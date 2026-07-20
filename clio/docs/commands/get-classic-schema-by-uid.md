@@ -19,10 +19,11 @@ package's schema of a multi-package (base + replacing) schema can be read indepe
 
 This is the per-schema read behind Classic→Freedom migration discovery: pair it with
 `list-schema-hierarchy`, which lists every package schema of a name together with its UId, then
-read the one you need by UId here. No local workspace files are created or modified.
+read the one you need by UId here.
 
 When `--output-file` is set, the schema body is written to the specified file and the body field
-is omitted from the response JSON printed to stdout.
+is omitted from the response JSON printed to stdout. The output path must be absolute; relative
+paths are rejected because MCP server working directories are not caller-obvious.
 
 ## Synopsis
 

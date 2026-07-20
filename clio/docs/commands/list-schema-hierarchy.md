@@ -16,6 +16,9 @@ The list-schema-hierarchy command lists every package schema that shares one cli
 name — the base schema plus every replacing schema across packages — each with its package,
 maintainer, InstallType, an is-client-editable flag, the base template, and a `HierarchyLevel`.
 The schemas are ordered so the base comes first and replacing schemas follow by depth.
+If the schema is not found, the command returns `success=false`. If Creatio omits ordering or
+base/replacing metadata, or if the result reaches the row-count cap, the response includes warnings
+instead of presenting the order as fully determined.
 
 This is the foundation for Classic→Freedom migration discovery: use it to see the full override
 chain of a schema, pick which schema to read by UId with `get-classic-schema-by-uid`, and identify

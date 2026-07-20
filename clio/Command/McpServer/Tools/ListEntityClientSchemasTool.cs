@@ -19,7 +19,7 @@ public sealed class ListEntityClientSchemasTool(
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, " +
-		"edit pages (including per-type/typed pages) and add mini pages, each classified classic vs freedom. " +
+		"edit pages (including per-type/typed pages) and add mini pages, each classified classic, freedom, or unknown. " +
 		"One level only — recurse into detail entities by calling this per detail entity; details-on-page and " +
 		"Freedom counterparts are read from the page body by the merge module, not here. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
@@ -27,14 +27,17 @@ public sealed class ListEntityClientSchemasTool(
 		[Description("Parameters: entity-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		ListEntityClientSchemasArgs args) {
-		ListEntityClientSchemasOptions options = new() {
-			EntityName = args.EntityName,
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password
-		};
 		return ExecuteWithCleanLog(() => {
+			if (args is null) {
+				return new ListEntityClientSchemasResponse { Success = false, Error = "args is required" };
+			}
+			ListEntityClientSchemasOptions options = new() {
+				EntityName = args.EntityName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
 			ListEntityClientSchemasCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<ListEntityClientSchemasCommand>(options);

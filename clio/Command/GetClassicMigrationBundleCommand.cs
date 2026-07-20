@@ -110,16 +110,22 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// non-word lookbehind stops the match from firing inside a longer identifier (e.g. `masterEntitySchemaName`),
 	// so inference binds the page's own entity rather than a related one.
 	private static readonly Regex EntityNameRegex = new(
-		"(?<![A-Za-z_])entitySchemaName[\"']?\\s*:\\s*[\"']([A-Za-z_][\\w]*)[\"']", RegexOptions.Compiled);
+		"(?<![A-Za-z_])entitySchemaName[\"']?\\s*:\\s*[\"']([A-Za-z_][\\w]*)[\"']",
+		RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	// Detail schema references in a classic page body: `schemaName: "SomeDetailV2"` (detail-named schemas only).
 	// The lookbehind keeps longer identifiers (e.g. `entitySchemaName: "XDetail"`) from matching as details.
 	private static readonly Regex DetailSchemaNameRegex = new(
-		"(?<![A-Za-z_])schemaName[\"']?\\s*:\\s*[\"']([A-Za-z][\\w]*Detail[\\w]*)[\"']", RegexOptions.Compiled);
+		"(?<![A-Za-z_])schemaName[\"']?\\s*:\\s*[\"']([A-Za-z][\\w]*Detail[\\w]*)[\"']",
+		RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	// A detail's edit page: getEditPageName / editPageName / EditPageSchemaName -> "SomePage".
 	private static readonly Regex EditPageRegex = new(
-		"(?:getEditPageName|editPageName|EditPageSchemaName)[\\s\\S]{0,80}?[\"']([A-Za-z][\\w]+)[\"']", RegexOptions.Compiled);
+		"(?:getEditPageName|editPageName|EditPageSchemaName)[\\s\\S]{0,80}?[\"']([A-Za-z][\\w]+)[\"']",
+		RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;

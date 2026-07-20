@@ -22,7 +22,9 @@ DESCRIPTION
     together with its UId, then read the one you need by UId here.
 
     When --output-file is set, the schema body is written to the specified file
-    and the body field is omitted from the response JSON printed to stdout.
+    and the body field is omitted from the response JSON printed to stdout. The
+    output path must be absolute; relative paths are rejected because MCP server
+    working directories are not caller-obvious.
 
 OPTIONS
     --schema-uid                       Client unit schema UId — a specific

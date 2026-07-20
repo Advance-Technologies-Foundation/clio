@@ -16,7 +16,9 @@ public sealed class GetClassicSchemaByUidTool(
 
 	internal const string ToolName = "get-classic-schema-by-uid";
 
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// ReadOnly=false: the tool writes the schema body to disk when output-file is set.
+	// Destructive stays false in line with the schema-read family because it does not mutate Creatio state.
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Read the JavaScript body and metadata of a single Classic client unit schema record by its UId. " +
 		"Unlike get-client-unit-schema (resolves the top schema by NAME), this loads a specific schema by SysSchema.UId — " +
@@ -26,15 +28,18 @@ public sealed class GetClassicSchemaByUidTool(
 		[Description("Parameters: schema-uid (required); output-file (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		GetClassicSchemaByUidArgs args) {
-		GetClassicSchemaByUidOptions options = new() {
-			SchemaUId = args.SchemaUId,
-			OutputFile = args.OutputFile,
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password
-		};
 		return ExecuteWithCleanLog(() => {
+			if (args is null) {
+				return new GetClassicSchemaByUidResponse { Success = false, Error = "args is required" };
+			}
+			GetClassicSchemaByUidOptions options = new() {
+				SchemaUId = args.SchemaUId,
+				OutputFile = args.OutputFile,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
 			GetClassicSchemaByUidCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetClassicSchemaByUidCommand>(options);

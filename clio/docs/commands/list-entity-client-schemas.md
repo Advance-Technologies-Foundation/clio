@@ -14,7 +14,10 @@ list-entity-client-schemas - Resolve the Classic page-role graph (sections, edit
 
 The list-entity-client-schemas command resolves the page-role graph of an entity for a
 Classic→Freedom migration: its Classic sections, edit pages (including per-type / typed pages),
-and add mini pages — each classified as Classic vs Freedom.
+and add mini pages. Sections, edit pages, and mini pages include template and `kind` metadata
+(`classic`, `freedom`, or `unknown`) so callers do not have to infer page type from names alone.
+If the entity metadata does not contain a confirmed base row (`ExtendParent=false`), the command
+fails instead of guessing which entity schema UId to use.
 
 This is one level only: the migration workflow recurses into detail entities separately. The
 command is pure ESQ over the page-role metadata; it does not read or parse any schema body (use

@@ -7,7 +7,7 @@ using CommandLine;
 using Newtonsoft.Json.Linq;
 
 [Verb("get-classic-schema-by-uid", Aliases = ["classic-schema-get"],
-	HelpText = "Read the JavaScript body and metadata of a Classic client unit schema schema by its UId. " +
+	HelpText = "Read the JavaScript body and metadata of a Classic client unit schema by its UId. " +
 		"Unlike get-client-unit-schema (resolves the TOP schema by name), this loads a SPECIFIC schema by SysSchema.UId — " +
 		"the foundation for Classic->Freedom migration discovery (read every package schema of a schema).")]
 public class GetClassicSchemaByUidOptions : EnvironmentOptions {
@@ -68,6 +68,13 @@ public class GetClassicSchemaByUidCommand : Command<GetClassicSchemaByUidOptions
 		try {
 			if (string.IsNullOrWhiteSpace(options.SchemaUId)) {
 				response = new GetClassicSchemaByUidResponse { Success = false, Error = "schema-uid is required" };
+				return false;
+			}
+			if (!string.IsNullOrWhiteSpace(options.OutputFile) && !Path.IsPathRooted(options.OutputFile)) {
+				response = new GetClassicSchemaByUidResponse {
+					Success = false,
+					Error = "output-file must be an absolute path"
+				};
 				return false;
 			}
 			(JObject schema, string loadError) = SchemaDesignerHelper.LoadSchema(

@@ -6468,3 +6468,24 @@ Decision: Verified current branch `feature/client-unit-schema-full-hierarchy` is
 Discovery: Both ancestry checks failed (`upstream/pr/880` is not an ancestor of current HEAD, and current HEAD is not an ancestor of `upstream/pr/880`). PR #880 remains open from fork head `kbondarenko-tech:feature/classic-to-freedom-schema-tools` into `master`.
 Files: .codex/workspace-diary.md
 Impact: Local commit can proceed, but PR #880 update requires an explicit branch strategy (cherry-pick onto the fork branch, force-replace the PR head, or open/update a separate PR).
+
+## 2026-07-20 17:22 – PR #880 review-comment relevance pass after push
+Context: After pushing commit 623e1c24 to `kbondarenko-tech:feature/classic-to-freedom-schema-tools`, user asked to recheck previously left PR comments for relevance.
+Decision: Fetched PR #880 metadata and all GitHub API inline/general review comments. Validated 35 inline comments against PR head 623e1c24. DataService failure-envelope comments and command-doc visibility comments are now fixed/stale; many older correctness/test-style comments on `list-schema-hierarchy`, `list-entity-client-schemas`, and `get-classic-schema-by-uid` remain relevant.
+Discovery: Current live findings include `get-classic-schema-by-uid` still `ReadOnly=true` while writing `output-file`, zero-row `list-schema-hierarchy` still returning success, null `ExtendParent`/`InstallType` defaults, missing truncation warnings, weak `ClassifyKind`, N+1 metadata lookups, missing real command tests, non-compliant MCP tool-test style, null `args` dereference before `ExecuteWithCleanLog`, and command help category metadata gaps.
+Files: clio/Command/ListSchemaHierarchyCommand.cs, clio/Command/ListEntityClientSchemasCommand.cs, clio/Command/GetClassicSchemaByUidCommand.cs, clio/Command/McpServer/Tools/GetClassicSchemaByUidTool.cs, clio.tests/Command/McpServer/*
+Impact: Remaining PR-comment scope is now separated from stale/fixed comments; next work can target only the confirmed-open findings.
+
+## 2026-07-20 17:37 – PR #880 resolved fixed/stale review threads
+Context: User asked to leave a PR comment and resolve review conversations that were already fixed or irrelevant after the PR head update.
+Decision: Resolved 8 GitHub review threads by GraphQL: DataService failure-envelope duplicates, command-doc artifact duplicates, live-server verification for `SysSchema.UId`, stale `BaseTool.ExecuteResolved` suggestion, and stale connection-args duplication. Posted PR comment https://github.com/Advance-Technologies-Foundation/clio/pull/880#issuecomment-5024208339 with the reconciliation.
+Discovery: Verification query returned 34 review threads total: 8 resolved / 26 open; because the live-verification thread has a reply, this covers 9 resolved inline comments and leaves 26 open inline comments.
+Files: .codex/workspace-diary.md
+Impact: PR #880 now has its fixed/stale review conversations closed while the still-relevant correctness, safety, performance, and test-coverage comments remain visible.
+
+## 2026-07-20 19:15 – PR #880 review-comment fix pass
+Context: User asked to validate and fix review comments on PR #880 at head 623e1c24.
+Decision: Fixed confirmed open issues for schema-classic tools: `get-classic-schema-by-uid` now rejects relative output paths and is marked non-read-only in MCP; schema hierarchy now fails closed on zero rows, treats nullable `ExtendParent`/`InstallType` distinctly, uses the DataService select route, and emits cap/metadata warnings; entity client schema listing now fails without a confirmed base row, batches schema metadata lookup, classifies only exact known templates, returns section/edit metadata, and warns on caps. Added regex timeouts for Sonar S6444 findings in migration bundle parsing.
+Discovery: SonarCloud reported three open S6444 vulnerabilities in `GetClassicMigrationBundleCommand` regex construction. Targeted MCP E2E fixtures for the three touched tools run clean locally when using `UseAppHost=false` and a scratch output directory.
+Files: clio/Command/GetClassicMigrationBundleCommand.cs, clio/Command/GetClassicSchemaByUidCommand.cs, clio/Command/ListSchemaHierarchyCommand.cs, clio/Command/ListEntityClientSchemasCommand.cs, clio/Command/McpServer/Tools/GetClassicSchemaByUidTool.cs, clio/Command/McpServer/Tools/ListSchemaHierarchyTool.cs, clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs, clio.tests/Command/GetClassicSchemaByUidCommandTests.cs, clio.tests/Command/ListEntityClientSchemasCommandTests.cs, clio.tests/Command/McpServer/GetClassicSchemaByUidToolTests.cs, clio.tests/Command/McpServer/ListSchemaHierarchyToolTests.cs, clio.tests/Command/McpServer/ListEntityClientSchemasToolTests.cs, clio.mcp.e2e
+Impact: The main correctness, MCP-safety, Sonar, and coverage review comments for these commands are addressed locally; docs/help were updated for changed command behavior, and targeted unit plus MCP E2E verification passed.

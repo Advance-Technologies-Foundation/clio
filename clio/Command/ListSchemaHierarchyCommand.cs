@@ -34,7 +34,7 @@ public sealed class SchemaHierarchyEntry {
 	public string Maintainer { get; set; }
 
 	[System.Text.Json.Serialization.JsonPropertyName("installType")]
-	public int InstallType { get; set; }
+	public int? InstallType { get; set; }
 
 	[System.Text.Json.Serialization.JsonPropertyName("isBase")]
 	public bool IsBase { get; set; }
@@ -51,6 +51,9 @@ public sealed class SchemaHierarchyEntry {
 	// skill can see the ordering key and detect ties independently.
 	[System.Text.Json.Serialization.JsonPropertyName("hierarchyLevel")]
 	public int? HierarchyLevel { get; set; }
+
+	[System.Text.Json.Serialization.JsonIgnore]
+	internal bool? ExtendParent { get; set; }
 }
 
 public sealed class ListSchemaHierarchyResponse {
@@ -79,7 +82,7 @@ public sealed class ListSchemaHierarchyResponse {
 
 public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 
-	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
+	private const int SchemaHierarchyRowCount = 200;
 
 	// Product maintainers are never client-editable regardless of InstallType.
 	private static readonly HashSet<string> ProductMaintainers =
@@ -107,9 +110,17 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 			string managerName = string.IsNullOrWhiteSpace(options.ManagerName)
 				? "ClientUnitSchemaManager" : options.ManagerName;
 			JObject query = BuildSelectHierarchyByName(options.SchemaName, managerName);
-			string url = _serviceUrlBuilder.Build(SelectQueryRoute);
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 			string json = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
 			JArray rows = DataServiceSelectResponse.ReadRows(json);
+			if (rows.Count == 0) {
+				response = new ListSchemaHierarchyResponse {
+					Success = false,
+					SchemaName = options.SchemaName,
+					Error = $"Schema '{options.SchemaName}' not found (ManagerName='{managerName}')"
+				};
+				return false;
+			}
 
 			List<SchemaHierarchyEntry> schemas = rows.Select(MapHierarchyEntry).ToList();
 
@@ -129,6 +140,11 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 				.ToList();
 
 			List<string> warnings = DetectOrderingAmbiguity(schemas);
+			if (rows.Count == SchemaHierarchyRowCount) {
+				warnings.Add(
+					$"The schema hierarchy result reached the rowCount cap ({SchemaHierarchyRowCount}); " +
+					"the result may be truncated. Verify before treating it as complete.");
+			}
 			response = new ListSchemaHierarchyResponse {
 				Success = true,
 				SchemaName = options.SchemaName,
@@ -148,17 +164,19 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 
 	private static SchemaHierarchyEntry MapHierarchyEntry(JToken row) {
 		string maintainer = row["Maintainer"]?.ToString();
-		int installType = row["InstallType"]?.Value<int?>() ?? 0;
+		int? installType = row["InstallType"]?.Value<int?>();
+		bool? extendParent = row["ExtendParent"]?.Value<bool?>();
 		bool isClientEditable = IsClientEditable(maintainer, installType);
 		return new SchemaHierarchyEntry {
 			Package = row["PackageName"]?.ToString(),
 			UId = row["UId"]?.ToString(),
 			Maintainer = maintainer,
 			InstallType = installType,
-			IsBase = !(row["ExtendParent"]?.Value<bool?>() ?? false),
+			IsBase = extendParent == false,
 			IsClientEditable = isClientEditable,
 			BaseTemplate = row["ParentName"]?.ToString(),
-			HierarchyLevel = row["HierarchyLevel"]?.Value<int?>()
+			HierarchyLevel = row["HierarchyLevel"]?.Value<int?>(),
+			ExtendParent = extendParent
 		};
 	}
 
@@ -167,7 +185,15 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 	// the merge order between them is a stable-but-arbitrary tiebreak, not authoritative.
 	internal static List<string> DetectOrderingAmbiguity(List<SchemaHierarchyEntry> schemas) {
 		List<SchemaHierarchyEntry> nonBase = schemas.Where(l => !l.IsBase).ToList();
-		List<string> warnings = nonBase
+		List<string> warnings = [];
+		List<SchemaHierarchyEntry> unknownExtendParent = schemas.Where(l => !l.ExtendParent.HasValue).ToList();
+		if (unknownExtendParent.Count > 0) {
+			warnings.Add(
+				$"Schemas [{string.Join(", ", unknownExtendParent.Select(l => l.Package ?? "(unknown)"))}] " +
+				"do not report ExtendParent; treated as replacing schemas rather than base schemas. " +
+				"Verify the base/replacing classification before applying the merge order.");
+		}
+		warnings.AddRange(nonBase
 			.Where(l => l.HierarchyLevel.HasValue)
 			.GroupBy(l => l.HierarchyLevel.Value)
 			.Where(g => g.Count() > 1)
@@ -175,13 +201,12 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 				$"Schemas [{string.Join(", ", g.Select(l => l.Package ?? "(unknown)"))}] share HierarchyLevel {g.Key}; " +
 				"their relative merge order is not determined by dependency depth — applied a stable " +
 				"tiebreak by package name. Verify against actual package dependencies if these schemas " +
-				"modify the same elements.")
-			.ToList();
+				"modify the same elements."));
 		// Schemas whose HierarchyLevel the platform did not report all collapse to the same "unknown"
 		// bucket and get an arbitrary name tiebreak — that is ALSO undetermined order, so it must warn
 		// too (otherwise empty Warnings would falsely imply a fully dependency-determined order).
 		List<SchemaHierarchyEntry> unknown = nonBase.Where(l => !l.HierarchyLevel.HasValue).ToList();
-		if (unknown.Count > 1)
+		if (unknown.Count > 0)
 			warnings.Add(
 				$"Schemas [{string.Join(", ", unknown.Select(l => l.Package ?? "(unknown)"))}] have no HierarchyLevel; " +
 				"their relative merge order is undetermined — applied a stable tiebreak by package name. " +
@@ -192,9 +217,9 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 	// Client-editable ⇔ a non-product maintainer AND developed-here InstallType (0).
 	// Lesson from PoC: Maintainer='Customer' alone is NOT enough — installed (InstallType=1)
 	// customer packages are read-only for schema creation.
-	internal static bool IsClientEditable(string maintainer, int installType) =>
+	internal static bool IsClientEditable(string maintainer, int? installType) =>
 		!string.IsNullOrWhiteSpace(maintainer)
-		&& !ProductMaintainers.Contains(maintainer)
+		&& !ProductMaintainers.Contains(maintainer.Trim())
 		&& installType == 0;
 
 	public override int Execute(ListSchemaHierarchyOptions options) {
@@ -241,6 +266,6 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 				["byManager"] = EqFilter("ManagerName", managerName)
 			}
 		},
-		["rowCount"] = 200
+		["rowCount"] = SchemaHierarchyRowCount
 	};
 }

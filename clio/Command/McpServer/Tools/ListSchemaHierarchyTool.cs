@@ -27,15 +27,18 @@ public sealed class ListSchemaHierarchyTool(
 		[Description("Parameters: schema-name (required); manager-name (optional, default ClientUnitSchemaManager); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		ListSchemaHierarchyArgs args) {
-		ListSchemaHierarchyOptions options = new() {
-			SchemaName = args.SchemaName,
-			ManagerName = string.IsNullOrWhiteSpace(args.ManagerName) ? "ClientUnitSchemaManager" : args.ManagerName,
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password
-		};
 		return ExecuteWithCleanLog(() => {
+			if (args is null) {
+				return new ListSchemaHierarchyResponse { Success = false, Error = "args is required" };
+			}
+			ListSchemaHierarchyOptions options = new() {
+				SchemaName = args.SchemaName,
+				ManagerName = string.IsNullOrWhiteSpace(args.ManagerName) ? "ClientUnitSchemaManager" : args.ManagerName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
 			ListSchemaHierarchyCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<ListSchemaHierarchyCommand>(options);
