@@ -113,7 +113,15 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`. Fixtures carry `[Propert
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-07-20
+- Implementation completed: 2026-07-20
+- Tests passing: `dotnet test --filter "Category=Unit&Module=McpServer"` → 2500 passed, 0 failed, 1 skipped
+- Notes: New `ISchemaConvergenceService` classifies Create/Reconcile/AlreadySatisfied/Collision from a single
+  global read (`FindEntitySchemaCommand.FindSchemas`) + column detail (`GetEntitySchemaPropertiesCommand`).
+  `ExecuteCreateSchema` routes through it; `EnsureLookupRegistration` moved to run on the already-exists path;
+  `TryGetCollisionInfo` deleted with its last caller; additive `outcome` on `SchemaSyncOperationResult`.
+  Focused review found + fixed a HIGH regression: `extend-parent=true` replacement schemas (same name, different
+  package) are now classified `Create` (was wrongly `Collision`); the `ExtendParent==false` masked-collision fix
+  is intact. Reconcile add-only path reuses `UpdateEntitySchemaCommand` (shared helper Story 2 extends).
+  Known limitations (documented): `FindSchemas` is `EntitySchemaManager`-scoped; parent/kind check is
+  immediate-parent only. `ColumnsToModify` surfaced-not-applied (Story 2 write path).

@@ -571,6 +571,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
+		services.AddTransient<ISchemaConvergenceService, SchemaConvergenceService>();
 		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
 		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
 		// the real accessor/validator are absent). The mcp-http host registers the REAL

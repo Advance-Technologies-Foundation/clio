@@ -23,6 +23,7 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class SchemaSyncTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger,
+	ISchemaConvergenceService convergenceService,
 	ISchemaEnrichmentService? enrichmentService = null) {
 
 	internal const string ToolName = "sync-schemas";
@@ -30,6 +31,10 @@ public sealed class SchemaSyncTool(
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
 	private const string SeedDataOperationName = "seed-data";
+	private const string CreatedOutcome = "created";
+	private const string ReconciledOutcome = "reconciled";
+	private const string AlreadySatisfiedOutcome = "already-satisfied";
+	private const string CollisionOutcome = "collision";
 
 	/// <summary>
 	/// Executes a batch of schema operations in a single MCP call.
@@ -227,77 +232,125 @@ public sealed class SchemaSyncTool(
 	private SchemaSyncOperationResult ExecuteCreateSchema(
 		SchemaSyncOperation op, SchemaSyncArgs args,
 		string parentSchemaName, bool extendParent, string operationName, string tenantKey) {
+		bool isLookup = string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal);
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
 			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 				op.TitleLocalizations,
 				op.LegacyTitle,
 				context);
-			if (string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
+			if (isLookup) {
 				ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(op.Columns);
 			}
-			CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
-				new CreateLookupArgs(
-					args.PackageName, op.SchemaName,
-					new Dictionary<string, string>(titleLocalizations, StringComparer.OrdinalIgnoreCase), args.EnvironmentName,
-					op.Columns),
-				parentSchemaName, extendParent,
-				isVirtual: string.Equals(operationName, CreateEntityOperationName, StringComparison.Ordinal)
-					&& op.IsVirtual);
-			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
-			int exitCode = command.Execute(options);
-			if (exitCode == 0 && string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
+
+			// Read the current server state ONCE and classify (create-if-absent / reconcile-delta /
+			// already-satisfied / durable collision) BEFORE any mutation, replacing the old
+			// create-unconditionally-then-probe path. All reads are server-side within this batch call.
+			IReadOnlyList<CreateEntitySchemaColumnArgs> requestedColumns =
+				op.Columns as IReadOnlyList<CreateEntitySchemaColumnArgs> ?? op.Columns?.ToList() ?? [];
+			SchemaConvergenceTarget target = new(
+				args.EnvironmentName, args.PackageName, op.SchemaName,
+				isLookup ? "BaseLookup" : parentSchemaName, isLookup, extendParent, requestedColumns);
+			SchemaConvergencePlan plan = convergenceService.Classify(target);
+
+			if (plan.Outcome == SchemaConvergenceOutcome.Collision) {
+				return new SchemaSyncOperationResult {
+					Type = operationName,
+					SchemaName = op.SchemaName,
+					Success = false,
+					Outcome = CollisionOutcome,
+					Error = plan.Error,
+					Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
+					CollisionInfo = plan.CollisionPackageName is null
+						? null
+						: new SchemaSyncCollisionInfo(plan.CollisionPackageName, plan.Error ?? string.Empty)
+				};
+			}
+
+			int exitCode = ApplyConvergencePlan(plan, op, args, parentSchemaName, extendParent, operationName, titleLocalizations);
+
+			// FR-02: ensure the Lookups registration on EVERY successful create-lookup path (created,
+			// reconciled, already-satisfied) — the registration service is idempotent by name, so this is
+			// safe to run on an already-existing schema whose registration might still be missing.
+			if (exitCode == 0 && isLookup) {
 				ILookupRegistrationService registrationService =
-					commandResolver.Resolve<ILookupRegistrationService>(options);
+					commandResolver.Resolve<ILookupRegistrationService>(new EnvironmentOptions { Environment = args.EnvironmentName });
 				registrationService.EnsureLookupRegistration(
 					args.PackageName,
 					op.SchemaName,
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
 			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
-			SchemaSyncCollisionInfo? collisionInfo = exitCode != 0
-				? TryGetCollisionInfo(op.SchemaName, args)
-				: null;
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
+				Outcome = exitCode == 0 ? MapOutcome(plan.Outcome) : null,
 				Messages = messages,
-				Error = BuildOperationError(operationName, exitCode, messages),
-				CollisionInfo = collisionInfo
+				Error = BuildOperationError(operationName, exitCode, messages)
 			};
 		} catch (Exception ex) {
-			SchemaSyncCollisionInfo? collisionInfo = TryGetCollisionInfo(op.SchemaName, args);
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
-				CollisionInfo = collisionInfo
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
 			};
 		}
 	}
 
-	private SchemaSyncCollisionInfo? TryGetCollisionInfo(string schemaName, SchemaSyncArgs args) {
-		try {
-			FindEntitySchemaOptions findOptions = new() {
-				Environment = args.EnvironmentName,
-				SchemaName = schemaName
-			};
-			FindEntitySchemaCommand findCommand = commandResolver.Resolve<FindEntitySchemaCommand>(findOptions);
-			IReadOnlyList<EntitySchemaSearchResult> results = findCommand.FindSchemas(findOptions);
-			EntitySchemaSearchResult? existing = results.FirstOrDefault();
-			if (existing is null) {
-				return null;
-			}
-			string hint = string.Equals(existing.PackageName, args.PackageName, StringComparison.OrdinalIgnoreCase)
-				? "Schema already exists in the target package. Use update-entity to add columns or proceed to seed-data without recreating."
-				: $"Schema already exists in package '{existing.PackageName}'. Reuse it by referencing it without creation, or call delete-schema first to remove the stale version before recreating.";
-			return new SchemaSyncCollisionInfo(existing.PackageName, hint);
-		} catch {
-			return null;
+	/// <summary>
+	/// Applies the mutation implied by a non-collision convergence plan: create the absent schema (columns
+	/// applied inline), add only the missing columns to an existing schema via <see cref="UpdateEntitySchemaCommand"/>'s
+	/// add-column operation (never recreating — <see cref="CreateEntitySchemaCommand"/> is create-only), or
+	/// perform no mutation when the schema is already satisfied. Returns the underlying command exit code.
+	/// </summary>
+	private int ApplyConvergencePlan(
+		SchemaConvergencePlan plan, SchemaSyncOperation op, SchemaSyncArgs args,
+		string parentSchemaName, bool extendParent, string operationName,
+		IReadOnlyDictionary<string, string> titleLocalizations) {
+		switch (plan.Outcome) {
+			case SchemaConvergenceOutcome.Create:
+				CreateEntitySchemaOptions createOptions = CreateEntitySchemaTool.CreateOptions(
+					new CreateLookupArgs(
+						args.PackageName, op.SchemaName,
+						new Dictionary<string, string>(titleLocalizations, StringComparer.OrdinalIgnoreCase), args.EnvironmentName,
+						op.Columns),
+					parentSchemaName, extendParent,
+					isVirtual: string.Equals(operationName, CreateEntityOperationName, StringComparison.Ordinal)
+						&& op.IsVirtual);
+				CreateEntitySchemaCommand createCommand = commandResolver.Resolve<CreateEntitySchemaCommand>(createOptions);
+				return createCommand.Execute(createOptions);
+			case SchemaConvergenceOutcome.Reconcile:
+				if (plan.ColumnsToAdd.Count == 0) {
+					// The reconcile delta had only column-shape modifications (Story 2 owns the modify write
+					// path); Story 1 applies no mutation and reports success.
+					return 0;
+				}
+				List<UpdateEntitySchemaOperationArgs> addOperations =
+					plan.ColumnsToAdd.Select(CoerceColumnToAddOperation).ToList();
+				UpdateEntitySchemaOptions updateOptions = new() {
+					Environment = args.EnvironmentName,
+					Package = args.PackageName,
+					SchemaName = op.SchemaName,
+					Operations = UpdateEntitySchemaTool.SerializeOperations(addOperations, op.SchemaName)
+				};
+				UpdateEntitySchemaCommand updateCommand = commandResolver.Resolve<UpdateEntitySchemaCommand>(updateOptions);
+				return updateCommand.Execute(updateOptions);
+			default:
+				// AlreadySatisfied: the requested shape is already present, so no mutation is issued.
+				return 0;
 		}
+	}
+
+	private static string MapOutcome(SchemaConvergenceOutcome outcome) {
+		return outcome switch {
+			SchemaConvergenceOutcome.Create => CreatedOutcome,
+			SchemaConvergenceOutcome.Reconcile => ReconciledOutcome,
+			SchemaConvergenceOutcome.AlreadySatisfied => AlreadySatisfiedOutcome,
+			_ => CollisionOutcome
+		};
 	}
 
 	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
@@ -601,6 +654,15 @@ public sealed class SchemaSyncOperationResult {
 
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
+
+	/// <summary>
+	/// Convergence discriminator for the operation: <c>created</c>, <c>reconciled</c>,
+	/// <c>already-satisfied</c>, or <c>collision</c>. Additive and omitted when null so the existing
+	/// wire shape is preserved for callers that predate the convergent semantics.
+	/// </summary>
+	[JsonPropertyName("outcome")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Outcome { get; init; }
 
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

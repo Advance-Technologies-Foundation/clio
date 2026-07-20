@@ -85,7 +85,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -124,7 +124,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -164,7 +164,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
@@ -191,7 +191,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -235,7 +235,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeSeedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
@@ -281,7 +281,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(_ => resolveCount++ == 0 ? failingCommand : secondCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -318,7 +318,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(failingCommand);
-		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
@@ -337,22 +337,19 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Includes collision-info when schema already exists in a different package")]
+	[Description("Surfaces the cross-package collision pre-emptively without ever attempting the create when the convergence classifier reports a different owning package.")]
 	public async Task SchemaSync_CreateLookup_Should_Include_CollisionInfo_When_Schema_Exists_In_Different_Package() {
 		// Arrange
 		TestLogger logger = new();
-		var failingCommand = new FakeCreateEntitySchemaCommand(
-			logger,
-			exitCode: 1,
-			messages: ["Schema 'UsrFirst' already exists."]);
-		var fakeFindCommand = new FakeFindEntitySchemaCommand(
-			[new EntitySchemaSearchResult("UsrFirst", "OtherPackage", "Customer", "BaseLookup")]);
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
-			.Returns(failingCommand);
-		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
-			.Returns(fakeFindCommand);
-		SchemaSyncTool tool = new(commandResolver, logger);
+			.Returns(fakeCreateCommand);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPackage",
+			error: "Error: schema 'UsrFirst' already exists in package 'OtherPackage'.");
+		SchemaSyncTool tool = new(commandResolver, logger, convergence);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
@@ -361,31 +358,32 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "a cross-package name collision is a durable failure, not a success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the collision outcome discriminator must be surfaced to callers");
 		response.Results[0].CollisionInfo.Should().NotBeNull(
-			because: "find-entity-schema found the schema in a different package");
+			because: "the classifier found the schema in a different package");
 		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPackage",
 			because: "the collision info should name the package that owns the stale schema");
-		response.Results[0].CollisionInfo.Hint.Should().Contain("OtherPackage",
-			because: "the hint should reference the owning package to guide the agent");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the collision must be detected pre-emptively — create is never attempted");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Omits collision-info when schema is not found after a failed create operation")]
+	[Description("Omits collision-info and reports the created outcome when the convergence classifier reports the schema is absent.")]
 	public async Task SchemaSync_CreateLookup_Should_Not_Include_CollisionInfo_When_Schema_Not_Found() {
 		// Arrange
 		TestLogger logger = new();
-		var failingCommand = new FakeCreateEntitySchemaCommand(
-			logger,
-			exitCode: 1,
-			messages: ["create-lookup failed with exit code 1: network timeout"]);
-		var fakeFindCommand = new FakeFindEntitySchemaCommand([]);
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
-			.Returns(failingCommand);
-		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
-			.Returns(fakeFindCommand);
-		SchemaSyncTool tool = new(commandResolver, logger);
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create));
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
@@ -396,6 +394,8 @@ public sealed class SchemaSyncToolTests {
 		// Assert
 		response.Results[0].CollisionInfo.Should().BeNull(
 			because: "no existing schema was found, so there is no collision to report");
+		response.Results[0].Outcome.Should().Be("created",
+			because: "an absent schema that is created must report the created outcome");
 	}
 
 	[Test]
@@ -404,7 +404,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_Unknown_OperationType_Should_Return_Error() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("delete-schema", "UsrOops")]);
@@ -430,7 +430,7 @@ public sealed class SchemaSyncToolTests {
 	[Description("Rejects the legacy operation field name with a targeted sync-schemas validation message.")]
 	public async Task SchemaSync_Should_Reject_Legacy_Operation_Field_Name() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -465,7 +465,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Fail() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
@@ -486,7 +486,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Enumerate_Accepted_Shapes() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
@@ -517,7 +517,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -557,7 +557,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -601,9 +601,9 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<CreateEntitySchemaOptions>())
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(Substitute.For<ILookupRegistrationService>());
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -639,7 +639,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(failingCreateCommand);
 		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
 			.Returns(fakeSeedCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrBroken",
@@ -669,7 +669,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"missing-env", "UsrPkg",
 			[
@@ -703,7 +703,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"missing-env", "UsrPkg",
 			[
@@ -739,7 +739,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"missing-env", "UsrPkg",
 			[
@@ -781,7 +781,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeUpdateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -836,7 +836,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeUpdateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -901,7 +901,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncArgs(
@@ -929,7 +929,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -964,7 +964,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -996,7 +996,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1027,7 +1027,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1058,7 +1058,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1086,7 +1086,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1116,7 +1116,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1145,7 +1145,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Enumerate_IsRequired_And_Caption_Aliases() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
@@ -1170,7 +1170,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1199,7 +1199,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1229,7 +1229,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1259,7 +1259,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1292,7 +1292,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1330,7 +1330,7 @@ public sealed class SchemaSyncToolTests {
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
 			.Throws(new InvalidOperationException("baseUri: Value cannot be null"));
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -1362,7 +1362,7 @@ public sealed class SchemaSyncToolTests {
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
 			.Throws(new InvalidOperationException("dataforge call to https://target.creatio.com/0/rest failed: /Users/dev/secret/appsettings.json missing"));
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -1397,7 +1397,7 @@ public sealed class SchemaSyncToolTests {
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
 			.Throws(new NullReferenceException("object reference not set"));
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -1425,7 +1425,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeSeedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -1460,7 +1460,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(failingCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -1492,7 +1492,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(Substitute.For<ILookupRegistrationService>());
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -1514,6 +1514,216 @@ public sealed class SchemaSyncToolTests {
 			because: "a cancellation signalled after the first operation's marker must abort the batch on the calling thread");
 		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(
 			Arg.Is<CreateEntitySchemaOptions>(options => options.SchemaName == "UsrBeta"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Creates the schema and ensures the Lookups registration when the convergence classifier reports the schema is absent.")]
+	public async Task ExecuteCreateSchema_ShouldReturnCreatedOutcomeAndEnsureRegistration_WhenSchemaAbsent() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.Create));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an absent schema must be created successfully");
+		response.Results[0].Outcome.Should().Be("created",
+			because: "the created outcome discriminator must be surfaced for an absent schema");
+		fakeCreateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the create path must run when the schema is absent");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Adds only the missing columns via the update-entity add-column path without recreating the schema when the classifier reports a same-package subset.")]
+	public async Task ExecuteCreateSchema_ShouldAddOnlyMissingColumnsWithoutRecreate_WhenSchemaExistsWithSubset() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Reconcile,
+			columnsToAdd: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))]);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "adding a missing column to an existing schema should succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an existing schema with a missing column must report the reconciled outcome");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "CreateEntitySchemaCommand is create-only and must never recreate an existing schema");
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "missing columns are added through the update-entity add-column path");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrExtra\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "only the single missing column must be added, as an add operation");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Ensures the Lookups registration on the already-exists path (moved out of the freshly-created branch) when the classifier reports the schema is already satisfied.")]
+	public async Task ExecuteCreateSchema_ShouldEnsureLookupRegistrationOnAlreadyExistsPath_WhenRegistrationMissing() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.AlreadySatisfied));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an already-satisfied schema requires no mutation and must succeed");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "a schema that already matches the requested shape must report already-satisfied");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "an already-satisfied schema must not be recreated");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "an already-satisfied schema has no columns to add");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Cross-package pre-existing schema is surfaced pre-emptively as a collision without ever calling create.")]
+	public async Task ExecuteCreateSchema_ShouldFailWithCollisionAndNotCallCreate_WhenSchemaInDifferentPackage() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPkg",
+			error: "Error: schema 'UsrTodoStatus' already exists in package 'OtherPkg'.");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "a cross-package name collision is a durable failure, not a success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the collision outcome discriminator must be surfaced to callers");
+		response.Results[0].CollisionInfo.Should().NotBeNull(
+			because: "the owning package must be machine-readable");
+		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPkg",
+			because: "the collision info must name the owning package");
+		response.Results[0].Error.Should().StartWith("Error:",
+			because: "errors must be user-friendly Error: {message} strings");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the collision must be detected pre-emptively — create is never attempted (no masked collision)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops the batch on the first operation when a create collision is detected and never runs the following operation.")]
+	public async Task SchemaSync_ShouldStopOnFirstFailure_WhenCreateCollisionDetected() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPkg",
+			error: "Error: schema 'UsrFirst' already exists in package 'OtherPkg'.");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First")),
+				new SchemaSyncOperation("create-lookup", "UsrSecond", TitleLocalizations: Localizations("Second"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a collision on the first operation fails the batch");
+		response.Results.Should().HaveCount(1,
+			because: "stop-on-first-failure must prevent the second operation from running");
+		response.Results[0].SchemaName.Should().Be("UsrFirst",
+			because: "only the first (failing) operation result should be present");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the collision is pre-emptive, so no create is attempted on either operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the outcome field from the serialized result when the outcome is null so the existing wire shape is preserved.")]
+	public void SchemaSyncOperationResult_ShouldOmitOutcomeField_WhenOutcomeIsNull() {
+		// Arrange
+		SchemaSyncOperationResult result = new() {
+			Type = "create-lookup",
+			SchemaName = "UsrTodoStatus",
+			Success = true,
+			Outcome = null
+		};
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(result);
+
+		// Assert
+		json.Should().NotContain("\"outcome\"",
+			because: "the outcome field is JsonIgnoreCondition.WhenWritingNull, so a null outcome must not appear on the wire");
+	}
+
+	private static ISchemaConvergenceService Convergence(
+		SchemaConvergenceOutcome outcome = SchemaConvergenceOutcome.Create,
+		IReadOnlyList<CreateEntitySchemaColumnArgs>? columnsToAdd = null,
+		IReadOnlyList<UpdateEntitySchemaOperationArgs>? columnsToModify = null,
+		string? collisionPackageName = null,
+		string? error = null) {
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
+			.Returns(new SchemaConvergencePlan(outcome, columnsToAdd ?? [], columnsToModify ?? [], collisionPackageName, error));
+		return convergence;
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
@@ -1576,15 +1786,6 @@ public sealed class SchemaSyncToolTests {
 			}
 			return 0;
 		}
-	}
-
-	private sealed class FakeFindEntitySchemaCommand : FindEntitySchemaCommand {
-		private readonly IReadOnlyList<EntitySchemaSearchResult> _results;
-		public FakeFindEntitySchemaCommand(IReadOnlyList<EntitySchemaSearchResult> results)
-			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>()) {
-			_results = results;
-		}
-		public override IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) => _results;
 	}
 
 	private sealed class FakeCreateDataBindingDbCommand : CreateDataBindingDbCommand {
