@@ -210,15 +210,16 @@ internal static class GuidanceCatalog {
 				"theming",
 				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
 				ThemingGuidanceResource.Guide),
-			["run-process-button"] = Create(
-				"run-process-button",
+			["when-to-use-requests"] = Create(
+				"when-to-use-requests",
 				"""
-				Canonical MCP guidance for adding a Freedom UI button that runs a business process
-				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
-				key = CODE not caption (silent-skip warning), and the static-constant /
-				view-model-attribute-binding / current-record variants.
+				Canonical MCP guidance for wiring Freedom UI page actions to platform requests:
+				when to reuse a built-in crt.*Request vs chain a handler vs author a usr.*Request,
+				and the mandatory get-request-info catalog discipline — parameters as the only
+				authorable keys (empty map = no params block), platform-injected baseParameters
+				never in params, per-request documentation, and version scoping.
 				""",
-				RunProcessButtonGuidanceResource.Guide),
+				WhenToUseRequestsGuidanceResource.Guide),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "

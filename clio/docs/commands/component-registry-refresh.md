@@ -22,6 +22,11 @@ a fresh `{version}.json` payload and the matching `{version}.meta.json`
 sidecar (ETag, Last-Modified, SHA-256). Failed downloads do not poison the
 cache — the previous entry stays as-is.
 
+Every targeted version is refreshed for the web (`ComponentRegistry.json`, cache
+root), mobile (`MobileComponentRegistry.json`, `mobile/` subdirectory), and requests
+(`RequestRegistry.json`, `requests/` subdirectory, the Freedom UI request catalog
+consumed by `get-request-info`) flavors.
+
 The CDN base URL defaults to
 `https://academy.creatio.com/api/mcp/` and can be overridden with the
 `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` environment variable for dev or
