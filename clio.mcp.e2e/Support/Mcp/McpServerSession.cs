@@ -261,11 +261,11 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	/// <summary>
 	/// Invokes a long-tail DESTRUCTIVE tool through the advertised, host-gated
 	/// <c>clio-run-destructive</c> executor, returning the target tool's <see cref="CallToolResult"/>
-	/// verbatim. The auto-routing
-	/// <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, CancellationToken)"/>
-	/// dispatches an unadvertised tool through the SAFE <c>clio-run</c> executor, which refuses
-	/// destructive commands; a destructive long-tail tool (for example <c>dataforge-initialize</c> after
-	/// it left the resident profile in ENG-92761) must be driven through this executor instead.
+	/// verbatim. Both <c>clio-run</c> and <c>clio-run-destructive</c> dispatch any target tool
+	/// directly — neither refuses by target; the destructive gate is enforced at the HOST level via the
+	/// tool's <c>Destructive=true</c> flag, not by the executor. <c>clio-run-destructive</c> is used here
+	/// because it is the semantically-correct executor for a destructive long-tail tool (for example
+	/// <c>dataforge-initialize</c> after it left the resident profile in ENG-92761).
 	/// </summary>
 	/// <param name="command">The destructive target tool name (the <c>command</c> for the executor).</param>
 	/// <param name="args">The target tool's argument object, forwarded verbatim under <c>args</c>.</param>

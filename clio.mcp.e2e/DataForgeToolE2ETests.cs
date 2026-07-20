@@ -456,7 +456,9 @@ public sealed class DataForgeToolE2ETests {
 	// Read-only Data Forge discovery tools are now long-tail (ENG-92761), so they are deliberately NOT
 	// in tools/list; Session.CallToolAsync auto-routes an unadvertised tool through the clio-run
 	// executor, which returns the target tool's result verbatim. (Destructive initialize/update use
-	// CallDestructiveAsync instead — the safe clio-run executor refuses destructive commands.)
+	// CallDestructiveAsync — the semantically-correct clio-run-destructive executor — instead. Both
+	// executors dispatch directly; the destructive gate is host-level via Destructive=true, not enforced
+	// by clio-run.)
 	private static async Task<CallToolResult> CallToolAsync(
 		ArrangeContext arrangeContext,
 		string toolName,
