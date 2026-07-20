@@ -2677,7 +2677,7 @@ public static class SchemaValidationService
 
 	private static IReadOnlyDictionary<string, HashSet<string>> BuildValidatorParameterContracts(string jsBody) {
 		var contracts = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-		foreach ((string validatorType, string[] paramNames) in StandardValidatorContractParser.GetContracts()) {
+		foreach ((string validatorType, string[] paramNames) in StandardValidatorContracts.GetContracts()) {
 			contracts[validatorType] = new HashSet<string>(paramNames, StringComparer.OrdinalIgnoreCase);
 		}
 		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {

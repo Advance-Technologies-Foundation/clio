@@ -26,21 +26,60 @@ DESCRIPTION
       - send-telemetry         Store one workflow telemetry event as a local OpenTelemetry-shaped event once consent is granted
       - withdraw-telemetry-consent  Withdraw consent: set the stored decision to denied and delete not-yet-uploaded local events; stops all collection and upload
 
-    Available MCP guidance resources:
-    - docs://mcp/guides/app-modeling
-    - docs://mcp/guides/data-bindings
-    - docs://mcp/guides/existing-app-maintenance
-    - docs://mcp/guides/page-schema-handlers
-    - docs://mcp/guides/page-schema-sdk-common
-    - docs://mcp/guides/page-schema-validators
+    Guidance is discovered from active trusted knowledge libraries, not compiled into Clio.
+    Call get-guidance with an unknown name to receive availableGuides, or use resources/list
+    to receive canonical URIs with publisher-owned titles and descriptions. Read canonical
+    docs://knowledge/<library-id>/<item-id> resources directly. Publisher-declared legacy
+    docs://mcp/guides/... aliases remain readable during migration.
 
-    Preferred guidance access:
-    - get-guidance {"name":"app-modeling"}
-    - get-guidance {"name":"data-bindings"}
-    - get-guidance {"name":"existing-app-maintenance"}
-    - get-guidance {"name":"page-schema-handlers"}
-    - get-guidance {"name":"page-schema-sdk-common"}
-    - get-guidance {"name":"page-schema-validators"}
+    External knowledge delivery configuration:
+    - appsettings.json knowledge.root-path  Readable local cache root
+    - appsettings.json knowledge.sources  Trusted Git/NuGet sources keyed by alias
+    - appsettings.json knowledge.topic-pins  Optional topic-to-library overrides
+    - knowledge.sources.<alias>.trusted-key-id  NuGet-only signing-key ID
+    - knowledge.sources.<alias>.trusted-public-key-path  NuGet-only public-key PEM path
+
+    Before serving requests, both MCP transports ensure a built-in Git source named
+    creatio-curated exists and is installed from
+    https://github.com/Advance-Technologies-Foundation/clio-knowledge.git
+    on branch master. Its library-id is com.creatio.clio, priority is 100, and
+    participation is authoritative. A valid local checkout is reused without a
+    remote call. A missing checkout gets a five-second startup installation budget
+    before the MCP handshake completes, so mandatory first-request guidance is available
+    whenever that bounded bootstrap succeeds. Older
+    aliases for the same library are normalized to creatio-curated and their
+    checkouts are moved rather than cloned again. The built-in source cannot be removed; disable it with
+    clio disable-knowledge-source --alias creatio-curated. Disabled state survives
+    updates and MCP restarts. A failed or timed-out initial clone is warned but does not prevent
+    MCP startup; retry with install-knowledge --source creatio-curated.
+
+    Public verification keys are not secrets. Never configure a private signing key.
+    NuGet sources require signed v1 bundles. Git sources are cloned directly. This POC
+    supports credential-free public HTTPS Git and NuGet sources only; authenticated private sources are not
+    supported. Signed legacyUris remain exact aliases for their declaring items. No
+    implicit v0 source is registered; prototype caches require source configuration
+    and reinstall.
+
+    The service-index URL must respond directly; redirects are not followed. Its advertised
+    PackageBaseAddress/3.0.0 must use the same scheme, host, and port as the configured service index.
+
+    NuGet sources are bound to their package version, verified signature, and digest. Git sources
+    are bound to the configured trusted repository URL and exact resolved commit, then validated
+    directly from the checkout; Git does not use NuGet bundle-signing keys. Both transports validate
+    compatibility, identity, catalogs, paths, and sizes before activation under knowledge.root-path.
+    The former top-level knowledge-root-path is migrated once. When absent, Clio persists
+    <clio-home>/knowledge. Installed content remains visible on disk.
+
+    Normal guidance lookup, resource reads, and example discovery use only local installed content
+    and never contact transports. Explicit install/update operations and info-knowledge with
+    checkUpdates=true may contact configured transports. Manage sources with the knowledge lifecycle
+    and add/remove/enable/disable/list source commands. These commands are non-resident MCP tools
+    callable through clio-run. The running MCP process hot
+    reloads source updates and enablement without restart. Rejected updates retain last-known-good;
+    a cold invalid cache returns guidance-unavailable for external guides. info-knowledge reads only
+    local state unless CLI --check-updates or MCP checkUpdates=true is supplied.
+    Clio owns delivery and resolution mechanics only. Article text, item/topic identity, titles,
+    descriptions, and legacy URI declarations belong to the knowledge libraries.
 
 SYNOPSIS
     clio mcp-server
@@ -62,17 +101,9 @@ EXAMPLES
     Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
         Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating raw.body.
 
-    Use your MCP client to call get-guidance {"name":"page-schema-validators"}.
-        Read the canonical validator authoring guide through a tool call instead of relying on docs:// URI routing in the client.
-
-    Use your MCP client to call get-guidance {"name":"page-schema-handlers"}.
-        Read the canonical handler authoring guide through a tool call before editing SCHEMA_HANDLERS in raw page bodies.
-
-    Use your MCP client to call get-guidance {"name":"page-schema-sdk-common"}.
-        Read the canonical page-schema SDK guide through a tool call before adding or editing @creatio-devkit/common usage in raw page bodies.
-
-    Use your MCP client to call get-guidance {"name":"data-bindings"}.
-        Read the canonical lookup seeding and binding verification guide before choosing between sync-schemas, DB-first bindings, and local binding artifacts.
+    Use your MCP client to call get-guidance with an unknown name, inspect availableGuides,
+    then call get-guidance again with the selected name.
+        Discover and read the currently installed publisher-owned guidance catalog.
 
 PREREQUISITES
     - clio version 8.0.2.35 or higher
@@ -86,11 +117,12 @@ NOTES
     - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
     - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
     - For Freedom UI page-body handler, validator, or @creatio-devkit/common page-schema work, prefer get-guidance instead of relying on client-specific docs:// resource routing
-    - For lookup seeding or binding artifact work, prefer get-guidance {"name":"data-bindings"} for workflow selection and keep get-tool-contract authoritative for exact field names
+    - Use get-guidance or resources/list to discover applicable installed knowledge; keep get-tool-contract authoritative for exact tool field names
     - This repository documents the MCP server surface; it does not ship a generic stdio helper client
     - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
+    - Guidance/resource/example lookups use local installed content; only explicit install/update or info-knowledge checkUpdates=true operations contact transports
     - Product telemetry is consent-gated: nothing is uploaded unless consent is granted. A production collector endpoint ships as the default, so uploads begin automatically once consent is granted; override it with CLIO_TELEMETRY_ENDPOINT or the settings "telemetry.endpoint" (https, or http only for loopback), or disable uploading entirely (regardless of consent) with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false. Events are stored under <clio-home>/telemetry (override CLIO_TELEMETRY_HOME) and exclude prompts, secrets, customer data, and generated content
 
 RETURN VALUES

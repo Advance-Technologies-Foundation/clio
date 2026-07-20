@@ -1,0 +1,28 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    disable-knowledge-source - Disable one configured source without deleting its cache
+
+SYNOPSIS
+    clio disable-knowledge-source --alias <alias> [--json]
+
+DESCRIPTION
+    Atomically disables one configured source. It becomes ineligible for logical
+    topics and exact namespaced routes on the next lookup. Configuration and
+    installed generations remain available for later re-enablement.
+
+OPTIONS
+    --alias <alias>    Required configured source alias
+    --json             Emit indented JSON
+
+EXAMPLES
+    clio disable-knowledge-source --alias partner
+    clio disable-knowledge-source --alias partner --json
+
+EXIT CODES
+    0   Source was disabled or was already disabled
+    1   Source was not found or configuration persistence failed
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

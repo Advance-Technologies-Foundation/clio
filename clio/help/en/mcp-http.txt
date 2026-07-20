@@ -12,6 +12,17 @@ DESCRIPTION
 
     The server runs until the process is terminated (Ctrl+C or SIGTERM).
 
+    Before accepting requests, Clio ensures the built-in creatio-curated Git
+    knowledge source is configured and installed from the master branch of
+    https://github.com/Advance-Technologies-Foundation/clio-knowledge.git.
+    A valid local checkout is reused without a remote update check. A missing
+    checkout gets a five-second startup installation budget before HTTP startup
+    completes, so mandatory first-request guidance is available whenever that
+    bounded bootstrap succeeds.
+    The source
+    cannot be removed; use disable-knowledge-source --alias creatio-curated.
+    A failed or timed-out initial clone is logged as a warning and does not block HTTP startup.
+
 PREREQUISITES
     mcp-http hosts the MCP endpoint on ASP.NET Core, so clio requires the
     ASP.NET Core shared runtime (Microsoft.AspNetCore.App) in addition to the

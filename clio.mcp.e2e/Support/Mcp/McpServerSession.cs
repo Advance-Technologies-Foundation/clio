@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Results;
@@ -45,6 +46,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		McpE2ESettings settings,
 		Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>>? elicitationHandler,
 		CancellationToken cancellationToken) {
+		SuppressCuratedKnowledgeBootstrap(settings);
 		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
 		StdioClientTransport transport = new(new StdioClientTransportOptions {
 			Command = process.Command,
@@ -73,6 +75,40 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			cancellationToken);
 
 		return new McpServerSession(client, transport);
+	}
+
+	private static void SuppressCuratedKnowledgeBootstrap(McpE2ESettings settings) {
+		if (!settings.SuppressCuratedKnowledgeBootstrap
+				|| !settings.ProcessEnvironmentVariables.TryGetValue("CLIO_HOME", out string? clioHome)
+				|| string.IsNullOrWhiteSpace(clioHome)) {
+			return;
+		}
+		string appSettingsPath = Path.Combine(clioHome, "appsettings.json");
+		if (!File.Exists(appSettingsPath)) {
+			return;
+		}
+		try {
+			JsonObject root = JsonNode.Parse(File.ReadAllText(appSettingsPath))?.AsObject() ?? new JsonObject();
+			JsonObject knowledge = root["knowledge"] as JsonObject ?? new JsonObject();
+			root["knowledge"] = knowledge;
+			JsonObject sources = knowledge["sources"] as JsonObject ?? new JsonObject();
+			knowledge["sources"] = sources;
+			if (sources.ContainsKey(CuratedKnowledgeSourceDefaults.Alias)) {
+				return;
+			}
+			sources[CuratedKnowledgeSourceDefaults.Alias] = new JsonObject {
+				["library-id"] = CuratedKnowledgeSourceDefaults.LibraryId,
+				["type"] = "git",
+				["location"] = CuratedKnowledgeSourceDefaults.Location,
+				["branch"] = CuratedKnowledgeSourceDefaults.Branch,
+				["enabled"] = false,
+				["priority"] = CuratedKnowledgeSourceDefaults.Priority,
+				["participation"] = "authoritative"
+			};
+			File.WriteAllText(appSettingsPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+		} catch (JsonException) {
+			// Invalid-settings fixtures must reach the real server unchanged and assert its diagnostics.
+		}
 	}
 
 	/// <summary>

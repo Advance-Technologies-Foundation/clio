@@ -169,15 +169,15 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). Buckets: <see cref="PassthroughClassification.Routed"/>,
-	/// <see cref="PassthroughClassification.Guarded"/>, <see cref="PassthroughClassification.NotEnvironmentSensitive"/>
-	/// (PRD's literal out-of-scope audit, matched to CURRENT tool names — several PRD names are stale, see the
-	/// inline notes below), and <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change
-	/// required). Per-bucket counts live on the section-header comments below, next to the rows they count —
-	/// prose totals here rotted twice (150→160 tools between 2026-07-11 and 2026-07-16) and were dropped.
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). 162 tools at authoring time (2026-07-19):
+	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
+	/// 30 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
+	/// plus global knowledge-source management, matched to CURRENT tool names), and 117
+	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
 		new Dictionary<string, PassthroughClassification>(System.StringComparer.Ordinal) {
+			// --- Routed (12): audited class c1 (7) + c2 (1) + matrix (4), fixed in Stories 3-14 ---
 			["list-apps"] = PassthroughClassification.Routed,
 			["get-app-info"] = PassthroughClassification.Routed,
 			["create-app"] = PassthroughClassification.Routed,
@@ -197,7 +197,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["link-from-repository-by-env-package-path"] = PassthroughClassification.Guarded,
 			["link-from-repository-unlocked"] = PassthroughClassification.Guarded,
 
-			// --- NotEnvironmentSensitive (20): PRD "Out of scope" audit, matched to CURRENT tool names.
+			// --- NotEnvironmentSensitive (30): PRD "Out of scope" audit plus global knowledge-source
+			// management, matched to CURRENT tool names.
 			// Several PRD prose names are stale vs. the actual [McpServerTool(Name=...)]; the ACTUAL name
 			// is used as the dictionary key and the PRD's (older) name is noted inline for traceability:
 			["get-telemetry-consent"] = PassthroughClassification.NotEnvironmentSensitive,
@@ -220,8 +221,18 @@ internal static class PassthroughToolClassificationRegistry {
 			["add-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
+			["install-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["update-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["info-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["delete-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["add-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["remove-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["enable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["disable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
+			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (125): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (117): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,

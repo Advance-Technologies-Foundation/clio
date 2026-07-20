@@ -17,6 +17,17 @@ This server exposes the same clio tools available in stdio mode
 
 The server runs until the process is terminated (Ctrl+C or SIGTERM).
 
+Before the endpoint starts accepting requests, Clio bootstraps the same built-in
+`creatio-curated` Git knowledge source used by `mcp-server`. It installs
+`com.creatio.clio` from the `master` branch of
+`https://github.com/Advance-Technologies-Foundation/clio-knowledge.git` when missing and otherwise
+uses the validated local checkout without a remote update check. A missing checkout gets a five-second
+startup installation budget before HTTP startup completes, so mandatory first-request guidance is
+available whenever that bounded bootstrap succeeds.
+The source cannot be removed;
+disable it with `clio disable-knowledge-source --alias creatio-curated`. A bootstrap retrieval
+failure or timeout is logged as a warning and does not prevent the HTTP host from starting.
+
 ## Prerequisites
 
 `clio mcp-http` hosts the MCP endpoint on ASP.NET Core, so clio requires the

@@ -1,0 +1,27 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    list-knowledge-sources - List all configured knowledge sources
+
+SYNOPSIS
+    clio list-knowledge-sources [--json]
+
+DESCRIPTION
+    Lists every configured source, including disabled sources, without contacting
+    Git or NuGet. Output includes alias, stable library identity, transport,
+    enablement, priority, participation, and a credential-safe location.
+
+OPTIONS
+    --json    Emit indented JSON
+
+EXAMPLES
+    clio list-knowledge-sources
+    clio list-knowledge-sources --json
+
+EXIT CODES
+    0   Configured sources were listed
+    1   Source configuration could not be read safely
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

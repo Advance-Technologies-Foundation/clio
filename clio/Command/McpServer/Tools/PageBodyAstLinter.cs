@@ -12,8 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 ///
 /// Background: the syntactic floor catches grammar errors
 /// but not the semantic anti-patterns described in the guidance resources
-/// (<c>PageSchemaHandlersGuidanceResource</c>, <c>PageSchemaValidatorsGuidanceResource</c>,
-/// <c>PageSchemaConvertersGuidanceResource</c>, <c>PageModificationGuidanceResource</c>).
+/// The matching authoring rules are delivered by external page-schema knowledge articles.
 /// Each rule below maps to one or more "DO NOT" entries in those guides.
 ///
 /// Severity model:

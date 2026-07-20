@@ -1,0 +1,810 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Clio.Command.McpServer.Knowledge;
+using Clio.Tests.Infrastructure;
+using Clio.UserEnvironment;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.McpServer;
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "McpServer")]
+public sealed class KnowledgeMultiSourceActivatorTests {
+	[Test]
+	[Description("Concurrent first access waits for the initial activation snapshot instead of observing an empty runtime.")]
+	public async Task EnsureActivated_ShouldWaitForInitialActivation_WhenFirstRefreshIsInProgress() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		using BlockingConfigurationProvider configurationProvider = new();
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(Substitute.For<IKnowledgeSourceInstallationStore>());
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider>(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton<IFileSystem>(TestFileSystem.MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+		using ManualResetEventSlim secondStarted = new();
+
+		// Act
+		Task first = Task.Run(activator.EnsureActivated);
+		bool firstEntered = configurationProvider.Entered.Wait(TimeSpan.FromSeconds(5));
+		Task second = Task.Run(() => {
+			secondStarted.Set();
+			activator.EnsureActivated();
+		});
+		bool secondEntered = secondStarted.Wait(TimeSpan.FromSeconds(5));
+		bool secondCompletedBeforeRelease = second.Wait(TimeSpan.FromMilliseconds(100));
+		configurationProvider.Release.Set();
+		await Task.WhenAll(first, second);
+
+		// Assert
+		firstEntered.Should().BeTrue(
+			because: "the test must hold the initial refresh inside the activation critical section");
+		secondEntered.Should().BeTrue(
+			because: "the concurrent caller must reach EnsureActivated before the initial refresh is released");
+		secondCompletedBeforeRelease.Should().BeFalse(
+			because: "no caller may observe the runtime before the first activation snapshot is complete");
+		configurationProvider.CallCount.Should().Be(1,
+			because: "the waiting caller can reuse the completed initial snapshot instead of refreshing it again");
+	}
+
+	[Test]
+	[Description("Concurrent access remains single-flight when the initial configuration refresh failed and a retry is in progress.")]
+	public async Task EnsureActivated_ShouldWaitForRetry_WhenInitialRefreshFailed() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		using BlockingConfigurationProvider configurationProvider = new(failFirstCall: true);
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(Substitute.For<IKnowledgeSourceInstallationStore>());
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider>(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton<IFileSystem>(TestFileSystem.MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+		activator.EnsureActivated();
+		using ManualResetEventSlim concurrentStarted = new();
+
+		// Act
+		Task retry = Task.Run(activator.EnsureActivated);
+		bool retryEntered = configurationProvider.Entered.Wait(TimeSpan.FromSeconds(5));
+		Task concurrent = Task.Run(() => {
+			concurrentStarted.Set();
+			activator.EnsureActivated();
+		});
+		bool concurrentEntered = concurrentStarted.Wait(TimeSpan.FromSeconds(5));
+		bool concurrentCompletedBeforeRelease = concurrent.Wait(TimeSpan.FromMilliseconds(100));
+		configurationProvider.Release.Set();
+		await Task.WhenAll(retry, concurrent);
+
+		// Assert
+		retryEntered.Should().BeTrue(
+			because: "the retry must reach the configuration provider after the synthetic initial failure");
+		concurrentEntered.Should().BeTrue(
+			because: "the concurrent caller must reach activation while the retry is still blocked");
+		concurrentCompletedBeforeRelease.Should().BeFalse(
+			because: "a failed initial attempt does not establish a last-known-good snapshot that permits stale-fast reads");
+		configurationProvider.CallCount.Should().Be(2,
+			because: "one failed attempt and one successful retry are sufficient for both concurrent callers");
+	}
+
+	[Test]
+	[Description("Configuration refresh deactivates disabled and removed sources while independently activating newly configured sources and pins.")]
+	public void EnsureActivated_ShouldReconcileEachSource_WhenConfigurationChanges() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		KnowledgeConfiguration currentConfiguration = Configuration(
+			("alpha", Source("com.example.alpha", priority: 100)),
+			("beta", Source("com.example.beta", priority: 50)));
+		configurationProvider.GetCurrent().Returns(_ => currentConfiguration);
+		Dictionary<string, KnowledgeSourceCurrentState> states = new(StringComparer.OrdinalIgnoreCase) {
+			["alpha"] = State("alpha", "com.example.alpha", 1),
+			["beta"] = State("beta", "com.example.beta", 2),
+			["gamma"] = State("gamma", "com.example.gamma", 3)
+		};
+		store.ReadCurrent(Arg.Any<string>(), out Arg.Any<string?>()).Returns(call => {
+			call[1] = null;
+			return states[call.ArgAt<string>(0)];
+		});
+		store.TryReadCandidate(
+			Arg.Any<string>(),
+			Arg.Any<KnowledgeSourceGenerationPointer>(),
+			out Arg.Any<InstalledKnowledgeSourceCandidate?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			KnowledgeSourceGenerationPointer pointer = call.ArgAt<KnowledgeSourceGenerationPointer>(1);
+			call[2] = new InstalledKnowledgeSourceCandidate(
+				pointer,
+				Path.Combine(Path.GetTempPath(), "knowledge", pointer.LibraryId),
+				[1, 2, 3]);
+			call[3] = null;
+			return true;
+		});
+		runtime.ActivateLibrary(
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<KnowledgeSourceParticipation>(),
+			Arg.Any<Stream>(),
+			Arg.Any<string?>(),
+			Arg.Any<string?>(),
+			Arg.Any<string?>()).Returns(call => {
+			string alias = call.ArgAt<string>(0);
+			ulong sequence = states[alias].Active.Sequence;
+			return Activated(sequence);
+		});
+		List<IReadOnlyDictionary<string, string>> observedPins = [];
+		runtime.When(instance => instance.SetTopicPins(Arg.Any<IReadOnlyDictionary<string, string>>()))
+			.Do(call => observedPins.Add(new Dictionary<string, string>(
+				call.ArgAt<IReadOnlyDictionary<string, string>>(0), StringComparer.Ordinal)));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		currentConfiguration = Configuration(
+			("alpha", Source("com.example.alpha", priority: 100, enabled: false)),
+			("gamma", Source("com.example.gamma", priority: 75)));
+		currentConfiguration.TopicPins["creatio.esq.filters"] = "com.example.gamma";
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "alpha").Should().Be(1,
+			because: "alpha should activate only while enabled");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "beta").Should().Be(1,
+			because: "beta's first activation must remain independent from alpha");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "gamma").Should().Be(1,
+			because: "a newly configured source must activate during the next refresh");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "alpha").Should().Be(1,
+			because: "a disabled source must stop serving while its cached generation is retained");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "beta").Should().Be(1,
+			because: "a removed source must leave the runtime snapshot on refresh");
+		observedPins.Should().ContainSingle(
+			because: "topic pins should update only when their effective routing configuration changes");
+		observedPins[^1]["creatio.esq.filters"].Should().Be("com.example.gamma",
+			because: "the most recent settings file must control logical-topic routing");
+		activator.LastDiagnostic.Should().BeNull(
+			because: "independent source activation and deactivation completed without fallback errors");
+	}
+
+	[Test]
+	[Description("A configuration refresh failure clears all active libraries instead of serving a stale mixed snapshot.")]
+	public void EnsureActivated_ShouldDeactivateRuntime_WhenConfigurationRefreshFails() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(_ => throw new InvalidDataException("synthetic invalid settings"));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.Deactivate)).Should().Be(1,
+			because: "invalid live configuration must fail closed rather than retain a stale source set");
+		activator.LastDiagnostic.Should().Contain("synthetic invalid settings",
+			because: "operators need a useful explanation for a rejected settings refresh");
+	}
+
+	[Test]
+	[Description("One corrupt source marker deactivates only that library while another configured source still activates.")]
+	public void EnsureActivated_ShouldIsolateMarkerFailure_WhenAnotherSourceIsHealthy() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(
+			("alpha", Source("com.example.alpha", priority: 100)),
+			("beta", Source("com.example.beta", priority: 50))));
+		KnowledgeSourceCurrentState betaState = State("beta", "com.example.beta", 2);
+		store.ReadCurrent(Arg.Any<string>(), out Arg.Any<string?>()).Returns(call => {
+			string alias = call.ArgAt<string>(0);
+			call[1] = alias == "alpha" ? "synthetic alpha marker failure" : null;
+			return alias == "beta" ? betaState : null;
+		});
+		store.TryReadCandidate(
+			"beta",
+			betaState.Active,
+			out Arg.Any<InstalledKnowledgeSourceCandidate?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			call[2] = new InstalledKnowledgeSourceCandidate(
+				betaState.Active,
+				Path.Combine(Path.GetTempPath(), "knowledge", "beta"),
+				[1, 2, 3]);
+			call[3] = null;
+			return true;
+		});
+		runtime.ActivateLibrary(
+			"beta", 50, KnowledgeSourceParticipation.Authoritative, Arg.Any<Stream>(), "1.0.0",
+			"com.example.beta", Arg.Any<string?>()).Returns(Activated(2));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "alpha").Should().Be(1,
+			because: "the corrupt source must fail closed without changing another library");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "beta").Should().Be(1,
+			because: "a healthy source must remain independently activatable");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.Deactivate)).Should().Be(0,
+			because: "one source-level marker failure must not clear the entire multi-source runtime");
+		activator.LastDiagnostic.Should().Contain("synthetic alpha marker failure",
+			because: "the isolated source failure must remain visible to operators");
+	}
+
+	[Test]
+	[Description("A live signing-trust change forces revalidation and withdraws a generation that the replacement key does not trust.")]
+	public void EnsureActivated_ShouldRevalidateAndDeactivate_WhenSourceTrustChanges() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		KnowledgeSourceConfiguration source = Source("com.example.alpha", priority: 100);
+		KnowledgeConfiguration configuration = Configuration(("alpha", source));
+		configurationProvider.GetCurrent().Returns(_ => configuration);
+		KnowledgeSourceCurrentState state = State("alpha", "com.example.alpha", 1);
+		store.ReadCurrent("alpha", out Arg.Any<string?>()).Returns(call => {
+			call[1] = null;
+			return state;
+		});
+		store.TryReadCandidate(
+			"alpha",
+			state.Active,
+			out Arg.Any<InstalledKnowledgeSourceCandidate?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			call[2] = new InstalledKnowledgeSourceCandidate(
+				state.Active,
+				Path.Combine(Path.GetTempPath(), "knowledge", "alpha"),
+				[1, 2, 3]);
+			call[3] = null;
+			return true;
+		});
+		runtime.ActivateLibrary(
+			"alpha", 100, KnowledgeSourceParticipation.Authoritative, Arg.Any<Stream>(), "1.0.0",
+			"com.example.alpha", Arg.Any<string?>()).Returns(
+			Activated(1),
+			new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Rejected,
+				KnowledgeBundleRejectionCode.InvalidSignature,
+				1,
+				null,
+				"replacement key rejected the installed bundle"));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		KnowledgeSourceConfiguration replacementTrust = Source("com.example.alpha", priority: 100);
+		replacementTrust.TrustedKeyId = "replacement-signing-key";
+		configuration = Configuration(("alpha", replacementTrust));
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "alpha").Should().Be(2,
+			because: "changing trust must revalidate once while the bounded failure cooldown prevents repeated disk and signature work");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "alpha").Should().Be(1,
+			because: "a generation rejected by replacement trust must stop serving immediately");
+		activator.LastDiagnostic.Should().Contain("replacement key rejected",
+			because: "operators need the validation reason after a live trust change");
+	}
+
+	[Test]
+	[Description("Replacing public-key bytes at the same configured path changes activation identity and forces immediate revalidation.")]
+	public void EnsureActivated_ShouldRevalidate_WhenTrustFingerprintChangesAtSamePath() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		IKnowledgeTrustFingerprintService fingerprints = Substitute.For<IKnowledgeTrustFingerprintService>();
+		KnowledgeSourceConfiguration source = Source("com.example.alpha", priority: 100);
+		configurationProvider.GetCurrent().Returns(Configuration(("alpha", source)));
+		KnowledgeSourceCurrentState state = State("alpha", "com.example.alpha", 1);
+		store.ReadCurrent("alpha", out Arg.Any<string?>()).Returns(call => {
+			call[1] = null;
+			return state;
+		});
+		store.TryReadCandidate(
+			"alpha", state.Active, out Arg.Any<InstalledKnowledgeSourceCandidate?>(), out Arg.Any<string?>())
+			.Returns(call => {
+				call[2] = new InstalledKnowledgeSourceCandidate(
+					state.Active, Path.Combine(Path.GetTempPath(), "knowledge", "alpha"), [1, 2, 3]);
+				call[3] = null;
+				return true;
+			});
+		fingerprints.TryGetFingerprint(source.TrustedPublicKeyPath, out Arg.Any<string>()).Returns(
+			call => { call[1] = "FINGERPRINT-A"; return true; },
+			call => { call[1] = "FINGERPRINT-B"; return true; });
+		runtime.ActivateLibrary(
+			"alpha", 100, KnowledgeSourceParticipation.Authoritative, Arg.Any<Stream>(), "1.0.0",
+			"com.example.alpha", Arg.Any<string?>()).Returns(
+			Activated(1),
+			new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Rejected,
+				KnowledgeBundleRejectionCode.InvalidSignature,
+				1,
+				null,
+				"replacement key rejected the installed bundle"));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
+		services.AddSingleton(fingerprints);
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "alpha").Should().Be(2,
+			because: "effective key replacement must invalidate the observed activation even when the path is unchanged");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "alpha").Should().Be(1,
+			because: "a generation rejected under replacement trust must be withdrawn immediately");
+	}
+
+	[Test]
+	[Description("An unchanged Git revision uses the cheap revision identity and does not reread repository content.")]
+	public void EnsureActivated_ShouldSkipGitRepositoryRead_WhenRevisionAndConfigurationAreUnchanged() {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		IKnowledgeGitRepositoryReader reader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot(sequence: 1, digest: "DIGEST-A");
+		reader.TryRead(repositoryPath, "com.example.partner", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			call[2] = snapshot;
+			call[3] = null;
+			return true;
+		});
+		runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, snapshot).Returns(Activated(1));
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(("partner", GitSource("com.example.partner", 100))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(reader);
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(reader, nameof(IKnowledgeGitRepositoryReader.TryRead)).Should().Be(1,
+			because: "an unchanged commit and source configuration must not rehash every Git resource on each MCP request");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateGitRepository), "partner").Should().Be(1,
+			because: "an unchanged Git source must keep its existing immutable runtime snapshot");
+	}
+
+	[Test]
+	[Description("Git activation yields immediately while another process is synchronizing the source.")]
+	public void EnsureActivated_ShouldDeferGitActivation_WhenSourceMutationLockIsBusy() {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(false);
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(("partner", GitSource("com.example.partner", 100))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateGitRepository), "partner").Should().Be(0,
+			because: "an MCP request must not read a checkout while another process is mutating it");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(0,
+			because: "temporary synchronization must not withdraw any previously served snapshot");
+		activator.LastDiagnostic.Should().Contain("synchronizing",
+			because: "the caller should receive a retryable explanation instead of waiting on the command lock");
+	}
+
+	[TestCase(true, 100, TestName = "EnsureActivated_ShouldWithdrawGitContent_WhenLocationChangesAndValidationFails")]
+	[TestCase(false, 10, TestName = "EnsureActivated_ShouldWithdrawGitContent_WhenPriorityChangesAndValidationFails")]
+	[Description("A Git source configuration change withdraws old content when the replacement checkout is invalid.")]
+	public void EnsureActivated_ShouldWithdrawGitContent_WhenServingConfigurationChangesAndValidationFails(
+		bool changeLocation,
+		int replacementPriority) {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		IKnowledgeGitRepositoryReader reader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot(sequence: 1, digest: "DIGEST-A");
+		reader.TryRead(repositoryPath, "com.example.partner", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(
+			call => {
+				call[2] = snapshot;
+				call[3] = null;
+				return true;
+			},
+			call => {
+				call[2] = null;
+				call[3] = "replacement source is invalid";
+				return false;
+			});
+		runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, snapshot).Returns(Activated(1));
+		KnowledgeSourceConfiguration original = GitSource("com.example.partner", 100);
+		KnowledgeSourceConfiguration replacement = GitSource("com.example.partner", replacementPriority);
+		if (changeLocation) {
+			replacement.Location = "https://replacement.invalid/knowledge.git";
+		}
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(
+			Configuration(("partner", original)),
+			Configuration(("partner", replacement)));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(reader);
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(1,
+			because: "last-known-good content must not survive a trust or precedence configuration change");
+		activator.LastDiagnostic.Should().Contain("replacement source is invalid",
+			because: "operators need the reason replacement source content was withdrawn");
+	}
+
+	[Test]
+	[Description("An invalid changed Git revision preserves the last-known-good runtime snapshot and records the rejection.")]
+	public void EnsureActivated_ShouldPreserveLastKnownGoodGitContent_WhenChangedRevisionIsInvalid() {
+		// Arrange
+		const string firstRevision = "1111111111111111111111111111111111111111";
+		const string secondRevision = "2222222222222222222222222222222222222222";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(
+			firstRevision, firstRevision, secondRevision, secondRevision);
+		IKnowledgeGitRepositoryReader reader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot(sequence: 1, digest: "DIGEST-A");
+		reader.TryRead(repositoryPath, "com.example.partner", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(
+			call => {
+				call[2] = snapshot;
+				call[3] = null;
+				return true;
+			},
+			call => {
+				call[2] = null;
+				call[3] = "synthetic invalid changed checkout";
+				return false;
+			});
+		runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, snapshot).Returns(Activated(1));
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(("partner", GitSource("com.example.partner", 100))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(reader);
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateGitRepository), "partner").Should().Be(1,
+			because: "the rejected changed checkout must not replace the previously activated immutable snapshot");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(0,
+			because: "an invalid newer Git checkout must not withdraw last-known-good content");
+		activator.LastDiagnostic.Should().Contain("synthetic invalid changed checkout",
+			because: "operators still need the validation reason while last-known-good content remains active");
+	}
+
+	[Test]
+	[Description("Runtime configuration provider rereads the bounded settings file so source enablement changes are visible without restart.")]
+	public void GetCurrent_ShouldReadLatestKnowledgeObject_WhenSettingsFileChanges() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string settingsPath = TestFileSystem.GetRootedPath("clio", "appsettings.json");
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.AppSettingsFilePath.Returns(settingsPath);
+		fileSystem.AddFile(settingsPath, new MockFileData(SettingsJson(enabled: true)));
+		ServiceCollection services = new();
+		services.AddSingleton(settingsRepository);
+		services.AddSingleton<System.IO.Abstractions.IFileSystem>(fileSystem);
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeRuntimeConfigurationProvider provider =
+			container.GetRequiredService<IKnowledgeRuntimeConfigurationProvider>();
+
+		// Act
+		KnowledgeConfiguration before = provider.GetCurrent();
+		fileSystem.File.WriteAllText(settingsPath, SettingsJson(enabled: false));
+		KnowledgeConfiguration after = provider.GetCurrent();
+
+		// Assert
+		before.Sources["partner"].Enabled.Should().BeTrue(
+			because: "the initial file state must be reflected in the runtime configuration");
+		after.Sources["partner"].Enabled.Should().BeFalse(
+			because: "subsequent reads must observe source kill-switch changes without restarting clio");
+		settingsRepository.ReceivedCalls().Count(call =>
+			call.GetMethodInfo().Name == nameof(ISettingsRepository.GetKnowledgeConfiguration)).Should().Be(0,
+			because: "an existing live file is authoritative over the repository's startup snapshot");
+	}
+
+	private static KnowledgeConfiguration Configuration(
+		params (string Alias, KnowledgeSourceConfiguration Source)[] sources) => new() {
+		Sources = sources.ToDictionary(
+			pair => pair.Alias,
+			pair => pair.Source,
+			StringComparer.OrdinalIgnoreCase),
+		TopicPins = new Dictionary<string, string>(StringComparer.Ordinal)
+	};
+
+	private static KnowledgeSourceConfiguration Source(string libraryId, int priority, bool enabled = true) => new() {
+		LibraryId = libraryId,
+		Type = KnowledgeSourceType.NuGet,
+		Location = "https://feed.invalid/v3/index.json",
+		TrustedKeyId = "test-signing-key",
+		TrustedPublicKeyPath = TestFileSystem.GetRootedPath("keys", "test-public.pem"),
+		PackageId = "Example.Knowledge",
+		Enabled = enabled,
+		Priority = priority,
+		Participation = KnowledgeSourceParticipation.Authoritative
+	};
+
+	private static KnowledgeSourceConfiguration GitSource(string libraryId, int priority) => new() {
+		LibraryId = libraryId,
+		Type = KnowledgeSourceType.Git,
+		Location = "https://github.com/example/knowledge.git",
+		Branch = "main",
+		Enabled = true,
+		Priority = priority,
+		Participation = KnowledgeSourceParticipation.Authoritative
+	};
+
+	private static IKnowledgeRepositoryTransport GitTransport() {
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		return transport;
+	}
+
+	private static KnowledgeGitRepositorySnapshot GitSnapshot(ulong sequence, string digest) => new(
+		"com.example.partner",
+		"1.0.0",
+		sequence,
+		digest,
+		[new KnowledgeArticle(
+			"guide",
+			"docs://knowledge/com.example.partner/guide",
+			"synthetic content",
+			LibraryId: "com.example.partner",
+			ItemId: "guide",
+			TopicId: "example.guide",
+			Role: "guidance")]);
+
+	private static KnowledgeSourceCurrentState State(string alias, string libraryId, ulong sequence) {
+		KnowledgeSourceGenerationPointer pointer = new(
+			libraryId,
+			"1.0.0",
+			sequence,
+			$"generations/{sequence}-digest",
+			$"digest-{sequence}",
+			$"revision-{sequence}",
+			DateTimeOffset.UtcNow);
+		return new KnowledgeSourceCurrentState(1, alias, pointer, null);
+	}
+
+	private static KnowledgeBundleActivationResult Activated(ulong sequence) => new(
+		KnowledgeBundleActivationStatus.Activated,
+		KnowledgeBundleRejectionCode.None,
+		sequence,
+		sequence,
+		null);
+
+	private static int CountCalls(object substitute, string method, string? firstArgument = null) =>
+		substitute.ReceivedCalls().Count(call =>
+			call.GetMethodInfo().Name == method
+			&& (firstArgument is null || call.GetArguments().FirstOrDefault() as string == firstArgument));
+
+	private static string SettingsJson(bool enabled) {
+		string publicKeyPath = TestFileSystem.GetRootedPath("keys", "partner-public.pem").Replace('\\', '/');
+		return $$"""
+		{
+		  "knowledge": {
+		    "sources": {
+		      "partner": {
+		        "library-id": "com.example.partner",
+		        "type": "nuget",
+		        "location": "https://feed.invalid/v3/index.json",
+		        "trusted-key-id": "partner-signing-2026",
+		        "trusted-public-key-path": "{{publicKeyPath}}",
+		        "package-id": "Example.Knowledge",
+		        "enabled": {{enabled.ToString().ToLowerInvariant()}},
+		        "priority": 10,
+		        "participation": "supplement"
+		      }
+		    },
+		    "topic-pins": {}
+		  }
+		}
+		""";
+	}
+
+	private sealed class BlockingConfigurationProvider : IKnowledgeRuntimeConfigurationProvider, IDisposable {
+		private readonly bool _failFirstCall;
+		private int _callCount;
+
+		public BlockingConfigurationProvider(bool failFirstCall = false) {
+			_failFirstCall = failFirstCall;
+		}
+
+		public ManualResetEventSlim Entered { get; } = new();
+		public ManualResetEventSlim Release { get; } = new();
+		public int CallCount => Volatile.Read(ref _callCount);
+
+		public KnowledgeConfiguration GetCurrent() {
+			int callCount = Interlocked.Increment(ref _callCount);
+			if (_failFirstCall && callCount == 1) {
+				throw new InvalidDataException("synthetic initial configuration failure");
+			}
+			Entered.Set();
+			Release.Wait(TimeSpan.FromSeconds(5));
+			return Configuration();
+		}
+
+		public void Dispose() {
+			Entered.Dispose();
+			Release.Dispose();
+		}
+	}
+}

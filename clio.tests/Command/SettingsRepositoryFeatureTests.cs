@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
@@ -64,6 +65,42 @@ public sealed class SettingsRepositoryFeatureTests {
 		_fileSystem.AllFiles.Should().NotContain(path => path.Contains("schema.json.", StringComparison.Ordinal)
 			&& path.EndsWith(".tmp", StringComparison.Ordinal),
 			because: "atomic refresh and an idempotent second load must clean every temporary schema artifact");
+	}
+
+	[Test]
+	[Description("Documents every knowledge configuration key and the transport-specific NuGet requirement in the generated appsettings schema.")]
+	public void AppSettingsSchema_ShouldDescribeKnowledgeKeys_WhenKnowledgeConfigurationIsAvailable() {
+		// Arrange
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
+		JsonObject schema = JsonNode.Parse(File.ReadAllText(templatePath))!.AsObject();
+		JsonObject definitions = schema["definitions"]!.AsObject();
+		JsonObject knowledge = definitions["knowledgeconfiguration"]!.AsObject();
+		JsonObject knowledgeProperties = knowledge["properties"]!.AsObject();
+		JsonObject source = definitions["knowledgesource"]!.AsObject();
+		JsonObject sourceProperties = source["properties"]!.AsObject();
+
+		// Act
+		string[] knowledgeKeys = knowledgeProperties.Select(property => property.Key).ToArray();
+		string[] sourceKeys = sourceProperties.Select(property => property.Key).ToArray();
+		string[] undocumentedSourceKeys = sourceProperties
+			.Where(property => string.IsNullOrWhiteSpace(property.Value?["description"]?.GetValue<string>()))
+			.Select(property => property.Key)
+			.ToArray();
+		string[] nugetRequired = source["allOf"]![0]!["then"]!["required"]!.AsArray()
+			.Select(value => value!.GetValue<string>())
+			.ToArray();
+
+		// Assert
+		knowledgeKeys.Should().BeEquivalentTo(["root-path", "sources", "topic-pins"],
+			because: "the editor schema must expose every persisted knowledge section key");
+		sourceKeys.Should().BeEquivalentTo([
+			"library-id", "type", "location", "trusted-key-id", "trusted-public-key-path", "package-id",
+			"branch", "tag", "commit", "enabled", "priority", "participation"
+		], because: "the editor schema must expose every trusted-source transport and resolution key");
+		undocumentedSourceKeys.Should().BeEmpty(
+			because: "hover help must explain every unfamiliar trusted-source setting to an operator");
+		nugetRequired.Should().BeEquivalentTo(["package-id", "trusted-key-id", "trusted-public-key-path"],
+			because: "NuGet sources require a package identity and signing trust while Git sources do not");
 	}
 
 	[Test]

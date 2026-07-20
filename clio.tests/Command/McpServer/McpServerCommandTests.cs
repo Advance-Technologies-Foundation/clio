@@ -1,7 +1,12 @@
 using System;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
+using Clio.Common;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -9,6 +14,53 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class McpServerCommandTests {
+
+	[Test]
+	[Category("Unit")]
+	[Description("Curated knowledge installation completes before the MCP protocol handshake can expose mandatory guidance.")]
+	public void BootstrapCuratedKnowledge_ShouldCompleteBeforeReturning() {
+		// Arrange
+		ICuratedKnowledgeBootstrapService bootstrap = Substitute.For<ICuratedKnowledgeBootstrapService>();
+		ILogger logger = Substitute.For<ILogger>();
+		bootstrap.Bootstrap(Arg.Any<CancellationToken>())
+			.Returns(new CuratedKnowledgeBootstrapResult(true, true, true, "ready"));
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = McpServerCommand.BootstrapCuratedKnowledge(bootstrap, logger);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the host may accept requests only after the local curated source is ready or a bounded failure is known");
+		bootstrap.Received(1).Bootstrap(Arg.Is<CancellationToken>(token => token.CanBeCanceled));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Curated knowledge bootstrap failures are logged as warnings while the MCP host remains free to start.")]
+	public void BootstrapCuratedKnowledge_ShouldWarnAndReturn_WhenBootstrapFails() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		CuratedKnowledgeBootstrapResult failure = new(
+			false,
+			true,
+			false,
+			"repository unavailable");
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = McpServerCommand.ReportCuratedKnowledgeBootstrap(failure, logger);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the host must retain the bootstrap diagnostic while continuing its startup path");
+		string[] warnings = logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => call.GetArguments()[0]?.ToString() ?? string.Empty)
+			.ToArray();
+		warnings.Should().ContainSingle(message =>
+			message.Contains("repository unavailable", StringComparison.Ordinal)
+			&& message.Contains("install-knowledge --source creatio-curated", StringComparison.Ordinal),
+			because: "operators need both the safe failure and the exact retry command without MCP startup failing");
+	}
 
 	[Test]
 	[Category("Unit")]

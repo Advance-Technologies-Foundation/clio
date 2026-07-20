@@ -2,6 +2,7 @@
 using System.IO;
 using Clio.Common.db;
 using Clio.Common.DbHub;
+using Clio.Command.McpServer.Knowledge;
 
 namespace Clio.UserEnvironment
 {
@@ -114,6 +115,98 @@ namespace Clio.UserEnvironment
 		/// Gets the configured global workspaces root path.
 		/// </summary>
 		string GetWorkspacesRoot();
+
+		/// <summary>
+		/// Gets the explicitly configured root directory for installed Clio knowledge.
+		/// </summary>
+		/// <returns>The configured absolute path, or <c>null</c> when it has not been initialized.</returns>
+		string GetKnowledgeRootPath();
+
+		/// <summary>
+		/// Persists the root directory used for installed Clio knowledge.
+		/// </summary>
+		/// <param name="path">The absolute knowledge root path.</param>
+		void SetKnowledgeRootPath(string path);
+
+		/// <summary>
+		/// Returns the configured knowledge root or atomically persists the supplied default when absent.
+		/// </summary>
+		/// <param name="defaultPath">The absolute default path to persist when no value exists.</param>
+		/// <returns>The configured or newly persisted absolute path.</returns>
+		string GetOrCreateKnowledgeRootPath(string defaultPath);
+
+		/// <summary>
+		/// Gets a detached, validated snapshot of the multi-source knowledge configuration.
+		/// </summary>
+		/// <returns>The configured root, sources, and topic pins.</returns>
+		KnowledgeConfiguration GetKnowledgeConfiguration();
+
+		/// <summary>
+		/// Replaces the complete multi-source knowledge configuration atomically.
+		/// </summary>
+		/// <param name="configuration">The validated configuration to persist.</param>
+		void SetKnowledgeConfiguration(KnowledgeConfiguration configuration);
+
+		/// <summary>
+		/// Adds or replaces one knowledge source without overwriting concurrent changes to other settings.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="source">The trusted source configuration.</param>
+		void UpsertKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
+
+		/// <summary>
+		/// Adds one knowledge source only when neither its alias nor stable library identity is configured.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="source">The trusted source configuration.</param>
+		/// <returns><c>true</c> when the source was added; otherwise, <c>false</c>.</returns>
+		bool TryAddKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
+
+		/// <summary>
+		/// Atomically ensures one managed knowledge source uses the supplied canonical alias and configuration.
+		/// </summary>
+		/// <param name="alias">The canonical operator-facing source alias.</param>
+		/// <param name="source">The canonical source configuration.</param>
+		/// <returns>The persisted source configuration, with an existing enabled state preserved.</returns>
+		/// <remarks>
+		/// Any source that already uses either the canonical alias or the same stable library identity is
+		/// replaced in the same settings mutation. All canonical fields are restored while the existing
+		/// <see cref="KnowledgeSourceConfiguration.Enabled"/> value remains the operator-controlled kill switch.
+		/// </remarks>
+		KnowledgeSourceConfiguration EnsureKnowledgeSource(
+			string alias,
+			KnowledgeSourceConfiguration source);
+
+		/// <summary>
+		/// Removes one configured knowledge source while leaving its installed cache untouched.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <returns><c>true</c> when the source existed and was removed.</returns>
+		bool RemoveKnowledgeSource(string alias);
+
+		/// <summary>
+		/// Removes one configured knowledge source only when it still matches the supplied snapshot.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="expected">The exact source snapshot observed before the operation.</param>
+		/// <returns><c>true</c> when the unchanged source existed and was removed.</returns>
+		bool TryRemoveKnowledgeSource(string alias, KnowledgeSourceConfiguration expected);
+
+		/// <summary>
+		/// Persists a discovered Git branch only when the source still matches the supplied snapshot.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="expected">The exact source snapshot used for retrieval.</param>
+		/// <param name="branch">The verified remote default branch.</param>
+		/// <returns><c>true</c> when the branch was stored or already matched.</returns>
+		bool TrySetKnowledgeSourceBranch(string alias, KnowledgeSourceConfiguration expected, string branch);
+
+		/// <summary>
+		/// Enables or disables one configured knowledge source without deleting its installed cache.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="enabled">Whether the source should participate.</param>
+		void SetKnowledgeSourceEnabled(string alias, bool enabled);
 
 		/// <summary>
 		/// Gets the configured container image CLI used by build-docker-image.
