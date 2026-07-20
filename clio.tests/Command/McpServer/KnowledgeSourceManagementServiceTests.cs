@@ -579,6 +579,28 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
+	[Description("The built-in Creatio-curated library cannot be removed and directs operators to its enabled kill switch.")]
+	public void Remove_ShouldRefuseBuiltInCuratedLibrary() {
+		// Arrange
+		KnowledgeSourceConfiguration source = Source(CuratedKnowledgeSourceDefaults.LibraryId, enabled: true);
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("creatio-curated", source)));
+
+		// Act
+		KnowledgeSourceCommandResult result = _service.Remove("creatio-curated", confirmed: true);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the next MCP bootstrap must be able to rely on the built-in source configuration existing");
+		result.Message.Should().Contain("cannot be removed",
+			because: "operators need a direct explanation of the built-in source invariant");
+		result.Message.Should().Contain("disable-knowledge-source --alias creatio-curated",
+			because: "the supported kill switch must include the exact valid CLI option in the refusal message");
+		_settings.DidNotReceiveWithAnyArgs().TryRemoveKnowledgeSource(default!, default!);
+		_runtime.DidNotReceiveWithAnyArgs().DeactivateLibrary(default!);
+		_store.DidNotReceiveWithAnyArgs().Delete(default!, default);
+	}
+
+	[Test]
 	[Description("Source removal stays deactivated when best-effort cache deletion fails.")]
 	public void Remove_ShouldKeepSourceDeactivated_WhenCacheDeleteFails() {
 		// Arrange

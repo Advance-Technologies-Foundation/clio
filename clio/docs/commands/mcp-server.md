@@ -74,6 +74,20 @@ default branch only after a successful install/update, then records the exact co
 commit for every installed generation. Information and update-availability checks never mutate
 source configuration.
 
+Both MCP hosts bootstrap one built-in source while they begin serving requests: `creatio-curated`
+(`com.creatio.clio`) follows the `master` branch of
+`https://github.com/Advance-Technologies-Foundation/clio-knowledge.git` as an authoritative source
+with priority `100`. When the source is absent, Clio adds it and installs its Git checkout. A valid
+local checkout is reused without contacting Git, so ordinary MCP restarts remain local-only. A
+missing checkout is cloned in the background so the MCP protocol handshake is never delayed by
+Git; curated guidance becomes available to the running host as soon as installation completes. An
+older alias for the same library is normalized to `creatio-curated` and its checkout is moved to
+the canonical source cache instead of cloned again. The source cannot be removed;
+set `enabled: false` or run `disable-knowledge-source --alias creatio-curated` to opt out. That
+disabled state survives future Clio updates and MCP starts. A failed first clone is logged as a
+warning and does not prevent MCP from starting; retry with
+`install-knowledge --source creatio-curated` when connectivity returns.
+
 Signing trust is scoped per source so independent publishers can use different keys. The configured
 path references public ECDSA P-256 SubjectPublicKeyInfo PEM material; it is not a secret and must
 never reference or contain a private signing key.

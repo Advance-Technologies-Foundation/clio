@@ -810,7 +810,12 @@ namespace Clio
 			_settings.Features = rebuilt;
 		}
 
-		private void UpdateSettings(Action<Settings> mutation) {
+		private void UpdateSettings(Action<Settings> mutation) => UpdateSettingsIfChanged(settings => {
+			mutation(settings);
+			return true;
+		});
+
+		private void UpdateSettingsIfChanged(Func<Settings, bool> mutation) {
 			ExecuteWithSettingsLock(_fileSystem, () => {
 				for (int attempt = 0; attempt < 3; attempt++) {
 					string expectedContent;
@@ -827,8 +832,11 @@ namespace Clio
 					}
 					AttachDbServers(_settings);
 					EnsureSettingsCollections();
-					mutation(_settings);
+					bool changed = mutation(_settings);
 					EnsureSettingsCollections();
+					if (!changed) {
+						return true;
+					}
 					try {
 						SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
 						return true;
@@ -1258,6 +1266,59 @@ namespace Clio
 				added = true;
 			});
 			return added;
+		}
+
+		/// <inheritdoc />
+		public KnowledgeSourceConfiguration EnsureKnowledgeSource(
+			string alias,
+			KnowledgeSourceConfiguration source) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration canonical =
+				KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
+			KnowledgeSourceConfiguration persisted = null;
+			UpdateSettingsIfChanged(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration existingSource);
+				KeyValuePair<string, KnowledgeSourceConfiguration>? existingLibrary = settings.Knowledge.Sources
+					.Where(pair => string.Equals(
+						pair.Value.LibraryId,
+						canonical.LibraryId,
+						StringComparison.OrdinalIgnoreCase))
+					.Select(pair => (KeyValuePair<string, KnowledgeSourceConfiguration>?)pair)
+					.FirstOrDefault();
+				existingSource ??= existingLibrary?.Value;
+				bool enabled = existingSource?.Enabled ?? canonical.Enabled;
+				KnowledgeSourceConfiguration ensured =
+					KnowledgeSourceConfigurationValidator.ValidateAndClone(canonical);
+				ensured.Enabled = enabled;
+				settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration current);
+				bool alreadyCanonical = current is not null
+					&& settings.Knowledge.Sources.Count(pair =>
+					string.Equals(pair.Key, alias, StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(pair.Value.LibraryId, canonical.LibraryId, StringComparison.OrdinalIgnoreCase)) == 1
+					&& KnowledgeSourcesEqual(current, ensured);
+				if (alreadyCanonical) {
+					persisted = KnowledgeSourceConfigurationValidator.ValidateAndClone(current);
+					return false;
+				}
+				string[] conflicts = settings.Knowledge.Sources
+					.Where(pair => string.Equals(pair.Key, alias, StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(pair.Value.LibraryId, canonical.LibraryId, StringComparison.OrdinalIgnoreCase))
+					.Select(pair => pair.Key)
+					.ToArray();
+				foreach (string conflict in conflicts) {
+					settings.Knowledge.Sources.Remove(conflict);
+				}
+				settings.Knowledge.Sources[alias] = ensured;
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(settings.Knowledge);
+				settings.LegacyKnowledgeRootPath = null;
+				persisted = KnowledgeSourceConfigurationValidator.ValidateAndClone(
+					settings.Knowledge.Sources[alias]);
+				return true;
+			});
+			return persisted;
 		}
 
 		/// <inheritdoc />

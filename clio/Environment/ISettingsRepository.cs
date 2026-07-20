@@ -163,6 +163,21 @@ namespace Clio.UserEnvironment
 		bool TryAddKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
 
 		/// <summary>
+		/// Atomically ensures one managed knowledge source uses the supplied canonical alias and configuration.
+		/// </summary>
+		/// <param name="alias">The canonical operator-facing source alias.</param>
+		/// <param name="source">The canonical source configuration.</param>
+		/// <returns>The persisted source configuration, with an existing enabled state preserved.</returns>
+		/// <remarks>
+		/// Any source that already uses either the canonical alias or the same stable library identity is
+		/// replaced in the same settings mutation. All canonical fields are restored while the existing
+		/// <see cref="KnowledgeSourceConfiguration.Enabled"/> value remains the operator-controlled kill switch.
+		/// </remarks>
+		KnowledgeSourceConfiguration EnsureKnowledgeSource(
+			string alias,
+			KnowledgeSourceConfiguration source);
+
+		/// <summary>
 		/// Removes one configured knowledge source while leaving its installed cache untouched.
 		/// </summary>
 		/// <param name="alias">The operator-friendly source alias.</param>

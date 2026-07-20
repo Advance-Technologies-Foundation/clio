@@ -190,6 +190,54 @@ public sealed class EnvironmentSettingsTests {
 	}
 
 	[Test]
+	[Description("EnsureKnowledgeSource atomically migrates a matching library to its canonical alias and preserves only the operator-controlled enabled state.")]
+	public void EnsureKnowledgeSource_ShouldCanonicalizeSource_AndPreserveDisabledState() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository repository = new(fileSystem);
+		repository.UpsertKnowledgeSource("creatio-poc", new KnowledgeSourceConfiguration {
+			LibraryId = "com.creatio.clio",
+			Type = KnowledgeSourceType.Git,
+			Location = "https://example.invalid/old.git",
+			Branch = "experiment",
+			Enabled = false,
+			Priority = 1,
+			Participation = KnowledgeSourceParticipation.Supplement
+		});
+		KnowledgeSourceConfiguration canonical = new() {
+			LibraryId = "com.creatio.clio",
+			Type = KnowledgeSourceType.Git,
+			Location = "https://github.com/Advance-Technologies-Foundation/clio-knowledge.git",
+			Branch = "master",
+			Enabled = true,
+			Priority = 100,
+			Participation = KnowledgeSourceParticipation.Authoritative
+		};
+
+		// Act
+		KnowledgeSourceConfiguration result = repository.EnsureKnowledgeSource("creatio-curated", canonical);
+		KnowledgeConfiguration persisted = repository.GetKnowledgeConfiguration();
+
+		// Assert
+		persisted.Sources.Should().ContainSingle(
+			because: "the same stable library identity must not remain configured under two aliases");
+		persisted.Sources.Should().ContainKey("creatio-curated",
+			because: "the built-in library must use the stable alias agents and operators can rely on");
+		persisted.Sources.Should().NotContainKey("creatio-poc",
+			because: "the former proof-of-concept alias is replaced in the same atomic settings mutation");
+		result.Enabled.Should().BeFalse(
+			because: "an explicit operator opt-out must survive canonical configuration repair");
+		result.Location.Should().Be(canonical.Location,
+			because: "bootstrap owns the curated repository identity rather than retaining an edited location");
+		result.Branch.Should().Be("master",
+			because: "the curated source follows the supported master branch");
+		result.Priority.Should().Be(100,
+			because: "all canonical policy fields except enabled are restored by bootstrap");
+		result.Participation.Should().Be(KnowledgeSourceParticipation.Authoritative,
+			because: "the curated library must remain authoritative in deterministic topic resolution");
+	}
+
+	[Test]
 	[Description("UpsertKnowledgeSource persists validated source fields under the nested knowledge configuration.")]
 	public void UpsertKnowledgeSource_ShouldPersistNestedSource_WhenConfigurationIsValid() {
 		// Arrange

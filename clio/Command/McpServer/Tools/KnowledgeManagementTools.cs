@@ -83,7 +83,7 @@ internal sealed class KnowledgeManagementTools {
 		args.Participation));
 
 	[McpServerTool(Name = RemoveKnowledgeSourceToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Removes one trusted source and its Clio-managed cache after explicit confirmation.")]
+	[Description("Removes one trusted source and its Clio-managed cache after explicit confirmation. The built-in com.creatio.clio source cannot be removed; disable it instead.")]
 	public KnowledgeSourceCommandResult Remove(KnowledgeConfirmedAliasArgs args) =>
 		_service.Remove(args.Alias, args.Confirmed);
 

@@ -23,8 +23,102 @@ public sealed class KnowledgeManagementToolE2ETests : McpContractFixtureBase {
 
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
-		_clioHome = CreateIsolatedClioHome("{}", "knowledge-source-management");
+		_clioHome = CreateIsolatedClioHome("""
+			{
+			  "knowledge": {
+			    "sources": {
+			      "creatio-curated": {
+			        "library-id": "com.creatio.clio",
+			        "type": "git",
+			        "location": "https://github.com/Advance-Technologies-Foundation/clio-knowledge.git",
+			        "branch": "master",
+			        "enabled": false,
+			        "priority": 100,
+			        "participation": "authoritative"
+			      }
+			    },
+			    "topic-pins": {}
+			  }
+			}
+			""", "knowledge-source-management");
 		settings.ProcessEnvironmentVariables["CLIO_HOME"] = _clioHome;
+	}
+
+	[Test]
+	[AllureTag(KnowledgeManagementTools.InfoKnowledgeToolName)]
+	[AllureName("MCP startup preserves the curated source kill switch")]
+	[AllureDescription("Starts the real Clio MCP server with a disabled built-in source and verifies bootstrap preserves the canonical configuration without contacting Git or asserting external guidance content.")]
+	[Description("Preserves the disabled curated source through the real MCP startup path.")]
+	public async Task McpStartup_ShouldPreserveCuratedKillSwitch_WhenSourceIsDisabled() {
+		// Arrange
+		await using ArrangeContext context = Arrange();
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			KnowledgeManagementTools.InfoKnowledgeToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["source"] = "creatio-curated",
+					["checkUpdates"] = false
+				}
+			},
+			context.CancellationTokenSource.Token);
+		string serializedResult = JsonSerializer.Serialize(callResult);
+		using JsonDocument response = JsonDocument.Parse(serializedResult);
+		string responseText = response.RootElement.GetProperty("content")[0]
+			.GetProperty("text").GetString() ?? string.Empty;
+		using JsonDocument settings = JsonDocument.Parse(
+			File.ReadAllText(Path.Combine(_clioHome, "appsettings.json")));
+		JsonElement source = settings.RootElement
+			.GetProperty("knowledge")
+			.GetProperty("sources")
+			.GetProperty("creatio-curated");
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"the real local-only info path should see the checkout installed during startup: {serializedResult}");
+		responseText.Should().Contain("\"enabled\":false",
+			because: "the local-only info path must expose the operator's durable bootstrap opt-out");
+		source.GetProperty("library-id").GetString().Should().Be("com.creatio.clio",
+			because: "the built-in source is bound to the stable curated library identity");
+		source.GetProperty("location").GetString().Should().Be(
+			"https://github.com/Advance-Technologies-Foundation/clio-knowledge.git",
+			because: "bootstrap must persist the supported public Git origin rather than an implicit transport");
+		source.GetProperty("branch").GetString().Should().Be("master",
+			because: "the unpinned curated source follows the supported master branch");
+		source.GetProperty("enabled").GetBoolean().Should().BeFalse(
+			because: "MCP bootstrap must never silently re-enable an explicitly disabled built-in source");
+	}
+
+	[Test]
+	[AllureTag(KnowledgeManagementTools.RemoveKnowledgeSourceToolName)]
+	[AllureName("remove-knowledge-source refuses the built-in curated source")]
+	[AllureDescription("Invokes remove-knowledge-source through the real lazy MCP dispatch path and verifies the built-in source remains configured with disable as the supported alternative.")]
+	[Description("Refuses removal of the built-in curated source through the real MCP tool path.")]
+	public async Task RemoveKnowledgeSource_ShouldRefuseBuiltInCuratedSource() {
+		// Arrange
+		await using ArrangeContext context = Arrange();
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			KnowledgeManagementTools.RemoveKnowledgeSourceToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["alias"] = "creatio-curated",
+					["confirmed"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		string serializedResult = JsonSerializer.Serialize(callResult);
+		string persisted = File.ReadAllText(Path.Combine(_clioHome, "appsettings.json"));
+
+		// Assert
+		serializedResult.Should().Contain("cannot be removed",
+			because: "the real MCP command result must explain the built-in source invariant");
+		serializedResult.Should().Contain("disable-knowledge-source --alias creatio-curated",
+			because: "agents need the exact valid kill-switch command in the refusal response");
+		persisted.Should().Contain("creatio-curated",
+			because: "a refused removal must leave the canonical source configuration intact");
 	}
 
 	[Test]

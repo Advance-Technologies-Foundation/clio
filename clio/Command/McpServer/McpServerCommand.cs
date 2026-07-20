@@ -1,7 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Common.Telemetry;
 using CommandLine;
 
@@ -13,11 +15,18 @@ public class McpServerCommandOptions : BaseCommandOptions
 { }
 
 
+/// <summary>
+/// Starts Clio's standard-input/output MCP host.
+/// </summary>
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITelemetryFlushScheduler flushScheduler,
 	ISessionContainerCache sessionContainerCache,
-	ITenantExecutionLockProvider tenantExecutionLockProvider) : Command<McpServerCommandOptions>{
+	ITenantExecutionLockProvider tenantExecutionLockProvider,
+	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
+	ILogger logger) : Command<McpServerCommandOptions>{
 	public override int Execute(McpServerCommandOptions options) {
+		Task<CuratedKnowledgeBootstrapResult> curatedKnowledgeBootstrap =
+			BootstrapCuratedKnowledgeAsync(curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
 		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
@@ -67,11 +76,59 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// ~10 seconds.
 			Task.WhenAll(
 					ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
-					flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
+					flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)),
+					DrainCuratedKnowledgeBootstrapAsync(curatedKnowledgeBootstrap, logger))
 				.GetAwaiter().GetResult();
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Reports one non-fatal curated knowledge bootstrap phase.
+	/// </summary>
+	/// <param name="result">The phase result to report.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>The bootstrap result.</returns>
+	internal static CuratedKnowledgeBootstrapResult ReportCuratedKnowledgeBootstrap(
+		CuratedKnowledgeBootstrapResult result,
+		ILogger logger) {
+		if (result.Success) {
+			logger.WriteDebug(result.Message);
+		} else {
+			logger.WriteWarning(
+				$"MCP is starting without built-in curated knowledge: {result.Message} "
+				+ $"Retry with install-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}.");
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Repairs local source identity synchronously, then schedules only installation work on a worker thread.
+	/// </summary>
+	/// <param name="bootstrapService">The curated knowledge bootstrap service.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>A task that completes with the non-fatal bootstrap result.</returns>
+	internal static Task<CuratedKnowledgeBootstrapResult> BootstrapCuratedKnowledgeAsync(
+		ICuratedKnowledgeBootstrapService bootstrapService,
+		ILogger logger) {
+		CuratedKnowledgeBootstrapResult preparation =
+			ReportCuratedKnowledgeBootstrap(bootstrapService.Prepare(), logger);
+		return !preparation.Success || !preparation.Enabled
+			? Task.FromResult(preparation)
+			: Task.Run(() => ReportCuratedKnowledgeBootstrap(
+				bootstrapService.InstallPreparedSource(),
+				logger));
+	}
+
+	internal static async Task DrainCuratedKnowledgeBootstrapAsync(
+		Task<CuratedKnowledgeBootstrapResult> bootstrap,
+		ILogger logger) {
+		try {
+			await bootstrap.WaitAsync(TimeSpan.FromSeconds(10));
+		} catch (TimeoutException) {
+			logger.WriteDebug("Curated knowledge bootstrap is still running while the MCP process is shutting down.");
+		}
 	}
 
 	/// <summary>

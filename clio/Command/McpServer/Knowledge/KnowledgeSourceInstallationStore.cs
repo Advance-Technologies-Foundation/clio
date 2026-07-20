@@ -58,6 +58,10 @@ internal interface IKnowledgeSourceInstallationStore {
 
 	string GetGitRepositoryPath(string sourceAlias, bool createSourceRoot);
 
+	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
+
+	bool MigrateGitRepository(string sourceAlias, string targetAlias);
+
 	T ExecuteWithSourceMutationLock<T>(string sourceAlias, Func<T> action);
 
 	bool TryExecuteWithSourceMutationLock(string sourceAlias, Action action);
@@ -134,6 +138,59 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			EnsureNoReparsePoint(sourceRoot, repositoryPath);
 		}
 		return repositoryPath;
+	}
+
+	public bool TryMigrateGitRepository(string sourceAlias, string targetAlias) {
+		return MigrateGitRepositoryWithLocks(sourceAlias, targetAlias, waitForLocks: false);
+	}
+
+	public bool MigrateGitRepository(string sourceAlias, string targetAlias) {
+		return MigrateGitRepositoryWithLocks(sourceAlias, targetAlias, waitForLocks: true);
+	}
+
+	private bool MigrateGitRepositoryWithLocks(string sourceAlias, string targetAlias, bool waitForLocks) {
+		KnowledgeSourceConfigurationValidator.ValidateAlias(sourceAlias);
+		KnowledgeSourceConfigurationValidator.ValidateAlias(targetAlias);
+		if (string.Equals(sourceAlias, targetAlias, StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		string firstAlias = string.Compare(sourceAlias, targetAlias, StringComparison.OrdinalIgnoreCase) < 0
+			? sourceAlias
+			: targetAlias;
+		string secondAlias = string.Equals(firstAlias, sourceAlias, StringComparison.OrdinalIgnoreCase)
+			? targetAlias
+			: sourceAlias;
+		if (waitForLocks) {
+			return ExecuteWithSourceMutationLock(firstAlias, () =>
+				ExecuteWithSourceMutationLock(secondAlias, () => MigrateGitRepositoryCore(sourceAlias, targetAlias)));
+		}
+		bool migrated = false;
+		bool secondLockAcquired = false;
+		bool firstLockAcquired = TryExecuteWithSourceMutationLock(firstAlias, () => {
+			secondLockAcquired = TryExecuteWithSourceMutationLock(secondAlias, () =>
+				migrated = MigrateGitRepositoryCore(sourceAlias, targetAlias));
+		});
+		return firstLockAcquired && secondLockAcquired && migrated;
+	}
+
+	private bool MigrateGitRepositoryCore(string sourceAlias, string targetAlias) {
+		string sourceRepository = GetGitRepositoryPath(sourceAlias, createSourceRoot: false);
+		string targetRepository = GetGitRepositoryPath(targetAlias, createSourceRoot: true);
+		if (_fileSystem.Directory.Exists(_fileSystem.Path.Combine(targetRepository, ".git"))) {
+			return true;
+		}
+		if (!_fileSystem.Directory.Exists(_fileSystem.Path.Combine(sourceRepository, ".git"))) {
+			return false;
+		}
+		if (_fileSystem.Directory.Exists(targetRepository)) {
+			if (_fileSystem.Directory.EnumerateFileSystemEntries(targetRepository).Any()) {
+				throw new InvalidOperationException(
+					$"Knowledge repository target '{targetAlias}' is not empty.");
+			}
+			_fileSystem.Directory.Delete(targetRepository);
+		}
+		_fileSystem.Directory.Move(sourceRepository, targetRepository);
+		return true;
 	}
 
 	public T ExecuteWithSourceMutationLock<T>(string sourceAlias, Func<T> action) {

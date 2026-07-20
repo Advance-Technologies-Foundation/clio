@@ -289,7 +289,7 @@
 		"knowledgeconfiguration": {
 			"type": "object",
 			"additionalProperties": false,
-			"description": "Local cache location, trusted publishers, and optional topic ownership overrides for Clio knowledge. Manage sources with the *-knowledge-source commands instead of editing this object by hand when possible.",
+			"description": "Local cache location, trusted publishers, and optional topic ownership overrides for Clio knowledge. MCP startup ensures the built-in creatio-curated Git source exists; disable it with enabled=false instead of removing it. Manage other sources with the *-knowledge-source commands instead of editing this object by hand when possible.",
 			"properties": {
 				"root-path": {
 					"type": "string",
@@ -299,7 +299,7 @@
 				},
 				"sources": {
 					"type": "object",
-					"description": "Trusted knowledge publishers keyed by a case-insensitive operator alias. Aliases use lowercase letters, digits, dots, and hyphens; each configured library-id must be unique.",
+					"description": "Trusted knowledge publishers keyed by a case-insensitive operator alias. Aliases use lowercase letters, digits, dots, and hyphens; each configured library-id must be unique. Clio reserves creatio-curated for the built-in com.creatio.clio library and restores it on MCP startup when missing.",
 					"patternProperties": {
 						"^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$": {
 							"$ref": "#/definitions/knowledgesource"

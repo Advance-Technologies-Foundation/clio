@@ -23,6 +23,9 @@ namespace Clio.Mcp.E2E;
 /// Starting one server here first performs that create/migrate once while nothing else runs, so by
 /// the time the parallel cohort starts the shared home is present and already at the current
 /// settings version — every later load is read-only and the cross-process write race never opens.
+/// The fixture also temporarily configures the built-in curated source as disabled and restores the
+/// exact original file at assembly teardown. This prevents an external GitHub clone from becoming a
+/// hidden prerequisite of unrelated MCP mechanics tests while preserving the runner's environments.
 /// Fixtures that use an isolated home (OAuth, the canaries) are unaffected: they write their own
 /// per-fixture home and never touch the global one.
 ///
@@ -31,6 +34,7 @@ namespace Clio.Mcp.E2E;
 /// </remarks>
 [SetUpFixture]
 public sealed class McpSharedHomeSetUpFixture {
+	private TemporaryClioSettingsOverride? _curatedSourceOverride;
 
 	[OneTimeSetUp]
 	public async Task MigrateSharedClioHomeOnceAsync() {
@@ -38,9 +42,18 @@ public sealed class McpSharedHomeSetUpFixture {
 		// settings so this server resolves the SAME global home the non-isolated fixtures use.
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		_curatedSourceOverride = TemporaryClioSettingsOverride.DisableCuratedKnowledgeBootstrap(
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
 		using CancellationTokenSource startupCts = new(TimeSpan.FromMinutes(5));
 		// Completing the MCP initialize handshake proves the child booted, which is when it resolves
 		// settings and performs the one-time create/migrate write against the shared home.
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, startupCts.Token);
+	}
+
+	[OneTimeTearDown]
+	public void RestoreSharedClioHome() {
+		_curatedSourceOverride?.Dispose();
+		_curatedSourceOverride = null;
 	}
 }

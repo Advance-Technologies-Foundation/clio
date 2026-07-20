@@ -561,6 +561,7 @@ public class BindingsModule {
 		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
 		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
+		services.AddSingleton<ICuratedKnowledgeBootstrapService, CuratedKnowledgeBootstrapService>();
 		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
 		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();

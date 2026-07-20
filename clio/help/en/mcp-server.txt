@@ -49,6 +49,19 @@ DESCRIPTION
     - knowledge.sources.<alias>.trusted-key-id  NuGet-only signing-key ID
     - knowledge.sources.<alias>.trusted-public-key-path  NuGet-only public-key PEM path
 
+    While beginning to serve requests, both MCP transports ensure a built-in Git source named
+    creatio-curated exists and is installed from
+    https://github.com/Advance-Technologies-Foundation/clio-knowledge.git
+    on branch master. Its library-id is com.creatio.clio, priority is 100, and
+    participation is authoritative. A valid local checkout is reused without a
+    remote call. A missing checkout is cloned in the background, so the MCP
+    handshake never waits for Git and the running host sees it when ready. Older
+    aliases for the same library are normalized to creatio-curated and their
+    checkouts are moved rather than cloned again. The built-in source cannot be removed; disable it with
+    clio disable-knowledge-source --alias creatio-curated. Disabled state survives
+    updates and MCP restarts. A failed initial clone is warned but does not prevent
+    MCP startup; retry with install-knowledge --source creatio-curated.
+
     Public verification keys are not secrets. Never configure a private signing key.
     NuGet sources require signed v1 bundles. Git sources are cloned directly. This POC
     supports credential-free public HTTPS Git and NuGet sources only; authenticated private sources are not

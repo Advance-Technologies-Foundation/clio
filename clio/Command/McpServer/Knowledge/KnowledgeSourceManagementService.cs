@@ -157,6 +157,15 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return Failed(sourceAlias, $"Knowledge source '{sourceAlias}' is not configured.");
 		}
 		KnowledgeSourceConfiguration expected = configuration.Sources[sourceAlias];
+		if (string.Equals(sourceAlias, CuratedKnowledgeSourceDefaults.Alias, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(
+				expected.LibraryId,
+				CuratedKnowledgeSourceDefaults.LibraryId,
+				StringComparison.OrdinalIgnoreCase)) {
+			return Failed(sourceAlias,
+				$"Built-in knowledge source '{sourceAlias}' cannot be removed. "
+				+ $"Use disable-knowledge-source --alias {sourceAlias} to stop serving it while retaining its cache.");
+		}
 		if (!_settingsRepository.TryRemoveKnowledgeSource(sourceAlias, expected)) {
 			return Failed(sourceAlias, $"Knowledge source '{sourceAlias}' changed while it was being removed; retry.");
 		}

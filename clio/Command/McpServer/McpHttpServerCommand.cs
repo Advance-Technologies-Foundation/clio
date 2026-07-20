@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -282,6 +283,10 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		AspNetWebApplication app = builder.Build();
+		Task<CuratedKnowledgeBootstrapResult> curatedKnowledgeBootstrap =
+			McpServerCommand.BootstrapCuratedKnowledgeAsync(
+			app.Services.GetRequiredService<ICuratedKnowledgeBootstrapService>(),
+			ConsoleLogger.Instance);
 
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and the run-time-configured session-container cache, so per-tenant
@@ -342,7 +347,13 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 		ConsoleLogger.Instance.WriteInfo(
 			$"MCP HTTP server listening on http://{options.Host}:{options.Port}{options.Path}");
-		app.Run();
+		try {
+			app.Run();
+		} finally {
+			McpServerCommand.DrainCuratedKnowledgeBootstrapAsync(
+				curatedKnowledgeBootstrap,
+				ConsoleLogger.Instance).GetAwaiter().GetResult();
+		}
 		return 0;
 	}
 

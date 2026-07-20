@@ -6856,3 +6856,10 @@ Decision: Unified artifact and repository transport discovery, bounded parallel 
 Discovery: A non-blocking activator can legitimately miss a source during concurrent synchronization; catalog discovery must propagate that state so agents retry rather than infer that no examples exist.
 Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio.tests/Command/McpServer/, clio.mcp.e2e/, clio/tpl/jsonschema/schema.json.tpl, C:/Projects/clio-knowledge/.worktrees/pr927-compat/schemas/v1/knowledge-repository.schema.json
 Impact: The draft PR now has matching producer/consumer contracts, mechanics-only Clio E2E coverage, live Git example discovery, and no unresolved Blocker/High review findings.
+
+## 2026-07-20 11:56 – Bootstrap the built-in curated knowledge source
+Context: A released Clio must not lose its official guidance when guidance content moves out of the binary, and operators need a persistent opt-out.
+Decision: Reserve `creatio-curated` for `com.creatio.clio`, restore its canonical public Git configuration on MCP startup, preserve only `enabled`, protect it from removal, and clone a missing checkout in the background so the MCP handshake never waits for Git.
+Discovery: Canonicalizing the former `creatio-poc` alias must move its existing checkout under both source locks; otherwise offline users lose a usable cache. Isolated MCP E2E homes must seed the source disabled so unrelated tests never clone from GitHub.
+Files: clio/Command/McpServer/Knowledge/CuratedKnowledgeBootstrapService.cs, clio/Environment/ConfigurationOptions.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceInstallationStore.cs, clio/Command/McpServer/McpServerCommand.cs, clio/Command/McpServer/McpHttpServerCommand.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs
+Impact: Fresh MCP sessions automatically acquire curated guidance without blocking startup, disabled state survives upgrades, legacy caches remain usable offline, and Clio's E2E suite stays deterministic.

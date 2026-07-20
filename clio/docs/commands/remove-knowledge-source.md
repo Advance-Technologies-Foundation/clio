@@ -21,6 +21,10 @@ Clio-managed installed generations, staging data, and activation marker. Configu
 retained if best-effort cache cleanup fails; the command reports the remaining cache as orphaned.
 Other source configuration, caches, and unrelated files are preserved.
 
+The built-in `com.creatio.clio` source (normally aliased as `creatio-curated`) cannot be removed.
+Use `disable-knowledge-source --alias creatio-curated` as its persistent kill switch; Clio retains
+the checkout and respects that disabled state across updates and MCP restarts.
+
 Removal requires interactive confirmation. Non-interactive hosts must pass `--force` after
 obtaining user authorization. Use `disable-knowledge-source` instead when the source should stop
 serving but its configuration and cache should remain available for later re-enablement.

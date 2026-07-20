@@ -77,6 +77,50 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 	}
 
 	[Test]
+	[Description("Git repository migration preserves an installed checkout when a stable library adopts a canonical source alias.")]
+	public void TryMigrateGitRepository_ShouldMoveCheckout_ToCanonicalAlias() {
+		// Arrange
+		string previousRepository = _store.GetGitRepositoryPath("creatio-poc", createSourceRoot: true);
+		Directory.CreateDirectory(Path.Combine(previousRepository, ".git"));
+		File.WriteAllText(Path.Combine(previousRepository, "bundle-source.json"), "{}");
+
+		// Act
+		bool migrated = _store.TryMigrateGitRepository("creatio-poc", "creatio-curated");
+		string canonicalRepository = _store.GetGitRepositoryPath("creatio-curated", createSourceRoot: false);
+
+		// Assert
+		migrated.Should().BeTrue(
+			because: "an already-installed checkout should be reused instead of requiring another network clone");
+		Directory.Exists(Path.Combine(canonicalRepository, ".git")).Should().BeTrue(
+			because: "the canonical source must own the migrated Git checkout");
+		File.Exists(Path.Combine(canonicalRepository, "bundle-source.json")).Should().BeTrue(
+			because: "all repository content must move with the checkout");
+		Directory.Exists(previousRepository).Should().BeFalse(
+			because: "the previous alias must not retain a duplicate repository checkout");
+	}
+
+	[Test]
+	[Description("Startup alias migration reports lock contention without waiting behind another source operation.")]
+	public void TryMigrateGitRepository_ShouldReturnFalse_WhenLegacySourceIsLocked() {
+		// Arrange
+		string previousRepository = _store.GetGitRepositoryPath("creatio-poc", createSourceRoot: true);
+		Directory.CreateDirectory(Path.Combine(previousRepository, ".git"));
+		bool migrated = true;
+
+		// Act
+		_store.ExecuteWithSourceMutationLock("creatio-poc", () => {
+			migrated = _store.TryMigrateGitRepository("creatio-poc", "creatio-curated");
+			return true;
+		});
+
+		// Assert
+		migrated.Should().BeFalse(
+			because: "MCP preparation must never delay its protocol handshake behind an existing cache mutation");
+		Directory.Exists(previousRepository).Should().BeTrue(
+			because: "the background phase must be able to retry the untouched legacy checkout");
+	}
+
+	[Test]
 	[Description("Each source publishes and reads an independent active generation without affecting another source.")]
 	public void Publish_ShouldKeepIndependentCandidates_WhenSourcesDiffer() {
 		// Arrange

@@ -13,6 +13,8 @@ DESCRIPTION
     source remains removed and the orphaned cache is reported. Other sources and
     unrelated files remain. Interactive confirmation is required unless --force is
     set. Use disable-knowledge-source to retain configuration and installed content.
+    The built-in com.creatio.clio source (creatio-curated) cannot be removed;
+    disable it with disable-knowledge-source --alias creatio-curated instead.
 
 OPTIONS
     --alias <alias>    Required configured source alias
