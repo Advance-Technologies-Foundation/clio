@@ -2377,7 +2377,7 @@ public sealed class ToolContractGetToolTests {
 		index.Index!.Select(entry => entry.Name).Should().Contain(toolName,
 			because: "with a null registry BuildIndexToolNames unions CanonicalToolNames with the schema catalog, so an uncurated registered tool still appears in the compact index");
 	}
-	
+
 	[Test]
 	[Category("Unit")]
 	[Description("Pins the curated get-request-info contract: input args, the environment-name/version mutual-exclusion validator, the rejected kebab-case aliases, the output envelope fields, and the memory-authored-params anti-pattern.")]
