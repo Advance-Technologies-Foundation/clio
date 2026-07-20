@@ -112,27 +112,23 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		string schemaName,
 		out string schemaUId,
 		out ClientUnitSchemaUpdateResponse response) {
-		var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+		// Resolve through the SAME deterministic top-layer resolution get-client-unit-schema uses.
+		// A row-order-dependent single-row query here would read the top layer but WRITE a random
+		// layer of a multi-package schema, corrupting a base layer with top-layer content.
+		(string resolvedUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
 			_applicationClient,
 			_serviceUrlBuilder,
 			schemaName,
-			("UId", "UId"));
-		if (metadata == null) {
+			SchemaDesignerKind.ClientUnit);
+		if (resolveError != null) {
 			schemaUId = null;
 			response = new ClientUnitSchemaUpdateResponse {
 				Success = false,
-				Error = queryError
+				Error = resolveError
 			};
 			return false;
 		}
-		schemaUId = metadata["UId"]?.ToString();
-		if (string.IsNullOrWhiteSpace(schemaUId)) {
-			response = new ClientUnitSchemaUpdateResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' metadata is missing UId"
-			};
-			return false;
-		}
+		schemaUId = resolvedUId;
 		response = null;
 		return true;
 	}

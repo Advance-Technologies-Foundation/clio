@@ -25,6 +25,8 @@ public sealed class ClientUnitSchemaUpdateTool(
 	[Description(
 		"Update the raw body of any client unit schema (classic 7x JS mixins/modules/utilities or Freedom UI) " +
 		"without Freedom UI bundle/marker validation. Use when the target is not a Freedom UI page schema, e.g. 'NetworkUtilities'. " +
+		"A schema name that exists in several packages resolves deterministically to the top (most-derived) layer — " +
+		"the same layer get-client-unit-schema reads. " +
 		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ClientUnitSchemaUpdateResponse UpdateSchema(
@@ -50,6 +52,11 @@ public sealed class ClientUnitSchemaUpdateTool(
 				return new ClientUnitSchemaUpdateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryUpdateSchema(options, out ClientUnitSchemaUpdateResponse response);
+			if (!string.IsNullOrEmpty(response?.Error)) {
+				// The command's inner error can carry an HTTP/DataService message with the environment URI/host;
+				// redact before it lands in the MCP transcript (parity with the get-* schema tools).
+				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
+			}
 			return response;
 		});
 	}

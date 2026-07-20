@@ -357,6 +357,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-classic-schema-by-uid"></a>
 <a id="classic-schema-get"></a>
 - [`get-classic-schema-by-uid`](docs/commands/get-classic-schema-by-uid.md) - Read the body and metadata of a specific Classic client unit schema by its SysSchema.UId, `classic-schema-get`
+<a id="get-classic-migration-bundle"></a>
+<a id="classic-migration-bundle"></a>
+- [`get-classic-migration-bundle`](docs/commands/get-classic-migration-bundle.md) - Assemble a Classic->Freedom migration bundle and write the manifest JSON to disk, `classic-migration-bundle`
 <a id="get-client-unit-schema"></a>
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
