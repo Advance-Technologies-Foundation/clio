@@ -89,6 +89,26 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
+	[Description("Refuses to expose another tenant's operation record when its global operation-id is supplied by a different caller.")]
+	public void GetStatus_Should_ReturnNotFound_WhenOperationIdBelongsToAnotherTenant() {
+		// Arrange
+		CompileOperationRegistry registry = new();
+		CompileOperationRecord othersOperation = registry.Begin("tenant-a", "victim-env", "SecretPackage");
+		registry.Finish(othersOperation.OperationId, 0, []);
+		// The caller resolves to a DIFFERENT tenant but knows/guesses tenant-a's global operation-id.
+		CompileStatusTool tool = new(registry, CreateResolver("tenant-b"));
+
+		// Act
+		CompileStatusResponse response = tool.GetStatus(new CompileStatusArgs("attacker-env", othersOperation.OperationId));
+
+		// Assert
+		response.Status.Should().Be("not-found",
+			because: "on a shared MCP server a caller must not read another tenant's operation via a leaked/guessed operation-id");
+		response.PackageName.Should().BeNull(because: "the other tenant's package name must not leak");
+		response.EnvironmentName.Should().NotBe("victim-env", because: "the other tenant's environment name must not leak");
+	}
+
+	[Test]
 	[Description("Reports not-found for an operation-id that does not exist in the registry.")]
 	public void GetStatus_Should_ReturnNotFound_WhenOperationIdUnknown() {
 		// Arrange

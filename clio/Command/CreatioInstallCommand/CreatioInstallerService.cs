@@ -1139,8 +1139,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private bool WaitForServerReady(string baseUri, bool isNetCore) {
-		// Preserves the historical 15s initial delay / 45s total budget (10 attempts * 3s) exactly;
-		// only the polling mechanics moved to the shared IServerReadinessWaiter (ENG-91315).
+		// Preserves the historical readiness timing exactly: a fifteen-second initial delay, then a
+		// forty-five-second budget of three-second polls; only the polling mechanics moved to the shared
+		// IServerReadinessWaiter (ENG-91315).
 		return _serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = baseUri,
 			IsNetCore = isNetCore,

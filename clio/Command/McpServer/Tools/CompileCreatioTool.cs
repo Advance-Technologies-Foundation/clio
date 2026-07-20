@@ -67,7 +67,12 @@ public sealed class CompileCreatioTool(
 					} catch (EnvironmentResolutionException exception) {
 						result = CommandExecutionResult.FromResolverError(exception);
 					} catch (Exception exception) {
-						result = CommandExecutionResult.FromException(exception);
+						// FR-11 (ENG-93208): this passthrough-catch bypasses BaseTool's own exception filter, so
+						// scrub the exception chain here too on a credential-passthrough request (same tenant-key
+						// signal). Otherwise the raw text would surface unredacted and then be preserved in the
+						// compile-status message tail. The trusted stdio / -e path stays full-fidelity.
+						result = CommandExecutionResult.FromException(
+							exception, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
 					}
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					return result;

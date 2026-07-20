@@ -108,7 +108,7 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 			operationId,
 			// Unknown id: defensive fallback (Begin always precedes Finish in the real call path) so a
 			// bookkeeping gap surfaces as an odd-looking record instead of an exception from the compile path.
-			_ => new CompileOperationRecord(operationId, null, null, null, status, finishedUtc, finishedUtc, exitCode, messageTail),
+			id => new CompileOperationRecord(id, null, null, null, status, finishedUtc, finishedUtc, exitCode, messageTail),
 			(_, existing) => existing with {
 				Status = status,
 				FinishedUtc = finishedUtc,

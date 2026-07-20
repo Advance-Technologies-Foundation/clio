@@ -235,6 +235,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["clio-run"] = PassthroughClassification.NotApplicable,
 			["clio-run-destructive"] = PassthroughClassification.NotApplicable,
 			["compile-creatio"] = PassthroughClassification.NotApplicable,
+			["compile-status"] = PassthroughClassification.NotApplicable,
 			["create-business-process"] = PassthroughClassification.NotApplicable,
 			["create-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["create-data-binding"] = PassthroughClassification.NotApplicable,

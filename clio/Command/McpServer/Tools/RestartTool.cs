@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -23,6 +24,8 @@ public class RestartTool(
 	/// </summary>
 	internal const string RestartByCredentialsToolName = "restart-by-credentials";
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) polls the instance's health-check endpoint after the restart request and returns only once it answers, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the wait continues server-side. Do NOT retry; poll readiness with clio-run healthcheck instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
@@ -51,6 +54,8 @@ public class RestartTool(
 	// method: it is served by IMcpToolCompatibilityCatalog (alias -> restart-by-environment-name), which
 	// the durable call-tool handler and the clio-run executor both resolve through. A duplicate method
 	// would now fail the registry's duplicate-name guard by design.
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Parameters mirror the restart-by-credentials MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) polls the instance's health-check endpoint after the restart request and returns only once it answers, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the wait continues server-side. Do NOT retry; poll readiness with clio-run healthcheck instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
@@ -115,7 +120,7 @@ public class RestartTool(
 		$"Restart of {targetDescription} was accepted and the restart request itself already "
 		+ "succeeded; the application is still warming up (MCP response deadline reached, the "
 		+ $"readiness wait continues server-side for up to {waitTimeoutSeconds}s). Poll readiness "
-		+ "with clio-run tool 'healthcheck' against the same environment/credentials — exit code 0 "
-		+ "means the application is ready. Typical warm-up is 1-10 minutes; do NOT retry "
-		+ $"{toolName}.";
+		+ "by running the clio CLI healthcheck verb against the same environment/credentials "
+		+ "(e.g. `clio healthcheck -e <environment>`) — exit code 0 means the application is ready. "
+		+ $"Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
 }

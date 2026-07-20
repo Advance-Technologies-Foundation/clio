@@ -31,9 +31,17 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 				Note: "environment-name is required and cannot be empty.");
 		}
 
+		string callerTenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
 		CompileOperationRecord record = string.IsNullOrWhiteSpace(args.OperationId)
-			? registry.GetLatest(commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName }))
+			? registry.GetLatest(callerTenantKey)
 			: registry.GetById(args.OperationId.Trim());
+
+		// Scope operation-id lookups to the caller's tenant: on a shared MCP HTTP server a caller who obtains
+		// (or guesses) another session's global operation id must not read its environment/package/exit-code/
+		// message-tail. GetLatest is already tenant-keyed, so this only tightens the GetById path.
+		if (record is not null && !string.Equals(record.TenantKey, callerTenantKey, StringComparison.Ordinal)) {
+			record = null;
+		}
 
 		if (record is null) {
 			return new CompileStatusResponse(true, "not-found", EnvironmentName: args.EnvironmentName,
