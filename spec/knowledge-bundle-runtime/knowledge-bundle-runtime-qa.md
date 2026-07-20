@@ -39,10 +39,11 @@
 
 - **TC-E-01:** Start with an isolated `CLIO_HOME`, install synthetic package v1, and assert visible
   settings/root/version artifacts plus successful synthetic guidance retrieval through both
-  `get-guidance` and MCP `resources/read`; all external resource URIs remain advertised.
+  `get-guidance` and MCP `resources/read`; `resources/list` exposes the synthetic publisher's title
+  and description without article-specific Clio classes.
 - **TC-E-02:** Start a second real MCP process against the same home with the fake feed offline and
-  prove it serves v1 from disk without a network request. With no installation, external resources
-  remain advertised while `resources/read` fails with typed `guidance-unavailable`.
+  prove it serves v1 from disk without a network request. With no installation, the dynamic catalog
+  is empty while explicit lookup returns typed `guidance-unavailable`.
 - **TC-E-03:** Keep one MCP process running, update v1 to synthetic v2 through a separate Clio
   process, and prove the same MCP process serves v2 on its next request.
 - **TC-E-04:** Offer invalid v3, prove update fails, and prove the same MCP process and a fresh MCP
@@ -55,7 +56,7 @@
 
 ## Content ownership rule
 
-Fixtures synthesize a complete stable route catalog with arbitrary deterministic article bytes.
+Fixtures synthesize a complete stable route catalog, discovery metadata, and arbitrary deterministic article bytes.
 Tests may assert identities, versions, digests, paths, state transitions, request counts, error
 codes, and message types. They must not assert canonical guidance wording, headings, examples, or
 real `clio-knowledge` snapshots.

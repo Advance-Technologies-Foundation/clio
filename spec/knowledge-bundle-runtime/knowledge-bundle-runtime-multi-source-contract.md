@@ -80,15 +80,21 @@ Each signed NuGet bundle declares:
 - `libraryVersion`: publisher-facing generation label;
 - `sequence`: positive, monotonically increasing unsigned integer scoped to `libraryId`;
 - `source`: non-secret provenance including repository and exact commit when applicable;
-- resources with stable `itemId`, `topicId`, relative path, media type, digest, and role.
+- resources with stable `itemId`, `topicId`, publisher-owned `title` and `description`, relative path,
+  media type, digest, role, and optional `requiredFeatures`.
 
 Each Git repository carries a bounded `bundle-source.json` manifest with contract version `1.0.0`,
 the configured `libraryId`, a publisher-facing `libraryVersion`, a positive `sequence`, and bounded
-resource declarations. Each resource supplies an `itemId`, `topicId`, role, exact namespaced URI,
+resource declarations. Each resource supplies an `itemId`, `topicId`, bounded human-readable title
+and description, role, exact namespaced URI, optional stable `requiredFeatures`,
 repository-relative `sourcePath`, and optional legacy URIs. Clio computes the content digest from
 the manifest and declared resource bytes and records the complete resolved Git commit separately as
 transport provenance. Configured commits must be complete 40-character SHA-1 or 64-character
 SHA-256 hexadecimal object IDs; abbreviated commit IDs are rejected.
+
+An article remains installed but is excluded from bare lookup and `resources/list` while any
+publisher-declared feature key is disabled. This keeps knowledge discovery aligned with the
+feature-gated tools and prompts exposed by the same MCP host.
 
 For signed NuGet content, the immutable generation identity is
 `(libraryId, sequence, bundleDigest)`. A package version is transport state, not knowledge identity.
@@ -106,11 +112,18 @@ Every item has an exact namespaced route:
 docs://knowledge/<library-id>/<item-id>
 ```
 
-The logical `topicId` supports cross-library discovery and selection. Exact namespaced lookup never
+Both the stable `itemId` and logical `topicId` support bare-name discovery and selection; this keeps
+established `get-guidance name=<item-id>` calls stable while allowing publishers to group equivalent
+items under a namespaced topic. Exact namespaced lookup never
 falls through to another library. A resource may additionally declare `legacyUris`; they are signed
 manifest fields for NuGet and repository-manifest fields for Git. The resolver serves those aliases
 as exact references to that same item. Alias collisions are rejected or reported as ambiguity
 rather than being resolved by configuration order.
+
+MCP `resources/list` is generated from the active resolved catalog at request time. It exposes the
+canonical URI, stable item name, title, description, and media type declared by the selected publisher;
+Clio does not compile an article inventory or article-specific resource descriptions. Canonical and
+publisher-declared legacy URI reads are handled by generic resource templates.
 
 ## Resolution contract
 
@@ -118,8 +131,9 @@ Resolution is deterministic and does not merge Markdown at runtime:
 
 1. Exclude disabled, invalid, incompatible, or unavailable libraries.
 2. Exact namespaced requests select that library and item only.
-3. Logical topic requests select eligible items for the requested role.
-4. Apply a configured topic pin when present; a missing or ineligible pin is a visible error.
+3. Bare item-ID or logical-topic requests select eligible items for the requested role. Multiple
+   matches inside one library are a visible ambiguity.
+4. Apply a configured topic pin for that bare name when present; a missing or ineligible pin is a visible error.
 5. Otherwise choose the highest operator priority.
 6. Equal highest priority from different eligible libraries is an ambiguity error, never
    configuration-order tie-breaking.

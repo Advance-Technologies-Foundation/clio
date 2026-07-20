@@ -52,6 +52,83 @@ public sealed class KnowledgeResolverTests {
 	}
 
 	[Test]
+	[Description("A bare item ID remains a stable get-guidance alias when the publisher uses a namespaced topic ID.")]
+	public void Find_ShouldResolveItemId_WhenTopicIdIsNamespaced() {
+		// Arrange
+		KnowledgeLibrarySnapshot library = Library(
+			"creatio",
+			"com.creatio.clio",
+			100,
+			KnowledgeSourceParticipation.Authoritative,
+			Article("creatio.core-rules", "core-rules"));
+
+		// Act
+		KnowledgeArticleLookup result = _resolver.Find(
+			"core-rules",
+			[library],
+			new Dictionary<string, string>());
+
+		// Assert
+		result.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
+			because: "existing get-guidance calls use publisher item IDs rather than namespaced topic IDs");
+		result.Article!.ItemId.Should().Be("core-rules",
+			because: "the simple alias must resolve the exact publisher-owned item");
+	}
+
+	[Test]
+	[Description("A bare publisher item alias resolves its canonical topic before source priority and topic pins are applied.")]
+	public void Find_ShouldResolveCanonicalTopicAcrossLibraries_WhenItemAliasIsUsed() {
+		// Arrange
+		KnowledgeLibrarySnapshot creatio = Library(
+			"creatio",
+			"com.creatio.clio",
+			100,
+			KnowledgeSourceParticipation.Authoritative,
+			Article("creatio.esq", "esq"));
+		KnowledgeLibrarySnapshot partner = Library(
+			"partner",
+			"com.example.partner",
+			200,
+			KnowledgeSourceParticipation.Authoritative,
+			Article("creatio.esq", "partner-esq"));
+
+		// Act
+		KnowledgeArticleLookup priorityResult = _resolver.Find(
+			"esq",
+			[creatio, partner],
+			new Dictionary<string, string>());
+		KnowledgeArticleLookup pinnedResult = _resolver.Find(
+			"esq",
+			[creatio, partner],
+			new Dictionary<string, string> { ["creatio.esq"] = "com.creatio.clio" });
+
+		// Assert
+		priorityResult.Provenance!.LibraryId.Should().Be("com.example.partner",
+			because: "an item alias must enter the same canonical-topic priority competition as a topic ID");
+		pinnedResult.Provenance!.LibraryId.Should().Be("com.creatio.clio",
+			because: "topic pins are keyed by the canonical topic even when the request used a publisher item alias");
+	}
+
+	[Test]
+	[Description("Discovery exposes both stable item IDs and logical topic IDs for active guidance.")]
+	public void GetNames_ShouldReturnItemAndTopicIds_WhenTheyDiffer() {
+		// Arrange
+		KnowledgeLibrarySnapshot library = Library(
+			"creatio",
+			"com.creatio.clio",
+			100,
+			KnowledgeSourceParticipation.Authoritative,
+			Article("creatio.routing", "routing"));
+
+		// Act
+		IReadOnlyList<string> result = _resolver.GetNames([library]);
+
+		// Assert
+		result.Should().BeEquivalentTo(["routing", "creatio.routing"],
+			because: "agents need the established item alias while topic-aware consumers retain logical discovery");
+	}
+
+	[Test]
 	[Description("A topic pin overrides source priority for an eligible library.")]
 	public void Find_ShouldHonorTopicPin_WhenPinnedLibraryIsEligible() {
 		// Arrange

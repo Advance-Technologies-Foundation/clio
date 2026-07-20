@@ -33,6 +33,13 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
 		RegexOptions.CultureInvariant,
 		TimeSpan.FromSeconds(1));
+	private static readonly Regex StableIdPattern = new(
+		"^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+		RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
+	private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal) {
+		"guidance", "reference", "advisory", "capability", "reference-example"
+	};
 	private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
 	private readonly object _activationLock = new();
@@ -664,8 +671,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			? manifest.Requirements.ItemIds!
 			: manifest.Requirements.GuidanceIds!;
 		if (!ids.SetEquals(requiredIds)
-				|| !uris.SetEquals(manifest.Requirements.ResourceUris)
-				|| (!IsMultiSource(manifest) && !ids.SetEquals(_capabilities.GuidanceResources.Keys))) {
+				|| !uris.SetEquals(manifest.Requirements.ResourceUris)) {
 			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
 				"Declared requirements and bundle resources must describe the same complete item set.");
 		}
@@ -676,12 +682,6 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		foreach (KnowledgeBundleResourceDto resource in manifest.Resources) {
 			ValidateResourceDescriptor(manifest, resource);
 			string itemId = ResourceId(resource, manifest);
-			if (!IsMultiSource(manifest)
-					&& (!_capabilities.GuidanceResources.TryGetValue(itemId, out string? expectedUri)
-						|| !string.Equals(resource.Uri, expectedUri, StringComparison.Ordinal))) {
-				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
-					$"Resource '{itemId}' does not match the stable Clio guidance catalog URI.");
-			}
 			expectedEntries.Add(resource.Path);
 			byte[] bytes = ReadRequiredEntry(entries, resource.Path, MaxResourceBytes);
 			totalLength = checked(totalLength + bytes.LongLength);
@@ -699,12 +699,16 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				itemId,
 				resource.Uri,
 				text,
-				IsMultiSource(manifest) ? manifest.LibraryId! : LegacyLibraryId,
-				itemId,
-				topicId,
-				role,
-				resource.Path,
-				resource.LegacyUris?.ToArray() ?? Array.Empty<string>()));
+				LibraryId: IsMultiSource(manifest) ? manifest.LibraryId! : LegacyLibraryId,
+				ItemId: itemId,
+				TopicId: topicId,
+				Role: role,
+				LocalPath: resource.Path,
+				LegacyUris: resource.LegacyUris?.ToArray() ?? Array.Empty<string>(),
+				Title: resource.Title ?? itemId,
+				Description: resource.Description ?? string.Empty,
+				MediaType: resource.MediaType,
+				RequiredFeatures: resource.RequiredFeatures?.ToArray() ?? Array.Empty<string>()));
 		}
 		if (!expectedEntries.SetEquals(entries.Keys)) {
 			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
@@ -722,8 +726,12 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			? $"{KnowledgeResolver.NamespacedUriPrefix}{Uri.EscapeDataString(manifest.LibraryId!)}/{Uri.EscapeDataString(itemId)}"
 			: resource.Uri;
 		if (string.IsNullOrWhiteSpace(itemId)
-				|| (multiSource && (string.IsNullOrWhiteSpace(resource.TopicId)
-					|| string.IsNullOrWhiteSpace(resource.Role)
+				|| (multiSource && (!ValidStableId(itemId)
+					|| !ValidStableId(resource.TopicId)
+					|| !AllowedRoles.Contains(resource.Role!)
+					|| (resource.RequiredFeatures?.Any(feature => !ValidStableId(feature)) ?? false)
+					|| !ValidDiscoveryText(resource.Title, 160)
+					|| !ValidDiscoveryText(resource.Description, 1000)
 					|| !string.Equals(resource.Uri, canonicalUri, StringComparison.Ordinal)))
 				|| string.IsNullOrWhiteSpace(resource.Uri)
 				|| !resource.Uri.StartsWith("docs://", StringComparison.Ordinal)
@@ -747,12 +755,24 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					$"Resource '{itemId}' has an invalid legacy URI.");
 			}
 		}
+		if (resource.RequiredFeatures is not null) {
+			EnsureUnique(resource.RequiredFeatures, "required feature", manifest.Sequence);
+		}
 	}
 
 	private static string ResourceId(
 		KnowledgeBundleResourceDto resource,
 		KnowledgeBundleManifestDto manifest) =>
 		IsMultiSource(manifest) ? resource.ItemId! : resource.Id!;
+
+	private static bool ValidDiscoveryText(string? value, int maximumLength) =>
+		!string.IsNullOrWhiteSpace(value)
+		&& value.Length <= maximumLength
+		&& string.Equals(value, value.Trim(), StringComparison.Ordinal)
+		&& !value.Any(char.IsControl);
+
+	private static bool ValidStableId(string? value) =>
+		value is not null && value.Length is >= 1 and <= 160 && StableIdPattern.IsMatch(value);
 
 	private static bool IsCompatible(KnowledgeBundleVersionRangeDto range, Version current) {
 		if (range is null

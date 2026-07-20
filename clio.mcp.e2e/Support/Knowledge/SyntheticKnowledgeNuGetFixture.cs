@@ -14,6 +14,8 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	internal const string PackageId = "Clio.Synthetic.Knowledge";
 	internal const string LibraryId = "com.example.synthetic";
 	internal const string SelectedGuideName = "synthetic-transport-guide";
+	internal const string SelectedReferenceName = "synthetic-transport-guide-details";
+	internal const string SelectedReferenceLegacyUri = "docs://mcp/references/synthetic-transport-guide/details";
 	internal const string ReferenceExampleId = "example.synthetic.reference";
 	internal const string ReferenceExampleRepository = "https://github.com/example/synthetic-reference";
 
@@ -75,7 +77,7 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 					$"synthetic::{revision}::{itemId}::sequence={sequence}\n");
 				return new SyntheticResource(
 					itemId,
-					itemId,
+					$"synthetic.{itemId}",
 					"guidance",
 					$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{itemId}",
 					$"resources/synthetic-{index}.txt",
@@ -84,6 +86,17 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 					Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
 			})
 			.ToList();
+		byte[] referenceBytes = new UTF8Encoding(false, true).GetBytes(
+			$"synthetic::{revision}::reference-details::sequence={sequence}\n");
+		resources.Add(new SyntheticResource(
+			SelectedReferenceName,
+			"synthetic.transport-guide.details",
+			"reference",
+			$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{SelectedReferenceName}",
+			"resources/synthetic-reference.txt",
+			"text/plain",
+			referenceBytes,
+			Convert.ToHexString(SHA256.HashData(referenceBytes)).ToLowerInvariant()));
 		byte[] exampleBytes = new UTF8Encoding(false, true).GetBytes($$"""
 			schemaVersion: 0
 			id: {{ReferenceExampleId}}
@@ -145,10 +158,14 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 				itemId = resource.Name,
 				topicId = resource.TopicId,
 				role = resource.Role,
+				title = $"Synthetic {resource.Name}",
+				description = $"Synthetic discovery metadata for {resource.Name}.",
 				uri = resource.Uri,
-				legacyUris = resource.Name == SelectedGuideName
-					? new[] { $"docs://mcp/guides/{SelectedGuideName}" }
-					: Array.Empty<string>(),
+				legacyUris = resource.Name switch {
+					SelectedGuideName => new[] { $"docs://mcp/guides/{SelectedGuideName}" },
+					SelectedReferenceName => new[] { SelectedReferenceLegacyUri },
+					_ => Array.Empty<string>()
+				},
 				path = resource.Path,
 				mediaType = resource.MediaType,
 				length = resource.Bytes.LongLength,

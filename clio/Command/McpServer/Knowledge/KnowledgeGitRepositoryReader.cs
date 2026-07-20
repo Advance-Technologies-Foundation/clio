@@ -51,6 +51,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	private static readonly IReadOnlyDictionary<string, string> SourceRootByRole =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
 			["guidance"] = "guidance/",
+			["reference"] = "references/",
 			["advisory"] = "advisories/",
 			["capability"] = "capabilities/",
 			["reference-example"] = "catalog/"
@@ -108,12 +109,16 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 					resource.ItemId,
 					resource.Uri,
 					StrictUtf8.GetString(content),
-					manifest.LibraryId,
-					resource.ItemId,
-					resource.TopicId,
-					resource.Role,
-					path,
-					resource.LegacyUris ?? []));
+					LibraryId: manifest.LibraryId,
+					ItemId: resource.ItemId,
+					TopicId: resource.TopicId,
+					Role: resource.Role,
+					LocalPath: path,
+					LegacyUris: resource.LegacyUris ?? [],
+					Title: resource.Title,
+					Description: resource.Description,
+					MediaType: resource.MediaType,
+					RequiredFeatures: resource.RequiredFeatures ?? []));
 			}
 			snapshot = new KnowledgeGitRepositorySnapshot(
 				manifest.LibraryId,
@@ -247,7 +252,10 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 		string canonicalUri = $"docs://knowledge/{manifest.LibraryId}/{resource.ItemId}";
 		if (!ValidStableId(resource.ItemId)
 				|| !ValidStableId(resource.TopicId)
+				|| (resource.RequiredFeatures?.Any(feature => !ValidStableId(feature)) ?? false)
 				|| !ValidRoleSourcePath(resource.Role, resource.SourcePath)
+				|| !ValidDiscoveryText(resource.Title, 160)
+				|| !ValidDiscoveryText(resource.Description, 1000)
 				|| !string.Equals(resource.Uri, canonicalUri, StringComparison.Ordinal)
 				|| !ValidBundlePath(resource.BundlePath)
 				|| string.IsNullOrWhiteSpace(resource.MediaType)
@@ -256,10 +264,17 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 					|| !uri.StartsWith("docs://", StringComparison.Ordinal)) ?? false)) {
 			throw new InvalidDataException($"Git knowledge resource '{resource.ItemId}' has an invalid descriptor.");
 		}
+		EnsureUnique(resource.RequiredFeatures ?? [], "required feature");
 	}
 
 	private static bool ValidStableId(string value) =>
 		value is not null && value.Length is >= 1 and <= 160 && StableIdPattern.IsMatch(value);
+
+	private static bool ValidDiscoveryText(string value, int maximumLength) =>
+		!string.IsNullOrWhiteSpace(value)
+		&& value.Length <= maximumLength
+		&& string.Equals(value, value.Trim(), StringComparison.Ordinal)
+		&& !value.Any(char.IsControl);
 
 	private static bool ValidLibraryId(string value) =>
 		value is not null && value.Length is >= 3 and <= 255 && LibraryIdPattern.IsMatch(value);
@@ -432,6 +447,15 @@ internal sealed class KnowledgeGitRepositoryResource {
 
 	[JsonProperty("role")]
 	public string Role { get; init; } = string.Empty;
+
+	[JsonProperty("title")]
+	public string Title { get; init; } = string.Empty;
+
+	[JsonProperty("description")]
+	public string Description { get; init; } = string.Empty;
+
+	[JsonProperty("requiredFeatures")]
+	public string[]? RequiredFeatures { get; init; }
 
 	[JsonProperty("uri")]
 	public string Uri { get; init; } = string.Empty;

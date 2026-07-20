@@ -646,6 +646,40 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
+	[Description("A caller-supplied single-source installation deadline is propagated to the repository transport.")]
+	public void Install_ShouldUseCallerDeadline_WhenOneGitSourceIsSelected() {
+		// Arrange
+		const int startupDeadlineMilliseconds = 5_000;
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		source.Branch = "main";
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		KnowledgeTransportRequest? observedRequest = null;
+		_gitTransport.Synchronize(Arg.Do<KnowledgeTransportRequest>(request => observedRequest = request), repositoryPath)
+			.Returns(new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Failed,
+				null,
+				null,
+				repositoryPath,
+				"synthetic timeout"));
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Install(
+			"git-source",
+			startupDeadlineMilliseconds,
+			CancellationToken.None);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the synthetic transport failure must remain visible to the startup caller");
+		observedRequest.Should().NotBeNull(
+			because: "the selected Git source must be handed to its repository transport");
+		observedRequest!.TransportDeadlineMilliseconds.Should().Be(startupDeadlineMilliseconds,
+			because: "a bounded MCP startup must not silently expand to the ordinary thirty-second operation deadline");
+	}
+
+	[Test]
 	[Description("A discovered Git default branch is persisted with targeted compare-and-swap only after successful repository validation.")]
 	public void Install_ShouldPersistDiscoveredGitBranch_AfterSuccessfulValidation() {
 		// Arrange

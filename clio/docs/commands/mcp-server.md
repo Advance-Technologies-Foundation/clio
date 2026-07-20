@@ -47,21 +47,11 @@ and skill/plugin versions — never prompts, secrets, tokens, customer data, or 
 content. Spooled events are pruned after at most 30 days locally; the collected metrics are
 retained up to 1 year server-side.
 
-Available MCP guidance resources:
-- docs://mcp/guides/app-modeling
-- docs://mcp/guides/data-bindings
-- docs://mcp/guides/existing-app-maintenance
-- docs://mcp/guides/page-schema-handlers
-- docs://mcp/guides/page-schema-sdk-common
-- docs://mcp/guides/page-schema-validators
-
-Preferred guidance access:
-- get-guidance {"name":"app-modeling"}
-- get-guidance {"name":"data-bindings"}
-- get-guidance {"name":"existing-app-maintenance"}
-- get-guidance {"name":"page-schema-handlers"}
-- get-guidance {"name":"page-schema-sdk-common"}
-- get-guidance {"name":"page-schema-validators"}
+Guidance is discovered from active trusted knowledge libraries rather than a list compiled into Clio.
+Call `get-guidance` with an unknown name to receive `availableGuides`, or use MCP `resources/list` to
+receive canonical resource URIs together with publisher-owned titles and descriptions. Read a
+canonical `docs://knowledge/<library-id>/<item-id>` URI through `resources/read`; publisher-declared
+legacy `docs://mcp/guides/...` aliases remain readable during migration.
 
 External knowledge delivery is configured visibly under `knowledge` in Clio's `appsettings.json`.
 The section contains `root-path`, a `sources` map, and optional `topic-pins`. Each trusted source
@@ -74,18 +64,18 @@ default branch only after a successful install/update, then records the exact co
 commit for every installed generation. Information and update-availability checks never mutate
 source configuration.
 
-Both MCP hosts bootstrap one built-in source while they begin serving requests: `creatio-curated`
+Both MCP hosts bootstrap one built-in source before serving requests: `creatio-curated`
 (`com.creatio.clio`) follows the `master` branch of
 `https://github.com/Advance-Technologies-Foundation/clio-knowledge.git` as an authoritative source
 with priority `100`. When the source is absent, Clio adds it and installs its Git checkout. A valid
 local checkout is reused without contacting Git, so ordinary MCP restarts remain local-only. A
-missing checkout is cloned in the background so the MCP protocol handshake is never delayed by
-Git; curated guidance becomes available to the running host as soon as installation completes. An
+missing checkout gets a five-second startup installation budget before the MCP protocol handshake
+completes, so mandatory first-request guidance is available whenever that bounded bootstrap succeeds. An
 older alias for the same library is normalized to `creatio-curated` and its checkout is moved to
 the canonical source cache instead of cloned again. The source cannot be removed;
 set `enabled: false` or run `disable-knowledge-source --alias creatio-curated` to opt out. That
-disabled state survives future Clio updates and MCP starts. A failed first clone is logged as a
-warning and does not prevent MCP from starting; retry with
+disabled state survives future Clio updates and MCP starts. A failed or timed-out first clone is
+logged as a warning and does not prevent MCP from starting; retry with
 `install-knowledge --source creatio-curated` when connectivity returns.
 
 Signing trust is scoped per source so independent publishers can use different keys. The configured
@@ -122,9 +112,12 @@ compares source activation/configuration on every lookup,
 so an update, enable, or disable becomes visible without restarting MCP. A rejected update leaves
 the last-known-good generation active for that source.
 `info-knowledge` is local-only unless CLI `--check-updates` or MCP `checkUpdates: true` is supplied.
+Clio contains the delivery and resolution mechanics only; article text, stable item/topic identities,
+titles, descriptions, and legacy URI declarations belong to the knowledge libraries.
 Deleting or invalidating the disk cache stops in-memory external serving on the next lookup. With
 no verified active bundle, external guide lookups return typed `guidance-unavailable`; guidance that
-remains embedded in the current Clio build is unaffected.
+is unavailable from active knowledge libraries has no embedded article fallback. CLI help and other
+mechanical resources remain available from Clio itself.
 
 ## Synopsis
 
@@ -151,17 +144,9 @@ Bootstrap an existing-app or page workflow from the authoritative contract befor
 Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
 Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating raw.body.
 
-Use your MCP client to call get-guidance {"name":"page-schema-validators"}.
-Read the canonical validator authoring guide through a tool call instead of relying on docs:// URI routing in the client.
-
-Use your MCP client to call get-guidance {"name":"page-schema-handlers"}.
-Read the canonical handler authoring guide through a tool call before editing SCHEMA_HANDLERS in raw page bodies.
-
-Use your MCP client to call get-guidance {"name":"page-schema-sdk-common"}.
-Read the canonical page-schema SDK guide through a tool call before adding or editing @creatio-devkit/common usage in raw page bodies.
-
-Use your MCP client to call get-guidance {"name":"data-bindings"}.
-Read the canonical lookup seeding and binding verification guide before choosing between sync-schemas, DB-first bindings, and local binding artifacts.
+Use your MCP client to call get-guidance with an unknown name, inspect `availableGuides`, then call
+get-guidance again with the selected name.
+    Discover and read the currently installed publisher-owned guidance catalog.
 ```
 
 ## Prerequisites
@@ -178,7 +163,7 @@ Read the canonical lookup seeding and binding verification guide before choosing
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
 - For Freedom UI page-body handler, validator, or `@creatio-devkit/common` page-schema work, prefer get-guidance instead of relying on client-specific docs:// resource routing
-- For lookup seeding or binding artifact work, prefer get-guidance {"name":"data-bindings"} for workflow selection and keep get-tool-contract authoritative for exact field names
+- Use get-guidance or resources/list to discover applicable installed knowledge; keep get-tool-contract authoritative for exact tool field names
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings

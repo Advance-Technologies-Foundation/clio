@@ -91,6 +91,7 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 	private readonly Dictionary<string, FailedActivation> _failed = new(StringComparer.OrdinalIgnoreCase);
 	private IReadOnlyDictionary<string, string> _observedTopicPins = new Dictionary<string, string>(
 		StringComparer.Ordinal);
+	private int _completedActivation;
 
 	public KnowledgeMultiSourceActivator(
 		IKnowledgeBundleRuntime runtime,
@@ -120,8 +121,16 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 
 	public void EnsureActivated() {
 		if (!Monitor.TryEnter(_activationLock)) {
-			return;
+			if (Volatile.Read(ref _completedActivation) == 1) {
+				return;
+			}
+			Monitor.Enter(_activationLock);
+			if (Volatile.Read(ref _completedActivation) == 1) {
+				Monitor.Exit(_activationLock);
+				return;
+			}
 		}
+		bool completedSnapshot = false;
 		try {
 			try {
 				KnowledgeConfiguration configuration = _configurationProvider.GetCurrent();
@@ -207,6 +216,7 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 					_observed.Remove(alias);
 				}
 				LastDiagnostic = diagnostics.Count == 0 ? null : string.Join(" ", diagnostics);
+				completedSnapshot = true;
 			} catch (Exception exception) when (exception is IOException
 					or UnauthorizedAccessException
 					or InvalidOperationException
@@ -217,8 +227,12 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 				_observed.Clear();
 				_observedGitConfiguration.Clear();
 				_failed.Clear();
+				Volatile.Write(ref _completedActivation, 0);
 			}
 		} finally {
+			if (completedSnapshot) {
+				Volatile.Write(ref _completedActivation, 1);
+			}
 			Monitor.Exit(_activationLock);
 		}
 	}

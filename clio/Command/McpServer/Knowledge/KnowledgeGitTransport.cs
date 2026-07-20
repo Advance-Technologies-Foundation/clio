@@ -336,10 +336,10 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 	}
 
 	private void ValidateCheckout(string repositoryPath, Stopwatch operation, TimeSpan deadline) {
-		string status = ExecuteGit(repositoryPath, "status --porcelain --untracked-files=no",
+		string status = ExecuteGit(repositoryPath, "status --porcelain --untracked-files=all",
 			GetRemainingTimeout(operation, deadline)).StandardOutput;
 		if (!string.IsNullOrWhiteSpace(status)) {
-			throw new InvalidDataException("Git knowledge checkout contains modified tracked files.");
+			throw new InvalidDataException("Git knowledge checkout contains modified or untracked files.");
 		}
 		string index = ExecuteGit(repositoryPath, "ls-files --stage",
 			GetRemainingTimeout(operation, deadline)).StandardOutput;

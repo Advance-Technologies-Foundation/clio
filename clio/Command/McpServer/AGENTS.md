@@ -115,7 +115,7 @@ a 5-minute in-process cache. Any failure class (HTTP error, missing CoreVersion,
 non-SemVer string, cliogate < `2.0.0.32`, no active environment) degrades softly
 to `latest`, and the MCP response carries the `resolvedFrom` marker
 (`"environment"` | `"environment-superset"` | `"latest-fallback"`) so AI can interpret the result correctly
-(see `Resources/PageModificationGuidanceResource.cs` for the guidance text).
+(see the externally delivered `page-modification` knowledge article for the guidance text).
 
 The soft degrade keeps the tool from erroring, but it does NOT license the agent
 to proceed blindly. On `latest-fallback` the server instructions
@@ -331,11 +331,8 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   `ComponentDocumentationLoader`) is reused verbatim.
 - **The surface ships enabled on every install.** `RequestInfoTool` (`get-request-info`) is a
   resident core tool in `McpCoreToolProfile.CoreToolTypes`; the `ListPrintablesTool` probe is
-  non-resident and dispatched through `clio-run`; the `WhenToUseRequestsGuidanceResource` guide is a
-  plain `GuidanceCatalog` entry, and the routing map plus the three always-on page guides
-  (`PageModificationGuidanceResource` with its run-process GATE row, `MobilePageGuidanceResource`
-  with its request-catalog pointer, `PageSchemaHandlersGuidanceResource` with its "Standard handler
-  parameter catalog" pointers) reference the request surface as static article content.
+  non-resident and dispatched through `clio-run`; request-selection and page-authoring guidance is
+  delivered by active trusted knowledge libraries and discovered through `get-guidance` or `resources/list`.
   `ToolContractGetTool` carries the curated `BuildRequestInfo` contract that names `get-request-info`
   as the authoritative contract. The `when-to-use-requests` guide owns the request-selection decision
   rules and the catalog discipline; handler mechanics stay in `page-schema-handlers` (never duplicate).
@@ -436,7 +433,7 @@ absent (mobile entries without bindings) and both can be empty (the
 legacy `properties: {}` block on a wrapped-shape entry). AI must look at
 both fields, not just `properties`, when generating `viewConfigDiff`
 inserts or matching output events to handler `request` strings — see the
-canonical guidance in `Resources/PageModificationGuidanceResource.cs`.
+canonical guidance in the externally delivered `page-modification` knowledge article.
 
 List-mode search (`ComponentInfoGrouping.Matches`) inspects the wrapped
 shape too: it walks every `inputs`/`outputs` key and the well-known

@@ -243,11 +243,11 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 			itemId,
 			$"docs://knowledge/{libraryId}/{itemId}",
 			yaml,
-			libraryId,
-			itemId,
-			itemId,
-			KnowledgeReferenceExampleService.ReferenceExampleRole,
-			$"catalog/reference-examples/{itemId}.yaml");
+			LibraryId: libraryId,
+			ItemId: itemId,
+			TopicId: itemId,
+			Role: KnowledgeReferenceExampleService.ReferenceExampleRole,
+			LocalPath: $"catalog/reference-examples/{itemId}.yaml");
 		KnowledgeArticleProvenance provenance = new(
 			sourceAlias,
 			libraryId,

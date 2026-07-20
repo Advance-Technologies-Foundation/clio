@@ -283,8 +283,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		AspNetWebApplication app = builder.Build();
-		Task<CuratedKnowledgeBootstrapResult> curatedKnowledgeBootstrap =
-			McpServerCommand.BootstrapCuratedKnowledgeAsync(
+		McpServerCommand.BootstrapCuratedKnowledge(
 			app.Services.GetRequiredService<ICuratedKnowledgeBootstrapService>(),
 			ConsoleLogger.Instance);
 
@@ -347,13 +346,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 		ConsoleLogger.Instance.WriteInfo(
 			$"MCP HTTP server listening on http://{options.Host}:{options.Port}{options.Path}");
-		try {
-			app.Run();
-		} finally {
-			McpServerCommand.DrainCuratedKnowledgeBootstrapAsync(
-				curatedKnowledgeBootstrap,
-				ConsoleLogger.Instance).GetAwaiter().GetResult();
-		}
+		app.Run();
 		return 0;
 	}
 

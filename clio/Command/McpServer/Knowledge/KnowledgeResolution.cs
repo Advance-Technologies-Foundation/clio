@@ -68,7 +68,7 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles
 				.Where(article => article.LegacyUris?.Contains(identifier, StringComparer.Ordinal) == true)
-				.Select(article => (library, article)))
+				.Select(article => (Library: library, Article: article)))
 			.ToArray();
 		return matches.Length switch {
 			0 => NotFound(libraries.Count == 0 ? null : libraries.Max(library => library.Sequence)),
@@ -88,9 +88,10 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles)
 			.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal))
-			.Select(article => article.TopicId)
+			.SelectMany(article => new[] { article.ItemId, article.TopicId })
+			.Where(identifier => !string.IsNullOrWhiteSpace(identifier))
 			.Distinct(StringComparer.Ordinal)
-			.OrderBy(topic => topic, StringComparer.Ordinal)
+			.OrderBy(identifier => identifier, StringComparer.Ordinal)
 			.ToArray();
 	}
 
@@ -109,25 +110,62 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 	}
 
 	private static KnowledgeArticleLookup FindTopic(
-		string topicId,
+		string identifier,
 		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
 		IReadOnlyDictionary<string, string> topicPins) {
-		KnowledgeLibrarySnapshot[] candidates = libraries
+		(KnowledgeLibrarySnapshot Library, KnowledgeArticle Article)[] namedArticles = libraries
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
-			.Where(library => library.Articles.Any(article =>
-				string.Equals(article.TopicId, topicId, StringComparison.Ordinal)
-				&& string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal)))
+			.SelectMany(library => library.Articles
+				.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal)
+					&& (string.Equals(article.TopicId, identifier, StringComparison.Ordinal)
+						|| string.Equals(article.ItemId, identifier, StringComparison.Ordinal)))
+				.Select(article => (library, article)))
 			.ToArray();
-		if (candidates.Length == 0) {
+		if (namedArticles.Length == 0) {
 			return NotFound(libraries.Count == 0 ? null : libraries.Max(library => library.Sequence));
 		}
+		string[] canonicalTopics = namedArticles
+			.Select(match => match.Article.TopicId)
+			.Where(topicId => !string.IsNullOrWhiteSpace(topicId))
+			.Distinct(StringComparer.Ordinal)
+			.OrderBy(topicId => topicId, StringComparer.Ordinal)
+			.ToArray();
+		if (canonicalTopics.Length != 1) {
+			return Ambiguous(
+				$"Knowledge name '{identifier}' maps to multiple logical topics: "
+				+ string.Join(", ", canonicalTopics)
+				+ ". Use a namespaced knowledge URI.");
+		}
+		string canonicalTopic = canonicalTopics[0];
+		(KnowledgeLibrarySnapshot Library, KnowledgeArticle Article)[] matches = libraries
+			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
+			.SelectMany(library => library.Articles
+				.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal)
+					&& string.Equals(article.TopicId, canonicalTopic, StringComparison.Ordinal))
+				.Select(article => (library, article)))
+			.ToArray();
+		string[] duplicateLibraries = matches
+			.GroupBy(match => match.Library.LibraryId, StringComparer.Ordinal)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.OrderBy(value => value, StringComparer.Ordinal)
+			.ToArray();
+		if (duplicateLibraries.Length > 0) {
+			return Ambiguous(
+				$"Knowledge name '{identifier}' matches multiple guidance items in libraries: "
+				+ string.Join(", ", duplicateLibraries)
+				+ ". Use a namespaced knowledge URI.");
+		}
+		KnowledgeLibrarySnapshot[] candidates = matches.Select(match => match.Library).ToArray();
 
-		if (topicPins.TryGetValue(topicId, out string? pinnedLibraryId)) {
+		if (topicPins.TryGetValue(canonicalTopic, out string? pinnedLibraryId)
+				|| (!string.Equals(canonicalTopic, identifier, StringComparison.Ordinal)
+					&& topicPins.TryGetValue(identifier, out pinnedLibraryId))) {
 			KnowledgeLibrarySnapshot? pinned = candidates.SingleOrDefault(candidate =>
 				string.Equals(candidate.LibraryId, pinnedLibraryId, StringComparison.Ordinal));
 			return pinned is null
-				? Ambiguous($"Topic '{topicId}' is pinned to unavailable or ineligible library '{pinnedLibraryId}'.")
-				: Active(SelectTopicArticle(pinned, topicId), pinned);
+				? Ambiguous($"Knowledge topic '{canonicalTopic}' is pinned to unavailable or ineligible library '{pinnedLibraryId}'.")
+				: Active(SelectNamedArticle(matches, pinned), pinned);
 		}
 
 		KnowledgeLibrarySnapshot[] authoritative = candidates
@@ -142,17 +180,17 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 			.ToArray();
 		if (winners.Length != 1) {
 			return Ambiguous(
-				$"Topic '{topicId}' is ambiguous between equally prioritized libraries: "
+				$"Knowledge topic '{canonicalTopic}' is ambiguous between equally prioritized libraries: "
 				+ string.Join(", ", winners.Select(winner => winner.LibraryId).OrderBy(value => value, StringComparer.Ordinal))
 				+ ". Configure a topic pin or distinct priorities.");
 		}
-		return Active(SelectTopicArticle(winners[0], topicId), winners[0]);
+		return Active(SelectNamedArticle(matches, winners[0]), winners[0]);
 	}
 
-	private static KnowledgeArticle SelectTopicArticle(KnowledgeLibrarySnapshot library, string topicId) =>
-		library.Articles.Single(article =>
-			string.Equals(article.TopicId, topicId, StringComparison.Ordinal)
-			&& string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal));
+	private static KnowledgeArticle SelectNamedArticle(
+		IReadOnlyCollection<(KnowledgeLibrarySnapshot Library, KnowledgeArticle Article)> matches,
+		KnowledgeLibrarySnapshot library) =>
+		matches.Single(match => string.Equals(match.Library.LibraryId, library.LibraryId, StringComparison.Ordinal)).Article;
 
 	private static KnowledgeArticleLookup Active(KnowledgeArticle article, KnowledgeLibrarySnapshot library) =>
 		new(

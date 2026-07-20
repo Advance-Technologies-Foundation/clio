@@ -54,8 +54,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			new Version(8, 1, 0, 86),
 			new Version(1, 0, 0),
-			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
-			new Dictionary<string, string>(StringComparer.Ordinal) { [TestArticleName] = TestArticleUri }));
+			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		_container = services.BuildServiceProvider();
@@ -202,6 +201,30 @@ public sealed class KnowledgeBundleRuntimeTests {
 			because: "duplicate logical declarations are a signed manifest contract violation");
 		result.Diagnostic.Should().Contain("topic and role",
 			because: "publishers need an actionable explanation of the conflicting identity pair");
+	}
+
+	[TestCase("topicId", "Invalid Topic")]
+	[TestCase("role", "unsupported")]
+	[TestCase("title", "Unsafe\u001btitle")]
+	[TestCase("description", "Unsafe\u0007description")]
+	[Description("V1 validation rejects malformed publisher discovery identity and display metadata.")]
+	public void Validate_ShouldRejectMalformedDiscoveryMetadata_WhenV1DescriptorIsInvalid(
+		string property,
+		string value) {
+		// Arrange
+		using MemoryStream candidate = MutateV1AndResign((manifest, _) =>
+			manifest["resources"]!.AsArray()[0]![property] = value);
+
+		// Act
+		KnowledgeBundleValidationResult result = _runtime.Validate(
+			candidate,
+			expectedLibraryId: "com.example.partner");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "MCP discovery must not publish unstable identifiers, unsupported roles, or terminal control characters");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "malformed signed descriptors violate the v1 content contract");
 	}
 
 	[Test]
@@ -556,57 +579,6 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
-	[Description("Rejects a self-consistent signed bundle that changes the stable catalog URI and retains active guidance.")]
-	public void Activate_ShouldRetainActiveBundle_WhenResourceUriDiffersFromCatalog() {
-		// Arrange
-		ActivateValid();
-		using MemoryStream candidate = MutateAndResign(manifest => {
-			const string mismatchedUri = "docs://synthetic/guides/wrong";
-			manifest["requirements"]!["resourceUris"]![0] = mismatchedUri;
-			manifest["resources"]![0]!["uri"] = mismatchedUri;
-		});
-
-		// Act
-		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
-
-		// Assert
-		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
-			because: "a producer-signed URI cannot override Clio's stable resource identity");
-		result.ActiveSequence.Should().Be(1,
-			because: "catalog identity rejection must retain the last-known-good bundle");
-	}
-
-	[Test]
-	[Description("Rejects a correctly signed bundle that omits one stable external guidance catalog entry.")]
-	public void Activate_ShouldRejectCandidate_WhenStableCatalogResourceIsMissing() {
-		// Arrange
-		ServiceCollection services = new();
-		services.AddSingleton(_trustStore);
-		services.AddSingleton(new KnowledgeBundleClientCapabilities(
-			new Version(8, 1, 0),
-			new Version(1, 0, 0),
-			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
-			new Dictionary<string, string>(StringComparer.Ordinal) {
-				[TestArticleName] = TestArticleUri,
-				["guide-b"] = "docs://mcp/guides/guide-b"
-			}));
-		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
-		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
-		using ServiceProvider partialCatalogContainer = services.BuildServiceProvider();
-		IKnowledgeBundleRuntime runtime = partialCatalogContainer.GetRequiredService<IKnowledgeBundleRuntime>();
-		using MemoryStream candidate = ValidCandidate();
-
-		// Act
-		KnowledgeBundleActivationResult result = runtime.Activate(candidate);
-
-		// Assert
-		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
-			because: "an active bundle must cover the complete stable external catalog atomically");
-		runtime.ActiveSequence.Should().BeNull(
-			because: "partial catalog coverage must not publish a degraded active snapshot");
-	}
-
-	[Test]
 	[Description("Activates only increasing bundle sequences and rejects replay of equal or older candidates.")]
 	public void Activate_ShouldAdvanceOnly_WhenSequenceIsGreater() {
 		// Arrange
@@ -818,10 +790,10 @@ public sealed class KnowledgeBundleRuntimeTests {
 			"guide",
 			"docs://knowledge/com.example.partner/guide",
 			text,
-			"com.example.partner",
-			"guide",
-			"example.guide",
-			"guidance")]);
+			LibraryId: "com.example.partner",
+			ItemId: "guide",
+			TopicId: "example.guide",
+			Role: "guidance")]);
 
 	private MemoryStream MutateAndResign(Action<JsonObject> mutateManifest) => MutateCandidate(entries => {
 		JsonObject manifest = JsonNode.Parse(entries["manifest.json"])!.AsObject();
@@ -929,6 +901,8 @@ public sealed class KnowledgeBundleRuntimeTests {
 					itemId = TestArticleName,
 					topicId = "topic-a",
 					role = "guidance",
+					title = "Synthetic guide",
+					description = "Synthetic discovery metadata.",
 					uri,
 					legacyUris = new[] { TestArticleUri },
 					path = TestArticlePath,

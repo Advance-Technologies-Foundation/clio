@@ -109,6 +109,10 @@ internal interface IKnowledgeSourceManagementService {
 	/// Installs knowledge for one configured source or all enabled sources.
 	/// </summary>
 	KnowledgeSourceBatchResult Install(string? sourceAlias, CancellationToken cancellationToken = default);
+	KnowledgeSourceBatchResult Install(
+		string? sourceAlias,
+		int operationDeadlineMilliseconds,
+		CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Updates knowledge for one configured source or all enabled sources.

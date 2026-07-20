@@ -350,8 +350,7 @@ internal sealed class UnavailableKnowledgeBundleRuntime : IKnowledgeBundleRuntim
 internal sealed record KnowledgeBundleClientCapabilities(
 	Version ClioVersion,
 	Version McpToolContractVersion,
-	IReadOnlySet<string> Tools,
-	IReadOnlyDictionary<string, string> GuidanceResources);
+	IReadOnlySet<string> Tools);
 
 internal enum KnowledgeBundleActivationStatus {
 	Activated,
@@ -393,9 +392,20 @@ internal sealed record KnowledgeArticle(
 	string TopicId = "",
 	string Role = "guidance",
 	string? LocalPath = null,
-	IReadOnlyList<string>? LegacyUris = null) {
+	IReadOnlyList<string>? LegacyUris = null,
+	string Title = "",
+	string Description = "",
+	string MediaType = "text/plain",
+	IReadOnlyList<string>? RequiredFeatures = null) {
 	internal const string DefaultRole = "guidance";
 }
+
+internal sealed record KnowledgeGuidanceDescriptor(
+	string Name,
+	string Title,
+	string Description,
+	string Uri,
+	string MediaType);
 
 internal sealed record KnowledgeArticleProvenance(
 	string SourceAlias,

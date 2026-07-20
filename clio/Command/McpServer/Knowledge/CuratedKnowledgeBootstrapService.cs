@@ -16,6 +16,7 @@ internal static class CuratedKnowledgeSourceDefaults {
 	internal const string Branch = "master";
 	internal const string LegacyAlias = "creatio-poc";
 	internal const int Priority = 100;
+	internal const int StartupInstallDeadlineMilliseconds = 5_000;
 
 	internal static KnowledgeSourceConfiguration CreateConfiguration() => new() {
 		LibraryId = LibraryId,
@@ -38,7 +39,7 @@ public sealed record CuratedKnowledgeBootstrapResult(
 	string Message);
 
 /// <summary>
-/// Ensures Clio's built-in curated knowledge source is configured and installed without delaying MCP transport startup.
+/// Ensures Clio's built-in curated knowledge source is configured and installed before MCP serves requests.
 /// </summary>
 public interface ICuratedKnowledgeBootstrapService {
 	/// <summary>
@@ -50,7 +51,7 @@ public interface ICuratedKnowledgeBootstrapService {
 	/// <summary>
 	/// Uses a valid local checkout or installs the source previously prepared by <see cref="Prepare"/>.
 	/// </summary>
-	/// <param name="cancellationToken">Stops background installation work when requested.</param>
+	/// <param name="cancellationToken">Stops bounded startup installation work when requested.</param>
 	/// <returns>A non-throwing installation result.</returns>
 	CuratedKnowledgeBootstrapResult InstallPreparedSource(CancellationToken cancellationToken = default);
 
@@ -105,7 +106,7 @@ internal sealed class CuratedKnowledgeBootstrapService(
 				true,
 				true,
 				false,
-				$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' is configured; local installation continues in the background.");
+				$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' is configured and ready for installation.");
 		} catch (Exception exception) when (exception is not OutOfMemoryException) {
 			return Failure(exception);
 		}
@@ -154,6 +155,7 @@ internal sealed class CuratedKnowledgeBootstrapService(
 
 			KnowledgeSourceBatchResult installation = sourceManagementService.Install(
 				CuratedKnowledgeSourceDefaults.Alias,
+				CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
 				cancellationToken);
 			KnowledgeSourceOperationResult? operation = installation.Sources.SingleOrDefault();
 			if (installation.Success && operation is { Success: true }) {

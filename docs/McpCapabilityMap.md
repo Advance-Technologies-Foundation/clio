@@ -27,8 +27,9 @@ is discovered through `get-tool-contract`, not `tools/list`:
 - the full invokable catalog (~137 tools) indexed by `get-tool-contract` (each entry carries `resident`
   and `destructive` flags, plus `aliases` when a legacy name maps to it)
 - `67` prompts
-- `92` resources
-- `1` resource template
+- a small fixed set of CLI-help and mechanical resources
+- a dynamic, paginated resource catalog supplied by active trusted knowledge libraries
+- generic canonical and publisher-declared legacy resource templates
 
 Important shape of the surface:
 
@@ -746,7 +747,8 @@ Important observation:
 
 ## Resource Layer: What The AI Can Read
 
-The MCP resource surface is still small, but it now has one MCP-native guidance article in addition to CLI help.
+Clio owns a small fixed mechanics surface. Guidance and supporting reference content are discovered
+at runtime from active trusted knowledge libraries, so the total resource count is intentionally dynamic.
 
 - `docs://help/command/{commandName}`
   Generic command help lookup by CLI verb name or alias
@@ -754,18 +756,21 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for the restart command
 - `docs://help/flushdb`
   Dedicated help resource for Redis flush help
-- `docs://mcp/guides/app-modeling`
-  Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
-- `docs://mcp/guides/theming`
-  Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment
+- `docs://knowledge/{libraryId}/{itemId}`
+  Canonical identity for one installed publisher-owned knowledge item
+- `docs://mcp/guides/{...}` and `docs://mcp/references/{...}`
+  Generic compatibility routes resolved only from legacy URIs declared by the publisher
+- `resources/list`
+  Paginated discovery for active guidance and supporting references, including publisher-owned title and description metadata
 
 How an external AI should interpret resources:
 
-- most resources are command-centric, but the modeling guide is intentionally cross-tool
-- they are good for understanding CLI semantics
-- they can now also carry stable MCP-owned workflow guardrails that would otherwise be duplicated in consumer AGENTS instructions
+- fixed Clio resources are command-centric and explain delivery mechanics
+- knowledge-library resources carry workflow and domain guidance without requiring a Clio release
+- source priority, participation, and topic pins resolve competing providers while namespaced URIs retain exact access
 
-That means prompts, tool descriptions, and the modeling guide together carry the MCP-specific guidance surface.
+That means prompts and tool descriptions advertise when knowledge is needed, while active external
+libraries own the detailed article content and discovery metadata.
 
 ## Instruction Ownership: What Should Move Into clio MCP
 
@@ -881,7 +886,7 @@ If you are integrating another AI client with this MCP, the most reliable mental
 3. Prefer the structured read tools before mutating anything.
 4. Prefer batch tools such as `sync-schemas` and `sync-pages` when the workflow is already known.
 5. Use prompts as recipes, not just as help text.
-6. Use resources both for CLI help and for stable cross-tool modeling guidance such as `docs://mcp/guides/app-modeling`.
+6. Use fixed resources for CLI help and discover current cross-tool guidance through `resources/list` or `get-guidance` from active trusted knowledge libraries.
 7. Expect destructive power and local-machine side effects in many tools.
 
 ## Most Natural AI Workflows

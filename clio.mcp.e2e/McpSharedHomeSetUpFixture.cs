@@ -1,18 +1,20 @@
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// Assembly-wide one-time guard that migrates the shared clio home exactly once, serially,
-/// before any parallel fixture starts.
+/// Assembly-wide guard that copies the runner's Clio settings into a suite-owned home and migrates
+/// that isolated copy exactly once before any parallel fixture starts.
 /// </summary>
 /// <remarks>
 /// Vetted <see cref="McpContractFixtureBase"/> fixtures that do NOT override
 /// <see cref="McpContractFixtureBase.ConfigureMcpServerSettings"/> (PackageHotfix,
 /// AddPackageDependency, CompileCreatio, DeployCreatio, RestoreDb, DownloadConfiguration and the
 /// <c>*ContractToolE2ETests</c> cohort) let the child <c>clio mcp-server</c> inherit the runner's
-/// global <c>CLIO_HOME</c>. Under <c>NumberOfTestWorkers=2</c> with <c>[Parallelizable]</c>, two such
+/// suite-owned <c>CLIO_HOME</c>. Under <c>NumberOfTestWorkers=2</c> with <c>[Parallelizable]</c>, two such
 /// fixtures' <c>[OneTimeSetUp]</c> would otherwise start two servers concurrently, and each resolves
 /// settings via <c>SettingsBootstrapService.Load()</c> with repairs enabled — which WRITES
 /// <c>appsettings.json</c> when the shared home is missing (first run) or legacy
@@ -23,9 +25,9 @@ namespace Clio.Mcp.E2E;
 /// Starting one server here first performs that create/migrate once while nothing else runs, so by
 /// the time the parallel cohort starts the shared home is present and already at the current
 /// settings version — every later load is read-only and the cross-process write race never opens.
-/// The fixture also temporarily configures the built-in curated source as disabled and restores the
-/// exact original file at assembly teardown. This prevents an external GitHub clone from becoming a
-/// hidden prerequisite of unrelated MCP mechanics tests while preserving the runner's environments.
+/// The child-session harness configures the built-in curated source as disabled in the isolated
+/// copy. This prevents an external GitHub clone from becoming a hidden prerequisite while the
+/// runner's real settings file is never modified or restored.
 /// Fixtures that use an isolated home (OAuth, the canaries) are unaffected: they write their own
 /// per-fixture home and never touch the global one.
 ///
@@ -34,17 +36,33 @@ namespace Clio.Mcp.E2E;
 /// </remarks>
 [SetUpFixture]
 public sealed class McpSharedHomeSetUpFixture {
-	private TemporaryClioSettingsOverride? _curatedSourceOverride;
+	private string? _sharedClioHome;
+	private string? _isolatedSettingsPath;
 
 	[OneTimeSetUp]
 	public async Task MigrateSharedClioHomeOnceAsync() {
-		// Mirror McpContractFixtureBase.StartSharedMcpServerAsync with the default (non-overridden)
-		// settings so this server resolves the SAME global home the non-isolated fixtures use.
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		_curatedSourceOverride = TemporaryClioSettingsOverride.DisableCuratedKnowledgeBootstrap(
+		string sourceSettingsPath = TemporaryClioSettingsOverride.GetClioAppSettingsPath(
 			settings.ClioProcessPath,
 			settings.ProcessEnvironmentVariables);
+		_sharedClioHome = Path.Combine(Path.GetTempPath(), $"clio-mcp-e2e-shared-home-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(_sharedClioHome);
+		ProtectDirectoryForCurrentUser(_sharedClioHome);
+		_isolatedSettingsPath = Path.Combine(_sharedClioHome, "appsettings.json");
+		string sourceContent = File.Exists(sourceSettingsPath) ? File.ReadAllText(sourceSettingsPath) : "{}";
+		JsonObject root = JsonNode.Parse(sourceContent)?.AsObject() ?? new JsonObject();
+		root["knowledge"] = new JsonObject {
+			["root-path"] = Path.Combine(_sharedClioHome, "knowledge"),
+			["sources"] = new JsonObject()
+		};
+		File.WriteAllText(
+			_isolatedSettingsPath,
+			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+		ProtectFileForCurrentUser(_isolatedSettingsPath);
+		TestConfiguration.UseSharedClioHome(_sharedClioHome);
+		settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource startupCts = new(TimeSpan.FromMinutes(5));
 		// Completing the MCP initialize handshake proves the child booted, which is when it resolves
 		// settings and performs the one-time create/migrate write against the shared home.
@@ -53,7 +71,47 @@ public sealed class McpSharedHomeSetUpFixture {
 
 	[OneTimeTearDown]
 	public void RestoreSharedClioHome() {
-		_curatedSourceOverride?.Dispose();
-		_curatedSourceOverride = null;
+		TestConfiguration.ClearSharedClioHome();
+		DeleteSensitiveSettingsFile();
+		if (!string.IsNullOrWhiteSpace(_sharedClioHome) && Directory.Exists(_sharedClioHome)) {
+			try {
+				Directory.Delete(_sharedClioHome, recursive: true);
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
+			}
+		}
+		_sharedClioHome = null;
+		_isolatedSettingsPath = null;
+	}
+
+	private static void ProtectDirectoryForCurrentUser(string path) {
+		if (!OperatingSystem.IsWindows()) {
+			File.SetUnixFileMode(path,
+				UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+		}
+	}
+
+	private static void ProtectFileForCurrentUser(string path) {
+		if (!OperatingSystem.IsWindows()) {
+			File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+		}
+	}
+
+	private void DeleteSensitiveSettingsFile() {
+		if (string.IsNullOrWhiteSpace(_isolatedSettingsPath)) {
+			return;
+		}
+		for (int attempt = 0; attempt < 3 && File.Exists(_isolatedSettingsPath); attempt++) {
+			try {
+				File.Delete(_isolatedSettingsPath);
+			} catch (IOException) when (attempt < 2) {
+				Thread.Sleep(50);
+			} catch (UnauthorizedAccessException) when (attempt < 2) {
+				Thread.Sleep(50);
+			}
+		}
+		if (File.Exists(_isolatedSettingsPath)) {
+			throw new IOException($"Unable to remove the E2E settings copy at '{_isolatedSettingsPath}'.");
+		}
 	}
 }

@@ -565,8 +565,7 @@ public class BindingsModule {
 			new HashSet<string>(StringComparer.Ordinal) {
 				GuidanceGetTool.ToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
-			},
-			GuidanceCatalog.GetExternalResourceUris()));
+			}));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
@@ -1039,7 +1038,10 @@ public class BindingsModule {
 					options.Capabilities.Logging = new();
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+				.WithRequestFilters(filters => {
+					filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors);
+					filters.AddListResourcesFilter(KnowledgeResourceDiscoveryFilter.AppendKnowledgeResources);
+				});
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		return mcpServerBuilder;

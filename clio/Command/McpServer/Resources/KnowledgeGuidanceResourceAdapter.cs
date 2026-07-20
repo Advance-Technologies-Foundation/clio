@@ -24,7 +24,7 @@ internal sealed class KnowledgeGuidanceResourceAdapter : IKnowledgeGuidanceResou
 		return lookup.Status switch {
 			KnowledgeArticleLookupStatus.Active => new TextResourceContents {
 				Uri = lookup.Article!.Uri,
-				MimeType = "text/plain",
+				MimeType = lookup.Article.MediaType,
 				Text = lookup.Article.Text
 			},
 			KnowledgeArticleLookupStatus.Unavailable => throw UnavailableResource(uri),

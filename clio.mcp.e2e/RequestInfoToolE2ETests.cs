@@ -11,8 +11,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the get-request-info MCP tool and its companions (the
-/// when-to-use-requests guide and the list-printables probe) — the request-catalog surface
+/// End-to-end tests for the get-request-info MCP tool and its list-printables companion — the request-catalog surface
 /// that ships unconditionally on every default install. The fixture starts the real clio MCP
 /// server with an isolated <c>CLIO_HOME</c> (hermetic settings: a single known environment,
 /// autoupdate off, and a fixture-owned directory that also hosts the registry fixture file)
@@ -27,13 +26,6 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = RequestInfoTool.ToolName;
-
-	// The four always-on guidance resources whose direct resources/read path is pinned below —
-	// each must carry its request-catalog pointers.
-	private const string RoutingUri = "docs://mcp/guides/routing";
-	private const string PageModificationUri = "docs://mcp/guides/page-modification";
-	private const string MobilePageUri = "docs://mcp/guides/mobile-page-modification";
-	private const string PageSchemaHandlersUri = "docs://mcp/guides/page-schema-handlers";
 
 	/// <summary>
 	/// Offline registry fixture: the pilot parameterless request (no docs, so the detail
@@ -327,74 +319,6 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 			because: "the rejection must not degrade into a full catalog dump");
 	}
 
-	[Test]
-	[Description("The when-to-use-requests guide is advertised and resolves through get-guidance, and the routing map carries the request-wiring row — the request-catalog discovery chain is always available on a default install.")]
-	[AllureTag(ToolName)]
-	[AllureName("when-to-use-requests guidance and routing row resolve on the default surface")]
-	[AllureDescription("Calls get-guidance for when-to-use-requests and the routing map and verifies both carry the request-catalog discovery chain.")]
-	public async Task WhenToUseRequestsGuide_And_RoutingRow_Should_Resolve() {
-		// Arrange
-		await using var context = Arrange();
-
-		// Act
-		GuidanceGetResponse guide = await CallGuidanceAsync(
-			context.Session,
-			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["name"] = "when-to-use-requests" });
-		GuidanceGetResponse routing = await CallGuidanceAsync(
-			context.Session,
-			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["name"] = "routing" });
-
-		// Assert
-		guide.Success.Should().BeTrue(
-			because: "when-to-use-requests is a registered guidance name and must always resolve");
-		guide.Article.Should().NotBeNull(
-			because: "successful guidance lookups return the resolved article over the wire");
-		guide.Article!.Uri.Should().Be("docs://mcp/guides/when-to-use-requests",
-			because: "the canonical article URI must be stable");
-		guide.Article.Text.Should().Contain("get-request-info",
-			because: "the guide's core discipline is fetching the request contract from the catalog tool");
-		routing.Success.Should().BeTrue(
-			because: "the routing map is a core guide");
-		routing.Article!.Text.Should().Contain("get-request-info",
-			because: "the routing map must route button/menu request wiring to the catalog tool");
-	}
-
-	[Test]
-	[Description("The four always-on guidance resources, read over the DIRECT resources/read MCP path, carry their request-catalog pointers - pinning that the pointers are served on resources/read, not only through get-guidance.")]
-	[AllureTag(ToolName)]
-	[AllureName("guides include request-catalog pointers over resources/read")]
-	[AllureDescription("Reads routing, page-modification, mobile-page-modification and page-schema-handlers over resources/read and verifies each carries its request-catalog pointers.")]
-	public async Task GuidanceResources_Should_Include_RequestCatalog_Pointers_Over_ResourcesRead() {
-		// Arrange
-		await using var context = Arrange();
-		CancellationToken token = context.CancellationTokenSource.Token;
-
-		// Act + Assert
-		TextResourceContents routing = await ReadGuideAsync(context.Session, RoutingUri, token);
-		routing.Text.Should().Contain("get-request-info",
-			because: "the routing map advertises the request catalog over resources/read");
-		routing.Text.Should().Contain("when-to-use-requests",
-			because: "the routing map advertises the request-wiring guide over resources/read");
-
-		TextResourceContents page = await ReadGuideAsync(context.Session, PageModificationUri, token);
-		page.Text.Should().Contain("when-to-use-requests",
-			because: "the page-modification GATE row mandates the request-wiring guide over resources/read");
-		page.Text.Should().Contain("get-request-info",
-			because: "the run-process GATE row names the request catalog over resources/read");
-
-		TextResourceContents mobile = await ReadGuideAsync(context.Session, MobilePageUri, token);
-		mobile.Text.Should().Contain("get-request-info",
-			because: "the mobile run-process entry points at the request catalog over resources/read");
-
-		TextResourceContents handlers = await ReadGuideAsync(context.Session, PageSchemaHandlersUri, token);
-		handlers.Text.Should().Contain("get-request-info",
-			because: "the handler parameter catalog names the request catalog over resources/read");
-		handlers.Text.Should().Contain("when-to-use-requests",
-			because: "the handler catalog intro points at the request-wiring guide over resources/read");
-	}
-
 	private static async Task<RequestInfoResponse> CallRequestInfoAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -411,32 +335,4 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 		return EntitySchemaStructuredResultParser.Extract<RequestInfoResponse>(callResult);
 	}
 
-	private static async Task<GuidanceGetResponse> CallGuidanceAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		IReadOnlyDictionary<string, object?> arguments) {
-		CallToolResult callResult = await session.CallToolAsync(
-			GuidanceGetTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = arguments },
-			cancellationToken);
-		callResult.IsError.Should().NotBeTrue(
-			because: "get-guidance should return a normal MCP tool result envelope for valid request shapes");
-		return EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
-	}
-
-	/// <summary>
-	/// Reads one guidance resource over the raw resources/read MCP path (not the lazy tools/list -> clio-run
-	/// route) and returns its single plain-text article, asserting the URI round-trips.
-	/// </summary>
-	private static async Task<TextResourceContents> ReadGuideAsync(
-		McpServerSession session,
-		string uri,
-		CancellationToken cancellationToken) {
-		ReadResourceResult result = await session.ReadResourceAsync(uri, cancellationToken);
-		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
-			because: "a guidance resource resolves to a single plain-text article over resources/read").Subject;
-		article.Uri.Should().Be(uri,
-			because: "resources/read must preserve the stable guide URI");
-		return article;
-	}
 }

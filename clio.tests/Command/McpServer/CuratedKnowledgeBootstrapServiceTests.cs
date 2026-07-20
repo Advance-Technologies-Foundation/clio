@@ -46,6 +46,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		_management.Install(
 			CuratedKnowledgeSourceDefaults.Alias,
+			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
 			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
 				true,
 				"installed",
@@ -75,6 +76,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				&& source.Participation == KnowledgeSourceParticipation.Authoritative));
 		_management.Received(1).Install(
 			CuratedKnowledgeSourceDefaults.Alias,
+			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
 			Arg.Any<System.Threading.CancellationToken>());
 	}
 
@@ -99,7 +101,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			because: "a valid local checkout is sufficient to serve guidance immediately");
 		result.Message.Should().Contain("local cache",
 			because: "the diagnostic should make clear that startup performed no remote update");
-		_management.DidNotReceiveWithAnyArgs().Install(default!, default);
+		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
 	}
 
 	[Test]
@@ -133,7 +135,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				CuratedKnowledgeSourceDefaults.Alias,
 				Arg.Any<KnowledgeSourceConfiguration>());
 		});
-		_management.DidNotReceiveWithAnyArgs().Install(default!, default);
+		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
 	}
 
 	[Test]
@@ -174,7 +176,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		result.Enabled.Should().BeFalse(
 			because: "the bootstrap result must expose that the kill switch is active");
 		_management.DidNotReceiveWithAnyArgs().GetInfo(default, default, default);
-		_management.DidNotReceiveWithAnyArgs().Install(default!, default);
+		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
 	}
 
 	[Test]
@@ -183,6 +185,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		_management.Install(
 			CuratedKnowledgeSourceDefaults.Alias,
+			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
 			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
 				false,
 				"clone failed",

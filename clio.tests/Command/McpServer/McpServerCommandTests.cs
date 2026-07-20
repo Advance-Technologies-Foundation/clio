@@ -17,35 +17,21 @@ public class McpServerCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Curated knowledge installation runs independently so a slow Git source cannot delay the MCP protocol handshake.")]
-	public async Task BootstrapCuratedKnowledgeAsync_ShouldReturnPendingTask_WithoutBlockingCaller() {
+	[Description("Curated knowledge installation completes before the MCP protocol handshake can expose mandatory guidance.")]
+	public void BootstrapCuratedKnowledge_ShouldCompleteBeforeReturning() {
 		// Arrange
 		ICuratedKnowledgeBootstrapService bootstrap = Substitute.For<ICuratedKnowledgeBootstrapService>();
 		ILogger logger = Substitute.For<ILogger>();
-		using ManualResetEventSlim started = new();
-		using ManualResetEventSlim release = new();
-		bootstrap.Prepare().Returns(new CuratedKnowledgeBootstrapResult(true, true, false, "configured"));
-		bootstrap.InstallPreparedSource().Returns(_ => {
-			started.Set();
-			release.Wait();
-			return new CuratedKnowledgeBootstrapResult(true, true, true, "ready");
-		});
+		bootstrap.Bootstrap(Arg.Any<CancellationToken>())
+			.Returns(new CuratedKnowledgeBootstrapResult(true, true, true, "ready"));
 
 		// Act
-		Task<CuratedKnowledgeBootstrapResult> scheduled =
-			McpServerCommand.BootstrapCuratedKnowledgeAsync(bootstrap, logger);
-		bool workerStarted = started.Wait(TimeSpan.FromSeconds(2));
-		bool wasPending = !scheduled.IsCompleted;
-		release.Set();
-		CuratedKnowledgeBootstrapResult result = await scheduled.WaitAsync(TimeSpan.FromSeconds(2));
+		CuratedKnowledgeBootstrapResult result = McpServerCommand.BootstrapCuratedKnowledge(bootstrap, logger);
 
 		// Assert
-		workerStarted.Should().BeTrue(
-			because: "the background bootstrap must actually begin during host startup");
-		wasPending.Should().BeTrue(
-			because: "the caller must remain free to start the MCP transport while Git work is pending");
 		result.Success.Should().BeTrue(
-			because: "the scheduled bootstrap result must remain observable after the host has started");
+			because: "the host may accept requests only after the local curated source is ready or a bounded failure is known");
+		bootstrap.Received(1).Bootstrap(Arg.Is<CancellationToken>(token => token.CanBeCanceled));
 	}
 
 	[Test]

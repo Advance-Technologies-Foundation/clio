@@ -197,6 +197,36 @@ public sealed class KnowledgeGitTransportTests {
 	}
 
 	[Test]
+	[Description("Installed Git checkout validation rejects untracked files that cannot be attributed to the installed commit.")]
+	public void ValidateInstalledCheckout_ShouldRejectUntrackedFiles() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		KnowledgeSourceConfiguration source = GitSource();
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "installed-untracked", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath);
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
+			ProcessExecutionOptions options = call.Arg<ProcessExecutionOptions>();
+			if (options.Arguments.Contains("remote get-url origin", StringComparison.Ordinal)) {
+				return Task.FromResult(Success(source.Location + "\n"));
+			}
+			if (options.Arguments.Contains("status --porcelain", StringComparison.Ordinal)) {
+				return Task.FromResult(Success("?? guidance/injected.md\n"));
+			}
+			return Task.FromResult(Success());
+		});
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+
+		// Act
+		Action act = () => transport.ValidateInstalledCheckout(source, repositoryPath);
+
+		// Assert
+		act.Should().Throw<InvalidDataException>()
+			.WithMessage("*untracked*",
+				because: "content absent from HEAD must never be served with the installed commit's provenance");
+	}
+
+	[Test]
 	[Description("Git synchronization rejects filesystem links before invoking Git in an existing checkout.")]
 	public void ValidateCheckoutForSynchronization_ShouldRejectReparsePoint_BeforeInvokingGit() {
 		// Arrange

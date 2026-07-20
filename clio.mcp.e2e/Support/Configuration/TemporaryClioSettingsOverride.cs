@@ -1,5 +1,4 @@
 using Clio.Command.McpServer;
-using Clio.Command.McpServer.Knowledge;
 using Newtonsoft.Json.Linq;
 using System.Diagnostics;
 using System.Reflection;
@@ -30,40 +29,6 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 		settings["workspaces-root"] = workspacesRoot;
 		File.WriteAllText(appSettingsPath, settings.ToString(Newtonsoft.Json.Formatting.Indented));
 		return new TemporaryClioSettingsOverride(appSettingsPath, originalContent, true);
-	}
-
-	public static TemporaryClioSettingsOverride DisableCuratedKnowledgeBootstrap(
-		string? clioProcessPath = null,
-		IReadOnlyDictionary<string, string?>? processEnvironmentVariables = null) {
-		string appSettingsPath = GetClioAppSettingsPath(clioProcessPath, processEnvironmentVariables);
-		bool fileExisted = File.Exists(appSettingsPath);
-		string? originalContent = fileExisted ? File.ReadAllText(appSettingsPath) : null;
-		JObject settings = string.IsNullOrWhiteSpace(originalContent) ? new JObject() : JObject.Parse(originalContent);
-		JObject knowledge = settings["knowledge"] as JObject ?? new JObject();
-		settings["knowledge"] = knowledge;
-		JObject sources = knowledge["sources"] as JObject ?? new JObject();
-		knowledge["sources"] = sources;
-		foreach (JProperty duplicate in sources.Properties().Where(property =>
-				!string.Equals(property.Name, CuratedKnowledgeSourceDefaults.Alias, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(
-					(property.Value as JObject)?["library-id"]?.Value<string>(),
-					CuratedKnowledgeSourceDefaults.LibraryId,
-					StringComparison.OrdinalIgnoreCase)).ToArray()) {
-			duplicate.Remove();
-		}
-		JObject curated = new() {
-			["library-id"] = CuratedKnowledgeSourceDefaults.LibraryId,
-			["type"] = "git",
-			["location"] = CuratedKnowledgeSourceDefaults.Location,
-			["branch"] = CuratedKnowledgeSourceDefaults.Branch,
-			["priority"] = CuratedKnowledgeSourceDefaults.Priority,
-			["participation"] = "authoritative",
-			["enabled"] = false
-		};
-		sources[CuratedKnowledgeSourceDefaults.Alias] = curated;
-		Directory.CreateDirectory(Path.GetDirectoryName(appSettingsPath)!);
-		File.WriteAllText(appSettingsPath, settings.ToString(Newtonsoft.Json.Formatting.Indented));
-		return new TemporaryClioSettingsOverride(appSettingsPath, originalContent, fileExisted);
 	}
 
 	public static TemporaryClioSettingsOverride ReplaceContent(

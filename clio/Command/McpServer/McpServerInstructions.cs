@@ -5,7 +5,7 @@ namespace Clio.Command.McpServer;
 /// This is a thin POINTER, not a manual: it carries only a mandatory directive to load the
 /// <c>core-rules</c> guide (the non-negotiable invariants) and the <c>routing</c> guide (task -> guide map)
 /// before any operation, plus the telemetry advertisement. All invariants, the routing table, and detailed
-/// rules live in <c>GuidanceCatalog</c> (loaded lazily on demand) — never duplicate guide content here.
+/// rules live in active trusted knowledge libraries (loaded lazily on demand) — never duplicate guide content here.
 /// </summary>
 internal static class McpServerInstructions
 {

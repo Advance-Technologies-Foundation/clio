@@ -35,8 +35,7 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			new Version(8, 1, 0, 86),
 			new Version(1, 1, 0),
-			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
-			new Dictionary<string, string>(StringComparer.Ordinal)));
+			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
 		_services = services.BuildServiceProvider();
 		_sut = _services.GetRequiredService<IKnowledgeGitRepositoryReader>();
@@ -168,7 +167,11 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 	[TestCase("bundlePath", "content/sample.md", "invalid descriptor")]
 	[TestCase("mediaType", "application/octet-stream", "invalid descriptor")]
 	[TestCase("sourcePath", "guidance/../outside.md", "invalid descriptor")]
-	[Description("Resource paths and media types must conform to the producer schema before files are opened.")]
+	[TestCase("title", "", "invalid descriptor")]
+	[TestCase("title", " padded", "invalid descriptor")]
+	[TestCase("title", "unsafe\u001btitle", "invalid descriptor")]
+	[TestCase("description", "", "invalid descriptor")]
+	[Description("Resource paths, media types, and discovery metadata must conform to the producer schema before files are opened.")]
 	public void TryRead_ShouldRejectRepository_WhenResourceDescriptorViolatesSchema(
 		string property,
 		string value,
@@ -189,7 +192,30 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 		diagnostic.Should().Contain(expectedDiagnostic, because: "the producer contract violation should be identifiable");
 	}
 
+	[Test]
+	[Description("Resource feature requirements use stable feature identifiers.")]
+	public void TryRead_ShouldRejectRepository_WhenRequiredFeatureIsInvalid() {
+		// Arrange
+		JObject manifest = ValidManifest();
+		manifest["resources"]![0]!["requiredFeatures"] = new JArray("Invalid Feature");
+		WriteResource("guidance/sample.md", "content");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = _sut.TryRead(_repositoryPath, LibraryId, out KnowledgeGitRepositorySnapshot? snapshot,
+			out string? diagnostic);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "feature-gated discovery must use stable settings keys shared with Clio feature toggles");
+		snapshot.Should().BeNull(
+			because: "invalid feature requirements must fail before repository content is published");
+		diagnostic.Should().Contain("invalid descriptor",
+			because: "the malformed feature declaration should be identifiable to the publisher");
+	}
+
 	[TestCase("guidance", "catalog/sample.md")]
+	[TestCase("reference", "guidance/sample.md")]
 	[TestCase("advisory", "guidance/sample.md")]
 	[TestCase("capability", "advisories/sample.md")]
 	[TestCase("reference-example", "capabilities/sample.md")]
@@ -286,6 +312,8 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 				["itemId"] = itemId,
 				["topicId"] = $"example.{itemId}",
 				["role"] = "guidance",
+				["title"] = $"Synthetic {itemId}",
+				["description"] = $"Synthetic discovery metadata for {itemId}.",
 				["uri"] = uri,
 				["legacyUris"] = new JArray($"docs://mcp/guides/{itemId}"),
 				["sourcePath"] = resourceCount == 1 ? "guidance/sample.md" : $"guidance/sample-{index}.md",

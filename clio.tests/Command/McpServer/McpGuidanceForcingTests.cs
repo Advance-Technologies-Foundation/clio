@@ -1,11 +1,7 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using System.Text.Json;
 using Clio.Command;
-using Clio.Command.McpServer;
-using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -19,54 +15,6 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
-	private static readonly Regex GuidanceRoute = new(
-		@"get-guidance\s+name=([a-z0-9-]+)",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-	[Test]
-	[Description("Keeps the initialize-time instructions routed through the stable routing guidance identifier.")]
-	public void McpServerInstructions_ShouldRetainStableRoutingPointer_WhenParsed() {
-		// Arrange
-		string instructions = McpServerInstructions.Text;
-
-		// Act
-		string[] names = ExtractGuidanceNames(instructions).ToArray();
-
-		// Assert
-		names.Should().Contain("routing",
-			because: "initialize-time clients need one stable guide-name entry point into external routing");
-		names.Should().Contain("core-rules",
-			because: "initialize-time clients must retain the content-neutral entry point to executable safety rules");
-		instructions.Should().Contain("mandatory on every operation",
-			because: "both bootstrap routes must remain required rather than optional reading");
-		foreach (string name in names) {
-			GuidanceCatalog.TryGet(name, out _).Should().BeTrue(
-				because: $"the initialize-time route '{name}' must resolve without inspecting article content");
-		}
-	}
-
-	[Test]
-	[Description("Ensures every guidance identifier referenced by an MCP tool description resolves through the stable catalog.")]
-	public void McpToolDescriptions_ShouldOnlyReferenceResolvableGuidanceNames_WhenParsed() {
-		// Arrange
-		IEnumerable<string> descriptions = typeof(McpServerInstructions).Assembly.GetTypes()
-			.SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-			.Where(method => method.GetCustomAttribute<McpServerToolAttribute>() is not null)
-			.Select(method => method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description)
-			.Where(description => !string.IsNullOrWhiteSpace(description))!;
-
-		// Act
-		string[] names = descriptions.SelectMany(ExtractGuidanceNames).Distinct().ToArray();
-
-		// Assert
-		names.Should().NotBeEmpty(
-			because: "tool-triggered guidance routing must remain present on the guaranteed description channel");
-		foreach (string name in names) {
-			GuidanceCatalog.TryGet(name, out _).Should().BeTrue(
-				because: $"tool descriptions must not route callers to the dangling identifier '{name}'");
-		}
-	}
-
 	[Test]
 	[Description("Confirms the response types carry a nullable note property so the deterministic compile-not-required signal can be emitted.")]
 	public void ResponseTypes_ShouldExposeNoteProperty_ForDeterministicSignal() {
@@ -168,9 +116,6 @@ public sealed class McpGuidanceForcingTests {
 		newtonsoftWithNote.Should().Contain($"\"note\":\"{CommandExecutionResult.CompileNotRequiredNote}\"",
 			because: "Newtonsoft.Json must emit a populated signal");
 	}
-
-	private static IEnumerable<string> ExtractGuidanceNames(string text) =>
-		GuidanceRoute.Matches(text).Select(match => match.Groups[1].Value);
 
 	private static PageCreateArgs BuildPageCreateArgs() =>
 		new("UsrTestPage", "FormPage", "UsrPackage",

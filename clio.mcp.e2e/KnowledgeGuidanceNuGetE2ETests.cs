@@ -66,6 +66,11 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		});
 		CallToolResult installResult = await CallKnowledgeCommand(
 			context, KnowledgeManagementTools.InstallKnowledgeToolName, new Dictionary<string, object?> { ["source"] = "synthetic" });
+		IList<McpClientResource> discoveredResources = await context.Session.ListResourcesAsync(
+			context.CancellationTokenSource.Token);
+		ReadResourceResult legacyReference = await context.Session.ReadResourceAsync(
+			SyntheticKnowledgeNuGetFixture.SelectedReferenceLegacyUri,
+			context.CancellationTokenSource.Token);
 		(CallToolResult initialCall, GuidanceGetResponse initialResponse) = await CallSelectedGuide(context);
 		ReadResourceResult? initialResourceResult = null;
 		Exception? initialResourceError = null;
@@ -117,6 +122,23 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		// Assert
 		AssertCommandSucceeded(addResult, "the explicitly trusted source should be persisted through clio-run");
 		AssertCommandSucceeded(installResult, "the first verified synthetic package should be installed through clio-run");
+		McpClientResource discoveredGuide = discoveredResources.Should().ContainSingle(resource =>
+			resource.Uri == _fixture.SelectedGuideUri,
+			because: "resources/list must expose each active knowledge article without a compiled resource class").Subject;
+		discoveredGuide.Name.Should().Be(SyntheticKnowledgeNuGetFixture.SelectedGuideName,
+			because: "the publisher-owned item identifier must drive resource discovery");
+		discoveredGuide.Title.Should().Be($"Synthetic {SyntheticKnowledgeNuGetFixture.SelectedGuideName}",
+			because: "the resource title must come from the installed knowledge manifest");
+		discoveredGuide.Description.Should().Be(
+			$"Synthetic discovery metadata for {SyntheticKnowledgeNuGetFixture.SelectedGuideName}.",
+			because: "the resource description must come from the installed knowledge manifest");
+		discoveredResources.Should().ContainSingle(resource =>
+			resource.Name == SyntheticKnowledgeNuGetFixture.SelectedReferenceName,
+			because: "reference-role fragments must be discoverable without becoming get-guidance names");
+		legacyReference.Contents.Should().ContainSingle(
+			because: "one legacy reference URI must resolve exactly one publisher item");
+		legacyReference.Contents.Single().Should().BeOfType<TextResourceContents>(
+				because: "the generic legacy reference template must resolve publisher-declared reference aliases");
 		AssertSuccessfulDelivery(initialCall, initialResponse, _initial, "initial package");
 		initialResourceError.Should().BeNull(
 			because: "the canonical namespaced resource should be readable after verified installation");

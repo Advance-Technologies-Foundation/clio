@@ -57,18 +57,29 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				});
 	}
 
-	public KnowledgeSourceBatchResult Install(string? sourceAlias, CancellationToken cancellationToken = default) => ExecuteLifecycle(
-		sourceAlias,
-		includeDisabledWhenExplicit: false,
-		(alias, source, deadlineMilliseconds) => InstallOrUpdate(
-			alias, source, isUpdate: false, deadlineMilliseconds),
-		cancellationToken);
+	public KnowledgeSourceBatchResult Install(string? sourceAlias, CancellationToken cancellationToken = default) =>
+		Install(sourceAlias, OperationDeadlineMilliseconds, cancellationToken);
+
+	public KnowledgeSourceBatchResult Install(
+		string? sourceAlias,
+		int operationDeadlineMilliseconds,
+		CancellationToken cancellationToken = default) {
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(operationDeadlineMilliseconds);
+		return ExecuteLifecycle(
+			sourceAlias,
+			includeDisabledWhenExplicit: false,
+			(alias, source, deadlineMilliseconds) => InstallOrUpdate(
+				alias, source, isUpdate: false, deadlineMilliseconds),
+			operationDeadlineMilliseconds,
+			cancellationToken);
+	}
 
 	public KnowledgeSourceBatchResult Update(string? sourceAlias, CancellationToken cancellationToken = default) => ExecuteLifecycle(
 		sourceAlias,
 		includeDisabledWhenExplicit: false,
 		(alias, source, deadlineMilliseconds) => InstallOrUpdate(
 			alias, source, isUpdate: true, deadlineMilliseconds),
+		OperationDeadlineMilliseconds,
 		cancellationToken);
 
 	public KnowledgeSourceInfoResult GetInfo(
@@ -91,6 +102,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			(pair, deadlineMilliseconds) => BuildInfo(
 				pair.Key, pair.Value, checkUpdates, deadlineMilliseconds),
 			pair => UnavailableInfo(pair.Key, pair.Value, "Knowledge information request timed out before this source was inspected."),
+			OperationDeadlineMilliseconds,
 			cancellationToken);
 		return new KnowledgeSourceInfoResult(
 			true,
@@ -107,6 +119,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		sourceAlias,
 		includeDisabledWhenExplicit: true,
 		(alias, _, _) => ToOperation(alias, _store.Delete(alias, confirmed)),
+		OperationDeadlineMilliseconds,
 		cancellationToken);
 
 	public KnowledgeSourceCommandResult Add(KnowledgeSourceAddRequest request) {
@@ -698,6 +711,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		string? sourceAlias,
 		bool includeDisabledWhenExplicit,
 		Func<string, KnowledgeSourceConfiguration, int, KnowledgeSourceOperationResult> operation,
+		int operationDeadlineMilliseconds,
 		CancellationToken cancellationToken) {
 		try {
 			KnowledgeConfiguration configuration = _settingsRepository.GetKnowledgeConfiguration();
@@ -711,6 +725,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				(pair, deadlineMilliseconds) => operation(pair.Key, pair.Value, deadlineMilliseconds),
 				pair => FailedOperation(pair.Key,
 					"Knowledge operation timed out before this source was processed."),
+				operationDeadlineMilliseconds,
 				cancellationToken);
 			bool success = results.All(result => result.Success);
 			return new KnowledgeSourceBatchResult(
@@ -727,10 +742,11 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		IReadOnlyList<KeyValuePair<string, KnowledgeSourceConfiguration>> selected,
 		Func<KeyValuePair<string, KnowledgeSourceConfiguration>, int, TResult> operation,
 		Func<KeyValuePair<string, KnowledgeSourceConfiguration>, TResult> timeoutResult,
+		int operationDeadlineMilliseconds,
 		CancellationToken cancellationToken) where TResult : class {
 		cancellationToken.ThrowIfCancellationRequested();
 		if (selected.Count <= 1) {
-			return selected.Count == 0 ? [] : [operation(selected[0], OperationDeadlineMilliseconds)];
+			return selected.Count == 0 ? [] : [operation(selected[0], operationDeadlineMilliseconds)];
 		}
 		TResult?[] results = new TResult?[selected.Count];
 		Stopwatch batch = Stopwatch.StartNew();
@@ -747,10 +763,10 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				if (remainingBatchMilliseconds <= 0) {
 					return;
 				}
-				int operationDeadlineMilliseconds = Math.Min(
-					OperationDeadlineMilliseconds,
+				int sourceDeadlineMilliseconds = Math.Min(
+					operationDeadlineMilliseconds,
 					remainingBatchMilliseconds);
-				results[index] = operation(selected[index], operationDeadlineMilliseconds);
+				results[index] = operation(selected[index], sourceDeadlineMilliseconds);
 			});
 		} catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
 			// A bounded batch returns explicit per-source timeout results for work that was not started.

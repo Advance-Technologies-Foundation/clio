@@ -29,16 +29,6 @@ internal sealed class GuidanceGetTool {
 		_guidanceSource = guidanceSource ?? throw new ArgumentNullException(nameof(guidanceSource));
 	}
 
-	// Compatibility-only constructor for legacy embedded-guide tests; production resolves the source from DI.
-#pragma warning disable CLIO001
-	internal GuidanceGetTool(IFeatureToggleService featureToggleService)
-		: this(new KnowledgeGuidanceSource(
-			featureToggleService,
-			new NoOpKnowledgeBundleActivator(),
-			new UnavailableKnowledgeBundleRuntime())) {
-	}
-#pragma warning restore CLIO001
-
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["topic"] = "name",
 		["guide"] = "name",
@@ -53,13 +43,9 @@ internal sealed class GuidanceGetTool {
 	/// Resolves one named guidance article and returns its plain-text content.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns a named clio MCP guidance article, or lists all available guide names when "
-		+ "the requested name is unknown. Known names include clio guides such as app-modeling, "
-		+ "page-modification, theming, and page-schema-handlers plus composable-app skill "
-		+ "guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, "
-		+ "and their test guides. Always read the availableGuides list for the authoritative set.")]
+	[Description("Returns a named guidance article from active trusted knowledge, or lists all available guide names when the requested name is unknown.")]
 	public Task<GuidanceGetResponse> GetGuidance(
-		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, related-list, esq-filters, or existing-app-maintenance.")]
+		[Description("Parameters: name (required). Use one of the names returned in availableGuides.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
@@ -138,7 +124,7 @@ internal sealed class GuidanceGetTool {
 /// </summary>
 public sealed record GuidanceGetArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, related-list, esq-filters, or existing-app-maintenance.")]
+	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown.")]
 	string? Name = null
 ) {
 	[JsonExtensionData]

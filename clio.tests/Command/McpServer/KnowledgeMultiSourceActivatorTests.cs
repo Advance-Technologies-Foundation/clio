@@ -4,6 +4,8 @@ using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
@@ -18,6 +20,91 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class KnowledgeMultiSourceActivatorTests {
+	[Test]
+	[Description("Concurrent first access waits for the initial activation snapshot instead of observing an empty runtime.")]
+	public async Task EnsureActivated_ShouldWaitForInitialActivation_WhenFirstRefreshIsInProgress() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		using BlockingConfigurationProvider configurationProvider = new();
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(Substitute.For<IKnowledgeSourceInstallationStore>());
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider>(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton<IFileSystem>(TestFileSystem.MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+		using ManualResetEventSlim secondStarted = new();
+
+		// Act
+		Task first = Task.Run(activator.EnsureActivated);
+		bool firstEntered = configurationProvider.Entered.Wait(TimeSpan.FromSeconds(5));
+		Task second = Task.Run(() => {
+			secondStarted.Set();
+			activator.EnsureActivated();
+		});
+		bool secondEntered = secondStarted.Wait(TimeSpan.FromSeconds(5));
+		bool secondCompletedBeforeRelease = second.Wait(TimeSpan.FromMilliseconds(100));
+		configurationProvider.Release.Set();
+		await Task.WhenAll(first, second);
+
+		// Assert
+		firstEntered.Should().BeTrue(
+			because: "the test must hold the initial refresh inside the activation critical section");
+		secondEntered.Should().BeTrue(
+			because: "the concurrent caller must reach EnsureActivated before the initial refresh is released");
+		secondCompletedBeforeRelease.Should().BeFalse(
+			because: "no caller may observe the runtime before the first activation snapshot is complete");
+		configurationProvider.CallCount.Should().Be(1,
+			because: "the waiting caller can reuse the completed initial snapshot instead of refreshing it again");
+	}
+
+	[Test]
+	[Description("Concurrent access remains single-flight when the initial configuration refresh failed and a retry is in progress.")]
+	public async Task EnsureActivated_ShouldWaitForRetry_WhenInitialRefreshFailed() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		using BlockingConfigurationProvider configurationProvider = new(failFirstCall: true);
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(Substitute.For<IKnowledgeSourceInstallationStore>());
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider>(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton<IFileSystem>(TestFileSystem.MockFileSystem());
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+		activator.EnsureActivated();
+		using ManualResetEventSlim concurrentStarted = new();
+
+		// Act
+		Task retry = Task.Run(activator.EnsureActivated);
+		bool retryEntered = configurationProvider.Entered.Wait(TimeSpan.FromSeconds(5));
+		Task concurrent = Task.Run(() => {
+			concurrentStarted.Set();
+			activator.EnsureActivated();
+		});
+		bool concurrentEntered = concurrentStarted.Wait(TimeSpan.FromSeconds(5));
+		bool concurrentCompletedBeforeRelease = concurrent.Wait(TimeSpan.FromMilliseconds(100));
+		configurationProvider.Release.Set();
+		await Task.WhenAll(retry, concurrent);
+
+		// Assert
+		retryEntered.Should().BeTrue(
+			because: "the retry must reach the configuration provider after the synthetic initial failure");
+		concurrentEntered.Should().BeTrue(
+			because: "the concurrent caller must reach activation while the retry is still blocked");
+		concurrentCompletedBeforeRelease.Should().BeFalse(
+			because: "a failed initial attempt does not establish a last-known-good snapshot that permits stale-fast reads");
+		configurationProvider.CallCount.Should().Be(2,
+			because: "one failed attempt and one successful retry are sufficient for both concurrent callers");
+	}
+
 	[Test]
 	[Description("Configuration refresh deactivates disabled and removed sources while independently activating newly configured sources and pins.")]
 	public void EnsureActivated_ShouldReconcileEachSource_WhenConfigurationChanges() {
@@ -640,10 +727,10 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 			"guide",
 			"docs://knowledge/com.example.partner/guide",
 			"synthetic content",
-			"com.example.partner",
-			"guide",
-			"example.guide",
-			"guidance")]);
+			LibraryId: "com.example.partner",
+			ItemId: "guide",
+			TopicId: "example.guide",
+			Role: "guidance")]);
 
 	private static KnowledgeSourceCurrentState State(string alias, string libraryId, ulong sequence) {
 		KnowledgeSourceGenerationPointer pointer = new(
@@ -691,5 +778,33 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		  }
 		}
 		""";
+	}
+
+	private sealed class BlockingConfigurationProvider : IKnowledgeRuntimeConfigurationProvider, IDisposable {
+		private readonly bool _failFirstCall;
+		private int _callCount;
+
+		public BlockingConfigurationProvider(bool failFirstCall = false) {
+			_failFirstCall = failFirstCall;
+		}
+
+		public ManualResetEventSlim Entered { get; } = new();
+		public ManualResetEventSlim Release { get; } = new();
+		public int CallCount => Volatile.Read(ref _callCount);
+
+		public KnowledgeConfiguration GetCurrent() {
+			int callCount = Interlocked.Increment(ref _callCount);
+			if (_failFirstCall && callCount == 1) {
+				throw new InvalidDataException("synthetic initial configuration failure");
+			}
+			Entered.Set();
+			Release.Wait(TimeSpan.FromSeconds(5));
+			return Configuration();
+		}
+
+		public void Dispose() {
+			Entered.Dispose();
+			Release.Dispose();
+		}
 	}
 }
