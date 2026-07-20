@@ -30,9 +30,10 @@ public sealed class RelatedListGuidanceResource {
 
 		       Before you author or edit a detail, fetch the structure from `get-component-info`: the full
 		       "Expanded list" recipe with `composite="Expanded list"`. Read it in full. Also read `page-modification`
-		       (body markers, append vs replace, static-vs-diff body forms, container selection). Those are the
-		       source of truth for the component/composite shapes; this guide owns the master-detail WIRING that
-		       connects them — the part AI most often gets wrong.
+		       and its sub-guides (`page-modification-overview` for body markers / append vs replace,
+		       `page-modification-field-contract` for static-vs-diff body forms, `page-modification-containers` for
+		       container selection). Those are the source of truth for the component/composite shapes; this guide owns
+		       the master-detail WIRING that connects them — the part AI most often gets wrong.
 
 		       The headline rule — scope a detail with `modelConfig.dependencies`, NOT a handler
 		       The platform filters a child list by the open record DECLARATIVELY. You declare the child→master
@@ -133,43 +134,57 @@ public sealed class RelatedListGuidanceResource {
 		         id changes, so switching the open record re-scopes the child list with no handler.
 		       - The grid `items` binding and the panel/grid `viewConfigDiff` inserts are normal page edits — fetch
 		         the structure with `get-component-info composite="Expanded list"` (the canonical recipe), and see
-		         `page-modification` for `parentName`/`propertyName`/`index` placement and `get-component-info` for
+		         `page-modification-components` for `parentName`/`propertyName`/`index` placement and `get-component-info` for
 		         `columns`, `features`, and toolbar slots.
 
-		       Adding records to the detail — inline grid add is the DEFAULT; a header "Add" button needs a resolvable page
-		       - DEFAULT, always safe: enable INLINE add on the inner `crt.DataGrid` (read-only by default). Fetch
-		         the exact editable flags from `get-component-info crt.DataGrid` (the grid `features` that enable
-		         editing and inline row creation). The grid then renders an add row; the new record inherits the
-		         master foreign key from the `dependencies` relationship, so it is scoped to the open record with
-		         NO separate page and NO navigation. This works for ANY child entity — INCLUDING a standalone
-		         detail entity that has no section. Prefer this whenever the requirement is "add a related item" /
-		         "an Add button"; the inline add row IS the add affordance the user asked for.
-		       - REQUIRED wiring for inline add to SAVE: the child FK column (the `attributePath` reference column,
-		         here `UsrContact.UsrClient`) MUST be one of the grid's columns / collection attributes. The
-		         `dependencies` relationship populates the FK on the new row only when that column is present in the
-		         grid; omit it and the inline add row's parent FK stays empty, so the save fails with the runtime error
-		         "<FK caption> field must be filled in" (a detail FK is normally required). Add the FK column to the
-		         grid — it may be hidden in the UI, but it must be in the collection so inline create inherits the
-		         open master (confirm via OData that the child's `...Id` equals the master Id after save).
-		       - FOOTGUN — do NOT, by default, satisfy "Add button" with a header `tools` button wired to
-		         `crt.CreateRecordRequest`. That request opens the child entity's navigation/edit page, which the
-		         runtime resolves from the entity's REGISTERED page. A standalone detail entity (created with
-		         `create-entity-schema` + a `create-page` FormPage but NO section) has no registered navigation/edit
-		         page, so clicking the button throws the runtime toast "There is no page for new or existing record.
-		         System administrator must check the button settings in the Freedom UI." (console: `_openEntityPage`
-		         -> `_showEntityNavigationError`). The page and the grid still load — only the click fails — and
-		         `update-page` reports `success: true`, so the break surfaces only in the browser. Reload and click
-		         the button to verify; never trust the save result alone.
-		       - If a separate header button is explicitly required (inline add is not wanted), make the target page
-		         resolvable in one of two ways, AND seed the master FK so the new record stays linked:
-		         - pass an explicit `entityPageName` in the request `params` naming an existing FormPage schema
-		           (e.g. `"entityPageName": "UsrContactItem_FormPage"`) so the runtime opens that page directly
-		           instead of looking one up; or
-		         - give the child entity a real section (`create-app-section`) so its edit page is registered for
-		           navigation.
-		         Either way set `params.defaultValues` to the master FK, e.g.
-		         `[{ "attributeName": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the same column used as the dependency
-		         `attributePath`), so the created record points back at the open record.
+		       Adding records to the detail — two mechanisms; page-based add/edit is the primary one
+		       This guide owns only the MECHANICS of each add mechanism. WHICH one to use is a UX/product decision —
+		       take it from the approved plan (Business Plan) and the `creatio-ui-guidelines` skill (`page-layout-and-controls.md`).
+		       Default for a detail: page-based add/edit (a mini add page + a full edit page). Use inline editing only
+		       for simple line-item lists (a few short columns) or when the user explicitly asks. When the plan specifies
+		       a pattern, implement THAT one — do not downgrade a page-based detail to inline to save effort. The panel /
+		       grid / toolbar STRUCTURE comes from `get-component-info composite="Expanded list"`; this guide adds only the
+		       wiring below.
+
+		       Mechanism A (default) — page-based add: a header "Add" button opens a page
+		       - The "Expanded list" composite's header add button (`crt.CreateRecordRequest`) opens the child entity's
+		         REGISTERED add page. That page MUST be resolvable, or the click throws the runtime toast
+		         "There is no page for new or existing record. System administrator must check the button settings in the
+		         Freedom UI." (console: `_openEntityPage` -> `_showEntityNavigationError`). The page and grid still load and
+		         `update-page` reports `success: true` — the failure surfaces only on click, so reload and click to verify;
+		         never trust the save result alone.
+		       - Make the page resolvable in one of these ways:
+		         - Register the entity's pages with `create-related-page-addon` (see `get-guidance name=related-page-binding`):
+		           bind a default/edit page (`is-default`) and, if it differs, a separate add page (`is-add`) — e.g. a full
+		           `create-page` FormPage for edit + a `BaseMiniPageTemplate` mini page for add. `crt.CreateRecordRequest`
+		           then resolves the registered add page automatically. This is the standard section-less-entity path.
+		           (Note: `create-related-page-addon` rebuilds static content and bumps the page checksum, so a subsequent
+		           `update-page` may report a false "external modification" conflict — re-fetch, or force after confirming
+		           the change is your own.)
+		         - or pass an explicit `entityPageName` in the request `params` (e.g. `"entityPageName": "UsrContactItem_FormPage"`)
+		           to open a specific FormPage without registration; or
+		         - give the child entity a real section (`create-app-section`) so its edit page is registered for navigation.
+		       - In every case extend the add button's `params` with `defaultValues` so the new record stays linked to the
+		         open master: `params.defaultValues: [{ "attributeName": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the
+		         same column used as the dependency `attributePath`).
+		       - Authoring the pages themselves: a `create-page` page starts with an EMPTY body and is the DIFF body form, so
+		         you must add the `PDS` data source via `modelConfigDiff` (it is NOT auto-provisioned as with `create-app`);
+		         mini-page fields go in `MainContainer`. See `create-page` / `page-modification` before writing the bodies.
+
+		       Mechanism B — inline grid add: edit rows in the grid (for simple line-item lists)
+		       - Enable inline editing/creation on the inner `crt.DataGrid` via its `features` (fetch the exact flags from
+		         `get-component-info crt.DataGrid`). The grid renders an add row; the new record inherits the master foreign
+		         key from the `dependencies` relationship, so it is scoped to the open record with NO separate page and NO
+		         navigation. This works for ANY child entity — including a section-less detail entity. Choosing inline means
+		         intentionally omitting the composite's header add button (a valid opt-out):
+		         the inline add row IS the add affordance.
+		       - REQUIRED wiring for inline add to SAVE: the child FK column (the `attributePath` reference column, here
+		         `UsrContact.UsrClient`) MUST be one of the grid's columns / collection attributes. The `dependencies`
+		         relationship populates the FK on the new row only when that column is present in the grid; omit it and the
+		         inline add row's parent FK stays empty, so the save fails with the runtime error "<FK caption> field must be
+		         filled in" (a detail FK is normally required). Add the FK column to the grid — it may be hidden in the UI, but
+		         it must be in the collection so inline create inherits the open master (confirm via OData that the child's
+		         `...Id` equals the master Id after save).
 
 		       Reuse, don't duplicate
 		       - Do NOT create a new child schema when an existing child entity + relationship already models the
@@ -200,13 +215,13 @@ public sealed class RelatedListGuidanceResource {
 		         It is the reverse: `attributePath` = child FK column, `relationPath` = master id path (`PDS.Id`).
 		       - Pointing `relationPath` at something other than the page `primaryDataSourceName` — the runtime
 		         cannot resolve the open record's id and the list is not scoped.
-		       - Satisfying an "Add button" with a header `tools` button wired to `crt.CreateRecordRequest` for a
-		         standalone detail entity that has no registered navigation/edit page. The click throws "There is
-		         no page for new or existing record" even though `update-page` returned `success: true`. Prefer
-		         inline grid add (see `get-component-info crt.DataGrid` for the editable flags) — the safe
-		         default — or pass an explicit `entityPageName` (an existing FormPage) / register a section page.
-		         See "Adding records to the detail".
-		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters` column-path
+		       - Wiring a header "Add" button (`crt.CreateRecordRequest`) for a child entity whose add/edit page is not
+		         resolvable (no registered page, no `entityPageName`, no section). The click throws
+		         "There is no page for new or existing record" even though `update-page` returned `success: true`. Fix by
+		         registering the page (`related-page-binding`), passing `entityPageName`, or adding a section — see
+		         "Adding records to the detail, Mechanism A". Use inline add (Mechanism B) only when the plan calls for a
+		         simple line-item list, and then ensure the FK column is present in the grid collection.
+		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters-frontend` column-path
 		         normalization; use the bare reference column name.
 		       """
 	};

@@ -27,6 +27,9 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
+         TestServer request/response, not just config-object assertions). -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->
@@ -101,6 +104,14 @@
     </None>
 
     <None Include="Command\McpServer\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
+    <None Include="Theming\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
+    <None Include="..\clio\tpl\themes\10.0\theme.css.tpl" Link="Theming\Fixtures\theme.css.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
 

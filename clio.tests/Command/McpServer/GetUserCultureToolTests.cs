@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
-using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -19,9 +18,9 @@ public sealed class GetUserCultureToolTests {
 		resolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(resolution));
 		ICurrentUserCultureResolverFactory factory = Substitute.For<ICurrentUserCultureResolverFactory>();
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
-		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
-		return new GetUserCultureTool(factory, settingsRepository);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		return new GetUserCultureTool(factory, commandResolver);
 	}
 
 	[Test]

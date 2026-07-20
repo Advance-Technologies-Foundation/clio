@@ -13,6 +13,7 @@ internal enum HelpGroupId {
 	Development,
 	DeploymentAndInfrastructure,
 	LocalInstanceManagement,
+	Theming,
 	IntegrationsAndTools,
 	General
 }
@@ -47,6 +48,7 @@ internal sealed class CommandHelpCatalog {
 		new(HelpGroupId.Development, "Development"),
 		new(HelpGroupId.DeploymentAndInfrastructure, "Deployment & Infrastructure"),
 		new(HelpGroupId.LocalInstanceManagement, "Local Instance Management"),
+		new(HelpGroupId.Theming, "Theming"),
 		new(HelpGroupId.IntegrationsAndTools, "Integrations & Tools"),
 		new(HelpGroupId.General, "General")
 	];
@@ -233,6 +235,16 @@ internal sealed class CommandHelpCatalog {
 			"upload-license"
 		];
 
+	private static readonly HashSet<string> ThemingCommands =
+		[
+			"build-theme",
+			"clear-themes-cache",
+			"create-theme",
+			"delete-theme",
+			"list-themes",
+			"update-theme"
+		];
+
 	private static readonly HashSet<string> IntegrationCommands =
 		[
 			"delete-toolkit",
@@ -284,6 +296,7 @@ internal sealed class CommandHelpCatalog {
 	private static readonly HashSet<string> GeneralCommands =
 		[
 			"assert",
+			"config",
 			"healthcheck",
 			"register",
 			"unregister"
@@ -461,6 +474,9 @@ internal sealed class CommandHelpCatalog {
 		}
 		if (LocalInstanceCommands.Contains(canonicalName)) {
 			return HelpGroupId.LocalInstanceManagement;
+		}
+		if (ThemingCommands.Contains(canonicalName)) {
+			return HelpGroupId.Theming;
 		}
 		if (IntegrationCommands.Contains(canonicalName)) {
 			return HelpGroupId.IntegrationsAndTools;

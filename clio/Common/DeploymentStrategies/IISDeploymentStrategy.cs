@@ -6,6 +6,8 @@ using Clio.Command;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.ScenarioHandlers;
+using Clio.Common.IIS;
+using Clio.UserEnvironment;
 using OneOf;
 using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -21,20 +23,32 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 	private readonly ILogger _logger;
 	private readonly IAbstractionsFileSystem _fileSystem;
 	private readonly IWindowsFeatureManager _windowsFeatureManager;
+	private readonly IIisCertificateResolver _certificateResolver;
+	private readonly ISettingsRepository _settingsRepository;
 
 	/// <summary>
 	/// Initializes a new instance of the IISDeploymentStrategy class.
 	/// </summary>
+	/// <param name="createIISSiteHandler">IIS site creation handler.</param>
+	/// <param name="logger">Command logger.</param>
+	/// <param name="fileSystem">Filesystem abstraction.</param>
+	/// <param name="windowsFeatureManager">Required IIS feature manager.</param>
+	/// <param name="certificateResolver">Host certificate resolver.</param>
+	/// <param name="settingsRepository">Repository containing the optional certificate pin.</param>
 	public IISDeploymentStrategy(
 		ICreateIISSiteHandler createIISSiteHandler,
 		ILogger logger,
 		IAbstractionsFileSystem fileSystem,
-		IWindowsFeatureManager windowsFeatureManager)
+		IWindowsFeatureManager windowsFeatureManager,
+		IIisCertificateResolver certificateResolver,
+		ISettingsRepository settingsRepository)
 	{
 		_createIISSiteHandler = createIISSiteHandler ?? throw new ArgumentNullException(nameof(createIISSiteHandler));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_windowsFeatureManager = windowsFeatureManager ?? throw new ArgumentNullException(nameof(windowsFeatureManager));
+		_certificateResolver = certificateResolver ?? throw new ArgumentNullException(nameof(certificateResolver));
+		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 	}
 
 	/// <summary>
@@ -54,7 +68,7 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 
 	/// <summary>
 	/// Deploys Creatio application via IIS.
-	/// Creates application pool, website, and HTTP/HTTPS bindings.
+	/// Creates an application pool, website, and exactly one HTTP or HTTPS binding.
 	/// </summary>
 	public async Task<int> Deploy(string appDirectoryPath, PfInstallerOptions options)
 	{
@@ -75,13 +89,33 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 
 		try {
 			InstallerHelper.FrameworkType frameworkType = InstallerHelper.DetectFrameworkByPath(appDirectoryPath);
+			string hostName = InstallerHelper.FetFQDN();
+			IisCertificateInfo certificate = null;
+			if (options.UseHttps) {
+				IisCertificateSelection selection = _certificateResolver.Resolve(hostName,
+					_settingsRepository.GetPinnedIisCertificateThumbprint(), DateTimeOffset.Now);
+				certificate = selection.Certificate;
+				if (selection.PinnedCertificateUnavailable) {
+					_logger.WriteWarning("The pinned IIS certificate is unavailable for this host; clio will use another matching certificate when possible.");
+				}
+				if (certificate is null) {
+					_logger.WriteWarning($"No usable LocalMachine/My server certificate matches '{hostName}'. Continuing with HTTP.");
+					options.UseHttps = false;
+				}
+				else {
+					_logger.WriteInfo($"[IIS HTTPS certificate] - {certificate.Thumbprint}, expires {certificate.NotAfter:u}");
+				}
+			}
 			CreateIISSiteRequest request = new() {
 				Arguments = new Dictionary<string, string> {
 					{ "siteName", options.SiteName },
 					{ "port", options.SitePort.ToString() },
 					{ "sourceDirectory", appDirectoryPath },
 					{ "destinationDirectory", _fileSystem.Path.GetDirectoryName(appDirectoryPath) ?? string.Empty },
-					{ "isNetFramework", (frameworkType == InstallerHelper.FrameworkType.NetFramework).ToString() }
+					{ "isNetFramework", (frameworkType == InstallerHelper.FrameworkType.NetFramework).ToString() },
+					{ "protocol", options.UseHttps ? "https" : "http" },
+					{ "hostName", hostName },
+					{ "certificateThumbprint", certificate?.Thumbprint ?? string.Empty }
 				}
 			};
 

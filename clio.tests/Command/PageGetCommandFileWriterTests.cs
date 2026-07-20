@@ -1,6 +1,10 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -99,6 +103,59 @@ public sealed class PageGetCommandFileWriterTests {
 			because: "a page successfully read from the server must not be discarded because its baseline could not be persisted");
 		_logger.Received(1).WriteWarning(
 			Arg.Is<string>(message => message.Contains("body.js is locked")));
+	}
+
+	[Test]
+	[Description("get-page must keep the own schema's optionalProperties in the merged bundle even when the own schema has no body yet (freshly created page/dashboard).")]
+	public void Execute_ShouldIncludeOwnSchemaOptionalProperties_WhenOwnSchemaHasNoBody() {
+		// Arrange — the own (most-derived) schema carries seeded optionalProperties but has no body
+		// diff yet; only its body-bearing template parent has a body. The own schema must not be
+		// dropped from the merged bundle just because its body is null.
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"rows":[{"Name":"{{SchemaName}}","UId":"uid-1","PackageName":"UsrPkg","PackageUId":"pkg-1","ParentSchemaName":"BaseDashboardTemplate"}]}""");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1").Returns([
+			new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = SchemaName, PackageUId = "pkg-1", PackageName = "UsrPkg", SchemaVersion = 1,
+				Body = null,
+				OptionalProperties = new JArray {
+					new JObject { ["key"] = "DashboardsEntitySchemaName", ["value"] = "Contact" },
+					new JObject { ["key"] = "DashboardsElementName", ["value"] = "Dashboards" }
+				}
+			},
+			new PageDesignerHierarchySchema {
+				UId = "uid-2", Name = "BaseDashboardTemplate", PackageUId = "pkg-2", PackageName = "CrtUIPlatform",
+				SchemaVersion = 1, Body = Body
+			}
+		]);
+		PageGetResponse captured = null;
+		_writer.WritePageFiles(Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(ci => { captured = ci.Arg<PageGetResponse>(); return new PageGetResponse { Success = true }; });
+		PageGetCommand command = CreateCommand(hierarchyClient);
+		PageGetOptions options = new() { SchemaName = SchemaName, Environment = "dev" };
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "get-page must succeed for a freshly created body-less schema");
+		captured.Should().NotBeNull(because: "a successful get-page passes its full response to the file writer");
+		captured.Bundle.Should().NotBeNull(because: "the merged bundle is built before the MCP wrapper compacts it to file paths");
+		captured.Bundle.Name.Should().Be(SchemaName,
+			because: "the bundle identity must be the requested page, not its first body-bearing ancestor");
+		Dictionary<string, string> optionalProperties = captured.Bundle.OptionalProperties
+			.OfType<JsonNode>()
+			.ToDictionary(node => node["key"]?.ToString() ?? string.Empty, node => node["value"]?.ToString());
+		optionalProperties.Should().ContainKey("DashboardsEntitySchemaName",
+			because: "the own schema's seeded entity-schema link-back must survive the merge, not be dropped with its null body");
+		optionalProperties["DashboardsEntitySchemaName"].Should().Be("Contact",
+			because: "the persisted entity-schema link-back value must round-trip through the merged bundle");
+		optionalProperties.Should().ContainKey("DashboardsElementName",
+			because: "the own schema's seeded dashboards-element link-back must survive the merge");
+		optionalProperties["DashboardsElementName"].Should().Be("Dashboards",
+			because: "the persisted dashboards-element link-back value must round-trip through the merged bundle");
 	}
 
 	[Test]

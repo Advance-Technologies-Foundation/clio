@@ -257,8 +257,9 @@ public sealed record ToolContractGetResponse(
 /// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
 /// <param name="Resident">
 /// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
-/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
-/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// from <c>tools/list</c> (<c>false</c>). A non-resident tool is reachable through <c>clio-run</c> /
+/// <c>clio-run-destructive</c>, and on the stdio transport also via forgiving direct invocation
+/// (the durable unmatched-name handler). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
 /// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
 /// </param>
 /// <param name="Destructive">
@@ -271,7 +272,10 @@ public sealed record ToolContractIndexEntry(
 	[property: JsonPropertyName("purpose")] string Purpose,
 	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
 	[property: JsonPropertyName("resident")] bool Resident,
-	[property: JsonPropertyName("destructive")] bool? Destructive = null
+	[property: JsonPropertyName("destructive")] bool? Destructive = null,
+	[property: JsonPropertyName("aliases")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string> Aliases = null
 );
 
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
@@ -399,6 +403,8 @@ internal static class ToolContractCatalog {
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
+	private const string PassthroughEnvironmentNameSuffix =
+		" Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.";
 	private const string ErrorFieldName = "error";
 	private const string ExampleAccountSchemaName = "Account";
 	private const string ExampleContactSchemaName = "Contact";
@@ -461,6 +467,7 @@ internal static class ToolContractCatalog {
 	private const string InstalledApplicationIdentifierDescription = "Installed application identifier.";
 	private const string InstalledApplicationVersionDescription = "Installed application version.";
 	private const string InvalidWorkflowShapeCode = "invalid-workflow-shape";
+	private const string IsVirtualFieldName = "is-virtual";
 	private const string MissingRequiredParameterCode = "missing-required-parameter";
 	private const string PackageUIdFieldName = "package-u-id";
 	private const string PackageNameDescription = "Target package name.";
@@ -549,6 +556,7 @@ internal static class ToolContractCatalog {
 			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
+			[RequestInfoTool.ToolName] = BuildRequestInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
 			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
@@ -625,6 +633,7 @@ internal static class ToolContractCatalog {
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
+		RequestInfoTool.ToolName,
 		PageUpdateTool.ToolName,
 		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
@@ -700,9 +709,13 @@ internal static class ToolContractCatalog {
 				results.Add(registryContract);
 				continue;
 			}
-			// Last resort: reflection over the options type. Only reached when the registry has no entry
-			// (e.g. registry unavailable), and may be lossy for some tools.
-			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
+			// Last resort: reflection over the options type. The toggle-blind reflection catalog is
+			// consulted ONLY when no invoker registry is available (degraded path): with a live registry
+			// every feature-enabled tool already resolved above, so the only names reflection would add
+			// are feature-gated-OFF tools — and a disabled tool must stay invisible on every MCP surface,
+			// the named-contract lookup included.
+			if (toolInvokerRegistry is null
+				&& McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
 				results.Add(schemaContract);
 				continue;
 			}
@@ -711,14 +724,24 @@ internal static class ToolContractCatalog {
 				Error: new ToolContractError(
 					"tool-not-found",
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
-					BuildSuggestions(normalizedName)));
+					BuildSuggestions(normalizedName, toolInvokerRegistry)));
 		}
 		return new ToolContractGetResponse(true, results);
 	}
 
-	private static IReadOnlyList<string> BuildSuggestions(string requestedName) {
+	/// <summary>
+	/// Builds the "did you mean" shortlist for an unknown tool name. With a live invoker registry the
+	/// candidate pool is the curated contracts plus the registry's feature-enabled tool names; the
+	/// toggle-blind reflection catalog pads the pool only on the degraded no-registry path, so a
+	/// feature-gated-OFF tool is never suggested while it is hidden.
+	/// </summary>
+	private static IReadOnlyList<string> BuildSuggestions(
+		string requestedName,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
+			?? McpToolSchemaCatalog.RegisteredToolNames;
 		return Contracts.Keys
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Concat(derivedNames)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
@@ -749,16 +772,20 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Produces the deterministic, deduplicated (case-insensitive) union of every invokable MCP tool name:
-	/// curated canonical tools, registry-invokable hidden tools, and reflection-discovered tools. Ordered
-	/// ordinally by name so the index prefix stays stable for prompt caching. <c>get-tool-contract</c>
-	/// itself is excluded so the discovery tool does not index itself (matching the curated-only behavior).
+	/// curated canonical tools plus the invoker registry's feature-enabled tool set. The toggle-blind
+	/// reflection catalog contributes names only on the degraded no-registry path — with a live registry
+	/// every feature-enabled tool is already present, so the reflection union would add exactly the
+	/// feature-gated-OFF tools, and a disabled tool must stay invisible on every MCP surface (the
+	/// discovery index included). Ordered ordinally by name so the index prefix stays stable for prompt
+	/// caching. <c>get-tool-contract</c> itself is excluded so the discovery tool does not index itself
+	/// (matching the curated-only behavior).
 	/// </summary>
-	/// <param name="toolInvokerRegistry">Optional registry contributing the hidden long-tail tool names.</param>
+	/// <param name="toolInvokerRegistry">Optional registry contributing the feature-enabled long-tail tool names.</param>
 	private static IEnumerable<string> BuildIndexToolNames(IMcpToolInvokerRegistry? toolInvokerRegistry) {
-		IEnumerable<string> registryNames = toolInvokerRegistry?.ToolNames ?? [];
+		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
+			?? McpToolSchemaCatalog.RegisteredToolNames;
 		return CanonicalToolNames
-			.Concat(registryNames)
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Concat(derivedNames)
 			.Where(name => !string.IsNullOrWhiteSpace(name)
 				&& !string.Equals(name, ToolContractGetTool.ToolName, StringComparison.OrdinalIgnoreCase))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -786,7 +813,13 @@ internal static class ToolContractCatalog {
 			string.IsNullOrEmpty(purpose) ? name : purpose,
 			ContractAvailable: contractAvailable,
 			Resident: McpCoreToolProfile.IsResident(name),
-			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+			Destructive: ResolveDestructive(toolInvokerRegistry, name),
+			// Deprecated alias names are projected from the compatibility catalog (the single source of
+			// truth for renames), so an agent scanning the index finds a legacy name next to its canonical
+			// entry instead of concluding the tool disappeared.
+			Aliases: McpToolCompatibilityCatalog.SeedAliasesByCanonical.TryGetValue(name, out IReadOnlyList<string> aliases)
+				? aliases
+				: null);
 	}
 
 	/// <summary>
@@ -1205,9 +1238,10 @@ internal static class ToolContractCatalog {
 			ApplicationCreateTool.ApplicationCreateToolName,
 			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName],
+				["name", "code", TemplateCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
@@ -1247,7 +1281,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
@@ -1301,9 +1335,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, CaptionFieldName],
+				[ApplicationCodeFieldName, CaptionFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),
@@ -1396,9 +1431,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(CaptionFieldName, StringType, "Optional updated section caption."),
@@ -1486,9 +1522,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(DeleteEntitySchemaFieldName, BooleanType,
@@ -1546,9 +1583,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 			"Returns the list of sections of an existing installed application and their metadata.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName],
+				[ApplicationCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription)
 				]),
 			EnvelopeOutput(
@@ -2072,9 +2110,10 @@ internal static class ToolContractCatalog {
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			"Returns installed application identity plus current package and entity metadata so callers can inspect the right app before mutating it.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName],
+				[],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(SelectorIdFieldName, StringType, "Application GUID."),
 					Field(SelectorCodeFieldName, StringType, "Application code.")
 				],
@@ -2095,7 +2134,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting for the environment. Use as the prefix for all subsequent custom schema codes. Empty string means no prefix is configured."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -2126,9 +2165,10 @@ internal static class ToolContractCatalog {
 			ApplicationGetListTool.ApplicationGetListToolName,
 			"Lists installed applications from the target Creatio environment so the caller can discover the right existing app first.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName],
+				[],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix)
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3362,16 +3402,21 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
 						InvalidLocalizationMapCode,
-						Field: OperationsFieldName)
+						Field: OperationsFieldName),
+					new ToolContractValidator(
+						"sync-schemas-virtual-entity-seed-rows",
+						InvalidWorkflowShapeCode,
+						Fields: [$"{OperationsFieldName}[*].{IsVirtualFieldName}", $"{OperationsFieldName}[*].seed-rows"],
+						Context: "A create-entity operation cannot combine is-virtual=true with seed-rows because a virtual entity has no physical table.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3383,7 +3428,9 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
-			[],
+			[
+				Default($"{OperationsFieldName}[*].{IsVirtualFieldName}", "false", "Create-entity operations create persistent schemas unless explicitly marked virtual.")
+			],
 			[
 				Example("Create a lookup and extend the main entity", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -3686,7 +3733,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateEntity() {
 		return new ToolContractDefinition(
 			CreateEntitySchemaTool.CreateEntitySchemaToolName,
-			"Creates an entity schema directly in the target package.",
+			"Creates an entity schema directly in the target package. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, TitleLocalizationsFieldName],
 				EnvironmentPackageSchemaFields(
@@ -3694,7 +3741,8 @@ internal static class ToolContractCatalog {
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
 					Field("columns", ArrayType, "Optional initial columns."),
 					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
-					Field("extend-parent", BooleanType, "Optional replacement-schema flag.")),
+					Field("extend-parent", BooleanType, "Optional replacement-schema flag."),
+					Field(IsVirtualFieldName, BooleanType, "Creates a virtual entity schema without a physical database table when true.")),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
 				]),
@@ -3705,7 +3753,9 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, "extend-parent", "extendParent", RejectedStatus, "Use 'extend-parent' instead of 'extendParent'."),
 				TitleParameterAlias(),
 				CaptionParameterAlias()),
-			[],
+			[
+				Default(IsVirtualFieldName, "false", "Entity schemas are persistent unless explicitly marked virtual.")
+			],
 			[
 				Example("Create an additional business entity", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -4030,6 +4080,7 @@ internal static class ToolContractCatalog {
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
 				Field("title", StringType, "Schema title."),
+				Field("virtual", BooleanType, "Whether the entity schema is virtual and has no physical database table."),
 				Field(ColumnsFieldName, ArrayType, "Column metadata.")),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),
@@ -4072,7 +4123,8 @@ internal static class ToolContractCatalog {
 			StructuredResultOutput(
 				Field("name", StringType, "Column name."),
 				Field("data-value-type", StringType, "Column type."),
-				Field("source", StringType, "Column source.")),
+				Field("source", StringType, "Column source."),
+				Field("usage-type", StringType, "Column usage type as a friendly name (General/Advanced/None), re-usable verbatim as a usage-type write input.")),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias()),
@@ -4121,7 +4173,8 @@ internal static class ToolContractCatalog {
 					Field("required", BooleanType, "Optional required flag."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
-					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."))),
+					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."),
+					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
@@ -4267,6 +4320,87 @@ internal static class ToolContractCatalog {
 					"The 'documentation' field of a composite detail response contains the complete, authoritative assembly recipe. "
 					+ "Do NOT synthesize the structure from memory or other sources — those are incomplete and will produce a broken result. "
 					+ "Follow the documentation field verbatim.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildRequestInfo() {
+		return new ToolContractDefinition(
+			RequestInfoTool.ToolName,
+			"Returns the Freedom UI request catalog (crt.*Request types wired through request bindings such as a button's clicked) or the full parameter contract for one request type.",
+			new ToolInputSchemaContract(
+				[],
+				[
+					Field("request-type", StringType, "Freedom UI request type, e.g. 'crt.PrintablesRequest'. Omit or use 'list' to return the catalog (list mode); a known type returns that request's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'print'."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
+					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive",
+						InvalidWorkflowShapeCode,
+						Fields: [EnvironmentNameFieldName, "version"],
+						Context: "'environment-name' and 'version' are mutually exclusive — pass one or neither.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("mode", StringType, "detail or list."),
+				Field(CountFieldName, NumberType, "Number of matching requests."),
+				Field("items", ArrayType, "Flat list-mode request summaries, each with requestType and an optional description."),
+				Field("requestType", StringType, "Request type echoed back in detail mode."),
+				Field("parameters", ObjectType, "The ONLY keys a page schema may pass via the binding's params block. An EMPTY map means the request accepts NO parameters — do not invent any. A parameter may carry a valueSource annotation ({kind:'environment', tool:'<probe>'}): fill that value ONLY from the named probe tool's result (e.g. templateId -> list-printables, processName -> get-process-signature)."),
+				Field("baseParameters", ObjectType, "Fields every request inherits from BaseRequest ($context, scopes, type) — platform-injected at dispatch time; NEVER pass them via params."),
+				Field("documentation", StringType, "Per-request authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one."),
+				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
+				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
+				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': tell the user the version is unknown and request explicit confirmation before proceeding. Omitted otherwise."),
+				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, "request-type", "requestType", RejectedStatus, "Use 'request-type' instead of 'requestType'."),
+				Alias(ParameterScope, "request-type", "request_type", RejectedStatus, "Use 'request-type' instead of 'request_type'."),
+				Alias(ParameterScope, "request-type", "request-name", RejectedStatus, "Use 'request-type' instead of 'request-name'."),
+				Alias(ParameterScope, "request-type", "requestName", RejectedStatus, "Use 'request-type' instead of 'requestName'."),
+				Alias(ParameterScope, "request-type", "request_name", RejectedStatus, "Use 'request-type' instead of 'request_name'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environment_name", RejectedStatus, "Use 'environment-name' instead of 'environment_name'.")
+			],
+			[],
+			[
+				Example("Inspect one request contract", new Dictionary<string, object?> {
+					["request-type"] = "crt.PrintablesRequest"
+				}),
+				Example("List the full request catalog", new Dictionary<string, object?>()),
+				Example("Search the catalog by keyword", new Dictionary<string, object?> {
+					["search"] = "print"
+				})
+			],
+			Flow([RequestInfoTool.ToolName],
+				"Use BEFORE wiring a button/menu action to a platform request: list the catalog to pick the request, "
+				+ "then fetch its detail and author the binding's params ONLY from 'parameters'. "
+				+ "Read get-guidance name=when-to-use-requests for the decision rules; a parameter carrying a "
+				+ "valueSource annotation is resolved through the named probe tool, never invented."),
+			[],
+			[],
+			[
+				new ToolAntiPattern(
+					"Authoring request names or params from memory",
+					"Request names and parameter keys are case-sensitive contracts; the runtime silently ignores unknown params. "
+					+ "Always pick the request from the catalog and copy parameter keys from the detail response."),
+				new ToolAntiPattern(
+					"Inventing environment-dependent values (templateId, processName)",
+					"A parameter with a valueSource annotation is filled ONLY from the named probe tool's result "
+					+ "(list-printables, get-process-signature). A made-up value passes save and fails silently at runtime.")
 			]);
 	}
 
@@ -4929,6 +5063,7 @@ internal static class ToolContractCatalog {
 	private const string SitePortFieldName = "sitePort";
 	private const string DbServerNameFieldName = "dbServerName";
 	private const string RedisServerNameFieldName = "redisServerName";
+	private const string UseHttpsFieldName = "useHttps";
 	private const string IdentitySitePortFieldName = "identitySitePort";
 	private const string IdentitySiteNameFieldName = "identitySiteName";
 	private const string IdentityPathFieldName = "identityPath";
@@ -5034,7 +5169,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[
@@ -5042,7 +5177,8 @@ internal static class ToolContractCatalog {
 					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
 					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
 					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
-					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name.")
+					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name."),
+					Field(UseHttpsFieldName, BooleanType, "Prefer HTTPS for local IIS deployment. Uses a matching usable LocalMachine/My certificate and falls back to HTTP with a warning when none is available.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -5054,7 +5190,8 @@ internal static class ToolContractCatalog {
 					[ZipFileFieldName] = @"F:\CreatioBuilds\8.1.5.2176_StudioNet8_Softkey_PostgreSQL_ENU.zip",
 					[SitePortFieldName] = 40001,
 					[DbServerNameFieldName] = "postgres-local",
-					[RedisServerNameFieldName] = "redis-local"
+					[RedisServerNameFieldName] = "redis-local",
+					[UseHttpsFieldName] = true
 				})
 			],
 			Flow(
@@ -5314,7 +5451,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListSysSettings() {
 		return new ToolContractDefinition(
 			SysSettingsListTool.ListSysSettingsToolName,
-			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are excluded — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.",
+			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings (whose value is stored as blob data, e.g. the logo) are listed too, with their value shown as <binary> because MCP does not surface the blob value; write them with update-sys-setting using value-file-path.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -5352,8 +5489,8 @@ internal static class ToolContractCatalog {
 			SysSettingCreateTool.CreateSysSettingToolName,
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
-			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. " +
-			"Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed through this tool set. " +
+			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, e.g. the logo) are write-only: assign the value via update-sys-setting with value-file-path; reading a Binary value back is not exposed through MCP. " +
 			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
@@ -5361,7 +5498,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary is not exposed by this tool set."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary (blob data, e.g. the logo) is write-only via update-sys-setting value-file-path."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),
@@ -5405,13 +5542,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildUpdateSysSetting() {
 		return new ToolContractDefinition(
 			SysSettingUpdateTool.UpdateSysSettingToolName,
-			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist — use create-sys-setting first to register a new code.",
+			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist; use create-sys-setting first to register a new code. Provide exactly one of value or value-file-path. For a Binary setting (blob data, e.g. the logo) pass value-file-path so clio Base64-encodes the file locally.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, SysSettingCodeFieldName, SysSettingValueFieldName],
+				[EnvironmentNameFieldName, SysSettingCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Existing sys-setting code."),
-					Field(SysSettingValueFieldName, StringType, "New value. Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name."),
+					Field(SysSettingValueFieldName, StringType, "New value (provide this OR value-file-path). Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name, Binary expects a raw Base64 string."),
+					Field("value-file-path", StringType, "Local file path whose bytes clio reads and Base64-encodes into the value (provide this OR value). Use for Binary settings (blob data, e.g. the logo) so the blob stays out of the tool-call arguments."),
 					Field(SysSettingValueTypeFieldName, StringType, "Optional fallback value-type-name when the setting cannot be located on the target environment.")
 				]),
 			EnvelopeOutput(

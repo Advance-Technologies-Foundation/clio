@@ -53,9 +53,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		containerBuilder.AddTransient(_ => _sysSettingsManager);
 	}
 
-	[Test]
-	[Description("Creates a root entity schema, auto-adds the prefixed primary column from SchemaNamePrefix when needed, and persists the requested text column metadata.")]
-	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload()
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Creates persistent and virtual root entity schemas, auto-adds the primary column, and persists the requested virtual flag in the save payload.")]
+	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload(bool isVirtual)
 	{
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
@@ -86,6 +87,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			Title = "Vehicle",
+			IsVirtual = isVirtual,
 			Columns = ["Name:Text:Vehicle name"]
 		});
 
@@ -113,6 +115,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		var json = JObject.Parse(saveBody);
 		json["name"]!.Value<string>().Should().Be("UsrVehicle");
 		json["caption"]![0]!["value"]!.Value<string>().Should().Be("Vehicle");
+		json["isVirtual"]!.Value<bool>().Should().Be(isVirtual,
+			because: "the schema designer DTO must distinguish persistent and virtual entities before SaveSchema");
 		Guid.Parse(json["package"]!["uId"]!.Value<string>()!).Should().Be(_packageUId);
 		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("UsrId",
 			because: "the generated primary GUID column should use the configured SchemaNamePrefix");
@@ -209,6 +213,50 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates an entity schema with a Color column through create-entity-schema, persisting it as data value type 18.")]
+	public void Create_CreatesSchema_WithColorColumn()
+	{
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrHighlight:Color:Highlight color"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		JToken colorColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrHighlight");
+		colorColumn["type"]!.Value<int>().Should().Be(18,
+			because: "a Color column must persist as the platform Color data value type 18");
+		JToken colorReferenceSchema = colorColumn["referenceSchema"];
+		(colorReferenceSchema is null || colorReferenceSchema.Type == JTokenType.Null).Should().BeTrue(
+			because: "a Color column is a plain value column and must not carry a reference schema");
+	}
+
+	[Test]
 	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
 	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
 	{
@@ -260,12 +308,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("Creates an entity schema with an assigned parent schema before saving the final designer payload.")]
-	public void Create_CreatesSchemaWithParent_AndCallsAssignParentSchema()
+	[Description("Preserves virtual state inherited by a replacement schema when the caller omits the virtual option.")]
+	public void Create_ReplacementOfVirtualParent_PreservesInheritedVirtualState()
 	{
+		string saveBody = null;
 		bool saveDbStructureCalled = false;
 		bool runtimeVerifyCalled = false;
-		SetupApplicationClient((url, _) => {
+		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}
@@ -276,9 +325,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true,\"items\":[{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\",\"caption\":\"Account\"}]}";
 			}
 			if (url.Contains("AssignParentSchema", StringComparison.Ordinal)) {
-				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"isVirtual\":true,\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}
 			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
 				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
 			}
 			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
@@ -296,7 +346,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Package = "UsrPkg",
 			SchemaName = "UsrAccount",
 			Title = "Account",
-			ParentSchemaName = "Account"
+			ParentSchemaName = "Account",
+			ExtendParent = true
 		});
 
 		_applicationClient.Received().ExecutePostRequest(
@@ -311,8 +362,83 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
-		saveDbStructureCalled.Should().BeTrue();
-		runtimeVerifyCalled.Should().BeTrue();
+		JObject.Parse(saveBody)["isVirtual"]!.Value<bool>().Should().BeTrue(
+			because: "an omitted positive-only option must not erase virtual state inherited by a replacement schema");
+		saveDbStructureCalled.Should().BeTrue(
+			because: "the normal designer actualization lifecycle remains required for virtual replacement schemas");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "the replacement schema must still be verified through the runtime readback path");
+	}
+
+	[Test]
+	[Description("Creates an entity schema with an assigned parent schema and preserves the inherited primary column when a custom Guid column is requested.")]
+	public void Create_ShouldPreserveInheritedPrimaryColumn_WhenDerivedSchemaHasCustomGuid()
+	{
+		// Arrange
+		string? saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"items\":[{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\",\"caption\":\"Account\"}]}";
+			}
+			if (url.Contains("AssignParentSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"columns\":[],\"inheritedColumns\":[{\"uId\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"name\":\"Id\",\"type\":0}],\"indexes\":[],\"primaryColumn\":{\"uId\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"name\":\"Id\",\"type\":0}}}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrAccount\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrAccount",
+			Title = "Account",
+			ParentSchemaName = "Account",
+			Columns = ["UsrName:Text:Name", "UsrExternalRecordId:Guid:External record Id"]
+		});
+
+		// Assert
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("AssignParentSchema", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		saveBody.Should().NotBeNullOrWhiteSpace(
+			because: "derived entity creation must submit the final schema payload for saving");
+		JObject json = JObject.Parse(saveBody!);
+		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("Id",
+			because: "a derived schema must retain the primary column inherited from its assigned parent");
+		json["columns"]!.Should().Contain(column => column["name"]!.Value<string>() == "UsrExternalRecordId",
+			because: "the requested custom Guid must remain an ordinary own column in the saved schema");
+		saveDbStructureCalled.Should().BeTrue(
+			because: "derived entity creation must materialize the saved schema structure");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "derived entity creation must verify that the saved schema is available at runtime");
 	}
 
 	[Test]

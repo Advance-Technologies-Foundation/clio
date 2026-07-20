@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ClioRing.ViewModels"
+        xmlns:views="clr-namespace:ClioRing.Views"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="ClioRing.Views.RingWindow"
+        x:DataType="vm:RingViewModel"
+        Title="clio ring"
+        Icon="/Assets/clio-ring.ico"
+        Width="532"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="AcrylicBlur, Blur, Transparent">
+
+    <!-- Outer transparent margin so the panel's drop shadow is visible.
+         Compact by default (ring only); the drawer expands downward without moving the ring. -->
+    <Border Margin="16" CornerRadius="20" BorderThickness="1"
+            BorderBrush="#26FFFFFF"
+            BoxShadow="0 18 60 0 #B0000000">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Offset="0" Color="#F20E1117" />
+                <GradientStop Offset="0.55" Color="#F2131A24" />
+                <GradientStop Offset="1" Color="#F21B1220" />
+            </LinearGradientBrush>
+        </Border.Background>
+        <views:RingView />
+    </Border>
+</Window>

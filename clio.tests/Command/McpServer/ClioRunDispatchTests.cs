@@ -29,7 +29,9 @@ public sealed class ClioRunDispatchTests {
 	[SetUp]
 	public void SetUp() {
 		_registry = Substitute.For<IMcpToolInvokerRegistry>();
-		_sut = new ClioRunExecutor(_registry);
+		// An inert catalog substitute: TryResolveAlias defaults to false, so alias resolution never
+		// interferes with the direct-name dispatch behavior these tests pin.
+		_sut = new ClioRunExecutor(_registry, Substitute.For<IMcpToolCompatibilityCatalog>());
 	}
 
 	// A real SDK-built tool over a static echo method, so InvokeAsync executes without a live server.
@@ -107,16 +109,17 @@ public sealed class ClioRunDispatchTests {
 
 	// A typed-POCO SUCCESS envelope whose data legitimately carries URI/path-shaped strings, returned as a
 	// plain record without IsError — the audit backstop must leave it completely untouched.
-	public sealed record PocoSuccessEnvelope(bool Success, string Url);
+	public sealed record PocoSuccessEnvelope(bool Success, string Message, string Url, string FullPath);
 
 	[McpServerToolType]
 	private static class PocoSuccessToolType {
 		internal const string LegitimateUrl = "https://legit-host:443/0/odata/Contact";
+		internal const string LegitimatePath = @"F:\CreatioBuilds\10.1.268\build.zip";
 
 		[McpServerTool(Name = "poco-success-tool", Destructive = false)]
 		[System.ComponentModel.Description("Returns a typed POCO success envelope carrying a URL field.")]
 		public static PocoSuccessEnvelope ReturnSuccess([System.ComponentModel.Description("payload")] string value) =>
-			new(Success: true, Url: LegitimateUrl);
+			new(Success: true, Message: "Found 36 builds.", Url: LegitimateUrl, FullPath: LegitimatePath);
 	}
 
 	private static McpServerTool BuildPocoSuccessTool() =>
@@ -313,7 +316,8 @@ public sealed class ClioRunDispatchTests {
 		result.IsError.Should().BeTrue(because: "clio-run must not be able to target itself");
 		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
 			because: "the guard must explain that the executors cannot be dispatch targets");
-		_registry.DidNotReceive().TryGetTool(ClioRunTool.ToolName, out Arg.Any<McpServerTool>());
+		// A read-only registry lookup IS allowed before the guard (alias canonicalization runs first so
+		// the guard always sees the final dispatch target); the refusal message above proves no dispatch.
 	}
 
 	[Test]
@@ -346,7 +350,8 @@ public sealed class ClioRunDispatchTests {
 			because: "the registry matches names with OrdinalIgnoreCase, so a different-cased executor name is still self-dispatch and must be refused");
 		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
 			because: "the guard must reject the case-variant alias for the same recursion reason");
-		_registry.DidNotReceive().TryGetTool(mixedCaseName, out Arg.Any<McpServerTool>());
+		// Read-only registry lookups may precede the guard (alias canonicalization); the refusal above
+		// proves the differently-cased executor name was still never dispatched.
 	}
 
 	[Test]
@@ -444,6 +449,32 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The caller's ProgressToken is preserved onto the rebuilt child params so a dispatched tool (e.g. deploy-creatio) can emit notifications/progress; without this the token is dropped and typed stage events are silently lost.")]
+	public async Task RunAsync_ShouldPreserveCallerProgressToken_WhenDispatchingTool() {
+		// Arrange — a valid dispatch whose incoming call carries a ProgressToken (as a real MCP progress-tracked
+		// call does). BuildChildParams rebuilds Params from Name+Arguments only, so the fix must copy the token.
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+		// RequestParams exposes ProgressToken as a read-only view over Meta["progressToken"], so seed the token
+		// through _meta exactly as a progress-tracked MCP call arrives on the wire.
+		const string tokenValue = "ring-progress-token-1";
+		RequestContext<CallToolRequestParams> ctx = CallContext();
+		ctx.Params = new CallToolRequestParams {
+			Name = ClioRunTool.ToolName,
+			Meta = new System.Text.Json.Nodes.JsonObject { ["progressToken"] = tokenValue }
+		};
+
+		// Act — dispatch through clio-run, which rewrites ctx.Params to the child tool's params.
+		await _sut.RunAsync("echo-tool", args, destructiveSurface: false, ctx, CancellationToken.None);
+
+		// Assert — the rewritten child params still carry the caller's ProgressToken (via preserved _meta), so
+		// the dispatched tool's forwarder (which reads Params.ProgressToken) can send progress to the host.
+		ctx.Params!.ProgressToken.Should().Be(new ProgressToken(tokenValue),
+			because: "clio-run must carry the caller's ProgressToken onto the dispatched tool or progress is lost");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Surfaces the real failure message in a structured Error result (not a thrown exception or a generic message) when the dispatched tool fails (field-test defect #3).")]
 	public async Task RunAsync_ShouldReturnStructuredErrorWithRealMessage_WhenDispatchedToolThrows() {
 		// Arrange
@@ -519,6 +550,10 @@ public sealed class ClioRunDispatchTests {
 		string text = ErrorText(result);
 		text.Should().Contain(PocoSuccessToolType.LegitimateUrl,
 			because: "a successful payload's legitimate URL data must survive — the backstop only touches failure content");
+		using JsonDocument successPayload = JsonDocument.Parse(text);
+		successPayload.RootElement.GetProperty("FullPath").GetString().Should().Be(
+			PocoSuccessToolType.LegitimatePath,
+			because: "a successful discovery payload with a normal message must preserve its usable filesystem path exactly");
 		text.Should().NotContain("[redacted",
 			because: "no redaction placeholder may appear in a successful envelope");
 	}
@@ -695,7 +730,8 @@ public sealed class ClioRunDispatchTests {
 		result.IsError.Should().BeTrue(because: "a wrapped clio-run target must still be caught by the recursion guard after recovery");
 		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
 			because: "recovery runs before the guard, so the recovered command 'clio-run' must trip the same self-dispatch refusal");
-		_registry.DidNotReceive().TryGetTool("clio-run", out Arg.Any<McpServerTool>());
+		// Read-only registry lookups may precede the guard (alias canonicalization); the refusal above
+		// proves the recovered executor name was still never dispatched.
 	}
 
 	[Test]
