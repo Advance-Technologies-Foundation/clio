@@ -34,8 +34,9 @@ public sealed class RoutingGuidanceResource {
 		         - dashboards (create a dashboard page, or lay out / size / style analytics widgets) -> name=dashboards (routes onward to dashboard-creation / dashboard-design)
 		         - desktop pages (create/edit a desktop-selector workspace, CentralAreaDesktopTemplate, group Desktop) -> name=desktop-page
 		         - page business rules (create/change/remove; visibility/required/value) -> name=business-rules
+		         - wire a button/menu action to a platform request (crt.*Request: print, close, cancel, ...) -> get-request-info + name=when-to-use-requests
+		         - add a button/menu item that runs a business process -> get-process-signature FIRST + get-request-info (crt.RunBusinessProcessRequest)
 		         - bind which page opens for a record / which page adds a record (related pages) -> name=related-page-binding
-		         - add a button/menu item that runs a business process -> name=run-process-button
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
 		         - virtual entity object, IEntityQueryExecutor reads, or EntityEventListener writes -> name=virtual-entities
 		         - schema designer fails with "GetSchemaDesignItem returned an HTML error page" / package dependencies -> name=package-dependencies

@@ -169,15 +169,15 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). 150 tools at authoring time (2026-07-11):
-	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
-	/// 20 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit,
-	/// matched to CURRENT tool names — several PRD names are stale, see the inline notes below), and 115
-	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). Buckets: <see cref="PassthroughClassification.Routed"/>,
+	/// <see cref="PassthroughClassification.Guarded"/>, <see cref="PassthroughClassification.NotEnvironmentSensitive"/>
+	/// (PRD's literal out-of-scope audit, matched to CURRENT tool names — several PRD names are stale, see the
+	/// inline notes below), and <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change
+	/// required). Per-bucket counts live on the section-header comments below, next to the rows they count —
+	/// prose totals here rotted twice (150→160 tools between 2026-07-11 and 2026-07-16) and were dropped.
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
 		new Dictionary<string, PassthroughClassification>(System.StringComparer.Ordinal) {
-			// --- Routed (12): audited class c1 (7) + c2 (1) + matrix (4), fixed in Stories 3-14 ---
 			["list-apps"] = PassthroughClassification.Routed,
 			["get-app-info"] = PassthroughClassification.Routed,
 			["create-app"] = PassthroughClassification.Routed,
@@ -189,6 +189,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = PassthroughClassification.Routed,
 			["sync-pages"] = PassthroughClassification.Routed,
 			["get-component-info"] = PassthroughClassification.Routed,
+			["get-request-info"] = PassthroughClassification.Routed,
 			["build-theme"] = PassthroughClassification.Routed,
 
 			// --- Guarded (3): audited class c3, fail-fast under passthrough (Story 1) ---
@@ -220,7 +221,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (117): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (125): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -299,6 +300,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-packages"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
 			["list-pages"] = PassthroughClassification.NotApplicable,
+			["list-printables"] = PassthroughClassification.NotApplicable,
 			["list-sys-settings"] = PassthroughClassification.NotApplicable,
 			["list-themes"] = PassthroughClassification.NotApplicable,
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
@@ -386,6 +388,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = [Entry("version-probe")], // "write" intentionally absent — see type remarks
 			["sync-pages"] = [Entry("version-probe")],
 			["get-component-info"] = [Entry("outer")],
+			["get-request-info"] = [Entry("outer")],
 			["build-theme"] = [Entry("version")],
 
 			["link-from-repository-by-environment"] = [GuardedEntry("by-environment")],
@@ -559,6 +562,13 @@ internal static class PassthroughToolClassificationRegistry {
 			nameof(ComponentInfoToolTests.ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment)),
 		new("get-component-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(McpHttpNoRegressionE2ETests),
 			nameof(McpHttpNoRegressionE2ETests.Stdio_ShouldExposeTouchedTool_WhenPassthroughUnused)),
+
+		new("get-request-info", "outer", PassthroughScenario.HeaderOnly, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldNeverCallCommandResolver_WhenHeaderOnly)),
+		new("get-request-info", "outer", PassthroughScenario.MixedInput, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
+		new("get-request-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenEnvironmentNameProvided)),
 
 		// --- build-theme (version) ---
 		new("build-theme", "version", PassthroughScenario.HeaderOnly, typeof(BuildThemeToolTests),
