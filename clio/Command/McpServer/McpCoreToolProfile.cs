@@ -73,9 +73,12 @@ public static class McpCoreToolProfile {
 		typeof(GuidanceGetTool),                   // get-guidance
 		typeof(ToolContractGetTool),               // get-tool-contract
 
-		// system-setting read / discovery
-		typeof(SysSettingGetTool),                 // get-sys-setting
-		typeof(SysSettingsListTool),               // list-sys-settings
+		// NOTE: SysSettingGetTool / SysSettingsListTool were moved OUT of the resident profile. Each is
+		// a single-method class (no destructive ride-along, unlike the DataForgeTool precedent), and
+		// system-setting read/discovery is a niche path relative to app/page/entity discovery. Both
+		// tool names are already in the get-tool-contract curated index (CanonicalToolNames,
+		// independent of residency), so read discovery is unaffected; reachable via clio-run. No
+		// canonical name changed, so no McpToolCompatibilityCatalog entry is needed.
 	};
 
 	/// <summary>
