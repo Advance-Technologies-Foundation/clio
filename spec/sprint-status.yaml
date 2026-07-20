@@ -21,6 +21,18 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-ring-clio-tool-update-1
+    title: "Detect and safely install clio tool updates from ClioRing"
+    feature: "ring-clio-tool-update"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: done
+    note: "Issue #905. UI approved; 149 focused tests, final three-lens review, and Windows x64 NativeAOT publish pass."
+    file: spec/ring-clio-tool-update/ring-clio-tool-update-story.md
+    prd: spec/ring-clio-tool-update/ring-clio-tool-update-spec.md
+    adr: spec/ring-clio-tool-update/ring-clio-tool-update-adr.md
+    depends_on: []
+    blocks: []
   - id: story-get-info-target-classification-1
     title: "Classify get-info target and response failures"
     feature: "get-info-target-classification"
@@ -1977,6 +1989,60 @@ stories:
     depends_on: []
     blocks: []
 
+  # --- set-user-theme (ENG-93302): apply created theme to current user's profile ---
+  # Krylov gate CLEARED 2026-07-15: both CLI command + MCP tool confirmed; Creatio 10.0.0+ floor
+  # via RequiresCreatioVersion (spec §9.2). Story 1 unblocked.
+  # AI Toolkit routing entry is UC-owned, tracked outside this repo (spec §9.1).
+  - id: story-set-user-theme-1
+    title: "set-user-theme CLI command (SysUserProfile apply + reset + gate diagnostics)"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-1.md
+    prd: spec/prd/spec-set-user-theme.md
+    adr: spec/adr/adr-theming.md
+    fr: [FR-1, FR-2, FR-5, FR-6]
+    depends_on: []
+    blocks: [story-set-user-theme-2, story-set-user-theme-4]
+  - id: story-set-user-theme-2
+    title: "set-user-theme MCP tool + auto-apply step in theming guidance"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-2.md
+    prd: spec/prd/spec-set-user-theme.md
+    adr: spec/adr/adr-theming.md
+    status_note: "SetUserThemeTool + ThemingGuidanceResource auto-apply implemented; unit tests green"
+    fr: [FR-3, FR-4]
+    depends_on: [story-set-user-theme-1]
+    blocks: [story-set-user-theme-3, story-set-user-theme-4]
+  - id: story-set-user-theme-3
+    title: "MCP E2E coverage: create -> set-user-theme -> verify -> reset"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-3.md
+    prd: spec/prd/spec-set-user-theme.md
+    depends_on: [story-set-user-theme-2]
+    blocks: []
+  - id: story-set-user-theme-4
+    title: "Docs, ADR D-D6 amendment, capability map"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-4.md
+    status_note: "help/docs/Commands.md/WikiAnchors + McpCapabilityMap + ADR D-D6 amendment done"
+    prd: spec/prd/spec-set-user-theme.md
+    adr: spec/adr/adr-theming.md
+    depends_on: [story-set-user-theme-1, story-set-user-theme-2]
   - id: story-apppool-profile-cleanup-1
     title: "Best-effort IIS application-pool profile cleanup during uninstall"
     feature: "apppool-profile-cleanup"
@@ -2046,4 +2112,110 @@ stories:
     adr: spec/ring-app-settings-schema/ring-app-settings-schema-adr.md
     test_plan: spec/ring-app-settings-schema/ring-app-settings-schema-test-plan.md
     depends_on: []
+    blocks: []
+
+  # --- entity-schema-authoring-gaps stories (ENG-93040, epic ENG-85256) — added 2026-07-09 ---
+  # Ordered per ADR "Ordered implementation plan (maps to stories)": 1 -> 2 -> 3 -> 4.
+  # Story 1 (Color) is independent and can run in parallel with Story 2. Story 3 depends on
+  # Story 2 because Story 2 extracts the shared save/publish/verify pipeline Story 3 reuses.
+  # Story 4 (MCP guidance/prompt/routing + consolidated clio.mcp.e2e) depends on 1, 2, 3.
+  - id: story-entity-schema-authoring-gaps-1
+    title: "Color type — registry entry, friendly name, and not-text-like classification"
+    feature: "entity-schema-authoring-gaps"
+    size: S
+    status: review
+    file: spec/stories/story-entity-schema-authoring-gaps-1.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-05, FR-06, FR-07]
+    ac: [AC-05, AC-06, AC-07, AC-ERR, AC-DOC]
+    depends_on: []
+    blocks:
+      - story-entity-schema-authoring-gaps-4
+
+  - id: story-entity-schema-authoring-gaps-2
+    title: "set-entity-schema-properties — set primary-display column (shared-pipeline extraction)"
+    feature: "entity-schema-authoring-gaps"
+    size: L
+    status: review
+    note: "Extracts the shared save/publish/verify pipeline from ModifyColumns — Story 3 depends on this refactor being in place."
+    file: spec/stories/story-entity-schema-authoring-gaps-2.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-01, FR-02, FR-11]
+    ac: [AC-01, AC-02, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-entity-schema-authoring-gaps-3
+      - story-entity-schema-authoring-gaps-4
+
+  - id: story-entity-schema-authoring-gaps-3
+    title: "Inherited-column caption override — relax the read-only guard (caption/description only)"
+    feature: "entity-schema-authoring-gaps"
+    size: M
+    status: review
+    note: "BLOCKED on story-entity-schema-authoring-gaps-2 — reuses the shared save/publish/verify pipeline and the inherited-verify plumbing extracted there."
+    file: spec/stories/story-entity-schema-authoring-gaps-3.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-03, FR-04, FR-10]
+    ac: [AC-03, AC-04, AC-ERR]
+    depends_on: [story-entity-schema-authoring-gaps-2]
+    blocks:
+      - story-entity-schema-authoring-gaps-4
+
+  - id: story-entity-schema-authoring-gaps-4
+    title: "MCP guidance / prompt / routing + clio.mcp.e2e coverage for all three capabilities"
+    feature: "entity-schema-authoring-gaps"
+    size: M
+    status: review
+    note: "BLOCKED on stories 1, 2, 3 — describes and E2E-exercises all three capabilities. clio.mcp.e2e is NOT in CI; manual run against a live stand recorded in the PR."
+    file: spec/stories/story-entity-schema-authoring-gaps-4.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-08, FR-09]
+    ac: [AC-MCP, AC-DOC]
+    depends_on:
+      - story-entity-schema-authoring-gaps-1
+      - story-entity-schema-authoring-gaps-2
+      - story-entity-schema-authoring-gaps-3
+    blocks: []
+  - id: story-ring-clio-runtime-switch-1
+    title: "Make release clio the default and surface the active runtime switch"
+    feature: "ring-clio-runtime-switch"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: done
+    note: "Issue #903. UI approved; 129 focused tests, comprehensive review, and Windows x64 NativeAOT publish passed."
+    file: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-story.md
+    prd: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-spec.md
+    adr: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-adr.md
+    depends_on: []
+    blocks: []
+  - id: story-clio-guidance-development-1
+    title: "Publish the evidence-backed clio guidance development framework"
+    feature: "clio-guidance-development"
+    repo: "clio"
+    size: M
+    status: done
+    note: "Merged in PR #913 with lab-validated ESQ filter and virtual-entity guidance, portable shared skill, MCP E2E, comprehensive review, and ClioRing compatibility validation."
+    file: spec/clio-guidance-development/clio-guidance-development-story.md
+    prd: spec/clio-guidance-development/clio-guidance-development-spec.md
+    adr: spec/clio-guidance-development/clio-guidance-development-adr.md
+    test_plan: spec/clio-guidance-development/clio-guidance-development-test-plan.md
+    depends_on: []
+    blocks: []
+  - id: story-esq-primitive-comparisons-1
+    title: "Complete backend ESQ primitive Compare guidance"
+    feature: "esq-primitive-comparisons"
+    repo: "clio"
+    size: S
+    status: review
+    note: "Lab-verified Integer and MediumText Compare construction/parsing with exact native-versus-ATF shape evidence."
+    file: spec/esq-primitive-comparisons/esq-primitive-comparisons-story.md
+    prd: spec/esq-primitive-comparisons/esq-primitive-comparisons-spec.md
+    adr: spec/esq-primitive-comparisons/esq-primitive-comparisons-adr.md
+    test_plan: spec/esq-primitive-comparisons/esq-primitive-comparisons-test-plan.md
+    depends_on:
+      - story-clio-guidance-development-1
     blocks: []

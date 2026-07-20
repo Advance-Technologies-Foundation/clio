@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ClioRing.Ipc;
+using ClioRing.Models;
 
 namespace ClioRing.Services;
 
@@ -14,7 +17,22 @@ namespace ClioRing.Services;
 /// full process tree on cancellation.
 /// </summary>
 public sealed class ClioAdapter : IClioAdapter {
-	private const string ClioExecutable = "clio";
+	private readonly ResolvedClioRuntime _runtime;
+	private readonly IClioProcessGate _processGate;
+
+	/// <summary>Creates an adapter using the installed release clio.</summary>
+	public ClioAdapter() : this(new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default),
+		new ClioProcessGate()) { }
+
+	/// <summary>Creates an adapter using the same immutable runtime selected for IPC workflows.</summary>
+	/// <param name="runtime">Resolved runtime and child-process launch settings.</param>
+	public ClioAdapter(ResolvedClioRuntime runtime) : this(runtime, new ClioProcessGate()) { }
+
+	/// <summary>Creates an adapter coordinated with the application-wide clio process gate.</summary>
+	public ClioAdapter(ResolvedClioRuntime runtime, IClioProcessGate processGate) {
+		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+		_processGate = processGate ?? throw new ArgumentNullException(nameof(processGate));
+	}
 
 	/// <inheritdoc />
 	public event EventHandler<ClioOutputLine>? OutputReceived;
@@ -44,26 +62,11 @@ public sealed class ClioAdapter : IClioAdapter {
 		Action<ClioOutputLine>? onOutput = null,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(invocation);
+		await using IAsyncDisposable? processLease = _runtime.Mode == ClioRuntimeMode.Release
+			? await _processGate.AcquireProcessLeaseAsync(cancellationToken).ConfigureAwait(false)
+			: null;
 
-		var startInfo = new ProcessStartInfo {
-			FileName = ClioExecutable, // NOSONAR: clio is a user-installed dotnet tool intentionally resolved via PATH
-			RedirectStandardOutput = true,
-			RedirectStandardError = true,
-			UseShellExecute = false,
-			CreateNoWindow = true,
-			StandardOutputEncoding = Encoding.UTF8,
-			StandardErrorEncoding = Encoding.UTF8
-		};
-
-		startInfo.ArgumentList.Add(invocation.Verb);
-		foreach (string arg in invocation.Args) {
-			startInfo.ArgumentList.Add(arg);
-		}
-
-		if (!string.IsNullOrWhiteSpace(invocation.EnvName)) {
-			startInfo.ArgumentList.Add("-e");
-			startInfo.ArgumentList.Add(invocation.EnvName);
-		}
+		ProcessStartInfo startInfo = BuildStartInfo(invocation);
 
 		using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 
@@ -77,7 +80,7 @@ public sealed class ClioAdapter : IClioAdapter {
 			process.Start();
 		}
 		catch (Exception ex) {
-			string message = $"Failed to start '{ClioExecutable}': {ex.Message}";
+			string message = $"Failed to start '{startInfo.FileName}': {ex.Message}";
 			var line = new ClioOutputLine(ClioStream.Stderr, message, Stopwatch.GetTimestamp());
 			stderr.AppendLine(message);
 			onOutput?.Invoke(line);
@@ -106,6 +109,35 @@ public sealed class ClioAdapter : IClioAdapter {
 		}
 
 		return new ClioRunResult(exitCode, stdout.ToString(), stderr.ToString(), cancelled);
+	}
+
+	internal ProcessStartInfo BuildStartInfo(ClioInvocation invocation) {
+		var startInfo = new ProcessStartInfo {
+			FileName = _runtime.LaunchSettings.Command,
+			WorkingDirectory = _runtime.LaunchSettings.WorkingDirectory ?? string.Empty,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			UseShellExecute = false,
+			CreateNoWindow = true,
+			StandardOutputEncoding = Encoding.UTF8,
+			StandardErrorEncoding = Encoding.UTF8
+		};
+
+		foreach (string argument in _runtime.LaunchSettings.Args.TakeWhile(argument =>
+			!string.Equals(argument, "mcp-server", StringComparison.OrdinalIgnoreCase))) {
+			startInfo.ArgumentList.Add(argument);
+		}
+		startInfo.ArgumentList.Add(invocation.Verb);
+		foreach (string arg in invocation.Args) {
+			startInfo.ArgumentList.Add(arg);
+		}
+
+		if (!string.IsNullOrWhiteSpace(invocation.EnvName)) {
+			startInfo.ArgumentList.Add("-e");
+			startInfo.ArgumentList.Add(invocation.EnvName);
+		}
+
+		return startInfo;
 	}
 
 	private void HandleLine(string? data, ClioStream stream, StringBuilder sink, Action<ClioOutputLine>? onOutput) {

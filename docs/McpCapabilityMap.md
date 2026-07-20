@@ -237,6 +237,7 @@ Structured domain responses:
 - `show-passing-infrastructure`
 - `get-entity-schema-properties`
 - `get-entity-schema-column-properties`
+- `set-entity-schema-properties`
 
 Generic command envelopes:
 
@@ -366,13 +367,15 @@ What an external AI can practically do here:
 The AI sees this as a higher abstraction layer than package-level commands.
 
 **Long-running / progress contract.** `create-app`, `create-app-section`,
-`update-app-section`, `delete-app-section`, `list-app-sections`, and `get-app-info`
-call the Creatio backend synchronously and can take minutes on a cold or busy
-environment. They emit `notifications/progress` on a fixed cadence (default 15 s,
-overridable via the `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable) so MCP
-clients reset their inactivity timeout. A progress notification means the server is
-still working — the AI must await completion and must not retry or fall back to raw SQL
-or manual UI on a perceived client timeout.
+`update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`, and
+`sync-schemas` call the Creatio backend synchronously and can take minutes on a cold or busy
+environment. They emit `notifications/progress` so MCP clients reset their inactivity timeout:
+a fixed-cadence keep-alive beat (default 15 s, overridable via the
+`CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable), and — for `sync-schemas` — a
+per-operation stage marker (`"<i>/<n>: <op> <schema>"`) pushed before each operation in the
+batch so the client can show which operation is running. A progress notification means the
+server is still working — the AI must await completion and must not retry or fall back to raw
+SQL or manual UI on a perceived client timeout.
 
 ### 3. Entity, Lookup, And Schema Design
 
@@ -383,6 +386,7 @@ This is the second major design-oriented surface after page tools.
 - `update-entity-schema`
 - `modify-entity-schema-column`
 - `get-entity-schema-properties`
+- `set-entity-schema-properties`
 - `get-entity-schema-column-properties`
 - `sync-schemas`
 
@@ -392,6 +396,9 @@ What an external AI can practically do here:
 - create explicit lookup schemas
 - read structured schema metadata before mutating
 - mutate one column or a whole schema batch
+- create `Color` columns (dataValueType 18; read back as the named `Color` type)
+- override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
+- set a schema's primary-display column (own or inherited) via `set-entity-schema-properties`
 - execute composite schema changes in one call
 
 Why `sync-schemas` matters:
@@ -642,7 +649,7 @@ environment.
 - `list-user-tasks` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — returns the environment's user-task palette (built-in + custom; name + UId) for `userTaskName` selection when building a process.
 - `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
 - `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters,signal?}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted.
-- `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: the `run-process-button` guidance.
+- `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: authoring crt.RunBusinessProcessRequest via the request catalog (get-request-info).
 
 What an external AI can practically do here:
 
@@ -675,10 +682,13 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+- `set-user-theme`
+  Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
 
 What an external AI can practically do here:
 
 - build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
 - brand beyond the theme: write the four logo slots (`LogoImage`, `MenuLogoImage`, `ConfigurationPageLogoImage`, `CrtAppToolbarLogo`) as Binary sys settings via `update-sys-setting` + `value-file-path`, and apply a shell background (image upload via the platform `ImageAPIService` on an authenticated browser session, gallery registration via `SysImageInTag`, activation via `CrtBackgroundConfig`) — the exact mechanics live in the `theming` guidance's "Branding — logos and background" section (ENG-92981)
