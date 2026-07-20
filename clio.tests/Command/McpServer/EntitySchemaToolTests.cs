@@ -34,6 +34,7 @@ public sealed class EntitySchemaToolTests {
 			CreateLookupTool.CreateLookupToolName,
 			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+			SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 			FindEntitySchemaTool.FindEntitySchemaToolName
@@ -45,11 +46,121 @@ public sealed class EntitySchemaToolTests {
 				"create-lookup",
 				"update-entity-schema",
 				"get-entity-schema-properties",
+				"set-entity-schema-properties",
 				"get-entity-schema-column-properties",
 				"modify-entity-schema-column",
 				"find-entity-schema"
 			},
 			because: "the entity schema MCP tool identifiers should remain stable for callers and tests");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the Color type token in the create-entity-schema and modify-entity-schema-column type descriptions so MCP callers can create Color columns.")]
+	public void EntitySchemaColumnArgs_Should_Advertise_Color_TypeToken() {
+		// Arrange
+		System.Reflection.PropertyInfo createTypeProperty = typeof(CreateEntitySchemaColumnArgs)
+			.GetProperty(nameof(CreateEntitySchemaColumnArgs.Type))!;
+		System.Reflection.PropertyInfo modifyTypeProperty = typeof(ColumnModificationArgsBase)
+			.GetProperty(nameof(ColumnModificationArgsBase.Type))!;
+
+		// Act
+		string createTypeDescription = createTypeProperty
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+		string modifyTypeDescription = modifyTypeProperty
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		createTypeDescription.Should().Contain("Color",
+			because: "create-entity-schema callers must see Color as a supported column type");
+		modifyTypeDescription.Should().Contain("Color",
+			because: "modify-entity-schema-column callers must see Color as a supported column type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Routes virtual entity creation callers to the canonical virtual-entities guidance at the decision point.")]
+	public void CreateEntitySchemaTool_ShouldRouteToVirtualEntitiesGuidance_WhenVirtualSchemaIsConsidered() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CreateEntitySchemaTool)
+			.GetMethod(nameof(CreateEntitySchemaTool.CreateEntitySchema))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("get-guidance with name virtual-entities",
+			because: "is-virtual callers must see the canonical lifecycle and safety guide before creation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Documents inherited caption-override support in the modify and update entity-schema tool descriptions.")]
+	public void ModifyAndUpdateTools_Should_Document_InheritedCaptionOverride() {
+		// Arrange
+		System.Reflection.MethodInfo modifyMethod = typeof(ModifyEntitySchemaColumnTool)
+			.GetMethod(nameof(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumn))!;
+		System.Reflection.MethodInfo updateMethod = typeof(UpdateEntitySchemaTool)
+			.GetMethod(nameof(UpdateEntitySchemaTool.UpdateEntitySchema))!;
+
+		// Act
+		string modifyDescription = modifyMethod
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+		string updateDescription = updateMethod
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		modifyDescription.Should().Contain("INHERITED",
+			because: "modify-entity-schema-column must document that inherited columns support a caption/description override");
+		updateDescription.Should().Contain("INHERITED",
+			because: "update-entity-schema must document that inherited columns support a caption/description override");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps set-entity-schema-properties arguments into the environment-resolved command options.")]
+	public void SetEntitySchemaProperties_Should_Map_All_Arguments() {
+		// Arrange
+		FakeSetEntitySchemaPropertiesCommand defaultCommand = new();
+		FakeSetEntitySchemaPropertiesCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetEntitySchemaPropertiesCommand>(Arg.Any<SetEntitySchemaPropertiesOptions>())
+			.Returns(resolvedCommand);
+		SetEntitySchemaPropertiesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.SetEntitySchemaProperties(new SetEntitySchemaPropertiesArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			PrimaryDisplayColumn: "UsrName"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid set request should forward through the resolved environment-specific command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance, not the injected one");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
+			because: "the environment name must be forwarded to the command");
+		resolvedCommand.CapturedOptions.Package.Should().Be("UsrPkg",
+			because: "the package name must be forwarded to the command");
+		resolvedCommand.CapturedOptions.SchemaName.Should().Be("UsrVehicle",
+			because: "the schema name must be forwarded to the command");
+		resolvedCommand.CapturedOptions.PrimaryDisplayColumn.Should().Be("UsrName",
+			because: "the primary-display column argument must be forwarded to the command");
 	}
 
 	[Test]
@@ -417,6 +528,35 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Serializes the usage-type field in update-entity-schema batch operations so the batch command can apply it.")]
+	public async Task UpdateEntitySchema_Should_Serialize_UsageType() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand defaultCommand = new();
+		FakeUpdateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			[
+				new UpdateEntitySchemaOperationArgs("modify", "UsrStatus") { UsageType = "Advanced" }
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a batch operation carrying usage-type should be accepted");
+		string operation = resolvedCommand.CapturedOptions!.Operations!.Single();
+		operation.Should().Contain("\"usage-type\":\"Advanced\"",
+			because: "usage-type must survive MCP batch serialization so the batch command can apply it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Preserves add, modify, and remove operations in order when update-entity-schema serializes the batch payload.")]
 	public async Task UpdateEntitySchema_Should_Preserve_Mixed_Operation_Order() {
 		// Arrange
@@ -526,6 +666,32 @@ public sealed class EntitySchemaToolTests {
 			because: "default-value-source should be mapped for mutation flows that need explicit clearing or const defaults");
 		resolvedCommand.CapturedOptions.LocalizableText.Should().BeTrue(
 			because: "text-specific options should be mapped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps the usage-type MCP argument onto modify-entity-schema-column command options.")]
+	public void ModifyEntitySchemaColumn_Should_Map_UsageType() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(
+			new ModifyEntitySchemaColumnArgs("dev", "UsrPkg", "UsrVehicle", "modify", "Name") {
+				UsageType = "Advanced"
+			});
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "a usage-type-only modify is a valid mutation request");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped mutation options");
+		resolvedCommand.CapturedOptions!.UsageType.Should().Be("Advanced",
+			because: "the MCP usage-type argument must be forwarded to the command options unchanged");
 	}
 
 	[Test]
@@ -993,6 +1159,19 @@ public sealed class EntitySchemaToolTests {
 		}
 
 		public override int Execute(UpdateEntitySchemaOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeSetEntitySchemaPropertiesCommand : SetEntitySchemaPropertiesCommand {
+		public SetEntitySchemaPropertiesOptions CapturedOptions { get; private set; }
+
+		public FakeSetEntitySchemaPropertiesCommand()
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(SetEntitySchemaPropertiesOptions options) {
 			CapturedOptions = options;
 			return 0;
 		}

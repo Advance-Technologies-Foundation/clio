@@ -27,6 +27,9 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
+         TestServer request/response, not just config-object assertions). -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->

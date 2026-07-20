@@ -37,9 +37,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 												 Column type. Supported values:
 												 Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
 												 Text, ShortText, MediumText, LongText, MaxSizeText,
-												 Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
-												 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
-												 Currency0, Currency1, Currency2, Currency3
+												 Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
+												 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
+												 Currency0, Currency1, Currency2, Currency3, Color
 												 """)]
 	public string Type { get; set; }
 
@@ -108,6 +108,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 
 	[Option("do-not-control-integrity", Required = false, HelpText = "Set do-not-control-integrity flag")]
 	public bool? DoNotControlIntegrity { get; set; }
+
+	[Option("usage-type", Required = false, HelpText = "Column usage type: General (default), Advanced, or None. Case-insensitive. On modify, the stored value is left unchanged when omitted.")]
+	public string UsageType { get; set; }
 }
 
 /// <summary>
@@ -188,6 +191,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 			|| options.UseSeconds.HasValue
 			|| options.SimpleLookup.HasValue
 			|| options.Cascade.HasValue
-			|| options.DoNotControlIntegrity.HasValue;
+			|| options.DoNotControlIntegrity.HasValue
+			|| !string.IsNullOrWhiteSpace(options.UsageType);
 	}
 }

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using ConsoleTables;
@@ -500,6 +502,129 @@ public sealed class BaseToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The typed-response path (ResolveCommand called directly, bypassing InternalExecute) is version-gated: ResolveCommand throws CreatioVersionRequirementException when the env-scoped checker reports the version requirement unmet, so the tool's own catch turns it into a structured failure.")]
+	public void ResolveCommand_ShouldThrowCreatioVersionRequirementException_WhenCheckerReportsVersionUnmet() {
+		// Arrange
+		var command = new FakeVersionGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		ICreatioVersionChecker checker = Substitute.For<ICreatioVersionChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeVersionGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		VersionGatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		VersionGatedToolHarnessOptions options = new() { Environment = "gated-env" };
+
+		// Act
+		Action act = () => tool.ResolveDirectly(options);
+
+		// Assert
+		act.Should().Throw<CreatioVersionRequirementException>(
+				because: "the typed-response path that calls ResolveCommand directly must enforce the version gate and let the exception propagate to the tool's own catch")
+			.Which.ErrorCode.Should().Be(CreatioVersionRequirementException.VersionTooOldCode,
+				because: "the stable machine-readable ErrorCode must survive the typed-response path");
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when its Creatio version requirement is not satisfied");
+		resolver.Received(1).Resolve<ICreatioVersionChecker>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "gated-env"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On an options type declaring both [RequiresCreatioVersion] and [RequiresPackage], the version gate runs first: the refusal carries the distinct version exit code and the package checker is never consulted, so MCP refusal precedence matches the CLI dispatch order (feature-toggle -> creatio-version -> package).")]
+	public void InternalExecuteGeneric_ShouldEnforceVersionGateBeforePackageGate_WhenOptionsTypeDeclaresBothRequirements() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeDualGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IRequiredPackageChecker packageChecker = Substitute.For<IRequiredPackageChecker>();
+		packageChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new PackageRequirementException("Install the cliogate package."));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeDualGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(packageChecker);
+		DualGatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new DualGatedToolHarnessOptions());
+
+		// Assert
+		result.ExitCode.Should().Be(Clio.Program.CreatioVersionRequirementExitCode,
+			because: "when both requirements are unmet the refusal must come from the version gate, matching the CLI dispatch precedence");
+		resolver.DidNotReceive().Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when its requirements are not satisfied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review #5: on the InternalExecute path the session-container in-flight guard is marked in-use BEFORE the container is Acquired, so the entry cannot be LRU-evicted/disposed during the resolve → version/package-gate window. Verifies MarkInUse precedes Acquire for the SAME tenant key.")]
+	public void InternalExecuteGeneric_ShouldMarkInUseBeforeAcquire_ForTheSameTenantKey() {
+		// Arrange — wire the SAME recording cache into the facade (which MarkInUse targets) and the resolver
+		// (whose Resolve stands in for the container Acquire), so their relative order is observable.
+		ConsoleLogger.Instance.ClearMessages();
+		string tenantKey = "tenant-order-" + Guid.NewGuid();
+		List<string> events = [];
+		OrderRecordingSessionCache spyCache = new(events);
+		McpToolExecutionLock.Configure(TenantExecutionLockProvider.Shared, spyCache);
+		try {
+			var command = new FakeUngatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "ran");
+			IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+			resolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns(tenantKey);
+			resolver.LastResolvedTenantKey.Returns(tenantKey);
+			resolver.Resolve<FakeUngatedCommand>(Arg.Any<EnvironmentOptions>())
+				.Returns(command)
+				.AndDoes(_ => spyCache.Acquire(tenantKey, () => Substitute.For<IServiceProvider>()));
+			UngatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+			// Act
+			CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions());
+
+			// Assert
+			result.ExitCode.Should().Be(0,
+				because: "the ungated command runs once its (absent) requirements pass");
+			int markIndex = events.IndexOf("MarkInUse:" + tenantKey);
+			int acquireIndex = events.IndexOf("Acquire:" + tenantKey);
+			markIndex.Should().BeGreaterThanOrEqualTo(0,
+				because: "the in-flight guard must be marked for the tenant on the InternalExecute path");
+			acquireIndex.Should().BeGreaterThan(markIndex,
+				because: "MarkInUse must precede Acquire so the container is reserved before it is built — closing the Acquire→MarkInUse eviction window (review #5)");
+		}
+		finally {
+			// Restore a clean real cache so the mutated static facade does not leak the spy into later tests.
+			McpToolExecutionLock.Configure(
+				TenantExecutionLockProvider.Shared,
+				new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	// Records the relative order of session-cache in-flight marking vs container Acquire so a test can
+	// assert MarkInUse precedes Acquire (review #5). Acquire delegates to the supplied factory.
+	private sealed class OrderRecordingSessionCache(List<string> events) : ISessionContainerCache {
+		public IServiceProvider Acquire(string cacheKey, Func<IServiceProvider> factory) {
+			events.Add("Acquire:" + cacheKey);
+			return factory();
+		}
+
+		public void MarkInUse(string cacheKey) => events.Add("MarkInUse:" + cacheKey);
+
+		public void MarkAvailable(string cacheKey) => events.Add("MarkAvailable:" + cacheKey);
+	}
+
 	[RequiresPackage("cliogate", "2.0.0.0")]
 	private sealed class GatedToolHarnessOptions : EnvironmentOptions { }
 
@@ -507,6 +632,12 @@ public sealed class BaseToolTests {
 	// isolation (the package gate early-returns) and only the version-gate behavior is under test.
 	[RequiresCreatioVersion("10.0.0")]
 	private sealed class VersionGatedToolHarnessOptions : EnvironmentOptions { }
+
+	// Carries BOTH gate attributes so the relative order of the gates is pinned: creatio-version fires
+	// before package, mirroring the CLI dispatch chokepoint (feature-toggle -> creatio-version -> package).
+	[RequiresCreatioVersion("10.0.0")]
+	[RequiresPackage("cliogate", "2.0.0.0")]
+	private sealed class DualGatedToolHarnessOptions : EnvironmentOptions { }
 
 	private sealed class UngatedToolHarnessOptions : EnvironmentOptions { }
 
@@ -517,10 +648,14 @@ public sealed class BaseToolTests {
 		public CommandExecutionResult Execute(GatedToolHarnessOptions options) =>
 			InternalExecute<FakeGatedCommand>(options);
 
-		// Exercises the typed-response path: tools that return a typed response call ResolveCommand
-		// directly (inside ExecuteWithCleanLog) instead of going through InternalExecute.
 		public FakeGatedCommand ResolveDirectly(GatedToolHarnessOptions options) =>
 			ResolveCommand<FakeGatedCommand>(options);
+	}
+
+	private sealed class DualGatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)
+		: BaseTool<DualGatedToolHarnessOptions>(command: null, logger, commandResolver) {
+		public CommandExecutionResult Execute(DualGatedToolHarnessOptions options) =>
+			InternalExecute<FakeDualGatedCommand>(options);
 	}
 
 	private sealed class UngatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)
@@ -533,6 +668,9 @@ public sealed class BaseToolTests {
 		: BaseTool<VersionGatedToolHarnessOptions>(command: null, logger, commandResolver) {
 		public CommandExecutionResult Execute(VersionGatedToolHarnessOptions options) =>
 			InternalExecute<FakeVersionGatedCommand>(options);
+
+		public FakeVersionGatedCommand ResolveDirectly(VersionGatedToolHarnessOptions options) =>
+			ResolveCommand<FakeVersionGatedCommand>(options);
 	}
 
 	private sealed class BaseToolHarness(Command<BaseToolHarnessOptions> command, ILogger logger)
@@ -547,6 +685,17 @@ public sealed class BaseToolTests {
 		public bool WasExecuted { get; private set; }
 
 		public override int Execute(GatedToolHarnessOptions options) {
+			WasExecuted = true;
+			logger.WriteInfo(messageToWrite);
+			return exitCode;
+		}
+	}
+
+	private sealed class FakeDualGatedCommand(ILogger logger, int exitCode, string messageToWrite)
+		: Command<DualGatedToolHarnessOptions> {
+		public bool WasExecuted { get; private set; }
+
+		public override int Execute(DualGatedToolHarnessOptions options) {
 			WasExecuted = true;
 			logger.WriteInfo(messageToWrite);
 			return exitCode;

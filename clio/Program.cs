@@ -85,6 +85,7 @@ internal class Program {
 		typeof(PushWorkspaceCommandOptions),
 		typeof(LoadPackagesToFileSystemOptions),
 		typeof(UploadLicensesOptions),
+		typeof(DistributeLicenseOptions),
 		typeof(LoadPackagesToDbOptions),
 		typeof(HealthCheckOptions),
 		typeof(ComponentRegistryRefreshOptions),
@@ -138,6 +139,8 @@ internal class Program {
 		typeof(PageGetOptions),
 		typeof(PageUpdateOptions),
 		typeof(PageCreateOptions),
+		typeof(CreateRelatedPageAddonOptions),
+		typeof(GetRelatedPageAddonOptions),
 		typeof(SourceCodeSchemaCreateOptions),
 		typeof(SourceCodeSchemaUpdateOptions),
 		typeof(GetSourceCodeSchemaOptions),
@@ -167,6 +170,9 @@ internal class Program {
 		typeof(CreateServerToServerOAuthAppOptions),
 		typeof(VerifyOAuthAppOptions),
 		typeof(PfInstallerOptions),
+		typeof(PinCertificateOptions),
+		typeof(InstallDbHubOptions),
+		typeof(SyncDbHubOptions),
 		typeof(CreateInfrastructureOptions),
 		typeof(DeployInfrastructureOptions),
 		typeof(DeleteInfrastructureOptions),
@@ -174,6 +180,7 @@ internal class Program {
 		typeof(CheckWindowsFeaturesOptions),
 		typeof(ManageWindowsFeaturesOptions),
 		typeof(CreateTestProjectOptions),
+		typeof(CreateIntegrationTestProjectOptions),
 		typeof(ListenOptions),
 		typeof(ShowPackageFileContentOptions),
 		typeof(SwitchNugetToDllOptions),
@@ -200,6 +207,7 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(SetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
 		typeof(CreateUserTaskOptions),
@@ -218,9 +226,12 @@ internal class Program {
 		typeof(CreateThemeOptions),
 		typeof(UpdateThemeOptions),
 		typeof(DeleteThemeOptions),
+		typeof(SetUserThemeOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
+		typeof(ConfigOptions),
+		typeof(RingCommandOptions),
 		typeof(UnregisterOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
@@ -282,7 +293,29 @@ internal class Program {
 			result = normalizedArgs;
 		}
 
+		result = NormalizeGetSysSettingArgs(result);
 		return NormalizeJsonFlagArgs(result);
+	}
+
+	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
+	// is gated solely by the --get flag. Without normalization `clio get-syssetting <code>` falls
+	// through to the write path and overwrites the setting with an empty string (silent data loss).
+	// Inject --get when the command is invoked through the get-syssetting alias so the "get" name
+	// actually reads, matching its help ("Get or set a system setting value").
+	internal static string[] NormalizeGetSysSettingArgs(string[] args) {
+		if (args is null || args.Length == 0
+			|| !string.Equals(args[0], "get-syssetting", StringComparison.OrdinalIgnoreCase)) {
+			return args;
+		}
+		bool alreadyHasGetFlag = args.Any(token =>
+			string.Equals(token, "--get", StringComparison.OrdinalIgnoreCase));
+		if (alreadyHasGetFlag) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 1);
+		output.AddRange(args);
+		output.Add("--get");
+		return output.ToArray();
 	}
 
 	// The --json option is declared as bool? (its established public form is `--json true|false`).
@@ -387,6 +420,7 @@ internal class Program {
 			CreateThemeOptions opts => Resolve<CreateThemeCommand>(opts).Execute(opts),
 			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
 			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
+			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -414,6 +448,8 @@ internal class Program {
 			NewPkgOptions opts => Resolve<NewPkgCommand>().Execute(opts),
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
+			ConfigOptions opts => Resolve<ConfigCommand>().Execute(opts),
+			RingCommandOptions opts => Resolve<RingCommand>().Execute(opts),
 			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
 			PullPkgOptions opts => DownloadZipPackages(opts),
 			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
@@ -450,6 +486,7 @@ internal class Program {
 			LoadPackagesToFileSystemOptions opts => Resolve<LoadPackagesToFileSystemCommand>(opts).Execute(opts),
 			LoadPackagesToDbOptions opts => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
 			UploadLicensesOptions opts => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+			DistributeLicenseOptions opts => Resolve<DistributeLicenseCommand>(opts).Execute(opts),
 			HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
 			ComponentRegistryRefreshOptions opts => Resolve<ComponentRegistryRefreshCommand>().Execute(opts),
 			ComponentInfoCommandOptions opts => Resolve<ComponentInfoCommand>().Execute(opts),
@@ -494,6 +531,9 @@ internal class Program {
 			CreateServerToServerOAuthAppOptions opts => Resolve<CreateServerToServerOAuthAppCommand>(opts).Execute(opts),
 			VerifyOAuthAppOptions opts => Resolve<VerifyOAuthAppCommand>(opts).Execute(opts),
 			PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
+			PinCertificateOptions opts => Resolve<PinCertificateCommand>().Execute(opts),
+			InstallDbHubOptions opts => Resolve<InstallDbHubCommand>(opts).Execute(opts),
+			SyncDbHubOptions opts => Resolve<SyncDbHubCommand>(opts).Execute(opts),
 			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
 			DeployInfrastructureOptions opts => Resolve<DeployInfrastructureCommand>().Execute(opts),
 			DeleteInfrastructureOptions opts => Resolve<DeleteInfrastructureCommand>().Execute(opts),
@@ -501,6 +541,7 @@ internal class Program {
 			CheckWindowsFeaturesOptions opts => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
 			ManageWindowsFeaturesOptions opts => Resolve<ManageWindowsFeaturesCommand>().Execute(opts),
 			CreateTestProjectOptions opts => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
+			CreateIntegrationTestProjectOptions opts => Resolve<CreateIntegrationTestProjectCommand>(opts).Execute(opts),
 			DeactivatePkgOptions opts => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 			ListenOptions opts => Resolve<ListenCommand>(opts).Execute(opts),
 			ShowPackageFileContentOptions opts => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
@@ -530,6 +571,7 @@ internal class Program {
 			ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+			SetEntitySchemaPropertiesOptions opts => Resolve<SetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
@@ -552,6 +594,8 @@ internal class Program {
 			McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
 			McpHttpServerCommandOptions opts => McpHttpServerCommand.Run(opts),
 			PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
+			CreateRelatedPageAddonOptions opts => Resolve<CreateRelatedPageAddonCommand>(opts).Execute(opts),
+			GetRelatedPageAddonOptions opts => Resolve<GetRelatedPageAddonCommand>(opts).Execute(opts),
 			SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
 			GetSourceCodeSchemaOptions opts => Resolve<GetSourceCodeSchemaCommand>(opts).Execute(opts),
@@ -1048,7 +1092,8 @@ internal class Program {
 		Dictionary<string, HashSet<string>> searchTermsByCanonicalName = new(StringComparer.OrdinalIgnoreCase);
 		foreach (Type optionType in CommandOption) {
 			VerbAttribute verbAttribute = optionType.GetCustomAttribute<VerbAttribute>();
-			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)) {
+			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)
+				|| optionType.IsDefined(typeof(FeatureToggleAttribute), inherit: false)) {
 				continue;
 			}
 			if (!searchTermsByCanonicalName.TryGetValue(verbAttribute.Name, out HashSet<string> searchTerms)) {

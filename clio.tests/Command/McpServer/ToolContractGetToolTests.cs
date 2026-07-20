@@ -266,6 +266,26 @@ public sealed class ToolContractGetToolTests {
 			because: "execute-esq is a read-only ESQ query tool annotated as non-destructive");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("get-request-info appears in the compact discovery index as a resident, non-destructive tool, matching its membership in McpCoreToolProfile.CoreToolTypes and its ReadOnly=true / Destructive=false MCP annotation.")]
+	public void ToolContractGet_Should_MarkRequestInfo_Resident_And_NonDestructive_InIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry requestInfo = result.Index!.Single(entry => entry.Name == RequestInfoTool.ToolName);
+		requestInfo.Resident.Should().BeTrue(
+			because: "get-request-info is a member of McpCoreToolProfile.CoreToolTypes, so it ships resident in tools/list");
+		requestInfo.Destructive.Should().BeFalse(
+			because: "get-request-info is annotated ReadOnly=true, Destructive=false on its MCP tool method");
+	}
+
 	// ENG-92761 (F2): the compact index must let an agent tell WHICH tools are called natively (present
 	// in tools/list) vs. reached only through clio-run, without depending on an invoker registry.
 	[Test]
@@ -569,8 +589,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should not have defaults after enabled was removed");
 		contract.Aliases.Should().BeEmpty(
 			because: "the contract should avoid duplicating rejected aliases already represented by the runtime tool schema");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "created",
-			because: "the batch output contract advertises the created count the tool returns");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "succeeded",
+			because: "the batch output contract advertises the succeeded count the tool returns");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "failed",
 			because: "the batch output contract advertises the failed count");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "results",
@@ -1044,8 +1064,10 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			because: "the requested tool contract should be returned verbatim");
-		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "caption"],
-			because: "section-create requires environment-name, application-code, and caption as the minimal payload");
+		contract.InputSchema.Required.Should().Contain(["application-code", "caption"],
+			because: "section-create requires application-code and caption as the minimal payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 		contract.InputSchema.AnyOf.Should().BeNullOrEmpty(
 			because: "section-create now uses a single required application-code selector");
 		contract.InputSchema.Validators.Should().Contain(validator =>
@@ -1098,8 +1120,10 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 			because: "the requested tool contract should be returned verbatim");
-		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "section-code"],
-			because: "section-update requires environment-name, application-code, and section-code as the selector payload");
+		contract.InputSchema.Required.Should().Contain(["application-code", "section-code"],
+			because: "section-update requires application-code and section-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 		contract.InputSchema.Properties.Should().Contain(field => field.Name == "caption",
 			because: "section-update should advertise caption as an optional mutable field");
 		contract.InputSchema.Properties.Should().Contain(field => field.Name == "description",
@@ -1128,6 +1152,54 @@ public sealed class ToolContractGetToolTests {
 					ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
 				},
 				because: "section-update should advertise the canonical discover-inspect-mutate flow for existing section metadata edits");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-delete contract with environment-name schema-optional (FR-05a, ENG-93347).")]
+	public void ToolContractGet_Should_Return_ApplicationSectionDelete_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-tool-contract should expose the delete-app-section contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["application-code", "section-code"],
+			because: "section-delete requires application-code and section-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-list contract with environment-name schema-optional (FR-05a, ENG-93347).")]
+	public void ToolContractGet_Should_Return_ApplicationSectionGetList_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-tool-contract should expose the list-app-sections contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["application-code"],
+			because: "section-list requires application-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 	}
 
 	[Test]
@@ -1186,6 +1258,32 @@ public sealed class ToolContractGetToolTests {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
 				}),
 			because: "update-entity-schema should advertise the canonical inspect-mutate-verify flow");
+		ToolContractDefinition createEntityContract = result.Tools.Single(contract =>
+			contract.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		createEntityContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "is-virtual" && field.Type == "boolean",
+			because: "the standalone create contract must advertise virtual entity creation");
+		createEntityContract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "is-virtual" && defaultValue.Value == "false",
+			because: "persistent entity creation must remain the documented default");
+		createEntityContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the standalone contract should route virtual schema work to its canonical guide");
+		ToolContractDefinition syncContract = result.Tools.Single(contract =>
+			contract.Name == SchemaSyncTool.ToolName);
+		syncContract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "operations[*].is-virtual" && defaultValue.Value == "false",
+			because: "batched create-entity operations must document the same persistent default");
+		syncContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "sync-schemas-virtual-entity-seed-rows"
+				&& validator.Code == "invalid-workflow-shape",
+			because: "the contract must reject seed rows before creating a virtual schema that has no table");
+		syncContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the batched contract should route virtual schema work to its canonical guide");
+		ToolContractDefinition propertiesContract = result.Tools.Single(contract =>
+			contract.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName);
+		propertiesContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "virtual" && field.Type == "boolean",
+			because: "schema readback must advertise the virtual flag for verification");
 	}
 
 	[Test]
@@ -1380,6 +1478,9 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the installed application version");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
 			because: "the contract should advertise the active SchemaNamePrefix so agents know the correct prefix for subsequent schema names");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
+			because: "get-app-info should document virtual status within each entity result");
 	}
 
 	[Test]
@@ -1807,8 +1908,8 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical list-sys-settings contract documenting Binary exclusion in its description.")]
-	public void ToolContractGet_Should_Return_ListSysSettings_Contract_With_Binary_Exclusion_Note() {
+	[Description("Returns the canonical list-sys-settings contract documenting that Binary settings are listed (value shown as <binary>) and written via value-file-path.")]
+	public void ToolContractGet_Should_Return_ListSysSettings_Contract_With_Binary_Note() {
 		ToolContractGetTool tool = new();
 
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
@@ -1819,9 +1920,9 @@ public sealed class ToolContractGetToolTests {
 			because: "list-sys-settings is part of the executable clio MCP contract surface");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Description.Should().Contain("Binary",
-			because: "the description must call out Binary exclusion so contract-driven clients understand why those entries are absent");
-		contract.Description.Should().Contain("excluded",
-			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
+			because: "the description must call out Binary handling so contract-driven clients understand how those entries behave in the list");
+		contract.Description.Should().Contain("value-file-path",
+			because: "the description must point callers at the write path (update-sys-setting with value-file-path) since Binary values are listed but shown as <binary>, not readable");
 	}
 
 	[Test]
@@ -2222,5 +2323,104 @@ public sealed class ToolContractGetToolTests {
 				&& alias.Status == "rejected"
 				&& alias.Message.Contains("component-type"),
 			because: "an agent that passes the wrong-WORD selector must be redirected to 'component-type' rather than left to guess");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Load-bearing premise for the discovery-gating hardening: with every toggle enabled, the registry-derived compact index is a superset of the toggle-blind McpToolSchemaCatalog reflection set - the only catalog name absent from the index is get-tool-contract itself, which never indexes itself. Guards against a future registration-path divergence silently shrinking the Ring-consumed index below the reflection catalog.")]
+	public void ToolContractGet_IndexNames_Should_BeSuperset_Of_SchemaCatalog_When_AllTogglesEnabled() {
+		// Arrange - every tool type enabled.
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+		string[] missing = McpToolSchemaCatalog.RegisteredToolNames
+			.Except(index.Index!.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+		// Assert
+		index.Index.Should().NotBeNullOrEmpty(because: "the no-args call must produce the compact index");
+		missing.Should().BeEquivalentTo(new[] { ToolContractGetTool.ToolName },
+			because: "the only reflection-catalog tool absent from the fully-enabled compact index is get-tool-contract (deliberately excluded from indexing itself); every other tool the toggle-blind schema catalog knows must also be in the registry-derived index, so dropping the schema-catalog union from the index cannot lose a tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degraded path: with a null invoker registry, get-tool-contract falls back to the toggle-blind McpToolSchemaCatalog on all three discovery surfaces - an uncurated-but-registered tool still resolves by named lookup, is suggested for a near-miss, and appears in the compact index.")]
+	public void ToolContractGet_Should_ResolveUncuratedTool_ViaSchemaCatalog_ForLookupSuggestionsAndIndex_When_RegistryNull() {
+		// Arrange - no invoker registry, so the schema-catalog fallback governs discovery.
+		ToolContractGetTool tool = new();
+		string toolName = DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName;
+
+		// Act - named lookup.
+		ToolContractGetResponse lookup = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert - resolves via the reflection-catalog fallback.
+		lookup.Success.Should().BeTrue(
+			because: "with no registry the reflection-catalog fallback resolves an uncurated registered tool");
+		lookup.Tools!.Single().Name.Should().Be(toolName,
+			because: "the fallback returns the requested tool verbatim");
+
+		// Act - near-miss suggestions.
+		ToolContractGetResponse miss = tool.GetToolContracts(new ToolContractGetArgs([toolName + "x"]));
+
+		// Assert - the real name is suggested from the schema-catalog pool.
+		miss.Success.Should().BeFalse(because: "a near-miss name matches no tool");
+		miss.Error!.Code.Should().Be("tool-not-found", because: "an unknown name must fail as tool-not-found");
+		miss.Error.Suggestions.Should().Contain(toolName,
+			because: "with a null registry BuildSuggestions draws its pool from McpToolSchemaCatalog.RegisteredToolNames, so the near-miss surfaces the real uncurated name");
+
+		// Act - compact index.
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert - present in the index via the schema-catalog union.
+		index.Index!.Select(entry => entry.Name).Should().Contain(toolName,
+			because: "with a null registry BuildIndexToolNames unions CanonicalToolNames with the schema catalog, so an uncurated registered tool still appears in the compact index");
+	}
+	
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the curated get-request-info contract: input args, the environment-name/version mutual-exclusion validator, the rejected kebab-case aliases, the output envelope fields, and the memory-authored-params anti-pattern.")]
+	public void ToolContractGet_Should_Return_RequestInfo_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([RequestInfoTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-request-info has a curated contract discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(RequestInfoTool.ToolName,
+			because: "the returned contract must be for the requested tool");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(
+			["request-type", "search", "environment-name", "version", "uri", "login", "password"],
+			because: "the contract must advertise every authorable input argument");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "mutually-exclusive"
+				&& validator.Context!.Contains("mutually exclusive", StringComparison.OrdinalIgnoreCase),
+			because: "environment-name and version are mutually exclusive, and the contract must advertise that rule");
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == "requestType"
+				&& alias.CanonicalName == "request-type"
+				&& alias.Status == "rejected",
+			because: "the camelCase requestType selector must be advertised as rejected in favor of request-type");
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == "environmentName"
+				&& alias.CanonicalName == "environment-name"
+				&& alias.Status == "rejected",
+			because: "the camelCase environmentName selector must be advertised as rejected in favor of environment-name");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(
+			["success", "mode", "parameters", "baseParameters", "documentation", "requiresVersionConfirmation", "resolvedFrom"],
+			because: "the contract must document the request-catalog output envelope: the authorable parameters map, the separate platform-injected baseParameters, per-request documentation, the version resolver tier, and the latest-fallback hard stop");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "parameters"
+				&& field.Description.Contains("valueSource", StringComparison.Ordinal),
+			because: "the parameters field must explain the valueSource probe annotation so an agent fills environment-dependent values from the named probe, never from memory");
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
+		contract.AntiPatterns!.Should().Contain(pattern =>
+				pattern.Pattern.Contains("memory", StringComparison.OrdinalIgnoreCase),
+			because: "authoring request names or params from memory is the core anti-pattern the catalog exists to prevent");
 	}
 }

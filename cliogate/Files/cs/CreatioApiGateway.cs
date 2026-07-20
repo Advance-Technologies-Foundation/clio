@@ -76,6 +76,7 @@ namespace cliogate.Files.cs
 
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
 		private readonly string splitName = "#OriginalMaintainer:";
+		private const string DescriptionColumnName = "Description";
 
 		#endregion
 
@@ -169,6 +170,46 @@ namespace cliogate.Files.cs
 				.IsEqual(Column.Parameter(packageName)) as Select;
 			T result = query.ExecuteScalar<T>();
 			return result;
+		}
+
+		/// <summary>
+		/// Builds the value stored in the <c>SysPackage.Description</c> column when unlocking a package,
+		/// preserving the original maintainer marker. A null <paramref name="originalDescription"/>
+		/// (the column is nullable) is treated as an empty string.
+		/// </summary>
+		internal static string BuildUnlockDescription(string originalDescription, string originalMaintainer,
+			string splitMarker){
+			originalDescription = originalDescription ?? string.Empty;
+			return originalDescription.Contains(splitMarker)
+				? originalDescription
+				: originalDescription + splitMarker + originalMaintainer;
+		}
+
+		/// <summary>
+		/// Splits a stored <c>SysPackage.Description</c> value into its human description and the
+		/// preserved original maintainer marker when locking a package. A null
+		/// <paramref name="originalDescription"/> (the column is nullable) is treated as an empty string,
+		/// so the result is always a non-empty array.
+		/// </summary>
+		internal static string[] SplitLockDescription(string originalDescription, string splitMarker){
+			return (originalDescription ?? string.Empty).Split(new[] {splitMarker}, StringSplitOptions.None);
+		}
+
+		/// <summary>
+		/// Formats package names for a single-line log entry, replacing control and Unicode formatting
+		/// characters that could otherwise create misleading log output.
+		/// </summary>
+		internal static string FormatPackageNamesForLog(IEnumerable<string> packageNames){
+			return string.Join(", ", (packageNames ?? Array.Empty<string>()).Select(packageName =>
+				new string((packageName ?? string.Empty).Select(character => {
+					System.Globalization.UnicodeCategory category = char.GetUnicodeCategory(character);
+					return char.IsControl(character) ||
+						category == System.Globalization.UnicodeCategory.Format ||
+						category == System.Globalization.UnicodeCategory.LineSeparator ||
+						category == System.Globalization.UnicodeCategory.ParagraphSeparator
+							? ' '
+							: character;
+				}).ToArray())));
 		}
 
 		#endregion
@@ -378,22 +419,26 @@ namespace cliogate.Files.cs
 			ResponseFormat = WebMessageFormat.Json)]
 		public bool LockPackages(string[] lockPackages = null){
 			CheckCanManageSolution();
-			_log.WarnFormat("Start LockPackages, packages: {0}", string.Join(", ", lockPackages));
+			_log.WarnFormat("Start LockPackages, packages: {0}", FormatPackageNamesForLog(lockPackages));
 			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
 			if (lockPackages != null && lockPackages.Any()) {
 				foreach (string lockPackage in lockPackages) {
+					string packageNameForLog = FormatPackageNamesForLog(new[] {lockPackage});
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", lockPackage);
-					string[] description = GetPackageAttributeValue<string>("Description", lockPackage)
-						.Split(new[] {splitName}, StringSplitOptions.None);
+					string[] description = SplitLockDescription(
+						GetPackageAttributeValue<string>(DescriptionColumnName, lockPackage), splitName);
 					string maintainer = description.Length > 1 ? description.Last() : originalMaintainer;
 					Query query = new Update(UserConnection, "SysPackage")
 						.Set("InstallType", Column.Parameter(1))
 						.Set("Maintainer", Column.Parameter(maintainer))
-						.Set("Description", Column.Parameter(description[0]))
+						.Set(DescriptionColumnName, Column.Parameter(description[0]))
 						.Where("Name").IsEqual(Column.Parameter(lockPackage));
 					Update update = query as Update;
 					update.BuildParametersAsValue = true;
-					update.Execute();
+					if (update.Execute() != 1) {
+						_log.WarnFormat("Could not lock package {0}.", packageNameForLog);
+						return false;
+					}
 				}
 			} else {
 				Query query = new Update(UserConnection, "SysPackage")
@@ -444,28 +489,29 @@ namespace cliogate.Files.cs
 			ResponseFormat = WebMessageFormat.Json)]
 		public bool UnlockPackages(string[] unlockPackages = null){
 			CheckCanManageSolution();
-			_log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages));
+			_log.WarnFormat("Start UnlockPackages, packages: {0}", FormatPackageNamesForLog(unlockPackages));
 			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
 			_log.WarnFormat($"Maintainer code: {maintainerCode}");
 			if (unlockPackages != null && unlockPackages.Any()) {
 				foreach (string unlockPackage in unlockPackages) {
+					string packageNameForLog = FormatPackageNamesForLog(new[] {unlockPackage});
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
-					string originalDescription = GetPackageAttributeValue<string>("Description", unlockPackage);
-					string description = originalDescription.Contains(splitName) ? originalDescription
-						: originalDescription + splitName + originalMaintainer;
+					string description = BuildUnlockDescription(
+						GetPackageAttributeValue<string>(DescriptionColumnName, unlockPackage), originalMaintainer, splitName);
 					Query query = new Update(UserConnection, "SysPackage")
 						.Set("InstallType", Column.Parameter(0))
 						.Set("Maintainer", Column.Parameter(maintainerCode))
-						.Set("Description", Column.Parameter(description))
+						.Set(DescriptionColumnName, Column.Parameter(description))
 						.Where("Name").IsEqual(Column.Parameter(unlockPackage));
 					Update update = query as Update;
 					update.BuildParametersAsValue = true;
-					string sql = update.GetSqlText();
-					_log.WarnFormat("Unlocking with sql:\r\n {0}",sql);	
 					int isSuccess = update.Execute();
 					_log.WarnFormat(isSuccess == 1
-						? $"Successfully unlocked {unlockPackage} package"
-						: $"Could not unlock {unlockPackage} packages.");
+						? $"Successfully unlocked {packageNameForLog} package"
+						: $"Could not unlock {packageNameForLog} packages.");
+					if (isSuccess != 1) {
+						return false;
+					}
 				}
 			} else {
 				_log.WarnFormat($"Start UnlockPackages, packages: all with maintainer code {maintainerCode}");

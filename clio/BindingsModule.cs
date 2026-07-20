@@ -20,6 +20,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
+using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
@@ -32,6 +33,7 @@ using Clio.Common.SystemServices;
 using Clio.Common.Telemetry;
 using Clio.Common.K8;
 using Clio.Common.Kubernetes;
+using Clio.Common.IIS;
 using Clio.Common.Database;
 using Clio.Common.ScenarioHandlers;
 using Clio.Common.DataForge;
@@ -125,23 +127,85 @@ public class BindingsModule {
 	/// is resolved. Do NOT derive this from a process-wide static inside this module — it must be
 	/// threaded explicitly so a live MCP session's per-environment builds stay gated off.
 	/// </param>
-	/// <returns>The built and validated service provider.</returns>
+	/// <param name="validateGraph">
+	/// When <c>true</c> (default) the provider is built with <c>ValidateOnBuild</c> + <c>ValidateScopes</c>
+	/// so a scope/lifetime or missing-registration mistake fails fast. Pass <c>false</c> ONLY for the
+	/// per-request ephemeral session-container builds on the mcp-http credential-passthrough hot path
+	/// (review): the <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/> graph SHAPE is
+	/// structurally invariant across tenants (only <see cref="EnvironmentSettings"/> values differ), so it
+	/// is validated once at host startup via <see cref="ValidateEnvironmentScopedGraph"/> and re-validating
+	/// on every rotating-token cache miss is pure startup-grade cost. Never pass <c>false</c> for a build
+	/// whose graph shape is not already covered by that one-time startup validation.
+	/// </param>
+	/// <returns>The built (and, unless <paramref name="validateGraph"/> is <c>false</c>, validated) service provider.</returns>
 	public IServiceProvider Register(EnvironmentSettings settings = null,
 		Action<IServiceCollection> additionalRegistrations = null,
 		BindingsModuleRegistrationProfile? profile = null,
 		bool applyBootstrapRepairs = true,
-		bool registerMcpHost = false){
+		bool registerMcpHost = false,
+		bool validateGraph = true){
 		IServiceCollection services = new ServiceCollection();
 		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
 		if (registerMcpHost) {
 			services.AddTransient<McpServerCommand>();
-			RegisterMcpServer(services, settingsRepository).WithStdioServerTransport();
+			// The durable (forgiving) unmatched-name handler is registered HERE — at the stdio call-site —
+			// and deliberately NOT inside the transport-neutral RegisterMcpServer, which the unreleased
+			// mcp-http host also calls (McpHttpServerCommand): the forgiving invocation contract is scoped
+			// to the stdio transport only (ADR adr-mcp-durable-invocation, D1). The SDK invokes the handler
+			// only on a ToolCollection miss, so advertised (resident) tools are never shadowed.
+			RegisterMcpServer(services, settingsRepository)
+				.WithStdioServerTransport()
+				.WithCallToolHandler(static (request, cancellationToken) =>
+					request.Services.GetRequiredService<Command.McpServer.IMcpDurableCallToolHandler>()
+						.HandleAsync(request, cancellationToken));
+			// The invoker registry's constructor reflects every enabled [McpServerToolType] and
+			// SDK-builds the full tool map (~165 methods) — far too expensive to rebuild per call, which
+			// the assembly-scan transient registration would do (and the unmatched-name path resolves it
+			// twice: handler + executor). Pin both the registry and the compatibility catalog as
+			// singletons for the host's lifetime; the tool surface is fixed at process start anyway
+			// (tools/list is registered once), so a singleton also makes feature-flag reads consistent
+			// for the whole session.
+			// ORDERING DEPENDENCY: both types are ALSO auto-registered as transients by the reflection
+			// interface-scan inside RegisterInto (they implement Clio.* interfaces). These AddSingleton
+			// calls win only because RegisterInto ran earlier (line above) — last-registration-wins. If the
+			// scan were ever moved after this block, the lifetime would silently revert to transient and
+			// rebuild the ~165-tool map on every unmatched-name call. Keep this block after RegisterInto.
+			services.AddSingleton<Command.McpServer.Tools.IMcpToolInvokerRegistry,
+				Command.McpServer.Tools.McpToolInvokerRegistry>();
+			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
+				Command.McpServer.McpToolCompatibilityCatalog>();
 		}
 		additionalRegistrations?.Invoke(services);
-		return services.BuildServiceProvider(new ServiceProviderOptions {
-			ValidateOnBuild = true,
-			ValidateScopes = true
+		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
+			ValidateOnBuild = validateGraph,
+			ValidateScopes = validateGraph
 		});
+		if (registerMcpHost) {
+			// Fail-fast validation of the durable-invocation surface. ValidateOnBuild verifies the DI
+			// graph's call sites but does NOT instantiate transients/singletons, so a malformed
+			// compatibility catalog (duplicate canonical/alias) or a duplicate MCP tool NAME would
+			// otherwise surface only on the first tools/call. Resolving both here makes a malformed
+			// surface abort HOST STARTUP instead — the constructors throw on any collision.
+			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
+			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
+		}
+		return provider;
+	}
+
+	/// <summary>
+	/// Validates the <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/> graph SHAPE once —
+	/// builds a representative environment-scoped container with <c>ValidateOnBuild</c> + <c>ValidateScopes</c>
+	/// and disposes it. Called once at mcp-http host startup so the per-request ephemeral builds can skip
+	/// per-build validation (review) while a scope/lifetime or missing-registration mistake in that profile
+	/// still fails fast at startup rather than on the first passthrough request. The representative settings
+	/// are non-connecting (a loopback URI); validation reflects over the graph without any Creatio round-trip
+	/// because every client is registered lazily.
+	/// </summary>
+	public static void ValidateEnvironmentScopedGraph() {
+		EnvironmentSettings representative = new() { Uri = $"{Uri.UriSchemeHttp}://localhost", IsNetCore = true };
+		IServiceProvider probe = new BindingsModule().Register(
+			representative, profile: BindingsModuleRegistrationProfile.EnvironmentScoped, validateGraph: true);
+		(probe as IDisposable)?.Dispose();
 	}
 
 	/// <summary>
@@ -171,6 +235,8 @@ public class BindingsModule {
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
+		services.AddTransient<IRingDistributionService, RingDistributionService>();
+		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
@@ -213,6 +279,12 @@ public class BindingsModule {
 
 		services.AddTransient<IKubernetes>(_ => CreateKubernetesClient());
 
+		// NoReauthExecutor is the ONLY DI-resolved IReauthExecutor: it is injected into
+		// ApplicationClientFactory to build the credential-passthrough (bearer) client, which must
+		// never re-login. It does NOT hijack reauth globally — the login/password + OAuth paths use
+		// CreatioClientAdapter's own internal closure-based ReauthExecutor (not resolved from DI).
+		services.AddSingleton<IReauthExecutor, NoReauthExecutor>();
+
 		services.AddTransient<IKubernetesClient, KubernetesClient>();
 		services.AddTransient<K8ContextValidator>();
 		services.AddTransient<IK8ServiceResolver, K8ServiceResolver>();
@@ -228,7 +300,9 @@ public class BindingsModule {
 		services.AddTransient<ILocalRedisAssertion, LocalRedisAssertion>();
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
+		services.AddTransient<IDeployCreatioDefaultsResolver, DeployCreatioDefaultsResolver>();
 		services.AddTransient<InstallerCommand>();
+		services.AddTransient<PinCertificateCommand>();
 		services.AddTransient<DeployIdentityCommand>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
 		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
@@ -292,6 +366,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
+		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
@@ -300,13 +376,11 @@ public class BindingsModule {
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
-		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
-		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
@@ -337,6 +411,8 @@ public class BindingsModule {
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		services.AddTransient<PageCreateCommand>();
+		services.AddTransient<CreateRelatedPageAddonCommand>();
+		services.AddTransient<GetRelatedPageAddonCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
 		services.AddTransient<SourceCodeSchemaUpdateCommand>();
@@ -374,12 +450,24 @@ public class BindingsModule {
 				RegistryFlavor.Mobile.CacheSubdirectoryName),
 			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
 			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
+		// Requests flavor (Freedom UI request catalog, get-request-info): same transport
+		// chain, its own CDN file / cache subdirectory / local-override env var. The
+		// envelope differs from components, so parsing goes through RequestInfoCatalog.
+		services.AddSingleton<IRequestRegistryClient>(sp => new RequestRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.Requests.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RequestRegistryClient>>()));
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
 		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
+		services.AddSingleton<IRequestInfoCatalog, RequestInfoCatalog>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -404,6 +492,12 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
+		services.AddTransient<ReadEntityBusinessRuleTool>();
+		services.AddTransient<ReadPageBusinessRuleTool>();
+		services.AddTransient<UpdateEntityBusinessRuleTool>();
+		services.AddTransient<UpdatePageBusinessRuleTool>();
+		services.AddTransient<DeleteEntityBusinessRuleTool>();
+		services.AddTransient<DeletePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
@@ -434,11 +528,14 @@ public class BindingsModule {
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
+		services.AddTransient<CreateRelatedPageAddonTool>();
+		services.AddTransient<GetRelatedPageAddonTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<GetProcessSignatureTool>();
+		services.AddTransient<ListPrintablesTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -455,6 +552,7 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -462,6 +560,7 @@ public class BindingsModule {
 		services.AddTransient<CreateThemeTool>();
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
+		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
@@ -480,6 +579,33 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
+		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
+		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
+		// the real accessor/validator are absent). The mcp-http host registers the REAL
+		// CredentialContextAccessor + TargetUrlValidator AFTER this shared build (McpHttpServerCommand.Run),
+		// so last-registration-wins resolves the real ones in HTTP and these null objects everywhere else.
+		// Both interfaces stay in the RegisterAssemblyInterfaceTypes skip-list, which suppresses
+		// auto-registration of BOTH the real and the null implementations (the skip is keyed on the interface).
+		services.AddSingleton<ICredentialContextAccessor, NullCredentialContextAccessor>();
+		services.AddSingleton<ITargetUrlValidator, NullTargetUrlValidator>();
+		// Centralized credential-passthrough fail-fast guard (FR-04, ENG-93347). Reads the SAME
+		// ICredentialContextAccessor seam registered above (null object here, the real per-request
+		// accessor in the mcp-http host via last-registration-wins), so the guard is inert on
+		// stdio/CLI and fires only on authorized passthrough requests. Consumed by guard-only tools
+		// (link-from-repository-*) through the BaseTool.RejectIfPassthroughUnsupported helper.
+		services.AddSingleton<ICredentialPassthroughToolGuard, CredentialPassthroughToolGuard>();
+		// Shared DEFAULT session-container cache (FR-08). The mcp-http host re-registers a run-time
+		// configured instance AFTER this shared build (McpHttpServerCommand.Run) from --session-idle-ttl
+		// / --max-sessions, so last-registration-wins gives the configured cache in HTTP and this
+		// default everywhere else. It stays in the RegisterAssemblyInterfaceTypes skip-list: the impl
+		// ctor takes primitive TimeSpan/int args that cannot be auto-resolved, so an auto-registration
+		// would break ValidateOnBuild.
+		services.AddSingleton<ISessionContainerCache>(_ => new SessionContainerCache(
+			SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+		// Per-tenant execution lock provider (FR-05). The process-wide shared instance so the SAME
+		// tenant serializes on the SAME lock regardless of which container (root or per-session
+		// ephemeral) the call flows through, while DIFFERENT tenants use distinct locks.
+		services.AddSingleton<ITenantExecutionLockProvider>(TenantExecutionLockProvider.Shared);
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -510,6 +636,7 @@ public class BindingsModule {
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<ExperimentalCommand>();
+		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -542,6 +669,7 @@ public class BindingsModule {
 		services.AddTransient<LoadPackagesToFileSystemCommand>();
 		services.AddTransient<LoadPackagesToDbCommand>();
 		services.AddTransient<UploadLicensesCommand>();
+		services.AddTransient<DistributeLicenseCommand>();
 		services.AddTransient<HealthCheckCommand>();
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
@@ -579,9 +707,13 @@ public class BindingsModule {
 		services.AddTransient<RedisCommand>();
 		services.AddTransient<ClearThemesCacheCommand>();
 		services.AddTransient<ListThemesCommand>();
+		services.AddTransient<IThemeCatalog, ListThemesCommand>();
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
+		services.AddTransient<SetUserThemeCommand>();
+		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
@@ -599,6 +731,8 @@ public class BindingsModule {
 		services.AddTransient<CheckWindowsFeaturesCommand>();
 		services.AddTransient<ManageWindowsFeaturesCommand>();
 		services.AddTransient<CreateTestProjectCommand>();
+		services.AddTransient<CreateIntegrationTestProjectCommand>();
+		services.AddTransient<IValidator<CreateIntegrationTestProjectOptions>, CreateIntegrationTestProjectOptionsValidator>();
 		services.AddTransient<ListenCommand>();
 		services.AddTransient<ShowPackageFileContentCommand>();
 		services.AddTransient<CompilePackageCommand>();
@@ -660,10 +794,20 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommandOptionsValidator>();
 		services.AddTransient<AddItemOptionsValidator>();
 		services.AddTransient<ICreatioUninstaller, CreatioUninstaller>();
+		services.AddSingleton<IWindowsUserProfileApi, WindowsUserProfileApi>();
+		services.AddSingleton<IProfileDeletionRetryDelay, ProfileDeletionRetryDelay>();
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			services.AddTransient<IAppPoolProfileCleaner, WindowsAppPoolProfileCleaner>();
+		}
+		else {
+			services.AddTransient<IAppPoolProfileCleaner, NonWindowsAppPoolProfileCleaner>();
+		}
 		services.AddTransient<ICreateIISSiteHandler, CreateIISSiteRequestHandler>();
+		RegisterIisHttpsServices(services);
 		services.AddTransient<IConfigureConnectionStringHandler, ConfigureConnectionStringRequestHandler>();
 		services.AddTransient<IUpdateIISSitePhysicalPathHandler, UpdateIISSitePhysicalPathRequestHandler>();
 		services.AddTransient<GitSyncCommand>();
+
 		services.AddTransient<DeactivatePackageCommand>();
 		services.AddTransient<PublishWorkspaceCommand>();
 		services.AddTransient<ActivatePackageCommand>();
@@ -678,12 +822,15 @@ public class BindingsModule {
 		services.AddTransient<PullPkgCommand>();
 		services.AddTransient<AssemblyCommand>();
 		services.AddTransient<UninstallCreatioCommand>();
+		services.AddTransient<InstallDbHubCommand>();
+		services.AddTransient<SyncDbHubCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateEntitySchemaCommand>();
 		services.AddTransient<UpdateEntitySchemaCommand>();
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
@@ -695,6 +842,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();
@@ -746,36 +894,77 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
-			envSettings => {
-				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
-					? new RemoteDataProvider(envSettings.Uri, envSettings.Login, envSettings.Password,
-						envSettings.IsNetCore)
-					: new RemoteDataProvider(envSettings.Uri, envSettings.AuthAppUri, envSettings.ClientId,
-						envSettings.ClientSecret, envSettings.IsNetCore);
-				return new SysSettingsManager(dataProvider);
-			});
+			envSettings => new SysSettingsManager(BuildRemoteDataProvider(envSettings)));
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
 	}
 
+	private static void RegisterIisHttpsServices(IServiceCollection services) {
+		services.AddTransient<INetFrameworkHttpsConfigurator, NetFrameworkHttpsConfigurator>();
+		services.AddTransient<IIisCertificateResolver, IisCertificateResolver>();
+		services.AddTransient<ICertificateSelectionPrompt, ConsoleCertificateSelectionPrompt>();
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			services.AddTransient<IIisCertificateProvider, WindowsIisCertificateProvider>();
+			services.AddTransient<IIisCertificateBindingService, WindowsIisCertificateBindingService>();
+		}
+		else {
+			services.AddTransient<IIisCertificateProvider, NonWindowsIisCertificateProvider>();
+			services.AddTransient<IIisCertificateBindingService, NonWindowsIisCertificateBindingService>();
+		}
+	}
+
+	// Fallback base address for the no-credential local bootstrap case only (never a multi-tenant
+	// target): used when the environment supplies no explicit Uri.
+	// Composed from Uri.UriSchemeHttp rather than a literal so this loopback bootstrap fallback is not
+	// a hardcoded absolute URI (Sonar S1075). It is only ever used when the environment supplies no Uri.
+	private static readonly string DefaultLocalhostUri = $"{Uri.UriSchemeHttp}://localhost";
+
+	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
+	// consumed via the dedicated bearer ctor and must never reach the login/password path
+	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
+	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
+		if (!string.IsNullOrEmpty(settings.AccessToken)) {
+			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
+		}
+		if (string.IsNullOrEmpty(settings.ClientId)) {
+			return new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
+		}
+		return new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId,
+			settings.ClientSecret, settings.IsNetCore);
+	}
+
+	// Builds a CreatioClient for the environment. Bearer-first: an AccessToken is consumed via the
+	// bearer ctor and must never reach the "Supervisor" fallback (multi-tenant safety, ENG-93208 B1).
+	// The Supervisor/localhost default stays reachable ONLY for the no-credential bootstrap case.
+	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings) {
+		if (!string.IsNullOrEmpty(settings.AccessToken)) {
+			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, settings.AccessToken, settings.IsNetCore);
+		}
+		if (string.IsNullOrEmpty(settings.ClientId)) {
+			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, settings.Login ?? "Supervisor",
+				settings.Password ?? "Supervisor", true, settings.IsNetCore);
+		}
+		return CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri,
+			settings.ClientId, settings.ClientSecret, settings.IsNetCore);
+	}
+
 	private static void RegisterActiveEnvironmentServices(
 		IServiceCollection services, EnvironmentSettings activeSettings) {
 		services.AddSingleton(activeSettings);
-		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
-			string.IsNullOrEmpty(activeSettings.ClientId)
-				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
-					activeSettings.IsNetCore)
-				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
-					activeSettings.ClientSecret, activeSettings.IsNetCore)));
-		Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
-			? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
-				activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
-			: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
-				activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
+		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
+		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
+		// (multi-tenant safety, ENG-93208 B1).
+		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(activeSettings));
 		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-		services.AddSingleton<IApplicationClient>(_ =>
-			new CreatioClientAdapter(lazyCreatioClient));
+		services.AddSingleton<IApplicationClient>(sp =>
+			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
+			// so an ephemeral bearer client cannot fall back to a login/password re-auth
+			// (multi-tenant safety, ENG-93208 B1). Non-bearer keeps the adapter's default
+			// internal closure-based ReauthExecutor byte-for-byte.
+			!string.IsNullOrEmpty(activeSettings.AccessToken)
+				? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+				: new CreatioClientAdapter(lazyCreatioClient));
 		services.AddTransient<SysSettingsManager>();
 	}
 
@@ -902,7 +1091,34 @@ public class BindingsModule {
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
-					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)) {
+					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)
+					// The MCP credential-passthrough seam is registered explicitly in the
+					// mcp-http host only (McpHttpServerCommand.Run): the accessor depends on
+					// IHttpContextAccessor, which is not part of the stdio graph, and both are
+					// scoped to the HTTP transport. Auto-registering them here would fail
+					// ValidateOnBuild in the stdio/tool graph.
+					|| implementedInterface == typeof(ICredentialContextAccessor)
+					|| implementedInterface == typeof(ICredentialHeaderParser)
+					// The edge API-key gate is registered as an instance in the mcp-http host
+					// (McpHttpServerCommand.Run) because its key set is resolved at Run time from
+					// the CLI flag + env var. Auto-registering the type here has no key set and
+					// pollutes the stdio graph.
+					|| implementedInterface == typeof(IPlatformApiKeyGate)
+					// The SSRF / egress target-url validator is registered as an instance in the
+					// mcp-http host (McpHttpServerCommand.Run) because its policy (bound host +
+					// --allowed-base-urls allowlist) is resolved at Run time. Auto-registering the
+					// type here has no policy and pollutes the stdio graph.
+					|| implementedInterface == typeof(ITargetUrlValidator)
+					// The session-container cache is registered explicitly (a DEFAULT singleton in the
+					// shared build, a run-time-configured instance in the mcp-http host). Its impl ctor
+					// takes primitive TimeSpan/int args that DI cannot resolve, so auto-registering the
+					// type here would fail ValidateOnBuild.
+					|| implementedInterface == typeof(ISessionContainerCache)
+					// The per-tenant execution lock provider (FR-05) is registered explicitly as the
+					// process-wide shared instance. Its impl ctor is private (locks must be shared across
+					// every container the host builds), so auto-registering the type would fail
+					// ValidateOnBuild.
+					|| implementedInterface == typeof(ITenantExecutionLockProvider)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

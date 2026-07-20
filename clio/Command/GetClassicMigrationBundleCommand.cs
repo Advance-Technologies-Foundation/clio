@@ -717,7 +717,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		// H1: reading the process-global cwd must serialize against the MCP workspace tools that PIN cwd.
 		// In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
 		// is uncontended.
-		lock (McpServer.Tools.McpToolExecutionLock.SyncRoot) {
+		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
 			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
 				return _ioFileSystem.Path.GetFullPath(options.OutputFile);
 			}

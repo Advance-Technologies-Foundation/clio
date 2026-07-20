@@ -56,6 +56,25 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes batched virtual entity creation callers to the canonical virtual-entities guidance at the decision point.")]
+	public void SchemaSyncTool_ShouldRouteToVirtualEntitiesGuidance_WhenVirtualSchemaIsConsidered() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(SchemaSyncTool)
+			.GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("get-guidance with name virtual-entities",
+			because: "batched is-virtual operations must expose the canonical lifecycle and safety guide");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
 	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange
@@ -91,6 +110,8 @@ public sealed class SchemaSyncToolTests {
 			because: "create-lookup must always inherit from BaseLookup");
 		fakeCreateCommand.CapturedOptions.Environment.Should().Be("dev",
 			because: "the environment should be forwarded from the batch args");
+		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeFalse(
+			because: "lookup schemas remain persistent even if the virtual property is absent");
 		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
 	}
 
@@ -147,7 +168,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
-				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity")]);
+				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true }]);
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(args);
@@ -157,6 +178,8 @@ public sealed class SchemaSyncToolTests {
 			because: "a create-entity with exit code 0 should succeed");
 		fakeCreateCommand.CapturedOptions!.ParentSchemaName.Should().Be("BaseEntity",
 			because: "create-entity should use the specified parent schema");
+		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
+			because: "create-entity should preserve the explicit virtual-schema request");
 	}
 
 	[Test]
@@ -669,6 +692,42 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller must be told that each seed row requires a values wrapper");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
 			because: "sync-schemas should not attempt create-lookup after local seed-row validation fails");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects seed rows for virtual entity creation before executing any remote command.")]
+	public async Task SchemaSync_VirtualEntityWithSeedRows_Should_Fail_Before_Command_Resolution() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"missing-env", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrVirtualItem",
+					TitleLocalizations: Localizations("Virtual item"),
+					SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Unavailable")
+					})]) {
+					IsVirtual = true
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a virtual entity has no physical table that seed rows could populate");
+		response.Results.Should().ContainSingle(
+			because: "the invalid combined operation must stop before mutating the target environment");
+		response.Results[0].Error.Should().Contain("cannot include seed-rows",
+			because: "the caller needs an actionable explanation of the incompatible fields");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "validation must reject the request before resolving or executing the create command");
 	}
 
 	[Test]
@@ -1349,6 +1408,112 @@ public sealed class SchemaSyncToolTests {
 		// Assert
 		await act.Should().ThrowAsync<NullReferenceException>(
 			because: "a programming defect must not be hidden as a benign dataforge: degradation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Streams a per-operation stage marker before each operation and before the seed step, in batch order (ENG-93087).")]
+	public void ExecuteBatch_Should_Stream_Ordered_Stage_Markers_When_Operations_Succeed() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha",
+					TitleLocalizations: Localizations("Alpha"),
+					SeedRows: [
+						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+							["Name"] = ToJsonElement("New")
+						})
+					]),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		var markers = new List<string>();
+
+		// Act
+		SchemaSyncResponse response = tool.ExecuteBatch(args, markers.Add);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "every operation in the batch returned exit code 0");
+		markers.Should().Equal(
+			["1/2: create-entity UsrAlpha", "1/2: seed-data UsrAlpha", "2/2: create-lookup UsrBeta"],
+			because: "sync-schemas must stream one marker per operation plus one before the seed step, in batch order");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not stream a marker for a later operation when an earlier operation fails (stop-on-failure).")]
+	public void ExecuteBatch_Should_Not_Stream_Later_Marker_When_Earlier_Operation_Fails() {
+		// Arrange
+		var failingCreateCommand = new FakeCreateEntitySchemaCommand(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(failingCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha", TitleLocalizations: Localizations("Alpha")),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		var markers = new List<string>();
+
+		// Act
+		SchemaSyncResponse response = tool.ExecuteBatch(args, markers.Add);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the first operation returned a non-zero exit code");
+		markers.Should().Contain("1/2: create-entity UsrAlpha",
+			because: "the first operation's marker is streamed before it runs");
+		markers.Should().NotContain(marker => marker.Contains("2/2", StringComparison.Ordinal),
+			because: "sync-schemas must stop on the first failure and never announce a later operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Aborts the batch and never resolves the second operation's backend command when cancellation is signalled mid-batch after the first operation's marker (ENG-93087).")]
+	public void ExecuteBatch_Should_Abort_Remaining_Operations_When_Cancelled_MidBatch() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha", TitleLocalizations: Localizations("Alpha")),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		using var cts = new System.Threading.CancellationTokenSource();
+		Action<string> reportStage = marker => {
+			if (marker.Contains("1/2", StringComparison.Ordinal)) {
+				cts.Cancel();
+			}
+		};
+
+		// Act
+		Action act = () => tool.ExecuteBatch(args, reportStage, cts.Token);
+
+		// Assert
+		FluentActions.Invoking(act).Should().Throw<OperationCanceledException>(
+			because: "a cancellation signalled after the first operation's marker must abort the batch on the calling thread");
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(
+			Arg.Is<CreateEntitySchemaOptions>(options => options.SchemaName == "UsrBeta"));
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {

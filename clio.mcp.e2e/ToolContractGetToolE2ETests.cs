@@ -17,6 +17,56 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
+	[Description("Returns the virtual entity create defaults and readback fields for both standalone and batched schema tools.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises virtual entity schema support")]
+	public async Task ToolContractGet_Should_Advertise_Virtual_Entity_Contracts() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreateEntitySchemaTool.CreateEntitySchemaToolName,
+					SchemaSyncTool.ToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the MCP server should return all virtual entity related contracts in one request");
+		response.Tools.Should().NotBeNull(
+			because: "a successful contract lookup must include the requested tool definitions");
+		IReadOnlyList<ToolContractDefinition> contracts = response.Tools!;
+		ToolContractDefinition createContract = contracts.Single(tool =>
+			tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		createContract.InputSchema.Properties.Should().Contain(field => field.Name == "is-virtual",
+			because: "the standalone creation contract must expose the virtual-schema argument");
+		createContract.Defaults.Should().Contain(value => value.Name == "is-virtual" && value.Value == "false",
+			because: "standalone entity creation must document persistent schemas as the default");
+		createContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the live standalone contract should route virtual schema work to its canonical guide");
+		ToolContractDefinition syncContract = contracts.Single(tool => tool.Name == SchemaSyncTool.ToolName);
+		syncContract.Defaults.Should().Contain(value =>
+				value.Name == "operations[*].is-virtual" && value.Value == "false",
+			because: "batched create-entity operations must advertise the same persistent default");
+		syncContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the live batched contract should route virtual schema work to its canonical guide");
+		contracts.Single(tool => tool.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName)
+			.OutputContract.Fields.Should().Contain(field => field.Name == "virtual",
+				because: "schema properties must advertise virtual status for readback verification");
+		contracts.Single(tool => tool.Name == ApplicationGetInfoTool.ApplicationGetInfoToolName)
+			.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
+				because: "application context must document the virtual flag on each entity");
+	}
+
+	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract tool is advertised by the MCP server")]
 	public async Task ToolContractGet_Should_Be_Listed_By_Mcp_Server() {

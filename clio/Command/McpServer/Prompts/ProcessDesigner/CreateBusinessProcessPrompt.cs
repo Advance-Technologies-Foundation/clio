@@ -26,10 +26,12 @@ public static class CreateBusinessProcessPrompt {
 		 Steps: (1) call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values;
 		 (2) read `get-guidance name=process-modeling` for the full descriptor contract — element types, flows,
 		 parameters (incl. `typeFromElement` to copy an element parameter's exact type, and a constant `value`
-		 default), the `mappings` target/source contract, signal triggers, and the type-compatibility rule;
+		 default), the `mappings` target/source contract, signal triggers (and a data source `filter` to restrict
+		 which records fire one), and the type-compatibility rule;
 		 (3) supply a JSON descriptor with `name`
 		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
 		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
-		 trigger), not a page save handler. Confirm the target package with the user before building.
+		 trigger), not a page save handler; add a `filter` to fire only for matching records. Confirm the target
+		 package with the user before building.
 		 """;
 }

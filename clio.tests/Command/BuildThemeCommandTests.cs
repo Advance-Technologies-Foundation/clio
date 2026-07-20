@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -65,6 +66,17 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		Primary = "#004fd6",
 		CssClassName = "MyTheme"
 	};
+
+	[Test, Category("Unit")]
+	[Description("The pure-compute build-theme command stays available regardless of any Creatio version: it never contacts an environment, so its options type must not declare a version requirement.")]
+	public void BuildThemeOptions_ShouldNotDeclareCreatioVersionRequirement_WhenInspectingAttributes() {
+		// Arrange & Act
+		bool isGated = RequiresCreatioVersionAttribute.IsDefinedOn(typeof(BuildThemeOptions));
+
+		// Assert
+		isGated.Should().BeFalse(
+			because: "build-theme is pure computation without a target environment and must not force a version probe");
+	}
 
 	[Test, Category("Unit")]
 	[Description("Writes the built theme.css to stdout and touches no files when --output is omitted.")]
@@ -362,5 +374,65 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Assert
 		exitCode.Should().Be(1, because: "an invalid input must surface as a command failure, not a crash");
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("PRIMARY_REQUIRED")));
+	}
+
+	// Pattern B (ADR verification #5, ENG-93347): the resolvedSettings-aware TryBuildTheme overloads, used
+	// only by the build-theme MCP tool. The existing name-based overloads/CLI path tested above are
+	// untouched by this story and stay green unmodified.
+
+	[Test, Category("Unit")]
+	[Description("New resolvedSettings-aware TryBuildTheme overload (build-theme MCP tool only): when resolvedSettings is supplied, resolves the version via _resolverFactory.Create(resolvedSettings) directly — no ISettingsRepository call at all.")]
+	public void TryBuildTheme_ShouldResolveVersionViaResolverFactory_WhenResolvedSettingsSupplied() {
+		// Arrange
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://header-tenant.creatio.com" };
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(new PlatformVersionResolution("10.1.0", VersionResolutionSource.Environment)));
+		_resolverFactory.Create(resolvedSettings).Returns(resolver);
+		BuildThemeOptions options = ValidOptions();
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "a resolvable settings-based version builds a valid theme");
+		_themeTemplateProvider.Received(1).GetCssTemplate("10.1.0");
+		_settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+		error.Should().BeNull(because: "a successful build carries no error");
+	}
+
+	[Test, Category("Unit")]
+	[Description("New resolvedSettings-aware TryBuildTheme overload: when resolvedSettings is null (resolution was skipped or failed upstream), falls back to LatestFallback — the same offline default the CLI's by-name path produces — instead of failing, and never calls the repository or the version-resolver factory.")]
+	public void TryBuildTheme_ShouldFallBackToLatestFallback_WhenResolvedSettingsNull() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, null, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "a null resolvedSettings falls back to the highest bundled template, not a failure");
+		_themeTemplateProvider.Received(1).GetCssTemplate(null);
+		_resolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
+		_settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+		error.Should().BeNull(because: "a LatestFallback build carries no error");
+	}
+
+	[Test, Category("Unit")]
+	[Description("New resolvedSettings-aware TryBuildTheme overload: an explicit --version still wins over a supplied resolvedSettings and skips the version-resolver factory entirely (unchanged precedence rule).")]
+	public void TryBuildTheme_ShouldPreferExplicitVersion_WhenResolvedSettingsAlsoSupplied() {
+		// Arrange
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://header-tenant.creatio.com" };
+		BuildThemeOptions options = ValidOptions();
+		options.Version = "11.0";
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "an explicit version is a valid, self-sufficient input");
+		_themeTemplateProvider.Received(1).GetCssTemplate("11.0");
+		_resolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
+		error.Should().BeNull(because: "a successful build carries no error");
 	}
 }

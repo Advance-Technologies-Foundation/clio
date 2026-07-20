@@ -159,14 +159,14 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The guidance discloses the signal-start trigger limits: no record filter and no tracked-change columns, with an instruction to confirm an unfiltered trigger.")]
+	[Description("The guidance discloses the surviving signal-start 'modified' limit: it fires on any field change and cannot be restricted to specific tracked-change columns, with an instruction to confirm before building.")]
 	public void GetGuide_ShouldDiscloseSignalTriggerLimits_WhenRead() {
 		// Act
 		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
 
 		// Assert
-		text.Should().Contain("NO record filter",
-			because: "the agent must disclose that a signal start fires for every record instead of silently building an unfiltered trigger");
+		text.Should().Contain("column-level restriction cannot be built yet",
+			because: "a signalStart record filter IS buildable now, but the agent must still disclose that WHICH columns count as a change cannot be restricted");
 		text.Should().Contain("ANY field change",
 			because: "the agent must disclose that a 'modified' trigger cannot be limited to specific columns");
 	}
@@ -199,6 +199,48 @@ public sealed class ProcessModelingGuidanceResourceTests {
 			because: "Integer is isolated server-side (ENG-92127 TC-05) and a number-to-number shorthand would wrongly promise Integer->Float");
 		text.Should().Contain("Guid source INTO a lookup target IS allowed",
 			because: "the Guid-into-lookup allowance is a useful capability the compatibility check permits");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guidance carries the data source filter section: the signalStart filter, the signal-start right-hand-side restriction (value/macro/datePart only), the datePart/macro vocabulary, and the setFilter/clearFilter modify ops. Also pins the two corrections: the signalStart example is name-keyed (not id) and the datePart integer bullet forbids a processParameter.")]
+	public void GetGuide_ShouldCarryDataSourceFilterGuidance_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("Data source filters",
+			because: "the filter section documents how to restrict which records fire a signalStart trigger");
+		text.Should().Contain("SIGNAL-START RESTRICTION",
+			because: "the agent must know a signalStart filter allows only value/macro/datePart, not process/element parameter references");
+		text.Should().Contain("HourMinute",
+			because: "the datePart vocabulary (incl. the time-of-day HourMinute part) must be documented for filter conditions");
+		text.Should().Contain("setFilter",
+			because: "the modify-business-process setFilter/clearFilter ops must be documented for editing a filter on an existing process");
+		text.Should().Contain("\"name\": \"Start1\"",
+			because: "elements are name-keyed: the signalStart filter example must use `name` so an agent copying it emits a valid element handle");
+		text.Should().NotContain("\"id\": \"Start1\"",
+			because: "the signalStart filter example must not regress to the id-keyed form, which produces an invalid element handle");
+		text.Should().Contain("never a `processParameter`",
+			because: "the datePart integer bullet must keep the signalStart restriction (a datePart value pairs with a constant, never a processParameter), not the earlier contradictory wording");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guidance pins the relative-date/system macro vocabulary — CurrentHalfYear (which an agent doubted existed) and the recurring DayOfYearToday — and keeps the argument-requiring macros correct: the NDaysOfYear macros need a macroArgument and only DayOfYearToday takes none.")]
+	public void GetGuide_ShouldPinMacroVocabulary_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("CurrentHalfYear",
+			because: "the half-year macro was added specifically because an agent doubted it existed; an unpinned enumeration was already lost to a merge once on this branch");
+		text.Should().Contain("DayOfYearToday",
+			because: "the recurring 'every year' macro must stay documented");
+		text.Should().Contain("NextNDaysOfYear",
+			because: "the NDaysOfYear macros require an integer macroArgument and must be listed among the argument-requiring macros, or an agent following the guide verbatim sends a rejected payload");
+		text.Should().Contain("the ONLY DayOfYear macro that takes NO argument",
+			because: "only DayOfYearToday is argument-free; the guide must not let the three DateArg 'every year' macros drift back into the no-argument list");
 	}
 
 	[Test]

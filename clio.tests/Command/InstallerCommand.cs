@@ -28,17 +28,25 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		base.Setup();
 	}
 
+	public override void TearDown() {
+		_testKubernetesMock.ClearReceivedCalls();
+		_creatioInstallerServiceMock.ClearReceivedCalls();
+		base.TearDown();
+	}
+
 	[OneTimeTearDown]
 	public void OneTimeTearDown() {
 		_testKubernetesMock?.Dispose();
 	}
 
-	[Test(Description = "Should return without waiting for user input")]
+	[Test]
+	[Description("Should return without waiting for user input")]
 	public void Execute_ReturnsWithoutWaitingForInput_WhenSilent(){
 		//Arrange
 		var command = Container.GetRequiredService<InstallerCommand>();
 		PfInstallerOptions options = new () {
-			IsSilent = true
+			IsSilent = true,
+			SiteName = "test-site"
 		};
 		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
 			.Returns(0);
@@ -47,7 +55,7 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		var actual = command.Execute(options);
 		
 		//Assert
-		actual.Should().Be(0);
+		actual.Should().Be(0, "because silent deployment should complete without waiting for console input");
 	}
 	
 	[Test(Description = "Execute completes on Enter when not silent")]
@@ -70,12 +78,14 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		
 	}
 	
-	[Test(Description = "Should return 0 when OK")]
+	[Test]
+	[Description("Should return 0 when OK")]
 	public void Execute_DoesNotOpenBrowser_WhenSilent(){
 		//Arrange
 		var command = Container.GetRequiredService<InstallerCommand>();
 		PfInstallerOptions options = new PfInstallerOptions() {
-			IsSilent = true
+			IsSilent = true,
+			SiteName = "test-site"
 		};
 		_creatioInstallerServiceMock.Execute(Arg.Any<PfInstallerOptions>())
 			.Returns(0);
@@ -87,8 +97,10 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		var actual = command.Execute(options);
 		
 		//Assert
-		actual.Should().Be(0);
-		_creatioInstallerServiceMock.Received(0).StartWebBrowser(options);
+		actual.Should().Be(0, "because a successful silent deployment returns the installer exit code");
+		_creatioInstallerServiceMock.ReceivedCalls().Should().NotContain(
+			call => call.GetMethodInfo().Name == nameof(ICreatioInstallerService.StartWebBrowser),
+			"because silent deployment must not open a browser");
 	}
 	
 	[Ignore( "StartWebBrowser is now called from the CreatioInstallerService directly" )]

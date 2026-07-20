@@ -35,7 +35,7 @@ public sealed class SqlSchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SqlSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaCreateCommand>(options);
