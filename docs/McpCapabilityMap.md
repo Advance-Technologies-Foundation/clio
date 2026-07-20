@@ -681,10 +681,11 @@ What an external AI can practically do here:
 - build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
+- brand beyond the theme: write the four logo slots (`LogoImage`, `MenuLogoImage`, `ConfigurationPageLogoImage`, `CrtAppToolbarLogo`) as Binary sys settings via `update-sys-setting` + `value-file-path`, and apply a shell background (image upload via the platform `ImageAPIService` on an authenticated browser session, gallery registration via `SysImageInTag`, activation via `CrtBackgroundConfig`) — the exact mechanics live in the `theming` guidance's "Branding — logos and background" section (ENG-92981)
 
 Companion surfaces (see the `theming` guidance):
 
-- `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+- `get-guidance name=theming` — the palette conversation, the build step, the workspace/dev vs no-code/server delivery flows, and the branding companion mechanics (logos and the shell background).
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

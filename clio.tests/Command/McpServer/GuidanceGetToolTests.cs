@@ -158,6 +158,20 @@ public sealed class GuidanceGetToolTests {
 			because: "the guide routes to theming tools by their canonical names only");
 		result.Article.Text.Should().Contain("build-theme",
 			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
+		result.Article.Text.Should().Contain("Branding — logos and background",
+			because: "the guide must carry the branding companion section for logos and the shell background (ENG-92981)");
+		result.Article.Text.Should().Contain("CrtAppToolbarLogo",
+			because: "the branding section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		result.Article.Text.Should().Contain("value-file-path",
+			because: "logo uploads must route through the Binary sys-setting file path, never inline bytes");
+		result.Article.Text.Should().Contain("HideSplashScreenLogoImage",
+			because: "applying logos must also hide the stock splash logo");
+		result.Article.Text.Should().Contain("ImageAPIService/upload",
+			because: "the background image upload must use the platform image API, since OData JSON cannot write the binary stream");
+		result.Article.Text.Should().Contain("SysImageInTag",
+			because: "the background must be registered in the Appearance gallery via the shell-background tag");
+		result.Article.Text.Should().Contain("CrtBackgroundConfig",
+			because: "the shell background is applied by pointing CrtBackgroundConfig at the uploaded image");
 	}
 
 	[Test]
