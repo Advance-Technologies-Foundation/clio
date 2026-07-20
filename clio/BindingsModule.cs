@@ -572,6 +572,11 @@ public class BindingsModule {
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<ISchemaConvergenceService, SchemaConvergenceService>();
+		// Synchronous backoff for the sync-schemas per-operation transient-retry loop (ENG-93374). The
+		// loop runs inside the per-tenant McpToolExecutionLock where await is illegal, so the delay must
+		// be synchronous. Registered as the shared stateless singleton; tests substitute a zero-delay
+		// double so retry logic runs instantly.
+		services.AddSingleton<IRetryDelay>(ThreadSleepRetryDelay.Shared);
 		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
 		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
 		// the real accessor/validator are absent). The mcp-http host registers the REAL

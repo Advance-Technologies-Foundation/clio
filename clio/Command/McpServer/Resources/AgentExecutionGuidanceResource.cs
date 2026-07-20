@@ -67,7 +67,9 @@ public sealed class AgentExecutionGuidanceResource {
 			       - Use `update-entity-schema` semantics inside `sync-schemas` to extend an existing main entity. Use `create-entity-schema` only for additional business objects with distinct meaning.
 			       - Create lookup entities before entities that reference them.
 			       - Prefer batched lookup seeding inside `sync-schemas`. Use `create-data-binding-db` only when the run explicitly needs a separate binding artifact, custom filter, or cross-package reference.
-			       - After an ambiguous `sync-schemas` failure (the request may have reached the server but the response was lost), re-submit the SAME batch verbatim. Do NOT hand-compose a catch-up batch of only the operations that failed or did not run. `create-lookup` and `update-entity` are convergent, so already-applied operations replay as `already-satisfied`/`reconciled` with no duplicate mutation; a durable collision surfaces as `success: false` + `outcome: collision` + `collision-info`, so fix that real cause and re-run rather than reconstructing a partial batch.
+			       - `sync-schemas` retries transient network failures (DNS/reset/timeout/gateway) per operation on its own — do NOT wrap the whole call in your own retry for a transient flap.
+			       - After an ambiguous `sync-schemas` failure (the request may have reached the server but the response was lost), re-submit the SAME batch verbatim. `create-lookup`, `create-entity`, and `update-entity` are convergent, so already-applied schema operations replay as `already-satisfied`/`reconciled` with no duplicate mutation; a durable collision surfaces as `success: false` + `outcome: collision` + `collision-info`, so fix that real cause and re-run rather than reconstructing a partial batch.
+			       - When the response carries a `resume-plan`, resubmitting ONLY `resume-plan.operations` (the failed op plus the not-run ops, already in re-submittable shape) is the efficient path; it is also required for `seed-data`, which is NOT replay-safe (rows without a `Name` PK-conflict), because the plan converts a post-create seed failure to a standalone `seed-data` op instead of recreating the schema.
 
 			       Default value rules
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit schema default or UI default in addition to the seed row.
@@ -91,6 +93,7 @@ public sealed class AgentExecutionGuidanceResource {
 
 			       Retry and failure policy
 			       - Retry transient MCP transport failures up to 3 attempts with a short delay before fail-fast classification.
+			       - `sync-schemas` already performs this per-operation transient retry internally and returns a `resume-plan` on a mid-batch abort; consume the resume-plan instead of re-running the whole batch (see Schema sync recovery patterns).
 			       - For transient site reachability errors (DNS resolution failures, connect timeouts, temporary host-unreachable), retry the same registration/healthcheck path up to 3 additional attempts with 15-second delays before fail-fast classification.
 			       - If required tools are missing in `tools/list`, stop with a blocker.
 			       - If `get-tool-contract` cannot provide executable metadata, stop with a blocker.

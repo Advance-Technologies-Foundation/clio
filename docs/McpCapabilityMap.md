@@ -407,11 +407,10 @@ Why `sync-schemas` matters:
 - it batches create/update/seed actions
 - it is a better fit for agents that want one atomic plan execution instead of many tiny tool calls
 
-`sync-schemas` is **convergent (re-run-safe)**. `create-lookup` and `update-entity` read current
-server state first and apply only the missing delta (create-if-absent, add-only-missing-columns,
-per-column add/modify/remove; unlisted columns untouched), so re-submitting the identical batch after
-an ambiguous failure is safe — an agent must NOT hand-compose a catch-up batch of only the remaining
-operations. Details an external AI relies on:
+`sync-schemas` is **convergent (re-run-safe)**. `create-lookup`, `create-entity`, and `update-entity`
+read current server state first and apply only the missing delta (create-if-absent,
+add-only-missing-columns, per-column add/modify/remove; unlisted columns untouched), so re-submitting
+the identical batch after an ambiguous failure is safe. Details an external AI relies on:
 
 - **`outcome` discriminator** on each per-operation result: `created` | `reconciled` |
   `already-satisfied` | `collision` (additive; omitted for `seed-data`). `reconciled` and
@@ -425,6 +424,17 @@ operations. Details an external AI relies on:
 - **Seed-data `Name` contract**: a row is replay-safe only when the target schema has a `Name` column
   AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are
   non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay.
+
+**Per-operation `status`, transient retry, and resume-plan.** Each entry in `results` carries a
+machine-readable `status` (`completed` | `failed`), an `operation-index` (zero-based index into the
+request `operations`), and — only when the operation was retried for a transient network fault — an
+`attempts` count. Transient network failures (DNS/reset/timeout/gateway) are retried per operation
+(up to 3 attempts with short backoff) before the op fails. On a mid-batch abort the response carries
+a `resume-plan` (the failed op plus the not-run ops, in re-submittable shape). Because the schema ops
+are convergent, re-submitting the whole batch verbatim is safe; resubmitting only
+`resume-plan.operations` is the efficient path and is required for `seed-data` (NOT replay-safe),
+which the plan converts to a standalone op instead of recreating the schema.
+
 
 ### 4. User Task Engineering
 
