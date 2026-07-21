@@ -132,6 +132,8 @@ public sealed class PageValidateTool(
 				() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)),
 			InsertSelfConsistency: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
+			WidgetCaption: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources)),
 			LocalizableText: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateLocalizableTextLiterals(body)),
 			Binding: RunContentValidation(contentResult,
@@ -164,6 +166,12 @@ public sealed class PageValidateTool(
 		warnings.AddRange(content.Field.Warnings);
 		if (!content.Binding.IsValid) {
 			warnings.AddRange(content.Binding.Errors);
+		}
+		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (validate-page has no schema
+		// context, so it cannot see keys a prior save already registered). Surface it as a warning; the
+		// authoritative hard gate runs on the save path (PageUpdateCommand) against the final merged set.
+		if (!content.WidgetCaption.IsValid) {
+			warnings.AddRange(content.WidgetCaption.Errors);
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
 		warnings.AddRange(content.ContextAwait.Warnings);
@@ -215,6 +223,7 @@ public sealed class PageValidateTool(
 	private sealed record ContentValidationResults(
 		SchemaValidationResult Field,
 		SchemaValidationResult InsertSelfConsistency,
+		SchemaValidationResult WidgetCaption,
 		SchemaValidationResult LocalizableText,
 		SchemaValidationResult Binding,
 		SchemaValidationResult ConverterDecl,

@@ -58,6 +58,9 @@ public static class McpCoreToolProfile {
 		// Freedom UI component lookup (ENG-89871 hot path)
 		typeof(ComponentInfoTool),                 // get-component-info
 
+		// Freedom UI request lookup (ENG-93187)
+		typeof(RequestInfoTool),                   // get-request-info
+
 		// entity-schema lookup / inspection
 		typeof(FindEntitySchemaTool),              // find-entity-schema
 		typeof(GetEntitySchemaPropertiesTool),     // get-entity-schema-properties
@@ -75,9 +78,12 @@ public static class McpCoreToolProfile {
 		typeof(GuidanceGetTool),                   // get-guidance
 		typeof(ToolContractGetTool),               // get-tool-contract
 
-		// system-setting read / discovery
-		typeof(SysSettingGetTool),                 // get-sys-setting
-		typeof(SysSettingsListTool),               // list-sys-settings
+		// NOTE: SysSettingGetTool / SysSettingsListTool were moved OUT of the resident profile. Each is
+		// a single-method class (no destructive ride-along, unlike the DataForgeTool precedent), and
+		// system-setting read/discovery is a niche path relative to app/page/entity discovery. Both
+		// tool names are already in the get-tool-contract curated index (CanonicalToolNames,
+		// independent of residency), so read discovery is unaffected; reachable via clio-run. No
+		// canonical name changed, so no McpToolCompatibilityCatalog entry is needed.
 	};
 
 	/// <summary>

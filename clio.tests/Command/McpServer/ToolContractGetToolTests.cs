@@ -266,6 +266,26 @@ public sealed class ToolContractGetToolTests {
 			because: "execute-esq is a read-only ESQ query tool annotated as non-destructive");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("get-request-info appears in the compact discovery index as a resident, non-destructive tool, matching its membership in McpCoreToolProfile.CoreToolTypes and its ReadOnly=true / Destructive=false MCP annotation.")]
+	public void ToolContractGet_Should_MarkRequestInfo_Resident_And_NonDestructive_InIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry requestInfo = result.Index!.Single(entry => entry.Name == RequestInfoTool.ToolName);
+		requestInfo.Resident.Should().BeTrue(
+			because: "get-request-info is a member of McpCoreToolProfile.CoreToolTypes, so it ships resident in tools/list");
+		requestInfo.Destructive.Should().BeFalse(
+			because: "get-request-info is annotated ReadOnly=true, Destructive=false on its MCP tool method");
+	}
+
 	// ENG-92761 (F2): the compact index must let an agent tell WHICH tools are called natively (present
 	// in tools/list) vs. reached only through clio-run, without depending on an invoker registry.
 	[Test]
@@ -2303,5 +2323,104 @@ public sealed class ToolContractGetToolTests {
 				&& alias.Status == "rejected"
 				&& alias.Message.Contains("component-type"),
 			because: "an agent that passes the wrong-WORD selector must be redirected to 'component-type' rather than left to guess");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Load-bearing premise for the discovery-gating hardening: with every toggle enabled, the registry-derived compact index is a superset of the toggle-blind McpToolSchemaCatalog reflection set - the only catalog name absent from the index is get-tool-contract itself, which never indexes itself. Guards against a future registration-path divergence silently shrinking the Ring-consumed index below the reflection catalog.")]
+	public void ToolContractGet_IndexNames_Should_BeSuperset_Of_SchemaCatalog_When_AllTogglesEnabled() {
+		// Arrange - every tool type enabled.
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+		string[] missing = McpToolSchemaCatalog.RegisteredToolNames
+			.Except(index.Index!.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+		// Assert
+		index.Index.Should().NotBeNullOrEmpty(because: "the no-args call must produce the compact index");
+		missing.Should().BeEquivalentTo(new[] { ToolContractGetTool.ToolName },
+			because: "the only reflection-catalog tool absent from the fully-enabled compact index is get-tool-contract (deliberately excluded from indexing itself); every other tool the toggle-blind schema catalog knows must also be in the registry-derived index, so dropping the schema-catalog union from the index cannot lose a tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degraded path: with a null invoker registry, get-tool-contract falls back to the toggle-blind McpToolSchemaCatalog on all three discovery surfaces - an uncurated-but-registered tool still resolves by named lookup, is suggested for a near-miss, and appears in the compact index.")]
+	public void ToolContractGet_Should_ResolveUncuratedTool_ViaSchemaCatalog_ForLookupSuggestionsAndIndex_When_RegistryNull() {
+		// Arrange - no invoker registry, so the schema-catalog fallback governs discovery.
+		ToolContractGetTool tool = new();
+		string toolName = DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName;
+
+		// Act - named lookup.
+		ToolContractGetResponse lookup = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert - resolves via the reflection-catalog fallback.
+		lookup.Success.Should().BeTrue(
+			because: "with no registry the reflection-catalog fallback resolves an uncurated registered tool");
+		lookup.Tools!.Single().Name.Should().Be(toolName,
+			because: "the fallback returns the requested tool verbatim");
+
+		// Act - near-miss suggestions.
+		ToolContractGetResponse miss = tool.GetToolContracts(new ToolContractGetArgs([toolName + "x"]));
+
+		// Assert - the real name is suggested from the schema-catalog pool.
+		miss.Success.Should().BeFalse(because: "a near-miss name matches no tool");
+		miss.Error!.Code.Should().Be("tool-not-found", because: "an unknown name must fail as tool-not-found");
+		miss.Error.Suggestions.Should().Contain(toolName,
+			because: "with a null registry BuildSuggestions draws its pool from McpToolSchemaCatalog.RegisteredToolNames, so the near-miss surfaces the real uncurated name");
+
+		// Act - compact index.
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert - present in the index via the schema-catalog union.
+		index.Index!.Select(entry => entry.Name).Should().Contain(toolName,
+			because: "with a null registry BuildIndexToolNames unions CanonicalToolNames with the schema catalog, so an uncurated registered tool still appears in the compact index");
+	}
+	
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the curated get-request-info contract: input args, the environment-name/version mutual-exclusion validator, the rejected kebab-case aliases, the output envelope fields, and the memory-authored-params anti-pattern.")]
+	public void ToolContractGet_Should_Return_RequestInfo_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([RequestInfoTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-request-info has a curated contract discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(RequestInfoTool.ToolName,
+			because: "the returned contract must be for the requested tool");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(
+			["request-type", "search", "environment-name", "version", "uri", "login", "password"],
+			because: "the contract must advertise every authorable input argument");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "mutually-exclusive"
+				&& validator.Context!.Contains("mutually exclusive", StringComparison.OrdinalIgnoreCase),
+			because: "environment-name and version are mutually exclusive, and the contract must advertise that rule");
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == "requestType"
+				&& alias.CanonicalName == "request-type"
+				&& alias.Status == "rejected",
+			because: "the camelCase requestType selector must be advertised as rejected in favor of request-type");
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == "environmentName"
+				&& alias.CanonicalName == "environment-name"
+				&& alias.Status == "rejected",
+			because: "the camelCase environmentName selector must be advertised as rejected in favor of environment-name");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(
+			["success", "mode", "parameters", "baseParameters", "documentation", "requiresVersionConfirmation", "resolvedFrom"],
+			because: "the contract must document the request-catalog output envelope: the authorable parameters map, the separate platform-injected baseParameters, per-request documentation, the version resolver tier, and the latest-fallback hard stop");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "parameters"
+				&& field.Description.Contains("valueSource", StringComparison.Ordinal),
+			because: "the parameters field must explain the valueSource probe annotation so an agent fills environment-dependent values from the named probe, never from memory");
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
+		contract.AntiPatterns!.Should().Contain(pattern =>
+				pattern.Pattern.Contains("memory", StringComparison.OrdinalIgnoreCase),
+			because: "authoring request names or params from memory is the core anti-pattern the catalog exists to prevent");
 	}
 }

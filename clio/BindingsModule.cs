@@ -327,6 +327,8 @@ public class BindingsModule {
 			services.AddTransient<IFileSystem, FileSystem>();
 		}
 
+		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
@@ -446,12 +448,24 @@ public class BindingsModule {
 				RegistryFlavor.Mobile.CacheSubdirectoryName),
 			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
 			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
+		// Requests flavor (Freedom UI request catalog, get-request-info): same transport
+		// chain, its own CDN file / cache subdirectory / local-override env var. The
+		// envelope differs from components, so parsing goes through RequestInfoCatalog.
+		services.AddSingleton<IRequestRegistryClient>(sp => new RequestRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.Requests.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RequestRegistryClient>>()));
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
 		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
+		services.AddSingleton<IRequestInfoCatalog, RequestInfoCatalog>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -519,6 +533,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<GetProcessSignatureTool>();
+		services.AddTransient<ListPrintablesTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -531,6 +546,7 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -541,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
+		services.AddTransient<GetRecordRightsTool>();
+		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
@@ -557,6 +575,11 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
+		// Synchronous backoff for the sync-schemas per-operation transient-retry loop (ENG-93374). The
+		// loop runs inside the per-tenant McpToolExecutionLock where await is illegal, so the delay must
+		// be synchronous. Registered as the shared stateless singleton; tests substitute a zero-delay
+		// double so retry logic runs instantly.
+		services.AddSingleton<IRetryDelay>(ThreadSleepRetryDelay.Shared);
 		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
 		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
 		// the real accessor/validator are absent). The mcp-http host registers the REAL
@@ -820,6 +843,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();

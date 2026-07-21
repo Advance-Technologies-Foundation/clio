@@ -2219,3 +2219,58 @@ stories:
     depends_on:
       - story-clio-guidance-development-1
     blocks: []
+
+  # --- sync-schemas-verify-resume stories (ENG-93374, refines PR #910) — added 2026-07-20 ---
+  # Internal fix to ExecuteCreateSchema in SchemaSyncTool.cs: verify requested columns against
+  # the existing schema before forcing resume success. 3 files touched, no new CLI surface.
+  # Order: 1 -> 2 -> 3 (linear; no story depends on a later one). Ships inside PR #910.
+  - id: story-sync-schemas-verify-resume-1
+    title: "Verify requested columns before resuming a same-package create-lookup"
+    feature: "sync-schemas-verify-resume"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-sync-schemas-verify-resume-1.md
+    prd: spec/prd/prd-sync-schemas-verify-resume.md
+    adr: spec/adr/adr-sync-schemas-verify-resume.md
+    jira: ENG-93374
+    fr: [FR-01, FR-02, FR-04, FR-07, FR-08]
+    ac: [AC-01, AC-02, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-sync-schemas-verify-resume-2
+      - story-sync-schemas-verify-resume-3
+
+  - id: story-sync-schemas-verify-resume-2
+    title: "Honest failure on durable collision, resumed-existing degrade, status/message consistency"
+    feature: "sync-schemas-verify-resume"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-sync-schemas-verify-resume-2.md
+    prd: spec/prd/prd-sync-schemas-verify-resume.md
+    adr: spec/adr/adr-sync-schemas-verify-resume.md
+    jira: ENG-93374
+    fr: [FR-03, FR-05, FR-06]
+    ac: [AC-03, AC-04, AC-06]
+    depends_on:
+      - story-sync-schemas-verify-resume-1
+    blocks:
+      - story-sync-schemas-verify-resume-3
+
+  - id: story-sync-schemas-verify-resume-3
+    title: "Different-package regression test pinning the collision guard"
+    feature: "sync-schemas-verify-resume"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    file: spec/stories/story-sync-schemas-verify-resume-3.md
+    prd: spec/prd/prd-sync-schemas-verify-resume.md
+    adr: spec/adr/adr-sync-schemas-verify-resume.md
+    jira: ENG-93374
+    fr: [FR-09]
+    ac: [AC-05]
+    depends_on:
+      - story-sync-schemas-verify-resume-1
+      - story-sync-schemas-verify-resume-2
+    blocks: []

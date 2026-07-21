@@ -570,6 +570,60 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical home-page guidance article")]
+	[Description("Verifies get-guidance resolves the home-page guide over the real stdio MCP path, confirming the create-page tool and routing map route to a live catalog entry.")]
+	public async Task GuidanceGet_Should_Return_Home_Page_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "home-page"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "home-page is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/home-page",
+			because: "the canonical resource URI for the home-page guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP home-page guide",
+			because: "the guidance tool should return the canonical home-page guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical dashboard-and-home-page-layout guidance article")]
+	[Description("Verifies get-guidance resolves the shared dashboard-and-home-page-layout guide over the real stdio MCP path — the layout/styling guide the dashboards router and home-page guide both route to after the extraction.")]
+	public async Task GuidanceGet_Should_Return_Widget_Layout_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "dashboard-and-home-page-layout"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "dashboard-and-home-page-layout is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-and-home-page-layout",
+			because: "the canonical resource URI for the dashboard-and-home-page-layout guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP dashboard and home page layout guide",
+			because: "the guidance tool should return the canonical dashboard-and-home-page-layout guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical ESQ guidance article")]
 	public async Task GuidanceGet_Should_Return_Esq_Guide() {
 		// Arrange
@@ -774,9 +828,9 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance hides process-modeling while the process-designer feature is off, but still serves run-process-button")]
-	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while the deliberately ungated run-process-button guide (the shipped run-process scenario consumed by update-page and the page guides) still resolves.")]
-	public async Task GuidanceGet_Should_Hide_ProcessModeling_But_Serve_RunProcessButton_When_Feature_Disabled() {
+	[AllureName("get-guidance hides process-modeling while the process-designer feature is off and treats the removed run-process-button guide as unknown")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while ungated guides stay advertised. Also pins the ENG-93187 removal of the standalone run-process-button guide (removed with no alias, so it resolves as unknown and is no longer advertised); its successor guide (when-to-use-requests) ships always-on and is covered by RequestInfoToolE2ETests.")]
+	public async Task GuidanceGet_Should_Hide_ProcessModeling_And_Treat_RemovedRunProcessButton_As_Unknown_When_Feature_Disabled() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -803,14 +857,12 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the disabled process-modeling guide must not be advertised in availableGuides");
 		processModeling.AvailableGuides.Should().Contain("page-schema-handlers",
 			because: "ungated guides must stay advertised while the process-designer feature is off");
-		processModeling.AvailableGuides.Should().Contain("run-process-button",
-			because: "run-process-button is deliberately ungated and must stay advertised while the feature is off");
-		runProcessButton.Success.Should().BeTrue(
-			because: "run-process-button documents the shipped run-process scenario and must resolve while the process-designer feature is off");
-		runProcessButton.Article.Should().NotBeNull(
-			because: "the ungated guide must return its article over the real MCP transport");
-		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
-			because: "the canonical run-process-button article URI must be stable");
+		processModeling.AvailableGuides.Should().NotContain("run-process-button",
+			because: "the standalone run-process-button guide was removed under ENG-93187 with no alias and must no longer be advertised in availableGuides");
+		runProcessButton.Success.Should().BeFalse(
+			because: "the standalone run-process-button guide was removed under ENG-93187 with no alias and must now resolve as an unknown guidance name");
+		runProcessButton.Article.Should().BeNull(
+			because: "an unknown guidance name must not return an article over the real MCP transport");
 	}
 
 	[Test]

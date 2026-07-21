@@ -407,6 +407,17 @@ Why `sync-schemas` matters:
 - it batches create/update/seed actions
 - it is a better fit for agents that want one atomic plan execution instead of many tiny tool calls
 
+**Per-operation `status` values.** Each entry in `results` carries a machine-readable `status`:
+`completed` or `failed`. `create-lookup` can additionally report the additive `resumed-existing`
+status: on a resubmit where the lookup already exists in the target package but the requested
+columns could NOT be verified (the column read threw or failed), the operation still completes the
+outstanding registration with `success: true` but returns `status: "resumed-existing"` plus a
+warning that the requested columns are NOT confirmed present — verify with
+`get-entity-schema-properties` or resubmit. When the read succeeds and a requested column is
+genuinely missing, the operation fails honestly (`success: false`) with the "use update-entity to
+add columns" hint rather than masquerading as `completed`. Consumers should treat any
+non-`completed` status as not-fully-verified.
+
 ### 4. User Task Engineering
 
 This is a focused but meaningful workspace-backed capability.
@@ -649,7 +660,7 @@ environment.
 - `list-user-tasks` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — returns the environment's user-task palette (built-in + custom; name + UId) for `userTaskName` selection when building a process.
 - `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
 - `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters,signal?}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted.
-- `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: the `run-process-button` guidance.
+- `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: authoring crt.RunBusinessProcessRequest via the request catalog (get-request-info).
 
 What an external AI can practically do here:
 

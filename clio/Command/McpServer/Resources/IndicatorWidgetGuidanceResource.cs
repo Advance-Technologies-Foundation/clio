@@ -38,6 +38,13 @@ public sealed class IndicatorWidgetGuidanceResource {
 
 		       ## General
 
+		       ### Title localization
+		       The widget `config.title` is emitted as `#ResourceString(IndicatorWidget_<slug>_title)#`. Clio registers it ONLY when you pass it in
+		       the `resources` parameter.
+		       ALWAYS pair the title with `resources: '{"IndicatorWidget_<slug>_title": "<the title text>"}'`.
+		       Saving (`update-page` / `sync-pages`) now HARD REJECTS an inserted widget title whose key would not
+		       be registered this way; `validate-page` flags it as a warning  — see `page-schema-resources`.
+
 		       ### Placement Rules
 		       - Never set `parentName` as code of a dashboard component.
 		       - You may use `parentName`: "Main" only when working with Home pages.
@@ -45,10 +52,10 @@ public sealed class IndicatorWidgetGuidanceResource {
 		         you know there are other widgets, place it near the existing ones (use the same `parentName` as
 		         another widget).
 
-		       ## Page specific rules
-		       Pick `theme` / `layout.color` by the page surface (desktop, list/form, home). Those per-surface
-		       defaults are owned by the `crt.IndicatorWidget` documentation — read it via `get-component-info`.
-		       For dashboards, see the `dashboards` guidance (band/grid layout and the plain-white card policy).
+		       ## Card theme
+		       The card theme is set by the SURFACE's guide, not here: `dashboard-and-home-page-layout` for dashboards and home
+		       pages (plain-white / `theme` "without-fill"), `desktop-page` for desktops (glassmorphism). For the
+		       rest of the runtime config read the `crt.IndicatorWidget` documentation via `get-component-info`.
 
 		       """
 	};

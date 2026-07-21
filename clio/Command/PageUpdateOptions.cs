@@ -181,11 +181,17 @@ namespace Clio.Command {
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
+				if (options.DryRun) {
+					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
+					return true;
+				}
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
+				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
+				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
@@ -505,6 +511,46 @@ namespace Clio.Command {
 			(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys, dsBoundKeys);
 			schemaToSave[LocalizableStringsKey] = cleaned;
 			return registered.Count > 0 ? registered : null;
+		}
+
+		/// <summary>
+		/// Authoritative widget-caption resolvability gate. After <see cref="UpdateSchemaBody"/>
+		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
+		/// widget/container caption binds a localizable key that is neither
+		/// present in that final set nor auto-provided by a DS-bound attribute
+		/// </summary>
+		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
+		/// <summary>
+		/// Validates widget caption resource resolutions during dry-run (web pages only) and returns
+		/// advisory warnings to surface potential issues that a real save might reject.
+		/// </summary>
+		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
+		private static List<string> BuildDryRunWidgetCaptionWarnings(
+				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
+			if (schemaType == PageSchemaType.Mobile) {
+				return null;
+			}
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources);
+			return result.IsValid ? null : new List<string>(result.Errors);
+		}
+
+		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
+				JObject schemaToSave, string body, PageSchemaType schemaType) {
+			if (schemaType == PageSchemaType.Mobile) {
+				return null;
+			}
+			HashSet<string> registeredNames = ResourceStringHelper.GetExistingKeys(schemaToSave[LocalizableStringsKey] as JArray);
+			HashSet<string> dsBoundKeys = SchemaValidationService.CollectViewModelPaths(body).Keys
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(
+				body, registeredNames, dsBoundKeys);
+			if (result.IsValid) {
+				return null;
+			}
+			return new PageUpdateResponse {
+				Success = false,
+				Error = $"Body contains inserted widget captions bound to unregistered localizable strings: {string.Join("; ", result.Errors)}"
+			};
 		}
 
 		private static void MergeOptionalProperties(JObject schemaToSave, JArray incoming) {

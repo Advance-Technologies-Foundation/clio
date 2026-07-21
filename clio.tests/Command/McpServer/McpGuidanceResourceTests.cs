@@ -219,7 +219,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns handler guidance that keeps handler logic separate from validators and converters in clio MCP page editing.")]
+	[Description("Returns the canonical handler guidance that keeps handler logic separate from validators and converters in clio MCP page editing, including the request-catalog pointers.")]
 	public void PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide() {
 		// Arrange
 		PageSchemaHandlersGuidanceResource resource = new();
@@ -484,8 +484,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",
 			because: "handler guidance should expose the cancel-edits request contract");
-		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |",
-			because: "the handler catalog should point to the single-source-of-truth run-process-button guide and carry the CODE-not-caption rule instead of restating the full param list");
+		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the request catalog: get-request-info `crt.RunBusinessProcessRequest` (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-request-info `crt.RunBusinessProcessRequest` before authoring this button |",
+			because: "the handler catalog should point to the single-source-of-truth request catalog (get-request-info crt.RunBusinessProcessRequest) and carry the CODE-not-caption rule instead of restating the full param list");
 		article.Text.Should().Contain("| `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |",
 			because: "handler guidance should expose the create-email request contract");
 		article.Text.Should().Contain("| `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |",
@@ -542,6 +542,43 @@ public sealed class McpGuidanceResourceTests {
 			because: "the checklist should reinforce the canonical writeback pattern explicitly");
 		article.Text.Should().Contain("Is this edit still using the canonical page-body API (`request.value`, `await request.$context[\"Attr\"]`, `await request.$context.set(...)`) rather than a compatibility form?",
 			because: "the checklist should force AI to confirm that it stayed on the canonical page-body API instead of drifting to compatibility patterns");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-schema-handlers resource includes the request-catalog pointers: get-request-info as the authoritative contract and the when-to-use-requests selection guide.")]
+	public void PageSchemaHandlersGuidanceResource_Should_Include_RequestCatalogPointers() {
+		// Arrange
+		PageSchemaHandlersGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("call `get-request-info <type>` first",
+			because: "the parameter catalog must mandate the get-request-info call as the authoritative contract");
+		article.Text.Should().Contain("See `when-to-use-requests` for the",
+			because: "the guide must point at the when-to-use-requests selection guide");
+		article.Text.Should().Contain("get-request-info `crt.RunBusinessProcessRequest` (single source of truth)",
+			because: "the run-process row must name the request catalog as the single source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-schema-handlers GuidanceCatalog entry carries the request-catalog pointers (get-request-info / when-to-use-requests) on its article, covering the get-guidance serving path (not only the resource GetGuide path).")]
+	public void PageSchemaHandlersCatalogEntry_Article_Should_Carry_RequestCatalogPointers() {
+		// Arrange
+		GuidanceCatalog.TryGet("page-schema-handlers", out GuidanceCatalogEntry entry).Should().BeTrue(
+			because: "page-schema-handlers is an always-available catalog guide");
+
+		// Act
+		TextResourceContents article = entry.Article;
+
+		// Assert
+		article.Text.Should().Contain("call `get-request-info <type>` first",
+			because: "the get-guidance serving path must return the request-catalog pointer");
+		article.Text.Should().Contain("See `when-to-use-requests` for the",
+			because: "the get-guidance serving path must return the when-to-use-requests pointer");
 	}
 
 	[Test]
@@ -1504,10 +1541,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must tell the agent to always set and register a title so the widget header is not blank");
 		article.Text.Should().Contain("hideTools",
 			because: "the guide must warn against the hidden hideTitle/hideTools flags that strip the title and the full-screen button");
-		article.Text.Should().Contain("Style (theme) by page surface",
-			because: "the guide must set the chart theme by page surface (dashboard→white, desktop→glassmorphism, home→full-fill), mirroring the indicator policy");
-		article.Text.Should().Contain("glassmorphism",
-			because: "Desktop charts must use the glassmorphism theme");
+		article.Text.Should().Contain("set by the SURFACE's guide",
+			because: "the chart guide must route the card theme to the surface guide (dashboard-and-home-page-layout / desktop-page), not restate a per-surface policy");
+		article.Text.Should().Contain("without-fill",
+			because: "the chart card theme on dashboards and home pages is plain-white (without-fill), per dashboard-and-home-page-layout");
 		article.Text.Should().Contain("ONLY when the user explicitly asks to sort",
 			because: "the guide must tell the agent not to impose a default sort — emit seriesOrder only on explicit request");
 		article.Text.Should().Contain("`config.color` is REQUIRED for a VISIBLE title",
@@ -2071,6 +2108,40 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The page-modification resource includes the run-process GATE row that mandates the route to when-to-use-requests and the request catalog.")]
+	public void PageModificationGuidanceResource_Should_Include_RunProcessGateRow() {
+		// Arrange
+		PageModificationGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("| `when-to-use-requests` |",
+			because: "the GATE table must route the run-process task to the selection guide");
+		article.Text.Should().Contain("runs a business process (`clicked` -> `crt.RunBusinessProcessRequest`)",
+			because: "the row must be keyed to the run-process requirement wording");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The mobile page resource includes the request-catalog pointer that names get-request-info as the single source of truth for the run-process parameter contract.")]
+	public void MobilePageGuidanceResource_Should_Include_RequestCatalogPointer() {
+		// Arrange
+		MobilePageGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("FULL parameter contract is the request catalog (single source of truth)",
+			because: "the catalog pointer must name the authoritative contract source");
+		article.Text.Should().Contain("get-request-info request-type=crt.RunBusinessProcessRequest",
+			because: "the pointer must name the exact catalog call for the run-process request");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes business-rules so AI callers can retrieve business-rule authoring guidance by name.")]
 	public void GuidanceCatalog_Should_Include_Business_Rules_Entry() {
 		// Act
@@ -2247,8 +2318,8 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The routing map points the run-a-process-button task at the run-process-button guide so an agent reaches the shipped contract from the Pages domain.")]
-	public void RoutingGuidanceResource_Should_Route_RunProcessButton_Task() {
+	[Description("The routing resource includes the request-wiring rows, so an agent is deterministically routed to get-request-info and the when-to-use-requests guide.")]
+	public void RoutingGuidanceResource_Should_Include_RequestWiring_Rows() {
 		// Arrange
 		RoutingGuidanceResource resource = new();
 
@@ -2256,10 +2327,12 @@ public sealed class McpGuidanceResourceTests {
 		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
 
 		// Assert
-		article.Text.Should().Contain("name=run-process-button",
-			because: "the routing map must direct the agent to the run-process-button guide");
+		article.Text.Should().Contain("-> get-request-info + name=when-to-use-requests",
+			because: "the map must route button/menu action wiring to the request catalog and selection guide");
+		article.Text.Should().Contain("get-request-info (crt.RunBusinessProcessRequest)",
+			because: "the run-a-process-button task must route to get-process-signature + the request catalog");
 		article.Text.Should().Contain("runs a business process",
-			because: "the routing row must be keyed to the task wording so the agent recognizes it");
+			because: "the run-a-process-button routing row must be keyed to the task wording");
 	}
 
 	[Test]
