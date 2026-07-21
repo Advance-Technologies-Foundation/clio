@@ -37,6 +37,8 @@ This command is read-only and does not write any files.
   "offset": 0,
   "returnedCount": 5,
   "hasMore": false,
+  "bodiesOmittedForSize": false,            // true when bodies were auto-dropped (see Paging & Size)
+  "warning": null,                          // advisory hint set alongside bodiesOmittedForSize
   "schemas": [
     {
       "hierarchyLevel": 0,                  // 0 = root/base, ascending to the effective leaf
@@ -61,6 +63,13 @@ The whole chain is returned by default. For a very large chain, use `--offset` /
 `--limit` to page over the ordered entries (`totalCount`, `returnedCount` and
 `hasMore` describe the window), or `--metadata-only` to drop the raw bodies and
 return just the chain structure.
+
+To keep a required-arg-only call on a deep chain within MCP size limits, the bodies
+in the selected window are auto-omitted when their summed length exceeds a default
+budget (~200k characters). When that happens `bodiesOmittedForSize` is `true` and
+`warning` explains how to re-request: use `--metadata-only`, page with
+`--offset`/`--limit`, or fetch a single schema's body via `get-page`. Metadata
+(including `bodyLength`) is always returned, so the omission is visible and pageable.
 
 ## Synopsis
 

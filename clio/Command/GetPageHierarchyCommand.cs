@@ -131,6 +131,18 @@ public sealed class GetPageHierarchyResponse {
 	[JsonPropertyName("schemas")]
 	public List<PageHierarchySchemaEntry> Schemas { get; set; }
 
+	/// <summary>
+	/// Gets or sets a value indicating whether the raw bodies were auto-omitted because the selected
+	/// window exceeded the response size budget (AC3). When <c>true</c>, re-request with
+	/// <c>--metadata-only</c> or a smaller <c>--offset</c>/<c>--limit</c> window to page the bodies.
+	/// </summary>
+	[JsonPropertyName("bodiesOmittedForSize")]
+	public bool BodiesOmittedForSize { get; set; }
+
+	/// <summary>Gets or sets an advisory message (e.g. the size-budget omission hint), when applicable.</summary>
+	[JsonPropertyName("warning")]
+	public string Warning { get; set; }
+
 	/// <summary>Gets or sets the error message when <see cref="Success"/> is <c>false</c>.</summary>
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
@@ -144,6 +156,16 @@ public sealed class GetPageHierarchyResponse {
 /// (<see cref="IPageDesignerHierarchyClient.GetParentSchemas"/>), so this command just surfaces it ordered.
 /// </summary>
 public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
+
+	/// <summary>
+	/// Default serialized-body budget (in characters) for one response. When the summed body length of
+	/// the selected window exceeds this and bodies would otherwise be inlined, <see cref="BuildResponse"/>
+	/// auto-omits the bodies and flags <see cref="GetPageHierarchyResponse.BodiesOmittedForSize"/> so a
+	/// required-arg-only call on a deep (13–18-schema) chain cannot dump hundreds of KB–MB into the MCP
+	/// transcript (ENG-93727 AC3). Metadata (incl. <c>bodyLength</c>) is always returned so the caller can
+	/// page deliberately with <c>--offset</c>/<c>--limit</c> or fetch a single body via <c>get-page</c>.
+	/// </summary>
+	internal const int DefaultBodySizeBudgetChars = 200_000;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -227,6 +249,21 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		int total = rootFirst.Count;
 		int offset = Math.Min(options.Offset, total);
 		int take = options.Limit == 0 ? total - offset : Math.Min(options.Limit, total - offset);
+
+		// AC3 size guard: when bodies would be inlined (not metadata-only), sum the raw body length of
+		// the selected window up front. If it blows the budget, omit the bodies for the whole page and
+		// flag it — keeping the one-round-trip metadata win while never dumping a multi-MB payload into
+		// the transcript. Metadata (incl. bodyLength) is unaffected, so the caller can page deliberately.
+		bool omitBodiesForSize = false;
+		if (!options.MetadataOnly) {
+			long windowBodyChars = 0;
+			for (int i = 0; i < take; i++) {
+				windowBodyChars += rootFirst[offset + i].Body?.Length ?? 0;
+			}
+			omitBodiesForSize = windowBodyChars > DefaultBodySizeBudgetChars;
+		}
+		bool includeBodies = !options.MetadataOnly && !omitBodiesForSize;
+
 		var page = new List<PageHierarchySchemaEntry>(take);
 		for (int i = 0; i < take; i++) {
 			int level = offset + i;
@@ -242,7 +279,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 				SchemaType = PageSchemaTypeExtensions.FromNumericValue(schema.SchemaType).ToLabel(),
 				HasBody = hasBody,
 				BodyLength = schema.Body?.Length ?? 0,
-				Body = options.MetadataOnly || !hasBody ? null : schema.Body
+				Body = includeBodies && hasBody ? schema.Body : null
 			});
 		}
 		return new GetPageHierarchyResponse {
@@ -253,11 +290,16 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 			Offset = offset,
 			ReturnedCount = page.Count,
 			HasMore = offset + page.Count < total,
+			BodiesOmittedForSize = omitBodiesForSize,
+			Warning = omitBodiesForSize
+				? $"Bodies omitted: the selected window exceeds the {DefaultBodySizeBudgetChars}-char response budget. "
+					+ "Re-request with --metadata-only, or page with --offset/--limit, or fetch a single schema body via get-page."
+				: null,
 			Schemas = page
 		};
 	}
 
-	// ponytail: mirrors PageGetCommand's chain resolution (metadata -> design package -> full
+	// NOTE (ENG-93249): mirrors PageGetCommand's chain resolution (metadata -> design package -> full
 	// hierarchy from the root). Kept as a focused copy rather than refactoring the working get-page
 	// path; unifying both onto one resolver is tracked as ENG-93249.
 	private IReadOnlyList<PageDesignerHierarchySchema> ResolveEffectiveFirstHierarchy(string schemaName) {
