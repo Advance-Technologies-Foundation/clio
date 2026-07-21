@@ -12,10 +12,10 @@ namespace Clio.Command;
 public class UploadImageOptions : RemoteCommandOptions {
 
 	/// <summary>
-	/// Path to the local image file to upload (png, jpg/jpeg, gif, bmp, or webp).
+	/// Path to the local image file to upload (png, jpg/jpeg, gif, bmp, webp, or svg).
 	/// </summary>
 	[Value(0, MetaName = "file", Required = true,
-		HelpText = "Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).")]
+		HelpText = "Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).")]
 	public string File { get; set; }
 }
 

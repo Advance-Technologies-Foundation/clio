@@ -12,7 +12,7 @@ DESCRIPTION
     image, for example with 'clio set-background-image' to make it the shell
     background.
 
-    Supported formats: png, jpg, jpeg, gif, bmp, webp. The file is capped at
+    Supported formats: png, jpg, jpeg, gif, bmp, webp, svg. The file is capped at
     10 MB. The environment must have login/password credentials registered;
     OAuth-only environments are not supported.
 
@@ -20,7 +20,7 @@ SYNOPSIS
     clio upload-image <file> [options]
 
 OPTIONS
-    <file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).
+    <file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).
 
     --uri               -u          Application uri
 

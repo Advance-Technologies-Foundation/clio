@@ -16,7 +16,7 @@ prints the created image id.
 Each call stores a new image. Use the printed image id to reference the image, for example with
 [`set-background-image`](set-background-image.md) to make it the shell background.
 
-Supported formats: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`. The file is capped at 10 MB. The
+Supported formats: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`, `svg`. The file is capped at 10 MB. The
 environment must have login/password credentials registered; OAuth-only environments are not
 supported.
 
@@ -29,7 +29,7 @@ clio upload-image <file> [options]
 ## Options
 
 ```bash
-<file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).
+<file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).
 
 --uri               -u          Application uri
 

@@ -28,7 +28,7 @@ public class UploadImageTool(
 
 	/// <summary>Uploads the image and returns a structured result carrying the created image id.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
-	 Description("Upload a local image file (png, jpg, jpeg, gif, bmp, or webp) to a registered environment " +
+	 Description("Upload a local image file (png, jpg, jpeg, gif, bmp, webp, or svg) to a registered environment " +
 		"and return the created image-id. Additive only — each call stores a new image, nothing is overwritten. " +
 		"Requires forms-auth credentials on the environment (login/password). Returns { success, image-id, error? }. " +
 		"To set the uploaded image as the shell background, call set-background-image; " +
@@ -82,7 +82,7 @@ public sealed record UploadImageArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("file")]
-	[property: Description("Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).")]
+	[property: Description("Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).")]
 	[property: Required]
 	string? File = null
 ) {

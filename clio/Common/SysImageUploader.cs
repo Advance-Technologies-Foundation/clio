@@ -22,7 +22,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 	internal const long MaxImageBytes = SysSettingsManager.MaxBinaryValueBytes;
 
 	// The image API accepts a single-request upload for payloads under the cap, so no chunk loop is
-	// needed; the extension→mime map covers the raster formats the Appearance page accepts.
+	// needed; the extension→mime map covers the raster and vector formats the Appearance page accepts.
 	private static readonly IReadOnlyDictionary<string, string> MimeTypesByExtension =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			[".png"] = "image/png",
@@ -30,7 +30,8 @@ public sealed class SysImageUploader : ISysImageUploader {
 			[".jpeg"] = "image/jpeg",
 			[".gif"] = "image/gif",
 			[".bmp"] = "image/bmp",
-			[".webp"] = "image/webp"
+			[".webp"] = "image/webp",
+			[".svg"] = "image/svg+xml"
 		};
 
 	private const string CsrfCookieName = "BPMCSRF";
