@@ -19,7 +19,7 @@ public sealed class EntitySchemaDefaultValueConfig
 	/// Gets or sets the constant default value payload.
 	/// </summary>
 	[JsonPropertyName("value")]
-	[Description("Constant default value payload. Used only when source is Const.")]
+	[Description("Constant default value payload when source is Const. When source is Sequence, accepts a mask whose single '{0}' placeholder is at the end (for example 'LN-{0}' produces LN-00001); the static text before '{0}' becomes the sequence prefix. Static text after '{0}' (a suffix) is not supported and is rejected. Do not combine with sequence-prefix.")]
 	public object? Value { get; init; }
 
 	/// <summary>
@@ -40,7 +40,7 @@ public sealed class EntitySchemaDefaultValueConfig
 	/// Gets or sets the optional prefix for sequence defaults.
 	/// </summary>
 	[JsonPropertyName("sequence-prefix")]
-	[Description("Optional sequence prefix. Used when source is Sequence.")]
+	[Description("Optional static prefix prepended before the padded sequence number when source is Sequence (for example 'LN-' produces LN-00001). Alternative to passing a 'value' mask such as 'LN-{0}'; do not set both. Suffixes after the number are not supported.")]
 	public string? SequencePrefix { get; init; }
 
 	/// <summary>
