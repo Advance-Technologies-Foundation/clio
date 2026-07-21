@@ -687,9 +687,10 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	// Bundles the collision-probe context so FinalizeResult stays within the parameter limit. Create ops pass
-	// their args (and, when they already probed the collision, the reused result plus AlreadyProbed=true);
-	// non-create ops pass CollisionProbeContext.None so no probe is attempted.
+	// Bundles the collision-probe context so FinalizeResult stays within the parameter limit: create
+	// operations pass their args, plus the reused probe result and an already-probed flag when the
+	// collision was already checked; non-create operations pass the shared empty context, since no
+	// probe is attempted for them.
 	private readonly record struct CollisionProbeContext(
 		SchemaSyncArgs? Args, SchemaSyncCollisionInfo? Precomputed, bool AlreadyProbed) {
 		public static readonly CollisionProbeContext None = new(null, null, false);
