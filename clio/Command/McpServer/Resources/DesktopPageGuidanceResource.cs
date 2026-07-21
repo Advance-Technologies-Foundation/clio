@@ -136,10 +136,14 @@ public sealed class DesktopPageGuidanceResource {
 		         desktop rows they can read. Restricting a desktop to specific roles is therefore a
 		         RECORD-RIGHTS operation on the `Desktop` record — NOT a page/body edit and NOT a schema
 		         change.
-		       - clio does not yet automate that rights step. When the user asks to limit a desktop to
-		         selected roles, state explicitly that the visibility restriction is a record-rights
-		         change on the Desktop record and must currently be done through the Creatio UI
-		         (record access rights dialog) until the clio rights flow ships.
+		       - Apply it with `set-record-rights` on that `Desktop` record: resolve the record id from the
+		         auto-created selector row (`odata-read` on `Desktop`, matched by `DesktopSchemaName` / `SchemaUId`
+		         or Title), then `set-record-rights entity=Desktop record-id=<Desktop record id>
+		         grantee=<SysAdminUnit id> operation=read`, and `revoke` the default `All employees` grant if one is
+		         present (check with `get-record-rights` first). See `get-guidance name=record-rights`.
+		       - The `Desktop` record is auto-created per environment (see above), so its record id is env-local:
+		         do NOT ship these grants as a package data binding; re-apply `set-record-rights` on each target
+		         environment.
 
 		       DO NOT
 		       - Do not create ordinary `Page`-group schemas for desktop requests (they never appear in
