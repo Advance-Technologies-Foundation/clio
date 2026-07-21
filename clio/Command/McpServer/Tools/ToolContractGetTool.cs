@@ -1941,8 +1941,18 @@ internal static class ToolContractCatalog {
 					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
-			[]);
+			[],
+			OdataUnregisteredEntityAntiPatterns());
 	}
+
+	// Shared by odata-read and odata-create: both funnel through ODataResponseError.TryDetect and
+	// surface the identical routing-error hint, so the anti-pattern text is derived from the single
+	// UnregisteredEntityHint constant to keep the two contracts from drifting apart.
+	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns() => [
+		new ToolAntiPattern(
+			"Reading or writing a freshly-created custom object or lookup by entity name immediately after creating it and treating the routing error as a data gap.",
+			$"{ODataResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
+	];
 
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
@@ -1976,7 +1986,8 @@ internal static class ToolContractCatalog {
 					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
 					"Create the record, then read it back by the returned id to confirm persisted values.")
 			],
-			[]);
+			[],
+			OdataUnregisteredEntityAntiPatterns());
 	}
 
 	private static ToolContractDefinition BuildODataUpdate() {
