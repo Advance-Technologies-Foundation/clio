@@ -171,6 +171,16 @@ public static class WebToMobileAnalysisService {
 		// data-source section (the step where attribute `type` was being dropped).
 		JsonNode modelConfigDiff = BuildRootMergeDiff(modelConfig);
 		JsonNode viewModelConfigDiff = BuildRootMergeDiff(viewModelConfig);
+		// A list collection's modelConfig.filterAttributes (which wires each quick filter's `_Items`
+		// attribute so a value change reloads the data source) is OWNED by the mobile list template.
+		// The mobile diff engine REPLACES arrays on a merge, and on a ROOT merge (path []) the template
+		// baseline wins that array — so the page's carried filterAttributes (with the converted quick
+		// filters) is discarded and the chips render but never filter. A hand-built mobile list page
+		// works because the page designer emits a TARGETED merge at ["attributes",<collection>,
+		// "modelConfig"] carrying the full array (verified against UsrJeremy_MobileListPage). Mirror
+		// that: hoist each collection's filterAttributes out of the root merge into its own targeted
+		// merge so it overrides the template baseline.
+		viewModelConfigDiff = HoistFilterAttributesToTargetedMerges(viewModelConfigDiff);
 
 		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
@@ -832,6 +842,52 @@ public static class WebToMobileAnalysisService {
 			});
 
 	/// <summary>
+	/// Hoists each list collection's <c>modelConfig.filterAttributes</c> out of the single root merge
+	/// into its own TARGETED merge at <c>["attributes",&lt;collection&gt;,"modelConfig"]</c>. That array
+	/// is owned by the mobile list template; the mobile diff engine (JSONPathApplier) REPLACES arrays on
+	/// a merge, and on a ROOT merge (path []) the template baseline wins it — dropping the page's carried
+	/// filterAttributes (with the converted quick filters), so the chips render but never filter. A
+	/// hand-built mobile list page keeps them because the page designer emits exactly this targeted
+	/// merge (verified against UsrJeremy_MobileListPage). The filterAttributes is removed from the root
+	/// merge so the targeted merge is the single source of truth. No-op when no collection carries a
+	/// non-empty filterAttributes array (the diff stays a single root merge).
+	/// </summary>
+	private static JsonNode HoistFilterAttributesToTargetedMerges(JsonNode viewModelConfigDiff) {
+		if (viewModelConfigDiff is not JsonArray diff) {
+			return viewModelConfigDiff;
+		}
+		var targetedMerges = new List<JsonObject>();
+		foreach (JsonNode opNode in diff) {
+			if (opNode is not JsonObject op
+				|| op["path"] is not JsonArray path || path.Count != 0
+				|| op["values"] is not JsonObject values
+				|| values["attributes"] is not JsonObject attributes) {
+				continue;
+			}
+			foreach (KeyValuePair<string, JsonNode> attr in attributes) {
+				if (attr.Value is not JsonObject attrObj
+					|| attrObj["modelConfig"] is not JsonObject modelConfig
+					|| modelConfig["filterAttributes"] is not JsonArray filterAttributes
+					|| filterAttributes.Count == 0) {
+					continue;
+				}
+				targetedMerges.Add(new JsonObject {
+					["operation"] = "merge",
+					["path"] = new JsonArray("attributes", attr.Key, "modelConfig"),
+					["values"] = new JsonObject { ["filterAttributes"] = filterAttributes.DeepClone() }
+				});
+				// Drop it from the root merge — the template owns the array and a root merge cannot
+				// extend it; the targeted merge above overrides the template baseline instead.
+				modelConfig.Remove("filterAttributes");
+			}
+		}
+		foreach (JsonObject targetedMerge in targetedMerges) {
+			diff.Add(targetedMerge);
+		}
+		return viewModelConfigDiff;
+	}
+
+	/// <summary>
 	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
 	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
@@ -1109,9 +1165,20 @@ public static class WebToMobileAnalysisService {
 			//     type-driven — it lives in the general components rule and is surfaced in
 			//     componentSuggestions[<type>]; clio hardcodes no component-specific transform here.
 			if (ctx.ComponentMap.TryGetValue(name, out ComponentMappingRule compRule)) {
+				// The mobile type is normally the web type when it survives on mobile as-is; a rule that maps
+				// to a DIFFERENT mobile type (web crt.FolderTree → mobile crt.FolderTreeActions) declares it
+				// explicitly so carried values can be shape-coerced against the right registry contract.
+				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
+					? compRule.MobileType
+					: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
-					MobileType = ctx.MobileTypes.Contains(type ?? "") ? type : null,
+					MobileType = twinMobileType,
+					// A twin whose rule declares carryProperties gets a DETERMINISTIC merge payload: the listed
+					// web-node properties carried verbatim onto the mobile element (e.g. the folder tree's
+					// sourceSchemaName/rootSchemaName). Null when the rule carries none — the twin stays an advisory
+					// merge configured by the caller (e.g. DataTable → List's structural grid→row transform).
+					MobileValues = BuildCarriedTwinValues(ctx, node, compRule, twinMobileType),
 					Reason = ComponentTwinReason(name, type, compRule)
 				});
 				if (items is not null) {
@@ -1193,10 +1260,50 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule) {
 		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
+		// A twin that carries properties ships a prebuilt mobileValues merge payload — tell the caller to
+		// paste it (not to hand-configure), since merges are otherwise advisory. Keeps the DataTable-style
+		// (no carryProperties) advisory wording unchanged.
+		if (rule.CarryProperties is { Count: > 0 }) {
+			return $"{basis} — template-provided element — merge the prebuilt mobileValues " +
+				$"({string.Join(", ", rule.CarryProperties)}) onto '{rule.Mobile}' by name (do not insert a duplicate)";
+		}
 		string detail = string.IsNullOrEmpty(type)
 			? $"template-provided element — configure '{rule.Mobile}' by merge-by-name (do not insert a duplicate)"
 			: $"template-provided element — configure '{rule.Mobile}' by merge-by-name per componentSuggestions[\"{type}\"] (do not insert a duplicate)";
 		return $"{basis} — {detail}";
+	}
+
+	/// <summary>
+	/// Builds the deterministic merge <c>values</c> for a component twin whose rule declares
+	/// <see cref="ComponentMappingRule.CarryProperties"/>: each listed property PRESENT on the web node is
+	/// copied verbatim (shape-coerced to the mobile registry contract when a mobile type is known), producing
+	/// the minimal merge payload the caller pastes onto the mobile element. Returns null when the rule carries
+	/// no properties or none are present on the node — the twin then stays an advisory merge (no prebuilt
+	/// values). Event bindings are never carried here — a twin's requests are handled by the normal event
+	/// pipeline; carryProperties is intended for plain data bindings (e.g. sourceSchemaName/rootSchemaName).
+	/// </summary>
+	private static JsonNode BuildCarriedTwinValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string mobileType) {
+		if (rule?.CarryProperties is not { Count: > 0 }) {
+			return null;
+		}
+		var values = new JObject();
+		foreach (string propName in rule.CarryProperties) {
+			if (string.IsNullOrWhiteSpace(propName) || node[propName] is not { } propValue) {
+				continue;
+			}
+			JToken cloned = propValue.DeepClone();
+			values[propName] = string.IsNullOrEmpty(mobileType)
+				? cloned
+				: CoerceToDeclaredShape(ctx, mobileType, propName, cloned);
+		}
+		if (values.Count == 0) {
+			return null;
+		}
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch (System.Text.Json.JsonException) {
+			return null;
+		}
 	}
 
 	/// <summary>Returns a referenced data source other than the primary one (multi-data-source), or null.</summary>

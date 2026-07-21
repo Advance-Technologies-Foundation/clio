@@ -12,7 +12,14 @@
         { "web": "ListContainer", "mobile": "ListContainer", "note": "List area; web crt.DataTable maps to mobile crt.List." }
       ],
       "components": [
-        { "web": "DataTable", "mobile": "List", "note": "Primary list component." }
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        {
+          "web": "FolderTree",
+          "mobile": "FolderTreeActions",
+          "mobileType": "crt.FolderTreeActions",
+          "carryProperties": ["sourceSchemaName", "rootSchemaName"],
+          "note": "Folder tree. The mobile template (BaseMobileListTemplate) already provides the FolderTreeActions element; carry the web folder-schema binding (sourceSchemaName + rootSchemaName) onto it by merge-by-name so the mobile folder tree resolves the section entity. Without this the web crt.FolderTree node (inherited template chrome) is pruned and rootSchemaName is lost."
+        }
       ]
     },
     {

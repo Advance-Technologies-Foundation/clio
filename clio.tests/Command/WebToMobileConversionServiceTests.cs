@@ -17,13 +17,13 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions", "crt.QuickFilter"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.Input", "crt.Checkbox", "crt.HtmlEditor", "crt.DataGrid", "crt.DataTable",
-			"crt.ColorButton", "crt.FolderTree", "crt.FolderTreeActions"
+			"crt.ColorButton", "crt.FolderTree", "crt.FolderTreeActions", "crt.QuickFilter"
 		};
 
 	private static readonly WebToMobilePageConversionRules Rules = new() {
@@ -762,6 +762,68 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A converted quick filter's _Items attribute is wired into the list collection's template-owned modelConfig.filterAttributes by HOISTING that array out of the root merge into a TARGETED merge at [attributes,<collection>,modelConfig] (mirrors the mobile page designer's own output). The mobile diff engine replaces arrays on a root merge, so the template baseline would otherwise win and drop the quick filter; the targeted merge carries the full array (template natives + quick filters) and overrides the baseline. The array is removed from the root merge so the targeted merge is the sole source.")]
+	public void Analyze_QuickFilter_FilterAttributesHoistedToTargetedMerge() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "List", "type": "crt.List", "items": "$Items" },
+				{ "name": "QuickFilter_x", "type": "crt.QuickFilter", "filterType": "lookup",
+				  "config": { "caption": "Category", "entitySchemaName": "ProductCategory" },
+				  "_filterOptions": { "from": "QuickFilter_x_Value", "expose": [
+					{ "attribute": "QuickFilter_x_Items", "converters": [
+					  { "converter": "crt.QuickFilterAttributeConverter", "args": [
+						{ "target": { "viewAttributeName": "Items", "filterColumn": "Category" }, "quickFilterType": "lookup" } ] } ] } ] } } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": {
+				"Items": { "isCollection": true, "modelConfig": { "path": "PDS", "filterAttributes": [
+					{ "name": "QuickFilterGroup_Filters", "loadOnChange": true },
+					{ "name": "QuickFilter_x_Items", "loadOnChange": true } ] } },
+				"QuickFilter_x_Items": { "from": "QuickFilter_x_Value" } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false), ("crt.QuickFilter", false)));
+
+		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
+
+		// The root merge (path []) no longer carries filterAttributes on the collection's modelConfig.
+		JsonObject rootMerge = diff.Single(n => n!.AsObject()["path"]!.AsArray().Count == 0)!.AsObject();
+		rootMerge["operation"]!.GetValue<string>().Should().Be("merge");
+		rootMerge["values"]!["attributes"]!["Items"]!["modelConfig"]!.AsObject()
+			.Should().NotContainKey("filterAttributes");
+
+		// A targeted merge at [attributes,Items,modelConfig] carries the FULL array (template native
+		// QuickFilterGroup_Filters + the converted QuickFilter_x_Items), overriding the template baseline.
+		JsonObject targeted = diff.Single(n =>
+			n!.AsObject()["operation"]!.GetValue<string>() == "merge"
+			&& n.AsObject()["path"]!.AsArray().Count == 3)!.AsObject();
+		targeted["path"]!.AsArray().Select(n => n!.GetValue<string>())
+			.Should().Equal("attributes", "Items", "modelConfig");
+		targeted["values"]!["filterAttributes"]!.AsArray().Select(n => n!["name"]!.GetValue<string>())
+			.Should().Contain("QuickFilterGroup_Filters").And.Contain("QuickFilter_x_Items");
+	}
+
+	[Test]
+	[Description("A collection with no filterAttributes → nothing to hoist → viewModelConfigDiff stays a single root merge.")]
+	public void Analyze_NoFilterAttributes_ViewModelConfigDiffStaysSingleRootMerge() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS" } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
+
+		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
+		diff.Should().HaveCount(1);
+		diff[0]!.AsObject()["path"]!.AsArray().Should().BeEmpty();
+	}
+
+	[Test]
 	[Description("insert mobileValues carries the type, the field label, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the value binding is left out.")]
 	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
 		PageBundleInfo bundle = Bundle(
@@ -1263,6 +1325,44 @@ public sealed class WebToMobileConversionServiceTests {
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
 		guide.ElementMap.Should().NotContain(e => e.WebName == "DataTable" && e.Operation == "insert");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
+	}
+
+	[Test]
+	[Description("A component twin whose rule declares carryProperties (FolderTree→FolderTreeActions) is kept through baseline subtraction AND gets a deterministic merge payload: the whitelisted web props (sourceSchemaName/rootSchemaName) are carried verbatim onto the mobile element, so the app-authored rootSchemaName is not lost to template-chrome pruning.")]
+	public void Analyze_TemplateComponentTwin_CarryProperties_CarriesWebSchemaBindingOntoMobileElement() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ContentContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "FolderTree", "type": "crt.FolderTree", "sourceSchemaName": "FolderTree", "rootSchemaName": "UsrMouse" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.FolderTree", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ContentContainer"] = "HeaderContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["FolderTree"] = new ComponentMappingRule {
+				Web = "FolderTree", Mobile = "FolderTreeActions", MobileType = "crt.FolderTreeActions",
+				CarryProperties = ["sourceSchemaName", "rootSchemaName"], Note = "Folder tree."
+			}
+		};
+		// FolderTree is inherited from the web list template (it is in the baseline). Without the components map
+		// it would be pruned as chrome and its app-authored rootSchemaName lost; the map keeps it as a carry twin.
+		IReadOnlySet<string> templateNames = Names("ContentContainer", "FolderTree");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+
+		// Kept (not pruned): recorded as a merge-by-name twin onto the mobile FolderTreeActions element.
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "FolderTree");
+		twin.Operation.Should().Be("merge");
+		twin.MobileName.Should().Be("FolderTreeActions");
+		twin.MobileType.Should().Be("crt.FolderTreeActions");
+		// Deterministic payload: the whitelisted web props are carried verbatim.
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["rootSchemaName"]!.GetValue<string>().Should().Be("UsrMouse");
+		vals["sourceSchemaName"]!.GetValue<string>().Should().Be("FolderTree");
+		// The reason tells the caller to merge the prebuilt values (not hand-configure).
+		twin.Reason.Should().Contain("rootSchemaName");
+		// No duplicate insert for the folder element.
+		guide.ElementMap.Should().NotContain(e => e.WebName == "FolderTree" && e.Operation == "insert");
 	}
 
 	#endregion
