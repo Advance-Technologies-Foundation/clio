@@ -23,6 +23,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IRemoteEntitySchemaColumnManager _columnManager;
+	private IPageDesignerHierarchyClient _hierarchyClient;
 	private IFileSystem _fileSystem;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
@@ -50,16 +51,22 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://localhost/svc");
 		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => Route(ci.ArgAt<string>(1)));
+		// Default: no hierarchy -> LoadChainAndSeed falls back to the legacy per-layer fan-out, so the existing
+		// tests exercise (and keep asserting) that fallback path. The hierarchy-path tests configure this explicitly.
+		_hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(new List<PageDesignerHierarchySchema>());
 		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
 			.Do(ci => { _writtenPath = ci.ArgAt<string>(0); _writtenContent = ci.ArgAt<string>(1); });
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_columnManager);
+		containerBuilder.AddSingleton(_hierarchyClient);
 		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
@@ -713,7 +720,69 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("cycle")));
 	}
 
+	[Test]
+	[Description("TryAssembleBundle resolves schemas[] (page layers) and seed[] (parent templates) from a single GetParentSchemas hierarchy call, split by name and ordered base->top, instead of the per-layer fan-out.")]
+	public void TryAssembleBundle_ShouldResolveChainAndSeed_ViaGetParentSchemas() {
+		// Arrange — only the name->UId metadata row is registered on the fake DataService; the layer bodies come
+		// from GetParentSchemas (leaf-first: most-derived page layer, base page layer, parent template). The base
+		// page layer's UId equals the metadata UId so no root re-anchor re-fetch is needed.
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);   // metadata resolve target (UId + PackageUId)
+		AddSchema("uid-top", "define(\"UsrPage\", [], function() { return {}; });", EmptyGuid, "pkgB"); // BuildResources reads topLayerUId
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
+		_hierarchyClient.GetParentSchemas("uid-page", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrPage", "pkgB", "uid-top", "define(\"UsrPage\", [], function() { return {}; });"),
+			Hier("UsrPage", "pkgA", "uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });"),
+			Hier("BaseTpl", "Core", "uid-tpl", "define(\"BaseTpl\", [], function() { return { baseContainer: true }; });")
+		});
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the hierarchy resolves the page chain and seed");
+		_hierarchyClient.Received(1).GetParentSchemas("uid-page", Arg.Any<string>());
+		response.LayerCount.Should().Be(2, because: "both UsrPage-named layers become the schemas[] chain");
+		response.SeedCount.Should().Be(1, because: "the one non-page (parent-template) layer becomes the seed");
+		response.Entity.Should().Be("UsrX", because: "the entity is inferred from the split page bodies");
+		JObject manifest = JObject.Parse(_writtenContent);
+		var schemas = (JArray)manifest["schemas"];
+		schemas[0]["pkg"]!.ToString().Should().Be("pkgA", because: "schemas[] is ordered base->top (lower hierarchy first)");
+		schemas[1]["pkg"]!.ToString().Should().Be("pkgB", because: "the most-derived page layer sorts last");
+		var seed = (JArray)manifest["seed"];
+		seed.Should().HaveCount(1, because: "only the parent template is seed content");
+		seed[0]["pkg"]!.ToString().Should().Be("Core",
+			because: "the parent-template layer (never registered as a DataService layer) came from the hierarchy call");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle falls back to the legacy per-layer enumeration (and logs it) when the GetParentSchemas hierarchy call fails, still producing a manifest.")]
+	public void TryAssembleBundle_ShouldFallBackToLegacy_WhenGetParentSchemasThrows() {
+		// Arrange — a full legacy fake (layers + bodies + parent template), but the hierarchy call throws.
+		AddLayer("UsrPage2", "uid-p", "UsrApp", 200);
+		AddSchema("uid-p", "define(\"UsrPage2\", [], function() { return { entitySchemaName: \"UsrX\" }; });", "uid-par", "UsrApp");
+		AddLayer("BaseTpl", "uid-par", "Core", 100);
+		AddSchema("uid-par", "define(\"BaseTpl\", [], function() { return {}; });", EmptyGuid, "Core", name: "BaseTpl");
+		_hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>())
+			.Returns<IReadOnlyList<PageDesignerHierarchySchema>>(_ => throw new InvalidOperationException("designer down"));
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage2" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the legacy per-layer path assembles the bundle when the hierarchy call fails");
+		response.LayerCount.Should().Be(1, because: "the legacy enumeration loaded the page's single layer");
+		response.SeedCount.Should().Be(1, because: "the legacy parent walk seeded the base template");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("falling back")));
+	}
+
 	// --- fake-environment helpers ------------------------------------------------------------------
+
+	private static PageDesignerHierarchySchema Hier(string name, string pkg, string uid, string body) =>
+		new() { Name = name, PackageName = pkg, PackageUId = "pkguid-" + pkg, UId = uid, Body = body };
 
 	private string Route(string requestBody) {
 		if (string.IsNullOrEmpty(requestBody)) {
@@ -721,16 +790,26 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		}
 		if (requestBody.Contains("rootSchemaName")) {
 			JObject query = JObject.Parse(requestBody);
-			JToken byName = query["filters"]?["items"]?["byName"];
 			var names = new List<string>();
-			string single = byName?["rightExpression"]?["parameter"]?["value"]?.ToString();
-			if (!string.IsNullOrEmpty(single)) {
-				names.Add(single);
-			}
-			if (byName?["rightExpressions"] is JArray many) {
-				names.AddRange(many
-					.Select(expression => expression["parameter"]?["value"]?.ToString())
-					.Where(value => !string.IsNullOrEmpty(value)));
+			// Scan every filter item keyed on the Name column, so this fake answers BOTH the SchemaDesignerHelper
+			// layer queries (filter item "byName") AND QuerySysSchemaRow's metadata query (filter item "filter0",
+			// with a sibling "filter1" on ManagerName that this skips).
+			if (query["filters"]?["items"] is JObject items) {
+				foreach (JProperty item in items.Properties()) {
+					JToken filter = item.Value;
+					if (filter?["leftExpression"]?["columnPath"]?.ToString() != "Name") {
+						continue;
+					}
+					string single = filter["rightExpression"]?["parameter"]?["value"]?.ToString();
+					if (!string.IsNullOrEmpty(single)) {
+						names.Add(single);
+					}
+					if (filter["rightExpressions"] is JArray many) {
+						names.AddRange(many
+							.Select(expression => expression["parameter"]?["value"]?.ToString())
+							.Where(value => !string.IsNullOrEmpty(value)));
+					}
+				}
 			}
 			var rows = new JArray();
 			foreach (string name in names) {
@@ -740,7 +819,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 					}
 				}
 			}
-			return new JObject { ["rows"] = rows }.ToString();
+			// success:true so QuerySysSchemaRow's ExecuteSelectQuery (strict success check) resolves the
+			// name->UId+package metadata; the layer-enumeration path keys failure off TryGetFailure, for which
+			// a success:true envelope is a non-failure too.
+			return new JObject { ["success"] = true, ["rows"] = rows }.ToString();
 		}
 		JObject request = JObject.Parse(requestBody);
 		string uid = request["schemaUId"]?.ToString();
@@ -761,7 +843,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			_layersByName[name] = rows;
 		}
 		rows.Add(new JObject {
-			["UId"] = uid, ["Name"] = name, ["PackageName"] = package, ["HierarchyLevel"] = hierarchyLevel
+			["UId"] = uid, ["Name"] = name, ["PackageName"] = package, ["HierarchyLevel"] = hierarchyLevel,
+			// PackageUId lets QuerySysSchemaRow (the hierarchy path's name->UId+package resolve) return a full
+			// metadata row; without a configured GetParentSchemas the hierarchy path still falls back to legacy.
+			["PackageUId"] = "pkguid-" + package
 		});
 	}
 

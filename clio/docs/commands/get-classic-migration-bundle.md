@@ -17,10 +17,12 @@ migration engine (`migrate.mjs`) needs to fold a classic page, and writes it to 
 
 It:
 
-- enumerates the whole replacing-schema layer chain, ordered **base->top** by package hierarchy level;
-- fetches every layer's raw body (`schemas`);
-- walks the parent-template chain into the `seed`, enumerating **every layer** of each parent template
-  (base->top) so base containers defined in any package layer are seeded, not just the linked layer;
+- resolves the page's whole replacing-schema layer chain **and** its parent-template `seed` in a single
+  page-designer hierarchy call (`GetParentSchemas`, full hierarchy), ordered **base->top** by package
+  hierarchy level: the page's own layers (with raw bodies) become `schemas`, the ancestor templates the `seed`;
+- falls back to a per-layer enumeration — fetch each layer body, then walk the parent-template chain,
+  enumerating every same-named template layer — when the hierarchy call is unavailable, producing the same
+  manifest shape;
 - resolves the entity (from `--entity` or inferred from the page body) and gathers `entityColumns` and
   `columnTitles` from the merged entity schema;
 - gathers the localizable strings merged across the hierarchy into `resources`;

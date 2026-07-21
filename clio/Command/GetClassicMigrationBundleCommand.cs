@@ -130,6 +130,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
+	private readonly IPageDesignerHierarchyClient _hierarchyClient;
 	private readonly IFileSystem _fileSystem;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
@@ -138,12 +139,14 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IRemoteEntitySchemaColumnManager columnManager,
+		IPageDesignerHierarchyClient hierarchyClient,
 		IFileSystem fileSystem,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_columnManager = columnManager;
+		_hierarchyClient = hierarchyClient;
 		_fileSystem = fileSystem;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
@@ -181,17 +184,18 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			}
 			var ctx = new BundleRunContext();
 
-			// 1-2. Enumerate the same-named layer chain (base->top) and load each layer body -> schemas[].
-			//      pkg = owning package name (must line up with clientEditableSchemas downstream).
-			(JArray schemas, JObject topSchema, string topLayerUId, string chainError) =
-				LoadLayerChain(ctx, options.SchemaName);
+			// 1-3. Resolve the page's full replacing-layer chain (schemas[]) AND the parent-template seed[] in ONE
+			//      GetParentSchemas designer round-trip (useFullHierarchy=true returns the whole effective chain),
+			//      instead of the per-layer LoadLayerChain + per-template-level BuildSeed fan-out (~30+ round-trips
+			//      on a heavily-layered page). Falls back to that proven fan-out if the hierarchy call is
+			//      unavailable/empty. Live-verified parity: the engine's merged page + Freedom payload are identical
+			//      to the fan-out across Contact/Account/Activity/Order pages (see the change summary).
+			(JArray schemas, JArray seed, string topLayerUId, string chainError) =
+				LoadChainAndSeed(ctx, options.SchemaName);
 			if (chainError != null) {
 				response = Fail(chainError);
 				return false;
 			}
-
-			// 3. Walk the parent-template chain from the top layer -> seed[] (base->top).
-			JArray seed = BuildSeed(ctx, topSchema);
 
 			// 4. Resolve the entity (explicit option, else inferred from the bodies).
 			string entity = !string.IsNullOrWhiteSpace(options.Entity)
@@ -333,6 +337,111 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		}
 	}
 
+	// Resolves BOTH the page's replacing-layer chain (schemas[]) and its parent-template seed[] from a SINGLE
+	// GetParentSchemas designer call (useFullHierarchy=true returns the whole effective chain), instead of the
+	// per-layer LoadLayerChain + per-template-level BuildSeed fan-out (~30+ round-trips on a heavily-layered
+	// page). The flat hierarchy is ordered base->top; layers named schemaName become schemas[], the rest seed[].
+	// On any designer/transport failure or an unexpectedly empty result it degrades to the proven legacy fan-out,
+	// so the bundle is never worse than before.
+	private (JArray schemas, JArray seed, string topLayerUId, string error) LoadChainAndSeed(
+		BundleRunContext ctx, string schemaName) {
+		try {
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = ResolveHierarchyBaseToTop(schemaName);
+			if (hierarchy is { Count: > 0 }) {
+				var schemas = new JArray();
+				var seed = new JArray();
+				string topLayerUId = null;
+				foreach (PageDesignerHierarchySchema layer in hierarchy) {
+					string body = layer.Body ?? string.Empty;
+					if (string.Equals(layer.Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
+						// pkg is provenance the engine matches against clientEditableSchemas — mirror LoadLayerChain.
+						schemas.Add(new JObject { ["pkg"] = layer.PackageName, ["body"] = body });
+						topLayerUId = layer.UId; // base->top: the last page layer is the most-derived (top) layer.
+					}
+					else {
+						seed.Add(CreateSeedEntry(layer.PackageName, body));
+					}
+				}
+				if (schemas.Count > 0) {
+					return (schemas, seed, topLayerUId, null);
+				}
+				// The hierarchy carried no layer named schemaName (unexpected) — fall back rather than emit an
+				// empty schemas[] the engine would reject.
+				_logger.WriteWarning(
+					$"GetParentSchemas returned no '{schemaName}' layer; falling back to per-layer enumeration.");
+			}
+		}
+		catch (Exception ex) {
+			_logger.WriteWarning(
+				$"GetParentSchemas hierarchy resolution failed ({ex.Message}); falling back to per-layer enumeration.");
+		}
+		return LoadChainAndSeedLegacy(ctx, schemaName);
+	}
+
+	// The proven per-layer fan-out, kept as the fallback for LoadChainAndSeed (and still used directly by the
+	// section/child-page enrichers): the same-named layer chain -> schemas[], then the parent-template walk -> seed[].
+	private (JArray schemas, JArray seed, string topLayerUId, string error) LoadChainAndSeedLegacy(
+		BundleRunContext ctx, string schemaName) {
+		(JArray schemas, JObject topSchema, string topLayerUId, string chainError) = LoadLayerChain(ctx, schemaName);
+		if (chainError != null) {
+			return (null, null, null, chainError);
+		}
+		JArray seed = BuildSeed(ctx, topSchema);
+		return (schemas, seed, topLayerUId, null);
+	}
+
+	// Mirrors get-page / get-page-hierarchy chain resolution (unifying the copies is tracked as ENG-93249):
+	// resolve name -> UId + package, ask the designer for the design package (fallback to the schema's package),
+	// fetch the full hierarchy, then re-anchor on the ROOT variant of the name (a name->UId lookup can resolve to
+	// an arbitrary replacing layer) and re-fetch. Returned base->top: the service yields leaf-first, reversed here
+	// to match the engine's merge order. Returns null when the schema cannot be resolved (caller falls back).
+	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchyBaseToTop(string schemaName) {
+		(JToken metadata, _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+			_applicationClient, _serviceUrlBuilder, schemaName,
+			("UId", "UId"), ("PackageUId", "SysPackage.UId"));
+		string schemaUId = metadata?["UId"]?.ToString();
+		string packageUId = metadata?["PackageUId"]?.ToString();
+		if (string.IsNullOrWhiteSpace(schemaUId) || string.IsNullOrWhiteSpace(packageUId)) {
+			return null;
+		}
+		string designPackageUId;
+		try {
+			designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
+		}
+		catch {
+			designPackageUId = null; // best-effort: the design package resolves to the schema's own package below.
+		}
+		if (string.IsNullOrWhiteSpace(designPackageUId)) {
+			designPackageUId = packageUId;
+		}
+		IReadOnlyList<PageDesignerHierarchySchema> initial =
+			_hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
+		if (initial.Count == 0) {
+			return null;
+		}
+		string rootSchemaUId = FindRootSchemaUId(initial, schemaName) ?? schemaUId;
+		IReadOnlyList<PageDesignerHierarchySchema> leafFirst;
+		if (string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
+			leafFirst = initial;
+		}
+		else {
+			IReadOnlyList<PageDesignerHierarchySchema> full = _hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
+			leafFirst = full.Count > 0 ? full : initial;
+		}
+		return leafFirst.Reverse().ToList(); // leaf-first -> base->top
+	}
+
+	// The root variant is the LAST occurrence of the requested name in the leaf-first hierarchy (the most-base
+	// replacing layer of the page itself), mirroring get-page's normalization.
+	private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
+		for (int i = hierarchy.Count - 1; i >= 0; i--) {
+			if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
+				return hierarchy[i].UId;
+			}
+		}
+		return null;
+	}
+
 	// Enumerates a schema's replacing-layer chain and loads every layer body, producing the engine-facing
 	// [{pkg, body}] array base->top plus the most-derived layer (for parent walks). Shared by the main chain,
 	// the section gatherer, and child-page manifests.
@@ -466,12 +575,16 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 
 	// pkg is provenance the engine matches against clientEditableSchemas — when the owning package is unknown
 	// the property is omitted (an honest gap), never substituted with a value of the wrong kind.
-	private static JObject CreateSeedEntry(JObject layerSchema, string packageName) {
+	private static JObject CreateSeedEntry(JObject layerSchema, string packageName) =>
+		CreateSeedEntry(packageName, layerSchema["body"]?.ToString());
+
+	// Overload for the GetParentSchemas path, whose layer body is already a plain string (not a schema JObject).
+	private static JObject CreateSeedEntry(string packageName, string body) {
 		var entry = new JObject();
 		if (!string.IsNullOrWhiteSpace(packageName)) {
 			entry["pkg"] = packageName;
 		}
-		entry["body"] = layerSchema["body"]?.ToString() ?? string.Empty;
+		entry["body"] = body ?? string.Empty;
 		return entry;
 	}
 
