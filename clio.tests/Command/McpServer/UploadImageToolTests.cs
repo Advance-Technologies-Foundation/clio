@@ -148,6 +148,37 @@ public class UploadImageToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts sensitive tokens (a full request URI carrying the target host and embedded credentials) out of the command's failure message before it crosses into the MCP transcript, while keeping the human-readable reason intact.")]
+	public void UploadImage_ShouldRedactSensitiveErrorText_WhenCommandFailsWithSensitiveMessage() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sensitiveMessage =
+			"Image upload failed: POST https://admin:s3cr3t@stand.creatio.com/0/ImageAPIService/upload returned 500.";
+		FakeUploadImageCommand defaultCommand = new();
+		FakeUploadImageCommand resolvedCommand = new(SysImageUploadResult.Failure(sensitiveMessage));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UploadImageCommand>(Arg.Any<UploadImageOptions>()).Returns(resolvedCommand);
+		UploadImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		UploadImageResult result = tool.UploadImage(new UploadImageArgs(
+			EnvironmentName: "docker_fix2", File: "C:/brand/background.png"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a failed upload must not report success");
+		result.Error.Should().NotContain("s3cr3t",
+			because: "the credential embedded in the request URI must never reach the MCP transcript");
+		result.Error.Should().NotContain("stand.creatio.com",
+			because: "the target host must be scrubbed from the surfaced error");
+		result.Error.Should().Contain("[redacted-uri]",
+			because: "the sensitive URI must be replaced by the stable redaction placeholder");
+		result.Error.Should().Contain("Image upload failed",
+			because: "the human-readable reason must survive redaction so the agent can self-correct");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeUploadImageCommand : UploadImageCommand {
 		private readonly SysImageUploadResult _result;
 

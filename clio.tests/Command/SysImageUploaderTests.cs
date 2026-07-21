@@ -267,6 +267,27 @@ public sealed class SysImageUploaderTests
 	}
 
 	[Test]
+	[Description("A 2xx upload response with a non-JSON body (e.g. a truncated payload or an unexpected plain-text response) is not treated as a hard rejection: the JsonException is swallowed and the flow proceeds to the authoritative verification read, which byte-verifies persistence.")]
+	public async Task UploadAsync_ShouldProceedToVerification_WhenUploadBodyIsNotJson() {
+		// Arrange
+		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: false,
+			responder: request => request.Method == HttpMethod.Post
+				? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("not-json {truncated") }
+				: OkBytes(PngPayload));
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync("C:/brand/background.png");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an unparseable 2xx upload body is not a confirmed rejection — the byte-verified read is the authoritative persistence proof");
+		handler.Requests.Should().HaveCount(2,
+			because: "the flow must fall through the JSON parse to the verification GET rather than failing on the parse");
+		handler.Requests[1].Method.Should().Be(HttpMethod.Get,
+			because: "the second request is the verification read that actually proves persistence");
+	}
+
+	[Test]
 	[Description("Fails when the file grows past the size cap between the size probe and the read, so the cap cannot be raced (bounded-read discipline shared with the Binary sys-setting upload path).")]
 	public async Task UploadAsync_ShouldFail_WhenFileGrowsPastCapBetweenProbeAndRead() {
 		// Arrange
