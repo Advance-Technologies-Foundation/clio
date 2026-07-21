@@ -108,6 +108,29 @@ public sealed class ServerReadinessWaiterTests {
 	}
 
 	[Test]
+	[Description("Probes at least once even when the timeout budget is not greater than the initial delay, so a short --ready-timeout never yields a false negative for a healthy instance.")]
+	public void WaitForReady_Should_ProbeAtLeastOnce_WhenTimeoutNotGreaterThanInitialDelay() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		ServerReadinessWaiter waiter = new(healthCheckCommand, Substitute.For<ILogger>()) {
+			Sleep = _ => { }
+		};
+
+		// Act — Timeout <= InitialDelay used to compute the deadline before the delay elapsed, so the
+		// loop was never entered and a healthy instance returned "not ready".
+		bool ready = waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true,
+			InitialDelay = TimeSpan.FromSeconds(10), Timeout = TimeSpan.Zero
+		});
+
+		// Assert
+		ready.Should().BeTrue(
+			because: "the deadline starts after the initial delay and at least one probe always runs when the caller waits");
+		healthCheckCommand.Received(1).Execute(Arg.Any<HealthCheckOptions>());
+	}
+
+	[Test]
 	[Description("Forwards the requested Uri and IsNetCore to each health-check probe unchanged.")]
 	public void WaitForReady_Should_Propagate_Uri_And_IsNetCore_To_HealthCheckOptions() {
 		// Arrange

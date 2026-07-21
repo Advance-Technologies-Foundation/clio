@@ -52,13 +52,18 @@ public class ServerReadinessWaiter(HealthCheckCommand healthCheckCommand, ILogge
 
 	/// <inheritdoc/>
 	public bool WaitForReady(ServerReadinessOptions options) {
-		DateTime deadlineUtc = DateTime.UtcNow + options.Timeout;
-
 		logger.WriteInfo($"Waiting {options.InitialDelay.TotalSeconds:0} seconds for server to start...");
 		Sleep(options.InitialDelay);
 
+		// Start the timeout budget AFTER the initial delay: the delay is a fixed pre-condition, not part
+		// of the probing window. Computing the deadline before the delay meant any Timeout <= InitialDelay
+		// (e.g. --ready-timeout 5 with the 10s default delay) elapsed before the loop ran and returned a
+		// false "not ready" for a healthy instance. The do/while also guarantees at least one probe even
+		// when the caller passes a tiny or non-positive Timeout.
+		DateTime deadlineUtc = DateTime.UtcNow + options.Timeout;
+
 		int attempt = 0;
-		while (DateTime.UtcNow < deadlineUtc) {
+		do {
 			attempt++;
 			HealthCheckOptions healthOptions = new() {
 				Uri = options.Uri,
@@ -77,7 +82,7 @@ public class ServerReadinessWaiter(HealthCheckCommand healthCheckCommand, ILogge
 			logger.WriteInfo(
 				$"Waiting for server to become ready... (attempt {attempt}). Next check in {options.PollInterval.TotalSeconds:0} seconds.");
 			Sleep(options.PollInterval);
-		}
+		} while (DateTime.UtcNow < deadlineUtc);
 
 		logger.WriteWarning($"Server did not become ready within {options.Timeout.TotalSeconds:0} seconds.");
 		return false;
