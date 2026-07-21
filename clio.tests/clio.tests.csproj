@@ -30,6 +30,9 @@
     <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
          TestServer request/response, not just config-object assertions). -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <!-- Pin the patched build directly so the transitive System.Security.Cryptography.Xml
+         (pulled via PowerShell.SDK) is lifted above the NU1903 advisory. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->
