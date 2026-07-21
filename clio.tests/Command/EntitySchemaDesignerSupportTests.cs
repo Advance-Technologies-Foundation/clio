@@ -388,6 +388,35 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "the sequence width must round-trip through readback alongside the prefix");
 	}
 
+	[Description("A mask-created Sequence prefix survives the full round-trip: build DTO, read it back into a config, then re-apply that config through CreateDefaultValueDto — the trailing space must stay verbatim instead of being trimmed on re-apply (ENG-93375).")]
+	[Test]
+	public void Sequence_Prefix_Edge_Whitespace_Should_Survive_Readback_And_Reapply() {
+		// Arrange — a mask that persists edge whitespace, as AC2 requires.
+		EntitySchemaDefaultValueConfig maskConfig = new() {
+			Source = "Sequence",
+			Value = "INV {0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act — request path builds the DTO, readback projects it into a structured config,
+		// then that readback config is fed back through the explicit-prefix build path.
+		EntitySchemaDefaultValueConfig? normalized = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			maskConfig, null, null, "Column 'UsrName'");
+		EntitySchemaColumnDefValueDto firstDto = EntitySchemaDesignerSupport.CreateDefaultValueDto(
+			normalized!, "Column 'UsrName'");
+		EntitySchemaDefaultValueConfig? readback = EntitySchemaDesignerSupport.CreateDefaultValueConfig(firstDto);
+		EntitySchemaColumnDefValueDto reappliedDto = EntitySchemaDesignerSupport.CreateDefaultValueDto(
+			readback!, "Column 'UsrName'");
+
+		// Assert
+		firstDto.SequencePrefix.Should().Be("INV ",
+			because: "the mask path must preserve the trailing space on the initial build (ENG-93375)");
+		readback!.SequencePrefix.Should().Be("INV ",
+			because: "readback must project the persisted prefix verbatim so reuse is lossless");
+		reappliedDto.SequencePrefix.Should().Be("INV ",
+			because: "re-applying the readback config through the explicit-prefix path must keep the trailing space instead of trimming it to 'INV', which would silently recreate INV00001 (ENG-93375)");
+	}
+
 	[Description("Setting value-source on a Sequence default is rejected, since a sequence has no external selector to resolve.")]
 	[Test]
 	public void CreateDefaultValueDto_Should_Reject_Sequence_With_ValueSource() {

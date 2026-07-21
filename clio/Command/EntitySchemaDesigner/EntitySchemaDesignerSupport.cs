@@ -778,7 +778,10 @@ internal static class EntitySchemaDesignerSupport
 		return new EntitySchemaDefaultValueConfig {
 			Source = GetFriendlyDefaultValueSource(source),
 			Value = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value"),
-			SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
+			// Preserve an explicit prefix verbatim so it stays whitespace-significant like the mask
+			// and readback paths; trimming here would drop 'INV ' to 'INV' on the explicit-prefix
+			// path and break the round-trip a mask-created config relies on (ENG-93375).
+			SequencePrefix = PreserveSequencePrefix(config.SequencePrefix),
 			SequenceNumberOfChars = config.SequenceNumberOfChars
 		};
 	}
@@ -788,7 +791,9 @@ internal static class EntitySchemaDesignerSupport
 			throw new EntitySchemaDesignerException(
 				$"{context} cannot set default-value-config.value-source when source is Sequence.");
 		}
-		string? explicitPrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true);
+		// Keep an explicit prefix whitespace-significant so re-applying a mask-created readback config
+		// (which persists 'INV ' verbatim) does not silently trim it back to 'INV' here (ENG-93375).
+		string? explicitPrefix = PreserveSequencePrefix(config.SequencePrefix);
 		object? maskValue = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value");
 		if (maskValue == null) {
 			return explicitPrefix;
