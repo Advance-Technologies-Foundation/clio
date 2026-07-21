@@ -177,6 +177,324 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       `ReadScalarParameter` validates structure for enabled and disabled leaves alike. The parsed
 		       node retains `IsEnabled`; only the cached enabled-child list controls later evaluation.
 
+		       Null comparisons have a different verified leaf contract and must not use the scalar-parameter
+		       reader:
+		       ```csharp
+		       private static FilterComparisonType ReadNullComparison(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           bool isNullComparison = filter.ComparisonType == FilterComparisonType.IsNull ||
+		               filter.ComparisonType == FilterComparisonType.IsNotNull;
+		           if (!isNullComparison ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedColumn ||
+		               filter.RightExpressions.Count != 0) {
+		               throw new NotSupportedException("Unsupported null filter shape.");
+		           }
+		           return filter.ComparisonType;
+		       }
+		       ```
+
+		       Native and DataService text null predicates produced this same left-only runtime shape. For the
+		       verified MediumText columns, the provider matched Creatio's SQL oracle by evaluating `IsNull`
+		       with `string.IsNullOrEmpty(value)` and `IsNotNull` with its negation. Do not generalize that
+		       empty-string rule to other schema data-value types without a separate platform proof.
+
+		       Membership leaves use the ordinary `Equal` comparison type at this runtime boundary. Parse the
+		       complete right-expression collection and validate every value before evaluating any record:
+		       ```csharp
+		       private const int MaxMembershipValues = 100;
+
+		       private static HashSet<int> ReadIntegerMembership(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           if (filter.ComparisonType != FilterComparisonType.Equal ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedColumn) {
+		               throw new NotSupportedException("Unsupported membership filter shape.");
+		           }
+		           if (filter.RightExpressions.Count > MaxMembershipValues) {
+		               throw new NotSupportedException(
+		                   $"Membership exceeds the {MaxMembershipValues}-value limit.");
+		           }
+
+		           return filter.RightExpressions.Select(expression => {
+		               if (expression.ExpressionType !=
+		                       EntitySchemaQueryExpressionType.Parameter ||
+		                   expression.ParameterValue is not int value) {
+		                   throw new NotSupportedException("Membership requires Integer parameters.");
+		               }
+		               return value;
+		           }).ToHashSet();
+		       }
+		       ```
+
+		       Count right expressions against a separate conservative parameter budget (or the provider's shared
+		       parse budget), validate them once, and cache the set. Evaluate membership with
+		       `values.Contains(record.SequenceNumber)`. An empty returned set is
+		       always false; it must never fall through to an unfiltered result. One value is structurally the
+		       same runtime leaf as scalar equality, and multiple values are the same leaf with multiple right
+		       expressions. The serialized DataService `filterType: 4` discriminator is consumed before the
+		       executor boundary, so a parser cannot recover whether a one-value Equal leaf was authored as
+		       Compare or In. Support that ambiguity deliberately in the provider contract.
+
+		       A first-class Between leaf is distinct: require `ComparisonType.Between`, the exact allowed column
+		       path, and exactly two ordered parameter expressions. Parse them once as lower then upper:
+		       ```csharp
+		       private static (int Lower, int Upper) ReadIntegerBetween(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           if (filter.ComparisonType != FilterComparisonType.Between ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedColumn ||
+		               filter.RightExpressions.Count != 2) {
+		               throw new NotSupportedException("Unsupported Integer Between shape.");
+		           }
+
+		           int[] boundaries = filter.RightExpressions.Select(expression => {
+		               if (expression.ExpressionType !=
+		                       EntitySchemaQueryExpressionType.Parameter ||
+		                   expression.ParameterValue is not int value) {
+		                   throw new NotSupportedException(
+		                       "Between boundaries must be Integer parameters.");
+		               }
+		               return value;
+		           }).ToArray();
+		           return (boundaries[0], boundaries[1]);
+		       }
+		       ```
+
+		       Evaluate it inclusively: `record.SequenceNumber >= range.Lower &&
+		       record.SequenceNumber <= range.Upper`. The alternative `GreaterOrEqual` plus `LessOrEqual` form
+		       remains two leaves in the surrounding AND group. A general tree evaluator can support both, but must
+		       dispatch the shapes independently; do not rewrite or silently accept an exclusive sibling pair.
+
+		       Validate both the CLR value and `ParameterValueForcedType` for typed parameters. The same CLR Guid
+		       represents two different schema families:
+		       ```csharp
+		       private static T ReadTypedParameter<T, TDataValueType>(
+		           EntitySchemaQueryFilter filter,
+		           string expectedPath)
+		           where TDataValueType : DataValueType {
+		           if (filter.ComparisonType != FilterComparisonType.Equal ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedPath ||
+		               filter.RightExpressions.Count != 1) {
+		               throw new NotSupportedException("Unsupported typed filter shape.");
+		           }
+
+		           EntitySchemaQueryExpression right = filter.RightExpressions.Single();
+		           if (right.ExpressionType != EntitySchemaQueryExpressionType.Parameter ||
+		               right.ParameterValue is not T value ||
+		               right.ParameterValueForcedType is not TDataValueType) {
+		               throw new NotSupportedException("Unexpected parameter value or data type.");
+		           }
+		           return value;
+		       }
+		       ```
+
+		       Use `ReadTypedParameter<bool, BooleanDataValueType>(filter, "UsrIsActive")` for Boolean and
+		       `ReadTypedParameter<Guid, GuidDataValueType>(filter, "UsrExternalRecordId")` for a plain Guid.
+		       Reject textual Guid values instead of coercing them.
+
+		       For the verified `UsrOwner` lookup, native construction resolves the runtime left path to
+		       `UsrOwnerId`. Require that complete path and `LookupDataValueType` while reading the Guid. One right
+		       expression is equality; multiple right expressions are membership and must use the same bounded,
+		       validate-once set strategy as other In filters. Never classify a parameter as a lookup merely because
+		       its CLR value is Guid or its terminal path ends in `Id`.
+
+		       ## Parse temporal values, trimming, macros, and date parts
+		       Date, DateTime, and Time parameters all arrive as CLR `System.DateTime`. Also require a temporal
+		       `ParameterValueForcedType` (`DateTimeDataValueType` or its Date/Time subtype), then validate the complete
+		       left path against the schema contract; neither the CLR value nor the temporal forced-type family alone
+		       can distinguish those three Creatio types. The lab also observed DataService preserving ticks while
+		       changing a native UTC value to
+		       `DateTimeKind.Unspecified`, so compare or normalize `Kind` according to an explicit provider timezone
+		       policy rather than using it as the column-type discriminator.
+
+		       Date-only intent on a DateTime column is an explicit leaf property:
+		       ```csharp
+		       private static DateTime ReadTrimmedDate(
+		           EntitySchemaQueryFilter filter,
+		           string expectedPath) {
+		           if (filter.ComparisonType != FilterComparisonType.Equal ||
+		               !filter.TrimDateTimeParameterToDate ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedPath ||
+		               filter.RightExpressions.Count != 1 ||
+		               filter.RightExpressions.Single().ExpressionType !=
+		                   EntitySchemaQueryExpressionType.Parameter ||
+		               filter.RightExpressions.Single().ParameterValue is not DateTime value ||
+		               filter.RightExpressions.Single().ParameterValueForcedType is not
+		                   DateTimeDataValueType) {
+		               throw new NotSupportedException("Unsupported trim-to-date filter shape.");
+		           }
+		           return value.Date;
+		       }
+		       ```
+
+		       Do not infer trimming from `00:00:00`; an untrimmed midnight DateTime equality remains an exact instant.
+
+		       Relative macros are already expanded when a virtual query executor sees `esq.Filters`. Parse the
+		       resulting tree recursively:
+		       - CurrentYear is a nested AND with two boundary leaves using
+		         `EntitySchemaStartOfCurrentYearQueryFunction`;
+		       - PreviousNDays is a nested AND with `EntitySchemaCurrentDateQueryFunction` boundaries;
+		       - Year is a leaf with `EntitySchemaDatePartQueryFunction.Interval == Year`, a schema-column function
+		         argument, and one `System.Int32` parameter;
+		       - HourMinute equality is a nested `>=` / `<` one-minute range. Both sides are
+		         `EntitySchemaDatePartQueryFunction(Interval == HourMinute)`; the right-side function wraps a DateTime
+		         parameter.
+
+		       Function expressions are recursive. Inspect `expression.Function.GetArguments()` under the same depth,
+		       node, and parameter budgets as groups and leaves. Validate the concrete supported function type,
+		       `EntitySchemaDatePartQueryFunction.Interval`, argument count, argument expression type, column path, and
+		       parameter type before evaluating. Never treat an unknown function as a scalar parameter or silently
+		       drop one boundary of a half-open range.
+
+		       Compile the validated temporal tree once per query. Capture one provider-clock snapshot, resolve all
+		       record-independent CurrentYear/PreviousNDays boundaries from that same instant, and cache those bounds in
+		       the parsed predicate. Per-record evaluation should read only the record's temporal value/date part and
+		       compare it with the cached bounds. Recomputing `now` or traversing the function tree per row is both
+		       unnecessarily expensive and inconsistent when a query crosses midnight or a year boundary.
+
+		       ## Parse Exists, NotExists, and aggregate subqueries
+		       Existence leaves do not follow the ordinary left-column/right-parameter contract. Validate the comparison,
+		       null left expression, one right SubQuery, child root schema, and generated correlation together:
+		       ```csharp
+		       private static EntitySchemaQuery ReadActivityExistenceSubquery(
+		           EntitySchemaQueryFilter filter,
+		           FilterComparisonType expectedComparison) {
+		           if (filter.ComparisonType != expectedComparison ||
+		               filter.LeftExpression != null ||
+		               filter.RightExpressions.Count != 1 ||
+		               filter.RightExpressions.Single().ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SubQuery) {
+		               throw new NotSupportedException("Unsupported existence filter shape.");
+		           }
+
+		           EntitySchemaQuery child = filter.RightExpressions.Single().SubQuery;
+		           if (child?.RootSchema?.Name != "Activity") {
+		               throw new NotSupportedException("Expected an Activity subquery.");
+		           }
+		           // Recursively validate child.Filters, including the generated
+		           // Owner.Id == root UsrOwnerId schema-column correlation.
+		           return child;
+		       }
+		       ```
+
+		       Call it only for explicitly supported `Exists` or `NotExists` leaves. The verified mixed path generated
+		       `Owner.Id` on the Activity side and a schema-column right expression whose complete path was
+		       `UsrOwnerId` on the root side. A schema-column correlation is not a parameter: do not read
+		       `ParameterValue`, coerce it to Guid, or compare only the terminal `Id` column name.
+
+		       Aggregate filters invert the expression placement: the SubQuery is the outer leaf's left expression and
+		       the scalar threshold is on the right. Validate `Greater`, `LeftExpression.ExpressionType == SubQuery`,
+		       exactly one Integer threshold, the Activity root, and the complete child filter tree. Apply the
+		       selected-column/expression budget before enumerating child columns, then locate the aggregate
+		       column by function type:
+		       ```csharp
+		       ConsumeSelectedExpressionBudget(child.Columns.Count);
+		       EntitySchemaQueryColumn countColumn = child.Columns.SingleOrDefault(column =>
+		           column.ValueExpression?.Function is EntitySchemaAggregationQueryFunction);
+		       EntitySchemaAggregationQueryFunction countFunction =
+		           countColumn?.ValueExpression?.Function as EntitySchemaAggregationQueryFunction;
+		       if (countFunction?.AggregationType != AggregationTypeStrict.Count ||
+		           countFunction.AggregationEvalType != AggregationEvalType.None ||
+		           countFunction.Expression?.ExpressionType != EntitySchemaQueryExpressionType.SchemaColumn ||
+		           countFunction.Expression.Path != "Id") {
+		           throw new NotSupportedException("Expected Count(Id) without Distinct in the child subquery.");
+		       }
+		       ```
+
+		       Do not call `child.Columns.Single()` or assume the aggregation replaces the ordinary selected column. The
+		       verified Count subquery retained Id and the Count function. Reject an unknown aggregation, threshold,
+		       correlation, child schema, or Title predicate instead of treating every subquery as existence.
+
+		       Native and DataService child-filter envelopes differ. Native C# placed the verified Title leaf directly in
+		       `child.Filters`; DataService retained serialized `subFilters` as a one-item nested AND collection. An empty
+		       serialized Exists `subFilters` remained an empty nested AND next to the correlation. Accept only the
+		       direct and nested forms your provider has proved. Preserve/count the envelope for structural diagnostics;
+		       a semantic comparison may remove only this known transport wrapper after validating it is enabled,
+		       non-negated, AND, and contains the expected zero or one child.
+
+		       Extend depth, node, expression, and parameter budgets into every subquery, selected expression, and child
+		       filter collection. Parse and compile the validated tree once. Prefer a correlated Exists/aggregate pushed
+		       into the backing provider. If pushdown is unavailable, collect a bounded set of root correlation keys and use
+		       chunked batch queries plus provider-side aggregation. Enforce explicit root-key, child-row/fan-out, timeout,
+		       and cancellation limits; reject the request when those bounds cannot preserve semantics. Do not execute one
+		       child query per root record or materialize an unbounded child source merely to pre-index it. The diagnostic
+		       physical-SQL trick is an oracle only—always restore
+		       `RootSchema.IsVirtual` in `finally` and never execute that SQL for a virtual schema.
+
+		       ## Parse expanded Segment membership
+		       `filterType: 7` and `segmentFilterOptions.segmentId` are DataService authoring fields; they do not survive
+		       into `esq.Filters`. Native and DataService Segment requests reached the executor as the same ordinary
+		       Exists/NotExists subquery tree. Validate that expanded tree fail closed:
+		       ```csharp
+		       private static FilterComparisonType ReadSegmentMembership(
+		           EntitySchemaQueryFilter filter,
+		           ISegmentMembershipAuthorization segmentAuthorization,
+		           UserConnection userConnection,
+		           Guid rootSchemaUId) {
+		           if ((filter.ComparisonType != FilterComparisonType.Exists &&
+		                filter.ComparisonType != FilterComparisonType.NotExists) ||
+		               filter.LeftExpression != null ||
+		               filter.RightExpressions.Count != 1 ||
+		               filter.RightExpressions.Single().ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SubQuery) {
+		               throw new NotSupportedException("Unsupported Segment filter shape.");
+		           }
+
+		           EntitySchemaQuery child = filter.RightExpressions.Single().SubQuery;
+		           string tableName = child?.RootSchema?.Name;
+		           EntitySchemaQueryColumn selectedColumn = child?.Columns.Count == 1
+		               ? child.Columns.Single()
+		               : null;
+		           if (string.IsNullOrEmpty(tableName) ||
+		               selectedColumn?.ValueExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               selectedColumn.ValueExpression.Path != "RecordId") {
+		               throw new NotSupportedException("Unknown Segment membership table or selected column.");
+		           }
+		           // Require exactly two enabled leaves:
+		           // RecordId Equal root Id (SchemaColumn), and RemovedOn IsNull with no right values.
+		           ValidateCurrentMembershipFilters(child.Filters);
+		           segmentAuthorization.RequireAuthorizedCurrentSegmentOncePerQuery(
+		               userConnection, rootSchemaUId, tableName);
+		           return filter.ComparisonType;
+		       }
+		       ```
+
+		       Validate the complete correlation, not only terminal column names: the left path is `RecordId`; the one
+		       right expression is a SchemaColumn whose complete path is root `Id`. The active-membership leaf is
+		       `RemovedOn` with comparison `IsNull` and zero right expressions. The verified child group contained
+		       exactly those two enabled leaves and selected exactly one `RecordId` column. Reject extra groups,
+		       predicates, selected columns, comparison types, disabled nodes, or an unknown child table.
+
+		       The original Segment Guid cannot be recovered from the runtime tree. Before every membership access,
+		       validate the complete in-memory tree before performing metadata or permission work. Then unconditionally
+		       resolve the observed table name against permission-checked `SysDataSegment` metadata for the request's
+		       caller and root-schema UId. Authorize each distinct table once per query/request. Scope that positive cache
+		       to the caller, root-schema UId, table name, and current request lifetime. Never reuse a cross-caller, global,
+		       or stale authorization result. Require exactly one authorized, enabled segment whose table name
+		       matches with ordinal semantics; derive the usable identifier from that record. A configured allowlist may
+		       narrow this result but is not authorization by itself. Never accept every `SysDataInSegment*`-looking name.
+		       SQL table identifiers cannot be parameters: do not concatenate the observed name. Use the Creatio query
+		       builder/provider's quoted identifier obtained from the authorized metadata record, and parameterize every
+		       value. Reuse the subquery execution limits above; do not query the membership table once per virtual record.
+
+		       This shape requires the `UseSegmentFiltering` feature. The live proof used Creatio 10.1.298.0; locally
+		       inspected history's earliest containing build tag is `builds-linux/10.0.0.655`. Treat an absent API,
+		       disabled feature, target-schema mismatch, or rejected segment status as unsupported platform/setup—not as
+		       an empty result. Only default current-membership options are verified; reject expanded variants with
+		       additional removal/date predicates until their exact shapes and semantics are tested.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -226,11 +544,12 @@ public sealed class EsqFilterParsingGuidanceResource {
 
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
-		       scalar Compare operators using representative Integer and MediumText values. The frontend
-		       guide supplies the remaining validation backlog: Boolean/Guid values, IsNull, In, Between,
-		       lookups, dates/macros,
-		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
-		       DataService produce an asserted runtime shape and the lab proves result behavior.
+		       scalar Compare operators using representative Integer and MediumText values, plus text
+		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and temporal literals,
+		       trim-to-date, relative-period boundaries, Year, HourMinute functions, Exists/NotExists/Count subqueries over
+		       a mixed forward/backward path, and saved Segment Exists/NotExists membership with default options. Add new
+		       parsing rules only after native C# and DataService produce an asserted runtime shape and the lab proves
+		       result behavior.
 		       """
 	};
 

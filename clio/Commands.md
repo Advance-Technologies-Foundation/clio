@@ -594,6 +594,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 
+## Record rights
+
+<a id="get-record-rights"></a>
+- [`get-record-rights`](docs/commands/get-record-rights.md) - Read the record-level access rights of a single Creatio record
+<a id="set-record-rights"></a>
+- [`set-record-rights`](docs/commands/set-record-rights.md) - Grant or revoke a record-level access right on a single Creatio record (destructive)
+
 ## Integrations & Tools
 
 <a id="install-dbhub"></a>

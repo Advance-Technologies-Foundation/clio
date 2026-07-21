@@ -556,6 +556,7 @@ internal static class ToolContractCatalog {
 			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
+			[RequestInfoTool.ToolName] = BuildRequestInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
 			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
@@ -632,6 +633,7 @@ internal static class ToolContractCatalog {
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
+		RequestInfoTool.ToolName,
 		PageUpdateTool.ToolName,
 		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
@@ -707,9 +709,13 @@ internal static class ToolContractCatalog {
 				results.Add(registryContract);
 				continue;
 			}
-			// Last resort: reflection over the options type. Only reached when the registry has no entry
-			// (e.g. registry unavailable), and may be lossy for some tools.
-			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
+			// Last resort: reflection over the options type. The toggle-blind reflection catalog is
+			// consulted ONLY when no invoker registry is available (degraded path): with a live registry
+			// every feature-enabled tool already resolved above, so the only names reflection would add
+			// are feature-gated-OFF tools — and a disabled tool must stay invisible on every MCP surface,
+			// the named-contract lookup included.
+			if (toolInvokerRegistry is null
+				&& McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
 				results.Add(schemaContract);
 				continue;
 			}
@@ -718,14 +724,24 @@ internal static class ToolContractCatalog {
 				Error: new ToolContractError(
 					"tool-not-found",
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
-					BuildSuggestions(normalizedName)));
+					BuildSuggestions(normalizedName, toolInvokerRegistry)));
 		}
 		return new ToolContractGetResponse(true, results);
 	}
 
-	private static IReadOnlyList<string> BuildSuggestions(string requestedName) {
+	/// <summary>
+	/// Builds the "did you mean" shortlist for an unknown tool name. With a live invoker registry the
+	/// candidate pool is the curated contracts plus the registry's feature-enabled tool names; the
+	/// toggle-blind reflection catalog pads the pool only on the degraded no-registry path, so a
+	/// feature-gated-OFF tool is never suggested while it is hidden.
+	/// </summary>
+	private static IReadOnlyList<string> BuildSuggestions(
+		string requestedName,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
+			?? McpToolSchemaCatalog.RegisteredToolNames;
 		return Contracts.Keys
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Concat(derivedNames)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
@@ -756,16 +772,20 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Produces the deterministic, deduplicated (case-insensitive) union of every invokable MCP tool name:
-	/// curated canonical tools, registry-invokable hidden tools, and reflection-discovered tools. Ordered
-	/// ordinally by name so the index prefix stays stable for prompt caching. <c>get-tool-contract</c>
-	/// itself is excluded so the discovery tool does not index itself (matching the curated-only behavior).
+	/// curated canonical tools plus the invoker registry's feature-enabled tool set. The toggle-blind
+	/// reflection catalog contributes names only on the degraded no-registry path — with a live registry
+	/// every feature-enabled tool is already present, so the reflection union would add exactly the
+	/// feature-gated-OFF tools, and a disabled tool must stay invisible on every MCP surface (the
+	/// discovery index included). Ordered ordinally by name so the index prefix stays stable for prompt
+	/// caching. <c>get-tool-contract</c> itself is excluded so the discovery tool does not index itself
+	/// (matching the curated-only behavior).
 	/// </summary>
-	/// <param name="toolInvokerRegistry">Optional registry contributing the hidden long-tail tool names.</param>
+	/// <param name="toolInvokerRegistry">Optional registry contributing the feature-enabled long-tail tool names.</param>
 	private static IEnumerable<string> BuildIndexToolNames(IMcpToolInvokerRegistry? toolInvokerRegistry) {
-		IEnumerable<string> registryNames = toolInvokerRegistry?.ToolNames ?? [];
+		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
+			?? McpToolSchemaCatalog.RegisteredToolNames;
 		return CanonicalToolNames
-			.Concat(registryNames)
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Concat(derivedNames)
 			.Where(name => !string.IsNullOrWhiteSpace(name)
 				&& !string.Equals(name, ToolContractGetTool.ToolName, StringComparison.OrdinalIgnoreCase))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -4300,6 +4320,87 @@ internal static class ToolContractCatalog {
 					"The 'documentation' field of a composite detail response contains the complete, authoritative assembly recipe. "
 					+ "Do NOT synthesize the structure from memory or other sources — those are incomplete and will produce a broken result. "
 					+ "Follow the documentation field verbatim.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildRequestInfo() {
+		return new ToolContractDefinition(
+			RequestInfoTool.ToolName,
+			"Returns the Freedom UI request catalog (crt.*Request types wired through request bindings such as a button's clicked) or the full parameter contract for one request type.",
+			new ToolInputSchemaContract(
+				[],
+				[
+					Field("request-type", StringType, "Freedom UI request type, e.g. 'crt.PrintablesRequest'. Omit or use 'list' to return the catalog (list mode); a known type returns that request's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'print'."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
+					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive",
+						InvalidWorkflowShapeCode,
+						Fields: [EnvironmentNameFieldName, "version"],
+						Context: "'environment-name' and 'version' are mutually exclusive — pass one or neither.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("mode", StringType, "detail or list."),
+				Field(CountFieldName, NumberType, "Number of matching requests."),
+				Field("items", ArrayType, "Flat list-mode request summaries, each with requestType and an optional description."),
+				Field("requestType", StringType, "Request type echoed back in detail mode."),
+				Field("parameters", ObjectType, "The ONLY keys a page schema may pass via the binding's params block. An EMPTY map means the request accepts NO parameters — do not invent any. A parameter may carry a valueSource annotation ({kind:'environment', tool:'<probe>'}): fill that value ONLY from the named probe tool's result (e.g. templateId -> list-printables, processName -> get-process-signature)."),
+				Field("baseParameters", ObjectType, "Fields every request inherits from BaseRequest ($context, scopes, type) — platform-injected at dispatch time; NEVER pass them via params."),
+				Field("documentation", StringType, "Per-request authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one."),
+				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
+				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
+				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': tell the user the version is unknown and request explicit confirmation before proceeding. Omitted otherwise."),
+				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, "request-type", "requestType", RejectedStatus, "Use 'request-type' instead of 'requestType'."),
+				Alias(ParameterScope, "request-type", "request_type", RejectedStatus, "Use 'request-type' instead of 'request_type'."),
+				Alias(ParameterScope, "request-type", "request-name", RejectedStatus, "Use 'request-type' instead of 'request-name'."),
+				Alias(ParameterScope, "request-type", "requestName", RejectedStatus, "Use 'request-type' instead of 'requestName'."),
+				Alias(ParameterScope, "request-type", "request_name", RejectedStatus, "Use 'request-type' instead of 'request_name'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environment_name", RejectedStatus, "Use 'environment-name' instead of 'environment_name'.")
+			],
+			[],
+			[
+				Example("Inspect one request contract", new Dictionary<string, object?> {
+					["request-type"] = "crt.PrintablesRequest"
+				}),
+				Example("List the full request catalog", new Dictionary<string, object?>()),
+				Example("Search the catalog by keyword", new Dictionary<string, object?> {
+					["search"] = "print"
+				})
+			],
+			Flow([RequestInfoTool.ToolName],
+				"Use BEFORE wiring a button/menu action to a platform request: list the catalog to pick the request, "
+				+ "then fetch its detail and author the binding's params ONLY from 'parameters'. "
+				+ "Read get-guidance name=when-to-use-requests for the decision rules; a parameter carrying a "
+				+ "valueSource annotation is resolved through the named probe tool, never invented."),
+			[],
+			[],
+			[
+				new ToolAntiPattern(
+					"Authoring request names or params from memory",
+					"Request names and parameter keys are case-sensitive contracts; the runtime silently ignores unknown params. "
+					+ "Always pick the request from the catalog and copy parameter keys from the detail response."),
+				new ToolAntiPattern(
+					"Inventing environment-dependent values (templateId, processName)",
+					"A parameter with a valueSource annotation is filled ONLY from the named probe tool's result "
+					+ "(list-printables, get-process-signature). A made-up value passes save and fails silently at runtime.")
 			]);
 	}
 
