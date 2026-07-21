@@ -40,6 +40,13 @@ public interface IRemoteEntitySchemaColumnManager
 	void ModifyColumn(ModifyEntitySchemaColumnOptions options);
 
 	/// <summary>
+	/// Sets schema-level properties (v1: the primary-display column) on a remote entity schema and persists
+	/// the result through the shared save/publish pipeline, verifying that the change was applied.
+	/// </summary>
+	/// <param name="options">Options identifying the package, schema, environment, and the properties to set.</param>
+	void SetSchemaProperties(SetEntitySchemaPropertiesOptions options);
+
+	/// <summary>
 	/// Prints column properties in CLI-friendly text form.
 	/// </summary>
 	/// <param name="options">Options that identify the package, schema, column, and remote environment.</param>
@@ -113,28 +120,74 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			ApplyColumnMutation(schema, package, operation, effectiveCultureName);
 		}
 
-		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, rootOperation);
+		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
+			schema, package, rootOperation, "columns were saved");
+		VerifyColumnMutations(reloadedSchema, operations, effectiveCultureName);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			_logger.WriteInfo(
+				$"Column '{operation.ColumnName}' action '{operation.Action}' completed for schema '{operation.SchemaName}'.");
+		}
+	}
+
+	/// <summary>
+	/// Persists an in-memory design schema through the full designer pipeline and returns the reloaded schema.
+	/// Runs <c>SaveSchema</c> → <c>SaveSchemaDbStructure</c> → publish + OData rebuild → runtime availability
+	/// check, then reloads the design item so callers can verify the persisted result. Shared by the column
+	/// mutation path (<see cref="ModifyColumns"/>) and the schema-property setter
+	/// (<see cref="SetSchemaProperties"/>) so both write paths persist and publish identically.
+	/// </summary>
+	/// <param name="schema">The mutated design schema to save.</param>
+	/// <param name="package">The package that owns the schema (used to reload the design item).</param>
+	/// <param name="options">Remote command options identifying the target environment.</param>
+	/// <param name="publishReason">Human-readable reason appended to publish progress messages.</param>
+	/// <returns>The design schema reloaded after a successful save and publish.</returns>
+	private EntityDesignSchemaDto SaveAndReloadSchema(EntityDesignSchemaDto schema, PackageInfo package,
+		RemoteCommandOptions options, string publishReason) {
+		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
 			throw new EntitySchemaDesignerException(
 				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
 		}
-		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, rootOperation);
+		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
 		EntitySchemaPublishHelper.PublishAndRebuildOData(
-			_entitySchemaDesignerClient, _logger, rootOperation, schema.Name, "columns were saved");
+			_entitySchemaDesignerClient, _logger, options, schema.Name, publishReason);
 		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
-			rootOperation);
+			options);
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
 			throw new EntitySchemaDesignerException(
 				$"Schema '{schema.Name}' was saved but is not available in runtime.");
 		}
+		return LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, options,
+			allowDependencyResolution: true);
+	}
 
-		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
-		VerifyColumnMutations(reloadedSchema, operations);
-		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
-			_logger.WriteInfo(
-				$"Column '{operation.ColumnName}' action '{operation.Action}' completed for schema '{operation.SchemaName}'.");
+	public void SetSchemaProperties(SetEntitySchemaPropertiesOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
+			throw new EntitySchemaDesignerException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError);
 		}
+		PackageInfo package = ResolvePackage(options.Package);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId,
+			package.Descriptor.Name, options, allowDependencyResolution: true);
+		string requestedColumnName = options.PrimaryDisplayColumn.Trim();
+		// Resolve by name against own then inherited columns (modern server contract: the primary-display
+		// column is matched by the column's uId object, NOT a legacy flat primaryDisplayColumnUId).
+		(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
+		schema.PrimaryDisplayColumn = targetColumn;
+
+		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
+			schema, package, options, "schema properties were saved");
+		// The server performs no validation and silently no-ops if a target version expects the legacy
+		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
+		if (!string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name, requestedColumnName,
+			StringComparison.OrdinalIgnoreCase)) {
+			throw new EntitySchemaDesignerException(
+				$"Primary-display column '{requestedColumnName}' was not persisted for schema '{schema.Name}'. " +
+				"The target environment may not support setting the primary-display column through this API.");
+		}
+		_logger.WriteInfo(
+			$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
 	}
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
@@ -467,7 +520,15 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ModifyColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
 		string effectiveCultureName) {
-		EntitySchemaColumnDto column = FindOwnColumnForMutation(schema, options.ColumnName);
+		(EntitySchemaColumnDto column, bool isInherited) = FindColumnForMutation(schema, options.ColumnName);
+		if (isInherited) {
+			// An inherited column is owned by the parent schema: only its caption/description may be overridden
+			// on this (child/replacing) schema, applied in place on the InheritedColumns entry. Its uId, name,
+			// and type stay unchanged, so the server persists a caption override keyed
+			// '<Schema>.Columns.<Column>.Caption' without redefining the column or touching the parent.
+			ApplyInheritedColumnCaptionOverride(column, options, effectiveCultureName);
+			return;
+		}
 		int effectiveDataValueType = options.Type == null
 			? column.DataValueType ?? 0
 			: ParseSupportedType(options.Type, "modify");
@@ -485,6 +546,60 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		ApplyColumnScalarOptions(column, options);
 
 		ApplyColumnTypeConfiguration(package, column, options, effectiveDataValueType);
+	}
+
+	/// <summary>
+	/// Applies a caption/description-only override to an inherited column, in place on the schema's
+	/// <c>InheritedColumns</c> entry. Rejects any attempt to change a non-caption property (name, type, or any
+	/// flag) of an inherited column, and rejects a modify that carries no caption/description change at all.
+	/// </summary>
+	private static void ApplyInheritedColumnCaptionOverride(EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
+		if (HasNonCaptionInheritedMutation(options)) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{options.ColumnName}' is inherited; only its caption and description can be overridden. " +
+				"Its name, type, and flags are read-only.");
+		}
+		if (!HasCaptionOrDescriptionChange(options)) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{options.ColumnName}' is inherited; provide title-localizations (or a description) to override its caption.");
+		}
+		ApplyColumnCaptionAndDescription(column, options, effectiveCultureName);
+	}
+
+	/// <summary>Returns whether the modify request changes the column caption and/or description.</summary>
+	private static bool HasCaptionOrDescriptionChange(ModifyEntitySchemaColumnOptions options) {
+		return !string.IsNullOrWhiteSpace(options.Title)
+			|| options.TitleLocalizations?.Count > 0
+			|| !string.IsNullOrWhiteSpace(options.Description)
+			|| options.DescriptionLocalizations?.Count > 0;
+	}
+
+	/// <summary>
+	/// Returns whether the modify request touches any property other than caption/description — the set that is
+	/// read-only on an inherited column (name, type, reference, and every scalar/flag/default option).
+	/// </summary>
+	private static bool HasNonCaptionInheritedMutation(ModifyEntitySchemaColumnOptions options) {
+		return !string.IsNullOrWhiteSpace(options.NewName)
+			|| !string.IsNullOrWhiteSpace(options.Type)
+			|| !string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
+			|| options.Required.HasValue
+			|| options.Indexed.HasValue
+			|| options.Cloneable.HasValue
+			|| options.TrackChanges.HasValue
+			|| !string.IsNullOrWhiteSpace(options.DefaultValueSource)
+			|| options.DefaultValue != null
+			|| options.DefaultValueConfig != null
+			|| options.MultilineText.HasValue
+			|| options.LocalizableText.HasValue
+			|| options.AccentInsensitive.HasValue
+			|| options.Masked.HasValue
+			|| options.FormatValidated.HasValue
+			|| options.UseSeconds.HasValue
+			|| options.SimpleLookup.HasValue
+			|| options.Cascade.HasValue
+			|| options.DoNotControlIntegrity.HasValue
+			|| !string.IsNullOrWhiteSpace(options.UsageType);
 	}
 
 	/// <summary>
@@ -615,7 +730,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	private void RemoveColumn(EntityDesignSchemaDto schema, string columnName) {
-		EntitySchemaColumnDto column = FindOwnColumnForMutation(schema, columnName);
+		(EntitySchemaColumnDto column, bool isInherited) = FindColumnForMutation(schema, columnName);
+		if (isInherited) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{columnName}' is inherited and cannot be removed.");
+		}
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		ownColumns.RemoveAll(item => item.UId == column.UId);
 		schema.Columns = ownColumns;
@@ -759,19 +878,23 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const;
 	}
 
-	private EntitySchemaColumnDto FindOwnColumnForMutation(EntityDesignSchemaDto schema, string columnName) {
-		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
-		EntitySchemaColumnDto ownColumn = ownColumns.FirstOrDefault(column =>
+	/// <summary>
+	/// Resolves a column to mutate by name, preferring an own column and falling back to an inherited one.
+	/// Returns whether the match is inherited so the caller can enforce the caption-only rule for inherited
+	/// columns. Throws when the column exists on neither collection.
+	/// </summary>
+	private static (EntitySchemaColumnDto Column, bool IsInherited) FindColumnForMutation(
+		EntityDesignSchemaDto schema, string columnName) {
+		EntitySchemaColumnDto ownColumn = (schema.Columns?.ToList() ?? []).FirstOrDefault(column =>
 			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 		if (ownColumn != null) {
-			return ownColumn;
+			return (ownColumn, false);
 		}
 
 		EntitySchemaColumnDto inheritedColumn = (schema.InheritedColumns?.ToList() ?? []).FirstOrDefault(column =>
 			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 		if (inheritedColumn != null) {
-			throw new EntitySchemaDesignerException(
-				$"Column '{columnName}' is inherited and read-only in v1.");
+			return (inheritedColumn, true);
 		}
 
 		throw new EntitySchemaDesignerException(
@@ -987,11 +1110,32 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static void VerifyColumnMutations(
 		EntityDesignSchemaDto reloadedSchema,
-		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations,
+		string effectiveCultureName) {
+		HashSet<string> ownColumnNames = (reloadedSchema.Columns?.ToList() ?? [])
+			.Select(column => column.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		List<EntitySchemaColumnDto> inheritedColumns = reloadedSchema.InheritedColumns?.ToList() ?? [];
+
+		// Expected OWN-column presence, accounting for renames (old name absent, new name present). An
+		// inherited-column caption/description override stays in InheritedColumns (never in Columns), so it is
+		// verified via VerifyInheritedCaptionOverride and excluded from the own-column presence check to avoid
+		// a false "could not be reloaded" failure.
 		Dictionary<string, bool> expectedColumnPresence = new(StringComparer.OrdinalIgnoreCase);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
 			string columnName = operation.ColumnName.Trim();
+
+			if (action == EntitySchemaColumnAction.Modify && string.IsNullOrWhiteSpace(operation.NewName)
+				&& !ownColumnNames.Contains(columnName)) {
+				EntitySchemaColumnDto inheritedMatch = inheritedColumns.FirstOrDefault(column =>
+					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
+				if (inheritedMatch != null) {
+					VerifyInheritedCaptionOverride(inheritedMatch, operation, effectiveCultureName);
+					continue;
+				}
+			}
+
 			if (action == EntitySchemaColumnAction.Modify && !string.IsNullOrWhiteSpace(operation.NewName)) {
 				expectedColumnPresence[columnName] = false;
 				expectedColumnPresence[operation.NewName.Trim()] = true;
@@ -1001,11 +1145,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			expectedColumnPresence[columnName] = action != EntitySchemaColumnAction.Remove;
 		}
 
-		HashSet<string> reloadedColumnNames = (reloadedSchema.Columns?.ToList() ?? [])
-			.Select(column => column.Name)
-			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		foreach ((string columnName, bool shouldExist) in expectedColumnPresence) {
-			bool columnExists = reloadedColumnNames.Contains(columnName);
+			bool columnExists = ownColumnNames.Contains(columnName);
 			if (shouldExist && !columnExists) {
 				throw new EntitySchemaDesignerException(
 					$"Column '{columnName}' could not be reloaded after save.");
@@ -1015,6 +1156,54 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 					$"Column '{columnName}' is still present after save.");
 			}
 		}
+	}
+
+	/// <summary>
+	/// Asserts that a caption override requested on an inherited column is reflected on the reloaded column in
+	/// the effective culture (en-US fallback). A description-only override supplies no expected caption and is
+	/// verified by existence alone.
+	/// </summary>
+	private static void VerifyInheritedCaptionOverride(
+		EntitySchemaColumnDto reloadedColumn,
+		ModifyEntitySchemaColumnOptions options,
+		string effectiveCultureName) {
+		string expectedCaption = ResolveExpectedCaption(options, effectiveCultureName);
+		if (expectedCaption == null) {
+			return;
+		}
+		string actualCaption = EntitySchemaDesignerSupport.GetLocalizableValue(
+			reloadedColumn.Caption, effectiveCultureName);
+		if (!string.Equals(actualCaption, expectedCaption, StringComparison.Ordinal)) {
+			throw new EntitySchemaDesignerException(
+				$"Caption override for inherited column '{options.ColumnName}' was not persisted " +
+				$"(expected '{expectedCaption}', got '{actualCaption ?? "<none>"}').");
+		}
+	}
+
+	/// <summary>
+	/// Resolves the caption value a modify request is expected to write in the effective culture: the
+	/// effective-culture entry of <c>title-localizations</c> (en-US fallback, then first non-empty), else the
+	/// scalar title. Returns <see langword="null"/> when the request changes no caption.
+	/// </summary>
+	private static string ResolveExpectedCaption(
+		ModifyEntitySchemaColumnOptions options,
+		string effectiveCultureName) {
+		if (options.TitleLocalizations is { Count: > 0 } localizations) {
+			// Match culture keys case-insensitively so the expected caption resolves the same way
+			// GetLocalizableValue reads the actual caption back (which uses OrdinalIgnoreCase).
+			return FindCultureValue(localizations, effectiveCultureName)
+				?? FindCultureValue(localizations, EntitySchemaDesignerSupport.DefaultCultureName)
+				?? localizations.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+		}
+		return string.IsNullOrWhiteSpace(options.Title) ? null : options.Title.Trim();
+	}
+
+	private static string FindCultureValue(IReadOnlyDictionary<string, string> localizations, string cultureName) {
+		return localizations
+			.Where(localization => string.Equals(localization.Key, cultureName, StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(localization.Value))
+			.Select(localization => localization.Value.Trim())
+			.FirstOrDefault();
 	}
 
 	private static string FormatBoolean(bool value) {

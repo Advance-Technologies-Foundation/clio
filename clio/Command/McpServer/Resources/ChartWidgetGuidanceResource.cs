@@ -85,7 +85,7 @@ public sealed class ChartWidgetGuidanceResource {
 		       ## Filters
 
 		       - Static filters live in each series' `data.providing.filters.filter`; the filter/leaf contract
-		         is owned by the `esq-filters` guidance. Keep the filter-group envelope even when empty.
+		         is owned by the `esq-filters-frontend` guidance. Keep the filter-group envelope even when empty.
 		       - "Filter by page data" on a record page is wiring you MUST author — see the next section.
 
 		       ## Filter by page data (record pages) — you MUST wire it

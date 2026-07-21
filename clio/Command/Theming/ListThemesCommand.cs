@@ -23,7 +23,7 @@ public class ListThemesOptions : RemoteCommandOptions
 /// <c>ThemeService.svc/GetAvailableThemes</c> endpoint. Requires the <c>CanCustomizeBranding</c>
 /// license; callers without it receive an empty list rather than an error.
 /// </summary>
-public class ListThemesCommand : RemoteCommand<ListThemesOptions>
+public class ListThemesCommand : RemoteCommand<ListThemesOptions>, IThemeCatalog
 {
 	private readonly IServiceUrlBuilder _urlBuilder;
 
@@ -39,13 +39,7 @@ public class ListThemesCommand : RemoteCommand<ListThemesOptions>
 	/// <inheritdoc />
 	protected override string ServicePath => _urlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetAvailableThemes);
 
-	/// <summary>
-	/// Fetches the available themes from the target environment.
-	/// </summary>
-	/// <param name="options">Command options carrying the connection and timeout settings.</param>
-	/// <param name="themes">On success, the themes returned by the environment (possibly empty).</param>
-	/// <param name="errorMessage">On failure, the server-provided message, if any.</param>
-	/// <returns><c>true</c> when the catalog was read; <c>false</c> when the service reported a failure.</returns>
+	/// <inheritdoc />
 	public virtual bool TryGetAvailableThemes(ListThemesOptions options,
 		out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage) {
 		string response = ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options),

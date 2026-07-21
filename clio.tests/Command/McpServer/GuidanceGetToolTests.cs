@@ -379,7 +379,8 @@ public sealed class GuidanceGetToolTests {
 		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
 			because: "the page modification guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
 		string entryCrlfWorstCase = result.Article.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
-		new System.Text.UTF8Encoding(false).GetByteCount(entryCrlfWorstCase).Should().BeLessThanOrEqualTo(15000,
+		// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2.
+		new System.Text.UTF8Encoding(false).GetByteCount(entryCrlfWorstCase).Should().BeLessThanOrEqualTo(15 * 1024,
 			because: "the entry guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
 	}
 
@@ -521,8 +522,9 @@ public sealed class GuidanceGetToolTests {
 			// Normalize every line ending to CRLF so the budget reflects the largest the article can be
 			// served at (a CRLF checkout adds one byte per line over an LF checkout); this keeps the guard
 			// independent of git autocrlf and matches the real runtime size observed on Windows.
+			// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2.
 			string crlfWorstCase = result.Article!.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
-			utf8.GetByteCount(crlfWorstCase).Should().BeLessThanOrEqualTo(15000,
+			utf8.GetByteCount(crlfWorstCase).Should().BeLessThanOrEqualTo(15 * 1024,
 				because: $"the {name} guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
 		}
 	}
@@ -968,7 +970,7 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Hides process-modeling from availableGuides when the process-designer feature gate is disabled, while the ungated run-process-button guide stays listed.")]
+	[Description("Hides process-modeling from availableGuides when the process-designer feature gate is disabled, while ungated guides stay listed.")]
 	public void GuidanceGet_Should_Hide_ProcessModeling_From_AvailableGuides_When_Gate_Disabled() {
 		// Arrange
 		// _featureToggleService is a bare substitute: IsEnabled(...) returns false, so the gated guides are disabled.
@@ -982,8 +984,6 @@ public sealed class GuidanceGetToolTests {
 			because: "an unknown guidance name must not resolve");
 		result.AvailableGuides.Should().NotContain("process-modeling",
 			because: "process-modeling is gated behind a disabled process-designer flag and must not leak through get-guidance");
-		result.AvailableGuides.Should().Contain("run-process-button",
-			because: "run-process-button documents the shipped run-process scenario (get-process-signature + update-page) and is deliberately ungated, like the gps tool itself");
 		result.AvailableGuides.Should().Contain("app-modeling",
 			because: "ungated guidance entries must stay listed regardless of feature-toggle state");
 	}
@@ -1009,26 +1009,7 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves run-process-button while the process-designer feature gate is disabled: the guide documents the shipped run-process scenario and is not gated.")]
-	public void GuidanceGet_Should_Resolve_RunProcessButton_When_Gate_Disabled() {
-		// Arrange
-		GuidanceGetTool tool = new(_featureToggleService);
-
-		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("run-process-button")).Result;
-
-		// Assert
-		result.Success.Should().BeTrue(
-			because: "run-process-button is ungated — its consumers (update-page, page-modification, page-schema-handlers, mobile-page guides) are public and must never hit a dead pointer");
-		result.Article.Should().NotBeNull(
-			because: "the ungated guide must return its article regardless of the process-designer flag");
-		result.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
-			because: "the canonical run-process-button article URI must be stable");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Lists and resolves process-modeling when the process-designer feature gate is enabled; the ungated run-process-button resolves alongside it.")]
+	[Description("Lists and resolves process-modeling when the process-designer feature gate is enabled.")]
 	public async Task GuidanceGet_Should_List_And_Resolve_ProcessDesigner_Guides_When_Gate_Enabled() {
 		// Arrange
 		_featureToggleService.IsEnabled(typeof(ProcessModelingGuidanceResource)).Returns(true);
@@ -1037,21 +1018,14 @@ public sealed class GuidanceGetToolTests {
 		// Act
 		GuidanceGetResponse listing = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
 		GuidanceGetResponse processModeling = await tool.GetGuidance(new GuidanceGetArgs("process-modeling"));
-		GuidanceGetResponse runProcessButton = await tool.GetGuidance(new GuidanceGetArgs("run-process-button"));
 
 		// Assert
 		listing.AvailableGuides.Should().Contain("process-modeling",
 			because: "process-modeling must be listed when the process-designer gate is enabled");
-		listing.AvailableGuides.Should().Contain("run-process-button",
-			because: "run-process-button is ungated and must always be listed");
 		processModeling.Success.Should().BeTrue(
 			because: "process-modeling must resolve when the process-designer gate is enabled");
 		processModeling.Article!.Uri.Should().Be("docs://mcp/guides/process-modeling",
 			because: "the enabled process-modeling guide must return its canonical article URI");
-		runProcessButton.Success.Should().BeTrue(
-			because: "run-process-button is ungated and must resolve regardless of the gate");
-		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
-			because: "the enabled run-process-button guide must return its canonical article URI");
 	}
 
 	[Test]

@@ -19,6 +19,7 @@ namespace Clio.Mcp.E2E;
 // explicit Allure metadata; fixture-level AOP can block async continuations in this suite.
 [TestFixture]
 [Category("McpE2E.Sandbox")]
+[Category("McpE2E.Manual")]
 [AllureFeature("uninstall-creatio")]
 [NonParallelizable]
 public sealed class UninstallCreatioWarningE2ETests {

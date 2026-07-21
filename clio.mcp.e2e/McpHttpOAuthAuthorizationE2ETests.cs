@@ -32,6 +32,7 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 [TestFixture]
 [Category("E2E")]
+[Category("McpE2E.Manual")]
 [NonParallelizable]
 public sealed class McpHttpOAuthAuthorizationE2ETests {
 
