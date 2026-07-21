@@ -1,7 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
-using Clio.Command.Branding;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -67,14 +67,14 @@ public class UploadImageToolTests {
 
 		// Act
 		UploadImageResult result = tool.UploadImage(new UploadImageArgs(
-			EnvironmentName: "docker_fix2", File: "C:/brand/background.svg"));
+			EnvironmentName: "docker_fix2", File: "C:/brand/background.png"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a verified upload must report success");
 		result.ImageId.Should().Be(UploadedImageId.ToString(),
 			because: "the created SysImage id is the value the caller needs for SysImageInTag and CrtBackgroundConfig");
 		commandResolver.Received(1).Resolve<UploadImageCommand>(Arg.Is<UploadImageOptions>(options =>
-			options.Environment == "docker_fix2" && options.File == "C:/brand/background.svg"));
+			options.Environment == "docker_fix2" && options.File == "C:/brand/background.png"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command instance should perform the upload");
 		defaultCommand.CapturedOptions.Should().BeNull(
@@ -93,7 +93,7 @@ public class UploadImageToolTests {
 		UploadImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		UploadImageResult result = tool.UploadImage(new UploadImageArgs(File: "C:/brand/background.svg"));
+		UploadImageResult result = tool.UploadImage(new UploadImageArgs(File: "C:/brand/background.png"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a request without an environment name is invalid");

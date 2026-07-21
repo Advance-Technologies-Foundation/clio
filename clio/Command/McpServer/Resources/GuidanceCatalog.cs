@@ -220,7 +220,7 @@ internal static class GuidanceCatalog {
 				ThemingGuidanceResource.Guide),
 			["branding"] = Create(
 				"branding",
-				"Canonical MCP guidance for branding a Creatio environment beyond the theme — the four product logo sys settings, the splash/underlay companion settings, and the shell background image (upload, gallery registration, activation). The theme part of branding is covered by the theming guide.",
+				"Canonical MCP guidance for branding a Creatio environment: replacing the product logos and applying a shell background image.",
 				BrandingGuidanceResource.Guide),
 			["when-to-use-requests"] = Create(
 				"when-to-use-requests",

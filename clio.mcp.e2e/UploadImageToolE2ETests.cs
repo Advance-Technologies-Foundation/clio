@@ -109,7 +109,7 @@ public sealed class UploadImageToolE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environmentName"] = "docker_fix2",
-					["file"] = "C:/brand/background.svg"
+					["file"] = "C:/brand/background.png"
 				}
 			},
 			context.CancellationTokenSource.Token);

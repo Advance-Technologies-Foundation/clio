@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Clio.Command.Branding;
+namespace Clio.Common;
 
 /// <summary>
 /// Uploads a local image file into a Creatio environment's <c>SysImage</c> table through the platform

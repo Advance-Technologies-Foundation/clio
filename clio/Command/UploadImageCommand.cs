@@ -2,28 +2,27 @@ using System;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command.Branding;
+namespace Clio.Command;
 
 /// <summary>
 /// Options for the <c>upload-image</c> command.
 /// </summary>
 [Verb("upload-image",
-	HelpText = "Upload a local image file to the environment's SysImage table via the platform image API")]
+	HelpText = "Upload a local image to an environment and print its image id")]
 public class UploadImageOptions : RemoteCommandOptions {
 
 	/// <summary>
-	/// Path to the local image file to upload (png, jpg/jpeg, gif, bmp, webp, or svg).
+	/// Path to the local image file to upload (png, jpg/jpeg, gif, bmp, or webp).
 	/// </summary>
 	[Value(0, MetaName = "file", Required = true,
-		HelpText = "Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).")]
+		HelpText = "Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).")]
 	public string File { get; set; }
 }
 
 /// <summary>
-/// Uploads a local image file into the target environment's <c>SysImage</c> table and reports the
-/// created record id. This command is a thin adapter over <see cref="ISysImageUploader"/>, which owns
-/// the authenticated image-API upload and its verification; the command maps the CLI options onto the
-/// service and renders the user-facing result.
+/// Uploads a local image to the target environment and reports the created image id. A thin adapter
+/// over <see cref="ISysImageUploader"/>, which owns the upload and its verification; the command maps
+/// the CLI options onto the service and renders the user-facing result.
 /// </summary>
 public class UploadImageCommand : RemoteCommand<UploadImageOptions> {
 
@@ -43,7 +42,7 @@ public class UploadImageCommand : RemoteCommand<UploadImageOptions> {
 	/// and read the structured result.
 	/// </summary>
 	/// <param name="options">Command options carrying the file path and connection settings.</param>
-	/// <returns>The upload outcome carrying the created <c>SysImage</c> id or a failure message.</returns>
+	/// <returns>The upload outcome carrying the created image id or a failure message.</returns>
 	public virtual SysImageUploadResult UploadImage(UploadImageOptions options) =>
 		_uploader.UploadAsync(options.File).ConfigureAwait(false).GetAwaiter().GetResult();
 
@@ -51,7 +50,7 @@ public class UploadImageCommand : RemoteCommand<UploadImageOptions> {
 	protected override void ExecuteRemoteCommand(UploadImageOptions options) {
 		SysImageUploadResult result = UploadImage(options);
 		if (result.Success) {
-			Logger.WriteInfo($"Uploaded '{options.File}' to SysImage. imageId: {result.ImageId}");
+			Logger.WriteInfo($"Uploaded '{options.File}'. imageId: {result.ImageId}");
 			return;
 		}
 		CommandSuccess = false;

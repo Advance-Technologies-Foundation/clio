@@ -7,7 +7,6 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Clio.Command.Branding;
 using Clio.Common;
 using Clio.Common.BrowserSession;
 using FluentAssertions;
@@ -159,7 +158,8 @@ public sealed class SysImageUploaderTests
 		// Assert
 		result.Success.Should().BeFalse(because: "only image formats are accepted");
 		result.Error.Should().Contain("Unsupported image extension", because: "the failure must name the rejected extension");
-		result.Error.Should().Contain(".svg", because: "the failure must list the supported formats so the caller can recover");
+		result.Error.Should().Contain(".webp", because: "the failure must list the supported formats so the caller can recover");
+		result.Error.Should().NotContain(".svg", because: "svg is not supported by the other branding surfaces and must not be advertised");
 		handler.Requests.Should().BeEmpty(because: "validation failures must not reach the network");
 	}
 

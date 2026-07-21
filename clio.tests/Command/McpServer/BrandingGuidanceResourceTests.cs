@@ -74,8 +74,8 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The branding guide states the provenance and stability of the shell-background SysImageTag id and gives a lookup fallback, so the literal is never trusted blindly (PR #928 review).")]
-	public void BrandingGuidanceResource_Should_State_ShellBackground_Tag_Provenance() {
+	[Description("The branding guide routes background activation through the dedicated set-background-image tool and no longer carries the raw gallery-registration recipe (PR #928 review).")]
+	public void BrandingGuidanceResource_Should_Route_Background_Activation_Through_SetBackgroundImage_Tool() {
 		// Arrange
 		BrandingGuidanceResource resource = new();
 
@@ -84,12 +84,29 @@ public sealed class BrandingGuidanceResourceTests {
 			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
 
 		// Assert
-		article.Text.Should().Contain("273C2402-7CAE-456B-A9C4-067D2024F1A7",
-			because: "the platform-seeded shell-background tag id is the one literal the registration step needs");
-		article.Text.Should().Contain("shell_background",
-			because: "the guide must name the SysImageTag record so the id's provenance is stated inline");
-		article.Text.Should().Contain("same id on every installation",
-			because: "the stability guarantee must be stated inline so a future edit does not silently drop the context");
+		article.Text.Should().Contain("set-background-image",
+			because: "the dedicated tool encapsulates the gallery registration and background activation");
+		article.Text.Should().NotContain("SysImageInTag",
+			because: "the gallery-registration mechanics are owned by the set-background-image tool implementation, not hand-executed from the guide");
+		article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the background-configuration setting is owned by the set-background-image tool implementation");
+	}
+
+	[Test]
+	[Description("The branding guide warns that applying a logo cannot be automatically reverted by clio, so the agent warns the user before writing one (PR #928 review; verified live 2026-07-21: the platform accepts an empty-value clear but no clio surface can send one for a Binary setting).")]
+	public void BrandingGuidanceResource_Should_Warn_That_Logos_Cannot_Be_Automatically_Reverted() {
+		// Arrange
+		BrandingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("cannot be automatically reverted",
+			because: "clio has no clear affordance for Binary sys settings, so the guide must not promise a restore");
+		article.Text.Should().Contain("warn the user",
+			because: "the agent must get the user's go-ahead before an irreversible write");
 	}
 
 	[Test]

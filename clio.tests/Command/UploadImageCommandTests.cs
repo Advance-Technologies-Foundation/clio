@@ -1,7 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
-using Clio.Command.Branding;
+using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -39,16 +39,15 @@ public sealed class UploadImageCommandTests : BaseCommandTests<UploadImageOption
 	[Description("Reports success and prints the created SysImage id when the uploader succeeds, so the caller can chain the id into SysImageInTag / CrtBackgroundConfig.")]
 	public void Execute_ShouldReportImageId_WhenUploadSucceeds() {
 		// Arrange
-		_uploader.UploadAsync("C:/brand/background.svg", Arg.Any<System.Threading.CancellationToken>())
+		_uploader.UploadAsync("C:/brand/background.png", Arg.Any<System.Threading.CancellationToken>())
 			.Returns(SysImageUploadResult.Successful(UploadedImageId));
-		UploadImageOptions options = new() { File = "C:/brand/background.svg" };
+		UploadImageOptions options = new() { File = "C:/brand/background.png" };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0, because: "a verified upload is a success");
-		// The created SysImage id is the command's primary output and must reach the user.
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains(UploadedImageId.ToString())));
 	}
 
@@ -65,7 +64,6 @@ public sealed class UploadImageCommandTests : BaseCommandTests<UploadImageOption
 
 		// Assert
 		exitCode.Should().Be(1, because: "a failed upload must surface as a non-zero exit code");
-		// The uploader's actionable failure reason must reach the user.
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("File not found")));
 	}
 }

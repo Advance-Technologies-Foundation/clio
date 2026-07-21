@@ -11,11 +11,9 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool that uploads a local image file into a target environment's <c>SysImage</c> table through
-/// the platform image API (<c>ImageAPIService/upload</c>) and returns the created record id. The
-/// <c>SysImage</c> binary column cannot be written through the OData JSON tools, so this tool is the
-/// supported write path for images such as the shell background (see <c>get-guidance branding</c>).
-/// It only ever creates a new record (additive, never overwrites existing data), so it is annotated
+/// MCP tool that uploads a local image file to a target environment and returns the created image id —
+/// the supported write path for images such as the shell background (see <c>get-guidance branding</c>).
+/// Each call stores a new image and never overwrites existing data, so it is annotated
 /// <c>Destructive=false</c>.
 /// </summary>
 public class UploadImageTool(
@@ -28,13 +26,13 @@ public class UploadImageTool(
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal);
 
-	/// <summary>Uploads the image and returns a structured result carrying the created SysImage id.</summary>
+	/// <summary>Uploads the image and returns a structured result carrying the created image id.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
-	 Description("Upload a local image file (png, jpg, jpeg, gif, bmp, webp, or svg) to a registered environment's " +
-		"SysImage table via the platform image API and return the created record's image-id. Additive only — " +
-		"a new SysImage record is created on every call, nothing is overwritten. Requires forms-auth credentials " +
-		"on the environment (login/password). Returns { success, image-id, error? }. " +
-		"For the shell-background branding flow (gallery registration, CrtBackgroundConfig), read get-guidance branding first.")]
+	 Description("Upload a local image file (png, jpg, jpeg, gif, bmp, or webp) to a registered environment " +
+		"and return the created image-id. Additive only — each call stores a new image, nothing is overwritten. " +
+		"Requires forms-auth credentials on the environment (login/password). Returns { success, image-id, error? }. " +
+		"To set the uploaded image as the shell background, call set-background-image; " +
+		"for the full branding flow read get-guidance branding first.")]
 	public UploadImageResult UploadImage(
 		[Description("Parameters: environment-name (required), file (required — path to the local image file).")]
 		[Required] UploadImageArgs args) {
@@ -84,7 +82,7 @@ public sealed record UploadImageArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("file")]
-	[property: Description("Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).")]
+	[property: Description("Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).")]
 	[property: Required]
 	string? File = null
 ) {
@@ -101,7 +99,7 @@ public sealed record UploadImageResult {
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
 
-	/// <summary>The created <c>SysImage</c> record id; omitted on failure.</summary>
+	/// <summary>The created image id; omitted on failure.</summary>
 	[JsonPropertyName("image-id")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ImageId { get; init; }

@@ -7,10 +7,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using Clio.Common;
 using Clio.Common.BrowserSession;
 
-namespace Clio.Command.Branding;
+namespace Clio.Common;
 
 /// <inheritdoc cref="ISysImageUploader" />
 public sealed class SysImageUploader : ISysImageUploader {
@@ -23,7 +22,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 	internal const long MaxImageBytes = SysSettingsManager.MaxBinaryValueBytes;
 
 	// The image API accepts a single-request upload for payloads under the cap, so no chunk loop is
-	// needed; the extension→mime map covers the raster and vector formats the Appearance page accepts.
+	// needed; the extension→mime map covers the raster formats the Appearance page accepts.
 	private static readonly IReadOnlyDictionary<string, string> MimeTypesByExtension =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			[".png"] = "image/png",
@@ -31,8 +30,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 			[".jpeg"] = "image/jpeg",
 			[".gif"] = "image/gif",
 			[".bmp"] = "image/bmp",
-			[".webp"] = "image/webp",
-			[".svg"] = "image/svg+xml"
+			[".webp"] = "image/webp"
 		};
 
 	private const string CsrfCookieName = "BPMCSRF";

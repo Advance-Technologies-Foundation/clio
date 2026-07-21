@@ -664,7 +664,7 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app (see section 13 for logos and the background image): build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
   Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
@@ -684,8 +684,6 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
 - `set-user-theme`
   Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
-- `upload-image`
-  Upload a local image file to the environment's `SysImage` table and return the created record's `image-id`. Additive only (`Destructive=false`) — every call creates a new record. The supported write path for the shell background image.
 
 What an external AI can practically do here:
 
@@ -693,12 +691,42 @@ What an external AI can practically do here:
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
-- brand beyond the theme: write the four logo slots as Binary sys settings, and apply a shell background (upload with `upload-image`, then register and activate it) — the exact mechanics live in the `branding` guidance
 
 Companion surfaces:
 
 - `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
-- `get-guidance name=branding` — branding beyond the theme: the logo sys settings and the shell background image (upload, gallery registration, activation).
+- `get-guidance name=branding` — the rest of the branding surface: product logos and the shell background image (section 13 below).
+
+### 13. Branding
+
+These tools brand a Creatio app: the product logos and the shell background image (custom themes
+are section 12 above).
+Both act on a registered environment (`environment-name`) and require the `CanCustomizeBranding`
+license (precheck with `check-theming-access`). All tools take a single `args` object with
+kebab-case fields.
+
+- `upload-image`
+  Upload a local image file to the environment and return the created `image-id`. Additive only
+  (`Destructive=false`) — each call stores a new image. Requires forms-auth credentials
+  (login/password) on the environment.
+- `set-background-image`
+  Set a previously uploaded image (`image-id` from `upload-image`) as the environment's shell
+  background for all users. A confirmed write (`Destructive=true`: it replaces the currently
+  configured background, so the MCP host prompts before it runs; on the lazy tool surface it is
+  re-issued through `clio-run-destructive`). Idempotent — re-applying the same image converges to
+  the same state.
+
+What an external AI can practically do here:
+
+- apply a shell background in two calls: `upload-image` (file → `image-id`), then
+  `set-background-image` (`image-id` → active background)
+- write the four product logo slots as Binary sys settings (`update-sys-setting` +
+  `value-file-path`) — the slot list and rules live in the `branding` guidance
+
+Companion surfaces:
+
+- `get-guidance name=branding` — the logo slots, the background flow, and the license gate.
+- `get-guidance name=theming` — colours, fonts, and custom themes (section 12 above).
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

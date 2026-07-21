@@ -168,7 +168,7 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical branding guidance article when the caller requests branding: logo sys settings, the splash/underlay companions, and the shell background flow routed through the dedicated upload-image tool.")]
+	[Description("Returns the canonical branding guidance article when the caller requests branding: logo sys settings and the shell background flow routed through the dedicated upload-image and set-background-image tools.")]
 	public async Task GuidanceGet_Should_Return_Branding_Article() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
@@ -199,12 +199,10 @@ public sealed class GuidanceGetToolTests {
 			because: "the raw image-API recipe (endpoint, query literals, headers) is owned by the upload-image tool implementation and must not be hand-executed from the guide");
 		result.Article.Text.Should().NotContain("get-browser-session",
 			because: "the browser-session upload recipe is retired in favor of the dedicated upload-image tool");
-		result.Article.Text.Should().Contain("SysImageInTag",
-			because: "the background must be registered in the Appearance gallery via the shell-background tag");
-		result.Article.Text.Should().Contain("273C2402-7CAE-456B-A9C4-067D2024F1A7",
-			because: "the shell-background gallery tag id is the one literal the agent needs for the SysImageInTag registration");
-		result.Article.Text.Should().Contain("CrtBackgroundConfig",
-			because: "the shell background is applied by pointing CrtBackgroundConfig at the uploaded image");
+		result.Article.Text.Should().Contain("set-background-image",
+			because: "the background activation must route through the dedicated set-background-image tool");
+		result.Article.Text.Should().NotContain("SysImageInTag",
+			because: "the gallery-registration mechanics are owned by the set-background-image tool implementation and must not be hand-executed from the guide");
 	}
 
 	[Test]

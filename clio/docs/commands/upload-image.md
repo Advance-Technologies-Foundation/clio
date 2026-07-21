@@ -2,34 +2,23 @@
 
 ## Command Type
 
-    Theming commands
+    Branding commands
 
 ## Name
 
-upload-image - upload a local image file to the environment's SysImage table
+upload-image - upload a local image to an environment and print its image id
 
 ## Description
 
-`upload-image` uploads a local image file into the target environment's
-`SysImage` table through the platform image API (`ImageAPIService/upload`) on
-an authenticated clio session, and prints the created record's `imageId`.
+`upload-image` uploads a local image file to the target environment, verifies it was stored, and
+prints the created image id.
 
-The `SysImage` binary column cannot be written through the OData JSON surface
-(the stream stays empty), so this command is the supported programmatic write
-path for images such as the Freedom UI shell background (referenced by the
-`CrtBackgroundConfig` system setting).
+Each call stores a new image. Use the printed image id to reference the image, for example with
+[`set-background-image`](set-background-image.md) to make it the shell background.
 
-The upload is additive only: every call creates a new `SysImage` record and
-never overwrites existing data. After the upload the command reads the image
-back through the platform image read endpoint and reports an error rather than
-a false success when the binary did not persist. The image API is addressed
-runtime-aware: under the `/0` alias on .NET Framework environments and at the
-site root on .NET Core environments.
-
-Supported formats: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`, `svg`. The
-payload is capped at 10 MB (the same cap as Binary system-setting uploads).
-The environment must have forms-auth credentials (login/password) registered;
-OAuth-only environments are not supported.
+Supported formats: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`. The file is capped at 10 MB. The
+environment must have login/password credentials registered; OAuth-only environments are not
+supported.
 
 ## Synopsis
 
@@ -40,7 +29,7 @@ clio upload-image <file> [options]
 ## Options
 
 ```bash
-<file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).
+<file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, or webp).
 
 --uri               -u          Application uri
 
@@ -56,18 +45,14 @@ clio upload-image <file> [options]
 ## Example
 
 ```bash
-clio upload-image C:\brand\background.svg -e myapp
-upload the SVG and print the created SysImage record's imageId
+clio upload-image C:\brand\background.png -e myapp
+upload the image and print its image id
 ```
 
 ## Notes
 
-- To apply an uploaded image as the Freedom UI shell background, register it in
-  the Appearance gallery (`SysImageInTag`, shell-background tag) and point the
-  `CrtBackgroundConfig` system setting at its `imageId`.
-- Product logos are not `SysImage` records; write them as Binary system
-  settings (`LogoImage`, `MenuLogoImage`, `ConfigurationPageLogoImage`,
-  `CrtAppToolbarLogo`) with [`set-syssetting`](set-syssetting.md).
+- To set an uploaded image as the shell background, run
+  [`set-background-image`](set-background-image.md).
 
 ## Reporting Bugs
 

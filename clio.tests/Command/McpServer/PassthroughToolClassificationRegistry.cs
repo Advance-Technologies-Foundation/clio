@@ -330,10 +330,11 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
+			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-record-rights"] = PassthroughClassification.NotApplicable,
-			["set-user-theme"] = PassthroughClassification.NotApplicable, // BaseTool ExecuteResolved<SetUserThemeCommand> per-call env resolution (ENG-93302) — already passthrough-capable, like create-theme/list-themes
-			["upload-image"] = PassthroughClassification.NotApplicable, // BaseTool ExecuteResolved<UploadImageCommand> per-call env resolution (ENG-92981) — already passthrough-capable, like set-user-theme
+			["set-user-theme"] = PassthroughClassification.NotApplicable,
+			["upload-image"] = PassthroughClassification.NotApplicable,
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-creatio"] = PassthroughClassification.NotApplicable,
