@@ -53,6 +53,13 @@ public sealed class PackageDependenciesGuidanceResource {
 		       Read-only operations (get-entity-schema-properties, get-entity-schema-column-properties)
 		       never trigger auto-resolution.
 
+		       NOT THIS CASE: a transient network flap (DNS resolution failure, connection reset,
+		       timeout, gateway 502/503/504) is a DIFFERENT failure class from a missing dependency.
+		       `sync-schemas` retries transient network faults per operation on its own and, on a
+		       mid-batch abort, returns a `resume-plan` — resubmit only `resume-plan.operations`. Do
+		       NOT add a package dependency in response to a DNS/timeout error; add one only for the
+		       "GetSchemaDesignItem returned an HTML error page" missing-dependency symptom above.
+
 		       MANUAL RECOVERY (when auto-resolution is not available)
 		       1) Identify the owning app/package of the object's upper layer (for Opportunity it is
 		          `CrtLeadOppMgmtApp`; use get-app-info / find-entity-schema to confirm the owner of

@@ -107,6 +107,27 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	// A real SDK-built tool whose method blocks past a tiny deadline, honouring the SDK-injected
+	// CancellationToken, so the clio-run retry-safe branch can be driven into the read-response timeout
+	// without a real slow backend.
+	[McpServerToolType]
+	private static class BlockingToolType {
+		[McpServerTool(Name = "blocking-tool", Destructive = false, ReadOnly = true)]
+		[System.ComponentModel.Description("Blocks until cancelled.")]
+		public static async Task<string> Block(
+			[System.ComponentModel.Description("payload")] string value,
+			CancellationToken cancellationToken) {
+			await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+			return $"echo:{value}";
+		}
+	}
+
+	private static McpServerTool BuildBlockingTool() =>
+		McpServerTool.Create(
+			typeof(BlockingToolType).GetMethod(nameof(BlockingToolType.Block))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
 	// A typed-POCO SUCCESS envelope whose data legitimately carries URI/path-shaped strings, returned as a
 	// plain record without IsError — the audit backstop must leave it completely untouched.
 	public sealed record PocoSuccessEnvelope(bool Success, string Message, string Url, string FullPath);
@@ -427,6 +448,58 @@ public sealed class ClioRunDispatchTests {
 			because: "the audit trail must record which concrete tool clio-run actually executed");
 		auditNode["destructive"]!.GetValue<bool>().Should().BeTrue(
 			because: "the resolved tool's destructiveness (registry.IsDestructive) must be echoed for the host/audit trail");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Bounds the clio-run retry-safe dispatch vector (the PRIMARY long-tail read vector) by the read-response deadline: when a retry-safe target's work outlives the deadline, clio-run returns a structured creatio-timeout envelope AND still attaches the clio-run dispatch audit to _meta (ENG-93373). Exercised via the internal readDeadline test seam so the timeout branch is covered without a 120 s wait.")]
+	public async Task RunAsync_ShouldReturnStructuredTimeout_WhenRetrySafeToolExceedsDeadline() {
+		// Arrange — a retry-safe target whose dispatch blocks well past the tiny deadline.
+		RegisterTool("blocking-tool", BuildBlockingTool(), destructive: false);
+		_registry.IsRetrySafe("blocking-tool").Returns(true);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act — a tiny deadline wins the race against the parked work (request token never cancelled, so
+		// this is a timeout, not a caller cancellation).
+		CallToolResult result = await _sut.RunAsync(
+			"blocking-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None,
+			TimeSpan.FromMilliseconds(50));
+
+		// Assert — the clio-run vector returned the bounded timeout envelope, not a hang.
+		result.IsError.Should().BeTrue(
+			because: "a timed-out retry-safe dispatch must be reported as an error result");
+		JsonElement structured = result.StructuredContent!.Value;
+		structured.GetProperty("error-class").GetString().Should().Be("creatio-timeout",
+			because: "the clio-run vector must emit the same machine-readable timeout token as the other dispatch paths");
+		structured.GetProperty("read-response-timed-out").GetBoolean().Should().BeTrue(
+			because: "the read envelope must be distinguishable from a write in-progress envelope");
+		structured.GetProperty("tool").GetString().Should().Be("blocking-tool",
+			because: "the envelope must name the tool that timed out");
+		// AttachDispatchAudit still runs on the timed-out result — the audit trail must not be lost on timeout.
+		result.Meta.Should().NotBeNull(because: "even a timed-out dispatch must leave the clio-run audit record");
+		result.Meta!["clio-run"]!["dispatchedTool"]!.GetValue<string>().Should().Be("blocking-tool",
+			because: "the audit trail must record the concrete tool clio-run attempted, even on timeout");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A retry-safe tool that completes within the deadline passes its real result through the clio-run read-deadline wrapper unchanged (ENG-93373 happy path).")]
+	public async Task RunAsync_ShouldReturnResultUnchanged_WhenRetrySafeToolCompletesWithinDeadline() {
+		// Arrange — a retry-safe fast tool; the deadline is generous so the work wins the race.
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		_registry.IsRetrySafe("echo-tool").Returns(true);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(
+			"echo-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None,
+			TimeSpan.FromSeconds(30));
+
+		// Assert — the fast retry-safe result is returned unchanged, not a timeout envelope.
+		result.IsError.Should().NotBe(true, because: "a fast retry-safe read must return its real payload, not a timeout");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hello", StringComparison.Ordinal),
+			because: "the deadline wrapper must pass the real tool output through unchanged when work wins the race");
 	}
 
 	[Test]
