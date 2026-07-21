@@ -2123,6 +2123,60 @@ public sealed class BusinessRuleValidatorTests {
 				because: "lookup operands must reference the same schema, even when one side is a Lookup setting");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts comparing a Text system setting to a text-subtype attribute (ShortText): the text family is compatible even though the exact type names differ.")]
+	public void Validate_Should_Accept_Text_Setting_Vs_Text_Subtype_Attribute() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["City"] = new("City", "ShortText", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["Mode"] = new("Mode", "Text", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "Mode"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "City"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a Text setting and a ShortText attribute belong to the same text family, which the platform accepts");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts comparing an Integer system setting to a numeric-subtype attribute (Money): the numeric family is compatible.")]
+	public void Validate_Should_Accept_Numeric_Setting_Vs_Numeric_Subtype_Attribute() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["Amount"] = new("Amount", "Money", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["Limit"] = new("Limit", "Integer", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "Limit"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "Amount"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "Integer and Money both belong to the numeric family, which is a valid comparison");
+	}
+
 	private static BusinessRule SysSettingRule(
 		BusinessRuleExpression left,
 		string comparisonType,

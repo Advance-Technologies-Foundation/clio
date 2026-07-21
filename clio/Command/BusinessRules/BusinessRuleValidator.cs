@@ -535,7 +535,16 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		if (leftType is not null && rightType is not null) {
 			OperandType leftValue = leftType.AsValueType();
 			OperandType rightValue = rightType.AsValueType();
-			if (!string.Equals(leftValue.DataValueTypeName, rightValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+			// Operands are compatible when they share the same data value type OR the same text/numeric
+			// FAMILY: a system setting is usually the bare `Text` type while entity/page string columns
+			// are a text subtype (ShortText/MediumText/...), and likewise Integer/Float/Money are all
+			// numeric — the platform's rule engine accepts these cross-subtype comparisons (verified on a
+			// live environment). DateTime subtypes (Date/Time/DateTime) and Lookup are intentionally kept
+			// exact, since mixing those is not a meaningful comparison.
+			bool sameType = string.Equals(leftValue.DataValueTypeName, rightValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)
+				|| (IsTextDataValueType(leftValue.DataValueTypeName) && IsTextDataValueType(rightValue.DataValueTypeName))
+				|| (IsNumericDataValueType(leftValue.DataValueTypeName) && IsNumericDataValueType(rightValue.DataValueTypeName));
+			if (!sameType) {
 				throw new ArgumentException(
 					$"rule.condition.conditions[*] compares {left.Label} ({Describe(leftType)}) to {right.Label} ({Describe(rightType)}). Both operands must resolve to the same data value type.");
 			}

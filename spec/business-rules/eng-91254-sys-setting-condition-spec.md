@@ -69,17 +69,16 @@ those components free of environment I/O.
 - Services: `PageBusinessRuleService.cs`, `EntityBusinessRuleService.cs`; DI in `BindingsModule.cs`.
 - MCP: `ToolContractGetTool.cs`, `Resources/BusinessRulesGuidanceResource.cs`.
 
-## Known limitation / follow-up
+## Comparison compatibility (cross-subtype)
 
-`ValidateComparison` requires an **exact** `dataValueTypeName` match between two typed operands (pre-existing
-behavior shared with attribute-vs-attribute and SysValue comparisons). Because most Creatio system settings
-carry the bare `Text` type while entity string columns are usually a text *subtype* (`ShortText`,
-`MediumText`, …), a condition like "`Text` setting **equal** a `ShortText` attribute" is currently rejected
-even though both are textual (same for `Integer` setting vs `Float`/`Money` column). Same-type and Boolean
-scenarios (the verified Jira cases) work. Relaxing this to kind-based compatibility (Text-family/Numeric-family
-interchangeable, DateTime/Lookup kept exact) would fix it, but it changes shared comparison semantics and its
-runtime acceptance by the platform's business-rule engine is unverified — deferred as a follow-up decision,
-not silently changed here.
+Two typed operands are compatible when they share the same data value type **or the same text/numeric
+family**. Most system settings carry the bare `Text` type while entity/page string columns are a text
+subtype (`ShortText`, `MediumText`, …), and `Integer`/`Float`/`Money` are all numeric — so `ValidateComparison`
+treats those cross-subtype pairs as compatible (a `Text` setting **equal** a `ShortText` attribute is valid).
+`DateTime` subtypes (`Date`/`Time`/`DateTime`) and `Lookup` are kept **exact** (Lookup also matches on
+reference schema), since mixing those is not a meaningful comparison. The platform's business-rule engine
+accepts the relaxed pairs — verified on a live environment by persisting a `Text`-setting `equal`
+`ShortText`-attribute page rule (`succeeded: 1`, read-back confirmed).
 
 ## Verification
 
