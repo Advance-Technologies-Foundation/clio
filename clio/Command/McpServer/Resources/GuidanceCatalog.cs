@@ -139,6 +139,14 @@ internal static class GuidanceCatalog {
 				"dashboard-design",
 				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
 				DashboardDesignGuidanceResource.Guide),
+			["dashboard-rights"] = Create(
+				"dashboard-rights",
+				"Canonical MCP guidance for reading and changing a dashboard's record-level access rights (new or existing dashboard) via get-record-rights / set-record-rights, and shipping those grants with the dashboard's package as a SysSchemaAdminUnitRight data binding so they survive a transfer.",
+				DashboardRightsGuidanceResource.Guide),
+			["record-rights"] = Create(
+				"record-rights",
+				"Canonical MCP guidance for record-level access rights: read/change who can access a record or dashboard with get-record-rights / set-record-rights, addressing a dashboard as SysSchemaAdminUnit + schema UId, and the record-level (SysSchemaAdminUnitRight) vs operation-level (SysSchemaOperationRight) distinction.",
+				RecordRightsGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",

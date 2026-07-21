@@ -42,6 +42,7 @@ public sealed class DataBindingsGuidanceResource {
 			       Preferred workflows
 			       - Canonical lookup seeding flow: `get-tool-contract` -> `sync-schemas` -> refresh/read-back.
 			       - Canonical standalone DB-first binding flow: `get-tool-contract` -> `create-data-binding-db` -> optional `upsert-data-binding-row-db` -> refresh/read-back.
+			       - `upsert-data-binding-row-db` decides by primary key: it UPDATES a row that already exists in the table (matched by `Id`) and INSERTS only a genuinely new row (which must then carry every required column). The binding must exist first (`create-data-binding-db`, which may be empty).
 			       - Canonical local artifact flow: `get-tool-contract` -> `create-data-binding` -> `add-data-binding-row` or `remove-data-binding-row` -> local artifact verification.
 			       - DB-first SaveSchema metadata should be projected from the primary key plus columns referenced by currently bound or requested rows.
 			       - Unrelated runtime-only columns are not blockers for DB-first flows; explicitly requested unsupported runtime columns are blockers.
