@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -41,7 +43,7 @@ public sealed class CompileOperationRegistryTests {
 
 		// Assert
 		finished.Status.Should().Be(CompileOperationStatus.Succeeded, because: "exit code 0 means the compile succeeded");
-		finished.ExitCode.Should().Be(0);
+		finished.ExitCode.Should().Be(0, because: "the finalized record must carry the reported exit code");
 		finished.FinishedUtc.Should().NotBeNull(because: "a finished operation must carry a finish timestamp");
 		registry.GetById(created.OperationId)!.Status.Should().Be(CompileOperationStatus.Succeeded,
 			because: "the update must be visible on subsequent lookups by id");
@@ -59,7 +61,7 @@ public sealed class CompileOperationRegistryTests {
 
 		// Assert
 		finished.Status.Should().Be(CompileOperationStatus.Failed, because: "a non-zero exit code means the compile failed");
-		finished.ExitCode.Should().Be(1);
+		finished.ExitCode.Should().Be(1, because: "the finalized record must carry the reported exit code");
 		finished.PackageName.Should().Be("MyPackage",
 			because: "finishing an operation must not lose the package name recorded at Begin");
 	}
@@ -142,5 +144,30 @@ public sealed class CompileOperationRegistryTests {
 			because: "the tail must be capped so a large compile log does not grow the registry unbounded");
 		finished.MessageTail.Last().Should().Be($"line-{CompileOperationRegistry.MessageTailCap + 10}",
 			because: "the cap must keep the MOST RECENT lines, not the earliest ones");
+	}
+
+	[Test]
+	[Description("A detached over-deadline compile finalizing (Finish) while compile-status readers poll concurrently transitions the record from Running to Succeeded without throwing or losing the tenant's latest pointer.")]
+	public void Finish_Should_Transition_Running_To_Succeeded_Under_Concurrent_Reads() {
+		// Arrange
+		CompileOperationRegistry registry = new();
+		CompileOperationRecord begun = registry.Begin("tenant-a", "sandbox", null);
+		begun.Status.Should().Be(CompileOperationStatus.Running,
+			because: "the operation is running until the detached compile finishes");
+
+		// Act — run the detached Finish alongside a burst of concurrent status reads (compile-status polling),
+		// mirroring the over-deadline path where Finish lands on a background thread while an agent polls.
+		Task finisher = Task.Run(() => registry.Finish(begun.OperationId, 0, Array.Empty<LogMessage>()));
+		Parallel.For(0, 128, _ => {
+			registry.GetLatest("tenant-a");
+			registry.GetById(begun.OperationId);
+		});
+		finisher.Wait();
+
+		// Assert
+		registry.GetById(begun.OperationId)!.Status.Should().Be(CompileOperationStatus.Succeeded,
+			because: "the concurrent finalize must be observed once it completes, with no lost update");
+		registry.GetLatest("tenant-a")!.OperationId.Should().Be(begun.OperationId,
+			because: "concurrent reads and the finalize must not corrupt the tenant's latest-operation pointer");
 	}
 }

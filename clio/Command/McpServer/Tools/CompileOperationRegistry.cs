@@ -10,8 +10,13 @@ namespace Clio.Command.McpServer.Tools;
 /// Lifecycle status of a tracked <c>compile-creatio</c> operation.
 /// </summary>
 public enum CompileOperationStatus {
+	/// <summary>The compile is in flight — it has been accepted but has not yet reported an exit code.</summary>
 	Running,
+
+	/// <summary>The compile finished with exit code 0.</summary>
 	Succeeded,
+
+	/// <summary>The compile finished with a non-zero exit code (or resolution failed before it could run).</summary>
 	Failed
 }
 

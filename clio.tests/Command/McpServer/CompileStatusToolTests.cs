@@ -29,7 +29,7 @@ public sealed class CompileStatusToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "an empty environment-name is not a valid request");
-		response.Status.Should().Be("invalid-request");
+		response.Status.Should().Be("invalid-request", because: "an empty environment-name maps to the invalid-request status");
 		response.Note.Should().Contain("environment-name", because: "the note must explain what was missing");
 	}
 
@@ -45,8 +45,8 @@ public sealed class CompileStatusToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
-		response.Status.Should().Be("not-found");
-		response.EnvironmentName.Should().Be("sandbox");
+		response.Status.Should().Be("not-found", because: "no operation was ever tracked for this environment");
+		response.EnvironmentName.Should().Be("sandbox", because: "the response must echo the queried environment name");
 	}
 
 	[Test]
@@ -62,10 +62,10 @@ public sealed class CompileStatusToolTests {
 		CompileStatusResponse response = tool.GetStatus(new CompileStatusArgs("sandbox", null));
 
 		// Assert
-		response.Success.Should().BeTrue();
+		response.Success.Should().BeTrue(because: "returning a tracked operation is a successful lookup");
 		response.Status.Should().Be("running", because: "the operation has not finished yet");
-		response.OperationId.Should().Be(begun.OperationId);
-		response.PackageName.Should().Be("MyPackage");
+		response.OperationId.Should().Be(begun.OperationId, because: "the latest operation for the tenant must be returned when no id is supplied");
+		response.PackageName.Should().Be("MyPackage", because: "the response must surface the package recorded for the tracked operation");
 	}
 
 	[Test]
@@ -84,8 +84,8 @@ public sealed class CompileStatusToolTests {
 		// Assert
 		response.OperationId.Should().Be(older.OperationId,
 			because: "an explicit operation-id must be looked up directly, not resolved to the tenant's latest");
-		response.Status.Should().Be("succeeded");
-		response.ExitCode.Should().Be(0);
+		response.Status.Should().Be("succeeded", because: "the explicitly queried operation had finished with exit code 0");
+		response.ExitCode.Should().Be(0, because: "the finished operation's exit code must be surfaced");
 	}
 
 	[Test]
@@ -120,6 +120,6 @@ public sealed class CompileStatusToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue(because: "an unknown operation-id is a legitimate not-found result, not a tool error");
-		response.Status.Should().Be("not-found");
+		response.Status.Should().Be("not-found", because: "an operation-id absent from the registry maps to the not-found status");
 	}
 }

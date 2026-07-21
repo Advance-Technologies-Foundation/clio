@@ -1,4 +1,6 @@
+using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -200,10 +202,48 @@ public sealed class RestartToolTests {
 		message.Should().Contain("do NOT retry", because: "retrying restart while the instance is warming up is unnecessary and disruptive");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("When the readiness wait exceeds the MCP response deadline, restart-by-environment-name returns exit-code 0 with an in-progress notice pointing at the healthcheck poll target — the AC-#3 deadline -> FromInfo branch — instead of blocking or hard-failing the client.")]
+	public async Task RestartInstanceByName_Should_Return_InProgressNotice_When_ResponseDeadlineExceeded() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeRestartCommand defaultCommand = new();
+		// The resolved restart blocks on the gate until the test releases it, so Task.Delay(deadline)
+		// deterministically wins the WhenAny race (no timing dependence). The gate is released in finally so
+		// the detached work completes promptly and does not hold the tenant lock past the test.
+		ManualResetEventSlim executeGate = new(false);
+		FakeRestartCommand resolvedCommand = new() { ExecuteGate = executeGate };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RestartCommand>(Arg.Any<RestartOptions>()).Returns(resolvedCommand);
+		RestartTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver) {
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try {
+			// Act
+			CommandExecutionResult result = await tool.RestartInstanceByName("sandbox");
+
+			// Assert
+			result.ExitCode.Should().Be(0,
+				because: "an over-deadline readiness wait returns a non-error in-progress envelope so a hard-ceiling client does not fail the call");
+			result.Output.Should().Contain(
+				message => message.Value != null && message.Value.ToString()!.Contains("healthcheck"),
+				because: "the in-progress notice must point the agent at the healthcheck poll target while the restart warms up server-side");
+		} finally {
+			executeGate.Set(); // release the detached work so it completes and frees the tenant lock
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
 	private sealed class FakeRestartCommand : RestartCommand {
 		public RestartOptions? CapturedOptions { get; private set; }
 
 		public int ExitCodeToReturn { get; init; } = 0;
+
+		/// <summary>When set, <see cref="Execute"/> blocks on this gate so a test can force the response-deadline
+		/// branch deterministically, then release the detached work in its finally.</summary>
+		public ManualResetEventSlim? ExecuteGate { get; init; }
 
 		public FakeRestartCommand()
 			: base(
@@ -214,6 +254,7 @@ public sealed class RestartToolTests {
 
 		public override int Execute(RestartOptions options) {
 			CapturedOptions = options;
+			ExecuteGate?.Wait();
 			return ExitCodeToReturn;
 		}
 	}

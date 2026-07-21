@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
@@ -137,10 +138,10 @@ public sealed class CompileCreatioToolTests
 			// Assert
 			result.ExitCode.Should().Be(1, because: "the tool must surface the command's real exit code");
 			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
-			tracked.Should().NotBeNull();
+			tracked.Should().NotBeNull(because: "compile-creatio must record the operation even when it fails");
 			tracked!.Status.Should().Be(CompileOperationStatus.Failed,
 				because: "a non-zero exit code finalizes the tracked operation as failed");
-			tracked.ExitCode.Should().Be(1);
+			tracked.ExitCode.Should().Be(1, because: "the tracked operation must preserve the command's real exit code");
 			tracked.FinishedUtc.Should().NotBeNull(because: "a finished operation must carry a finish timestamp");
 		}
 		finally
@@ -174,8 +175,10 @@ public sealed class CompileCreatioToolTests
 			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
 			tracked.Should().NotBeNull(
 				because: "even a resolution failure must finalize the tracked operation, or compile-status would report it as running forever");
-			tracked!.Status.Should().Be(CompileOperationStatus.Failed);
-			tracked.FinishedUtc.Should().NotBeNull();
+			tracked!.Status.Should().Be(CompileOperationStatus.Failed,
+				because: "an environment-resolution failure finalizes the tracked operation as failed");
+			tracked.FinishedUtc.Should().NotBeNull(
+				because: "even a resolution failure must stamp a finish time so compile-status stops reporting it as running");
 		}
 		finally
 		{
@@ -235,6 +238,52 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("When compilation exceeds the MCP response deadline, the tool returns exit-code 0 with an in-progress notice pointing at compile-status — the AC-#3 deadline -> FromInfo branch — instead of blocking or hard-failing the client.")]
+	public async Task CompileCreatio_Should_Return_InProgressNotice_When_ResponseDeadlineExceeded()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The resolved compile blocks on the gate until the test releases it, so Task.Delay(deadline)
+		// deterministically wins the WhenAny race (no timing dependence). The gate is released in finally so
+		// the detached work completes promptly and does not hold the tenant lock past the test.
+		ManualResetEventSlim executeGate = new(false);
+		FakeCompileConfigurationCommand resolvedCommand = new() { ExecuteGate = executeGate };
+		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry)
+		{
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+
+			// Assert
+			result.ExitCode.Should().Be(0,
+				because: "an over-deadline compile returns a non-error in-progress envelope so a hard-ceiling client does not fail the call");
+			result.Output.Should().Contain(
+				message => message.Value != null && message.Value.ToString()!.Contains(CompileStatusTool.CompileStatusToolName),
+				because: "the in-progress notice must point the agent at compile-status to poll the compile that is still running server-side");
+			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
+			tracked.Should().NotBeNull(
+				because: "the operation must be tracked before the deadline fires so compile-status can report it");
+			tracked!.Status.Should().Be(CompileOperationStatus.Running,
+				because: "the detached compile has not finished when the response deadline returns the in-progress notice");
+		}
+		finally
+		{
+			executeGate.Set(); // release the detached work so it finalizes and frees the tenant lock
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Exposes destructive MCP metadata for compilation so hosts can prompt for confirmation before the long-running runtime reload.")]
 	public void CompileCreatio_Should_Expose_Expected_Mcp_Metadata()
 	{
@@ -281,6 +330,10 @@ public sealed class CompileCreatioToolTests
 
 		public int ExitCodeToReturn { get; init; } = 0;
 
+		/// <summary>When set, <see cref="Execute"/> blocks on this gate so a test can force the response-deadline
+		/// branch deterministically, then release the detached work in its finally.</summary>
+		public ManualResetEventSlim? ExecuteGate { get; init; }
+
 		public FakeCompileConfigurationCommand()
 			: base(
 				Substitute.For<IApplicationClient>(),
@@ -294,6 +347,7 @@ public sealed class CompileCreatioToolTests
 		public override int Execute(CompileConfigurationOptions options)
 		{
 			CapturedOptions = options;
+			ExecuteGate?.Wait();
 			return ExitCodeToReturn;
 		}
 	}

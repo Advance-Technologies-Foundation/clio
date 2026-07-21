@@ -27,6 +27,15 @@ public sealed class CompileCreatioTool(
 	internal const string CompileCreatioToolName = "compile-creatio";
 
 	/// <summary>
+	/// Test seam overriding the MCP response deadline passed to
+	/// <see cref="McpProgressHeartbeat.RunWithProgressAndDeadlineAsync{TResult}(global::ModelContextProtocol.Server.McpServer, global::ModelContextProtocol.Protocol.ProgressToken?, string, System.Func{TResult}, System.TimeSpan?, CancellationToken, System.TimeSpan?)"/>.
+	/// <see langword="null"/> in production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> ~150 s applies);
+	/// unit tests set a tiny value to deterministically exercise the deadline-exceeded in-progress branch
+	/// without racing the real ceiling.
+	/// </summary>
+	internal TimeSpan? ResponseDeadlineOverride { get; set; }
+
+	/// <summary>
 	/// Compiles Creatio fully or rebuilds a single package for a registered environment.
 	/// </summary>
 	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -77,6 +86,7 @@ public sealed class CompileCreatioTool(
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					return result;
 				},
+				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 		catch (McpResponseDeadlineExceededException)

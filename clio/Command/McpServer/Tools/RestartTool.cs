@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
@@ -23,6 +24,14 @@ public class RestartTool(
 	/// Stable MCP tool name for restart-by-credentials, referenced in the poll-guidance message.
 	/// </summary>
 	internal const string RestartByCredentialsToolName = "restart-by-credentials";
+
+	/// <summary>
+	/// Test seam overriding the MCP response deadline used by the readiness wait. <see langword="null"/> in
+	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> ~150 s applies);
+	/// unit tests set a tiny value to deterministically exercise the deadline-exceeded in-progress branch
+	/// without racing the real ceiling.
+	/// </summary>
+	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
@@ -114,6 +123,7 @@ public class RestartTool(
 				requestContext?.Params?.ProgressToken,
 				waitContext.ToolName,
 				() => InternalExecute<RestartCommand>(options),
+				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
 			return CommandExecutionResult.FromInfo(
