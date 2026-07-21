@@ -779,7 +779,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical branding guide")]
-	[Description("Verifies get-guidance returns the branding article that carries the logo sys-setting slots, routes the shell-background upload through the dedicated upload-image tool, and routes the theme part of branding to the theming guide (ENG-92981).")]
+	[Description("Verifies get-guidance returns the branding article that carries the logo sys-setting slots, routes the shell-background flow through the dedicated upload-image and set-background-image tools, and routes the theme part of branding to the theming guide (ENG-92981).")]
 	public async Task GuidanceGet_Should_Return_Branding_Guide() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -810,8 +810,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the shell-background upload must route through the dedicated upload-image tool");
 		response.Article.Text.Should().NotContain("ImageAPIService",
 			because: "the raw image-API recipe is owned by the upload-image tool implementation and must not be hand-executed from the guide");
-		response.Article.Text.Should().Contain("CrtBackgroundConfig",
-			because: "the branding guide owns the shell-background activation mechanics");
+		response.Article.Text.Should().Contain("set-background-image",
+			because: "the shell-background activation must route through the dedicated set-background-image tool");
+		response.Article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the background-configuration mechanics are owned by the set-background-image tool implementation, not hand-executed from the guide");
 	}
 
 	[Test]

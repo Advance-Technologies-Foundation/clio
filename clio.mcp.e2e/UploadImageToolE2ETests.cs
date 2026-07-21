@@ -28,6 +28,7 @@ public sealed class UploadImageToolE2ETests : McpContractFixtureBase {
 	[AllureTag(UploadImageTool.ToolName)]
 	[AllureName("upload-image tool is discoverable on the lazy surface")]
 	[AllureDescription("Starts the real clio MCP server and verifies upload-image is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
+	[Description("Starts the real clio MCP server and verifies upload-image is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
 	public async Task UploadImage_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -45,6 +46,7 @@ public sealed class UploadImageToolE2ETests : McpContractFixtureBase {
 	[AllureTag(UploadImageTool.ToolName)]
 	[AllureName("upload-image binds the args wrapper and returns a structured validation failure")]
 	[AllureDescription("Calls upload-image through the real clio MCP server with an empty args object and verifies the structured { success=false, error } result names environment-name — proving the args wrapper binds without a live Creatio environment.")]
+	[Description("Calls upload-image through the real clio MCP server with an empty args object and verifies the structured { success=false, error } result names environment-name — proving the args wrapper binds without a live Creatio environment.")]
 	public async Task UploadImage_Should_Return_Structured_Validation_Failure_When_Args_Are_Empty() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -71,6 +73,7 @@ public sealed class UploadImageToolE2ETests : McpContractFixtureBase {
 	[AllureTag(UploadImageTool.ToolName)]
 	[AllureName("upload-image requires the file argument before any environment work")]
 	[AllureDescription("Calls upload-image with only environment-name and verifies the structured failure names the missing file field — the validation runs before environment resolution, so no live Creatio environment is needed.")]
+	[Description("Calls upload-image with only environment-name and verifies the structured failure names the missing file field — the validation runs before environment resolution, so no live Creatio environment is needed.")]
 	public async Task UploadImage_Should_Return_Structured_Validation_Failure_When_File_Is_Missing() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -99,6 +102,7 @@ public sealed class UploadImageToolE2ETests : McpContractFixtureBase {
 	[AllureTag(UploadImageTool.ToolName)]
 	[AllureName("upload-image rejects a camelCase alias with a structured rename hint over the wire")]
 	[AllureDescription("Calls upload-image through the real clio MCP server with a camelCase environmentName field and verifies the structured rename hint — proving the args wrapper binds and unknown keys reach the ExtensionData bag through the real MCP serializer, without a live Creatio environment.")]
+	[Description("Calls upload-image through the real clio MCP server with a camelCase environmentName field and verifies the structured rename hint — proving the args wrapper binds and unknown keys reach the ExtensionData bag through the real MCP serializer, without a live Creatio environment.")]
 	public async Task UploadImage_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed_Over_The_Wire() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));

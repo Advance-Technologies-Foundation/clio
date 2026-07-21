@@ -68,6 +68,7 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 	[AllureTag(UploadImageTool.ToolName)]
 	[AllureName("upload-image uploads and verifies an image end to end against a loopback Creatio fake")]
 	[AllureDescription("Registers an isolated environment pointing at a loopback fake of the Creatio image surface, calls upload-image through the real clio MCP server, and verifies the structured { success=true, image-id } result plus the login → upload → byte-verified read call sequence on the fake.")]
+	[Description("Registers an isolated environment pointing at a loopback fake of the Creatio image surface, calls upload-image through the real clio MCP server, and verifies the structured { success=true, image-id } result plus the login → upload → byte-verified read call sequence on the fake.")]
 	public async Task UploadImage_Should_Upload_And_Verify_Image_When_Environment_Is_Reachable() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));

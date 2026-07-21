@@ -1,6 +1,6 @@
 using System;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 
@@ -77,7 +77,16 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			return SetBackgroundResult.Failure(
 				$"image-id '{options.ImageId}' is not a valid id. Pass the id printed by upload-image.");
 		}
-		if (!ImageExists(imageId)) {
+		// Existence is probed with a filter query (not a keyed GET) so "absent" comes back as an empty
+		// row set — cleanly distinguishable from a transport/server failure, which must not be reported
+		// as "image not found".
+		if (!TryQuerySingleId(
+			$"{ODataKeyFormatter.CollectionPath("SysImage")}?$filter=Id eq {imageId}&$select=Id&$top=1",
+			out string existingImageId, out string imageCheckError)) {
+			return SetBackgroundResult.Failure(
+				$"Could not check the image in the environment: {imageCheckError}");
+		}
+		if (existingImageId is null) {
 			return SetBackgroundResult.Failure(
 				$"No uploaded image with id '{imageId}' was found in the environment. " +
 				"Upload the file first with upload-image and pass the id it prints.");
@@ -107,94 +116,110 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		Logger.WriteError(result.Error);
 	}
 
-	private bool ImageExists(Guid imageId) {
-		try {
-			string url = _serviceUrlBuilder.Build($"odata/SysImage({imageId})?$select=Id");
-			string response = ApplicationClient.ExecuteGetRequest(url);
-			return !string.IsNullOrWhiteSpace(response) && !IsODataError(response);
-		} catch (Exception) {
-			return false;
-		}
-	}
-
 	// Makes the image available in the background gallery (idempotent: an already-registered image is
 	// left as is). Returns null on success, otherwise the failure message.
 	private string EnsureInBackgroundGallery(Guid imageId) {
-		Guid tagId = ShellBackgroundTagId;
-		if (IsInGallery(imageId, tagId)) {
-			return null;
+		if (!TryEnsureForTag(imageId, ShellBackgroundTagId, out bool ensured, out string hardError)) {
+			return hardError;
 		}
-		if (TryRegisterInGallery(imageId, tagId)) {
+		if (ensured) {
 			return null;
 		}
 		// The seeded tag id can deviate on a customized installation — re-resolve it by name and retry.
-		Guid? resolvedTagId = FindBackgroundTagIdByName();
-		if (resolvedTagId is null) {
+		if (!TryQuerySingleId(
+			$"{ODataKeyFormatter.CollectionPath("SysImageTag")}?$filter=Name eq '{ShellBackgroundTagName}'&$select=Id&$top=1",
+			out string resolvedTagIdRaw, out string tagLookupError)) {
+			return $"Could not resolve the background gallery tag: {tagLookupError}";
+		}
+		if (!Guid.TryParse(resolvedTagIdRaw, out Guid resolvedTagId)) {
 			return "The background gallery tag was not found in the environment, so the image could not " +
 				"be registered in the gallery.";
 		}
-		if (resolvedTagId.Value != tagId && (IsInGallery(imageId, resolvedTagId.Value)
-			|| TryRegisterInGallery(imageId, resolvedTagId.Value))) {
+		if (resolvedTagId != ShellBackgroundTagId
+			&& TryEnsureForTag(imageId, resolvedTagId, out ensured, out hardError) && ensured) {
 			return null;
 		}
-		return "Registering the image in the background gallery failed.";
+		return hardError ?? "Registering the image in the background gallery failed.";
 	}
 
-	private bool IsInGallery(Guid imageId, Guid tagId) {
-		try {
-			string url = _serviceUrlBuilder.Build(
-				$"odata/SysImageInTag?$filter=EntityId eq {imageId} and TagId eq {tagId}&$select=Id&$top=1");
-			string response = ApplicationClient.ExecuteGetRequest(url);
-			if (string.IsNullOrWhiteSpace(response) || IsODataError(response)) {
-				return false;
-			}
-			JsonNode root = JsonNode.Parse(response);
-			return root?["value"] is JsonArray rows && rows.Count > 0;
-		} catch (Exception) {
+	// Ensures the image is registered under one gallery tag. Returns false with a hard error when the
+	// gallery could not be read (a transport/server failure must abort, not blind-insert a duplicate
+	// row); on a true return, "ensured" says whether the membership exists (already present or just
+	// registered) — false means the insert was rejected and the caller may retry with another tag id.
+	private bool TryEnsureForTag(Guid imageId, Guid tagId, out bool ensured, out string hardError) {
+		ensured = false;
+		if (!TryQuerySingleId(
+			$"{ODataKeyFormatter.CollectionPath("SysImageInTag")}?$filter=EntityId eq {imageId} and TagId eq {tagId}&$select=Id&$top=1",
+			out string membershipId, out string readError)) {
+			hardError = $"Could not check the background gallery: {readError}";
 			return false;
 		}
+		hardError = null;
+		if (membershipId is not null) {
+			ensured = true;
+			return true;
+		}
+		ensured = TryRegisterInGallery(imageId, tagId);
+		return true;
 	}
 
 	private bool TryRegisterInGallery(Guid imageId, Guid tagId) {
 		try {
-			string url = _serviceUrlBuilder.Build("odata/SysImageInTag");
+			string url = _serviceUrlBuilder.Build(ODataKeyFormatter.CollectionPath("SysImageInTag"));
 			string body = JsonSerializer.Serialize(new {
 				EntityId = imageId.ToString(),
 				TagId = tagId.ToString()
 			});
 			string response = ApplicationClient.ExecutePostRequest(url, body);
-			return string.IsNullOrWhiteSpace(response) || !IsODataError(response);
+			if (string.IsNullOrWhiteSpace(response)) {
+				return true;
+			}
+			using JsonDocument document = JsonDocument.Parse(response);
+			return !ODataResponseError.TryDetect(document.RootElement, out _);
+		} catch (JsonException) {
+			// A non-JSON body on a successful POST still means the record was created.
+			return true;
 		} catch (Exception) {
 			return false;
 		}
 	}
 
-	private Guid? FindBackgroundTagIdByName() {
+	// Runs an OData collection GET and reads the first row's Id. Returns false with an error when the
+	// environment could not answer (transport failure, empty body, or a server error envelope); on a
+	// true return, "id" is null when the row set is empty.
+	private bool TryQuerySingleId(string relativeUrl, out string id, out string error) {
+		id = null;
+		error = null;
 		try {
-			string url = _serviceUrlBuilder.Build(
-				$"odata/SysImageTag?$filter=Name eq '{ShellBackgroundTagName}'&$select=Id&$top=1");
-			string response = ApplicationClient.ExecuteGetRequest(url);
-			if (string.IsNullOrWhiteSpace(response) || IsODataError(response)) {
-				return null;
+			string response = ApplicationClient.ExecuteGetRequest(_serviceUrlBuilder.Build(relativeUrl));
+			if (string.IsNullOrWhiteSpace(response)) {
+				error = "the environment returned an empty response.";
+				return false;
 			}
-			JsonNode root = JsonNode.Parse(response);
-			if (root?["value"] is not JsonArray rows || rows.Count == 0) {
-				return null;
+			using JsonDocument document = JsonDocument.Parse(response);
+			if (ODataResponseError.TryDetect(document.RootElement, out string serverError)) {
+				error = serverError;
+				return false;
 			}
-			string id = rows[0]?["Id"]?.GetValue<string>();
-			return Guid.TryParse(id, out Guid tagId) ? tagId : null;
-		} catch (Exception) {
-			return null;
-		}
-	}
-
-	private static bool IsODataError(string response) {
-		try {
-			JsonNode root = JsonNode.Parse(response);
-			return root?["error"] is not null;
-		} catch (JsonException) {
-			// A non-JSON body is not a recognizable OData success payload.
+			if (!document.RootElement.TryGetProperty("value", out JsonElement rows)
+				|| rows.ValueKind != JsonValueKind.Array) {
+				error = "the environment returned an unexpected response.";
+				return false;
+			}
+			foreach (JsonElement row in rows.EnumerateArray()) {
+				if (row.TryGetProperty("Id", out JsonElement idElement)
+					&& idElement.ValueKind == JsonValueKind.String) {
+					id = idElement.GetString();
+				}
+				break;
+			}
 			return true;
+		} catch (JsonException) {
+			error = "the environment returned a non-JSON response.";
+			return false;
+		} catch (Exception ex) {
+			error = ex.Message;
+			return false;
 		}
 	}
 }

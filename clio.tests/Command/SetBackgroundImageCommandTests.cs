@@ -45,10 +45,11 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		containerBuilder.AddTransient<ISysSettingsManager>(_ => _sysSettingsManager);
 	}
 
-	private void ArrangeImageExists() {
+	private void ArrangeImageExists(bool exists = true) {
+		string rows = exists ? $"[{{\"Id\":\"{ImageId}\"}}]" : "[]";
 		_applicationClient.ExecuteGetRequest(
-				Arg.Is<string>(url => url.StartsWith($"odata/SysImage({ImageId})")))
-			.Returns($"{{\"Id\":\"{ImageId}\"}}");
+				Arg.Is<string>(url => url.StartsWith("odata/SysImage?")))
+			.Returns($"{{\"value\":{rows}}}");
 	}
 
 	private void ArrangeGalleryState(bool alreadyRegistered) {
@@ -102,11 +103,10 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	}
 
 	[Test, Category("Unit")]
-	[Description("Fails with an upload-image pointer when no image with the given id exists in the environment, without writing anything.")]
+	[Description("Fails with an upload-image pointer when the environment answers the existence probe with an empty row set, without writing anything.")]
 	public void Execute_ShouldFail_WhenImageDoesNotExist() {
 		// Arrange
-		_applicationClient.ExecuteGetRequest(Arg.Any<string>())
-			.Throws(new InvalidOperationException("404"));
+		ArrangeImageExists(exists: false);
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
 
 		// Act
@@ -115,6 +115,46 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		// Assert
 		exitCode.Should().Be(1, because: "a missing image cannot be set as the background");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("upload-image")));
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails with a could-not-check message — not the misleading upload-image pointer — when the existence probe itself fails (transport or auth), without writing anything.")]
+	public void Execute_ShouldFail_WithoutUploadPointer_WhenExistenceProbeFails() {
+		// Arrange
+		_applicationClient.ExecuteGetRequest(Arg.Any<string>())
+			.Throws(new InvalidOperationException("connection refused"));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unanswered existence probe cannot prove anything");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Could not check the image") && !message.Contains("upload-image")));
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Aborts without inserting a gallery row when the gallery-membership read fails, so a transient read failure cannot create duplicate registrations.")]
+	public void Execute_ShouldAbortWithoutInsert_WhenGalleryReadFails() {
+		// Arrange
+		ArrangeImageExists();
+		_applicationClient.ExecuteGetRequest(
+				Arg.Is<string>(url => url.StartsWith("odata/SysImageInTag?")))
+			.Returns("{\"error\":{\"message\":\"boom\"}}");
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unreadable gallery must abort the flow");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Could not check the background gallery")));
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
 	}
