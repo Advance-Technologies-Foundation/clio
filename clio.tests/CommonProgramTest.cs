@@ -459,6 +459,97 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Renders real command help through the --help switch for a verb whose name is a textual prefix of another registered verb, instead of the previously empty CommandLineSDK dispatch output (ENG-93886).")]
+	public void ExecuteCommands_WithCreateDataBindingHelpSwitch_ShouldRenderCommandHelp() {
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		int exitCode = Program.ExecuteCommands(["create-data-binding", "--help"]);
+		string output = consoleOutput.ToString();
+
+		exitCode.Should().Be(0, because: "the parser-driven help path should succeed once the dispatch fix bypasses the CommandLineSDK prefix-collision bug");
+		output.Should().NotBeEmpty(because: "create-data-binding --help previously returned zero bytes because CommandLineSDK failed to dispatch help for a verb name that is a prefix of create-data-binding-db");
+		output.Should().Contain("create-data-binding - Create or regenerate a package data binding",
+			because: "the rendered help should come from the same manual command-help renderer used by `clio help create-data-binding`");
+		output.Should().Contain("create-data-binding-db",
+			because: "the SEE ALSO section should point to the DB-first alternative so agents discover the working persistence path");
+	}
+
+	[Test]
+	[Description("Keeps create-data-binding-db --help unchanged so the create-data-binding dispatch fix does not regress its already-working sibling (ENG-93886 AC3).")]
+	public void ExecuteCommands_WithCreateDataBindingDbHelpSwitch_ShouldStayUnaffected() {
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		int exitCode = Program.ExecuteCommands(["create-data-binding-db", "--help"]);
+		string output = consoleOutput.ToString();
+
+		exitCode.Should().Be(0, because: "create-data-binding-db --help already worked before the fix and must keep working");
+		output.Should().Contain("Creates a DB-first package data binding by persisting row data directly to the remote Creatio database",
+			because: "the DB-first command description must remain exactly as documented");
+	}
+
+	[Test]
+	[Description("Confirms the create-data-binding --help dispatch fix generalizes to every other verb broken by the same CommandLineSDK prefix-collision shape (ENG-93886 discovery: create-app/create-app-section).")]
+	public void ExecuteCommands_WithCreateAppHelpSwitches_ShouldRenderCommandHelpForBothPrefixCollisionVerbs() {
+		ThreadSafeStringWriter createAppOutput = new();
+		Console.SetOut(createAppOutput);
+		Console.SetError(createAppOutput);
+		int createAppExitCode = Program.ExecuteCommands(["create-app", "--help"]);
+
+		ThreadSafeStringWriter createAppSectionOutput = new();
+		Console.SetOut(createAppSectionOutput);
+		Console.SetError(createAppSectionOutput);
+		int createAppSectionExitCode = Program.ExecuteCommands(["create-app-section", "--help"]);
+
+		createAppExitCode.Should().Be(0, because: "create-app is a strict name-prefix of create-app-section and hit the same CommandLineSDK dispatch bug as create-data-binding");
+		createAppOutput.ToString().Should().NotBeEmpty(because: "create-app --help previously returned zero bytes for the same reason as create-data-binding");
+		createAppSectionExitCode.Should().Be(0, because: "create-app-section --help must keep succeeding after the dispatch fix");
+		createAppSectionOutput.ToString().Should().NotBeEmpty(because: "create-app-section --help previously returned zero bytes for the same reason as create-data-binding");
+	}
+
+	[Test]
+	[Description("Keeps a disabled experimental command's --help output empty so the shared dispatch fix cannot leak feature-toggled-off command help (ENG-93886 risk: shared chokepoint blast radius).")]
+	public void ExecuteCommands_WithDisabledExperimentalCommandHelpSwitch_ShouldNotLeakCommandHelp() {
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		int exitCode = Program.ExecuteCommands(["ring", "--help"]);
+		string output = consoleOutput.ToString();
+
+		exitCode.Should().Be(1, because: "a feature-toggled-off command must remain indistinguishable from an unknown verb even through the new --help dispatch short-circuit");
+		output.Should().NotContain("Install, update, launch",
+			because: "the disabled ring command's help text must not leak through the new --help dispatch short-circuit");
+	}
+
+	[Test]
+	[Description("Treats -h as a real argument, not a help request, when the target verb has already claimed -h for its own option (publish-app's --app-hub short name; ENG-93886 regression).")]
+	public void IsUnclaimedHelpFlagToken_WithVerbOwnedShortH_ShouldReturnFalse() {
+		bool result = Program.IsUnclaimedHelpFlagToken("-h", typeof(PublishWorkspaceCommandOptions));
+
+		result.Should().BeFalse(because: "publish-app already binds -h to its own --app-hub option, so -h must not be misread as a help request by the new dispatch short-circuit");
+	}
+
+	[Test]
+	[Description("Treats -h as a genuine help request for a verb that has not claimed -h for any of its own options (ENG-93886 core fix).")]
+	public void IsUnclaimedHelpFlagToken_WithNoVerbOwnedShortH_ShouldReturnTrue() {
+		bool result = Program.IsUnclaimedHelpFlagToken("-h", typeof(CreateDataBindingOptions));
+
+		result.Should().BeTrue(because: "create-data-binding does not define its own -h option, so -h should be treated as a genuine help request");
+	}
+
+	[Test]
+	[Description("Treats the long-form --help as a genuine help request even for a verb that claims the short -h for its own option, because that verb does not claim the long name 'help' (ENG-93886 regression symmetry).")]
+	public void IsUnclaimedHelpFlagToken_WithLongHelpOnVerbOwningShortH_ShouldReturnTrue() {
+		bool result = Program.IsUnclaimedHelpFlagToken("--help", typeof(HealthCheckOptions));
+
+		result.Should().BeTrue(because: "healthcheck claims only the short -h (--web-host), not the long --help, so --help must still trigger real help");
+	}
+
+	[Test]
 	[Description("Excludes hidden commands from the unknown-command suggestions.")]
 	public void ExecuteCommands_WithHiddenCommandAlias_ShouldNotSuggestHiddenCommand() {
 		ThreadSafeStringWriter consoleOutput = new();

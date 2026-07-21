@@ -1514,9 +1514,50 @@ internal class Program {
 			exitCode = 0;
 			return true;
 		}
+		// <verb> --help / <verb> -h: short-circuit before CommandLineSDK's own parser, which silently
+		// produces 0-byte output (exit 0) for a verb whose name is a prefix of another registered verb's
+		// name when the shorter verb has no [Verb] Aliases and its options class inherits
+		// EnvironmentOptions (e.g. create-data-binding vs. -db, create-app vs. -section; ENG-93886).
+		// Reuses the same renderer the `help <verb>` branch above already uses (confirmed byte-identical
+		// to what already-working verbs render via CustomHelpViewer/LocalHelpViewer today), and defers to
+		// the existing parser path unchanged for --WEB/-W (browser docs), for verbs the renderer doesn't
+		// recognize (typo suggestions, disabled feature toggles), and for a `-h`/`--help` token that the
+		// target verb has already claimed as its own option name (e.g. healthcheck's `-h, --web-host`;
+		// treating that as a help request would silently replace a real invocation with a help screen).
+		bool isWebMode = args.Length >= 2 && (args[1] == "--WEB" || args[1] == "-W");
+		if (!isWebMode
+			&& !string.Equals(normalizedArgs[0], "help", StringComparison.OrdinalIgnoreCase)
+			&& serviceProvider.GetRequiredService<CommandHelpCatalog>().TryGetCommand(normalizedArgs[0], out HelpCommandMetadata metadata)
+			&& normalizedArgs.Any(token => IsUnclaimedHelpFlagToken(token, metadata.OptionsType))
+			&& renderer.TryRenderCommandHelp(normalizedArgs[0]) is string verbHelp) {
+			Console.Out.Write(verbHelp);
+			exitCode = 0;
+			return true;
+		}
 		exitCode = 1;
 		return false;
 	}
+
+	// A token only signals "show help" when the target verb has not already claimed that exact
+	// name for its own [Option] (short 'h' or long "help") - otherwise it is a real argument value
+	// for that verb (e.g. healthcheck/publish-app bind their own -h to a different option).
+	// Internal (not private) so tests can verify the decision hermetically, without needing to
+	// drive a full command execution that may require a registered environment.
+	internal static bool IsUnclaimedHelpFlagToken(string token, Type optionsType) {
+		if (string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)) {
+			return !OwnOptionNames(optionsType).Any(option => string.Equals(option.ShortName, "h", StringComparison.OrdinalIgnoreCase));
+		}
+		if (string.Equals(token, "--help", StringComparison.OrdinalIgnoreCase)) {
+			return !OwnOptionNames(optionsType).Any(option => string.Equals(option.LongName, "help", StringComparison.OrdinalIgnoreCase));
+		}
+		return false;
+	}
+
+	private static IEnumerable<OptionAttribute> OwnOptionNames(Type optionsType) =>
+		optionsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<OptionAttribute>(true))
+			.Where(option => option is not null);
 
 	private static bool TryHandleBuiltInVersion(string[] args, out int exitCode) {
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
