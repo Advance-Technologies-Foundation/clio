@@ -10,9 +10,9 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool that sets a previously uploaded image (see <c>upload-image</c>) as the environment's shell
-/// background. Replaces the currently configured background for all users, so it is annotated
-/// <c>Destructive=true</c>.
+/// MCP tool that sets an image as the environment's shell background — either uploading a local file
+/// in the same call or applying an already-uploaded image by id. Replaces the currently configured
+/// background for all users, so it is annotated <c>Destructive=true</c>.
 /// </summary>
 public class SetBackgroundImageTool(
 	SetBackgroundImageCommand command,
@@ -29,28 +29,36 @@ public class SetBackgroundImageTool(
 
 	/// <summary>Sets the image as the shell background and returns a structured result.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Set a previously uploaded image (image-id returned by upload-image) as a registered " +
-		"environment's shell background. The background changes for all users after a page refresh, " +
-		"replacing the currently configured one. Returns { success, error? }. " +
+	 Description("Set an image as a registered environment's shell background. Pass exactly one of: " +
+		"file (a local image file — uploaded and applied in one call) or image-id (an image already " +
+		"uploaded with upload-image). The background changes for all users after a page refresh, " +
+		"replacing the currently configured one. Returns { success, image-id, error? }. " +
 		"For the full branding flow (logos, background), read get-guidance branding first.")]
 	public SetBackgroundImageResult SetBackgroundImage(
-		[Description("Parameters: environment-name (required), image-id (required — id returned by upload-image).")]
+		[Description("Parameters: environment-name (required), and exactly one of file (local image path) or image-id (id returned by upload-image).")]
 		[Required] SetBackgroundImageArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, image-id.");
+			"Valid: environment-name, file, image-id.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return SetBackgroundImageResult.Failure(aliasError);
 		}
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return SetBackgroundImageResult.Failure("environment-name is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.ImageId)) {
-			return SetBackgroundImageResult.Failure("image-id is required and cannot be empty.");
+		bool hasFile = !string.IsNullOrWhiteSpace(args.File);
+		bool hasImageId = !string.IsNullOrWhiteSpace(args.ImageId);
+		if (hasFile && hasImageId) {
+			return SetBackgroundImageResult.Failure("Pass either file or image-id, not both.");
+		}
+		if (!hasFile && !hasImageId) {
+			return SetBackgroundImageResult.Failure(
+				"Pass exactly one of file (local image path) or image-id (id returned by upload-image).");
 		}
 		SetBackgroundImageOptions options = new() {
 			Environment = args.EnvironmentName,
-			ImageId = args.ImageId
+			ImageId = args.ImageId,
+			File = args.File
 		};
 		return Execute(options);
 	}
@@ -60,13 +68,11 @@ public class SetBackgroundImageTool(
 			resolvedCommand => {
 				SetBackgroundResult result = resolvedCommand.SetBackground(options);
 				if (!result.Success) {
-					// The error can carry transport detail (URI/credentials/path), so redact it before
-					// it crosses into the MCP transcript.
 					return SetBackgroundImageResult.Failure(string.IsNullOrWhiteSpace(result.Error)
 						? "SetBackground returned success=false."
 						: SensitiveErrorTextRedactor.Redact(result.Error));
 				}
-				return SetBackgroundImageResult.Successful();
+				return SetBackgroundImageResult.Successful(result.ImageId);
 			},
 			SetBackgroundImageResult.Failure);
 	}
@@ -82,9 +88,12 @@ public sealed record SetBackgroundImageArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("image-id")]
-	[property: Description("Id of the uploaded image to set as the background (returned by upload-image).")]
-	[property: Required]
-	string? ImageId = null
+	[property: Description("Id of an already-uploaded image to set as the background (returned by upload-image). Pass either this or file, not both.")]
+	string? ImageId = null,
+
+	[property: JsonPropertyName("file")]
+	[property: Description("Path to a local image file to upload and set as the background in one call. Pass either this or image-id, not both.")]
+	string? File = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
@@ -99,13 +108,23 @@ public sealed record SetBackgroundImageResult {
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
 
+	/// <summary>The id of the image the background points at; omitted on failure.</summary>
+	[JsonPropertyName("image-id")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ImageId { get; init; }
+
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
-	/// <summary>Creates a success result.</summary>
-	public static SetBackgroundImageResult Successful() => new() { Success = true };
+	/// <summary>Creates a success result carrying the applied image id.</summary>
+	public static SetBackgroundImageResult Successful(Guid imageId) {
+		return new SetBackgroundImageResult {
+			Success = true,
+			ImageId = imageId.ToString()
+		};
+	}
 
 	/// <summary>Creates a failure result carrying the diagnostic message.</summary>
 	public static SetBackgroundImageResult Failure(string error) {

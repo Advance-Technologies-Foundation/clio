@@ -59,8 +59,6 @@ public class UploadImageTool(
 			resolvedCommand => {
 				SysImageUploadResult result = resolvedCommand.UploadImage(options);
 				if (!result.Success) {
-					// The error can carry a server-supplied image-API message or a transport message
-					// (URI/credentials/path), so redact it before it crosses into the MCP transcript.
 					return UploadImageResult.Failure(string.IsNullOrWhiteSpace(result.Error)
 						? "UploadImage returned success=false."
 						: SensitiveErrorTextRedactor.Redact(result.Error));

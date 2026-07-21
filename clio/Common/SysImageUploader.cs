@@ -21,11 +21,12 @@ public sealed class SysImageUploader : ISysImageUploader {
 	/// </summary>
 	internal const long MaxImageBytes = SysSettingsManager.MaxBinaryValueBytes;
 
-	// The image API accepts a single-request upload for payloads under the cap, so no chunk loop is
-	// needed; the extension→mime map covers the raster and vector formats the Appearance page accepts.
-	// SVG is deliberately supported (PR #928 decision): users can already upload SVGs through the
-	// platform UI, and SysImage assets are rendered via <img> tags, where embedded SVG script does
-	// not execute — so clio does not restrict the format more than the platform itself does.
+	/// <summary>
+	/// The raster and vector formats the Appearance page accepts, mapped to their mime types. SVG is
+	/// deliberately supported (PR #928 decision): users can already upload SVGs through the platform
+	/// UI, and SysImage assets are rendered via <c>img</c> tags, where embedded SVG script does not
+	/// execute — so clio does not restrict the format more than the platform itself does.
+	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> MimeTypesByExtension =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			[".png"] = "image/png",
@@ -145,10 +146,12 @@ public sealed class SysImageUploader : ISysImageUploader {
 		return await VerifyUploadAsync(http, cookieHeader, imageId, payload, cancellationToken).ConfigureAwait(false);
 	}
 
-	// The upload URL mirrors what the platform Appearance page sends: the "fileapi<epoch-ms>" fragment
-	// is a cache buster, fileId becomes the created SysImage record's Id, and the image API is served
-	// straight off the workspace base URL — under the "/0" WebAppAlias on .NET Framework and at the
-	// site root on .NET Core (no "/rest/" segment on either runtime).
+	/// <summary>
+	/// Builds the upload URL the platform Appearance page sends: the <c>fileapi&lt;epoch-ms&gt;</c>
+	/// fragment is a cache buster, <c>fileId</c> becomes the created record's id, and the image API is
+	/// served off the workspace base URL — under the <c>/0</c> alias on .NET Framework and at the site
+	/// root on .NET Core (no <c>/rest/</c> segment on either runtime).
+	/// </summary>
 	private string BuildUploadUrl(Guid imageId, long totalFileLength, string mimeType) {
 		return $"{BuildWorkspaceRoot()}/ImageAPIService/upload" +
 			$"?fileapi{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}" +
@@ -162,8 +165,10 @@ public sealed class SysImageUploader : ISysImageUploader {
 		return _environmentSettings.IsNetCore ? root : root + "/0";
 	}
 
-	// A 2xx upload response with {"success":false,...} still means the server rejected the file
-	// (e.g. the file-security policy); surface the server message instead of a false success.
+	/// <summary>
+	/// Detects a rejection reported inside a 2xx body (<c>{"success":false,...}</c>, e.g. the
+	/// file-security policy) so the server message is surfaced instead of a false success.
+	/// </summary>
 	private static bool TryReadUploadError(string responseBody, out string error) {
 		error = null;
 		if (string.IsNullOrWhiteSpace(responseBody)) {
@@ -187,8 +192,10 @@ public sealed class SysImageUploader : ISysImageUploader {
 		}
 	}
 
-	// The service is consumed by platform JS and answers in camelCase, but the property casing is not
-	// a documented contract — accept either casing so a PascalCase rejection message is not dropped.
+	/// <summary>
+	/// Reads a property accepting either casing: the service answers in camelCase but the casing is
+	/// not a documented contract, and a PascalCase rejection message must not be dropped.
+	/// </summary>
 	private static JsonNode ReadCaseInsensitive(JsonNode node, string propertyName) {
 		if (node is not JsonObject jsonObject) {
 			return null;
@@ -201,10 +208,12 @@ public sealed class SysImageUploader : ISysImageUploader {
 		return null;
 	}
 
-	// The upload response body alone does not prove the SysImage binary persisted; fetch the image
-	// back through the read endpoint (the "hash" segment is literal) and require the exact uploaded
-	// bytes. An expired session returns HTTP 200 with the login-page HTML, so a status-only check
-	// could report a false success — the byte comparison is the authoritative persistence proof.
+	/// <summary>
+	/// Reads the image back through the read endpoint (the "hash" segment is literal) and requires the
+	/// exact uploaded bytes: an expired session returns HTTP 200 with the login-page HTML, so a
+	/// status-only check could report a false success — the byte comparison is the authoritative
+	/// persistence proof.
+	/// </summary>
 	private async Task<SysImageUploadResult> VerifyUploadAsync(HttpClient http, string cookieHeader,
 		Guid imageId, byte[] payload, CancellationToken cancellationToken) {
 		string verifyUrl = $"{BuildWorkspaceRoot()}/img/entity/hash/SysImage/Data/{imageId}";

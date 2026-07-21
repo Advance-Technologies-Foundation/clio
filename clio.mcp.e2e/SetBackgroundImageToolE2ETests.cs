@@ -72,10 +72,10 @@ public sealed class SetBackgroundImageToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(SetBackgroundImageTool.ToolName)]
-	[AllureName("set-background-image requires the image-id argument before any environment work")]
-	[AllureDescription("Calls set-background-image with only environment-name and verifies the structured failure names the missing image-id field — the validation runs before environment resolution, so no live Creatio environment is needed.")]
-	[Description("Calls set-background-image with only environment-name and verifies the structured failure names the missing image-id field — the validation runs before environment resolution, so no live Creatio environment is needed.")]
-	public async Task SetBackgroundImage_Should_Return_Structured_Validation_Failure_When_ImageId_Is_Missing() {
+	[AllureName("set-background-image requires an image source (file or image-id) before any environment work")]
+	[AllureDescription("Calls set-background-image with only environment-name and verifies the structured failure names both accepted image sources — the validation runs before environment resolution, so no live Creatio environment is needed.")]
+	[Description("Calls set-background-image with only environment-name and verifies the structured failure names both accepted image sources — the validation runs before environment resolution, so no live Creatio environment is needed.")]
+	public async Task SetBackgroundImage_Should_Return_Structured_Validation_Failure_When_No_Image_Source_Is_Passed() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -95,9 +95,11 @@ public sealed class SetBackgroundImageToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
 		result.Success.Should().BeFalse(
-			because: "a missing image id leaves nothing to apply");
-		result.Error.Should().Contain("image-id is required",
-			because: "the failure must name the exact field the caller has to add");
+			because: "a missing image source leaves nothing to apply");
+		result.Error.Should().Contain("file",
+			because: "the failure must name the accepted sources so the caller can pick one");
+		result.Error.Should().Contain("image-id",
+			because: "the failure must name the accepted sources so the caller can pick one");
 	}
 
 	[Test]

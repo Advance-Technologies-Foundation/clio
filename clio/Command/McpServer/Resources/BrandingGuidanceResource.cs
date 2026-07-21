@@ -44,12 +44,10 @@ public sealed class BrandingGuidanceResource {
 		       - `MenuLogoImage` — main menu / shell header (white background).
 		       - `ConfigurationPageLogoImage` — configuration section (white background).
 		       - `CrtAppToolbarLogo` — top panel (dark surface; use the white/light logo variant when one exists, otherwise the main logo).
-		       After applying custom logos, set `HideSplashScreenLogoImage` (Boolean) to true so the stock splash logo does not flash during load; leave it untouched when no logos were applied. `CrtAppToolbarLogoUnderlayColor` (text) paints a backing color under the top-panel logo — change it only when the user explicitly asks.
+		       After applying custom logos, set the `HideSplashScreenLogoImage` system setting (Boolean) to true with `update-sys-setting` so the stock splash logo does not flash during load; leave it untouched when no logos were applied. The `CrtAppToolbarLogoUnderlayColor` system setting (text) paints a backing color under the top-panel logo — write it with `update-sys-setting` only when the user explicitly asks.
 
 		       Background
-		       Two steps:
-		       - Upload: call `upload-image` with the local image file path (`file`); it returns the `imageId`.
-		       - Set: call `set-background-image` with that `image-id`; it makes the image the shell background, replacing the currently configured one.
+		       Call `set-background-image` with the local image file path (`file`); it uploads the file and makes it the shell background, replacing the currently configured one. To re-apply an image that was already uploaded with `upload-image`, pass its `image-id` instead of `file` (exactly one of the two).
 		       """
 	};
 }

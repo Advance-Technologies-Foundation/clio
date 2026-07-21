@@ -2,7 +2,7 @@
 
 ## Command Type
 
-    Branding commands
+    Customization commands
 
 ## Name
 

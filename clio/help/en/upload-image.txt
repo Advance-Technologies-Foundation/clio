@@ -1,5 +1,5 @@
 COMMAND TYPE
-    Branding commands
+    Customization commands
 
 NAME
     upload-image - upload a local image to an environment and print its image id

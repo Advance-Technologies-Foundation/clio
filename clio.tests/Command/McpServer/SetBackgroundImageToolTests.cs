@@ -60,7 +60,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful());
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -105,8 +105,8 @@ public class SetBackgroundImageToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured failure naming image-id when the required image id is omitted, without resolving a command.")]
-	public void SetBackgroundImage_ShouldReturnFailure_WhenImageIdIsMissing() {
+	[Description("Returns a structured failure naming both accepted sources when neither file nor image-id is passed, without resolving a command.")]
+	public void SetBackgroundImage_ShouldReturnFailure_WhenNoImageSourceIsPassed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
@@ -118,10 +118,61 @@ public class SetBackgroundImageToolTests {
 			new SetBackgroundImageArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
-		result.Success.Should().BeFalse(because: "a request without an image id has nothing to apply");
+		result.Success.Should().BeFalse(because: "a request without an image source has nothing to apply");
+		result.Error.Should().Contain("file",
+			because: "the failure must name the accepted sources so the caller can pick one");
 		result.Error.Should().Contain("image-id",
-			because: "the failure must name the exact field the caller has to add");
+			because: "the failure must name the accepted sources so the caller can pick one");
 		commandResolver.DidNotReceive().Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured failure when both file and image-id are passed — the sources are mutually exclusive — without resolving a command.")]
+	public void SetBackgroundImage_ShouldReturnFailure_WhenBothFileAndImageIdArePassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString(), File: "C:/brand/background.png"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "two image sources are ambiguous and must be rejected");
+		result.Error.Should().Contain("not both",
+			because: "the failure must state the sources are mutually exclusive");
+		commandResolver.DidNotReceive().Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the environment-scoped command and forwards the file path when file is the image source.")]
+	public void SetBackgroundImage_ShouldForwardFile_WhenFileIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", File: "C:/brand/background.png"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a file source is a complete, valid request");
+		result.ImageId.Should().Be(ImageId.ToString(),
+			because: "the applied image id must reach the caller even when the source was a file");
+		commandResolver.Received(1).Resolve<SetBackgroundImageCommand>(Arg.Is<SetBackgroundImageOptions>(options =>
+			options.Environment == "docker_fix2" && options.File == "C:/brand/background.png"
+				&& string.IsNullOrEmpty(options.ImageId)));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -189,8 +240,9 @@ public class SetBackgroundImageToolTests {
 
 		public FakeSetBackgroundImageCommand(SetBackgroundResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
-				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>()) {
-			_result = result ?? SetBackgroundResult.Successful();
+				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
+				Substitute.For<ISysImageUploader>()) {
+			_result = result ?? SetBackgroundResult.Successful(ImageId);
 		}
 
 		public override SetBackgroundResult SetBackground(SetBackgroundImageOptions options) {

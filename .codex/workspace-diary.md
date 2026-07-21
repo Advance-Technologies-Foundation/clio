@@ -6802,3 +6802,10 @@ Decision: Verified both surfaces on both stands: CLI upload-image → set-backgr
 Discovery: reg-web-app's runtime flag is the hidden `-i true|false` (--IsNetCore); --isNetCore/--checkLogin long forms do not parse. DeployApplicationCommon logs carry the stand URL in <DeployedUrl>. The destructive-gate redirect message verified live for the first time on a real server (not just unit/E2E).
 Files: (verification only, no source changes)
 Impact: ENG-92981 branding flow is proven end-to-end on both .NET Framework (/0 alias) and .NET 8 (site root) against freshly deployed trunk builds — merge-readiness evidence for PR #928.
+
+## 2026-07-21 18:40 – ENG-92981 PR #928 wave 3: set-background-image file support, comment cleanup, Customization category
+Context: dnagayko's third review wave (8 threads) + a sweep agent that found omitted twins of each comment class in the same diff.
+Decision: set-background-image now accepts exactly one of --file (uploads via ISysImageUploader then applies) or image-id; both passed = error (r.krupin's call). upload-image/set-background-image recategorized from the PR-coined "Branding commands" to a new "Customization commands" COMMAND TYPE. Private-member // narration converted to XML docs or removed across the PR's production code (SVG-decision comment kept — Alexandr explicitly asked for it to be recorded). Guidance now says "HideSplashScreenLogoImage system setting ... with update-sys-setting" (same for CrtAppToolbarLogoUnderlayColor); "section N above/below" cross-references dropped from the capability map; MCP mentions removed from command XML docs.
+Discovery: none new; the one-call --file flow live-verified on dev (upload → gallery → CrtBackgroundConfig in a single command run).
+Files: clio/Command/SetBackgroundImageCommand.cs, clio/Command/McpServer/Tools/SetBackgroundImageTool.cs, clio/Common/SysImageUploader.cs, clio/Command/McpServer/Resources/BrandingGuidanceResource.cs, docs/McpCapabilityMap.md, clio/help/en/*.txt, clio/docs/commands/*.md
+Impact: background branding is now a true one-call agent flow; command docs carry no MCP internals; help categories no longer coin a doubtful group.

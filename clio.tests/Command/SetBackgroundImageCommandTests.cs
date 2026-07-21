@@ -18,6 +18,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ISysSettingsManager _sysSettingsManager;
+	private ISysImageUploader _sysImageUploader;
 	private ILogger _logger;
 	private SetBackgroundImageCommand _command;
 
@@ -40,9 +41,11 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
+		_sysImageUploader = Substitute.For<ISysImageUploader>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient<IServiceUrlBuilder>(_ => _serviceUrlBuilder);
 		containerBuilder.AddTransient<ISysSettingsManager>(_ => _sysSettingsManager);
+		containerBuilder.AddTransient<ISysImageUploader>(_ => _sysImageUploader);
 	}
 
 	private void ArrangeImageExists(bool exists = true) {
@@ -87,6 +90,82 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 			SetBackgroundImageCommand.BackgroundConfigCode,
 			Arg.Is<object>(value => value.ToString().Contains(ImageId.ToString())
 				&& value.ToString().Contains("Image")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Uploads the local file and sets the created image as the background when --file is passed, skipping the existence probe (the upload itself proves the image).")]
+	public void Execute_ShouldUploadAndSetBackground_WhenFileIsPassed() {
+		// Arrange
+		_sysImageUploader.UploadAsync("C:/brand/background.png", Arg.Any<System.Threading.CancellationToken>())
+			.Returns(SysImageUploadResult.Successful(ImageId));
+		ArrangeGalleryState(alreadyRegistered: false);
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(url => url == "odata/SysImageInTag"), Arg.Any<string>())
+			.Returns($"{{\"Id\":\"{Guid.NewGuid()}\"}}");
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { File = "C:/brand/background.png" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a file source is uploaded first and then applied like an image id");
+		_sysSettingsManager.Received(1).UpdateSysSetting(
+			SetBackgroundImageCommand.BackgroundConfigCode,
+			Arg.Is<object>(value => value.ToString().Contains(ImageId.ToString())));
+		_applicationClient.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.StartsWith("odata/SysImage?")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails without touching the environment when both a file and an image id are passed — the sources are mutually exclusive.")]
+	public void Execute_ShouldFail_WhenBothFileAndImageIdArePassed() {
+		// Arrange
+		SetBackgroundImageOptions options = new() {
+			ImageId = ImageId.ToString(), File = "C:/brand/background.png"
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "two image sources are ambiguous and must be rejected");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("not both")));
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+		_sysImageUploader.DidNotReceiveWithAnyArgs().UploadAsync(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails without touching the environment when neither a file nor an image id is passed.")]
+	public void Execute_ShouldFail_WhenNoImageSourceIsPassed() {
+		// Arrange
+		SetBackgroundImageOptions options = new();
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "there is no image to apply");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("file") && message.Contains("image-id")));
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Surfaces the uploader's failure message when the --file upload fails, without writing anything.")]
+	public void Execute_ShouldFail_WhenFileUploadFails() {
+		// Arrange
+		_sysImageUploader.UploadAsync(Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+			.Returns(SysImageUploadResult.Failure("File not found: 'C:/missing.png'."));
+		SetBackgroundImageOptions options = new() { File = "C:/missing.png" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a failed upload leaves nothing to apply");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("File not found")));
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
 	}
 
 	[Test, Category("Unit")]

@@ -2,35 +2,40 @@
 
 ## Command Type
 
-    Branding commands
+    Customization commands
 
 ## Name
 
-set-background-image - set a previously uploaded image as the environment's shell background
+set-background-image - set an image as the environment's shell background
 
 ## Description
 
-`set-background-image` makes an uploaded image (see [`upload-image`](upload-image.md)) the shell
-background of the target environment: it adds the image to the background gallery and selects it
-as the active background.
+`set-background-image` makes an image the shell background of the target environment: it adds the
+image to the background gallery and selects it as the active background.
+
+Pass exactly one image source:
+
+- a local file (`--file`): the file is uploaded and applied in one step;
+- an image id (positional): an image already uploaded with [`upload-image`](upload-image.md).
+
+Passing both is an error.
 
 The change applies to all users after a page refresh and replaces the currently configured
-background. Re-running the command with the same image id is safe and leaves the same background
-in place.
-
-The image must already exist in the environment; upload it first with `clio upload-image`, which
-prints the image id this command takes.
+background. Re-running the command with the same image is safe and leaves the same background in
+place.
 
 ## Synopsis
 
 ```bash
-clio set-background-image <image-id> [options]
+clio set-background-image [<image-id>] [--file <path>] [options]
 ```
 
 ## Options
 
 ```bash
-<image-id>                      Id of the uploaded image to set as the background (printed by upload-image).
+<image-id>                      Id of an already-uploaded image (printed by upload-image). Pass either this or --file.
+
+--file                          Path to a local image file to upload and set as the background in one step.
 
 --uri               -u          Application uri
 
@@ -43,12 +48,18 @@ clio set-background-image <image-id> [options]
 --Maintainer        -m          Maintainer name
 ```
 
-## Example
+## Examples
+
+Upload a local image and set it as the shell background in one step:
 
 ```bash
-clio upload-image C:\brand\background.png -e myapp
+clio set-background-image --file C:\brand\background.png -e myapp
+```
+
+Set an already-uploaded image as the shell background:
+
+```bash
 clio set-background-image aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee -e myapp
-upload the image, then set it as the shell background
 ```
 
 ## Reporting Bugs

@@ -38,8 +38,7 @@ public class UploadImageCommand : RemoteCommand<UploadImageOptions> {
 
 	/// <summary>
 	/// Uploads the image described by <paramref name="options"/> by delegating to
-	/// <see cref="ISysImageUploader"/>. Virtual so the MCP tool can call the resolved command directly
-	/// and read the structured result.
+	/// <see cref="ISysImageUploader"/>.
 	/// </summary>
 	/// <param name="options">Command options carrying the file path and connection settings.</param>
 	/// <returns>The upload outcome carrying the created image id or a failure message.</returns>
