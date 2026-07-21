@@ -2889,6 +2889,190 @@ public sealed class SchemaValidationServiceTests
 			because: "the mobile diagnostic must name the node and the placeholder property");
 	}
 
+	private const string MetricInsertWithMacroTitle = """
+		[
+			{
+				"operation":"insert",
+				"name":"IndicatorWidget_CriticalRequests",
+				"parentName":"Main",
+				"values":{
+					"type":"crt.IndicatorWidget",
+					"config":{
+						"title":"#ResourceString(IndicatorWidget_CriticalRequests_title)#",
+						"text":{"template":"{0}","metricMacros":"{0}"}
+					}
+				}
+			}
+		]
+	""";
+
+	[Test]
+	[Description("Inserted metric widget whose #ResourceString title key is neither registered, DS-bound, nor Usr-derivable and is not passed in resources is rejected (ENG-93098) — the binding would render raw $Resources.Strings.<key>.")]
+	public void ValidateInsertedWidgetCaptionResources_MetricTitleMacroUnregistered_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the widget title key IndicatorWidget_CriticalRequests_title is not registered and cannot be auto-provided, so the binding renders raw");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("IndicatorWidget_CriticalRequests_title") && error.Contains("render raw"),
+			because: "the diagnostic must name the unresolved key and explain the raw-render failure");
+	}
+
+	[Test]
+	[Description("Inserted metric widget title macro whose key IS passed in the resources parameter is accepted — clio registers it, so the binding resolves.")]
+	public void ValidateInsertedWidgetCaptionResources_MetricTitleMacroInResources_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var resources = new Dictionary<string, string> { ["IndicatorWidget_CriticalRequests_title"] = "Critical Requests" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, resources);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the title key is explicitly registered through the resources parameter");
+		result.Errors.Should().BeEmpty(because: "no caption binding is unresolvable");
+	}
+
+	[Test]
+	[Description("Inserted widget title in the $Resources.Strings binding form (not the macro form) with an unregistered key is rejected — both reference forms are checked.")]
+	public void ValidateInsertedWidgetCaptionResources_DollarBindingTitleUnregistered_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"IndicatorWidget_CriticalRequests",
+					"values":{
+						"type":"crt.IndicatorWidget",
+						"config":{"title":"$Resources.Strings.IndicatorWidget_CriticalRequests_title"}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the $Resources.Strings binding form is subject to the same resolvability rule as the macro form");
+		result.Errors.Should().ContainSingle(error => error.Contains("IndicatorWidget_CriticalRequests_title"),
+			because: "the diagnostic must name the unresolved key regardless of reference form");
+	}
+
+	[Test]
+	[Description("Inserted widget title bound to a Usr-prefixed key is accepted without resources — clio auto-derives a caption for Usr* keys.")]
+	public void ValidateInsertedWidgetCaptionResources_UsrTitleKey_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"IndicatorWidget_Usr",
+					"values":{
+						"type":"crt.IndicatorWidget",
+						"config":{"title":"#ResourceString(UsrCriticalRequests_title)#"}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a Usr-prefixed key is auto-derived by clio and therefore resolves at runtime");
+		result.Errors.Should().BeEmpty(because: "the Usr* title key needs no explicit resource");
+	}
+
+	[Test]
+	[Description("A merge (not insert) operation carrying an unresolvable title binding is tolerated — a merge may target a widget whose caption resource the parent schema already provides.")]
+	public void ValidateInsertedWidgetCaptionResources_MergeOperation_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"name":"IndicatorWidget_CriticalRequests",
+					"values":{
+						"config":{"title":"#ResourceString(IndicatorWidget_CriticalRequests_title)#"}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the validator only enforces self-containment for inserts, not merges");
+		result.Errors.Should().BeEmpty(because: "a merge may reference a key already registered on the schema");
+	}
+
+	[Test]
+	[Description("Authoritative save-gate check ValidateInsertedWidgetCaptionsRegistered rejects a metric title whose key is absent from the final registered localizableStrings set (first creation without resources).")]
+	public void ValidateInsertedWidgetCaptionsRegistered_TitleKeyNotRegistered_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var registered = new HashSet<string>(StringComparer.Ordinal);
+		var dsBound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(body, registered, dsBound);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the title key is not in the final localizableStrings, so the saved binding would render raw");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("IndicatorWidget_CriticalRequests_title") && e.Contains("render raw"),
+			because: "the diagnostic must name the unresolved key and the raw-render failure");
+	}
+
+	[Test]
+	[Description("Authoritative save-gate check accepts a re-inserted metric title whose key is ALREADY present in the schema's registered localizableStrings even when resources is omitted — the re-save flow the body-only heuristic would false-positive (ENG-93098 review fix).")]
+	public void ValidateInsertedWidgetCaptionsRegistered_TitleKeyAlreadyRegistered_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var registered = new HashSet<string>(StringComparer.Ordinal) { "IndicatorWidget_CriticalRequests_title" };
+		var dsBound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(body, registered, dsBound);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "CleanAndMerge preserves already-registered localizableStrings, so a re-inserted title whose key is registered resolves and must not be rejected");
+		result.Errors.Should().BeEmpty(because: "the pre-existing registration makes the binding resolve");
+	}
+
+	[Test]
+	[Description("Authoritative save-gate check treats a DS-bound caption key as resolvable (the platform auto-provides the caption), so it is not rejected.")]
+	public void ValidateInsertedWidgetCaptionsRegistered_DsBoundKey_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var registered = new HashSet<string>(StringComparer.Ordinal);
+		var dsBound = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "IndicatorWidget_CriticalRequests_title" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(body, registered, dsBound);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a DS-bound attribute caption is auto-provided by the platform and therefore resolves");
+		result.Errors.Should().BeEmpty(because: "DS-bound captions need no localizableStrings entry");
+	}
+
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
 		return $$"""
 			define(

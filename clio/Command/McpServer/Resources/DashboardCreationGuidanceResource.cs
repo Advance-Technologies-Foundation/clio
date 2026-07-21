@@ -100,6 +100,12 @@ public sealed class DashboardCreationGuidanceResource {
 		         Use the UId of `MyDashboard` from `MyPackage` (the root schema of that name) — not the Custom-package
 		         replacement, and not the parent `MyBaseDashboard`.
 
+		       ## Access rights
+
+		       A dashboard is created with a default `All Employees` read grant. To read or change who can access
+		       it — and to ship those grants with the package (they are data, not schema, so they are otherwise lost
+		       on transfer) — read `get-guidance name=dashboard-rights`.
+
 		       ## Notes
 
 		       - `create-page` seeds `optionalProperties` at creation, so the dashboard is correctly linked in a
