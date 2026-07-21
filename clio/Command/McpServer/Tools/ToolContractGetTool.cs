@@ -702,29 +702,51 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry = null,
 		string? detail = null,
 		bool legacyNoNamesFullShape = false) {
-		if (toolNames is null || toolNames.Count == 0) {
-			if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
-				return new ToolContractGetResponse(
-					true,
-					CanonicalToolNames.Select(name => Contracts[name]).ToArray());
-			}
-			if (legacyNoNamesFullShape) {
-				// Deliberate: set-EQUAL with the index name universe (curated + long-tail), not just the
-				// smaller curated set the legacy client historically received pre-ENG-90312. Alex's explicit
-				// call for ENG-93885 — the legacy client now sees every tool the index would list, just as
-				// full contracts instead of index entries.
-				List<ToolContractDefinition> legacyTools = [];
-				foreach (string name in BuildIndexToolNames(toolInvokerRegistry)) {
-					if (TryResolveFullContract(name, toolInvokerRegistry, out ToolContractDefinition contract)) {
-						legacyTools.Add(contract);
-					}
-				}
-				return new ToolContractGetResponse(true, legacyTools);
-			}
+		return toolNames is null || toolNames.Count == 0
+			? ResolveNoNamesContracts(toolInvokerRegistry, detail, legacyNoNamesFullShape)
+			: ResolveNamedContracts(toolNames, toolInvokerRegistry);
+	}
+
+	/// <summary>
+	/// Resolves the no-tool-names branch of <see cref="GetContracts"/>: <c>detail=full</c> (legacy, curated
+	/// only), the ENG-93885 legacy-client full shape (set-equal with the index universe), or the default
+	/// compact index — extracted purely to keep <see cref="GetContracts"/>'s cognitive complexity low
+	/// (Sonar S3776), no behavior change.
+	/// </summary>
+	private static ToolContractGetResponse ResolveNoNamesContracts(
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		string? detail,
+		bool legacyNoNamesFullShape) {
+		if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
 			return new ToolContractGetResponse(
 				true,
-				Index: BuildCompactIndex(toolInvokerRegistry));
+				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
 		}
+		if (legacyNoNamesFullShape) {
+			// Deliberate: set-EQUAL with the index name universe (curated + long-tail), not just the
+			// smaller curated set the legacy client historically received pre-ENG-90312. Alex's explicit
+			// call for ENG-93885 — the legacy client now sees every tool the index would list, just as
+			// full contracts instead of index entries.
+			List<ToolContractDefinition> legacyTools = [];
+			foreach (string name in BuildIndexToolNames(toolInvokerRegistry)) {
+				if (TryResolveFullContract(name, toolInvokerRegistry, out ToolContractDefinition contract)) {
+					legacyTools.Add(contract);
+				}
+			}
+			return new ToolContractGetResponse(true, legacyTools);
+		}
+		return new ToolContractGetResponse(
+			true,
+			Index: BuildCompactIndex(toolInvokerRegistry));
+	}
+
+	/// <summary>
+	/// Resolves the explicit tool-names branch of <see cref="GetContracts"/> — extracted purely to keep
+	/// <see cref="GetContracts"/>'s cognitive complexity low (Sonar S3776), no behavior change.
+	/// </summary>
+	private static ToolContractGetResponse ResolveNamedContracts(
+		IReadOnlyList<string> toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
 			string? name = toolNames[index];
