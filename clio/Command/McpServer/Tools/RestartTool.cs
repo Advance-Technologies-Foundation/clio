@@ -46,8 +46,9 @@ public class RestartTool(
 			ReadyTimeout = waitTimeoutSeconds
 		};
 		return await ExecuteWithReadinessWait(
-			options, waitReady, RestartByEnvironmentNameToolName, $"environment '{environmentName}'",
-			waitTimeoutSeconds, server, requestContext, cancellationToken).ConfigureAwait(false);
+			options, waitReady,
+			new RestartWaitContext(RestartByEnvironmentNameToolName, $"environment '{environmentName}'", waitTimeoutSeconds),
+			server, requestContext, cancellationToken).ConfigureAwait(false);
 	}
 
 	// The deprecated camelCase alias "restart-by-environmentName" is no longer a second [McpServerTool]
@@ -83,17 +84,25 @@ public class RestartTool(
 			ReadyTimeout = waitTimeoutSeconds
 		};
 		return await ExecuteWithReadinessWait(
-			options, waitReady, RestartByCredentialsToolName, $"'{url}'",
-			waitTimeoutSeconds, server, requestContext, cancellationToken).ConfigureAwait(false);
+			options, waitReady,
+			new RestartWaitContext(RestartByCredentialsToolName, $"'{url}'", waitTimeoutSeconds),
+			server, requestContext, cancellationToken).ConfigureAwait(false);
 	}
 
 	// Shared execution path for both restart tools: waitReady=false preserves the pre-ENG-91315
 	// synchronous behavior unchanged; waitReady=true wraps the same call in the heartbeat+deadline
 	// helper so MCP clients keep receiving progress instead of hitting an inactivity/hard-ceiling
 	// timeout while the instance warms up (ENG-91274 / ENG-91316 patterns).
+	// Descriptive context for a readiness wait, bundled into a DTO. Unlike the public
+	// [McpServerTool] methods (whose flat parameter lists must stay flat because they are
+	// reflected into the MCP JSON schema — see the S107 suppression above), this private
+	// helper has no reflected schema, so grouping its descriptive fields is safe and keeps
+	// the parameter count within budget.
+	private readonly record struct RestartWaitContext(string ToolName, string TargetDescription, int WaitTimeoutSeconds);
+
 	private async Task<CommandExecutionResult> ExecuteWithReadinessWait(
-		RestartOptions options, bool waitReady, string toolName, string targetDescription,
-		int waitTimeoutSeconds, global::ModelContextProtocol.Server.McpServer server, RequestContext<CallToolRequestParams> requestContext,
+		RestartOptions options, bool waitReady, RestartWaitContext waitContext,
+		global::ModelContextProtocol.Server.McpServer server, RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken) {
 		if (!waitReady) {
 			return InternalExecute<RestartCommand>(options);
@@ -103,11 +112,12 @@ public class RestartTool(
 			return await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
-				toolName,
+				waitContext.ToolName,
 				() => InternalExecute<RestartCommand>(options),
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
-			return CommandExecutionResult.FromInfo(BuildInProgressMessage(targetDescription, toolName, waitTimeoutSeconds));
+			return CommandExecutionResult.FromInfo(
+				BuildInProgressMessage(waitContext.TargetDescription, waitContext.ToolName, waitContext.WaitTimeoutSeconds));
 		}
 	}
 
