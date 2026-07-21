@@ -338,6 +338,7 @@ This area gives the AI a clean application-level view of the platform.
   Create a Creatio application and return its structured context.
 - `create-app-section`
   Add a section to an existing installed application; returns the created section, entity, and page readback.
+  Serialized per environment + application in-process; a detail-less `InsertQuery failed` is classified `contention` (parallel creation OR a server-side rejection — the server gives no detail to tell them apart) and auto-retried once with verification (create sections sequentially; a persistent single-create failure is server-side — ENG-93089).
 - `update-app-section`
   Update metadata (caption, description, icon) of an existing section; returns before/after readback.
 - `delete-app-section`
