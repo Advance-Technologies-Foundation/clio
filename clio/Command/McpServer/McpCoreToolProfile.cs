@@ -66,8 +66,13 @@ public static class McpCoreToolProfile {
 		typeof(GetEntitySchemaPropertiesTool),     // get-entity-schema-properties
 		typeof(GetEntitySchemaColumnPropertiesTool), // get-entity-schema-column-properties
 
-		// Data Forge discovery (dataforge-find-tables / dataforge-find-lookups / dataforge-status)
-		typeof(DataForgeTool),
+		// NOTE: DataForgeTool was moved OUT of the resident profile (ENG-92761). Data Forge is a
+		// niche path — the whole 8-method class cost ~19% of the tools/list payload (~1.5k tokens)
+		// on every session, resident-per-TYPE, even sessions that never touch the database. Its
+		// read-only discovery tools stay reachable+discoverable via the get-tool-contract curated
+		// index (CanonicalToolNames) and clio-run; on the stdio host a direct call also still works
+		// through the durable unmatched-name handler (ENG-93370). No canonical name changed, so no
+		// McpToolCompatibilityCatalog entry is needed.
 
 		// guidance index + lazy-schema describe tool
 		typeof(GuidanceGetTool),                   // get-guidance
