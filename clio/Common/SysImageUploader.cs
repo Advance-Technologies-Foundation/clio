@@ -129,8 +129,12 @@ public sealed class SysImageUploader : ISysImageUploader {
 		upload.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
 		// The File API range end is zero-indexed and inclusive: a 123-byte file is "bytes 0-122/123".
 		upload.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, payload.LongLength - 1, payload.LongLength);
+		// The file name travels percent-encoded inside the plain filename parameter, matching what the
+		// platform's own upload page sends. A raw non-ASCII name gets mangled on the Latin-1 header
+		// channel and the upload fails verification, and the image API rejects the RFC 5987 filename*
+		// parameter outright with HTTP 400 "Content-Disposition" — both verified live.
 		upload.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") {
-			FileName = fileName
+			FileName = $"\"{Uri.EscapeDataString(fileName)}\""
 		};
 
 		using HttpResponseMessage uploadResponse = await http.SendAsync(upload, cancellationToken)
@@ -176,13 +180,21 @@ public sealed class SysImageUploader : ISysImageUploader {
 		}
 		try {
 			JsonNode root = JsonNode.Parse(responseBody);
+			// The live API answers rejections in two shapes (both observed): {"error":"<reason>"} and
+			// {"success":false,"errorInfo":{...}}. Missing either one turns a server rejection into a
+			// misleading verification-mismatch error later.
+			JsonNode plainError = ReadCaseInsensitive(root, "error");
+			if (plainError is not null) {
+				error = AsDisplayString(plainError) ?? "the image API reported an error.";
+				return true;
+			}
 			JsonNode successNode = ReadCaseInsensitive(root, "success");
 			if (successNode is null || successNode.GetValueKind() != JsonValueKind.False) {
 				return false;
 			}
 			JsonNode errorInfo = ReadCaseInsensitive(root, "errorInfo");
-			error = ReadCaseInsensitive(errorInfo, "message")?.GetValue<string>()
-				?? ReadCaseInsensitive(errorInfo, "errorCode")?.GetValue<string>()
+			error = AsDisplayString(ReadCaseInsensitive(errorInfo, "message"))
+				?? AsDisplayString(ReadCaseInsensitive(errorInfo, "errorCode"))
 				?? "the image API reported success=false.";
 			return true;
 		} catch (JsonException) {
@@ -190,6 +202,18 @@ public sealed class SysImageUploader : ISysImageUploader {
 			// confirmed success either — the verification GET below is the authoritative check.
 			return false;
 		}
+	}
+
+	/// <summary>
+	/// Renders a JSON value for a user-facing message regardless of its kind: a rejection reason can
+	/// arrive as a string message or as a numeric error code, and <c>GetValue&lt;string&gt;()</c> on a
+	/// non-string node would throw and lose the server's reason.
+	/// </summary>
+	private static string AsDisplayString(JsonNode node) {
+		if (node is null) {
+			return null;
+		}
+		return node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : node.ToJsonString();
 	}
 
 	/// <summary>

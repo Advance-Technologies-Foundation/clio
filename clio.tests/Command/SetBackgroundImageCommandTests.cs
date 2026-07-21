@@ -31,7 +31,9 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 
 	public override void TearDown() {
 		_applicationClient.ClearReceivedCalls();
+		_serviceUrlBuilder.ClearReceivedCalls();
 		_sysSettingsManager.ClearReceivedCalls();
+		_sysImageUploader.ClearReceivedCalls();
 		base.TearDown();
 	}
 

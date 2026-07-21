@@ -49,11 +49,10 @@ public class SetBackgroundImageTool(
 		bool hasFile = !string.IsNullOrWhiteSpace(args.File);
 		bool hasImageId = !string.IsNullOrWhiteSpace(args.ImageId);
 		if (hasFile && hasImageId) {
-			return SetBackgroundImageResult.Failure("Pass either file or image-id, not both.");
+			return SetBackgroundImageResult.Failure(SetBackgroundImageCommand.BothSourcesError);
 		}
 		if (!hasFile && !hasImageId) {
-			return SetBackgroundImageResult.Failure(
-				"Pass exactly one of file (local image path) or image-id (id returned by upload-image).");
+			return SetBackgroundImageResult.Failure(SetBackgroundImageCommand.NoSourceError);
 		}
 		SetBackgroundImageOptions options = new() {
 			Environment = args.EnvironmentName,

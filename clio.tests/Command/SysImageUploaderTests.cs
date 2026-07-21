@@ -197,6 +197,68 @@ public sealed class SysImageUploaderTests
 	}
 
 	[Test]
+	[Description("A rejection delivered as the plain {\"error\":\"...\"} envelope (the second rejection shape the live image API uses) is surfaced as the failure reason instead of falling through to a misleading verification-mismatch error.")]
+	public async Task UploadAsync_ShouldSurfacePlainErrorEnvelope_WhenImageApiRejectsWithErrorProperty() {
+		// Arrange
+		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: false,
+			responder: _ => Ok("{\"error\": \"File is not an image.\"}"));
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync("C:/brand/background.png");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a 2xx body carrying an error envelope is a server-side rejection");
+		result.Error.Should().Contain("File is not an image",
+			because: "the server's real reason must reach the caller instead of a misleading mismatch error");
+		handler.Requests.Should().HaveCount(1, because: "a rejected upload must not be verified");
+	}
+
+	[Test]
+	[Description("A rejection whose errorInfo carries only a numeric errorCode (no string message) is surfaced as the failure reason instead of throwing on a non-string JSON value.")]
+	public async Task UploadAsync_ShouldSurfaceNumericErrorCode_WhenRejectionCarriesNoMessage() {
+		// Arrange
+		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: false,
+			responder: _ => Ok("{\"success\":false,\"errorInfo\":{\"errorCode\":500,\"message\":null}}"));
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync("C:/brand/background.png");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a 2xx body carrying success=false is a server-side rejection");
+		result.Error.Should().Contain("500",
+			because: "a numeric error code is still the server's reason and must reach the caller, not throw");
+		handler.Requests.Should().HaveCount(1, because: "a rejected upload must not be verified");
+	}
+
+	[Test]
+	[Description("A non-ASCII file name travels percent-encoded inside the plain Content-Disposition filename parameter (the form the image API accepts; it rejects RFC 5987 filename* with HTTP 400 and a raw Unicode name is mangled on the Latin-1 header channel — both verified live).")]
+	public async Task UploadAsync_ShouldSendPercentEncodedFileName_WhenFileNameIsNotAscii() {
+		// Arrange
+		(SysImageUploader sut, RecordingHandler handler, IFileSystem fileSystem) = BuildSut(isNetCore: false);
+		const string unicodePath = "C:/brand/логотип.png";
+		fileSystem.ExistsFile(unicodePath).Returns(true);
+		fileSystem.GetFileSize(unicodePath).Returns(PngPayload.LongLength);
+		fileSystem.ReadAllBytes(unicodePath).Returns(PngPayload);
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync(unicodePath);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a unicode file name must not break the upload");
+		System.Net.Http.Headers.ContentDispositionHeaderValue disposition =
+			handler.Requests[0].Content!.Headers.ContentDisposition!;
+		disposition.FileNameStar.Should().BeNull(
+			because: "the image API rejects the RFC 5987 filename* parameter with HTTP 400 (verified live)");
+		disposition.FileName!.Trim('"').Should().Be(Uri.EscapeDataString("логотип.png"),
+			because: "the name must travel percent-encoded in the plain filename parameter, the form the image API accepts "
+				+ "(the getter quotes the value on some target frameworks and not others)");
+		foreach (char character in disposition.FileName!) {
+			((int)character).Should().BeLessThan(128,
+				because: "the encoded filename must stay pure ASCII so the Latin-1 header channel cannot mangle it");
+		}
+	}
+
+	[Test]
 	[Description("Fails with the server's message when the image API returns 2xx with success=false (e.g. the file-security policy rejected the file).")]
 	public async Task UploadAsync_ShouldFail_WhenImageApiReportsSuccessFalse() {
 		// Arrange

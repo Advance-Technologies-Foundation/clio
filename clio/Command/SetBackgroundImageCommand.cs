@@ -63,6 +63,13 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	internal const string BackgroundConfigCode = "CrtBackgroundConfig";
 	private const string ShellBackgroundTagName = "shell_background";
 
+	/// <summary>Error text shared by the CLI and MCP surfaces when both image sources are passed.</summary>
+	internal const string BothSourcesError = "Pass either a file or an image-id, not both.";
+
+	/// <summary>Error text shared by the CLI and MCP surfaces when no image source is passed.</summary>
+	internal const string NoSourceError =
+		"Pass a file to upload (file) or the id of an already-uploaded image (image-id).";
+
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly ISysImageUploader _sysImageUploader;
@@ -90,12 +97,10 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		bool hasFile = !string.IsNullOrWhiteSpace(options.File);
 		bool hasImageId = !string.IsNullOrWhiteSpace(options.ImageId);
 		if (hasFile && hasImageId) {
-			return SetBackgroundResult.Failure(
-				"Pass either a file or an image-id, not both.");
+			return SetBackgroundResult.Failure(BothSourcesError);
 		}
 		if (!hasFile && !hasImageId) {
-			return SetBackgroundResult.Failure(
-				"Pass a file to upload (--file) or the id of an already-uploaded image (image-id).");
+			return SetBackgroundResult.Failure(NoSourceError);
 		}
 		Guid imageId;
 		if (hasFile) {
@@ -154,7 +159,8 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// image is left as is. Returns null on success, otherwise the failure message.
 	/// </summary>
 	private string EnsureInBackgroundGallery(Guid imageId) {
-		if (!TryEnsureForTag(imageId, ShellBackgroundTagId, out bool ensured, out string hardError)) {
+		if (!TryEnsureForTag(imageId, ShellBackgroundTagId, out bool ensured, out string hardError,
+			out string registrationError)) {
 			return hardError;
 		}
 		if (ensured) {
@@ -169,11 +175,16 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			return "The background gallery tag was not found in the environment, so the image could not " +
 				"be registered in the gallery.";
 		}
-		if (resolvedTagId != ShellBackgroundTagId
-			&& TryEnsureForTag(imageId, resolvedTagId, out ensured, out hardError) && ensured) {
-			return null;
+		if (resolvedTagId != ShellBackgroundTagId) {
+			if (!TryEnsureForTag(imageId, resolvedTagId, out ensured, out hardError, out registrationError)) {
+				return hardError;
+			}
+			if (ensured) {
+				return null;
+			}
 		}
-		return hardError ?? "Registering the image in the background gallery failed.";
+		return "Registering the image in the background gallery failed."
+			+ (registrationError is null ? string.Empty : $" {registrationError}");
 	}
 
 	/// <summary>
@@ -187,8 +198,10 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// duplicate row); on a true return, <paramref name="ensured"/> is false when the registration did
 	/// not materialize and the caller may retry with another tag id.
 	/// </summary>
-	private bool TryEnsureForTag(Guid imageId, Guid tagId, out bool ensured, out string hardError) {
+	private bool TryEnsureForTag(Guid imageId, Guid tagId, out bool ensured, out string hardError,
+		out string registrationError) {
 		ensured = false;
+		registrationError = null;
 		string membershipUrl =
 			$"{ODataKeyFormatter.CollectionPath("SysImageInTag")}?$filter=Entity/Id eq {imageId} and Tag/Id eq {tagId}&$select=Id&$top=1";
 		if (!TryQuerySingleId(membershipUrl, out string membershipId, out string readError)) {
@@ -200,7 +213,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			ensured = true;
 			return true;
 		}
-		PostGalleryRegistration(imageId, tagId);
+		registrationError = PostGalleryRegistration(imageId, tagId);
 		if (!TryQuerySingleId(membershipUrl, out membershipId, out readError)) {
 			hardError = $"Could not verify the background gallery registration: {readError}";
 			return false;
@@ -210,11 +223,13 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	}
 
 	/// <summary>
-	/// Sends the gallery-registration insert. Best-effort by design: the outcome is decided solely by
-	/// the read-back in <see cref="TryEnsureForTag"/>, so the response body and transport errors are
-	/// not interpreted here.
+	/// Sends the gallery-registration insert. The outcome is decided solely by the read-back in
+	/// <see cref="TryEnsureForTag"/> (a 2xx body proves nothing), so the response body is not
+	/// interpreted here; a transport failure is converted to a diagnostic message that the caller
+	/// attaches to the final error when the registration does not materialize. Returns null when the
+	/// request was sent without a transport error.
 	/// </summary>
-	private void PostGalleryRegistration(Guid imageId, Guid tagId) {
+	private string PostGalleryRegistration(Guid imageId, Guid tagId) {
 		try {
 			string url = _serviceUrlBuilder.Build(ODataKeyFormatter.CollectionPath("SysImageInTag"));
 			string body = JsonSerializer.Serialize(new {
@@ -222,9 +237,9 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				TagId = tagId.ToString()
 			});
 			ApplicationClient.ExecutePostRequest(url, body);
-		} catch (Exception) {
-			// Swallowed deliberately: a failed POST surfaces as "registration did not materialize"
-			// through the authoritative read-back, with the tag-fallback retry still available.
+			return null;
+		} catch (Exception ex) {
+			return ex.Message;
 		}
 	}
 
