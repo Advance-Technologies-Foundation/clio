@@ -327,6 +327,8 @@ public class BindingsModule {
 			services.AddTransient<IFileSystem, FileSystem>();
 		}
 
+		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
@@ -555,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
+		services.AddTransient<GetRecordRightsTool>();
+		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
