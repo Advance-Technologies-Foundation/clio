@@ -308,6 +308,16 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("sourceStructure")]
 	public IReadOnlyList<SourceComponentInfo> SourceStructure { get; init; } = [];
 
+	/// <summary>
+	/// Diagnostic set only when the converted layout came back empty despite the source page having
+	/// components — e.g. <c>"empty: …"</c> when the web-template baseline could not be resolved to a
+	/// distinct template (a replacing schema over a same-named base). Null in the normal case; a caller
+	/// must not mistake an empty layout for a legitimately layout-less page.
+	/// </summary>
+	[JsonPropertyName("layoutResolution")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string LayoutResolution { get; init; }
+
 	/// <summary>Web-only body sections present on the source (handlers / validators / converters).</summary>
 	[JsonPropertyName("webOnlySections")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

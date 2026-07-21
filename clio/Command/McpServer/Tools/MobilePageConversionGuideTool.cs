@@ -158,7 +158,11 @@ public sealed class MobilePageConversionGuideTool {
 		}
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
-		TemplateMappingRule templateRule = ResolveTemplateRule(rules, pageResponse.Page?.ParentSchemaName);
+		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
+		// replacing schema over a same-named base (parentSchemaName == schemaName). Feeds template-rule
+		// resolution, chrome subtraction, and the reported sourceTemplate — all from one value.
+		string effectiveTemplate = ResolveEffectiveTemplateName(pageResponse.Page, pageResponse.Bundle, rules);
+		TemplateMappingRule templateRule = ResolveTemplateRule(rules, effectiveTemplate);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
@@ -173,7 +177,7 @@ public sealed class MobilePageConversionGuideTool {
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
 		// containers, which the mobile template already provides. Best-effort — never blocks the guide.
 		IReadOnlySet<string> templateComponentNames = LoadTemplateComponentNames(
-			pageResponse.Page?.ParentSchemaName, args);
+			effectiveTemplate, pageResponse.Page?.SchemaName, args);
 
 		string targetName = string.IsNullOrWhiteSpace(args.TargetSchemaName)
 			? DeriveMobileSchemaName(args.SchemaName)
@@ -198,7 +202,7 @@ public sealed class MobilePageConversionGuideTool {
 				pageResponse.Bundle ?? new PageBundleInfo(),
 				mobileTypes, webTypes, webByType, mobileByType, rules, templateRule,
 				sourcePage: args.SchemaName,
-				sourceTemplate: pageResponse.Page?.ParentSchemaName,
+				sourceTemplate: effectiveTemplate,
 				suggestedTarget: targetName,
 				containerNameMap: containerNameMap,
 				sectionRegistration: sectionRegistration,
@@ -255,9 +259,15 @@ public sealed class MobilePageConversionGuideTool {
 	/// parent name is missing or the read fails — the guide is then produced without template
 	/// subtraction (current behavior). Never throws.
 	/// </summary>
-	private IReadOnlySet<string> LoadTemplateComponentNames(string parentSchemaName, MobilePageConversionGuideArgs args) {
+	private IReadOnlySet<string> LoadTemplateComponentNames(string parentSchemaName, string ownSchemaName, MobilePageConversionGuideArgs args) {
 		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(parentSchemaName)) {
+			return empty;
+		}
+		// Never load the source page as its own template baseline: for a replacing schema layered over a
+		// same-named base, the parent name equals the page's own name. Subtracting the page against itself
+		// would empty the whole layout. Belt-and-suspenders behind ResolveEffectiveTemplateName.
+		if (string.Equals(parentSchemaName, ownSchemaName, StringComparison.OrdinalIgnoreCase)) {
 			return empty;
 		}
 		try {
@@ -316,6 +326,48 @@ public sealed class MobilePageConversionGuideTool {
 			}
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// Resolves the effective web template of the source page — the schema whose chrome must be subtracted
+	/// and whose mobile counterpart is recommended. Normally this is the page's direct parent
+	/// (<c>ParentSchemaName</c>). For a REPLACING schema layered over a same-named base, the direct parent
+	/// equals the page's own name (Creatio keeps the same <c>Name</c> across a replacement stack); trusting it
+	/// would load the page as its own template baseline and subtract the whole layout against itself. In that
+	/// case (or when the parent is missing) this climbs the inheritance chain (<see cref="PageBundleInfo.Schemas"/>,
+	/// ordered HEAD→ROOT), skips every same-named replacing layer, and returns the first ancestor that matches a
+	/// known template rule (e.g. <c>PageWithTabsFreedomTemplate</c>) — falling back to the first differently-named
+	/// ancestor, then to the raw parent name. Pages whose parent already differs from their own name are returned
+	/// verbatim, so non-replacing pages behave exactly as before.
+	/// </summary>
+	internal static string ResolveEffectiveTemplateName(
+		PageMetadataInfo page, PageBundleInfo bundle, WebToMobilePageConversionRules rules) {
+		string own = page?.SchemaName;
+		string parent = page?.ParentSchemaName;
+		// Fast path: a normal (non-replacing) page — the parent is a distinct template/base. Unchanged behavior.
+		if (!string.IsNullOrWhiteSpace(parent)
+			&& !string.Equals(parent, own, StringComparison.OrdinalIgnoreCase)) {
+			return parent;
+		}
+		// Replacing / self-referential (or missing parent): climb the chain past same-named layers.
+		if (bundle?.Schemas is { Count: > 0 }) {
+			string firstDistinct = null;
+			foreach (PageSchemaChainEntry entry in bundle.Schemas) {
+				string name = entry?.SchemaName;
+				if (string.IsNullOrWhiteSpace(name)
+					|| string.Equals(name, own, StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				firstDistinct ??= name;
+				if (ResolveTemplateRule(rules, name) is not null) {
+					return name;
+				}
+			}
+			if (firstDistinct is not null) {
+				return firstDistinct;
+			}
+		}
+		return parent;
 	}
 
 	/// <summary>
