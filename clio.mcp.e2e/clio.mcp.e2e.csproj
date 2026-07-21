@@ -27,6 +27,9 @@
 		<PackageReference Include="ModelContextProtocol" />
 		<PackageReference Include="Allure.NUnit" />
 		<PackageReference Include="FluentAssertions" />
+		<!-- Direct reference so the centrally-managed version wins over the older vulnerable transitive
+		     version pulled in by clio -> Microsoft.PowerShell.SDK -> Microsoft.Windows.Compatibility. -->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
 	</ItemGroup>
 
 	<ItemGroup>

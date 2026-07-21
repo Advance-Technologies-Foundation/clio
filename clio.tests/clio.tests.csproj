@@ -26,6 +26,9 @@
     <PackageReference Include="NUnit.Analyzers" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
+    <!-- Direct reference so the centrally-managed version wins over the older vulnerable transitive
+         version pulled in by clio -> Microsoft.PowerShell.SDK -> Microsoft.Windows.Compatibility. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
          TestServer request/response, not just config-object assertions). -->
