@@ -351,9 +351,9 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 		ArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		// The helper serves both resident tools (get-sys-setting, list-sys-settings) and hidden long-tail
-		// tools (create-sys-setting, update-sys-setting), so the discoverability gate uses the lazy-surface
-		// union of tools/list names and the get-tool-contract compact index.
+		// All four sys-setting tools are long-tail (get-sys-setting/list-sys-settings joined
+		// create-/update-sys-setting off the resident profile), so the discoverability gate uses the
+		// lazy-surface union of tools/list names and the get-tool-contract compact index.
 		IReadOnlyCollection<string> toolNames =
 			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 		toolNames.Should().Contain(toolName,

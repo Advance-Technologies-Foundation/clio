@@ -31,6 +31,12 @@ When `validate` is `true` (the default), the body is checked client-side before 
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
   column captions and validator messages) and register the key's default-language value through
   `resources`. Call `clio get-guidance --name page-schema-resources` for the full rule.
+- **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
+  freshly inserted (`operation:"insert"`) widget/container bound as `$Resources.Strings.<Key>` or
+  `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
+  `resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key. This guards the
+  metric/chart-widget-title case (`#ResourceString(IndicatorWidget_<slug>_title)#` is registered only
+  when passed in `resources`; otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
 
 A malformed `VendorPrefix.Name` in any of these sections causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.

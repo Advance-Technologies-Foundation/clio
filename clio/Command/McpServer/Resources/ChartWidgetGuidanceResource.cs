@@ -130,23 +130,15 @@ public sealed class ChartWidgetGuidanceResource {
 		         `hideTools` flags: `hideTitle: true` removes the title, `hideTools: true` removes the header tools
 		         (including the full-screen button). Leave both unset so the platform shows the title and full-screen.
 
-		       ## Style (theme) by page surface — match the indicator-widget policy
+		       ## Style (theme)
 
-		       Pick `config.theme` from the surface you add the chart to (this also covers a `tsfunnel`/funnel chart —
-		       it is a chart-widget series). If the user named a style/theme in the prompt (plain white, fully colored,
-		       glass, or an explicit theme value), use that and IGNORE these defaults.
+		       The card theme is set by the SURFACE's guide, not here: `dashboard-and-home-page-layout` for dashboards and home
+		       pages (plain-white / `config.theme` "without-fill"), `desktop-page` for desktops (glassmorphism).
+		       This also covers a `tsfunnel`/funnel chart — it is a chart-widget series. If the user explicitly
+		       names a different style/theme in the prompt, use that instead.
 
-		       `config.color` is REQUIRED (see Title and header). It colors the title on `without-fill` and the card on
-		       `full-fill`. On Home guess it from other components; for glassmorphism mirror the indicator color;
-		       otherwise "dark-blue" is a safe default.
-
-		       - **Dashboards** (page inheriting `BaseDashboardTemplate`): plain-white card policy — `theme`: "without-fill".
-		         This WINS even if the dashboard sits on a Home page or Desktop. See the `dashboards` guidance.
-		       - **Desktops** (`BaseDesktop` in the page hierarchy): `layout.color`: "transparent", `theme`: "glassmorphism".
-		       - **Home pages** (`BaseHomePage` in the page hierarchy): `theme`: "full-fill"; guess the color from other
-		         components on the page.
-		       - **List pages and Form pages** (everything else): `theme`: "without-fill". Never use a transparent color
-		         unless the user explicitly asked for glassmorphism (applies to all surfaces).
+		       `config.color` is REQUIRED (see Title and header): it colors the title. Default to "dark-blue" when
+		       the user gives none.
 
 		       ## Placement and preserving existing widgets
 
