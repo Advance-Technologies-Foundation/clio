@@ -57,13 +57,24 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 			return result;
 		}
 
-		bool ready = _readinessWaiter.WaitForReady(new ServerReadinessOptions {
+		return WaitForReadiness(options) ? 0 : 1;
+	}
+
+	/// <summary>
+	/// Polls the instance's health-check endpoint until it answers or <see cref="RestartOptions.ReadyTimeout"/>
+	/// elapses, WITHOUT issuing the restart request. Exposed separately from <see cref="Execute"/> so the MCP
+	/// restart tools can run the restart request under the per-tenant execution lock, release it, and then run
+	/// this read-only wait lock-free — the multi-minute warm-up must not serialize other same-tenant calls
+	/// (ENG-91315, review Finding 2). <see langword="virtual"/> so unit tests can fake the wait.
+	/// </summary>
+	/// <param name="options">Restart options carrying the readiness timeout.</param>
+	/// <returns><c>true</c> when the instance answered within the timeout; otherwise <c>false</c>.</returns>
+	public virtual bool WaitForReadiness(RestartOptions options) =>
+		_readinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = EnvironmentSettings.Uri,
 			IsNetCore = EnvironmentSettings.IsNetCore,
 			Timeout = TimeSpan.FromSeconds(options.ReadyTimeout)
 		});
-		return ready ? 0 : 1;
-	}
 
 	#endregion
 

@@ -606,6 +606,10 @@ public class BindingsModule {
 		// transient default) so compile-creatio's Begin/Finish calls and compile-status's later lookup
 		// share the SAME in-memory table regardless of which container resolves them.
 		services.AddSingleton<ICompileOperationRegistry, CompileOperationRegistry>();
+		// Process-wide restart readiness-wait tracker (ENG-91315). A singleton for the same reason as the
+		// compile registry: restart-by-environment-name's Begin/Finish and restart-status's later lookup must
+		// share the SAME in-memory table regardless of which container resolves them.
+		services.AddSingleton<IRestartOperationRegistry, RestartOperationRegistry>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -1123,7 +1127,11 @@ public class BindingsModule {
 					// SINGLETON. Its ctor has no unresolvable args, so the auto-scan COULD register it —
 					// but only as a transient, which would give compile-creatio and compile-status each
 					// their own empty table and silently break status polling.
-					|| implementedInterface == typeof(ICompileOperationRegistry)) {
+					|| implementedInterface == typeof(ICompileOperationRegistry)
+					// The restart readiness-wait registry (ENG-91315), like the compile registry above, is
+					// registered explicitly as a SINGLETON; the auto-scan would give restart-by-environment-name
+					// and restart-status each their own empty table and silently break status polling.
+					|| implementedInterface == typeof(IRestartOperationRegistry)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);
