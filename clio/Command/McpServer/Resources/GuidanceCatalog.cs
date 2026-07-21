@@ -27,6 +27,10 @@ internal static class GuidanceCatalog {
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
 				AppModelingGuidanceResource.Guide),
+			["virtual-entities"] = Create(
+				"virtual-entities",
+				"Canonical guidance for creating and verifying a Creatio virtual entity object, implementing its IEntityQueryExecutor, and version-gating EntityEventListener writes to Creatio 10.0+.",
+				VirtualEntitiesGuidanceResource.Guide),
 			["data-bindings"] = Create(
 				"data-bindings",
 				"Canonical MCP guidance for generic lookup seeding and local or remote data-binding workflows.",
@@ -101,8 +105,20 @@ internal static class GuidanceCatalog {
 				EsqGuidanceResource.Guide),
 			["esq-filters"] = Create(
 				"esq-filters",
-				"Canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.",
+				"Stable ESQ filter guidance router: choose frontend/DataService construction, native backend C# construction, or runtime C# parsing without duplicating detailed rules.",
 				EsqFiltersGuidanceResource.Guide),
+			["esq-filters-frontend"] = Create(
+				"esq-filters-frontend",
+				"Canonical frontend ESQ filter construction guidance for JavaScript, Freedom UI, page JSON, and DataService SelectQuery payloads.",
+				EsqFiltersGuidanceResource.FrontendGuide),
+			["esq-filters-backend"] = Create(
+				"esq-filters-backend",
+				"Canonical and Lab-verified native Creatio backend C# guidance for constructing EntitySchemaQuery filter groups and compare leaves.",
+				EsqFiltersBackendGuidanceResource.Guide),
+			["esq-filter-parsing"] = Create(
+				"esq-filter-parsing",
+				"Lab-verified runtime C# guidance for recursively parsing EntitySchemaQuery.Filters without access to Creatio backend source code.",
+				EsqFilterParsingGuidanceResource.Guide),
 			["indicator-widget"] = Create(
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
@@ -202,15 +218,16 @@ internal static class GuidanceCatalog {
 				"theming",
 				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
 				ThemingGuidanceResource.Guide),
-			["run-process-button"] = Create(
-				"run-process-button",
+			["when-to-use-requests"] = Create(
+				"when-to-use-requests",
 				"""
-				Canonical MCP guidance for adding a Freedom UI button that runs a business process
-				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
-				key = CODE not caption (silent-skip warning), and the static-constant /
-				view-model-attribute-binding / current-record variants.
+				Canonical MCP guidance for wiring Freedom UI page actions to platform requests:
+				when to reuse a built-in crt.*Request vs chain a handler vs author a usr.*Request,
+				and the mandatory get-request-info catalog discipline — parameters as the only
+				authorable keys (empty map = no params block), platform-injected baseParameters
+				never in params, per-request documentation, and version scoping.
 				""",
-				RunProcessButtonGuidanceResource.Guide),
+				WhenToUseRequestsGuidanceResource.Guide),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "

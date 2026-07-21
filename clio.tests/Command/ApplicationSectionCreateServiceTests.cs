@@ -185,6 +185,22 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("Emits fine-grained stage markers in execution order on the successful section-create path when a reportStage callback is supplied.")]
+	public void CreateSection_Should_Report_Stage_Markers_In_Order_When_Callback_Provided() {
+		// Arrange
+		List<string> markers = [];
+		SetUpSuccessfulCreateWithReadbackCapture();
+
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest(), reportStage: markers.Add);
+
+		// Assert
+		markers.Should().ContainInOrder(
+			["loading application info", "creating section", "loading created section"],
+			because: "the happy path must emit each stage marker in execution order (load info, insert, readback)");
+	}
+
+	[Test]
 	[Description("Creates an existing-entity section with mobile pages and omits the web-only client type selector from the insert payload.")]
 	public void CreateSection_Should_Create_Existing_Entity_Section_With_Mobile_Pages() {
 		// Arrange
@@ -949,6 +965,22 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		result.Section.Code.Should().Be("UsrOrders",
 			because: "a timed-out insert whose section is already visible must be treated as a recovered success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits the 'loading created section' stage marker on the insert-timeout recovery path before the post-timeout verification readback runs (ENG-93087).")]
+	public void CreateSection_Should_Report_LoadingCreatedSection_Marker_On_InsertTimeout_Recovery() {
+		// Arrange
+		List<string> markers = [];
+		SetUpTimedOutInsertWithReadbackMocks();
+
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest(), reportStage: markers.Add);
+
+		// Assert
+		markers.Should().Contain("loading created section",
+			because: "the insert-timeout recovery path must announce the created-section readback stage before reading it back");
 	}
 
 	[Test]
