@@ -55,14 +55,29 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 			.Returns($"{{\"value\":{rows}}}");
 	}
 
-	private void ArrangeGalleryState(bool alreadyRegistered) {
-		string rows = alreadyRegistered ? $"[{{\"Id\":\"{Guid.NewGuid()}\"}}]" : "[]";
-		// The membership filter must use navigation paths (Entity/Id, Tag/Id): flat EntityId/TagId
-		// names in $filter fail on the platform with "Column by path ... not found" (verified live).
+	private static string Rows(bool withRow) =>
+		withRow ? $"{{\"value\":[{{\"Id\":\"{Guid.NewGuid()}\"}}]}}" : "{\"value\":[]}";
+
+	// The membership filter must use navigation paths (Entity/Id, Tag/Id): flat EntityId/TagId
+	// names in $filter fail on the platform with "Column by path ... not found" (verified live).
+	// The registration is verified by a read-back after the insert POST, so each response in
+	// "sequence" answers one consecutive membership GET.
+	private void ArrangeGalleryReads(params bool[] sequence) {
+		string[] responses = System.Linq.Enumerable.ToArray(
+			System.Linq.Enumerable.Select(sequence, withRow => Rows(withRow)));
 		_applicationClient.ExecuteGetRequest(
 				Arg.Is<string>(url => url.StartsWith("odata/SysImageInTag?$filter=Entity/Id eq ")
 					&& url.Contains(" and Tag/Id eq ")))
-			.Returns($"{{\"value\":{rows}}}");
+			.Returns(responses[0], System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Skip(responses, 1)));
+	}
+
+	private void ArrangeGalleryState(bool alreadyRegistered) {
+		if (alreadyRegistered) {
+			ArrangeGalleryReads(true);
+		} else {
+			// Not registered before the insert; the post-insert read-back confirms the new row.
+			ArrangeGalleryReads(false, true);
+		}
 	}
 
 	[Test, Category("Unit")]
@@ -266,7 +281,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	public void Execute_ShouldRetryWithResolvedTagId_WhenSeededTagIdIsRejected() {
 		// Arrange
 		ArrangeImageExists();
-		ArrangeGalleryState(alreadyRegistered: false);
 		_applicationClient.ExecuteGetRequest(
 				Arg.Is<string>(url => url.StartsWith("odata/SysImageTag?")))
 			.Returns($"{{\"value\":[{{\"Id\":\"{CustomTagId}\"}}]}}");
@@ -276,6 +290,9 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_applicationClient.ExecutePostRequest("odata/SysImageInTag",
 				Arg.Is<string>(body => body.Contains(CustomTagId.ToString())))
 			.Returns($"{{\"Id\":\"{Guid.NewGuid()}\"}}");
+		// Seeded tag: pre-check empty, read-back still empty (the insert was rejected);
+		// resolved tag: pre-check empty, read-back confirms the row.
+		ArrangeGalleryReads(false, false, false, true);
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
@@ -287,6 +304,49 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		exitCode.Should().Be(0, because: "the by-name tag lookup must recover from a deviating seeded tag id");
 		_applicationClient.Received(1).ExecutePostRequest("odata/SysImageInTag",
 			Arg.Is<string>(body => body.Contains(CustomTagId.ToString())));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Does not trust the insert response body: a non-JSON 2xx POST body (e.g. a login page) still counts as registered when the authoritative read-back confirms the membership row.")]
+	public void Execute_ShouldSucceed_WhenPostBodyIsNotJsonButReadBackConfirmsRow() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryReads(false, true);
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(url => url == "odata/SysImageInTag"), Arg.Any<string>())
+			.Returns("<html>login page</html>");
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read-back, not the POST body, is the authoritative registration proof");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Does not trust the insert response body: a success-looking POST body must NOT report success when the read-back shows the row never materialized (for the seeded and the by-name-resolved tag alike).")]
+	public void Execute_ShouldFail_WhenPostLooksSuccessfulButReadBackShowsNoRow() {
+		// Arrange
+		ArrangeImageExists();
+		// Pre-check and read-back stay empty for both the seeded and the resolved tag.
+		ArrangeGalleryReads(false, false, false, false);
+		_applicationClient.ExecuteGetRequest(
+				Arg.Is<string>(url => url.StartsWith("odata/SysImageTag?")))
+			.Returns($"{{\"value\":[{{\"Id\":\"{CustomTagId}\"}}]}}");
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(url => url == "odata/SysImageInTag"), Arg.Any<string>())
+			.Returns($"{{\"Id\":\"{Guid.NewGuid()}\"}}");
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unconfirmed registration must not report success");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Registering the image in the background gallery failed")));
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
 	}
 
 	[Test, Category("Unit")]

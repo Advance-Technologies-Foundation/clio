@@ -179,16 +179,19 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// <summary>
 	/// Ensures the image is registered under one gallery tag. The membership filter addresses the
 	/// lookup columns via navigation paths (<c>Entity/Id</c>, <c>Tag/Id</c>) — flat column names fail
-	/// on the platform with "Column by path ... not found". Returns false with a hard error when the
-	/// gallery could not be read (an unanswered read must abort, not blind-insert a duplicate row); on
-	/// a true return, <paramref name="ensured"/> is false when the insert was rejected and the caller
-	/// may retry with another tag id.
+	/// on the platform with "Column by path ... not found". The insert's response body is never
+	/// trusted as the outcome (a 2xx body can be a login page or an error envelope): after the POST
+	/// the membership is read back, and only a confirmed row counts as registered — the same
+	/// read-back-verification discipline as <see cref="SysImageUploader"/>. Returns false with a hard
+	/// error when the gallery could not be read (an unanswered read must abort, not blind-insert a
+	/// duplicate row); on a true return, <paramref name="ensured"/> is false when the registration did
+	/// not materialize and the caller may retry with another tag id.
 	/// </summary>
 	private bool TryEnsureForTag(Guid imageId, Guid tagId, out bool ensured, out string hardError) {
 		ensured = false;
-		if (!TryQuerySingleId(
-			$"{ODataKeyFormatter.CollectionPath("SysImageInTag")}?$filter=Entity/Id eq {imageId} and Tag/Id eq {tagId}&$select=Id&$top=1",
-			out string membershipId, out string readError)) {
+		string membershipUrl =
+			$"{ODataKeyFormatter.CollectionPath("SysImageInTag")}?$filter=Entity/Id eq {imageId} and Tag/Id eq {tagId}&$select=Id&$top=1";
+		if (!TryQuerySingleId(membershipUrl, out string membershipId, out string readError)) {
 			hardError = $"Could not check the background gallery: {readError}";
 			return false;
 		}
@@ -197,27 +200,31 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			ensured = true;
 			return true;
 		}
-		ensured = TryRegisterInGallery(imageId, tagId);
+		PostGalleryRegistration(imageId, tagId);
+		if (!TryQuerySingleId(membershipUrl, out membershipId, out readError)) {
+			hardError = $"Could not verify the background gallery registration: {readError}";
+			return false;
+		}
+		ensured = membershipId is not null;
 		return true;
 	}
 
-	private bool TryRegisterInGallery(Guid imageId, Guid tagId) {
+	/// <summary>
+	/// Sends the gallery-registration insert. Best-effort by design: the outcome is decided solely by
+	/// the read-back in <see cref="TryEnsureForTag"/>, so the response body and transport errors are
+	/// not interpreted here.
+	/// </summary>
+	private void PostGalleryRegistration(Guid imageId, Guid tagId) {
 		try {
 			string url = _serviceUrlBuilder.Build(ODataKeyFormatter.CollectionPath("SysImageInTag"));
 			string body = JsonSerializer.Serialize(new {
 				EntityId = imageId.ToString(),
 				TagId = tagId.ToString()
 			});
-			string response = ApplicationClient.ExecutePostRequest(url, body);
-			if (string.IsNullOrWhiteSpace(response)) {
-				return true;
-			}
-			using JsonDocument document = JsonDocument.Parse(response);
-			return !ODataResponseError.TryDetect(document.RootElement, out _);
-		} catch (JsonException) {
-			return true;
+			ApplicationClient.ExecutePostRequest(url, body);
 		} catch (Exception) {
-			return false;
+			// Swallowed deliberately: a failed POST surfaces as "registration did not materialize"
+			// through the authoritative read-back, with the tag-fallback retry still available.
 		}
 	}
 
