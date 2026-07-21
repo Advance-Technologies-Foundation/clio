@@ -31,8 +31,10 @@ public sealed class SysSettingsGuidanceResource {
 			       - Use `get-guidance` with `name` set to `sys-settings` to recall the rules below; do not copy schemas from consumer-repo docs.
 			       - Sys-settings expose four MCP tools: `list-sys-settings`, `get-sys-setting`, `create-sys-setting`, `update-sys-setting`. All operate on the All-Users default; per-user overrides are out of scope for this surface.
 			       - All tools accept named JSON arguments wrapped under `args`. Do not pass positional CLI-style arguments.
+			       - None of the four are advertised in `tools/list` — they are long-tail tools discoverable through `get-tool-contract` (each carries a `resident: false` flag); their absence from `tools/list` is expected, not a blocker.
+			       - Invoke the read-only tools (`list-sys-settings`, `get-sys-setting`) through the `clio-run` executor: `{"command": "list-sys-settings", "args": { …target args… }}`. Invoke the destructive tools (`create-sys-setting`, `update-sys-setting`) through `clio-run-destructive` with the same shape. Do not call any of the four by bare name — strict/HTTP MCP clients cannot dispatch an unadvertised bare name.
 
-			       Tool call shapes
+			       Tool call shapes (the `args` payload below goes inside the executor's own `args` field unchanged)
 			       - `list-sys-settings` — `{ "args": { "environment-name": "<env>" } }`
 			       - `get-sys-setting` — `{ "args": { "environment-name": "<env>", "code": "<setting code>" } }`
 			       - `update-sys-setting` — `{ "args": { "environment-name": "<env>", "code": "<setting code>", "value": "<new value>" } }` (optional `value-type-name` fallback when the setting cannot be located on the environment). For `Binary` settings pass `value-file-path` (a local file path) instead of `value`.
