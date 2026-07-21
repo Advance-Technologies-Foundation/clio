@@ -54,8 +54,11 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 
 	private void ArrangeGalleryState(bool alreadyRegistered) {
 		string rows = alreadyRegistered ? $"[{{\"Id\":\"{Guid.NewGuid()}\"}}]" : "[]";
+		// The membership filter must use navigation paths (Entity/Id, Tag/Id): flat EntityId/TagId
+		// names in $filter fail on the platform with "Column by path ... not found" (verified live).
 		_applicationClient.ExecuteGetRequest(
-				Arg.Is<string>(url => url.StartsWith("odata/SysImageInTag?")))
+				Arg.Is<string>(url => url.StartsWith("odata/SysImageInTag?$filter=Entity/Id eq ")
+					&& url.Contains(" and Tag/Id eq ")))
 			.Returns($"{{\"value\":{rows}}}");
 	}
 

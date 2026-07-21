@@ -17,7 +17,10 @@ public interface ISysImageUploader {
 	/// (no exception is thrown for expected validation/transport failures).
 	/// </summary>
 	/// <param name="filePath">Path to the local image file to upload.</param>
-	/// <param name="cancellationToken">Cancels the login and upload requests.</param>
+	/// <param name="cancellationToken">Cancels the login and upload requests. The CLI and MCP surfaces
+	/// invoke this without an external token (neither carries a caller cancel signal into the command),
+	/// so on those paths the dedicated HTTP client's timeout is the effective upper bound on the wait;
+	/// the parameter exists for hosts that do own a cancel signal.</param>
 	Task<SysImageUploadResult> UploadAsync(string filePath, CancellationToken cancellationToken = default);
 }
 

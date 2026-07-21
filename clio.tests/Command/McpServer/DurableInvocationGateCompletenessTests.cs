@@ -130,4 +130,17 @@ public sealed class DurableInvocationGateCompletenessTests {
 			because: "applying a theme overwrites (or clears) the profile's existing Theme value, so it must be " +
 				"host-gated rather than silently executable — consistent with update-theme/delete-theme");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("set-background-image is classified destructive, so the durable gate never silently runs it — it replaces the environment-wide background for all users and must be host-confirmed. This is why the tool is intentionally absent from the silently-executable ReviewedSilentWriteCapableTools baseline (that list holds Destructive=false write tools only; upload-image is there because it is additive-only).")]
+	public void SetBackgroundImage_ShouldBeDestructive_SoTheGateNeverSilentlyRunsIt() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act & Assert
+		registry.IsDestructive("set-background-image").Should().BeTrue(
+			because: "setting the background replaces the currently configured one for every user, so it must be " +
+				"host-gated rather than silently executable — consistent with set-user-theme");
+	}
 }

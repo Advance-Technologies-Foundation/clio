@@ -148,8 +148,11 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	// registered) — false means the insert was rejected and the caller may retry with another tag id.
 	private bool TryEnsureForTag(Guid imageId, Guid tagId, out bool ensured, out string hardError) {
 		ensured = false;
+		// Lookup columns are filtered via navigation paths (Entity/Id, Tag/Id) — the flat EntityId/TagId
+		// names exist only in payloads; a flat name in $filter fails with "Column by path ... not found"
+		// (verified live, PR #928).
 		if (!TryQuerySingleId(
-			$"{ODataKeyFormatter.CollectionPath("SysImageInTag")}?$filter=EntityId eq {imageId} and TagId eq {tagId}&$select=Id&$top=1",
+			$"{ODataKeyFormatter.CollectionPath("SysImageInTag")}?$filter=Entity/Id eq {imageId} and Tag/Id eq {tagId}&$select=Id&$top=1",
 			out string membershipId, out string readError)) {
 			hardError = $"Could not check the background gallery: {readError}";
 			return false;

@@ -23,6 +23,9 @@ public sealed class SysImageUploader : ISysImageUploader {
 
 	// The image API accepts a single-request upload for payloads under the cap, so no chunk loop is
 	// needed; the extension→mime map covers the raster and vector formats the Appearance page accepts.
+	// SVG is deliberately supported (PR #928 decision): users can already upload SVGs through the
+	// platform UI, and SysImage assets are rendered via <img> tags, where embedded SVG script does
+	// not execute — so clio does not restrict the format more than the platform itself does.
 	private static readonly IReadOnlyDictionary<string, string> MimeTypesByExtension =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			[".png"] = "image/png",
