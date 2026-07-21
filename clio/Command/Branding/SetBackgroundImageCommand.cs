@@ -206,12 +206,10 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				error = "the environment returned an unexpected response.";
 				return false;
 			}
-			foreach (JsonElement row in rows.EnumerateArray()) {
-				if (row.TryGetProperty("Id", out JsonElement idElement)
-					&& idElement.ValueKind == JsonValueKind.String) {
-					id = idElement.GetString();
-				}
-				break;
+			if (rows.GetArrayLength() > 0
+				&& rows[0].TryGetProperty("Id", out JsonElement idElement)
+				&& idElement.ValueKind == JsonValueKind.String) {
+				id = idElement.GetString();
 			}
 			return true;
 		} catch (JsonException) {
