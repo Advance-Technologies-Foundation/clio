@@ -462,14 +462,14 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return entry;
 	}
 
-	private static string InferEntity(JArray schemas, JArray seed) {
+	private string InferEntity(JArray schemas, JArray seed) {
 		// Prefer the page's own layer chain (most specific), then the parent-template seed.
 		foreach (JToken entry in schemas.Concat(seed)) {
 			string body = entry["body"]?.ToString();
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			Match match = EntityNameRegex.Match(body);
+			Match match = SafeMatch(EntityNameRegex, body, "inferring the bound entity");
 			if (match.Success) {
 				return match.Groups[1].Value;
 			}
@@ -553,7 +553,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			foreach (Match match in DetailSchemaNameRegex.Matches(body)) {
+			foreach (Match match in SafeMatches(DetailSchemaNameRegex, body, "collecting detail-schema references")) {
 				string detailName = match.Groups[1].Value;
 				if (!seen.Add(detailName)) {
 					continue;
@@ -648,7 +648,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			if (string.IsNullOrEmpty(detailBody)) {
 				continue;
 			}
-			Match editPageMatch = EditPageRegex.Match(detailBody);
+			Match editPageMatch = SafeMatch(EditPageRegex, detailBody, "resolving the detail's edit page");
 			if (!editPageMatch.Success) {
 				continue; // no edit page named on the detail -> nothing to nest; the engine flags it
 			}
@@ -733,4 +733,30 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 
 	private static GetClassicMigrationBundleResponse Fail(string error) =>
 		new() { Success = false, Error = error };
+
+	// Best-effort regex evaluation over server-supplied bodies. The compiled patterns carry a 1s match timeout;
+	// a timeout on one pathological body must DEGRADE (skip that body, keep the rest of the bundle) exactly like
+	// every other enricher, never abort the whole assembly. Every Match/Matches call funnels through these two
+	// guards so no regex pass can turn a would-be-successful bundle into a hard failure.
+	private Match SafeMatch(Regex regex, string body, string what) {
+		try {
+			return regex.Match(body);
+		}
+		catch (RegexMatchTimeoutException ex) {
+			_logger.WriteWarning($"Regex match timed out while {what}; skipping this body: {ex.Message}");
+			return Match.Empty;
+		}
+	}
+
+	private IReadOnlyList<Match> SafeMatches(Regex regex, string body, string what) {
+		try {
+			// Materialize inside the try: Regex.Matches is lazily evaluated, so a timeout would otherwise surface
+			// at the caller's enumeration site — outside this guard — rather than being caught here.
+			return regex.Matches(body).ToList();
+		}
+		catch (RegexMatchTimeoutException ex) {
+			_logger.WriteWarning($"Regex match timed out while {what}; skipping this body: {ex.Message}");
+			return [];
+		}
+	}
 }

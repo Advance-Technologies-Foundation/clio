@@ -8,51 +8,87 @@ using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
+/// <summary>Options for the <c>list-entity-client-schemas</c> command.</summary>
 [Verb("list-entity-client-schemas", Aliases = ["migration-unit-resolve"],
 	HelpText = "Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, " +
 		"edit pages (including per-type/typed pages), and add mini pages, each classified classic, freedom, or unknown. " +
 		"One level only — the skill recurses into detail entities. Pure ESQ; no schema-body parsing.")]
 public class ListEntityClientSchemasOptions : EnvironmentOptions {
 
+	/// <summary>Entity schema name whose Classic UI page-role graph is resolved, e.g. <c>Contract</c>.</summary>
 	[Option("entity-name", Required = true, HelpText = "Entity schema name, e.g. 'Contract' or 'SupportUnit'")]
 	public string EntityName { get; set; }
 }
 
+/// <summary>A Classic <c>SysModule</c> section bound to the entity, with its card page and migration classification.</summary>
 public sealed class MigrationSectionInfo {
+	/// <summary>Section caption (display name).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("caption")] public string Caption { get; set; }
+	/// <summary>Section code.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("code")] public string Code { get; set; }
+	/// <summary>Name of the section (list) schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("sectionSchema")] public string SectionSchema { get; set; }
+	/// <summary>Name of the card (edit page) schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("cardSchema")] public string CardSchema { get; set; }
+	/// <summary>UId of the card schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("cardSchemaUId")] public string CardSchemaUId { get; set; }
+	/// <summary>Parent template name of the card schema (drives the <see cref="Kind"/> classification).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("template")] public string Template { get; set; }
+	/// <summary>Migration classification of the card: <c>classic</c>, <c>freedom</c>, or <c>unknown</c>.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("kind")] public string Kind { get; set; }
+	/// <summary>Whether the section is typed (its module entity declares a type column).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("isTyped")] public bool IsTyped { get; set; }
 }
 
+/// <summary>A Classic <c>SysModuleEdit</c> edit page (optionally per type) bound to the entity, with its add mini page.</summary>
 public sealed class MigrationEditPageInfo {
+	/// <summary>The type-column value this edit page is registered for (empty for the default page).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("typeColumnValue")] public string TypeColumnValue { get; set; }
+	/// <summary>Name of the card (edit page) schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("cardSchema")] public string CardSchema { get; set; }
+	/// <summary>UId of the card schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("cardSchemaUId")] public string CardSchemaUId { get; set; }
+	/// <summary>Parent template name of the card schema (drives the <see cref="Kind"/> classification).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("template")] public string Template { get; set; }
+	/// <summary>Migration classification of the card: <c>classic</c> or <c>freedom</c>.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("kind")] public string Kind { get; set; } // classic | freedom
+	/// <summary>Name of the add mini page schema, when one is registered.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageSchema")] public string MiniPageSchema { get; set; }
+	/// <summary>UId of the add mini page schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageSchemaUId")] public string MiniPageSchemaUId { get; set; }
+	/// <summary>Parent template name of the mini page schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageTemplate")] public string MiniPageTemplate { get; set; }
+	/// <summary>Migration classification of the mini page: <c>classic</c>, <c>freedom</c>, or <c>unknown</c>.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageKind")] public string MiniPageKind { get; set; }
+	/// <summary>The mini page modes registration string.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageModes")] public string MiniPageModes { get; set; }
 }
 
+/// <summary>Response of the <c>list-entity-client-schemas</c> command: the entity's resolved page-role graph.</summary>
 public sealed class ListEntityClientSchemasResponse {
+	/// <summary>Whether the page-role graph was resolved.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("success")] public bool Success { get; set; }
+	/// <summary>The resolved entity schema name.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("entity")] public string Entity { get; set; }
+	/// <summary>UId of the entity's base schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("entityUId")] public string EntityUId { get; set; }
+	/// <summary>Classic sections bound to the entity.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("sections")] public List<MigrationSectionInfo> Sections { get; set; }
+	/// <summary>Classic edit pages (including per-type pages) bound to the entity.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("editPages")] public List<MigrationEditPageInfo> EditPages { get; set; }
+	/// <summary>Non-fatal warnings (e.g. a lookup that hit its rowCount cap); <c>null</c> when none.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("warnings")] public List<string> Warnings { get; set; }
+	/// <summary>Advisory note describing scope and how to interpret an empty result.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("note")] public string Note { get; set; }
+	/// <summary>Failure reason when <see cref="Success"/> is <c>false</c>; <c>null</c> otherwise.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("error")] public string Error { get; set; }
 }
 
+/// <summary>
+/// Resolves the Classic UI page-role graph of an entity (sections, edit pages, add mini pages) via DataService
+/// ESQ and classifies each page as <c>classic</c>, <c>freedom</c>, or <c>unknown</c> for a Classic-&gt;Freedom
+/// migration. One level only — callers recurse into detail entities by invoking the command per detail entity.
+/// </summary>
 public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
 
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
@@ -89,6 +125,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 
+	/// <summary>Initializes a new instance of the <see cref="ListEntityClientSchemasCommand"/> class.</summary>
 	public ListEntityClientSchemasCommand(
 		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
 		_applicationClient = applicationClient;
@@ -96,6 +133,14 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		_logger = logger;
 	}
 
+	/// <summary>
+	/// Resolves the entity's Classic UI page-role graph. Returns <c>true</c> with a populated
+	/// <paramref name="response"/> on success; <c>false</c> with <see cref="ListEntityClientSchemasResponse.Error"/>
+	/// set when the entity cannot be resolved or a DataService call fails.
+	/// </summary>
+	/// <param name="options">The command options carrying the entity name and environment.</param>
+	/// <param name="response">The resolved page-role graph, or a failure envelope.</param>
+	/// <returns><c>true</c> when the graph was resolved; otherwise <c>false</c>.</returns>
 	public virtual bool TryResolve(ListEntityClientSchemasOptions options, out ListEntityClientSchemasResponse response) {
 		try {
 			if (string.IsNullOrWhiteSpace(options.EntityName)) {
@@ -192,6 +237,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		}
 	}
 
+	/// <summary>Classifies a parent template name as <c>freedom</c>, <c>classic</c>, or <c>unknown</c>.</summary>
 	internal static string ClassifyKind(string template) {
 		if (string.IsNullOrWhiteSpace(template)) return "unknown";
 		template = template.Trim();
@@ -243,6 +289,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		return DataServiceSelectResponse.ReadRows(json);
 	}
 
+	/// <inheritdoc />
 	public override int Execute(ListEntityClientSchemasOptions options) {
 		bool success = TryResolve(options, out ListEntityClientSchemasResponse response);
 		_logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));

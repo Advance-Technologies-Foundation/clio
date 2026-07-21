@@ -52,6 +52,35 @@ public class DataServiceSelectResponseTests {
 	}
 
 	[Test]
+	[Description("A successful envelope carrying the nullable errorInfo field (errorInfo:null) returns rows, not a failure.")]
+	public void ReadRows_Should_Return_Rows_When_Successful_Envelope_Carries_Null_ErrorInfo() {
+		// Arrange - a common Creatio success shape carries the nullable envelope field as errorInfo:null; in
+		// Newtonsoft this parses to a JValue of type Null (NOT C# null), which must not be read as a failure.
+		string json = """{"success":true,"errorInfo":null,"rows":[{"Name":"A"}]}""";
+
+		// Act
+		JArray rows = DataServiceSelectResponse.ReadRows(json);
+
+		// Assert
+		rows.Should().HaveCount(1, because: "errorInfo:null is a success shape, not a failure signal, so the rows must be returned");
+	}
+
+	[Test]
+	[Description("A failure envelope with errorInfo:null still throws via success:false without an opaque JValue-indexing error.")]
+	public void ReadRows_Should_Throw_Cleanly_When_Failure_Envelope_Has_Null_ErrorInfo() {
+		// Arrange - success:false wins the failure gate; reading errorInfo["message"] must not throw a
+		// JValue-indexing exception when errorInfo is JSON null, and must fall back to the responseStatus message.
+		string json = """{"success":false,"errorInfo":null,"responseStatus":{"Message":"denied"}}""";
+
+		// Act
+		Action act = () => DataServiceSelectResponse.ReadRows(json);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "success:false is a failure regardless of the null errorInfo")
+			.WithMessage("*denied*");
+	}
+
+	[Test]
 	[Description("A responseStatus error envelope also throws so the real error is surfaced, not read as zero rows.")]
 	public void ReadRows_Should_Throw_When_ResponseStatus_Carries_ErrorCode() {
 		// Arrange

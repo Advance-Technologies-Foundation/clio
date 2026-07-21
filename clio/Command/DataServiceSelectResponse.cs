@@ -19,10 +19,17 @@ internal static class DataServiceSelectResponse {
 
 	public static JArray ReadRows(string json) {
 		JObject parsed = JObject.Parse(json);
+		// A JSON `"errorInfo": null` — a common success shape — parses in Newtonsoft to a JValue of type Null,
+		// which is NOT C# null, so a bare `parsed["errorInfo"] != null` test misfires on an otherwise successful
+		// envelope and takes the failure branch (and then throws an opaque JValue-indexing error reading
+		// `["message"]`). Only an actual error object is a failure signal; `as JObject` yields C# null for both
+		// the absent and the JSON-null case, so the failure gate keys on `success == false` / a real errorInfo
+		// object / a responseStatus error — matching the `success == false` convention every other consumer uses.
+		JObject errorInfo = parsed["errorInfo"] as JObject;
 		if (parsed["success"]?.Value<bool?>() == false
-			|| parsed["errorInfo"] != null
+			|| errorInfo != null
 			|| !string.IsNullOrEmpty(parsed["responseStatus"]?["ErrorCode"]?.Value<string>())) {
-			string message = parsed["errorInfo"]?["message"]?.Value<string>()
+			string message = errorInfo?["message"]?.Value<string>()
 				?? parsed["responseStatus"]?["Message"]?.Value<string>()
 				?? "Creatio DataService returned a failure response with no rows";
 			throw new InvalidOperationException($"SelectQuery failed: {message}");
