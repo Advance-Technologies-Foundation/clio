@@ -16,8 +16,11 @@ public sealed class GetClassicMigrationBundleTool(
 	internal const string ToolName = "get-classic-migration-bundle";
 
 	// ReadOnly=false: the tool's whole purpose is a local file write (the manifest). Destructive stays
-	// false in line with the schema-read family: the default path is confined to the resolved anchor
-	// (schema-name is format-validated), matching the get-page/PageFileWriter trade.
+	// false in line with the schema-read family (get-client-unit-schema, sql-schema-get), which likewise
+	// accept an arbitrary output-file and write it verbatim while staying non-destructive. Only the DEFAULT
+	// (no output-file) path is confined to the resolved anchor with a format-validated schema-name; an
+	// explicit output-file is written as given — the same trade as the sibling schema-get tools, NOT
+	// get-page/PageFileWriter (which always re-nests every write under an anchor).
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Assemble a Classic->Freedom migration bundle for a classic page schema and WRITE it to disk as a manifest " +

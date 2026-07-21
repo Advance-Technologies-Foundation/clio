@@ -80,6 +80,15 @@ internal static class SchemaDesignerHelper {
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
 		SchemaDesignerKind kind) {
+		// The deterministic top-layer (most-derived) resolution is SCOPED to ClientUnit — the only kind the
+		// Classic->Freedom migration path needs it for. SqlScript/SourceCode keep the pre-PR single-row pick:
+		// ResolveSchemaUId is a shared, kind-generic helper also used by SqlSchemaUpdate/SqlSchemaInstall
+		// (which executes raw SQL against the DB) and SourceCodeSchemaUpdate, none of which are covered by
+		// multi-layer resolution tests. Silently redirecting which physical layer those commands write to /
+		// execute against is out of scope for this PR (see PR #937 review); modernize those kinds separately.
+		if (kind != SchemaDesignerKind.ClientUnit) {
+			return ResolveSchemaUIdSingle(client, urlBuilder, schemaName, kind);
+		}
 		(IReadOnlyList<SchemaLayer> layers, string error) = EnumerateSchemaLayers(client, urlBuilder, schemaName, kind);
 		if (error != null)
 			return (null, error);
@@ -88,6 +97,27 @@ internal static class SchemaDesignerHelper {
 		// Layers are ordered base->top; the top (most-derived) layer wins for a single-schema resolve, so a
 		// multi-layer classic name always resolves to the same UId instead of a DB-order-dependent random layer.
 		string uId = layers[layers.Count - 1].UId;
+		if (string.IsNullOrWhiteSpace(uId))
+			return (null, $"Schema '{schemaName}' metadata is missing UId");
+		return (uId, null);
+	}
+
+	// Pre-PR single-row resolution preserved verbatim for the non-ClientUnit kinds (SqlScript/SourceCode):
+	// a UId-by-name query capped at one row, taking that row's UId. Kept deliberately unchanged so the layer
+	// the Sql/SourceCode update/install commands target is not altered by this PR (see ResolveSchemaUId).
+	private static (string uId, string error) ResolveSchemaUIdSingle(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		string schemaName,
+		SchemaDesignerKind kind) {
+		var query = BuildSelectUIdByName(schemaName, kind.ManagerName);
+		string url = urlBuilder.Build(SelectQueryRoute);
+		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
+		JObject selectResponse = JObject.Parse(responseJson);
+		var rows = selectResponse["rows"] as JArray ?? [];
+		if (rows.Count == 0)
+			return (null, $"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')");
+		string uId = rows[0]["UId"]?.ToString();
 		if (string.IsNullOrWhiteSpace(uId))
 			return (null, $"Schema '{schemaName}' metadata is missing UId");
 		return (uId, null);
@@ -301,6 +331,49 @@ internal static class SchemaDesignerHelper {
 		if (string.IsNullOrWhiteSpace(body))
 			return (null, "body (or body-file) is required and must not be empty");
 		return (body, null);
+	}
+
+	// Pre-PR UId-by-name query (single row) used by ResolveSchemaUIdSingle for the non-ClientUnit kinds.
+	private static JObject BuildSelectUIdByName(string schemaName, string managerName) {
+		return new JObject {
+			["rootSchemaName"] = "SysSchema",
+			["operationType"] = 0,
+			["columns"] = new JObject {
+				["items"] = new JObject {
+					["UId"] = new JObject {
+						["expression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "UId" }
+					}
+				}
+			},
+			["filters"] = new JObject {
+				["filterType"] = 6,
+				["logicalOperation"] = 0,
+				["isEnabled"] = true,
+				["items"] = new JObject {
+					["byName"] = new JObject {
+						["filterType"] = 1,
+						["comparisonType"] = 3,
+						["isEnabled"] = true,
+						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "Name" },
+						["rightExpression"] = new JObject {
+							[ExpressionTypeKey] = 2,
+							["parameter"] = new JObject { ["dataValueType"] = 1, [ValueKey] = schemaName }
+						}
+					},
+					["byManager"] = new JObject {
+						["filterType"] = 1,
+						["comparisonType"] = 3,
+						["isEnabled"] = true,
+						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "ManagerName" },
+						["rightExpression"] = new JObject {
+							[ExpressionTypeKey] = 2,
+							["parameter"] = new JObject { ["dataValueType"] = 1, [ValueKey] = managerName }
+						}
+					}
+				}
+			},
+			["rowCount"] = 1
+		};
 	}
 
 	private static JObject BuildSelectLayersByName(string schemaName, string managerName) {

@@ -3,14 +3,14 @@ namespace Clio.Tests.Command;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
-[Category("Unit")]
 [Property("Module", "Command")]
-public sealed class GetClientUnitSchemaCommandTests {
+internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitSchemaOptions> {
 	private const string TestBase = "http://test";
 	private const string SelectQueryUrl = TestBase + "/DataService/json/SyncReply/SelectQuery";
 	private const string GetSchemaUrl = TestBase + "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
@@ -59,19 +59,35 @@ public sealed class GetClientUnitSchemaCommandTests {
 	private string _writtenPath;
 	private string _writtenContent;
 
-	[SetUp]
-	public void SetUp() {
-		_applicationClient = Substitute.For<IApplicationClient>();
-		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		_fileSystem = Substitute.For<IFileSystem>();
-		_logger = Substitute.For<ILogger>();
+	public override void Setup() {
+		base.Setup();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
 		_writtenPath = null;
 		_writtenContent = null;
 		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
 			.Do(ci => { _writtenPath = ci.ArgAt<string>(0); _writtenContent = ci.ArgAt<string>(1); });
-		_command = new GetClientUnitSchemaCommand(_applicationClient, _serviceUrlBuilder, _fileSystem, _logger);
+		_command = Container.GetRequiredService<GetClientUnitSchemaCommand>();
+	}
+
+	public override void TearDown() {
+		_applicationClient.ClearReceivedCalls();
+		_serviceUrlBuilder.ClearReceivedCalls();
+		_fileSystem.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
+		base.TearDown();
+	}
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
+		_applicationClient = Substitute.For<IApplicationClient>();
+		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_fileSystem = Substitute.For<IFileSystem>();
+		_logger = Substitute.For<ILogger>();
+		containerBuilder.AddSingleton(_applicationClient);
+		containerBuilder.AddSingleton(_serviceUrlBuilder);
+		containerBuilder.AddSingleton(_fileSystem);
+		containerBuilder.AddSingleton(_logger);
 	}
 
 	[Test]
@@ -210,5 +226,25 @@ public sealed class GetClientUnitSchemaCommandTests {
 
 		result.Should().BeFalse();
 		response.Error.Should().Contain("UsrHelper").And.Contain("ClientUnitSchemaDesignerService");
+	}
+
+	[Test]
+	[Description("TryGetSchema fails when a --schema-uid load bypasses name resolution but GetSchema returns no schema object; the error names the requested UId and the designer service.")]
+	public void TryGetSchema_Fails_When_SchemaUid_Load_Returns_No_Schema_Object() {
+		// Arrange — schema-uid drives a direct load; no SelectQuery is stubbed because name resolution is bypassed,
+		// and the designer service answers with no "schema" node so the load fails
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": false}""");
+		var options = new GetClientUnitSchemaOptions { SchemaUId = SchemaUId };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a schema-uid load that returns no schema object cannot produce a body");
+		response.Success.Should().BeFalse(because: "the command must report failure when the load fails");
+		response.Error.Should().Contain(SchemaUId).And.Contain("ClientUnitSchemaDesignerService",
+			because: "with no schema name the error labels the load by the requested UId and names the designer service");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SelectQueryUrl, Arg.Any<string>());
 	}
 }

@@ -572,6 +572,147 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_writtenContent.Should().BeNull(because: "no manifest is written when enumeration fails");
 	}
 
+	[Test]
+	[Description("TryAssembleBundle caps detailSchemas at MaxDetails (50) and warns when the page body resolves more than fifty distinct details.")]
+	public void TryAssembleBundle_ShouldCapDetailSchemasAtMaxDetails_WhenMoreThanFiftyDetailsResolve() {
+		// Arrange — 55 distinct, individually resolvable detail references on one page (55 < collectionCap 100)
+		const int detailReferenceCount = 55;
+		var detailRefs = new List<string>();
+		for (int i = 0; i < detailReferenceCount; i++) {
+			string detail = "UsrDetail" + i;
+			detailRefs.Add("schemaName: \"" + detail + "\"");
+			AddLayer(detail, "uid-" + detail, "UsrApp", 200);
+			AddSchema("uid-" + detail, "define(\"" + detail + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { " +
+			string.Join(", ", detailRefs) + " } }; });",
+			EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.DetailCount.Should().Be(50,
+			because: "detail gathering is capped at MaxDetails (50) resolved schemas even when more resolve");
+		JObject manifest = JObject.Parse(_writtenContent);
+		((JObject)manifest["detailSchemas"]).Count.Should().Be(50,
+			because: "only the first fifty resolvable details are folded into the manifest");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
+	}
+
+	[Test]
+	[Description("TryAssembleBundle stops collecting detail-schema references at collectionCap (100) and warns when a body names more references than the cap.")]
+	public void TryAssembleBundle_ShouldStopDetailNameCollection_WhenMoreThanCollectionCapReferences() {
+		// Arrange — 105 distinct references, over collectionCap (MaxDetails * 2 = 100); none need to resolve
+		const int detailReferenceCount = 105;
+		var detailRefs = new List<string>();
+		for (int i = 0; i < detailReferenceCount; i++) {
+			detailRefs.Add("schemaName: \"UsrDetail" + i + "\"");
+		}
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { " +
+			string.Join(", ", detailRefs) + " } }; });",
+			EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "an over-cap reference list truncates collection, it does not fail the bundle");
+		response.DetailCount.Should().Be(0,
+			because: "none of the referenced details were registered, so none resolve into the manifest");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("More than 100 distinct detail-schema references")));
+	}
+
+	[Test]
+	[Description("TryAssembleBundle bounds childPageSchemas at fifty because child pages come only from the (MaxDetails-capped) detail set, and the detail cap warning is emitted.")]
+	public void TryAssembleBundle_ShouldCapChildPages_WhenManyDetailsEachReferenceAnEditPage() {
+		// Arrange — 55 distinct details, each naming its own resolvable child edit page
+		const int detailReferenceCount = 55;
+		var detailRefs = new List<string>();
+		for (int i = 0; i < detailReferenceCount; i++) {
+			string detail = "UsrDetail" + i;
+			string childPage = "UsrChildPage" + i;
+			detailRefs.Add("schemaName: \"" + detail + "\"");
+			AddLayer(detail, "uid-" + detail, "UsrApp", 200);
+			AddSchema("uid-" + detail,
+				"define(\"" + detail + "\", [], function() { return { getEditPageName: function() { return \"" + childPage + "\"; } }; });",
+				EmptyGuid, "UsrApp");
+			AddLayer(childPage, "uid-" + childPage, "UsrApp", 200);
+			AddSchema("uid-" + childPage, "define(\"" + childPage + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { " +
+			string.Join(", ", detailRefs) + " } }; });",
+			EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.ChildPageCount.Should().Be(50,
+			because: "child pages come only from the fifty resolved details, so the set is bounded at MaxChildPages (50)");
+		JObject manifest = JObject.Parse(_writtenContent);
+		((JObject)manifest["childPageSchemas"]).Count.Should().Be(50,
+			because: "exactly fifty child edit pages are nested into the manifest");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
+	}
+
+	[Test]
+	[Description("TryAssembleBundle warns that the parent-template walk stopped at the depth cap when the chain is deeper than MaxParentDepth (20) with a parent still to follow.")]
+	public void TryAssembleBundle_ShouldWarnDepthCap_WhenParentWalkExceedsMaxParentDepth() {
+		// Arrange — a page whose parent chain is 21 distinct levels deep (uid-p1 -> ... -> uid-p21)
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-p1", "UsrApp");
+		for (int i = 1; i <= 20; i++) {
+			AddSchema("uid-p" + i, "define(\"Tpl\", [], function() { return {}; });", "uid-p" + (i + 1), "Core");
+		}
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a truncated seed still produces a usable bundle, it does not fail assembly");
+		response.SeedCount.Should().Be(20,
+			because: "exactly MaxParentDepth (20) parent levels are walked before the cap stops the walk");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
+	}
+
+	[Test]
+	[Description("TryAssembleBundle warns that the parent-template walk stopped on a cycle when the parent chain revisits a UId (page -> A -> B -> A).")]
+	public void TryAssembleBundle_ShouldWarnCycle_WhenParentWalkRevisitsUid() {
+		// Arrange — a parent chain that loops back on itself: uid-a -> uid-b -> uid-a
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-a", "UsrApp");
+		AddSchema("uid-a", "define(\"Tpl\", [], function() { return {}; });", "uid-b", "Core");
+		AddSchema("uid-b", "define(\"Tpl\", [], function() { return {}; });", "uid-a", "Core");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a cycle truncates the seed but still yields a usable bundle");
+		response.SeedCount.Should().Be(2,
+			because: "only the two distinct parent layers are seeded before the cycle stops the walk");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("cycle")));
+	}
+
 	// --- fake-environment helpers ------------------------------------------------------------------
 
 	private string Route(string requestBody) {

@@ -260,6 +260,162 @@ public sealed class SchemaDesignerHelperTests {
 		layers.Should().BeEmpty(because: "no layers are returned when the query fails");
 	}
 
+	[Test]
+	[Description("EnumerateSchemaLayersBatch returns every requested name, mapping a found name to its ordered layers and a missing name to an empty list.")]
+	public void EnumerateSchemaLayersBatch_ShouldReturnEmptyListForMissingName_WhenSomeNamesResolve() {
+		// Arrange — the response carries layers only for "Found"; "Missing" has no rows at all
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
+			("uid-found-top", "Found", "SalesEnterprise", 438),
+			("uid-found-base", "Found", "CrtUIv2", 115)));
+
+		// Act
+		(var layersByName, string error) = SchemaDesignerHelper.EnumerateSchemaLayersBatch(
+			client, urlBuilder, new[] { "Found", "Missing" }, SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		error.Should().BeNull(because: "a well-formed batch response is not an error");
+		layersByName.Should().ContainKey("Found",
+			because: "a requested name that resolves must be present in the result");
+		layersByName.Should().ContainKey("Missing",
+			because: "every requested name is pre-seeded so callers can memoize not-found without re-querying");
+		layersByName["Found"].Should().HaveCount(2,
+			because: "both layers of the found schema must be enumerated, one per package");
+		layersByName["Found"][0].UId.Should().Be("uid-found-base",
+			because: "the found name's layers must be ordered base->top by hierarchy level");
+		layersByName["Found"][^1].UId.Should().Be("uid-found-top",
+			because: "the most-derived layer of the found name must sort last");
+		layersByName["Missing"].Should().BeEmpty(
+			because: "a requested name with no rows must map to an empty list, not be dropped");
+	}
+
+	[Test]
+	[Description("EnumerateSchemaLayersBatch ignores rows whose Name was not requested, without throwing.")]
+	public void EnumerateSchemaLayersBatch_ShouldIgnoreUnrequestedNames_WhenResponseHasExtraRows() {
+		// Arrange — the response includes a row for "Unwanted", which was never requested
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
+			("uid-wanted", "Wanted", "UsrCustom", 500),
+			("uid-unwanted", "Unwanted", "UsrOther", 500)));
+
+		// Act
+		(var layersByName, string error) = SchemaDesignerHelper.EnumerateSchemaLayersBatch(
+			client, urlBuilder, new[] { "Wanted" }, SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		error.Should().BeNull(because: "a response with extra rows is still a valid batch result");
+		layersByName.Should().ContainKey("Wanted",
+			because: "the requested name must be present in the result");
+		layersByName.Should().NotContainKey("Unwanted",
+			because: "a row whose Name was not requested must be filtered out client-side");
+		layersByName["Wanted"].Should().ContainSingle(
+			because: "only the requested name's single layer must survive the filter")
+			.Which.UId.Should().Be("uid-wanted", because: "the requested name's layer UId must be preserved");
+	}
+
+	[Test]
+	[Description("EnumerateSchemaLayersBatch surfaces a DataService failure while still returning every requested name mapped to an empty list, so a failure is never memoized as a real empty result.")]
+	public void EnumerateSchemaLayersBatch_ShouldSurfaceErrorButKeepSeededNames_WhenDataServiceReportsFailure() {
+		// Arrange — the DataService returns a failure envelope instead of rows
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(
+			"""{"success": false, "errorInfo": {"message": "Access denied"}}""");
+
+		// Act
+		(var layersByName, string error) = SchemaDesignerHelper.EnumerateSchemaLayersBatch(
+			client, urlBuilder, new[] { "Alpha", "Beta" }, SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		error.Should().NotBeNull(because: "a batch DataService failure must be surfaced, not masked as all-empty");
+		error.Should().Contain("Access denied", because: "the operator needs the underlying failure reason");
+		layersByName.Should().ContainKey("Alpha",
+			because: "the pre-seeded name must remain so a failed run cannot memoize a bogus not-found");
+		layersByName.Should().ContainKey("Beta",
+			because: "every requested name must remain present even on failure");
+		layersByName["Alpha"].Should().BeEmpty(
+			because: "on failure a requested name keeps its pre-seeded empty list rather than a resolved one");
+		layersByName["Beta"].Should().BeEmpty(
+			because: "on failure a requested name keeps its pre-seeded empty list rather than a resolved one");
+	}
+
+	[Test]
+	[Description("EnumerateSchemaLayersBatch short-circuits on empty input: no error, empty result, and no DataService round-trip.")]
+	public void EnumerateSchemaLayersBatch_ShouldNotQuery_WhenNoNamesRequested() {
+		// Arrange
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse());
+
+		// Act
+		(var layersByName, string error) = SchemaDesignerHelper.EnumerateSchemaLayersBatch(
+			client, urlBuilder, Array.Empty<string>(), SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		error.Should().BeNull(because: "an empty request is not an error, just a no-op");
+		layersByName.Should().BeEmpty(because: "no requested names means no result entries");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
+	[Test]
+	[Description("EnumerateSchemaLayersBatch orders a single name's layers base->top by hierarchy level, breaking equal-level ties by package name, regardless of DB row order.")]
+	public void EnumerateSchemaLayersBatch_ShouldOrderLayersBaseToTop_WhenNameHasMultipleLayers() {
+		// Arrange — rows returned out of order, including two siblings at the same hierarchy level
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
+			("uid-top", "MultiPage", "SalesEnterprise", 438),
+			("uid-mid-z", "MultiPage", "ZMid", 365),
+			("uid-base", "MultiPage", "CrtUIv2", 115),
+			("uid-mid-a", "MultiPage", "AMid", 365)));
+
+		// Act
+		(var layersByName, string error) = SchemaDesignerHelper.EnumerateSchemaLayersBatch(
+			client, urlBuilder, new[] { "MultiPage" }, SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		error.Should().BeNull(because: "a well-formed multi-layer response is not an error");
+		var layers = layersByName["MultiPage"];
+		layers.Should().HaveCount(4, because: "every layer of the name must be enumerated");
+		layers[0].UId.Should().Be("uid-base",
+			because: "the lowest hierarchy level (115) is the base layer and must sort first");
+		layers[1].PackageName.Should().Be("AMid",
+			because: "on a hierarchy-level tie (365) the package name must break it ascending");
+		layers[2].PackageName.Should().Be("ZMid",
+			because: "the alphabetically-later sibling at the tied level sorts after");
+		layers[^1].UId.Should().Be("uid-top",
+			because: "the highest hierarchy level (438) is the most-derived top layer and must sort last");
+	}
+
+	[Test]
+	[Description("ResolveSchemaUId returns the highest-hierarchy-level layer's UId for a multi-layer ClientUnit schema, not a DB-order-dependent one.")]
+	public void ResolveSchemaUId_ShouldReturnHighestHierarchyLayer_WhenClientUnitHasMultipleLayers() {
+		// Arrange — the top layer (highest level) is deliberately not the first row returned
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
+			("uid-mid", "OrderPageV2", "Case", 365),
+			("uid-top", "OrderPageV2", "SalesEnterprise", 438),
+			("uid-base", "OrderPageV2", "CrtUIv2", 115)));
+
+		// Act
+		(string uId, string error) = SchemaDesignerHelper.ResolveSchemaUId(
+			client, urlBuilder, "OrderPageV2", SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		error.Should().BeNull(because: "a resolvable multi-layer ClientUnit schema must not report an error");
+		uId.Should().Be("uid-top",
+			because: "ClientUnit resolution must return the highest-hierarchy-level (top) layer deterministically");
+	}
+
+	[Test]
+	[Description("ResolveSchemaUId for a non-ClientUnit kind (SqlScript) keeps the pre-PR single-row behavior and returns rows[0].UId, NOT the highest-hierarchy-level row.")]
+	public void ResolveSchemaUId_ShouldReturnFirstRowUId_WhenKindIsSqlScript() {
+		// Arrange — rows[0] is deliberately NOT the highest-hierarchy-level row, to distinguish the two behaviors
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
+			("uid-first", "UsrSqlScript", "CrtUIv2", 115),
+			("uid-highest", "UsrSqlScript", "SalesEnterprise", 438)));
+
+		// Act
+		(string uId, string error) = SchemaDesignerHelper.ResolveSchemaUId(
+			client, urlBuilder, "UsrSqlScript", SchemaDesignerKind.SqlScript);
+
+		// Assert
+		error.Should().BeNull(because: "a resolvable SqlScript schema must not report an error");
+		uId.Should().Be("uid-first",
+			because: "SqlScript/SourceCode kinds keep the pre-PR single-row pick (rows[0].UId), scoped away from top-layer resolution");
+	}
+
 	// Builds an IApplicationClient/IServiceUrlBuilder pair whose SelectQuery POST returns the given response JSON,
 	// regardless of the URL, body, or optional timeout/retry arguments.
 	private static (IApplicationClient client, IServiceUrlBuilder urlBuilder) MakeSelectQueryClient(string responseJson) {
@@ -277,6 +433,21 @@ public sealed class SchemaDesignerHelperTests {
 			array.Add(new JObject {
 				["UId"] = uid,
 				["Name"] = "ContactPageV2",
+				["PackageName"] = package,
+				["HierarchyLevel"] = level
+			});
+		}
+		return new JObject { ["rows"] = array }.ToString();
+	}
+
+	// Builds a canned DataService SelectQuery response with one row per (UId, Name, package, hierarchy level),
+	// letting a test cover many schema names in a single batch response.
+	private static string NamedLayersResponse(params (string uid, string name, string package, int level)[] rows) {
+		var array = new JArray();
+		foreach ((string uid, string name, string package, int level) in rows) {
+			array.Add(new JObject {
+				["UId"] = uid,
+				["Name"] = name,
 				["PackageName"] = package,
 				["HierarchyLevel"] = level
 			});

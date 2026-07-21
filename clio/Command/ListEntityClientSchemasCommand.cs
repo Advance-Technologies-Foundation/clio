@@ -50,8 +50,8 @@ public sealed class MigrationEditPageInfo {
 	[System.Text.Json.Serialization.JsonPropertyName("cardSchemaUId")] public string CardSchemaUId { get; set; }
 	/// <summary>Parent template name of the card schema (drives the <see cref="Kind"/> classification).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("template")] public string Template { get; set; }
-	/// <summary>Migration classification of the card: <c>classic</c> or <c>freedom</c>.</summary>
-	[System.Text.Json.Serialization.JsonPropertyName("kind")] public string Kind { get; set; } // classic | freedom
+	/// <summary>Migration classification of the card: <c>classic</c>, <c>freedom</c>, or <c>unknown</c>.</summary>
+	[System.Text.Json.Serialization.JsonPropertyName("kind")] public string Kind { get; set; }
 	/// <summary>Name of the add mini page schema, when one is registered.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageSchema")] public string MiniPageSchema { get; set; }
 	/// <summary>UId of the add mini page schema.</summary>
@@ -92,6 +92,11 @@ public sealed class ListEntityClientSchemasResponse {
 public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
 
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
+	// Migration classification values emitted in MigrationSectionInfo.Kind / MigrationEditPageInfo.Kind /
+	// MigrationEditPageInfo.MiniPageKind. `unknown` covers a missing template or one in neither known set.
+	private const string KindClassic = "classic";
+	private const string KindFreedom = "freedom";
+	private const string KindUnknown = "unknown";
 	private const int EntityRowCount = 50;
 	private const int SectionRowCount = 100;
 	private const int EditPageRowCount = 100;
@@ -239,13 +244,13 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 
 	/// <summary>Classifies a parent template name as <c>freedom</c>, <c>classic</c>, or <c>unknown</c>.</summary>
 	internal static string ClassifyKind(string template) {
-		if (string.IsNullOrWhiteSpace(template)) return "unknown";
+		if (string.IsNullOrWhiteSpace(template)) return KindUnknown;
 		template = template.Trim();
 		if (FreedomTemplates.Contains(template))
-			return "freedom";
+			return KindFreedom;
 		if (ClassicTemplates.Contains(template))
-			return "classic";
-		return "unknown";
+			return KindClassic;
+		return KindUnknown;
 	}
 
 	private static (string uId, string error) ResolveEntityUId(string entityName, JArray rows) {

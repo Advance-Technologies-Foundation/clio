@@ -375,13 +375,25 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		var seededTemplateNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var seededLayerUIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		JObject current = topSchema;
-		for (int depth = 0; depth < MaxParentDepth; depth++) {
+		int depth = 0;
+		while (true) {
 			string parentUId = (current?["parent"] as JObject)?["uId"]?.ToString();
 			if (string.IsNullOrWhiteSpace(parentUId) || string.Equals(parentUId, EmptyGuid, StringComparison.OrdinalIgnoreCase)) {
+				break; // reached the base template — a clean, complete walk
+			}
+			if (depth >= MaxParentDepth) {
+				// Depth cap hit with a parent still to follow: the seed is truncated. Say so, or a truncated
+				// seed looks identical to a page that simply has no more parents (parity with the other exits).
+				_logger.WriteWarning(
+					$"Parent-template walk stopped at the depth cap ({MaxParentDepth}); the seed may be truncated " +
+					$"(next unwalked parent '{parentUId}').");
 				break;
 			}
 			if (!visitedParentUId.Add(parentUId)) {
-				break; // cycle guard on the parent-link walk
+				// Cycle on the parent-link walk: stop and say so — silently truncating hides a corrupt chain.
+				_logger.WriteWarning(
+					$"Parent-template walk stopped on a cycle at '{parentUId}'; the seed may be truncated.");
+				break;
 			}
 			(JObject parentLayer, string error) = LoadSchemaCached(ctx, parentUId, null);
 			if (error != null || parentLayer == null) {
@@ -392,6 +404,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			}
 			levels.Add(LoadParentLevelLayers(ctx, parentUId, parentLayer, seededTemplateNames, seededLayerUIds));
 			current = parentLayer; // continue up from the linked layer's own parent
+			depth++;
 		}
 		levels.Reverse(); // base template first, most-derived template last
 		var seed = new JArray();
