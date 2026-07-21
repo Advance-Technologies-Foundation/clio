@@ -108,13 +108,13 @@ internal static class SchemaDesignerHelper {
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
 		JObject selectResponse = JObject.Parse(responseJson);
-		// Surface an explicit DataService failure (permission/auth/etc.: success:false with errorInfo and no
-		// rows) instead of masking it as an empty result — otherwise the caller reports a misleading "not found".
-		if (selectResponse["success"]?.Value<bool>() == false) {
-			string failure = selectResponse["errorInfo"]?["message"]?.ToString();
-			return ([], string.IsNullOrWhiteSpace(failure)
-				? $"SelectQuery for schema '{schemaName}' failed"
-				: $"SelectQuery for schema '{schemaName}' failed: {failure}");
+		// Surface an explicit DataService failure instead of masking it as an empty result — otherwise the
+		// caller reports a misleading "not found". Route through the shared SelectQuery detector so this keys
+		// failure off the same three signals as ReadRows (success:false / an errorInfo object / a
+		// responseStatus error), not the weaker success-only check that misses errorInfo/responseStatus-only
+		// failures (e.g. restricted SysSchema access) and throws on a "success":null token.
+		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure)) {
+			return ([], $"SelectQuery for schema '{schemaName}' failed: {failure}");
 		}
 		var rows = selectResponse["rows"] as JArray ?? [];
 		// Sort client-side as the authoritative order so the result is deterministic regardless of the row
@@ -154,11 +154,10 @@ internal static class SchemaDesignerHelper {
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
 		JObject selectResponse = JObject.Parse(responseJson);
-		if (selectResponse["success"]?.Value<bool>() == false) {
-			string failure = selectResponse["errorInfo"]?["message"]?.ToString();
-			return (layersByName, string.IsNullOrWhiteSpace(failure)
-				? "SelectQuery for schema layer batch failed"
-				: $"SelectQuery for schema layer batch failed: {failure}");
+		// Same shared SelectQuery failure detection as EnumerateSchemaLayers: a batch failure must not be
+		// read as "every requested name is empty", which PrimeLayerBatch would then memoize for the whole run.
+		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure)) {
+			return (layersByName, $"SelectQuery for schema layer batch failed: {failure}");
 		}
 		var rows = selectResponse["rows"] as JArray ?? [];
 		foreach (var group in rows
@@ -232,7 +231,9 @@ internal static class SchemaDesignerHelper {
 			string label = schemaName ?? schemaUId;
 			// Carry the designer service's own reason (permission, locked package, invalid UId) so a
 			// failed load is diagnosable instead of a generic message — parity with EnumerateSchemaLayers.
-			string failure = response["errorInfo"]?["message"]?.ToString();
+			// `as JObject` keeps a JSON `errorInfo:null` (a JValue of type Null, not C# null) from throwing an
+			// opaque JValue-indexing error when the reason is read.
+			string failure = (response["errorInfo"] as JObject)?["message"]?.ToString();
 			return (null, string.IsNullOrWhiteSpace(failure)
 				? $"Failed to load schema '{label}' via {kind.ServiceName}"
 				: $"Failed to load schema '{label}' via {kind.ServiceName}: {failure}");

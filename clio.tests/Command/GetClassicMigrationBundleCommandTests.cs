@@ -550,6 +550,28 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			because: "an entity reference is not a detail declaration — the heuristic must not fabricate a detail from it");
 	}
 
+	[Test]
+	[Description("TryAssembleBundle surfaces a DataService errorInfo-only failure (no success:false) as the bundle error instead of a misleading not-found.")]
+	public void TryAssembleBundle_ShouldSurfaceDataServiceFailure_WhenSelectQueryReturnsErrorInfoOnly() {
+		// Arrange - the layer-enumeration SelectQuery answers with an errorInfo object and NO success:false
+		// (the restricted-SysSchema shape). The shared detector must classify it as a failure so the bundle
+		// reports the real reason, not "not found" from a silently empty row set.
+		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(
+			"""{ "errorInfo": { "errorCode": "AccessDenied", "message": "Access to SysSchema is denied" } }""");
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a DataService failure envelope cannot produce a bundle");
+		response.Error.Should().Contain("Access to SysSchema is denied",
+			because: "the real DataService reason must surface, not a masked empty-result not-found");
+		response.Error.Should().NotContain("not found",
+			because: "an access failure must not be reported as a missing schema");
+		_writtenContent.Should().BeNull(because: "no manifest is written when enumeration fails");
+	}
+
 	// --- fake-environment helpers ------------------------------------------------------------------
 
 	private string Route(string requestBody) {

@@ -4,13 +4,13 @@ using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
-[Category("Unit")]
 [Property("Module", "Command")]
-public sealed class ListEntityClientSchemasCommandTests {
+internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntityClientSchemasOptions> {
 	private const string SelectQueryUrl = "http://test/DataService/json/SyncReply/SelectQuery";
 	private const string EntityUId = "aaaaaaaa-0000-0000-0000-000000000001";
 	private const string SectionUId = "bbbbbbbb-0000-0000-0000-000000000001";
@@ -23,13 +23,25 @@ public sealed class ListEntityClientSchemasCommandTests {
 	private ILogger _logger;
 	private ListEntityClientSchemasCommand _command;
 
-	[SetUp]
-	public void SetUp() {
+	public override void Setup() {
+		base.Setup();
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
+		_command = Container.GetRequiredService<ListEntityClientSchemasCommand>();
+	}
+
+	public override void TearDown() {
+		_applicationClient.ClearReceivedCalls();
+		base.TearDown();
+	}
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
-		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
-		_command = new ListEntityClientSchemasCommand(_applicationClient, _serviceUrlBuilder, _logger);
+		containerBuilder.AddSingleton(_applicationClient);
+		containerBuilder.AddSingleton(_serviceUrlBuilder);
+		containerBuilder.AddSingleton(_logger);
 	}
 
 	[Test]
@@ -130,5 +142,25 @@ public sealed class ListEntityClientSchemasCommandTests {
 		response.Success.Should().BeFalse(because: "the command should not continue with an unsafe entity UId");
 		response.Error.Should().Contain("ExtendParent=false", because: "the message should explain the missing base-row signal");
 		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl, Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("TryResolve fails with the DataService reason when a SelectQuery returns an errorInfo-only failure envelope (no success:false), not a misleading empty result.")]
+	public void TryResolve_Should_Fail_When_SelectQuery_Returns_ErrorInfo_Only_Failure() {
+		// Arrange - a restricted SysSchema read returns HTTP 200 with an errorInfo object and NO success:false;
+		// the shared DataServiceSelectResponse detector must classify it as a failure, so the whole resolve fails
+		// rather than reading zero rows and reporting a bogus "not found".
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns("""{ "errorInfo": { "errorCode": "AccessDenied", "message": "Access to SysSchema is denied" } }""");
+		var options = new ListEntityClientSchemasOptions { EntityName = "Contact" };
+
+		// Act
+		bool result = _command.TryResolve(options, out ListEntityClientSchemasResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "an errorInfo-only failure envelope is a failure, not an empty entity lookup");
+		response.Success.Should().BeFalse(because: "the command must not continue on a DataService failure");
+		response.Error.Should().Contain("Access to SysSchema is denied",
+			because: "the real DataService reason must surface instead of a misleading not-found message");
 	}
 }

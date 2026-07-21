@@ -19,22 +19,46 @@ internal static class DataServiceSelectResponse {
 
 	public static JArray ReadRows(string json) {
 		JObject parsed = JObject.Parse(json);
-		// A JSON `"errorInfo": null` — a common success shape — parses in Newtonsoft to a JValue of type Null,
-		// which is NOT C# null, so a bare `parsed["errorInfo"] != null` test misfires on an otherwise successful
-		// envelope and takes the failure branch (and then throws an opaque JValue-indexing error reading
-		// `["message"]`). Only an actual error object is a failure signal; `as JObject` yields C# null for both
-		// the absent and the JSON-null case, so the failure gate keys on `success == false` / a real errorInfo
-		// object / a responseStatus error — matching the `success == false` convention every other consumer uses.
-		JObject errorInfo = parsed["errorInfo"] as JObject;
-		if (parsed["success"]?.Value<bool?>() == false
-			|| errorInfo != null
-			|| !string.IsNullOrEmpty(parsed["responseStatus"]?["ErrorCode"]?.Value<string>())) {
-			string message = errorInfo?["message"]?.Value<string>()
-				?? parsed["responseStatus"]?["Message"]?.Value<string>()
-				?? "Creatio DataService returned a failure response with no rows";
+		if (TryGetFailure(parsed, out string message)) {
 			throw new InvalidOperationException($"SelectQuery failed: {message}");
 		}
 
 		return parsed["rows"] as JArray ?? [];
+	}
+
+	/// <summary>
+	/// Classifies a parsed DataService <c>SelectQuery</c> envelope as a failure. This is the single
+	/// authoritative failure-detection policy for the endpoint — <see cref="ReadRows"/> throws on it,
+	/// while tuple-returning callers (e.g. the schema-layer enumerators) surface it as an error string —
+	/// so every consumer keys failure off the same three signals instead of the weaker <c>success</c>-only
+	/// check.
+	/// </summary>
+	/// <param name="parsed">The parsed SelectQuery response envelope.</param>
+	/// <param name="message">
+	/// When the return value is <see langword="true"/>, the human-readable failure reason (the
+	/// <c>errorInfo</c>/<c>responseStatus</c> message, or a stable fallback); otherwise <see langword="null"/>.
+	/// </param>
+	/// <returns><see langword="true"/> when the envelope is a failure; otherwise <see langword="false"/>.</returns>
+	/// <remarks>
+	/// A JSON <c>"errorInfo": null</c> — a common success shape — parses in Newtonsoft to a JValue of type
+	/// Null, which is NOT C# null, so a bare <c>parsed["errorInfo"] != null</c> test misfires on an otherwise
+	/// successful envelope (and then throws an opaque JValue-indexing error reading <c>["message"]</c>).
+	/// <c>as JObject</c> yields C# null for both the absent and the JSON-null case, so only an actual error
+	/// object is a failure signal. <c>success</c> is read via the nullable <c>Value&lt;bool?&gt;()</c> so a
+	/// <c>"success": null</c> token does not throw.
+	/// </remarks>
+	public static bool TryGetFailure(JObject parsed, out string message) {
+		JObject errorInfo = parsed["errorInfo"] as JObject;
+		if (parsed["success"]?.Value<bool?>() == false
+			|| errorInfo != null
+			|| !string.IsNullOrEmpty(parsed["responseStatus"]?["ErrorCode"]?.Value<string>())) {
+			message = errorInfo?["message"]?.Value<string>()
+				?? parsed["responseStatus"]?["Message"]?.Value<string>()
+				?? "Creatio DataService returned a failure response with no rows";
+			return true;
+		}
+
+		message = null;
+		return false;
 	}
 }
