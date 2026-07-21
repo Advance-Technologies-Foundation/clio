@@ -106,14 +106,10 @@
 				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
 
 				<!--
-				 Warning NU1903 : Package 'System.Security.Cryptography.Xml'
-				 10.0.5 has a known high severity vulnerability,
-				 https://github.com/advisories/GHSA-37gx-xxp4-5rgx
-
-				 Temporary workaround: pin to 10.0.6 which contains the fix,
-				 but doesn't have a CVE published yet.
-
-				 Offending package Powershell.SDK
+				 NU1903 : PowerShell.SDK pulls a vulnerable System.Security.Cryptography.Xml
+				 transitively. Pin directly to the patched build (version comes from
+				 Directory.Packages.props, currently 10.0.10 — fixes the GHSA-23rf-6693-g89p
+				 advisory family that flagged 10.0.6/10.0.9).
 				-->
 				<PackageReference Include="System.Security.Cryptography.Xml" />
 			</ItemGroup>
