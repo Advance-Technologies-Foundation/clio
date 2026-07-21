@@ -48,6 +48,14 @@ public sealed class SchemaSyncTool(
 	internal const int MaxAttempts = 3;
 
 	/// <summary>
+	/// Sentinel exit code the retry attempt returns when a durable collision is only observable on a
+	/// re-classify (retry) read. It is distinct from any command exit code so the post-loop code can
+	/// rebuild the structured collision result from the (captured) reclassified plan via the same helper
+	/// as the pre-emptive path, without a separate captured-nullable flag.
+	/// </summary>
+	private const int ReclassifiedCollisionExitCode = int.MinValue;
+
+	/// <summary>
 	/// Backoff applied before each retry of a transient failure. Index 0 is the wait after the first
 	/// attempt, index 1 after the second — worst-case ~3s of added latency per retried step. A
 	/// create-lookup has two retryable steps (create + registration), so its worst case is ~6s, and the
@@ -348,7 +356,6 @@ public sealed class SchemaSyncTool(
 			// side-effect-free, so it cannot duplicate a mutation, and a Collision observed on re-read fails
 			// fast (it is not a transient fault, so the loop never spins on it).
 			SchemaConvergencePlan currentPlan = plan;
-			SchemaConvergencePlan? reclassifyCollision = null;
 			bool reclassify = false;
 			OperationExecution execution = RunAttempts(() => {
 				if (reclassify) {
@@ -357,18 +364,18 @@ public sealed class SchemaSyncTool(
 				reclassify = true;
 				if (currentPlan.Outcome == SchemaConvergenceOutcome.Collision) {
 					// A durable collision only observable on a re-read (near-impossible once the first attempt was
-					// non-collision, since our own apply would land in the target package). Capture the plan and
-					// return a non-zero, message-less exit so RunAttempts fails fast without retrying (a collision
-					// is not a transient fault); the structured collision result (outcome:collision + collision-info)
-					// is built after the loop by the SAME helper as the pre-emptive path, keeping the contract shape.
-					reclassifyCollision = currentPlan;
-					return 1;
+					// non-collision, since our own apply would land in the target package). Return the distinct
+					// message-less ReclassifiedCollisionExitCode so RunAttempts fails fast without retrying (a
+					// collision is not a transient fault); the structured collision result (outcome:collision +
+					// collision-info) is built after the loop from the (captured) currentPlan by the SAME helper as
+					// the pre-emptive path, keeping the contract shape.
+					return ReclassifiedCollisionExitCode;
 				}
 				return ApplyConvergencePlan(currentPlan, op, args, parentSchemaName, extendParent, operationName, titleLocalizations);
 			}, retryBudget);
 
-			if (reclassifyCollision is not null) {
-				return BuildCollisionResult(operationName, op.SchemaName, reclassifyCollision, tenantKey);
+			if (execution.ExitCode == ReclassifiedCollisionExitCode && execution.CaughtException is null) {
+				return BuildCollisionResult(operationName, op.SchemaName, currentPlan, tenantKey);
 			}
 
 			// FR-02: ensure the Lookups registration on EVERY successful create-lookup path (created,
