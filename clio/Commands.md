@@ -357,6 +357,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-classic-migration-bundle"></a>
+<a id="classic-migration-bundle"></a>
+- [`get-classic-migration-bundle`](docs/commands/get-classic-migration-bundle.md) - Assemble a Classic->Freedom migration bundle and write the manifest JSON to disk, `classic-migration-bundle`
 <a id="get-client-unit-schema"></a>
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
@@ -422,6 +425,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="list-entity-client-schemas"></a>
+<a id="migration-unit-resolve"></a>
+- [`list-entity-client-schemas`](docs/commands/list-entity-client-schemas.md) - Resolve the Classic page-role graph (sections, edit pages, mini pages) of an entity, `migration-unit-resolve`
 <a id="list-pages"></a>
 <a id="page-list"></a>
 - [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`

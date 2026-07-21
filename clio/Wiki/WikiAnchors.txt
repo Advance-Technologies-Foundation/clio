@@ -77,6 +77,7 @@ update-theme:update-theme
 delete-theme:delete-theme
 set-user-theme:set-user-theme,apply-user-theme
 get-build-info:get-build-info,bi,buildinfo
+get-classic-migration-bundle:get-classic-migration-bundle,classic-migration-bundle
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
@@ -134,6 +135,7 @@ open-web-app:open-web-app,open
 pack-nuget-pkg:pack-nuget-pkg,pack
 get-page:get-page,page-get
 list-app-sections:list-app-sections
+list-entity-client-schemas:list-entity-client-schemas,migration-unit-resolve
 list-pages:list-pages,page-list
 update-page:update-page,page-update
 create-page:create-page,page-create
