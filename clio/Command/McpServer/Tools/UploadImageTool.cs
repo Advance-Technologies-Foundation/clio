@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Clio.Command.Branding;
 using Clio.Common;
 using ModelContextProtocol.Server;
 

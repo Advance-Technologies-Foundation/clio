@@ -17,7 +17,6 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
-using Clio.Command.Branding;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;

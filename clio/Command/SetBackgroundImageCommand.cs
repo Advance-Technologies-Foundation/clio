@@ -4,7 +4,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command.Branding;
+namespace Clio.Command;
 
 /// <summary>
 /// Options for the <c>set-background-image</c> command.

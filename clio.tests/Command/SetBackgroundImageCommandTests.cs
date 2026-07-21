@@ -1,7 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
-using Clio.Command.Branding;
+using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
