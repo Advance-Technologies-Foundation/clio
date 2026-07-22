@@ -1380,7 +1380,7 @@ internal static class ToolContractCatalog {
 				Field(EntityFieldName, ObjectType, "Created or targeted entity metadata when available."),
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'server-error' (Creatio rejected the operation — fix inputs or server state first)."),
+				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'contention' (insert aborted without a detailed reason — may be parallel creation in one app OR a server-side rejection unrelated to concurrency; no section created (verified); run list-app-sections, create sections one at a time if you were creating them concurrently (clio serializes and auto-retries once), and if a single sequential create still fails treat it as server-side), 'server-error' (Creatio rejected the operation with a real, detailed reason — fix inputs or server state first)."),
 				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
 				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
 			),
@@ -1943,8 +1943,18 @@ internal static class ToolContractCatalog {
 					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
-			[]);
+			[],
+			OdataUnregisteredEntityAntiPatterns());
 	}
+
+	// Shared by odata-read and odata-create: both funnel through ODataResponseError.TryDetect and
+	// surface the identical routing-error hint, so the anti-pattern text is derived from the single
+	// UnregisteredEntityHint constant to keep the two contracts from drifting apart.
+	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns() => [
+		new ToolAntiPattern(
+			"Reading or writing a freshly-created custom object or lookup by entity name immediately after creating it and treating the routing error as a data gap.",
+			$"{ODataResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
+	];
 
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
@@ -1978,7 +1988,8 @@ internal static class ToolContractCatalog {
 					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
 					"Create the record, then read it back by the returned id to confirm persisted values.")
 			],
-			[]);
+			[],
+			OdataUnregisteredEntityAntiPatterns());
 	}
 
 	private static ToolContractDefinition BuildODataUpdate() {
