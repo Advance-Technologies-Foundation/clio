@@ -170,4 +170,67 @@ public sealed class CompileOperationRegistryTests {
 		registry.GetLatest("tenant-a")!.OperationId.Should().Be(begun.OperationId,
 			because: "concurrent reads and the finalize must not corrupt the tenant's latest-operation pointer");
 	}
+
+	[Test]
+	[Description("Finding 5: a terminal record idle past the TTL is evicted on the next Begin sweep, and its tenant latest-pointer is pruned — but a still-running operation is never evicted, however old.")]
+	public void Idle_Terminal_Records_Are_Evicted_But_Running_Ones_Are_Kept() {
+		// Arrange — long capacity so only the idle-TTL rule is exercised; controllable clock.
+		DateTime now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+		CompileOperationRegistry registry = new(TimeSpan.FromMinutes(5), maxEntries: 100, () => now);
+		CompileOperationRecord running = registry.Begin("tenant-run", "envR", null); // stays Running
+		CompileOperationRecord finished = registry.Begin("tenant-fin", "envF", null);
+		registry.Finish(finished.OperationId, 0, Array.Empty<LogMessage>());          // terminal at t0
+
+		// Act — advance past the TTL, then trigger the opportunistic sweep with a new Begin.
+		now = now.AddMinutes(6);
+		registry.Begin("tenant-trigger", "envT", null);
+
+		// Assert
+		registry.GetById(finished.OperationId).Should().BeNull(
+			because: "a terminal record idle past the TTL must be evicted so the process stays memory-bounded");
+		registry.GetLatest("tenant-fin").Should().BeNull(
+			because: "evicting a record must prune its dangling latest-per-tenant pointer too");
+		registry.GetById(running.OperationId).Should().NotBeNull(
+			because: "a still-running operation must never be evicted, or compile-status would report it as not found");
+	}
+
+	[Test]
+	[Description("Finding 5: over capacity, the least-recently-finished terminal record is evicted (LRU), keeping the table bounded.")]
+	public void OverCapacity_Evicts_LeastRecentlyFinished_Terminal_Record() {
+		// Arrange — cap of 2, long TTL so only the capacity rule is exercised.
+		DateTime now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+		CompileOperationRegistry registry = new(TimeSpan.FromHours(1), maxEntries: 2, () => now);
+		CompileOperationRecord oldest = registry.Begin("t-a", "e", null);
+		registry.Finish(oldest.OperationId, 0, Array.Empty<LogMessage>());
+		now = now.AddSeconds(1);
+		CompileOperationRecord middle = registry.Begin("t-b", "e", null);
+		registry.Finish(middle.OperationId, 0, Array.Empty<LogMessage>());
+		now = now.AddSeconds(1);
+
+		// Act — the third operation pushes the count over the cap.
+		CompileOperationRecord newest = registry.Begin("t-c", "e", null);
+
+		// Assert
+		registry.GetById(oldest.OperationId).Should().BeNull(
+			because: "the least-recently-finished record is the LRU victim when the cap is exceeded");
+		registry.GetById(middle.OperationId).Should().NotBeNull(because: "the more recent terminal record is retained");
+		registry.GetById(newest.OperationId).Should().NotBeNull(because: "the just-added record is never the eviction victim");
+	}
+
+	[Test]
+	[Description("Finding 5: when every retained record is still running, capacity overshoot is allowed rather than evicting a live operation.")]
+	public void OverCapacity_Allows_Overshoot_When_All_Records_Running() {
+		// Arrange — cap of 1, but both operations stay Running.
+		DateTime now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+		CompileOperationRegistry registry = new(TimeSpan.FromHours(1), maxEntries: 1, () => now);
+
+		// Act
+		CompileOperationRecord first = registry.Begin("t-1", "e", null);
+		CompileOperationRecord second = registry.Begin("t-2", "e", null); // over cap, but nothing evictable
+
+		// Assert
+		registry.GetById(first.OperationId).Should().NotBeNull(
+			because: "a running operation must not be evicted even to honor the capacity cap");
+		registry.GetById(second.OperationId).Should().NotBeNull(because: "the just-added running operation is retained");
+	}
 }

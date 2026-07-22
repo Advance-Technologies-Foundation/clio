@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -76,8 +75,29 @@ public interface IRestartOperationRegistry {
 /// <inheritdoc cref="IRestartOperationRegistry"/>
 public sealed class RestartOperationRegistry : IRestartOperationRegistry {
 
-	private readonly ConcurrentDictionary<string, RestartOperationRecord> _byId = new();
-	private readonly ConcurrentDictionary<string, string> _latestIdByTenant = new();
+	// Bounded store (Finding 5): idle-TTL + LRU eviction so the long-lived MCP process does not retain one
+	// record per restart forever. A running readiness wait is never evicted (its restart-status must stay
+	// resolvable); terminal records age out by FinishedUtc.
+	private readonly BoundedOperationStore<RestartOperationRecord> _store;
+	// Same clock seam the store evicts by, so record timestamps (StartedUtc/FinishedUtc) and the eviction
+	// idle/LRU comparison share ONE time source — a test that advances the clock moves both together.
+	private readonly Func<DateTime> _utcNow;
+
+	/// <summary>Production ctor: uses the same idle-TTL / capacity defaults as the neighboring caches.</summary>
+	public RestartOperationRegistry()
+		: this(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions) { }
+
+	/// <summary>Test/host seam: explicit idle-TTL, capacity, and clock for deterministic eviction tests.</summary>
+	internal RestartOperationRegistry(TimeSpan idleTtl, int maxEntries, Func<DateTime> utcNow = null) {
+		_utcNow = utcNow ?? (() => DateTime.UtcNow);
+		_store = new BoundedOperationStore<RestartOperationRecord>(
+			idleTtl,
+			maxEntries,
+			record => record.OperationId,
+			record => record.Status == RestartOperationStatus.Running,
+			record => record.FinishedUtc ?? record.StartedUtc,
+			_utcNow);
+	}
 
 	/// <inheritdoc/>
 	public RestartOperationRecord Begin(string tenantKey, string environmentName) {
@@ -86,26 +106,23 @@ public sealed class RestartOperationRegistry : IRestartOperationRegistry {
 			tenantKey,
 			environmentName,
 			RestartOperationStatus.Running,
-			DateTime.UtcNow,
+			_utcNow(),
 			null,
 			null);
-		_byId[record.OperationId] = record;
-		if (tenantKey is not null) {
-			_latestIdByTenant[tenantKey] = record.OperationId;
-		}
+		_store.Add(tenantKey, record);
 		return record;
 	}
 
 	/// <inheritdoc/>
 	public RestartOperationRecord Finish(string operationId, int exitCode) {
 		RestartOperationStatus status = exitCode == 0 ? RestartOperationStatus.Ready : RestartOperationStatus.TimedOut;
-		DateTime finishedUtc = DateTime.UtcNow;
-		return _byId.AddOrUpdate(
+		DateTime finishedUtc = _utcNow();
+		return _store.AddOrUpdate(
 			operationId,
 			// Unknown id: defensive fallback (Begin always precedes Finish in the real call path) so a
 			// bookkeeping gap surfaces as an odd-looking record instead of an exception from the restart path.
-			id => new RestartOperationRecord(id, null, null, status, finishedUtc, finishedUtc, exitCode),
-			(_, existing) => existing with {
+			() => new RestartOperationRecord(operationId, null, null, status, finishedUtc, finishedUtc, exitCode),
+			existing => existing with {
 				Status = status,
 				FinishedUtc = finishedUtc,
 				ExitCode = exitCode
@@ -113,17 +130,9 @@ public sealed class RestartOperationRegistry : IRestartOperationRegistry {
 	}
 
 	/// <inheritdoc/>
-	public RestartOperationRecord GetLatest(string tenantKey) {
-		return tenantKey is not null && _latestIdByTenant.TryGetValue(tenantKey, out string operationId)
-			? GetById(operationId)
-			: null;
-	}
+	public RestartOperationRecord GetLatest(string tenantKey) => _store.GetLatest(tenantKey);
 
 	/// <inheritdoc/>
-	public RestartOperationRecord GetById(string operationId) {
-		return operationId is not null && _byId.TryGetValue(operationId, out RestartOperationRecord record)
-			? record
-			: null;
-	}
+	public RestartOperationRecord GetById(string operationId) => _store.GetById(operationId);
 
 }

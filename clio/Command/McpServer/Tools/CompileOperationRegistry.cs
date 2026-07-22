@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
@@ -84,8 +83,29 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 	/// <summary>Maximum number of trailing output lines retained per operation.</summary>
 	internal const int MessageTailCap = 50;
 
-	private readonly ConcurrentDictionary<string, CompileOperationRecord> _byId = new();
-	private readonly ConcurrentDictionary<string, string> _latestIdByTenant = new();
+	// Bounded store (Finding 5): idle-TTL + LRU eviction so the long-lived MCP process does not retain one
+	// record per compile forever. A running compile is never evicted (its compile-status must stay
+	// resolvable); terminal records age out by FinishedUtc.
+	private readonly BoundedOperationStore<CompileOperationRecord> _store;
+	// Same clock seam the store evicts by, so record timestamps (StartedUtc/FinishedUtc) and the eviction
+	// idle/LRU comparison share ONE time source — a test that advances the clock moves both together.
+	private readonly Func<DateTime> _utcNow;
+
+	/// <summary>Production ctor: uses the same idle-TTL / capacity defaults as the neighboring caches.</summary>
+	public CompileOperationRegistry()
+		: this(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions) { }
+
+	/// <summary>Test/host seam: explicit idle-TTL, capacity, and clock for deterministic eviction tests.</summary>
+	internal CompileOperationRegistry(TimeSpan idleTtl, int maxEntries, Func<DateTime> utcNow = null) {
+		_utcNow = utcNow ?? (() => DateTime.UtcNow);
+		_store = new BoundedOperationStore<CompileOperationRecord>(
+			idleTtl,
+			maxEntries,
+			record => record.OperationId,
+			record => record.Status == CompileOperationStatus.Running,
+			record => record.FinishedUtc ?? record.StartedUtc,
+			_utcNow);
+	}
 
 	/// <inheritdoc/>
 	public CompileOperationRecord Begin(string tenantKey, string environmentName, string packageName) {
@@ -95,12 +115,11 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 			environmentName,
 			packageName,
 			CompileOperationStatus.Running,
-			DateTime.UtcNow,
+			_utcNow(),
 			null,
 			null,
 			[]);
-		_byId[record.OperationId] = record;
-		_latestIdByTenant[tenantKey] = record.OperationId;
+		_store.Add(tenantKey, record);
 		return record;
 	}
 
@@ -108,13 +127,13 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 	public CompileOperationRecord Finish(string operationId, int exitCode, IReadOnlyList<LogMessage> messages) {
 		CompileOperationStatus status = exitCode == 0 ? CompileOperationStatus.Succeeded : CompileOperationStatus.Failed;
 		IReadOnlyList<string> messageTail = BuildMessageTail(messages);
-		DateTime finishedUtc = DateTime.UtcNow;
-		return _byId.AddOrUpdate(
+		DateTime finishedUtc = _utcNow();
+		return _store.AddOrUpdate(
 			operationId,
 			// Unknown id: defensive fallback (Begin always precedes Finish in the real call path) so a
 			// bookkeeping gap surfaces as an odd-looking record instead of an exception from the compile path.
-			id => new CompileOperationRecord(id, null, null, null, status, finishedUtc, finishedUtc, exitCode, messageTail),
-			(_, existing) => existing with {
+			() => new CompileOperationRecord(operationId, null, null, null, status, finishedUtc, finishedUtc, exitCode, messageTail),
+			existing => existing with {
 				Status = status,
 				FinishedUtc = finishedUtc,
 				ExitCode = exitCode,
@@ -123,18 +142,10 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 	}
 
 	/// <inheritdoc/>
-	public CompileOperationRecord GetLatest(string tenantKey) {
-		return tenantKey is not null && _latestIdByTenant.TryGetValue(tenantKey, out string operationId)
-			? GetById(operationId)
-			: null;
-	}
+	public CompileOperationRecord GetLatest(string tenantKey) => _store.GetLatest(tenantKey);
 
 	/// <inheritdoc/>
-	public CompileOperationRecord GetById(string operationId) {
-		return operationId is not null && _byId.TryGetValue(operationId, out CompileOperationRecord record)
-			? record
-			: null;
-	}
+	public CompileOperationRecord GetById(string operationId) => _store.GetById(operationId);
 
 	private static IReadOnlyList<string> BuildMessageTail(IReadOnlyList<LogMessage> messages) {
 		return messages is null
