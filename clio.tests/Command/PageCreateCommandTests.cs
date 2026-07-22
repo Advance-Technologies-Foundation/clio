@@ -463,6 +463,44 @@ public sealed class PageCreateCommandTests
 			because: "omitting optional-properties must preserve the prior empty-array behavior");
 	}
 
+	[Test]
+	[Description("Stamps group Desktop on the SaveSchema payload when the CentralAreaDesktopTemplate is used, because the schema group (not the parent) is what makes the platform register the desktop in the selector.")]
+	public void TryCreatePage_Desktop_Template_Stamps_Desktop_Group() {
+		// Arrange
+		_catalog.FindTemplate(SchemaTemplateCatalog.DesktopTemplateName).Returns(new PageTemplateInfo {
+			UId = SchemaTemplateCatalog.DesktopTemplateUId,
+			Name = SchemaTemplateCatalog.DesktopTemplateName,
+			Title = "Desktop",
+			GroupName = SchemaTemplateCatalog.DesktopGroupName,
+			SchemaType = 9
+		});
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		PageCreateOptions options = new() {
+			SchemaName = "UsrSalesDesktop",
+			Template = SchemaTemplateCatalog.DesktopTemplateName,
+			PackageName = "Custom",
+			Caption = "Sales desktop"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		response.TemplateName.Should().Be(SchemaTemplateCatalog.DesktopTemplateName,
+			because: "a desktop is created from the CentralAreaDesktopTemplate like any other page");
+		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(s => s.Contains(SchemaTemplateCatalog.DesktopTemplateUId)
+				&& s.Contains("\"group\":\"Desktop\"")));
+	}
+
 	private void StubSelectQueryResponse(string url, string responseJson) {
 		_applicationClient.ExecutePostRequest(url, Arg.Any<string>()).Returns(responseJson);
 	}

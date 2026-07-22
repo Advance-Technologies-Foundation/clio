@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://advance-technologies-foundation.github.io/clio-ring/app-settings.schema.json",
+  "title": "ClioRing application settings",
+  "description": "Local ClioRing desktop settings. This file controls Ring presentation, workspace discovery, and the optional development clio MCP child.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [ "WorkspaceFolder" ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "title": "Schema reference",
+      "description": "Relative path or URL to this JSON Schema for editor validation and hover help."
+    },
+    "WorkspaceFolder": {
+      "type": "string",
+      "title": "Workspace folder",
+      "description": "Absolute folder scanned for clio workspaces.",
+      "minLength": 1,
+      "pattern": "\\S",
+      "examples": [ "C:\\Projects\\Workspaces" ]
+    },
+    "Hotkey": {
+      "type": [ "string", "null" ],
+      "title": "Global hotkey",
+      "description": "Optional global gesture used to summon Ring. An absent, blank, or invalid value uses the application default.",
+      "examples": [ "Ctrl+Alt+C" ]
+    },
+    "LogsFolder": {
+      "type": [ "string", "null" ],
+      "title": "Logs folder",
+      "description": "Optional absolute folder for logs and deployment receipts. Blank or absent defaults to the Logs folder beside clio-ring.exe.",
+      "examples": [ "C:\\Tools\\clio-ring\\Logs" ]
+    },
+    "Channel": {
+      "type": [ "string", "null" ],
+      "title": "Ring channel label",
+      "description": "Display/deployment label shown in the Ring build badge, such as release, dev, or preview. This value does not select the clio executable or MCP server.",
+      "default": "dev",
+      "minLength": 1,
+      "pattern": "\\S",
+      "examples": [ "release", "dev", "preview" ]
+    },
+    "ClioRuntimeMode": {
+      "type": [ "string", "null" ],
+      "title": "Active clio runtime",
+      "description": "Selects the clio child used on the next Ring launch. release starts a verified installed clio dotnet-tool shim from a dotnet-owned user directory. development uses the saved DevClioPath or ClioIpc target without deleting it.",
+      "enum": [ "release", "development", null ],
+      "default": "release"
+    },
+    "Experiments": {
+      "$ref": "#/$defs/experiments"
+    },
+    "ClioIpc": {
+      "$ref": "#/$defs/clioIpc"
+    },
+    "DevClioPath": {
+      "type": [ "string", "null" ],
+      "title": "Development clio override",
+      "description": "Optional absolute path to a trusted local development clio.dll or clio.exe. Ring executes it with your user privileges. In development mode, a valid value takes precedence over ClioIpc. Switching to release preserves this target.",
+      "examples": [ "C:\\Projects\\clio\\clio\\bin\\Debug\\net10.0\\clio.dll" ]
+    }
+  },
+  "$defs": {
+    "experiments": {
+      "type": [ "object", "null" ],
+      "title": "Experimental features",
+      "description": "Feature switches that remain off unless explicitly enabled.",
+      "additionalProperties": false,
+      "properties": {
+        "ClioIpc": {
+          "type": "boolean",
+          "title": "Enable clio IPC",
+          "description": "Enables the experimental MCP-over-stdio Clio IPC surface. This must be true to expose the IPC proof UI.",
+          "default": false
+        }
+      }
+    },
+    "clioIpc": {
+      "type": [ "object", "null" ],
+      "title": "Explicit clio MCP launch",
+      "description": "Explicit trusted development child-process command used in development mode when DevClioPath is absent or invalid. Ring executes it with your user privileges. Switching to release preserves this target.",
+      "additionalProperties": false,
+      "required": [ "Command", "Args" ],
+      "properties": {
+        "Command": {
+          "type": "string",
+          "title": "Executable",
+          "description": "Executable used to launch the clio MCP child, for example dotnet or clio.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "examples": [ "dotnet" ]
+        },
+        "Args": {
+          "type": "array",
+          "title": "Arguments",
+          "description": "Arguments passed to Command. For a framework-dependent build, pass the clio.dll path followed by mcp-server.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "examples": [ [ "C:\\Projects\\clio\\clio\\bin\\Debug\\net10.0\\clio.dll", "mcp-server" ] ]
+        },
+        "WorkingDirectory": {
+          "type": [ "string", "null" ],
+          "title": "Working directory",
+          "description": "Optional working directory for the clio child. Blank or absent uses the Ring launch directory."
+        }
+      }
+    }
+  }
+}

@@ -17,6 +17,20 @@ namespace Clio.Tests;
 
 [Property("Module", "Core")]
 internal class CreatioInstallerServiceTests : BaseClioModuleTests{
+	[Test]
+	[Description("Readiness timeout throws so deploy cannot emit a successful terminal outcome.")]
+	public void ThrowIfServerNotReady_ShouldThrow_WhenReadinessTimesOut() {
+		// Arrange
+		const bool isReady = false;
+
+		// Act
+		Action act = () => CreatioInstallerService.ThrowIfServerNotReady(isReady);
+
+		// Assert
+		act.Should().Throw<TimeoutException>(
+			because: "a readiness timeout must fail the wait-ready stage and the deployment run");
+	}
+
 	#region Fields: Private
 
 	private readonly string _localArtifactServerPath = Environment.OSVersion.Platform == PlatformID.Win32NT

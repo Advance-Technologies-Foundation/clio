@@ -6,6 +6,14 @@ compared to calling each operation individually.
 
 > **MCP-only tool** — available through the clio MCP server, not as a standalone CLI command.
 
+## Progress
+
+`sync-schemas` is long-running and streams `notifications/progress` while it works: a per-operation
+stage marker (`"<i>/<n>: <op> <schema>"`) is pushed before each operation (and before its seed step),
+plus a fixed-cadence keep-alive beat (default 15 s, overridable via
+`CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS`). A progress notification is **not** a timeout — await
+completion and do not retry or fall back on a perceived client timeout.
+
 ## When to Use
 
 Use `sync-schemas` instead of sequential calls to `create-lookup`, `create-data-binding-db`,
@@ -53,8 +61,11 @@ Creates an entity schema with an optional parent.
 | `title-localizations` | Yes | Schema title localizations. Must include `en-US` |
 | `parent-schema-name` | No | Parent schema name |
 | `extend-parent` | No | Create a replacement schema (default: false) |
+| `is-virtual` | No | Create a virtual entity schema without a physical database table (default: false) |
 | `columns` | No | Initial columns |
 | `seed-rows` | No | Rows to insert after creation |
+
+Use `is-virtual: true` only when the entity is backed by a custom data provider rather than a Creatio database table. A virtual `create-entity` operation cannot include `seed-rows` because there is no table to populate. Verify the result through `get-entity-schema-properties` or the entity list returned by `get-app-info`.
 
 #### `update-entity`
 

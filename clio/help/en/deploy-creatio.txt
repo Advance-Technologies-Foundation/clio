@@ -13,6 +13,11 @@ DESCRIPTION
     Services (IIS) by default. On macOS and Linux, uses dotnet runtime. Supports cross-platform
     deployment with optional HTTPS configuration and automatic service management.
 
+    When --site-name and the configured deploy-site-name default are both
+    omitted, interactive deployment prompts for the site name. The Windows
+    Explorer "clio: deploy Creatio" action uses this prompt instead of deriving
+    a name from the selected ZIP archive.
+
     Every deploy-creatio run creates a temp database-operation log file for the
     database restore portion of deployment. The final CLI output includes the
     absolute path in a "Database operation log:" line. For MCP tool execution,
@@ -38,9 +43,6 @@ SYNOPSIS
     clio deploy-creatio [OPTIONS]
 
 OPTIONS
-    -e, --environment-name NAME
-        Required. Environment/site name for the deployment
-
     --db DATABASE_TYPE
         Database type: pg (PostgreSQL) or mssql (MS SQL Server)
         Default: pg
@@ -52,14 +54,17 @@ OPTIONS
     --product PRODUCT_NAME
         Product to deploy (optional)
 
-    --SiteName SITE_NAME
-        Website/application name in IIS (Windows) or service name (macOS/Linux)
+    --site-name SITE_NAME
+        Website/application name in IIS (Windows) or service name (macOS/Linux).
+        When omitted and no configured default exists, interactive deployment
+        prompts for this value. Silent deployment fails with a clear error
+        instead of waiting for console input.
 
-    --SitePort PORT
+    --site-port PORT
         HTTP port number for the application
         Default: 80 (HTTP), 443 (HTTPS)
 
-    --ZipFile FILE_PATH
+    --zip-file FILE_PATH
         Required. Path to Creatio zip file or directory
         - If zip file: Will be automatically extracted
         - If directory: Used directly as already-extracted Creatio application
@@ -82,12 +87,15 @@ OPTIONS
         Default: Windows %ProgramFiles%/Creatio, macOS ~/creatio, Linux /opt/creatio
 
     --use-https
-        Enable HTTPS for the application
+        Prefer HTTPS for the application. For local IIS, clio selects a usable
+        LocalMachine/My certificate matching the host. If none is installed,
+        deployment warns and continues over HTTP. Configure an ambiguous
+        preference with pin-certificate.
         Default: false (HTTP only)
 
     --cert-path PATH
         Path to SSL certificate file (.pem or .pfx format)
-        Required if --use-https is specified
+        Used by dotnet deployment; IIS uses the Windows certificate store
 
     --cert-password PASSWORD
         Password for SSL certificate (if certificate is password-protected)
@@ -130,12 +138,14 @@ OPTIONS
     --db-server-name NAME
         Name of database server configuration from appsettings.json
         When specified, automatically restores database from zip file to local server
-        If not specified, restores database to Kubernetes cluster (default behavior)
+        If omitted, uses the configured deploy default. The Explorer action then uses
+        a sole enabled local server; other callers restore to Kubernetes
         Requires database server configuration in appsettings.json (see DATABASE RESTORATION)
 
-        IMPORTANT: If kubectl is not detected (no Kubernetes cluster available),
-        then --db-server-name is REQUIRED. The command will fail with an error
-        if neither kubectl config nor db-server-name is available
+        IMPORTANT: Outside the Explorer action, if kubectl is not detected (no
+        Kubernetes cluster available), then --db-server-name or a configured deploy
+        database default is REQUIRED. The Explorer action can also infer a sole
+        enabled local database server.
 
         Docker PostgreSQL note:
         - Configure the published host endpoint in appsettings.json (for example localhost:5433)
@@ -148,8 +158,8 @@ OPTIONS
         Default: false (will prompt user)
 
     --disable-reset-password
-        Disable automatic password-reset script after installation
-        Hidden option, Default: true
+        When true, disable Creatio's forced password change after installation
+        Hidden option, Default: false (preserves the build database's existing ForceChangePassword value)
 
         Corporate-gated behavior (script executes only when ALL conditions are met):
         - Option value is true
@@ -172,91 +182,101 @@ OPTIONS
 EXAMPLES
 
     1. Basic deployment with default settings (PostgreSQL, port 40001, auto-run):
-       clio deploy-creatio -e "Default" --ZipFile "C:\creatio-app.zip" --SitePort 40001 --silent
+       clio deploy-creatio --site-name "Default" --zip-file "C:\creatio-app.zip" --site-port 40001 --silent
 
     2. Deploy with MS SQL and custom port:
-       clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
-           --ZipFile "/path/to/creatio-app.zip"
+       clio deploy-creatio --site-name "Production" --db mssql --site-port 8080 \\
+           --zip-file "/path/to/creatio-app.zip"
 
     3. Deploy with .NET Framework (Windows):
-       clio deploy-creatio -e "LegacyApp" --platform netframework \\
-           --ZipFile "C:\creatio-framework.zip"
+       clio deploy-creatio --site-name "LegacyApp" --platform netframework \\
+           --zip-file "C:\creatio-framework.zip"
 
     4. Deploy with HTTPS on Windows using dotnet (no IIS):
-       clio deploy-creatio -e "SecureApp" --no-iis --use-https \\
-           --cert-path "C:\certs\app.pem" --ZipFile "C:\creatio-app.zip"
+       clio deploy-creatio --site-name "SecureApp" --no-iis --use-https \\
+           --cert-path "C:\certs\app.pem" --zip-file "C:\creatio-app.zip"
+
+    4a. Prefer HTTPS for local IIS (falls back to HTTP when no usable certificate exists):
+        clio pin-certificate
+        clio deploy-creatio --site-name "SecureIis" --site-port 40087 --use-https \
+            --zip-file "C:\creatio-app.zip"
 
     5. Deploy to custom path on macOS:
-       clio deploy-creatio -e "CreatioApp" --app-path "/var/creatio" \\
-           --ZipFile "/Users/downloads/creatio-app.zip"
+       clio deploy-creatio --site-name "CreatioApp" --app-path "/var/creatio" \\
+           --zip-file "/Users/downloads/creatio-app.zip"
 
     6. Deploy on Linux with systemd service management:
-       clio deploy-creatio -e "LinuxApp" --deployment dotnet \\
-           --app-path "/opt/creatio-prod" --ZipFile "/home/admin/creatio-app.zip"
+       clio deploy-creatio --site-name "LinuxApp" --deployment dotnet \\
+           --app-path "/opt/creatio-prod" --zip-file "/home/admin/creatio-app.zip"
 
     7. Deploy without auto-launching browser:
-       clio deploy-creatio -e "BackgroundApp" --auto-run false \\
-           --ZipFile "C:\creatio-app.zip"
+       clio deploy-creatio --site-name "BackgroundApp" --auto-run false \\
+           --zip-file "C:\creatio-app.zip"
 
     8. Silent deployment with all parameters:
-       clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
-           --SiteName "AutoCreatio" --SitePort 8443 --use-https \\
-           --cert-path "/certs/server.pem" --ZipFile "/app/creatio.zip" --silent
+	   clio deploy-creatio --site-name "AutoDeploy" --db pg --platform net6 \\
+		   --site-port 8443 --use-https \\
+           --cert-path "/certs/server.pem" --zip-file "/app/creatio.zip" --silent
 
     9. Deploy with specific Redis database (when auto-detection fails):
-       clio deploy-creatio -e "RedisApp" --ZipFile "C:\creatio-app.zip" --redis-db 5
+       clio deploy-creatio --site-name "RedisApp" --zip-file "C:\creatio-app.zip" --redis-db 5
 
     10. Deploy in production with manual Redis DB to avoid conflicts:
-        clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
-            --redis-db 3 --ZipFile "/path/to/creatio-app.zip"
+        clio deploy-creatio --site-name "Production" --db mssql --site-port 8080 \\
+            --redis-db 3 --zip-file "/path/to/creatio-app.zip"
 
     11. Deploy to local database server (automatic database restore):
         # Configure database server in appsettings.json first (see DATABASE RESTORATION)
         # Single command deploys everything: extract -> restore DB -> deploy app -> configure
-        clio deploy-creatio -e "LocalDev" --db mssql --SitePort 40001 \\
+        clio deploy-creatio --site-name "LocalDev" --db mssql --site-port 40001 \\
             --db-server-name my-local-mssql \\
-            --ZipFile "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip"
+            --zip-file "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip"
 
     12. Deploy PostgreSQL to local server with automatic DB drop:
-        clio deploy-creatio -e "QA" --db pg --SitePort 8080 \\
+        clio deploy-creatio --site-name "QA" --db pg --site-port 8080 \\
             --db-server-name my-local-postgres --drop-if-exists \\
-            --ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
+            --zip-file "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
 
     13. Deploy PostgreSQL running in Docker via published host port:
-        clio deploy-creatio -e "DockerDev" --db pg --SitePort 8080 \\
+        clio deploy-creatio --site-name "DockerDev" --db pg --site-port 8080 \\
             --db-server-name docker-postgres --drop-if-exists \\
-            --ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
+            --zip-file "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
 
     14. Silent deployment to local database without browser launch:
-        clio deploy-creatio -e "AutoDeploy" --db mssql --SitePort 8443 \\
+        clio deploy-creatio --site-name "AutoDeploy" --db mssql --site-port 8443 \\
             --db-server-name my-local-mssql --drop-if-exists \\
             --auto-run=false --silent \\
-            --ZipFile "C:\Creatio\app.zip"
+            --zip-file "C:\Creatio\app.zip"
 
     15. Deploy PostgreSQL with long filename (template reuse):
         # First deployment: Creates template from backup (slower)
-        clio deploy-creatio -e "Dev" --db pg --SitePort 8080 \\
+        clio deploy-creatio --site-name "Dev" --db pg --site-port 8080 \\
             --db-server-name my-local-postgres \\
-            --ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
+            --zip-file "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
 
         # Subsequent deployments: Reuses template (faster)
-        clio deploy-creatio -e "Dev2" --db pg --SitePort 8081 \\
+        clio deploy-creatio --site-name "Dev2" --db pg --site-port 8081 \\
             --db-server-name my-local-postgres \\
-            --ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
+            --zip-file "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
 
 BEHAVIOR
 
     Database Restoration (Automatic):
-    - WITHOUT --db-server-name: Restores database to Kubernetes cluster
+    - WITHOUT --db-server-name: Uses the configured deploy default. The Explorer
+      action then uses a sole enabled local server; other callers restore to Kubernetes
     - WITH --db-server-name: Restores database to local server from appsettings.json
     - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
     - Connection strings are automatically updated to point to target database
+    - Database and Redis connection values are never printed in command output
     - PostgreSQL/MSSQL native restore output is written into the temp database
       operation log artifact
 
     Password Reset Script (Creatio >= 8.3.3):
     - Applies SQL script that sets Supervisor ForceChangePassword to false
-    - Runs only when --disable-reset-password is true (default)
+    - Runs only when --disable-reset-password is explicitly set to true
+    - By default, the script is skipped and the build database's existing ForceChangePassword value is preserved
+    - Creatio asks the user to choose a new password only when that preserved value is true
+    - This option does not assign a new Supervisor password
     - Runs only for corporate-eligible machines:
       - tscrm domain member (Windows)
       - OR tscrm.com reachable via ping
@@ -265,7 +285,11 @@ BEHAVIOR
 
     Windows (Default - IIS):
     - Creates IIS Application Pool
-    - Creates IIS Website with HTTP/HTTPS bindings
+    - Creates IIS Website with exactly one HTTP or HTTPS binding
+    - HTTPS selects the pinned usable host certificate or the matching certificate
+      with the latest expiration; missing certificates warn and fall back to HTTP
+    - .NET Framework HTTPS switches ServiceModel config sources to https and sets
+      the Microsoft wsService encrypted attribute to true
     - Configures application pool identity and recycling
     - Returns application URL in format: http(s)://FQDN:port
 
@@ -298,8 +322,10 @@ DATABASE RESTORATION
     during deployment. The restoration target depends on the --db-server-name flag:
 
     AUTOMATIC DATABASE RESTORATION:
-    - If --db-server-name is NOT specified (default):
-      Database is restored to Kubernetes cluster
+    - If --db-server-name is NOT specified:
+      A configured deploy default is used first. The Explorer action then selects
+      a sole enabled local database server. Other callers preserve the existing
+      Kubernetes behavior when no deploy default applies.
 
     - If --db-server-name IS specified:
       Database is restored to local database server configured in appsettings.json
@@ -395,8 +421,8 @@ DATABASE RESTORATION
     WORKFLOW:
     1. Configure database server in appsettings.json (if using local database)
     2. Run deploy-creatio with --db-server-name to automatically restore and deploy:
-       clio deploy-creatio -e "LocalDev" --db mssql --SitePort 40001 \\
-           --db-server-name my-local-mssql --ZipFile "C:\Creatio\app.zip"
+       clio deploy-creatio --site-name "LocalDev" --db mssql --site-port 40001 \\
+           --db-server-name my-local-mssql --zip-file "C:\Creatio\app.zip"
     3. The command will:
        a. Extract the zip file
        b. Automatically restore database from db/*.bak or db/*.backup to local server
@@ -409,11 +435,13 @@ DATABASE RESTORATION
 TROUBLESHOOTING
 
     Q: "Could not detect kubectl config, and db server name (db-server-name) is not specified"
-    A: This error occurs when Kubernetes is not available and no enabled local database server is configured.
+    A: This error occurs when Kubernetes is not available and no unambiguous local database server is selected.
        Solutions:
        1. Install and configure kubectl for Kubernetes deployment
        2. Add --db-server-name parameter with a configured local database server
-       3. Configure database server in appsettings.json (see DATABASE RESTORATION section)
+       3. For the Windows Explorer action, configure exactly one enabled database
+          server in appsettings.json
+       4. Configure a deploy database default with clio config
 
     Q: "The type or namespace name could not be found"
     A: Ensure IIS is installed (Windows) or dotnet SDK is available
@@ -447,6 +475,12 @@ TROUBLESHOOTING
        - Subsequent deployments with same zip file reuse the template
        - Templates are identified by original zip filename in metadata
        - You can safely ignore these informational messages
+
+DBHUB SYNCHRONIZATION
+    When automatic dbHub synchronization is enabled by install-dbhub, a successful local
+    deployment reconciles its database source only after readiness succeeds. TOML or live
+    verification problems are reported as non-fatal warnings; deployment still succeeds.
+    Database passwords and full connection strings are never written to output.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

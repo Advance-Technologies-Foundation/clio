@@ -30,7 +30,7 @@ public sealed class ComponentInfoTool(
 	IMobileComponentInfoCatalog mobileCatalog,
 	IComponentRegistryDocsClient docsClient,
 	IPlatformVersionResolverFactory resolverFactory,
-	ISettingsRepository settingsRepository) {
+	IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "get-component-info";
 
@@ -103,7 +103,8 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("component-type (optional; omit or 'list' for the catalog of components AND composites), composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs, mutually exclusive with component-type), search (optional, filters both). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
+		[Description("component-type (optional; omit or 'list' for the catalog of components AND composites), composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs, mutually exclusive with component-type), search (optional, filters both). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only. " +
+			"Optional under credential passthrough: omitting environment-name/uri stays compliant (documented latest-fallback); supplying environment-name/uri together with an active passthrough header is rejected before any named-tenant probe, surfacing as a typed error response (success:false) rather than reading the named tenant's stored credentials.")]
 		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
@@ -272,9 +273,15 @@ public sealed class ComponentInfoTool(
 
 	/// <summary>
 	/// Builds the <see cref="EnvironmentSettings"/> for the cliogate probe from the per-call
-	/// arguments. Delegates to <see cref="ISettingsRepository.GetEnvironment(EnvironmentOptions)"/>
-	/// so the same registered-environment lookup, active-environment fallback, and explicit
-	/// uri/login/password fill the CLI verb uses also back the MCP tool.
+	/// arguments. Delegates to <see cref="IToolCommandResolver.Resolve{TCommand}(EnvironmentOptions)"/>
+	/// so this (the only <c>hasEnvironment</c>-supplied) branch shares the same ENG-93208
+	/// credential-passthrough seam every other resolver-routed tool uses: on an authorized HTTP
+	/// passthrough request the header tenant wins and an explicit <c>environment-name</c>/<c>uri</c>
+	/// is rejected before any named-registered-tenant lookup, instead of the root
+	/// <see cref="ISettingsRepository.GetEnvironment(EnvironmentOptions)"/> probing the named
+	/// environment's stored credentials directly. Stdio and registered-environment <c>mcp-http</c>
+	/// keep resolving exactly as before — the resolver falls through to the same
+	/// registered-environment lookup/fill when no credential context is active.
 	/// </summary>
 	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoArgs args) {
 		EnvironmentOptions options = new() {
@@ -283,7 +290,7 @@ public sealed class ComponentInfoTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return settingsRepository.GetEnvironment(options);
+		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
 
 	private static bool IsMobile(string? schemaType) =>

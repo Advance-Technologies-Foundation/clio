@@ -25,17 +25,10 @@ public class RestartTool(
 		return InternalExecute<RestartCommand>(options);
 	}
 
-	/// <summary>
-	/// Deprecated camelCase alias preserved for backwards compatibility with clients
-	/// configured against the original tool name. New clients should use
-	/// <c>restart-by-environment-name</c>.
-	/// </summary>
-	[McpServerTool(Name = "restart-by-environmentName", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("[Deprecated: use restart-by-environment-name] Restarts Creatio instance by environment name")]
-	public CommandExecutionResult RestartInstanceByNameLegacy(
-		[Description("Target Environment name to restart")] [Required] string environmentName
-	) => RestartInstanceByName(environmentName);
-
+	// The deprecated camelCase alias "restart-by-environmentName" is no longer a second [McpServerTool]
+	// method: it is served by IMcpToolCompatibilityCatalog (alias -> restart-by-environment-name), which
+	// the durable call-tool handler and the clio-run executor both resolve through. A duplicate method
+	// would now fail the registry's duplicate-name guard by design.
 	[McpServerTool(Name = "restart-by-credentials", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts Creatio instance by credentials")]
 	public CommandExecutionResult RestartInstanceByCredentials(

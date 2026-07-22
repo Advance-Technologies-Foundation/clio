@@ -37,8 +37,8 @@ public sealed class McpGuidanceForcingTests {
 	private static readonly string[] ReferencedGuideNames = [
 		"core-rules", "routing", "page-modification",
 		"page-modification-overview", "page-modification-field-contract", "page-modification-containers", "page-modification-components",
-		"business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "indicator-widget",
-		"app-modeling", "esq", "esq-filters", "data-bindings"
+		"business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "dashboard-and-home-page-layout", "indicator-widget",
+		"app-modeling", "esq", "esq-filters", "data-bindings", "desktop-page"
 	];
 
 	private static string ToolDescription<TTool>() {

@@ -19,6 +19,8 @@ public sealed class PageCreateTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"To create a DASHBOARD, use `template` `BaseDashboardTemplate` and pass its link-back properties through `optional-properties` (DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId) — call get-guidance with name `dashboard-creation` FIRST to learn how to retrieve each value (including the root-schema UId rule). " +
+		"To create a HOME PAGE (template `BaseHomePage`), also bind it to a workplace (SysWorkplace.HomePageUId) — call get-guidance with name `home-page`. " +
+		"To create a DESKTOP (a desktop-selector workspace), use `template` `CentralAreaDesktopTemplate` — call get-guidance with name `desktop-page` FIRST. " +
 		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public PageCreateResponse CreatePage(
 		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name, optional-properties (optional); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -49,7 +51,7 @@ public sealed class PageCreateTool(
 				Error = PageSchemaMetadataHelper.SchemaNameFormatError
 			};
 		}
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			PageCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageCreateCommand>(options);

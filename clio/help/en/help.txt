@@ -42,6 +42,7 @@ Commands:
   delete-schema                        Delete a schema from a workspace package
   delete-theme                         Delete a custom Creatio theme from the target environment via the native ThemeService
   delete-toolkit                       Uninstall the Creatio AI App Development Toolkit from coding agents
+  distribute-license                   Add or remove users from a Creatio license package, grant-license
   deploy-application                   Copy an application package between Creatio environments, deploy-app
   deploy-creatio                       Install Creatio from a distribution package, dc, ic, install-creatio
   deploy-infrastructure                Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), di
@@ -68,6 +69,7 @@ Commands:
   hosts                                List all Creatio hosts and their status, list-hosts
   info                                 Show clio, cliogate, and .NET runtime versions, get-version, i, ver
   install-application                  Install an application package into Creatio, install-app, push-app
+  install-dbhub                        Install, adopt, or repair a local loopback dbHub HTTP MCP server
   install-gate                         Install or update cliogate in Creatio, gate, installgate, update-gate
   install-nuget-pkg                    Install NuGet package to a web application (website), installng
   install-toolkit                      Install the Creatio AI App Development Toolkit for all detected coding agents
@@ -86,6 +88,7 @@ Commands:
   modify-entity-schema-column          Add, modify, or remove a column in a remote Creatio entity schema
   modify-user-task-parameters          Add or remove parameters in a user task schema
   new-pkg                              Create a new package project, init
+  new-integration-test-project         Create a portable Creatio integration-test project, integration-test
   new-test-project                     Create a new test project, create-test-project, unit-test
   new-ui-project                       Create a new Freedom UI project, create-ui-project, createup, new-ui, ui, uiproject
   open-k8-files                        Open the Kubernetes manifests folder, cfg-k8, cfg-k8f, cfg-k8s
@@ -130,6 +133,7 @@ Commands:
   start                                Start local Creatio application, sc, start-creatio, start-server
   stop                                 Stop Creatio application(s) and remove services, stop-creatio
   switch-nuget-to-dll-reference        Switches nuget references to dll references in csproj files, nuget2dll
+  sync-dbhub                           Reconcile clio-owned dbHub sources with local Creatio environments
   turn-farm-mode                       Configure IIS site for Creatio web farm deployment, farm-mode, tfm
   turn-fsm                             Turn file system mode on or off for an environment, fsm, tfsm
   uninstall-app-remote                 Uninstall an application package from Creatio, uninstall

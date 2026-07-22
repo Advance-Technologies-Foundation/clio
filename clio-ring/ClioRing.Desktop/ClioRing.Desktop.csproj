@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<!--If you are willing to use Windows/MacOS native APIs you will need to create 3 projects.
+		One for Windows with net9.0-windows TFM, one for MacOS with net9.0-macos and one with net9.0 TFM for Linux.-->
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+		<PublishAot>true</PublishAot>
+		<!-- Enforce both Roslyn AOT analysis and warnings emitted by the native compiler. -->
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+		<IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+		<AssemblyName>clio-ring</AssemblyName>
+		<Product>clio-ring</Product>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<!-- EXE / taskbar / Alt-Tab / Explorer identity icon. -->
+		<ApplicationIcon>..\ClioRing\Assets\clio-ring.ico</ApplicationIcon>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia.Desktop" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ClioRing\ClioRing.csproj"/>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="app-settings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="app-settings.schema.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+		</None>
+		<None Update="actions.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="actions.schema.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+</Project>
