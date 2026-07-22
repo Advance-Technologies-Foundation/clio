@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -182,6 +183,37 @@ public static class ComponentInfoResolution {
 			$"Unrecognized schema-type '{trimmed}'. Expected '{SchemaTypeWeb}' (default) or '{SchemaTypeMobile}'. "
 			+ $"Falling back to the {SchemaTypeWeb.ToUpperInvariant()} catalog — if you intended the mobile catalog "
 			+ $"this is likely a typo; re-call with schema-type='{SchemaTypeMobile}'.");
+	}
+
+	/// <summary>
+	/// Runs a tool's response builder and stamps the <c>schema-type</c> warning (from
+	/// <see cref="ResolveSchemaType"/>) onto whichever response comes back — the successful build or a
+	/// redacted error — so <c>get-component-info</c> and <c>get-request-info</c> share one control flow
+	/// instead of each duplicating the resolve → build → stamp → (catch → redact → stamp) block. The
+	/// warning is <see langword="null"/> for a valid selection, so a valid call is unaffected.
+	/// </summary>
+	/// <typeparam name="TResponse">The tool's response type.</typeparam>
+	/// <param name="schemaType">The raw <c>schema-type</c> argument (already alias-checked by the caller).</param>
+	/// <param name="buildResponse">Builds the mode-specific response (list / detail / not-found / errors).</param>
+	/// <param name="buildErrorResponse">Builds the tool's error response from an exception message that has already been redacted of sensitive text.</param>
+	/// <param name="applyWarning">Assigns the resolved warning to the response's <c>schemaTypeWarning</c> field.</param>
+	internal static async Task<TResponse> RunWithSchemaTypeWarningAsync<TResponse>(
+		string? schemaType,
+		Func<Task<TResponse>> buildResponse,
+		Func<string, TResponse> buildErrorResponse,
+		Action<TResponse, string?> applyWarning) {
+		// Resolve once here; args.SchemaType is null when a camelCase alias was already rejected upstream,
+		// so a valid/alias-rejected call yields no warning and this is a no-op beyond the build itself.
+		string? warning = ResolveSchemaType(schemaType).Warning;
+		try {
+			TResponse response = await buildResponse().ConfigureAwait(false);
+			applyWarning(response, warning);
+			return response;
+		} catch (Exception ex) {
+			TResponse error = buildErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+			applyWarning(error, warning);
+			return error;
+		}
 	}
 }
 

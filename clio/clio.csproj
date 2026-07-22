@@ -114,6 +114,14 @@
 	</Choose>
 
 	<ItemGroup>
+		<!-- Microsoft.PowerShell.SDK pulls System.Security.Cryptography.Xml transitively; the flagged
+		     versions (10.0.6 / 10.0.9) carry high-severity advisories (NU1903, treated as error). Pin it
+		     directly on EVERY target framework (not just net8.0) to the fixed 10.0.10 from central package
+		     management so the vulnerable transitive version never wins on net10.0. -->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"

@@ -107,17 +107,11 @@ public sealed class RequestInfoTool(
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return CreateErrorResponse(legacyAliasError);
 		}
-		string? schemaTypeWarning = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).Warning;
-		try {
-			RequestInfoResponse response = await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
-			response.SchemaTypeWarning = schemaTypeWarning;
-			return response;
-		}
-		catch (Exception ex) {
-			RequestInfoResponse error = CreateErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
-			error.SchemaTypeWarning = schemaTypeWarning;
-			return error;
-		}
+		return await ComponentInfoResolution.RunWithSchemaTypeWarningAsync(
+			args.SchemaType,
+			() => BuildResponseAsync(args, cancellationToken),
+			CreateErrorResponse,
+			(response, warning) => response.SchemaTypeWarning = warning).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -600,12 +594,10 @@ public sealed class RequestInfoResponse {
 	public string? VersionWarning => ComponentInfoResolution.GetVersionWarning(ResolvedFrom);
 
 	/// <summary>
-	/// Gets or sets the caveat emitted when the caller passed an unrecognized <c>schema-type</c> value
-	/// (anything other than omitted / <c>web</c> / <c>mobile</c>). The request still succeeds against the
-	/// WEB request catalog (the documented fallback), but this names the offending value so a typo such as
-	/// <c>"moblie"</c> surfaces instead of silently serving web-flavored request metadata for a mobile page.
-	/// Omitted from the wire shape for a valid selection. Set once at the tool entry point (not per response
-	/// mode); see <see cref="ComponentInfoResolution.ResolveSchemaType"/>.
+	/// Gets or sets the caveat for an unrecognized <c>schema-type</c> value (the call falls back to the
+	/// web request catalog and names the offending value); see
+	/// <see cref="ComponentInfoResolution.ResolveSchemaType"/> for the exact semantics. Omitted for a valid
+	/// selection (omitted / <c>web</c> / <c>mobile</c>).
 	/// </summary>
 	[JsonPropertyName("schemaTypeWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

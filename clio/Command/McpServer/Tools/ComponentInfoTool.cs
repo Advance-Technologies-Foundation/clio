@@ -119,22 +119,17 @@ public sealed class ComponentInfoTool(
 				Items = []
 			};
 		}
-		string? schemaTypeWarning = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).Warning;
-		try {
-			ComponentInfoResponse response = await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
-			response.SchemaTypeWarning = schemaTypeWarning;
-			return response;
-		}
-		catch (Exception ex) {
-			return new ComponentInfoResponse {
+		return await ComponentInfoResolution.RunWithSchemaTypeWarningAsync(
+			args.SchemaType,
+			() => BuildResponseAsync(args, cancellationToken),
+			errorMessage => new ComponentInfoResponse {
 				Success = false,
 				Mode = "list",
-				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
+				Error = errorMessage,
 				Count = 0,
-				Items = [],
-				SchemaTypeWarning = schemaTypeWarning
-			};
-		}
+				Items = []
+			},
+			(response, warning) => response.SchemaTypeWarning = warning).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -778,12 +773,10 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 	public string? VersionWarning => ComponentInfoResolution.GetVersionWarning(ResolvedFrom);
 
 	/// <summary>
-	/// Gets or sets the caveat emitted when the caller passed an unrecognized <c>schema-type</c> value
-	/// (anything other than omitted / <c>web</c> / <c>mobile</c>). The request still succeeds against the
-	/// WEB catalog (the documented fallback), but this names the offending value so a typo such as
-	/// <c>"moblie"</c> surfaces instead of silently serving web-flavored metadata for a mobile page.
-	/// Omitted from the wire shape for a valid selection. Set once at the tool entry point (not per
-	/// response mode); see <see cref="ComponentInfoResolution.ResolveSchemaType"/>.
+	/// Gets or sets the caveat for an unrecognized <c>schema-type</c> value (the call falls back to the
+	/// web component catalog and names the offending value); see
+	/// <see cref="ComponentInfoResolution.ResolveSchemaType"/> for the exact semantics. Omitted for a valid
+	/// selection (omitted / <c>web</c> / <c>mobile</c>).
 	/// </summary>
 	[JsonPropertyName("schemaTypeWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
