@@ -84,6 +84,15 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	#region Properties: Private
 
+	/// <summary>
+	/// Ambient run-mode used to decide console-output suppression. Set once at startup by the entry
+	/// point (property injection: this logger is a process-wide singleton created before the DI
+	/// container, so constructor injection is not possible). <see langword="null"/> ⇒ not MCP mode.
+	/// </summary>
+	internal IRuntimeMode RuntimeMode { get; set; }
+
+	private bool IsMcpServerMode => RuntimeMode?.IsMcpServerMode ?? false;
+
 	private static bool AddTimeStampToOutput => Program.AddTimeStampToOutput;
 
 	private CancellationToken CancellationToken { get; set; }
@@ -192,7 +201,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	private void WriteErrorInternal(string value){
 		string linePrefix = GetLinePrefix("[ERR]");
-		if (!Program.IsMcpServerMode) {
+		if (!IsMcpServerMode) {
 			Console.ForegroundColor = ConsoleColor.Red;
 			Console.Error.Write(linePrefix);
 			Console.ForegroundColor = _defaultConsoleColor;
@@ -215,7 +224,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	private void WriteInfoInternal(string value){
 		string linePrefix = GetLinePrefix("[INF]");
-		if (!Program.IsMcpServerMode) {
+		if (!IsMcpServerMode) {
 			System.IO.TextWriter sink = DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.Green;
 			sink.Write(linePrefix);
@@ -229,7 +238,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 	
 	private void PrintDebugInternal(string value){
 		string linePrefix = GetLinePrefix("[DBG]");
-		if (!Program.IsMcpServerMode) {
+		if (!IsMcpServerMode) {
 			System.IO.TextWriter sink = DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.DarkYellow;
 			sink.Write(linePrefix);
@@ -242,7 +251,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	private void WriteLineInternal(string value){
-		if (!Program.IsMcpServerMode) {
+		if (!IsMcpServerMode) {
 			Console.Out.WriteLine(value);
 		}
 		string linePrefix = GetLinePrefix();
@@ -253,7 +262,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	private void WriteWarningInternal(string value){
 		string linePrefix = GetLinePrefix("[WAR]");
-		if (!Program.IsMcpServerMode) {
+		if (!IsMcpServerMode) {
 			System.IO.TextWriter sink = DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.DarkYellow;
 			sink.Write(linePrefix);
@@ -276,7 +285,10 @@ public class ConsoleLogger : ILogger, IDisposable{
 	#endregion
 
 	#region Methods: Public
-	
+
+	/// <summary>Sets the ambient run-mode on the process-wide logger singleton (see <see cref="RuntimeMode"/>).</summary>
+	internal static void UseRuntimeMode(IRuntimeMode runtimeMode) => ((ConsoleLogger)Instance).RuntimeMode = runtimeMode;
+
 	public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) {
 		errors.Select(e => new { e.ErrorMessage, e.ErrorCode, e.Severity })
 			.ToList().ForEach(e =>
@@ -478,7 +490,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	public void BeginSpinner(string message) {
-		if (Program.IsMcpServerMode || Console.IsOutputRedirected) {
+		if (IsMcpServerMode || Console.IsOutputRedirected) {
 			WriteInfo(message);
 			return;
 		}
@@ -511,7 +523,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		_spinnerCts.Cancel();
 		_spinnerThread?.Join();
 		_spinnerActive = false;
-		if (!Program.IsMcpServerMode && !Console.IsOutputRedirected) {
+		if (!IsMcpServerMode && !Console.IsOutputRedirected) {
 			string prefix = GetLinePrefix("[INF]");
 			ConsoleColor iconColor = success ? ConsoleColor.Green : ConsoleColor.Red;
 			string icon = success ? "✓" : "✗";

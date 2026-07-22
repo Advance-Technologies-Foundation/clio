@@ -31,6 +31,10 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	public override void TearDown() {
 		Console.SetOut(_originalConsoleOut);
 		Console.SetError(_originalConsoleError);
+		// Program.Main (invoked by tests in this fixture) sets the process-wide run-mode on the
+		// ConsoleLogger singleton (Program.cs). Reset it so a Main("mcp") call cannot leak MCP-mode
+		// console suppression into a later fixture that shares this process-wide logger.
+		((ConsoleLogger)ConsoleLogger.Instance).RuntimeMode = null;
 		base.TearDown();
 	}
 

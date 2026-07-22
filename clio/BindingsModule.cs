@@ -230,7 +230,21 @@ public class BindingsModule {
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
-		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
+		// Run-mode singleton. Registered as an INSTANCE against the IRuntimeMode service type only
+		// (single type arg) so the concrete RuntimeMode stays unregistered — keeping `new RuntimeMode(...)`
+		// clean and out of the RegisterAssemblyInterfaceTypes auto-scan (IRuntimeMode is in its skip-list).
+		// Reuses the value Program set on the logger singleton at startup; defaults to non-MCP when Program
+		// never ran (e.g. a test that builds the container directly).
+		services.AddSingleton<IRuntimeMode>(((ConsoleLogger)ConsoleLogger.Instance).RuntimeMode ?? new RuntimeMode(false));
+		// ILogger is the same process-wide ConsoleLogger singleton. Resolving IRuntimeMode inside the factory
+		// makes that service "consumed" (keeps CLIO005 quiet) and back-fills the logger's run-mode when
+		// Program did not set it (property injection: the singleton predates the container, so constructor
+		// injection is impossible).
+		services.AddSingleton<ILogger>(sp => {
+			ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+			logger.RuntimeMode ??= sp.GetRequiredService<IRuntimeMode>();
+			return logger;
+		});
 		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
@@ -1114,7 +1128,12 @@ public class BindingsModule {
 					// process-wide shared instance. Its impl ctor is private (locks must be shared across
 					// every container the host builds), so auto-registering the type would fail
 					// ValidateOnBuild.
-					|| implementedInterface == typeof(ITenantExecutionLockProvider)) {
+					|| implementedInterface == typeof(ITenantExecutionLockProvider)
+					// The run-mode carrier is registered explicitly as an IRuntimeMode singleton instance
+					// (see the AddSingleton<IRuntimeMode> above). Its concrete RuntimeMode(bool) has a
+					// primitive ctor arg DI cannot resolve, so auto-registering the type here would fail
+					// ValidateOnBuild.
+					|| implementedInterface == typeof(IRuntimeMode)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

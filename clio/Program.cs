@@ -1238,6 +1238,11 @@ internal class Program {
 			}
 			bool isMcp = IsMcpCommand(clearArgs);
 			IsMcpServerMode = isMcp;
+			// Mirror the run-mode into the Core-owned, injectable abstraction the moment it is known
+			// (same value, same timing as the static above) so ConsoleLogger — a process-wide singleton
+			// created before any DI container — suppresses human console output under MCP without reading
+			// this entry-point static. Covers both the stdio (mcp-server) and mcp-http startup paths.
+			ConsoleLogger.UseRuntimeMode(new RuntimeMode(isMcp));
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			// Detect json output early (before the background updater logs) so decorated diagnostics are
