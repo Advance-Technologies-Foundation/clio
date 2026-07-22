@@ -2232,7 +2232,7 @@ stories:
     feature: "clio-modularization"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     note: "ADR Phase 1 · D3; risk R4. Leak-bucket 1 lift. Full-unit-suite trigger (ConsoleLogger in Common + Program.cs/BindingsModule.cs). Blocks the Clio.Mcp extraction (Story 4). No separate PRD (ADR self-contained)."
     file: spec/stories/story-clio-modularization-1.md
     adr: spec/adr/adr-clio-modularization.md

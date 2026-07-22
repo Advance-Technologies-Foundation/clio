@@ -4,7 +4,7 @@
 **ADR coverage**: Phase 1 · D3 · risk R4
 **ADR**: [adr-clio-modularization.md](../adr/adr-clio-modularization.md) (D3)
 **PRD**: none — the ADR is self-contained (problem + requirements embedded in the ADR Context; no separate PRD)
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M (half day)
 **Depends on**: none — independent leak-bucket lift; **blocks** Story 4 (the `Clio.Mcp` extraction)
 
