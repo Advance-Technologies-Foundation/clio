@@ -47,7 +47,7 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		_logger = logger;
 	}
 
-	public bool TryUpdateSchema(
+	public virtual bool TryUpdateSchema(
 		ClientUnitSchemaUpdateOptions options,
 		out ClientUnitSchemaUpdateResponse response) {
 		try {

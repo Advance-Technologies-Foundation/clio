@@ -15,7 +15,9 @@ namespace Clio.Tests.Command;
 /// used by create-sql-schema and create-source-code-schema, verifying the ENG-91044 script/culture guard;
 /// (2) <see cref="SchemaDesignerHelper.EnumerateSchemaLayers"/> / <see cref="SchemaDesignerHelper.ResolveSchemaUId"/>
 /// — deterministic base-&gt;top layer ordering by package hierarchy level (ENG-90577 classic-migration-bundle),
-/// so a multi-layer classic schema name resolves to the top layer instead of a DB-order-dependent one.
+/// so a multi-layer classic schema name resolves to the top layer instead of a DB-order-dependent one;
+/// (3) <see cref="SchemaDesignerHelper.LoadSchema"/> — the hardened designer-failure read path that carries the
+/// service's own <c>errorInfo.message</c> into the returned error (and stays safe against a JSON <c>errorInfo:null</c>).
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -414,6 +416,45 @@ public sealed class SchemaDesignerHelperTests {
 		error.Should().BeNull(because: "a resolvable SqlScript schema must not report an error");
 		uId.Should().Be("uid-first",
 			because: "SqlScript/SourceCode kinds keep the pre-PR single-row pick (rows[0].UId), scoped away from top-layer resolution");
+	}
+
+	[Test]
+	[Description("LoadSchema surfaces the designer service's own errorInfo.message (with the schema label and service name) when the response carries no schema payload, instead of masking it with a generic message.")]
+	public void LoadSchema_ShouldSurfaceErrorInfoMessage_WhenDesignerReturnsFailure() {
+		// Arrange — the designer GetSchema call returns a failure envelope with a reason but no "schema" node
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(
+			"""{"schema": null, "errorInfo": {"message": "Access denied"}}""");
+
+		// Act
+		(JObject schema, string error) = SchemaDesignerHelper.LoadSchema(
+			client, urlBuilder, "layer-uid", SchemaDesignerKind.ClientUnit, "ContactPageV2");
+
+		// Assert
+		schema.Should().BeNull(because: "a response without a schema payload is a failed load, not a schema");
+		error.Should().NotBeNull(because: "a designer failure must be surfaced, not returned as a null schema with no reason");
+		error.Should().Contain("Access denied",
+			because: "the designer service's own errorInfo.message must be carried through so the failure is diagnosable");
+		error.Should().Contain("ContactPageV2",
+			because: "the error must name the schema whose load failed");
+		error.Should().Contain(SchemaDesignerKind.ClientUnit.ServiceName,
+			because: "the error must name the designer service that reported the failure");
+	}
+
+	[Test]
+	[Description("LoadSchema returns the generic failure message (without throwing) when the response carries a JSON errorInfo:null, proving the 'as JObject' guard keeps a JValue-null from throwing an opaque indexing error.")]
+	public void LoadSchema_ShouldReturnGenericError_WhenErrorInfoIsJsonNull() {
+		// Arrange — a success-less envelope whose errorInfo is JSON null (a Newtonsoft JValue of type Null, not C# null)
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(
+			"""{"schema": null, "errorInfo": null}""");
+
+		// Act
+		(JObject schema, string error) = SchemaDesignerHelper.LoadSchema(
+			client, urlBuilder, "layer-uid", SchemaDesignerKind.ClientUnit, "ContactPageV2");
+
+		// Assert
+		schema.Should().BeNull(because: "a response without a schema payload is a failed load");
+		error.Should().Be($"Failed to load schema 'ContactPageV2' via {SchemaDesignerKind.ClientUnit.ServiceName}",
+			because: "a JSON errorInfo:null carries no message, so the generic failure message is used without throwing on the JValue-null");
 	}
 
 	// Builds an IApplicationClient/IServiceUrlBuilder pair whose SelectQuery POST returns the given response JSON,
