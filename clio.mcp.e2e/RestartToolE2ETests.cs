@@ -74,6 +74,43 @@ public sealed class RestartToolE2ETests : McpContractFixtureBase
 			because: "agents must be able to discover the readiness-wait timeout budget without reading source code");
 	}
 
+	[Test]
+	[AllureTag(RestartStatusTool.RestartStatusToolName)]
+	[AllureDescription("Starts the real clio MCP server and queries restart-status for an environment that never restarted, verifying a not-found (not an error) result.")]
+	[AllureName("Restart Status reports not-found for an untracked environment")]
+	[Description("restart-status reports not-found, not an error, for an environment with no tracked restart operation.")]
+	public async Task RestartStatus_Should_ReturnNotFound_ForNeverRestartedEnvironment()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string neverRestartedEnvironmentName = $"never-restarted-env-{Guid.NewGuid():N}";
+
+		// Act
+		RestartStatusResponse status = await ActStatusAsync(arrangeContext, neverRestartedEnvironmentName);
+
+		// Assert
+		status.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
+		status.Status.Should().Be("not-found");
+	}
+
+	private static async Task<RestartStatusResponse> ActStatusAsync(
+		ArrangeContext arrangeContext,
+		string environmentName)
+	{
+		return await AllureApi.Step("Act by invoking restart-status through MCP", async () =>
+		{
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				RestartStatusTool.RestartStatusToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			return EntitySchemaStructuredResultParser.Extract<RestartStatusResponse>(callResult);
+		});
+	}
+
 	private static async Task<RestartActResult> ActAsync(
 		ArrangeContext arrangeContext,
 		string environmentName)
