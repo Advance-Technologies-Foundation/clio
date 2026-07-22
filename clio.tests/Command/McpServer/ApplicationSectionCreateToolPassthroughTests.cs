@@ -75,7 +75,8 @@ public sealed class ApplicationSectionCreateToolPassthroughTests {
 			_applicationInfoService,
 			_ => _sysSettingsManager,
 			new NullLogger(),
-			_captionCultureResolver);
+			_captionCultureResolver,
+			new SectionCreateSerializationGuard(new NullLogger()));
 		_tool = new ApplicationSectionCreateTool(Substitute.For<ILogger>(), _commandResolver, sectionCreateService);
 	}
 

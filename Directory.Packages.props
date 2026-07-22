@@ -55,7 +55,9 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
                     Condition="'$(TargetFramework)' != 'net10.0'" />
     <!-- CVE-2026-50648 (GHSA-23rf-6693-g89p, DoS via crafted encrypted XML) affects <= 10.0.9 and fires
          NU1903 Warning-As-Error at restore; $(MsPackageVersion) is 10.0.10 (patched), so this rides the
-         shared property like every other family member instead of a standalone override. -->
+         shared property like every other family member instead of a standalone override. Test projects
+         pin it directly too (see clio.tests / clio.mcp.e2e) so the transitive 10.0.6 pulled via
+         PowerShell.SDK is also lifted to the patched version. -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />

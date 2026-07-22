@@ -143,8 +143,8 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	// web + mobile background refreshes (and refreshes for `latest` vs a pinned
 	// GA-version) artificially — review #2 on PR #599. Keyed lookup avoids that
 	// while still de-duplicating concurrent refreshes for the same flavor+version.
-	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
-		BackgroundRefreshGates = new(StringComparer.Ordinal);
+	// KeyedSemaphore preserves the previous never-evict ordinal-keyed (1,1) behavior.
+	private static readonly KeyedSemaphore BackgroundRefreshGates = new();
 
 	// Tracks in-flight fire-and-forget background refresh tasks so that
 	// DrainAsync() can await them before the process exits. Without this, the
@@ -156,7 +156,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 
 	private SemaphoreSlim GetBackgroundRefreshGate(string version) {
 		string key = $"{_flavor.DisplayName}|{version}";
-		return BackgroundRefreshGates.GetOrAdd(key, _ => new SemaphoreSlim(initialCount: 1, maxCount: 1));
+		return BackgroundRefreshGates.GetOrAdd(key);
 	}
 
 	private readonly IHttpClientFactory _httpClientFactory;

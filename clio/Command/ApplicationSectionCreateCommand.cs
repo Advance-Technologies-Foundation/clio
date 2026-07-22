@@ -86,6 +86,14 @@ public interface IApplicationSectionCreateService {
 	/// When <see langword="null"/> (the synchronous CLI path) the readback keeps its
 	/// <see cref="Timeout.Infinite"/> default; non-positive values fall through to that default too.
 	/// </param>
+	/// <param name="enableContentionRetry">
+	/// When <see langword="true"/> a detail-less <c>InsertQuery failed</c> rejection whose section is
+	/// verified absent triggers exactly one automatic retry (after a short backoff). This is the
+	/// cross-caller-contention path — the MCP/background tool, where several <c>create-app-section</c>
+	/// calls can target the same application in one process. When <see langword="false"/> (the default,
+	/// used by the bare synchronous CLI verb, which runs one command per process and never contends
+	/// in-process) the retry is skipped and a verified-absent detail-less rejection fails fast.
+	/// </param>
 	/// <param name="reportStage">
 	/// Optional callback invoked with a short human-readable marker at each internal stage boundary
 	/// (load application info, create section, load created section). Additive and side-effect-free;
@@ -94,11 +102,11 @@ public interface IApplicationSectionCreateService {
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
 		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
-		Action<string>? reportStage = null);
+		bool enableContentionRetry = false, Action<string>? reportStage = null);
 
 	/// <summary>
 	/// Creates a section against an already-resolved environment. Behaves identically to
-	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?, Action{string})"/> except it never
+	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?, bool, Action{string})"/> except it never
 	/// consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings
 	/// directly (e.g. an MCP passthrough tenant resolved from request headers) — and every nested call it
 	/// makes (BOTH caption-culture resolutions — the readback-culture and profile-validation sites — and
@@ -110,6 +118,7 @@ public interface IApplicationSectionCreateService {
 	/// <param name="request">Section creation request payload.</param>
 	/// <param name="insertTimeoutMsOverride">Optional override (ms) for the section-insert budget; see the name-based overload.</param>
 	/// <param name="readbackTimeoutMsOverride">Optional override (ms) for the post-insert readback; see the name-based overload.</param>
+	/// <param name="enableContentionRetry">Gates the one-shot cross-caller-contention retry; see the name-based overload (ENG-93089).</param>
 	/// <param name="reportStage">
 	/// Optional callback invoked with a short human-readable marker at each internal stage boundary; see
 	/// the name-based overload for the emitted markers. Additive and side-effect-free; when
@@ -120,14 +129,14 @@ public interface IApplicationSectionCreateService {
 	ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
 		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
-		Action<string>? reportStage = null);
+		bool enableContentionRetry = false, Action<string>? reportStage = null);
 }
 
 /// <summary>
 /// Default ApplicationSection DataService-backed implementation for existing-app section creation.
 /// </summary>
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-	Justification = "Service composes its required collaborators (settings, client factory, URL builders, app info, sys-settings factory, logger, culture resolver) via constructor injection; splitting them would add an artificial parameter object without behavioral benefit.")]
+	Justification = "Service composes its required collaborators (settings, client factory, URL builders, app info, sys-settings factory, logger, culture resolver, section-create serialization guard) via constructor injection; splitting them would add an artificial parameter object without behavioral benefit.")]
 public sealed class ApplicationSectionCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
@@ -136,7 +145,9 @@ public sealed class ApplicationSectionCreateService(
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger,
-	ICaptionCultureResolver captionCultureResolver)
+	ICaptionCultureResolver captionCultureResolver,
+	ISectionCreateSerializationGuard sectionCreateSerializationGuard,
+	Action<TimeSpan>? contentionDelay = null)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -170,6 +181,20 @@ public sealed class ApplicationSectionCreateService(
 	private const int DefaultInsertTimeoutMs = 90_000;
 	private const int VerificationTimeoutMs = 30_000;
 
+	// Upper bound for how long a queued caller waits for the per-application serialization lock before
+	// degrading to best-effort. Kept BELOW the MCP response deadline (McpProgressHeartbeat
+	// .DefaultResponseDeadline = 150 s; ApplicationSectionCreate passes deadline:null, so that default
+	// applies) so a queued caller degrades to best-effort — and actually issues its insert — BEFORE the
+	// 150 s deadline fires, rather than sitting on the lock until the deadline returns an "in-progress"
+	// envelope with no insert ever issued. Decoupled from the (up to 600 s) MCP insert budget on purpose:
+	// the guard wait runs synchronously on a background thread-pool worker, so tying it to the full insert
+	// budget could park a worker for ~10 min under a same-app burst. Because the guarded span is now only
+	// the destructive commit (insert + contention-verify + retry), this window reliably serializes about
+	// two concurrent same-app callers; any deeper queue degrades to best-effort and its residual contention
+	// is recovered by the verify/retry path in CommitSectionWithContentionRecovery. The CLI path never
+	// contends (one command per process).
+	private const int MaxSerializationWaitMs = 120_000;
+
 	private const string TransportRetryGuidance =
 		"The request never reached Creatio, so no section was created and retrying is safe. "
 		+ "Verify the environment URL and connectivity first (clio ping -e <env> / clio get-info -e <env>), "
@@ -197,6 +222,17 @@ public sealed class ApplicationSectionCreateService(
 		+ "issue is resolved. Verify the environment first (clio ping -e <env> / clio healthcheck -e <env>), "
 		+ "then retry create-app-section.";
 
+	private const string ContentionRetryGuidance =
+		"Creatio aborted the section insert without a detailed reason. This can happen when sections are "
+		+ "created in the same application in parallel, but a detail-less rejection can equally be a "
+		+ "server-side failure unrelated to concurrency — or a plain code collision — because the server "
+		+ "returned no detail to tell them apart. Do not blindly retry: first run list-app-sections to see "
+		+ "the current sections. A section with the generated or explicit code may already exist; if so, "
+		+ "change the caption or pass a different --code and try again. If you were creating sections "
+		+ "concurrently, create them one at a time (clio serializes and retries once automatically). If a "
+		+ "single sequential create with a fresh code still fails, treat it as a server-side issue — check "
+		+ "environment health (clio healthcheck -e <env>) and the Creatio server logs before retrying.";
+
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
 	private static readonly Regex CodeWordRegex = new(
 		@"[^\p{L}\p{Nd}]+",
@@ -211,10 +247,15 @@ public sealed class ApplicationSectionCreateService(
 		PropertyNameCaseInsensitive = true
 	};
 
+	// Sleep seam: production uses Thread.Sleep; unit tests inject a no-op (via the optional constructor
+	// parameter) so the contention backoff, the settle/poll verify loop, and the readback poll run at zero
+	// delay — keeping the suite under the smart-regression budget without changing production timing.
+	private readonly Action<TimeSpan> _delay = contentionDelay ?? System.Threading.Thread.Sleep;
+
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
 		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
-		Action<string>? reportStage = null) {
+		bool enableContentionRetry = false, Action<string>? reportStage = null) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -233,13 +274,19 @@ public sealed class ApplicationSectionCreateService(
 		// resolution at both call sites and name-based validation/polling application-info reads) so
 		// stdio / registered-environment behavior is untouched (ENG-93347 AC-08).
 		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
+		// Key the serialization guard off the CANONICAL environment identity (normalized Uri), NOT the
+		// registered name, so a registered-name call and a settings-based MCP-HTTP passthrough call to the
+		// SAME physical server resolve to the SAME per-application gate and serialize against each other
+		// (ENG-93089, #3594140065).
 		return CreateSectionCore(
+			SectionCreateSerializationGuard.BuildEnvironmentKey(environmentSettings),
 			environmentSettings,
 			request,
 			overrideCulture => captionCultureResolver.Resolve(cultureOptions, overrideCulture),
 			(id, code) => applicationInfoService.GetApplicationInfo(environmentName, id, code),
 			insertTimeoutMsOverride,
 			readbackTimeoutMsOverride,
+			enableContentionRetry,
 			reportStage);
 	}
 
@@ -247,7 +294,7 @@ public sealed class ApplicationSectionCreateService(
 	public ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
 		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
-		Action<string>? reportStage = null) {
+		bool enableContentionRetry = false, Action<string>? reportStage = null) {
 		ArgumentNullException.ThrowIfNull(environmentSettings);
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateRequest(request);
@@ -255,24 +302,31 @@ public sealed class ApplicationSectionCreateService(
 		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
 		// ISettingsRepository — all FOUR nested calls (the readback-culture and profile-validation
 		// caption-culture resolutions, and the validation + polling application-info reads) go through
-		// the Story-2 settings-based overloads.
+		// the Story-2 settings-based overloads. The serialization guard is keyed off the CANONICAL
+		// environment identity (normalized Uri) plus the application code — the SAME derivation the
+		// name-based overload uses — so both overloads serialize against each other for one server
+		// (ENG-93089, #3594140065).
 		return CreateSectionCore(
+			SectionCreateSerializationGuard.BuildEnvironmentKey(environmentSettings),
 			environmentSettings,
 			request,
 			overrideCulture => captionCultureResolver.Resolve(environmentSettings, overrideCulture),
 			(id, code) => applicationInfoService.GetApplicationInfo(environmentSettings, id, code),
 			insertTimeoutMsOverride,
 			readbackTimeoutMsOverride,
+			enableContentionRetry,
 			reportStage);
 	}
 
 	private ApplicationSectionCreateResult CreateSectionCore(
+		string serializationGuardKey,
 		EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
 		Func<string?, string> resolveCaptionCulture,
 		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int? insertTimeoutMsOverride,
 		int? readbackTimeoutMsOverride,
+		bool enableContentionRetry,
 		Action<string>? reportStage = null) {
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
@@ -319,9 +373,201 @@ public sealed class ApplicationSectionCreateService(
 		}
 		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
 		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds(insertTimeoutMsOverride);
+		// The CLI path leaves readbackTimeoutMsOverride null and keeps the patient Timeout.Infinite
+		// default; the MCP/background path passes a finite per-request budget so a wedged readback
+		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
+		int readbackTimeoutMs = ResolveReadbackTimeout(readbackTimeoutMsOverride);
+
+		// Serialize ONLY each destructive insert (the ExecutePostRequest that actually writes the section)
+		// per environment + application so concurrent create-app-section calls in one process cannot contend
+		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). Everything else — the
+		// read-only contention-verify, the fixed backoff between the two inserts, the retry-decision
+		// orchestration, and the success readback — runs OUTSIDE the guard: those steps read strictly by the
+		// section id generated for THIS call, so they are safe unserialized, and holding them under the guard
+		// would inflate the held span past the bounded wait cap and starve a second concurrent same-app
+		// caller into timing out and inserting unserialized. The wait is bounded and degrades to best-effort
+		// on timeout, so it never introduces a new failure mode — any residual contention (including the
+		// cross-process case the in-process guard cannot cover) is recovered by the reclassify/verify/retry
+		// path in CommitSectionWithContentionRecovery (Option B). The preparation reads above stay OUTSIDE the
+		// guard so invalid inputs still fail fast in parallel. The auto-retry is gated on the explicit
+		// enableContentionRetry flag (the MCP/background path, which is also where genuine cross-caller
+		// contention arises); the bare synchronous CLI verb never contends, so it skips the second insert and
+		// fails fast instead.
+		TimeSpan serializationWait = TimeSpan.FromMilliseconds(Math.Min(insertTimeoutMs, MaxSerializationWaitMs));
+		reportStage?.Invoke("creating section");
+		CommitSectionWithContentionRecovery(
+			serializationGuardKey,
+			request.ApplicationCode,
+			resolvedRequest,
+			requestBody,
+			client,
+			environmentSettings,
+			insertTimeoutMs,
+			serializationWait,
+			contentionRetryEnabled: enableContentionRetry);
+
+		reportStage?.Invoke("loading created section");
+		return LoadCreatedSection(
+			beforeInfo,
+			resolvedRequest,
+			client,
+			environmentSettings,
+			effectiveCultureName,
+			loadApplicationInfo,
+			readbackTimeoutMs);
+	}
+
+	/// <summary>
+	/// Ensures the section is committed server-side: runs the destructive insert and, on a detail-less
+	/// <c>InsertQuery failed</c> contention rejection, verifies by the generated section id (bounded
+	/// settle+poll) and — when <paramref name="contentionRetryEnabled"/> is set — auto-retries at most once
+	/// before surfacing the failure. Only each destructive insert (<see cref="TryCommitAttempt"/>) runs under
+	/// the per-application serialization guard (acquired separately for insert #1 and the retry); the
+	/// read-only verify, the fixed backoff, and the retry-decision orchestration run OUTSIDE the guard so the
+	/// held span stays narrow and never starves a concurrent same-app caller (ENG-93089). Returns normally
+	/// when the section is committed (insert acknowledged, contention-verified-present, retry acknowledged,
+	/// or timeout-recovered-visible), leaving the spinner ended on success; throws a classified
+	/// <see cref="ApplicationSectionCreateFailureClass"/> failure otherwise. It never runs the read-only
+	/// success readback — that happens outside so queued readbacks overlap.
+	/// </summary>
+	/// <param name="serializationGuardKey">Canonical per-environment part of the guard key (the normalized environment Uri from <see cref="SectionCreateSerializationGuard.BuildEnvironmentKey"/>) — identical for both overloads so same-server creates serialize (ENG-93089, #3594140065).</param>
+	/// <param name="applicationCode">Installed application code (part of the guard key).</param>
+	/// <param name="resolvedRequest">Resolved section-create request (carries the generated section id).</param>
+	/// <param name="requestBody">Serialized InsertQuery body for the section.</param>
+	/// <param name="client">Environment-scoped application client.</param>
+	/// <param name="environmentSettings">Resolved environment settings.</param>
+	/// <param name="insertTimeoutMs">Per-request budget for each insert HTTP call.</param>
+	/// <param name="serializationWait">Bounded wait for the per-application serialization guard per insert.</param>
+	/// <param name="contentionRetryEnabled">
+	/// When <see langword="true"/> (the MCP/background path where genuine cross-caller contention arises) a
+	/// verified-absent detail-less rejection triggers exactly one retry. When <see langword="false"/> (the
+	/// bare synchronous CLI verb, which never contends in-process) the retry is skipped: a first-attempt
+	/// detail-less rejection that verifies absent fails fast with the classified contention failure — no
+	/// backoff, no second insert.
+	/// </param>
+	private void CommitSectionWithContentionRecovery(
+		string serializationGuardKey,
+		string applicationCode,
+		ResolvedApplicationSectionCreateRequest resolvedRequest,
+		string requestBody,
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		int insertTimeoutMs,
+		TimeSpan serializationWait,
+		bool contentionRetryEnabled) {
+		// Insert #1 — the guard wraps ONLY this destructive insert; it is released the moment the insert
+		// returns so the verify/backoff below never runs while the lock is held.
+		bool committed = sectionCreateSerializationGuard.Run(
+			serializationGuardKey,
+			applicationCode,
+			serializationWait,
+			() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		if (committed) {
+			logger.EndSpinner(true);
+			return;
+		}
+
+		// Detail-less contention rejection: verify by the id generated for THIS call (bounded settle+poll so
+		// a committed-but-not-yet-visible row is not misread as absent) before any retry, so a section that
+		// committed despite the aborted response is never duplicated (matches strictly by id). This verify is
+		// read-only and runs with the guard NOT held.
+		bool? sectionVisible = TryVerifySectionExistsWithSettle(client, environmentSettings, resolvedRequest);
+		if (sectionVisible == true) {
+			logger.EndSpinner(true);
+			logger.WriteInfo(
+				$"Section '{resolvedRequest.SectionCode}' committed despite a detail-less rejection — continuing with readback.");
+			return;
+		}
+
+		if (sectionVisible is null) {
+			// Verification itself failed: the section state is unknown, so a blind retry could duplicate it.
+			logger.EndSpinner(false);
+			throw BuildContentionFailure(resolvedRequest, sectionCreated: null);
+		}
+
+		if (!contentionRetryEnabled) {
+			// Bare synchronous CLI path: one command per process, so cross-caller contention is not
+			// plausible. The section is verified absent, so fail fast with the classified contention failure
+			// rather than paying a backoff + second insert that would only mask a real code collision.
+			logger.EndSpinner(false);
+			throw BuildContentionFailure(resolvedRequest, sectionCreated: false);
+		}
+
+		// Verified absent on the contention-prone path → safe to retry exactly once (Jira "once") after a
+		// short fixed backoff. The backoff runs with the guard NOT held.
+		logger.WriteInfo(
+			$"Section insert was aborted without detail (contention); retrying once for section '{resolvedRequest.SectionCode}'...");
+		_delay(PollDelay);
+
+		// Retry insert — the guard is re-acquired for just this second destructive insert.
+		bool retryCommitted;
+		try {
+			retryCommitted = sectionCreateSerializationGuard.Run(
+				serializationGuardKey,
+				applicationCode,
+				serializationWait,
+				() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		} catch (ApplicationSectionCreateException retryException)
+			when (retryException.FailureClass == ApplicationSectionCreateFailureClass.ServerError) {
+			// The retry surfaced a TERMINAL detailed server rejection (e.g. a duplicate/constraint error).
+			// That can happen when insert #1 actually committed but answered detail-less and the settle
+			// window false-negatived "absent", so the retry collided with the row insert #1 created. Re-verify
+			// by the generated id before surfacing: if the section is now visible, treat it as committed and
+			// swallow the ServerError; otherwise the rejection is genuine, so rethrow it unchanged. Only the
+			// ServerError class is gated here — transport/timeout classes are never swallowed.
+			bool? sectionVisibleAfterServerError =
+				TryVerifySectionExistsWithSettle(client, environmentSettings, resolvedRequest);
+			if (sectionVisibleAfterServerError == true) {
+				// TryCommitAttempt already ended the spinner false on its throw; this EndSpinner(true) is a
+				// safe no-op on the real ConsoleLogger (EndSpinner short-circuits once its CTS is null, so it
+				// never double-renders a success line after the failure line) and only documents the recovered
+				// intent. Locked by CreateSection_ShouldRecoverAndNotDoubleRenderSpinner_WhenRetryServerErrorButSectionVisible.
+				logger.EndSpinner(true);
+				logger.WriteInfo(
+					$"Section '{resolvedRequest.SectionCode}' is visible despite a terminal rejection on the retry — "
+					+ "insert #1 committed; continuing with readback.");
+				return;
+			}
+
+			throw;
+		}
+
+		if (retryCommitted) {
+			logger.EndSpinner(true);
+			return;
+		}
+
+		// The single retry also aborted without detail. Re-verify before giving up: the retry may have
+		// committed despite its own aborted response (mirror the first-attempt verify branch exactly).
+		bool? sectionVisibleAfterRetry = TryVerifySectionExistsWithSettle(client, environmentSettings, resolvedRequest);
+		if (sectionVisibleAfterRetry == true) {
+			logger.EndSpinner(true);
+			logger.WriteInfo(
+				$"Section '{resolvedRequest.SectionCode}' committed on the retry despite a detail-less rejection — continuing with readback.");
+			return;
+		}
+
+		// Bounded to one retry (no unbounded loop): surface the classified contention failure. section-created
+		// is false when verified absent, null when the re-verification itself failed.
+		logger.EndSpinner(false);
+		throw BuildContentionFailure(resolvedRequest, sectionCreated: sectionVisibleAfterRetry);
+	}
+
+	/// <summary>
+	/// Performs one destructive section-insert attempt. Returns <c>true</c> when the insert is committed
+	/// (acknowledged by the response, or timed out but the section is already visible); returns <c>false</c>
+	/// to signal a detail-less contention rejection the caller should verify/retry; throws a classified
+	/// failure for transport/timeout/terminal server-error outcomes. On a <c>true</c> return the spinner is
+	/// left running for the caller to end once; on the contention signal it is also left running.
+	/// </summary>
+	private bool TryCommitAttempt(
+		ResolvedApplicationSectionCreateRequest resolvedRequest,
+		string requestBody,
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		int insertTimeoutMs) {
 		string responseBody;
 		try {
-			reportStage?.Invoke("creating section");
 			responseBody = client.ExecutePostRequest(
 				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
 				requestBody,
@@ -333,37 +579,17 @@ public sealed class ApplicationSectionCreateService(
 				throw;
 			}
 			if (failureClass == ApplicationSectionCreateFailureClass.CreatioTimeout) {
-				return RecoverFromInsertTimeout(
-					beforeInfo,
-					resolvedRequest,
-					client,
-					environmentSettings,
-					effectiveCultureName,
-					loadApplicationInfo,
-					insertTimeoutMs,
-					exception,
-					reportStage);
+				return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, exception);
 			}
 			logger.EndSpinner(false);
 			throw failureClass == ApplicationSectionCreateFailureClass.Transport
 				? BuildTransportFailure(resolvedRequest, exception)
 				: BuildServerErrorFailure(resolvedRequest, exception);
 		}
-		EnsureInsertSucceeded(responseBody, resolvedRequest);
-		logger.EndSpinner(true);
 
-		// The CLI path leaves readbackTimeoutMsOverride null and keeps the patient Timeout.Infinite
-		// default; the MCP/background path passes a finite per-request budget so a wedged readback
-		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
-		reportStage?.Invoke("loading created section");
-		return LoadCreatedSection(
-			beforeInfo,
-			resolvedRequest,
-			client,
-			environmentSettings,
-			effectiveCultureName,
-			loadApplicationInfo,
-			ResolveReadbackTimeout(readbackTimeoutMsOverride));
+		// A detail-less rejection signals contention to the caller without ending the spinner; a success
+		// response signals a committed insert (the caller ends the spinner and runs the readback outside).
+		return ClassifyInsertResponse(responseBody, resolvedRequest) != InsertResponseOutcome.Contention;
 	}
 
 	private static void ValidateRequest(ApplicationSectionCreateRequest request) {
@@ -518,6 +744,9 @@ public sealed class ApplicationSectionCreateService(
 
 		builder.Append('.');
 
+		// This method is reached only from the DETAILED-rejection branch of ClassifyInsertResponse, so the
+		// server message is guaranteed non-empty here (a detail-less rejection becomes contention, not this
+		// message). The length guard stays purely defensive; there is no detail-less else branch anymore.
 		string trimmedServerMessage = serverMessage?.Trim() ?? string.Empty;
 		if (trimmedServerMessage.Length > 0) {
 			builder.Append(" Server error: ").Append(trimmedServerMessage);
@@ -525,22 +754,39 @@ public sealed class ApplicationSectionCreateService(
 			if (last is not ('.' or '!' or '?')) {
 				builder.Append('.');
 			}
-		} else {
-			builder.Append(" The server rejected the section insert (InsertQuery failed) without returning a detailed message.");
 		}
 
 		builder.Append(" A section with code '")
 			.Append(request.SectionCode)
-			.Append("' may already exist, or the server rejected the insert for a reason it did not detail. Run 'list-app-sections' to inspect existing sections, then change the caption or pass a different --code to use another section code.");
+			.Append("' may already exist. Run 'list-app-sections' to inspect existing sections, then change the caption or pass a different --code to use another section code.");
 
 		return builder.ToString();
 	}
 
 	/// <summary>
-	/// Parses the InsertQuery response and converts every non-contract payload — HTML, empty,
-	/// or an explicit rejection — into a classified server-error failure with the spinner closed.
+	/// Outcome of parsing an InsertQuery response: the insert was acknowledged, or it was rejected
+	/// detail-lessly (contention — retryable). Terminal non-contract payloads (non-JSON, empty, or a
+	/// detailed rejection) do not produce an outcome — they throw a classified server-error failure.
 	/// </summary>
-	private void EnsureInsertSucceeded(
+	private enum InsertResponseOutcome {
+		/// <summary>The InsertQuery response acknowledged the insert (<c>success == true</c>).</summary>
+		Success,
+
+		/// <summary>
+		/// The InsertQuery response was a detail-less <c>InsertQuery failed</c> rejection — the contention
+		/// signature; the caller verifies existence and retries once (ENG-93089).
+		/// </summary>
+		Contention
+	}
+
+	/// <summary>
+	/// Parses the InsertQuery response. Returns <see cref="InsertResponseOutcome.Success"/> when the insert
+	/// was acknowledged, or <see cref="InsertResponseOutcome.Contention"/> when the server returned a
+	/// detail-less <c>InsertQuery failed</c> rejection (retryable — ENG-93089). Every other non-contract
+	/// payload — non-JSON, empty, or a DETAILED rejection — throws a classified server-error failure with
+	/// the spinner closed (unchanged terminal behavior).
+	/// </summary>
+	private InsertResponseOutcome ClassifyInsertResponse(
 		string responseBody,
 		ResolvedApplicationSectionCreateRequest resolvedRequest) {
 		InsertQueryResponseDto? response;
@@ -566,14 +812,89 @@ public sealed class ApplicationSectionCreateService(
 				sectionCreated: null,
 				ServerErrorRetryGuidance);
 		}
-		if (!response.Success) {
-			logger.EndSpinner(false);
-			throw new ApplicationSectionCreateException(
-				BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message),
-				ApplicationSectionCreateFailureClass.ServerError,
-				sectionCreated: false,
-				ServerErrorRetryGuidance);
+		if (response.Success) {
+			return InsertResponseOutcome.Success;
 		}
+
+		// A detail-less rejection is the contention signature (no section was created) — retryable.
+		if (IsDetailLessInsertRejection(response.ErrorInfo?.Message)) {
+			return InsertResponseOutcome.Contention;
+		}
+
+		// A DETAILED rejection (e.g. "already exists"/"already bound"/a real constraint) is terminal: retrying
+		// the same arguments will fail again. Keep the unchanged actionable message and server-error guidance.
+		// Emit a single low-noise INFO recording the actual server message so sentinel drift is observable in
+		// production: if Creatio ever rewords the detail-less "InsertQuery failed" sentinel, that reworded
+		// message stops matching IsDetailLessInsertRejection and surfaces HERE (as a detailed ServerError)
+		// instead of being reclassified as contention — this line is where an operator would see it. INFO,
+		// not WARNING, because this is already a failure path and genuine detailed rejections are expected.
+		logger.WriteInfo(
+			"Section insert rejected with a server-detailed message (not classified as contention): "
+			+ $"'{response.ErrorInfo?.Message}'");
+		logger.EndSpinner(false);
+		throw new ApplicationSectionCreateException(
+			BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message),
+			ApplicationSectionCreateFailureClass.ServerError,
+			sectionCreated: false,
+			ServerErrorRetryGuidance);
+	}
+
+	/// <summary>
+	/// The exact detail-less message Creatio's DataService <c>InsertQuery</c> emits when a section insert
+	/// is rejected without any error detail. This is a <b>server-owned contract string</b> and the single
+	/// load-bearing sentinel that gates the whole ENG-93089 contention reclassify/verify/retry recovery: the
+	/// DataService <c>SyncReply/InsertQuery</c> route returns <c>errorInfo.message == "InsertQuery failed."</c>
+	/// for a detail-less abort. If the server ever rewords or localizes it, update this constant AND the
+	/// classifier tests (<c>IsDetailLessInsertRejection_Should*</c>) that lock the contract in both directions.
+	/// </summary>
+	internal const string DetailLessInsertRejectionMessage = "InsertQuery failed";
+
+	/// <summary>
+	/// Returns <see langword="true"/> when an <c>InsertQuery</c> <c>success:false</c> body carries no
+	/// distinguishing detail — an empty message or exactly <see cref="DetailLessInsertRejectionMessage"/>
+	/// (with or without a trailing period, case-insensitive, whitespace-trimmed) — which the caller reclassifies
+	/// as a retryable <see cref="ApplicationSectionCreateFailureClass.Contention"/>. Any other non-empty message
+	/// is a detailed rejection kept as a terminal <see cref="ApplicationSectionCreateFailureClass.ServerError"/>.
+	/// </summary>
+	internal static bool IsDetailLessInsertRejection(string? serverMessage) {
+		string trimmed = serverMessage?.Trim() ?? string.Empty;
+		return trimmed.Length == 0
+			|| string.Equals(trimmed, DetailLessInsertRejectionMessage, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(trimmed, DetailLessInsertRejectionMessage + ".", StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Builds the classified <see cref="ApplicationSectionCreateFailureClass.Contention"/> failure surfaced
+	/// after a detail-less rejection could not be recovered by verify+retry (ENG-93089).
+	/// </summary>
+	/// <param name="request">Resolved section-create request used to surface caption/code/application context.</param>
+	/// <param name="sectionCreated">
+	/// Post-failure verification outcome: <c>false</c> when the section was verified absent,
+	/// <c>null</c> when verification itself failed.
+	/// </param>
+	private static ApplicationSectionCreateException BuildContentionFailure(
+		ResolvedApplicationSectionCreateRequest request,
+		bool? sectionCreated) {
+		StringBuilder builder = new();
+		builder.Append("Failed to create section '")
+			.Append(request.Caption)
+			.Append("' (code '")
+			.Append(request.SectionCode)
+			.Append("')");
+		if (!string.IsNullOrWhiteSpace(request.ApplicationCode)) {
+			builder.Append(" in application '")
+				.Append(request.ApplicationCode)
+				.Append('\'');
+		}
+
+		builder.Append(": Creatio aborted the section insert without a detailed reason (InsertQuery failed). "
+			+ "This may be contention from creating sections in parallel, or a server-side rejection unrelated "
+			+ "to concurrency — the server returned no detail to distinguish them.");
+		return new ApplicationSectionCreateException(
+			builder.ToString(),
+			ApplicationSectionCreateFailureClass.Contention,
+			sectionCreated,
+			ContentionRetryGuidance);
 	}
 
 	private static int ResolveInsertTimeoutMilliseconds(int? insertTimeoutMsOverride = null) {
@@ -681,40 +1002,75 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
-	/// Handles a timed-out ApplicationSection insert: returns the normal readback result when the
-	/// section is already visible despite the timeout, otherwise throws the classified failure.
+	/// Handles a timed-out ApplicationSection insert INSIDE the guard: returns <c>true</c> (committed) when
+	/// the section created by this call is already visible despite the timeout, otherwise throws the
+	/// classified timeout failure. It only VERIFIES visibility — the read-only success readback runs outside
+	/// the guard. The single-shot verify is deliberate: unlike the contention path, a false-negative here
+	/// does not trigger a destructive retry, so no settle+poll is needed. The spinner is left running on the
+	/// <c>true</c> return (the caller ends it once) and ended on the throw.
 	/// </summary>
-	private ApplicationSectionCreateResult RecoverFromInsertTimeout(
-		ApplicationInfoResult beforeInfo,
+	private bool RecoverFromInsertTimeout(
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
-		string effectiveCultureName,
-		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int insertTimeoutMs,
-		Exception cause,
-		Action<string>? reportStage = null) {
+		Exception cause) {
 		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
 		if (sectionVisible == true) {
-			logger.EndSpinner(true);
 			logger.WriteInfo(
 				$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
 				+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
-			// The server already proved slow, so the recovery readback runs bounded too —
-			// otherwise the budget guarantee would be lost right after the timeout.
-			reportStage?.Invoke("loading created section");
-			return LoadCreatedSection(
-				beforeInfo,
-				resolvedRequest,
-				client,
-				environmentSettings,
-				effectiveCultureName,
-				loadApplicationInfo,
-				VerificationTimeoutMs);
+			return true;
 		}
 
 		logger.EndSpinner(false);
 		throw BuildTimeoutFailure(resolvedRequest, insertTimeoutMs, sectionVisible, cause);
+	}
+
+	// Bounded settle+poll for the CONTENTION verify: after a detail-less rejection a committed row may not
+	// be visible yet, and a false "absent" would trigger a destructive retry, so retry the id-matched verify
+	// a few times (PollDelay between attempts) before concluding absent. Returns true as soon as the section
+	// is visible, false if ANY attempt definitively proved the section absent (retry-safe), and null only when
+	// NO attempt produced a definitive answer (every attempt errored — genuinely unknown state).
+	private const int ContentionVerifyAttempts = 3;
+
+	/// <summary>
+	/// Runs the id-matched <see cref="TryVerifySectionExists"/> up to <see cref="ContentionVerifyAttempts"/>
+	/// times with <see cref="PollDelay"/> between attempts, so a committed-but-not-yet-visible section is not
+	/// misread as absent before the destructive contention retry.
+	/// </summary>
+	/// <returns>
+	/// Returns the MOST-INFORMATIVE outcome across all attempts (not merely the last): <c>true</c> as soon as
+	/// any attempt finds the section visible; <c>false</c> when ANY attempt definitively proved the section
+	/// absent (retry-safe) and none found it visible; <c>null</c> ONLY when no attempt produced a definitive
+	/// answer (every attempt errored / returned <c>null</c>, so the section state is genuinely unknown). This
+	/// means a sequence such as <c>[false, false, null]</c> returns <c>false</c>, not <c>null</c>, so the
+	/// caller's id-matched auto-retry is not suppressed under the heavy same-app load this path exists to
+	/// recover from (ENG-93089 #3595964299).
+	/// </returns>
+	private bool? TryVerifySectionExistsWithSettle(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		ResolvedApplicationSectionCreateRequest request) {
+		bool sawDefinitiveAbsent = false;
+		for (int attempt = 1; attempt <= ContentionVerifyAttempts; attempt++) {
+			bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, request);
+			if (sectionVisible == true) {
+				return true;
+			}
+
+			if (sectionVisible == false) {
+				sawDefinitiveAbsent = true;
+			}
+
+			if (attempt < ContentionVerifyAttempts) {
+				_delay(PollDelay);
+			}
+		}
+
+		// Prefer a definitive "absent" over "unknown": if any attempt proved absence, the id-matched retry is
+		// PK-safe, so return false. null is reserved for the case where no attempt ever answered.
+		return sawDefinitiveAbsent ? false : (bool?)null;
 	}
 
 	/// <summary>
@@ -728,8 +1084,11 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings,
 		ResolvedApplicationSectionCreateRequest request) {
 		try {
+			// Neutral wording: this verification is shared by the timeout-recovery and the detail-less
+			// contention paths, so it must not claim the insert "timed out" (in the contention path the
+			// insert was rejected, not timed out).
 			logger.WriteInfo(
-				$"Insert timed out — verifying whether section '{request.SectionCode}' was created anyway...");
+				$"Verifying whether section '{request.SectionCode}' was created despite the failed insert response...");
 			ApplicationSectionSelectQueryResponseDto response =
 				SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 					client,
@@ -852,7 +1211,7 @@ public sealed class ApplicationSectionCreateService(
 			} catch (Exception exception) {
 				lastError = exception;
 				if (attempt < PollAttempts) {
-					System.Threading.Thread.Sleep(PollDelay);
+					_delay(PollDelay);
 				}
 			}
 		}

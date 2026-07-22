@@ -434,6 +434,26 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[TestCase("odata-read")]
+	[TestCase("odata-create")]
+	[Description("Both odata-read and odata-create contracts carry the shared unregistered-entity anti-pattern derived from the same hint constant, so an agent gets consistent contract-level steering for the routing-error failure both tools can hit.")]
+	public void ToolContractGet_Should_Return_Odata_Contract_With_UnregisteredEntity_AntiPattern(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: $"'{toolName}' funnels through the shared TryDetect routing-error path and must advertise the unregistered-entity anti-pattern");
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(ODataResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
+			because: "the anti-pattern rationale must be derived from the shared UnregisteredEntityHint constant so the two contracts cannot drift from the runtime hint");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical execute-esq contract with its required inputs, rows/count/success output, and the get-guidance preferred flow.")]
 	public void ToolContractGet_Should_Return_ExecuteEsq_Contract() {
 		// Arrange

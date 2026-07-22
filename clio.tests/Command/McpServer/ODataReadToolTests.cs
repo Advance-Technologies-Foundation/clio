@@ -481,4 +481,166 @@ public sealed class ODataReadToolTests {
 		response.Error.Should().Contain("Object reference",
 			because: "the ExceptionMessage should be surfaced to the caller");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A Web API routing error body ({Message, MessageDetail}) for an unregistered controller is reported as a failure with the unregistered-entity hint, not wrapped as a single-entity success.")]
+	public void Read_Should_Surface_Routing_Error_As_Failure() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "UsrCustomerStatus" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a {Message, MessageDetail} 404 routing body must not be reported as a successful single-entity read");
+		response.Error.Should().Contain("controller named 'UsrCustomerStatus'",
+			because: "the MessageDetail should be surfaced so the caller sees the unregistered-controller cause");
+		response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+			because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A bare {Message} body without MessageDetail is reported as a failure but without the unregistered-entity hint, so an unrelated error's cause is not misattributed to registration.")]
+	public void Read_Should_Surface_Bare_Message_Body_As_Failure_Without_Registration_Hint() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/Contact?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a bare {Message} body with no entity members is an error, not a single-entity record");
+		response.Error.Should().Contain("Authorization has been denied",
+			because: "the Message text should be surfaced verbatim to the caller");
+		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+			because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A real single-entity response that legitimately carries a Message column is returned as data (success:true), proving the routing-error heuristic does not misfire on genuine records.")]
+	public void Read_Should_Not_Misclassify_Single_Entity_With_Message_Column_As_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData?$top=1");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "EmailMessageData", Top = 1 });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a single-entity body carrying @odata.context and other members is real data, even when it contains a column named Message");
+		response.Count.Should().Be(1,
+			because: "a single-entity response without a value wrapper counts as one record");
+		response.Value!.Value.TryGetProperty("Message", out JsonElement messageColumn).Should().BeTrue(
+			because: "the entity payload must be preserved verbatim, including its Message column");
+		messageColumn.GetString().Should().Be("Hello there",
+			because: "the real Message column value must not be swallowed by the routing-error detection");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The absolute request URI carried by a bare-Message routing body (the shape hardened sites return once MessageDetail is stripped) is redacted before reaching the caller, matching the sibling error paths.")]
+	public void Read_Should_Redact_Server_Uri_In_Routing_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "UsrCustomerStatus" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a bare-Message routing body must still be surfaced as a failure");
+		response.Error.Should().NotContain("secret-host",
+			because: "the environment host embedded in the routing Message must be redacted like every sibling error path, not leaked into the transcript");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A {Message, MessageDetail} body whose content is NOT a routing miss (e.g. a validation error) is surfaced as a failure WITHOUT the wait-and-retry hint, so an unrelated non-transient failure is not misattributed to entity registration.")]
+	public void Read_Should_Surface_NonRouting_Message_Detail_Without_Registration_Hint() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/Contact?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"The request is invalid.\",\"MessageDetail\":\"The value 'x' is not valid for property Name.\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a {Message, MessageDetail} body is still an error, not a single-entity record");
+		response.Error.Should().Contain("not valid for property Name",
+			because: "the MessageDetail should be surfaced so the caller sees the actual cause");
+		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+			because: "the content is not a routing miss, so the wait-and-retry registration hint must NOT be appended to an unrelated failure");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An empty {Message} body degrades to an explicit contentless-response message with no hint, mirroring the create-path guard so the empty-body fallback is covered on both paths.")]
+	public void Read_Should_Surface_Empty_Message_Body_As_Failure_With_Explicit_Text() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/Contact?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a body whose only member is an empty Message is an error, not data");
+		response.Error.Should().Be("Creatio returned an empty error response.",
+			because: "an empty error body must degrade to an explicit contentless message rather than an empty string");
+		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+			because: "an empty body is not identifiable as a routing miss, so the registration hint must not be appended");
+	}
 }
