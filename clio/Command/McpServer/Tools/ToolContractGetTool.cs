@@ -4335,6 +4335,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': the version is unknown — tell the user and request explicit confirmation before proceeding instead of assuming the 'latest' superset. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4416,6 +4417,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': tell the user the version is unknown and request explicit confirmation before proceeding. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)

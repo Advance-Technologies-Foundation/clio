@@ -619,6 +619,8 @@ public sealed class RequestInfoToolTests {
 			because: "the mobile-registry request must surface from the mobile catalog");
 		response.Items!.Select(item => item.RequestType).Should().NotContain("crt.DeleteRecordRequest",
 			because: "crt.DeleteRecordRequest exists only in the web registry — the mobile branch must not read the web catalog");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "'mobile' is a valid selection, so no unrecognized-value warning is emitted");
 	}
 
 	[Test]
@@ -658,6 +660,30 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
+	[Description("Cross-catalog isolation (both directions): a request type unique to one flavor never resolves under the other. crt.DeleteRecordRequest (web-only) resolves under web but not under schema-type=mobile; crt.RunBusinessProcessRequest (mobile-only) resolves under mobile but not under the default web catalog — proving the two registries are fully independent stores, not one shared pool filtered by flavor.")]
+	public async Task GetRequestInfo_ShouldIsolateWebAndMobileCatalogs_WhenTypeIsUniqueToOneFlavor() {
+		// Arrange — the web fixture uniquely owns crt.DeleteRecordRequest; the mobile fixture uniquely
+		// owns crt.RunBusinessProcessRequest (crt.ClosePageRequest is intentionally shared and not used here).
+		RequestInfoTool tool = CreateTool();
+
+		// Act — look each unique type up under both flavors.
+		RequestInfoResponse webOnlyUnderWeb = await tool.GetRequestInfo(new RequestInfoArgs("crt.DeleteRecordRequest"));
+		RequestInfoResponse webOnlyUnderMobile = await tool.GetRequestInfo(new RequestInfoArgs("crt.DeleteRecordRequest", SchemaType: "mobile"));
+		RequestInfoResponse mobileOnlyUnderMobile = await tool.GetRequestInfo(new RequestInfoArgs("crt.RunBusinessProcessRequest", SchemaType: "mobile"));
+		RequestInfoResponse mobileOnlyUnderWeb = await tool.GetRequestInfo(new RequestInfoArgs("crt.RunBusinessProcessRequest"));
+
+		// Assert — each unique type resolves ONLY under its own flavor.
+		webOnlyUnderWeb.Success.Should().BeTrue(
+			because: "crt.DeleteRecordRequest exists in the web catalog");
+		webOnlyUnderMobile.Success.Should().BeFalse(
+			because: "the web-only request must NOT resolve under the mobile catalog");
+		mobileOnlyUnderMobile.Success.Should().BeTrue(
+			because: "crt.RunBusinessProcessRequest exists in the mobile catalog");
+		mobileOnlyUnderWeb.Success.Should().BeFalse(
+			because: "the mobile-only request must NOT resolve under the default web catalog");
+	}
+
+	[Test]
 	[Description("Omitting schema-type defaults to the web request catalog — the default flavor must be web, matching get-component-info.")]
 	public async Task GetRequestInfo_ShouldDefaultToWebCatalog_WhenSchemaTypeIsOmitted() {
 		// Arrange
@@ -670,6 +696,46 @@ public sealed class RequestInfoToolTests {
 		response.Count.Should().Be(3, because: "the web test registry declares three requests");
 		response.Items!.Select(item => item.RequestType).Should().Contain("crt.DeleteRecordRequest",
 			because: "omitting schema-type must read the web catalog, which contains the web-only request");
+	}
+
+	[Test]
+	[Description("An unrecognized schema-type value (typo 'moblie') is NOT silently treated as web: the call still succeeds against the WEB catalog (documented fallback) but the response carries a schemaTypeWarning naming the offending value, so a mis-typed mobile request surfaces instead of quietly serving web metadata for a mobile page.")]
+	public async Task GetRequestInfo_ShouldWarnAndFallBackToWeb_WhenSchemaTypeIsUnrecognized() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(SchemaType: "moblie"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an unrecognized schema-type must fall back to web, not hard-fail the call");
+		response.Count.Should().Be(3,
+			because: "the fallback serves the web catalog (three requests), not the mobile one");
+		response.Items!.Select(item => item.RequestType).Should().Contain("crt.DeleteRecordRequest",
+			because: "the web-only request proves the web catalog was served on the fallback");
+		response.SchemaTypeWarning.Should().NotBeNullOrEmpty(
+			because: "an unrecognized schema-type must surface a warning instead of a silent web fallback");
+		response.SchemaTypeWarning.Should().Contain("moblie",
+			because: "the warning must name the offending value so the typo is obvious to the caller");
+		response.SchemaTypeWarning.Should().Contain("mobile",
+			because: "the warning must point at the likely intended value");
+	}
+
+	[Test]
+	[Description("An explicit schema-type='web' is a valid selection: web catalog and NO schemaTypeWarning — the warning is reserved for unrecognized values, never emitted for the explicit default.")]
+	public async Task GetRequestInfo_ShouldNotWarn_WhenSchemaTypeIsExplicitWeb() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(SchemaType: "web"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "'web' is a valid explicit schema-type selection");
+		response.Count.Should().Be(3, because: "'web' selects the web catalog");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "a valid explicit selection must not emit the unrecognized-value warning");
 	}
 
 	[Test]

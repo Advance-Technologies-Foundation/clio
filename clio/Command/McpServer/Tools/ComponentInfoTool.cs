@@ -43,7 +43,7 @@ public sealed class ComponentInfoTool(
 	internal const string ComponentTypeParameterName = "component-type";
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
 	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
-	internal const string SchemaTypeMobile = "mobile";
+	internal const string SchemaTypeMobile = ComponentInfoResolution.SchemaTypeMobile;
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
@@ -119,8 +119,11 @@ public sealed class ComponentInfoTool(
 				Items = []
 			};
 		}
+		string? schemaTypeWarning = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).Warning;
 		try {
-			return await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
+			ComponentInfoResponse response = await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
+			response.SchemaTypeWarning = schemaTypeWarning;
+			return response;
 		}
 		catch (Exception ex) {
 			return new ComponentInfoResponse {
@@ -128,7 +131,8 @@ public sealed class ComponentInfoTool(
 				Mode = "list",
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Count = 0,
-				Items = []
+				Items = [],
+				SchemaTypeWarning = schemaTypeWarning
 			};
 		}
 	}
@@ -168,7 +172,7 @@ public sealed class ComponentInfoTool(
 	/// stable across the <c>schema-type</c> dimension.
 	/// </summary>
 	private async Task<ComponentInfoResponse> BuildResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
-		bool isMobile = IsMobile(args.SchemaType);
+		bool isMobile = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).IsMobile;
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(args.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri);
 		if (hasExplicitVersion && hasEnvironment) {
@@ -292,9 +296,6 @@ public sealed class ComponentInfoTool(
 		};
 		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
-
-	private static bool IsMobile(string? schemaType) =>
-		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
 
 	private static ComponentInfoResponse CreateListResponse(
 		IReadOnlyList<ComponentRegistryEntry> entries,
@@ -775,6 +776,18 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 	[JsonPropertyName("versionWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? VersionWarning => ComponentInfoResolution.GetVersionWarning(ResolvedFrom);
+
+	/// <summary>
+	/// Gets or sets the caveat emitted when the caller passed an unrecognized <c>schema-type</c> value
+	/// (anything other than omitted / <c>web</c> / <c>mobile</c>). The request still succeeds against the
+	/// WEB catalog (the documented fallback), but this names the offending value so a typo such as
+	/// <c>"moblie"</c> surfaces instead of silently serving web-flavored metadata for a mobile page.
+	/// Omitted from the wire shape for a valid selection. Set once at the tool entry point (not per
+	/// response mode); see <see cref="ComponentInfoResolution.ResolveSchemaType"/>.
+	/// </summary>
+	[JsonPropertyName("schemaTypeWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? SchemaTypeWarning { get; set; }
 
 	/// <summary>
 	/// Gets the machine-readable hard-stop flag, emitted as <c>true</c> only when <see cref="ResolvedFrom"/>

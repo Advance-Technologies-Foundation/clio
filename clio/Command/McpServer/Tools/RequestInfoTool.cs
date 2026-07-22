@@ -37,13 +37,6 @@ public sealed class RequestInfoTool(
 	internal const string ToolName = "get-request-info";
 
 	/// <summary>
-	/// <c>schema-type</c> value that selects the mobile request catalog. Mirrors
-	/// <see cref="ComponentInfoTool.SchemaTypeMobile"/>: any other value (or omission) uses the
-	/// default web catalog.
-	/// </summary>
-	internal const string SchemaTypeMobile = "mobile";
-
-	/// <summary>
 	/// Canonical kebab-case name of the request selector parameter — the JSON property bound
 	/// to <see cref="RequestInfoArgs.RequestType"/>. Every <see cref="LegacyAliases"/> entry
 	/// that redirects a mis-spelled selector points at this single value.
@@ -114,11 +107,16 @@ public sealed class RequestInfoTool(
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return CreateErrorResponse(legacyAliasError);
 		}
+		string? schemaTypeWarning = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).Warning;
 		try {
-			return await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
+			RequestInfoResponse response = await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
+			response.SchemaTypeWarning = schemaTypeWarning;
+			return response;
 		}
 		catch (Exception ex) {
-			return CreateErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+			RequestInfoResponse error = CreateErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+			error.SchemaTypeWarning = schemaTypeWarning;
+			return error;
 		}
 	}
 
@@ -130,7 +128,7 @@ public sealed class RequestInfoTool(
 	/// <c>requiresVersionConfirmation</c>) behave identically across both catalogs.
 	/// </summary>
 	private async Task<RequestInfoResponse> BuildResponseAsync(RequestInfoArgs args, CancellationToken cancellationToken) {
-		bool isMobile = IsMobile(args.SchemaType);
+		bool isMobile = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).IsMobile;
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(args.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri);
 		if (hasExplicitVersion && hasEnvironment) {
@@ -222,9 +220,6 @@ public sealed class RequestInfoTool(
 		};
 		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
-
-	private static bool IsMobile(string? schemaType) =>
-		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Builds the detail response for a catalog hit. Unlike the component catalog's
@@ -603,6 +598,18 @@ public sealed class RequestInfoResponse {
 	[JsonPropertyName("versionWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? VersionWarning => ComponentInfoResolution.GetVersionWarning(ResolvedFrom);
+
+	/// <summary>
+	/// Gets or sets the caveat emitted when the caller passed an unrecognized <c>schema-type</c> value
+	/// (anything other than omitted / <c>web</c> / <c>mobile</c>). The request still succeeds against the
+	/// WEB request catalog (the documented fallback), but this names the offending value so a typo such as
+	/// <c>"moblie"</c> surfaces instead of silently serving web-flavored request metadata for a mobile page.
+	/// Omitted from the wire shape for a valid selection. Set once at the tool entry point (not per response
+	/// mode); see <see cref="ComponentInfoResolution.ResolveSchemaType"/>.
+	/// </summary>
+	[JsonPropertyName("schemaTypeWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? SchemaTypeWarning { get; set; }
 
 	/// <summary>
 	/// Gets the machine-readable hard-stop flag, emitted as <c>true</c> only on the

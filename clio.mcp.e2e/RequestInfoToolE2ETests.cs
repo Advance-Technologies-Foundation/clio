@@ -346,6 +346,32 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("An unrecognized schema-type value over the wire is not silently treated as web: the call falls back to the WEB catalog but carries a schemaTypeWarning naming the offending value, proving the validation and warning cross the MCP boundary end-to-end rather than degrading silently.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-request-info warns on an unrecognized schema-type over the wire")]
+	[AllureDescription("Calls get-request-info with a typo schema-type ('moblie') against the local fixtures and verifies the web fallback plus a schemaTypeWarning that names the offending value.")]
+	public async Task RequestInfoTool_Should_Warn_And_Fall_Back_To_Web_When_SchemaType_Is_Unrecognized() {
+		// Arrange
+		await using var context = Arrange();
+
+		// Act
+		RequestInfoResponse response = await CallRequestInfoAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["schema-type"] = "moblie" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an unrecognized schema-type falls back to web over the wire instead of failing");
+		response.Items!.Select(item => item.RequestType).Should().Contain("crt.DeleteRecordRequest",
+			because: "the web fixture's request proves the WEB catalog was served on the fallback");
+		response.SchemaTypeWarning.Should().NotBeNullOrEmpty(
+			because: "the unrecognized-value warning must cross the MCP boundary, not be dropped silently");
+		response.SchemaTypeWarning!.Should().Contain("moblie",
+			because: "the warning must name the offending value over the wire so the typo is visible to the agent");
+	}
+
+	[Test]
 	[Description("An unknown request type over the wire returns a not-found list envelope with a bounded suggestion shortlist.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-request-info returns suggestions for an unknown request type")]

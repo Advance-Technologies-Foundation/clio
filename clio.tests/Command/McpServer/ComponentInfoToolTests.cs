@@ -1699,6 +1699,46 @@ public sealed class ComponentInfoToolTests {
 			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
 		response.ComponentType.Should().Be("crt.TabContainer",
 			because: "web catalog lookup should still work when schema-type is not specified");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "an omitted schema-type is a valid selection and must not emit the unrecognized-value warning");
+	}
+
+	[Test]
+	[Description("An unrecognized schema-type value (typo 'moblie') is NOT silently treated as web: the lookup still resolves against the WEB catalog (documented fallback) but the response carries a schemaTypeWarning naming the offending value, so a mis-typed mobile request surfaces instead of quietly serving web-flavored component metadata for a mobile page.")]
+	public async Task ComponentInfoTool_Should_Warn_And_Fall_Back_To_Web_When_SchemaType_Is_Unrecognized() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer", SchemaType: "moblie"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an unrecognized schema-type must fall back to web instead of hard-failing the call");
+		response.ComponentType.Should().Be("crt.TabContainer",
+			because: "crt.TabContainer is a web component, proving the web catalog was served on the fallback");
+		response.SchemaTypeWarning.Should().NotBeNullOrEmpty(
+			because: "an unrecognized schema-type must surface a warning instead of a silent web fallback");
+		response.SchemaTypeWarning.Should().Contain("moblie",
+			because: "the warning must name the offending value so the typo is obvious to the caller");
+		response.SchemaTypeWarning.Should().Contain("mobile",
+			because: "the warning must point at the likely intended value");
+	}
+
+	[Test]
+	[Description("An explicit schema-type='web' is a valid selection: web catalog and NO schemaTypeWarning — the warning is reserved for unrecognized values, never emitted for the explicit default.")]
+	public async Task ComponentInfoTool_Should_Not_Warn_When_SchemaType_Is_Explicit_Web() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer", SchemaType: "web"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "'web' is a valid explicit schema-type selection");
+		response.ComponentType.Should().Be("crt.TabContainer", because: "'web' selects the web catalog");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "a valid explicit selection must not emit the unrecognized-value warning");
 	}
 
 	[Test]
