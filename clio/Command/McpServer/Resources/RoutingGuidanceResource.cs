@@ -31,7 +31,8 @@ public sealed class RoutingGuidanceResource {
 
 		       - Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
 		         - page-modification is the entry; after its GATE read the ONE matching sub-guide: name=page-modification-overview (save lifecycle), name=page-modification-field-contract (insert a data-bound field), name=page-modification-containers (parentName / bundle.json), name=page-modification-components (button/handler/viewConfigDiff rules)
-		         - dashboards (create a dashboard page, lay out / size / style analytics widgets, or set who can access a dashboard) -> name=dashboards (routes onward to dashboard-creation / dashboard-design / dashboard-rights)
+		         - dashboards (create a dashboard page, lay out / size / style analytics widgets, or set who can access a dashboard) -> name=dashboards (routes onward to dashboard-creation / dashboard-and-home-page-layout / dashboard-design / dashboard-rights)
+		         - create a home page, or set a workplace's home page (BaseHomePage + SysWorkplace.HomePageUId binding) -> name=home-page
 		         - desktop pages (create/edit a desktop-selector workspace, CentralAreaDesktopTemplate, group Desktop) -> name=desktop-page
 		         - page business rules (create/change/remove; visibility/required/value) -> name=business-rules
 		         - wire a button/menu action to a platform request (crt.*Request: print, close, cancel, ...) -> get-request-info + name=when-to-use-requests

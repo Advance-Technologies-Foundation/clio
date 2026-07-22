@@ -79,6 +79,10 @@ internal static class GuidanceCatalog {
 				"page-creation",
 				"Canonical MCP guidance for creating Freedom UI pages from supported templates via create-page: the list-page-templates -> create-page -> get-page flow, the supported web/mobile template catalog, required and optional inputs, validation/failure modes, and designer-type mapping.",
 				PageCreationGuidanceResource.Guide),
+			["home-page"] = Create(
+				"home-page",
+				"Canonical MCP guidance for creating a Freedom UI home page (BaseHomePage) and making it a workplace's home page by binding SysWorkplace.HomePageUId as a package data binding.",
+				HomePageGuidanceResource.Guide),
 			["page-modification"] = Create(
 				"page-modification",
 				"Entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides (each kept small so one get-guidance response fits the agent token limit).",
@@ -129,7 +133,7 @@ internal static class GuidanceCatalog {
 				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
-				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-design (widget layout/sizing/styling), and indicator-widget / chart-widget (per-widget payload).",
+				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-and-home-page-layout (widget layout/sizing/styling), dashboard-design (the DashboardDS filter-by-page-data binding), and indicator-widget / chart-widget (per-widget payload).",
 				DashboardGuidanceResource.Guide),
 			["dashboard-creation"] = Create(
 				"dashboard-creation",
@@ -137,8 +141,12 @@ internal static class GuidanceCatalog {
 				DashboardCreationGuidanceResource.Guide),
 			["dashboard-design"] = Create(
 				"dashboard-design",
-				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
+				"Canonical MCP guidance for the dashboard-specific DashboardDS hidden page data source that a dashboard's widgets filter by via a dependencies entry; general widget layout/sizing/styling lives in the dashboard-and-home-page-layout guide.",
 				DashboardDesignGuidanceResource.Guide),
+			["dashboard-and-home-page-layout"] = Create(
+				"dashboard-and-home-page-layout",
+				"Canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white (without-fill) card theme used on dashboards and home pages alike.",
+				DashboardAndHomePageLayoutGuidanceResource.Guide),
 			["dashboard-rights"] = Create(
 				"dashboard-rights",
 				"Canonical MCP guidance for reading and changing a dashboard's record-level access rights (new or existing dashboard) via get-record-rights / set-record-rights, and shipping those grants with the dashboard's package as a SysSchemaAdminUnitRight data binding so they survive a transfer.",
