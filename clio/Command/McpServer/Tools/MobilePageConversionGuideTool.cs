@@ -103,7 +103,7 @@ public sealed class MobilePageConversionGuideTool {
 		PageGetResponse pageResponse;
 		try {
 			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
-			lock (McpToolExecutionLock.SyncRoot) {
+			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
 				try {
 					getCommand.TryGetPage(getOptions, out pageResponse);
 				} finally {
@@ -280,7 +280,7 @@ public sealed class MobilePageConversionGuideTool {
 			};
 			PageGetResponse templateResponse;
 			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
-			lock (McpToolExecutionLock.SyncRoot) {
+			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
 				try {
 					command.TryGetPage(options, out templateResponse);
 				} finally {
@@ -440,7 +440,7 @@ public sealed class MobilePageConversionGuideTool {
 			};
 			PageGetResponse templateResponse;
 			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
-			lock (McpToolExecutionLock.SyncRoot) {
+			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
 				try {
 					command.TryGetPage(options, out templateResponse);
 				} finally {

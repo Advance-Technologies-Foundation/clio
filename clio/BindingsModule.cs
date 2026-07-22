@@ -378,8 +378,6 @@ public class BindingsModule {
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
-		services.AddTransient<IRelatedPageService, RelatedPageService>();
-		services.AddTransient<RegisterRelatedPageCommand>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
@@ -500,7 +498,6 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
-		services.AddTransient<RelatedPageTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
 		services.AddTransient<ReadEntityBusinessRuleTool>();
 		services.AddTransient<ReadPageBusinessRuleTool>();

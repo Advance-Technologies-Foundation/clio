@@ -9,14 +9,44 @@ using Clio.Common;
 namespace Clio.Command.RelatedPages;
 
 /// <summary>
-/// Input for configuring the <c>RelatedPage</c> add-on of an object. <see cref="Pages"/> fully
-/// replaces the object's current related-page configuration.
+/// Target UI of a related-page add-on: the web designer (<c>RelatedPage</c>) or the Creatio Mobile app
+/// (<c>MobileRelatedPage</c>). Both add-ons attach to the same object (entity schema) and share the same
+/// <c>Pages</c> metadata shape — only the add-on name differs — so the service handles both from one code path.
+/// </summary>
+public enum RelatedPageSchemaType {
+	Web,
+	Mobile
+}
+
+/// <summary>
+/// Parses the CLI/MCP <c>schema-type</c> argument into a <see cref="RelatedPageSchemaType"/>. Null/empty defaults
+/// to <see cref="RelatedPageSchemaType.Web"/> (back-compat with the web-only origin of the tool); an unrecognized
+/// value is rejected so a typo cannot silently write the wrong add-on.
+/// </summary>
+public static class RelatedPageSchemaTypeParser {
+	public static RelatedPageSchemaType Parse(string schemaType) {
+		if (string.IsNullOrWhiteSpace(schemaType)
+			|| string.Equals(schemaType.Trim(), "web", StringComparison.OrdinalIgnoreCase)) {
+			return RelatedPageSchemaType.Web;
+		}
+		if (string.Equals(schemaType.Trim(), "mobile", StringComparison.OrdinalIgnoreCase)) {
+			return RelatedPageSchemaType.Mobile;
+		}
+		throw new ArgumentException($"schema-type '{schemaType}' is not valid; use 'web' or 'mobile'.");
+	}
+}
+
+/// <summary>
+/// Input for configuring the <c>RelatedPage</c> / <c>MobileRelatedPage</c> add-on of an object.
+/// <see cref="Pages"/> fully replaces the object's current related-page configuration. <see cref="SchemaType"/>
+/// selects which add-on is written (default <see cref="RelatedPageSchemaType.Web"/>).
 /// </summary>
 public sealed record RelatedPageAddonRequest(
 	string PackageName,
 	string EntitySchemaName,
 	IReadOnlyList<RelatedPageSpec> Pages,
-	string TypeColumnUId);
+	string TypeColumnUId,
+	RelatedPageSchemaType SchemaType = RelatedPageSchemaType.Web);
 
 /// <summary>
 /// Outcome of a <see cref="IRelatedPageAddonService.Create"/> call.
@@ -35,7 +65,8 @@ public sealed record RelatedPageAddonResult(
 /// </summary>
 public sealed record RelatedPageAddonReadRequest(
 	string PackageName,
-	string EntitySchemaName);
+	string EntitySchemaName,
+	RelatedPageSchemaType SchemaType = RelatedPageSchemaType.Web);
 
 /// <summary>
 /// The object's current <c>RelatedPage</c> configuration, decoded from the add-on metadata. Lets a caller
@@ -98,7 +129,16 @@ internal sealed class RelatedPageAddonService(
 	: IRelatedPageAddonService {
 
 	private const string RelatedPageAddonName = "RelatedPage";
+	// The mobile counterpart of the web RelatedPage add-on. It attaches to the same object (entity schema) via the
+	// same EntitySchemaManager and carries the same Pages metadata shape — so only the add-on name changes. Selected
+	// by RelatedPageAddonRequest/RelatedPageAddonReadRequest.SchemaType == Mobile (used by the mobile conversion flow
+	// to register a converted mobile form page as the object's default mobile edit page).
+	private const string MobileRelatedPageAddonName = "MobileRelatedPage";
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
+
+	// Maps the requested UI target to the platform add-on name written into the schema-designer request.
+	private static string AddonNameFor(RelatedPageSchemaType schemaType) =>
+		schemaType == RelatedPageSchemaType.Mobile ? MobileRelatedPageAddonName : RelatedPageAddonName;
 	// Single source of truth for the two audience role names is RelatedPageSpecBuilder (the CLI emitter of these
 	// role names); alias them here so the emitter and this validator cannot drift, while the validation code below
 	// still reads with the short unqualified names.
@@ -372,7 +412,8 @@ internal sealed class RelatedPageAddonService(
 		IReadOnlyDictionary<string, string> roleByName = ResolveRoleNames(request.Pages);
 		JsonArray pages = BuildPages(request.Pages, roleByName, packageId);
 
-		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId);
+		string addonName = AddonNameFor(request.SchemaType);
+		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId, addonName);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
 		// Start from the FETCHED metadata and replace only the two keys this tool owns (Pages, TypeColumnUId), so
 		// any OTHER top-level field survives the write. The RelatedPage MetaData is exactly
@@ -400,7 +441,7 @@ internal sealed class RelatedPageAddonService(
 		string buildWarning = addonSchemaDesignerClient.BuildConfiguration();
 
 		return new RelatedPageAddonResult(
-			entitySchema.UId.ToString("D"), packageUId, pages.Count, RelatedPageAddonName,
+			entitySchema.UId.ToString("D"), packageUId, pages.Count, addonName,
 			CombineWarnings(typeColumnWarning, resetWarning, buildWarning));
 	}
 
@@ -416,14 +457,15 @@ internal sealed class RelatedPageAddonService(
 		(string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) =
 			ResolveTarget(request.PackageName, request.EntitySchemaName);
 
-		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId);
+		string addonName = AddonNameFor(request.SchemaType);
+		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId, addonName);
 		// Read-only: GetSchema returns the (server auto-provisioned) add-on with its current metadata; no save.
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
 		IReadOnlyList<RelatedPageEntry> pages = DecodePages(schema.MetaData, out string typeColumnUId);
 
 		return new RelatedPageAddonReadResult(
 			request.EntitySchemaName, entitySchema.UId.ToString("D"), request.PackageName, packageUId,
-			RelatedPageAddonName, typeColumnUId, pages.Count, pages);
+			addonName, typeColumnUId, pages.Count, pages);
 	}
 
 	/// <summary>
@@ -540,13 +582,16 @@ internal sealed class RelatedPageAddonService(
 	}
 
 	/// <summary>
-	/// Builds the <c>RelatedPage</c> add-on <c>GetSchema</c> request for the resolved object — the single shape both
-	/// <see cref="Create"/> and <see cref="Get"/> send. Mirrors the Interface Designer / Business Rule add-on path:
-	/// a replacing or derived object reports the parent it extends; a plain object reports none (<c>Guid.Empty</c>).
+	/// Builds the related-page add-on <c>GetSchema</c> request for the resolved object — the single shape both
+	/// <see cref="Create"/> and <see cref="Get"/> send. <paramref name="addonName"/> selects the web
+	/// (<c>RelatedPage</c>) or mobile (<c>MobileRelatedPage</c>) add-on. Mirrors the Interface Designer / Business
+	/// Rule add-on path: a replacing or derived object reports the parent it extends; a plain object reports none
+	/// (<c>Guid.Empty</c>).
 	/// </summary>
-	private static AddonGetRequestDto BuildAddonGetRequest(EntityDesignSchemaDto entitySchema, Guid packageId) =>
+	private static AddonGetRequestDto BuildAddonGetRequest(
+		EntityDesignSchemaDto entitySchema, Guid packageId, string addonName) =>
 		new() {
-			AddonName = RelatedPageAddonName,
+			AddonName = addonName,
 			TargetSchemaUId = entitySchema.UId,
 			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
 			TargetPackageUId = packageId,

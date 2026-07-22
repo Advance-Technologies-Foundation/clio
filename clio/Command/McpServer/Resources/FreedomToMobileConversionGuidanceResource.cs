@@ -81,8 +81,9 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  section-registration intent) and STOP. Do NOT call create-page, update-page, validate-page, or
 			  create-page-business-rule until the developer explicitly approves the plan.
 			- Gate S (before ANY section/workplace registration): do NOT call odata-update / odata-create
-			  (SysModule / SysModuleInWorkplace / SysWorkplace) or register-related-page until the developer
-			  SEPARATELY approves the registration. Registering as a section is always the user's decision.
+			  (SysModule / SysModuleInWorkplace / SysWorkplace) or create-related-page-addon (schema-type=mobile,
+			  the default mobile edit page) until the developer SEPARATELY approves the registration. Registering
+			  as a section is always the user's decision.
 			- The user's initial request is NOT approval. "convert page X to mobile and register it as a
 			  section" states the request, not approval of the plan. Present the plan, then wait for a
 			  separate explicit go-ahead.

@@ -151,7 +151,7 @@ public static class MobileSectionRegistrationProbe {
 
 	private static string ManualEditPageActionOrSkip(bool isFormPage) =>
 		isFormPage
-			? "Edit page: after creating the mobile form page, register it as the object's default MOBILE edit page with register-related-page (schema-type=mobile, is-default=true; writes the MobileRelatedPage add-on)."
+			? "Edit page: after creating the mobile form page, register it as the object's default MOBILE edit page with create-related-page-addon (schema-type=mobile, a single is-default page → the MobileRelatedPage add-on)."
 			: "No additional section registration action is required for this page.";
 
 	/// <summary>Best-effort: finds the Id of the Mobile <c>SysApplicationClientType</c> (matched by name).</summary>
