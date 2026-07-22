@@ -11,6 +11,7 @@ using Newtonsoft.Json.Linq;
 using JsonNode = System.Text.Json.Nodes.JsonNode;
 using JsonArray = System.Text.Json.Nodes.JsonArray;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
+using JsonValue = System.Text.Json.Nodes.JsonValue;
 
 // Freedom UI WEB -> Freedom UI MOBILE conversion ANALYSIS (advisory-only, ENG-89620).
 // This service builds NOTHING and performs no Creatio I/O. It inspects the source web page
@@ -74,7 +75,22 @@ public static class WebToMobileAnalysisService {
 	/// <param name="sourcePage">Source web page schema name.</param>
 	/// <param name="suggestedTarget">Suggested target mobile page schema name.</param>
 	/// <param name="containerNameMap">Web→mobile container-name map from the template rule (may be null).</param>
-	public static MobilePageConversionGuide Analyze(
+	/// <param name="mobileTemplateArraysByPath">Every array found anywhere in the mobile template's own
+		/// merged viewModelConfig, keyed by its path (e.g. "Items/modelConfig/filterAttributes" ->
+		/// [QuickFilterGroup_Filters, FolderTreeActions_active_folder_filter] for BaseMobileListTemplate).
+		/// Unioned, path-for-path, with the page's own arrays so the template's native entries are not lost
+		/// when an array is hoisted into a targeted merge (may be null/empty when no template rule matched or
+		/// the template read failed).</param>
+		/// <param name="mobileTemplateArraysUnavailable">True when a mobile template was known but its bundle
+		/// could not be read (no active environment, read failure) - surfaced as an explicit constraint instead
+		/// of silently emitting arrays that carry only this page's own entries.</param>
+		/// <param name="mobileTemplateCollectionKeys">Top-level attribute keys the mobile template itself owns as
+		/// list collections (isCollection:true in the template's merged viewModelConfig, e.g. "Items" for
+		/// BaseMobileListTemplate). A template-owned collection is split into targeted merges (its scalars are
+		/// template-owned and dropped) instead of being dumped whole into the root merge. May be null/empty when
+		/// no template rule matched or the template read failed; the page's own isCollection:true marker also
+		/// identifies a collection to split (both signals are always honored, not only when this set is empty).</param>
+		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
 		IReadOnlySet<string> webTypes,
@@ -91,7 +107,10 @@ public static class WebToMobileAnalysisService {
 		IReadOnlySet<string> templateComponentNames = null,
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null,
 		IReadOnlyList<PositionalPlacement> positionalPlacements = null,
-		IReadOnlyDictionary<string, string> mobileContainerParents = null) {
+		IReadOnlyDictionary<string, string> mobileContainerParents = null,
+		IReadOnlyDictionary<string, JsonArray> mobileTemplateArraysByPath = null,
+		bool mobileTemplateArraysUnavailable = false,
+		IReadOnlySet<string> mobileTemplateCollectionKeys = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -171,16 +190,20 @@ public static class WebToMobileAnalysisService {
 		// data-source section (the step where attribute `type` was being dropped).
 		JsonNode modelConfigDiff = BuildRootMergeDiff(modelConfig);
 		JsonNode viewModelConfigDiff = BuildRootMergeDiff(viewModelConfig);
-		// A list collection's modelConfig.filterAttributes (which wires each quick filter's `_Items`
-		// attribute so a value change reloads the data source) is OWNED by the mobile list template.
-		// The mobile diff engine REPLACES arrays on a merge, and on a ROOT merge (path []) the template
-		// baseline wins that array — so the page's carried filterAttributes (with the converted quick
-		// filters) is discarded and the chips render but never filter. A hand-built mobile list page
-		// works because the page designer emits a TARGETED merge at ["attributes",<collection>,
-		// "modelConfig"] carrying the full array (verified against UsrJeremy_MobileListPage). Mirror
-		// that: hoist each collection's filterAttributes out of the root merge into its own targeted
-		// merge so it overrides the template baseline.
-		viewModelConfigDiff = HoistFilterAttributesToTargetedMerges(viewModelConfigDiff);
+		// A single ROOT merge (path []) that carries the WHOLE viewModelConfig lumps the logic of several
+		// distinct changes into one operation and is unsafe: the mobile diff engine (JSONPathApplier)
+		// REPLACES arrays wholesale on a merge, and for path [] the template baseline wins — silently
+		// dropping the page's own array entries (e.g. converted quick filters), so the chips render but
+		// never filter. A hand-built mobile page instead emits FOCUSED targeted merges, one per specific
+		// change (verified against the platform's own Leads_ListPage and UsrJeremy_MobileListPage). Mirror
+		// that: SPLIT the root merge into targeted merges and drop the path-[] operation entirely — a
+		// single ["attributes"] merge for the page-owned attributes, a per-collection
+		// ["attributes",<coll>,"viewModelConfig","attributes"] augment, and a per-array
+		// ["attributes",...,"modelConfig"] override unioned with the template's own native array at that
+		// exact path (union degrades to just the page's own entries when the template carries none).
+		viewModelConfigDiff = SplitRootMergeIntoTargetedMerges(
+			viewModelConfigDiff, mobileTemplateArraysByPath, mobileTemplateCollectionKeys, out bool anyArraysHoisted);
+		bool mobileTemplateNativesMissingForArrays = anyArraysHoisted && mobileTemplateArraysUnavailable;
 
 		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
@@ -213,7 +236,7 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -842,49 +865,273 @@ public static class WebToMobileAnalysisService {
 			});
 
 	/// <summary>
-	/// Hoists each list collection's <c>modelConfig.filterAttributes</c> out of the single root merge
-	/// into its own TARGETED merge at <c>["attributes",&lt;collection&gt;,"modelConfig"]</c>. That array
-	/// is owned by the mobile list template; the mobile diff engine (JSONPathApplier) REPLACES arrays on
-	/// a merge, and on a ROOT merge (path []) the template baseline wins it — dropping the page's carried
-	/// filterAttributes (with the converted quick filters), so the chips render but never filter. A
-	/// hand-built mobile list page keeps them because the page designer emits exactly this targeted
-	/// merge (verified against UsrJeremy_MobileListPage). The filterAttributes is removed from the root
-	/// merge so the targeted merge is the single source of truth. No-op when no collection carries a
-	/// non-empty filterAttributes array (the diff stays a single root merge).
+	/// Splits the single root merge (path []) that <see cref="BuildRootMergeDiff"/> emits for the
+	/// viewModelConfig into FOCUSED targeted merges, dropping the path-[] operation entirely — mirroring the
+	/// diff shape a hand-built mobile page (the platform's own Leads_ListPage / UsrJeremy_MobileListPage)
+	/// emits, so no single operation carries the logic of several distinct changes. Concretely:
+	/// <list type="bullet">
+	/// <item>Every array under an attribute's <c>modelConfig</c> (e.g. <c>modelConfig.filterAttributes</c> or
+	/// <c>modelConfig.sortingConfig.default</c> — type-driven, not keyed to <c>filterAttributes</c>) becomes
+	/// its own TARGETED merge at that array's parent path (e.g. <c>["attributes","Items","modelConfig"]</c>),
+	/// UNIONED with whatever array the mobile template carries at that exact path
+	/// (<paramref name="mobileTemplateArraysByPath"/>). This is unconditional and type-driven: a template-owned
+	/// array is at risk on a root merge (the engine REPLACES arrays wholesale, and for path [] the template
+	/// baseline wins), so it is always hoisted even when the template bundle could not be read (the union then
+	/// degrades to just the page's own entries).</item>
+	/// <item>Each TEMPLATE-OWNED list collection is split, not dumped. A collection is identified by EITHER
+	/// signal, honored unconditionally: a key in <paramref name="mobileTemplateCollectionKeys"/>, OR the page's
+	/// own body marking it <c>isCollection:true</c> (the page marker is not merely an unavailable-bundle
+	/// fallback — a collection's modelConfig scalars are template-owned on mobile regardless of which signal
+	/// identified it). It is split as: its column attributes go to a
+	/// <c>["attributes",&lt;coll&gt;,"viewModelConfig","attributes"]</c>
+	/// augment, its arrays to the modelConfig overrides above, and its remaining scalars
+	/// (<c>modelConfig.path</c>, <c>sortingConfig</c>, …) are DROPPED — they are template-owned, so re-emitting
+	/// them is idempotent at best and clobbering at worst. The collection node already exists in the template
+	/// accumulator (parent-first), so the deep merges apply.</item>
+	/// <item>Every other (page-owned, non-collection) attribute is collected into a single
+	/// <c>["attributes"]</c> merge (a <c>put</c> that adds keys without touching the template's siblings). Its
+	/// own arrays that are NOT under <c>modelConfig</c> (e.g. a combobox's static default <c>value</c> list) are
+	/// never template-owned and stay inline in that bucket.</item>
+	/// <item>Any top-level viewModelConfig key other than <c>attributes</c> (rare) cannot be expressed as an
+	/// <c>["attributes"]</c> merge and is kept in a minimal residual root merge; when there are none, NO path-[]
+	/// operation is emitted at all.</item>
+	/// </list>
+	/// <paramref name="anyArraysHoisted"/> reports whether any modelConfig array was hoisted (used to gate the
+	/// "template natives unavailable" constraint). Returns the diff unchanged when it is not the single-root-merge
+	/// shape (already split, empty, or the root merge carries no <c>values</c>).
 	/// </summary>
-	private static JsonNode HoistFilterAttributesToTargetedMerges(JsonNode viewModelConfigDiff) {
+	private static JsonNode SplitRootMergeIntoTargetedMerges(
+		JsonNode viewModelConfigDiff,
+		IReadOnlyDictionary<string, JsonArray> mobileTemplateArraysByPath,
+		IReadOnlySet<string> mobileTemplateCollectionKeys,
+		out bool anyArraysHoisted) {
+		anyArraysHoisted = false;
 		if (viewModelConfigDiff is not JsonArray diff) {
 			return viewModelConfigDiff;
 		}
-		var targetedMerges = new List<JsonObject>();
+		JsonObject rootMerge = null;
 		foreach (JsonNode opNode in diff) {
-			if (opNode is not JsonObject op
-				|| op["path"] is not JsonArray path || path.Count != 0
-				|| op["values"] is not JsonObject values
-				|| values["attributes"] is not JsonObject attributes) {
-				continue;
+			if (opNode is JsonObject op
+				&& string.Equals(op["operation"]?.GetValue<string>(), "merge", StringComparison.OrdinalIgnoreCase)
+				&& op["path"] is JsonArray p && p.Count == 0) {
+				rootMerge = op;
+				break;
 			}
-			foreach (KeyValuePair<string, JsonNode> attr in attributes) {
-				if (attr.Value is not JsonObject attrObj
-					|| attrObj["modelConfig"] is not JsonObject modelConfig
-					|| modelConfig["filterAttributes"] is not JsonArray filterAttributes
-					|| filterAttributes.Count == 0) {
+		}
+		if (rootMerge is null || rootMerge["values"] is not JsonObject values) {
+			return viewModelConfigDiff;
+		}
+		IReadOnlyDictionary<string, JsonArray> natives =
+			mobileTemplateArraysByPath ?? new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
+		IReadOnlySet<string> templateCollections =
+			mobileTemplateCollectionKeys ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		var arrayMerges = new List<JsonObject>();     // per-array modelConfig overrides (natives ∪ page)
+		var augmentMerges = new List<JsonObject>();   // per-collection viewModelConfig.attributes augments
+		var attributesBucket = new JsonObject();      // page-owned, non-collection attributes -> ["attributes"]
+
+		if (values["attributes"] is JsonObject attributes) {
+			foreach (string attrKey in attributes.Select(kv => kv.Key).ToList()) {
+				if (attributes[attrKey] is not JsonObject attrObj) {
+					attributesBucket[attrKey] = attributes[attrKey]?.DeepClone();
 					continue;
 				}
-				targetedMerges.Add(new JsonObject {
-					["operation"] = "merge",
-					["path"] = new JsonArray("attributes", attr.Key, "modelConfig"),
-					["values"] = new JsonObject { ["filterAttributes"] = filterAttributes.DeepClone() }
-				});
-				// Drop it from the root merge — the template owns the array and a root merge cannot
-				// extend it; the targeted merge above overrides the template baseline instead.
-				modelConfig.Remove("filterAttributes");
+				// (a) Hoist every array under this attribute's modelConfig into its own targeted merge
+				//     (unconditional — a template-owned array is at risk regardless of whether the template
+				//     bundle confirmed the collection). Each array is removed from attrObj.modelConfig here.
+				if (attrObj["modelConfig"] is JsonObject modelConfig) {
+					HoistArraysRecursive(modelConfig, [attrKey, "modelConfig"], natives, arrayMerges);
+				}
+				// (b) Template-owned collection? BOTH signals are honored unconditionally: the template
+				//     bundle's own collection keys, AND the page body's own isCollection:true marker. The
+				//     page marker is not merely an unavailable-bundle fallback — a collection's modelConfig
+				//     scalars (path, sortingConfig, …) are template-owned on mobile regardless of which
+				//     signal identified it, so a self-marked collection is split the same way (arrays
+				//     hoisted + viewModelConfig.attributes augment, scalars dropped).
+				bool isCollection = templateCollections.Contains(attrKey)
+					|| (attrObj["isCollection"] is JsonValue collFlag && collFlag.TryGetValue(out bool b) && b);
+				if (isCollection) {
+					// Emit only its SPECIFIC changes: the modelConfig arrays (a) and a viewModelConfig
+					// .attributes augment. Its remaining scalars are template-owned and dropped.
+					if (attrObj["viewModelConfig"] is JsonObject collVmc
+						&& collVmc["attributes"] is JsonObject collAttrs && collAttrs.Count > 0) {
+						augmentMerges.Add(new JsonObject {
+							["operation"] = "merge",
+							["path"] = new JsonArray("attributes", attrKey, "viewModelConfig", "attributes"),
+							["values"] = collAttrs.DeepClone()
+						});
+					}
+				} else {
+					attributesBucket[attrKey] = attrObj.DeepClone();
+				}
 			}
 		}
-		foreach (JsonObject targetedMerge in targetedMerges) {
-			diff.Add(targetedMerge);
+
+		// Emit order mirrors the platform's own diffs: the ["attributes"] bucket, then per-collection
+		// viewModelConfig.attributes augments, then the modelConfig array overrides.
+		var result = new JsonArray();
+		if (attributesBucket.Count > 0) {
+			result.Add(new JsonObject {
+				["operation"] = "merge",
+				["path"] = new JsonArray("attributes"),
+				["values"] = attributesBucket
+			});
 		}
-		return viewModelConfigDiff;
+		foreach (JsonObject augment in augmentMerges) {
+			result.Add(augment);
+		}
+		foreach (JsonObject arrayMerge in arrayMerges) {
+			result.Add(arrayMerge);
+		}
+		// Preserve any non-`attributes` top-level keys (rare) in a minimal residual root merge.
+		var residual = new JsonObject();
+		foreach (KeyValuePair<string, JsonNode> kv in values) {
+			if (!string.Equals(kv.Key, "attributes", StringComparison.OrdinalIgnoreCase)) {
+				residual[kv.Key] = kv.Value?.DeepClone();
+			}
+		}
+		if (residual.Count > 0) {
+			result.Add(new JsonObject {
+				["operation"] = "merge",
+				["path"] = new JsonArray(),
+				["values"] = residual
+			});
+		}
+		anyArraysHoisted = arrayMerges.Count > 0;
+		return result;
+	}
+
+	/// <summary>
+	/// Recursively walks <paramref name="node"/> (a subtree of <c>values.attributes.&lt;key&gt;</c>),
+	/// removing every array-valued property it finds and appending a targeted merge for it — path
+	/// <c>["attributes", ...pathSegments-without-the-array-key]</c>, values <c>{ &lt;arrayKey&gt;: &lt;union&gt; }</c>
+	/// — to <paramref name="targetedMerges"/>. Object-valued properties are recursed into (they already
+	/// survive a root merge, so no hoist needed there — only their array descendants matter); scalars are
+	/// left untouched. <paramref name="pathSegments"/> accumulates the path from the attribute key down to
+	/// (but not including) the array's own key, e.g. <c>["Items","modelConfig"]</c>, and is used both to
+	/// build the targeted merge's path and to look up that same path in <paramref name="mobileTemplateArrays"/>.
+	/// </summary>
+	private static void HoistArraysRecursive(
+		JsonObject node, List<string> pathSegments,
+		IReadOnlyDictionary<string, JsonArray> mobileTemplateArrays, List<JsonObject> targetedMerges) {
+		foreach (string propKey in node.Select(kv => kv.Key).ToList()) {
+			if (node[propKey] is JsonArray pageArray) {
+				pathSegments.Add(propKey);
+				string arrayPath = string.Join("/", pathSegments);
+				mobileTemplateArrays.TryGetValue(arrayPath, out JsonArray nativeArray);
+				targetedMerges.Add(new JsonObject {
+					["operation"] = "merge",
+					["path"] = new JsonArray(["attributes", .. pathSegments.Take(pathSegments.Count - 1)]),
+					["values"] = new JsonObject { [propKey] = UnionArraysByIdentity(nativeArray, pageArray) }
+				});
+				pathSegments.RemoveAt(pathSegments.Count - 1);
+				// Drop it from the root merge — a targeted merge at this exact path is now the sole source.
+				node.Remove(propKey);
+			} else if (node[propKey] is JsonObject childObj) {
+				pathSegments.Add(propKey);
+				HoistArraysRecursive(childObj, pathSegments, mobileTemplateArrays, targetedMerges);
+				pathSegments.RemoveAt(pathSegments.Count - 1);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Unions two arrays (the mobile template's baseline entries and the page's own — e.g. converted
+	/// quick-filter / folder-tree / search filterAttributes entries, but this is generic over any array
+	/// shape), deduplicated: an entry that is a JSON object with a <c>name</c> property is deduplicated by
+	/// that name (the common Freedom UI convention for attribute-reference-shaped arrays like
+	/// filterAttributes); anything else (an object without <c>name</c>, or a scalar) is deduplicated by deep
+	/// JSON equality. On a duplicate, the FIRST occurrence wins — natives are added before the page's own
+	/// entries, so the template's shape wins a <c>name</c> collision, matching the merged
+	/// <c>Leads_ListPage</c>/<c>UsrJeremy_MobileListPage</c> shape (natives followed by custom, no
+	/// closure-pruning — every page entry is copied).
+	/// </summary>
+	private static JsonArray UnionArraysByIdentity(JsonArray natives, JsonArray pageEntries) {
+		// Ordinal (case-sensitive): a name: collision is a real attribute-name collision, and the json:
+		// fallback compares serialized JSON, where two values differing only by case are genuinely distinct
+		// data and must NOT be coalesced.
+		var seen = new HashSet<string>(StringComparer.Ordinal);
+		var result = new JsonArray();
+		void AddAll(JsonArray source) {
+			if (source is null) {
+				return;
+			}
+			foreach (JsonNode entry in source) {
+				// Tolerant read: a non-string `name` (e.g. { "name": 123 } in malformed input) must not throw
+				// out of the whole conversion — it degrades to the deep-JSON identity path instead.
+				string name = (entry as JsonObject)?["name"] is JsonValue nameValue && nameValue.TryGetValue(out string nameStr)
+					? nameStr
+					: null;
+				string identity = !string.IsNullOrWhiteSpace(name) ? $"name:{name}" : $"json:{entry?.ToJsonString()}";
+				if (seen.Add(identity)) {
+					result.Add(entry?.DeepClone());
+				}
+			}
+		}
+		AddAll(natives);
+		AddAll(pageEntries);
+		return result;
+	}
+
+	/// <summary>
+	/// Collects EVERY array found anywhere in the mobile template's own merged <c>viewModelConfig</c> bundle
+	/// (e.g. <c>Items/modelConfig/filterAttributes</c> -> [QuickFilterGroup_Filters,
+	/// FolderTreeActions_active_folder_filter] for BaseMobileListTemplate; equally any other array such as
+	/// <c>Items/modelConfig/sortingConfig/default</c> — this is type-driven, not keyed to any specific field
+	/// name), keyed by its <c>/</c>-joined path (matching <see cref="HoistArraysRecursive"/>'s path
+	/// construction so a lookup at hoist time finds it directly). The bundle is already merged parent-first
+	/// (verified against the platform's own template bundles), so this is the effective native set for the
+	/// template a page actually builds on — no separate compiled-state lookup is needed. Case-insensitive on
+	/// path segments; returns an empty map for a null/attribute-less config.
+	/// </summary>
+	public static IReadOnlyDictionary<string, JsonArray> CollectNativeArraysByPath(JsonObject mobileTemplateViewModelConfig) {
+		var result = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
+		if (mobileTemplateViewModelConfig?["attributes"] is JsonObject attributes) {
+			foreach (KeyValuePair<string, JsonNode> attr in attributes) {
+				if (attr.Value is JsonObject attrObj) {
+					CollectArrayPaths(attrObj, [attr.Key], result);
+				}
+			}
+		}
+		return result;
+	}
+
+	/// <summary>Recursive helper for <see cref="CollectNativeArraysByPath"/>: records every array-valued
+	/// property under <paramref name="node"/>, keyed by its <c>/</c>-joined path, and recurses into
+	/// object-valued properties (arrays and scalars are leaves).</summary>
+	private static void CollectArrayPaths(JsonObject node, List<string> pathSegments, Dictionary<string, JsonArray> result) {
+		foreach (KeyValuePair<string, JsonNode> prop in node) {
+			if (prop.Value is JsonArray array) {
+				pathSegments.Add(prop.Key);
+				result[string.Join("/", pathSegments)] = array;
+				pathSegments.RemoveAt(pathSegments.Count - 1);
+			} else if (prop.Value is JsonObject childObj) {
+				pathSegments.Add(prop.Key);
+				CollectArrayPaths(childObj, pathSegments, result);
+				pathSegments.RemoveAt(pathSegments.Count - 1);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Collects the top-level attribute keys the mobile template owns as list collections — an attribute
+	/// under <c>viewModelConfig.attributes</c> whose <c>isCollection</c> flag is <c>true</c> (e.g. <c>Items</c>
+	/// for BaseMobileListTemplate). Used by <see cref="SplitRootMergeIntoTargetedMerges"/> to decide which
+	/// attributes are template-owned collections (split into targeted merges, scalars dropped) versus
+	/// page-owned attributes (kept whole in the <c>["attributes"]</c> bucket). Case-insensitive; returns an
+	/// empty set for a null/attribute-less config.
+	/// </summary>
+	public static IReadOnlySet<string> CollectTemplateCollectionKeys(JsonObject mobileTemplateViewModelConfig) {
+		var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (mobileTemplateViewModelConfig?["attributes"] is JsonObject attributes) {
+			foreach (KeyValuePair<string, JsonNode> attr in attributes) {
+				if (attr.Value is JsonObject attrObj
+					&& attrObj["isCollection"] is JsonValue flag && flag.TryGetValue(out bool b) && b) {
+					result.Add(attr.Key);
+				}
+			}
+		}
+		return result;
 	}
 
 	/// <summary>
@@ -981,7 +1228,8 @@ public static class WebToMobileAnalysisService {
 
 	private static List<string> BuildConstraints(
 		IReadOnlyList<string> webOnlySections,
-		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false) {
+		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
+		bool mobileTemplateNativesMissingForArrays = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1010,6 +1258,16 @@ public static class WebToMobileAnalysisService {
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");
+		}
+		if (mobileTemplateNativesMissingForArrays) {
+			constraints.Add(
+				"Could not read the mobile template's bundle (no active environment, or the template read failed) — " +
+				"one or more arrays nested in this page's viewModelConfig were hoisted into their own targeted merge " +
+				"containing ONLY this page's own entries. If any of those arrays are owned by the mobile template " +
+				"(e.g. Items.modelConfig.filterAttributes's built-in QuickFilterGroup_Filters / " +
+				"FolderTreeActions_active_folder_filter for BaseMobileListTemplate), its baseline entries may now be " +
+				"missing — verify manually before pasting, or re-run this tool with environment-name/uri set so clio " +
+				"can union them automatically.");
 		}
 		if (hasAdaptiveLayout) {
 			constraints.Add(

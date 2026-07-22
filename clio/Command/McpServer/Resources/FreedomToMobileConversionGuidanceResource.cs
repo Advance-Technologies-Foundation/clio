@@ -55,9 +55,12 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    re-derive placement from containerMap + componentSuggestions.
 			  - mobileContracts — for each suggested mobile type: allowedProperties + example +
 			    designerDefaults, so you can build the component's values inline.
-			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs (each a single root merge of the
-			    full config). Paste them VERBATIM as the page's modelConfigDiff / viewModelConfigDiff
-			    (see DATA SECTIONS below). This is the supported way to apply the data sections.
+			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs. modelConfigDiff is a single
+			    root merge of the full data-source config; viewModelConfigDiff is a set of FOCUSED targeted
+			    merges (page-owned ["attributes"] merge + per-collection augments + per-array modelConfig
+			    overrides unioned with the template's own natives), NOT a single root merge. Paste them
+			    VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (see DATA SECTIONS below). This
+			    is the supported way to apply the data sections.
 			  - modelConfig / viewModelConfig — the same configs in full-object form, for REFERENCE only.
 			    viewModelConfig is already FILTERED (attributes used only by dropped components removed).
 			  - adaptiveLayout — the responsive layout for each MULTI-column grid container (phone collapses to
@@ -110,11 +113,15 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   by iterating elementMap. For each entry act on its operation:
 			   - merge — the element is provided by the mobile template (a "twin", e.g. Tabs→Tabs,
 			     FeedTabContainer→FeedContainer). REUSE the existing mobileName; do NOT insert it. (Insert
-			     vs merge is the #1 mistake — the template already contains these elements.) If the mobile
-			     list template already provides the List / ListItem elements, configure them by MERGE-BY-NAME
-			     (the row goes on the ListItem element: title + body) — do NOT insert a second crt.List and
-			     do NOT put itemLayout inside a merge of the parent List (silent no-op; ListItem is a
-			     separate named element).
+			     vs merge is the #1 mistake — the template already contains these elements.) A merge entry MAY
+			     also carry a prebuilt mobileValues (for component twins whose rule declares carryProperties,
+			     e.g. FolderTree->FolderTreeActions carrying sourceSchemaName/rootSchemaName) — paste it onto
+			     the merged element verbatim, deterministically, as part of this same step. This does NOT
+			     require a separate confirmation beyond Gate M — it is a mechanical property fill-in, not a new
+			     decision. If the mobile list template already provides the List / ListItem elements, configure
+			     them by MERGE-BY-NAME (the row goes on the ListItem element: title + body) — do NOT insert a
+			     second crt.List and do NOT put itemLayout inside a merge of the parent List (silent no-op;
+			     ListItem is a separate named element).
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
 			     When elementMap[].index is present, add it to the insert op at that 0-based position (a
 			     positional element mapped above/below an anchor, e.g. above the mobile Tabs); otherwise omit

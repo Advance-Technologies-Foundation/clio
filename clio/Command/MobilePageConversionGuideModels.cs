@@ -352,7 +352,12 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// Ready-to-paste <c>viewModelConfigDiff</c> built from the filtered <see cref="ViewModelConfig"/> — a
-	/// single root merge. Paste it VERBATIM as the mobile page's <c>viewModelConfigDiff</c>. Null when none.
+	/// set of FOCUSED targeted merges (a page-owned <c>["attributes"]</c> merge, per-collection
+	/// <c>viewModelConfig.attributes</c> augments, and per-array <c>modelConfig</c> overrides unioned with the
+	/// mobile template's own native arrays), not a single root merge — mirroring the diff shape a hand-built
+	/// mobile page emits so the diff engine's array-replace never silently drops the template baseline (see
+	/// <c>WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges</c>). Paste it VERBATIM as the mobile
+	/// page's <c>viewModelConfigDiff</c>. Null when none.
 	/// </summary>
 	[JsonPropertyName("viewModelConfigDiff")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

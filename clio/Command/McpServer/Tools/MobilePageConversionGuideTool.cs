@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -163,10 +164,17 @@ public sealed class MobilePageConversionGuideTool {
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
 
-		// Positional (:top/:bottom) inserts attach to the mobile anchor's parent container. Read the mobile
-		// template to resolve that parent; only needed when the rule declares positional entries.
+		// Best-effort read of the mobile template's own bundle. Used for three independent probes: the
+		// positional-insert container-parent map (only needed when the rule declares positional entries),
+		// every array anywhere in the template's own merged viewModelConfig (filterAttributes, sortingConfig,
+		// or any other array — generic), and the template's own list-collection keys — all fetched
+		// unconditionally whenever a mobile template is known, so the page's own arrays can be UNIONED with
+		// the template's natives and each template-owned collection can be split into focused targeted merges
+		// instead of the mobile diff engine's array-replace root merge silently dropping one side (see
+		// WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges).
+		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args);
 		IReadOnlyDictionary<string, string> mobileContainerParents = positionalPlacements is { Count: > 0 }
-			? LoadMobileContainerParents(templateRule?.Mobile, args)
+			? mobileTemplateProbe.ContainerParents
 			: null;
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
@@ -206,7 +214,10 @@ public sealed class MobilePageConversionGuideTool {
 				templateComponentNames: templateComponentNames,
 				componentNameMap: componentNameMap,
 				positionalPlacements: positionalPlacements,
-				mobileContainerParents: mobileContainerParents);
+				mobileContainerParents: mobileContainerParents,
+				mobileTemplateArraysByPath: mobileTemplateProbe.NativeArraysByPath,
+				mobileTemplateArraysUnavailable: mobileTemplateProbe.Unavailable,
+				mobileTemplateCollectionKeys: mobileTemplateProbe.CollectionKeys);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -367,16 +378,37 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
-	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) to map each mobile
-	/// container to its parent — used to resolve where a positional (<c>:top</c> / <c>:bottom</c>) insert
-	/// attaches (the mobile anchor's parent). Mirrors <see cref="LoadTemplateComponentNames"/>: loads the
-	/// template's merged bundle and never throws. Returns an empty map when the name is missing or the read
-	/// fails (positional inserts then fall back to the default container).
+	/// Result of <see cref="LoadMobileTemplateProbe"/>: the mobile template's container-parent map
+	/// (positional inserts) and every array found anywhere in its own merged viewModelConfig, keyed by path
+	/// (array union — generic over filterAttributes, sortingConfig, or any other array). <c>Unavailable</c>
+	/// is true when a template schema name was known but its bundle could not be read (no active
+	/// environment, read failure) — the caller surfaces that as an explicit guide constraint instead of
+	/// silently emitting arrays that carry only this page's own entries.
 	/// </summary>
-	private IReadOnlyDictionary<string, string> LoadMobileContainerParents(string mobileSchemaName, MobilePageConversionGuideArgs args) {
-		var empty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+	private sealed record MobileTemplateProbe(
+		IReadOnlyDictionary<string, string> ContainerParents,
+		IReadOnlyDictionary<string, JsonArray> NativeArraysByPath,
+		IReadOnlySet<string> CollectionKeys,
+		bool Unavailable);
+
+	/// <summary>
+	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle, used for two
+	/// independent probes: mapping each mobile container to its parent — resolving where a positional
+	/// (<c>:top</c> / <c>:bottom</c>) insert attaches — and collecting EVERY array found anywhere in the
+	/// template's own merged viewModelConfig (e.g. <c>Items/modelConfig/filterAttributes</c> ->
+	/// [QuickFilterGroup_Filters, FolderTreeActions_active_folder_filter] for BaseMobileListTemplate, but
+	/// equally any other array), so the converted page's own arrays can be unioned with the template's
+	/// natives rather than the mobile diff engine's array-replace merge silently dropping one side. Mirrors
+	/// <see cref="LoadTemplateComponentNames"/>: loads the template's merged bundle and never throws. Returns
+	/// empty maps (and <c>Unavailable = false</c>) when no template name is known; <c>Unavailable = true</c>
+	/// when a name was known but the read failed.
+	/// </summary>
+	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
+		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var emptyArrays = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
+		var emptyCollections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
-			return empty;
+			return new MobileTemplateProbe(emptyParents, emptyArrays, emptyCollections, Unavailable: false);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -395,13 +427,22 @@ public sealed class MobilePageConversionGuideTool {
 					_logger.ClearMessages();
 				}
 			}
-			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
-				return WebToMobileAnalysisService.CollectParentByName(viewConfig);
+			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle) {
+				IReadOnlyDictionary<string, string> parents = bundle.ViewConfig is { } viewConfig
+					? WebToMobileAnalysisService.CollectParentByName(viewConfig)
+					: emptyParents;
+				IReadOnlyDictionary<string, JsonArray> natives = bundle.ViewModelConfig is { } viewModelConfig
+					? WebToMobileAnalysisService.CollectNativeArraysByPath(viewModelConfig)
+					: emptyArrays;
+				IReadOnlySet<string> collectionKeys = bundle.ViewModelConfig is { } collectionsVmc
+					? WebToMobileAnalysisService.CollectTemplateCollectionKeys(collectionsVmc)
+					: emptyCollections;
+				return new MobileTemplateProbe(parents, natives, collectionKeys, Unavailable: false);
 			}
 		} catch (Exception) {
-			// Best-effort: a failed mobile-template read falls back to the default positional container.
+			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
-		return empty;
+		return new MobileTemplateProbe(emptyParents, emptyArrays, emptyCollections, Unavailable: true);
 	}
 
 	/// <summary>
