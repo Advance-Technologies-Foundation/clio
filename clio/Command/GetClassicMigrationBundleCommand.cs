@@ -815,6 +815,8 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// level of children — the engine recursively maps the nested manifest and depth-caps its own display.
 	// An edit-page name that resolves to no schema is a heuristic miss and is omitted silently (null, null).
 	private (JObject manifest, string error) AssembleChildManifest(BundleRunContext ctx, string editPageName) {
+		// Existence gate on the (batch-primed, cached) enumeration so a heuristic edit-page miss stays a cheap
+		// no-op instead of a designer round-trip. Only after it resolves do we pay the hierarchy resolution.
 		(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, editPageName);
 		if (enumError != null) {
 			return (null, enumError);
@@ -822,11 +824,15 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		if (layers.Count == 0) {
 			return (null, null);
 		}
-		(JArray schemas, JObject topSchema, _, string chainError) = LoadLayerChain(ctx, editPageName);
+		// Resolve the child page's chain AND parent-template seed the SAME single-round-trip way the top-level
+		// page does — one GetParentSchemas designer call — instead of the per-layer LoadLayerChain +
+		// per-template-level BuildSeed fan-out this ran per child page (the dominant round-trip cost when a page
+		// carries many child edit pages, each itself deeply layered). LoadChainAndSeed degrades to that exact
+		// legacy fan-out on any hierarchy failure, so a child manifest is never worse than before.
+		(JArray schemas, JArray seed, _, string chainError) = LoadChainAndSeed(ctx, editPageName);
 		if (chainError != null) {
 			return (null, chainError);
 		}
-		JArray seed = BuildSeed(ctx, topSchema);
 		string entity = InferEntity(schemas, seed);
 		var manifest = new JObject { ["schemas"] = schemas };
 		if (!string.IsNullOrWhiteSpace(entity)) {

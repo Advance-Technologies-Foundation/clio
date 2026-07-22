@@ -786,6 +786,86 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("falling back")));
 	}
 
+	[Test]
+	[Description("TryAssembleBundle resolves a child edit-page manifest through ONE GetParentSchemas hierarchy call (chain + seed) rather than the per-layer LoadLayerChain + BuildSeed fan-out it used before.")]
+	public void TryAssembleBundle_ShouldResolveChildManifest_ViaGetParentSchemas() {
+		// Arrange — a page whose detail names an edit page (the child). The child page's LAYER BODIES are
+		// registered ONLY on the hierarchy call, not on the fake DataService (no AddSchema for uid-child*), so
+		// the child resolves iff the hierarchy path is taken: the legacy fan-out would fail to load uid-child's
+		// body and omit the child. Only the child's name->UId metadata row is registered (via AddLayer) so
+		// QuerySysSchemaRow can anchor the hierarchy; its base layer UId equals the metadata UId so no re-anchor
+		// re-fetch is needed (one GetParentSchemas call).
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrNoteDetail\", [], function() { return { getEditPageName: function() { return \"UsrNotePage\"; } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200); // metadata resolve target only — NO AddSchema body
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
+		_hierarchyClient.GetParentSchemas("uid-child", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrNotePage", "pkgB", "uid-child-top", "define(\"UsrNotePage\", [], function() { return {}; });"),
+			Hier("UsrNotePage", "pkgA", "uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });"),
+			Hier("BaseTpl", "Core", "uid-ctpl", "define(\"BaseTpl\", [], function() { return { baseContainer: true }; });")
+		});
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the page assembles and the child edit page nests from the hierarchy call");
+		_hierarchyClient.Received(1).GetParentSchemas("uid-child", Arg.Any<string>());
+		response.ChildPageCount.Should().Be(1,
+			because: "the child edit page resolves — proving the hierarchy path ran, since its body was never registered on the DataService fan-out");
+		JObject manifest = JObject.Parse(_writtenContent);
+		JToken childManifest = manifest["childPageSchemas"]!["UsrNotePage"]!;
+		var childSchemas = (JArray)childManifest["schemas"]!;
+		childSchemas.Should().HaveCount(2,
+			because: "both UsrNotePage-named hierarchy layers become the child chain, split from the parent template");
+		childSchemas[0]["pkg"]!.ToString().Should().Be("pkgA", because: "the child chain is ordered base->top");
+		childSchemas[1]["pkg"]!.ToString().Should().Be("pkgB", because: "the most-derived child layer sorts last");
+		((JArray)childManifest["seed"]!).Should().ContainSingle(
+				because: "the child's non-page hierarchy layer becomes its seed")
+			.Which["pkg"]!.ToString().Should().Be("Core", because: "the parent template seeds the child manifest");
+		childManifest["entity"]!.ToString().Should().Be("UsrNote",
+			because: "the child entity is inferred from its hierarchy-resolved body");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle still nests a child edit-page manifest via the legacy per-layer fan-out when the child's GetParentSchemas hierarchy call yields nothing, so the optimization never regresses child resolution.")]
+	public void TryAssembleBundle_ShouldResolveChildManifest_ViaLegacyFanout_WhenChildHierarchyEmpty() {
+		// Arrange — child page fully registered on the fake DataService (layer + body), and the hierarchy call
+		// returns empty for every schema (the Setup default), so the child must resolve through the legacy path.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrNoteDetail\", [], function() { return { getEditPageName: function() { return \"UsrNotePage\"; } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the legacy per-layer fan-out still assembles the child manifest");
+		response.ChildPageCount.Should().Be(1,
+			because: "with an empty hierarchy the child resolves through the identical legacy LoadLayerChain + BuildSeed path");
+		JObject manifest = JObject.Parse(_writtenContent);
+		manifest["childPageSchemas"]!["UsrNotePage"]!["schemas"].Should().NotBeNull(
+			because: "the child edit page is still nested as its own manifest via the fallback");
+	}
+
 	// --- fake-environment helpers ------------------------------------------------------------------
 
 	private static PageDesignerHierarchySchema Hier(string name, string pkg, string uid, string body) =>
