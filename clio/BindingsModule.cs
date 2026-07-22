@@ -963,10 +963,6 @@ public class BindingsModule {
 				? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
 				: new CreatioClientAdapter(lazyCreatioClient));
 		services.AddTransient<SysSettingsManager>();
-		// The business-rule engine resolves a system-setting condition operand's value type through
-		// ISysSettingsManager against the active environment; bind the interface to the same concrete
-		// manager the active-environment services already use.
-		services.AddTransient<ISysSettingsManager, SysSettingsManager>();
 	}
 
 	private static IKubernetes CreateKubernetesClient() {

@@ -5,24 +5,13 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
-/// <summary>
-/// Resolves the environment-specific data value type of every system-setting operand referenced by a
-/// business rule so the pure converter/validator can type a <c>SysSetting</c> operand without touching
-/// the environment. Settings whose value type cannot be used in a condition (Binary, SecureText, or an
-/// otherwise non-scalar type) are rejected with an explanatory error.
-/// </summary>
 internal interface ISysSettingConditionOperandResolver {
-	/// <summary>
-	/// Resolves each distinct system setting referenced by a <c>SysSetting</c> condition operand in
-	/// <paramref name="rule"/> to its operand descriptor, keyed by setting code. Returns an empty map
-	/// (and performs no environment round-trip) when the rule references no system-setting operand.
-	/// </summary>
-	/// <param name="rule">Business rule whose condition operands are inspected.</param>
 	IReadOnlyDictionary<string, SysSettingOperandDescriptor> Resolve(BusinessRule rule);
 }
 
-internal sealed class SysSettingConditionOperandResolver(ISysSettingsManager sysSettingsManager)
-	: ISysSettingConditionOperandResolver {
+internal sealed class SysSettingConditionOperandResolver(
+	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
+	EnvironmentSettings environmentSettings) : ISysSettingConditionOperandResolver {
 
 	private const string SecureTextValueTypeName = "SecureText";
 	private const string BinaryValueTypeName = "Binary";
@@ -31,9 +20,10 @@ internal sealed class SysSettingConditionOperandResolver(ISysSettingsManager sys
 	public IReadOnlyDictionary<string, SysSettingOperandDescriptor> Resolve(BusinessRule rule) {
 		ArgumentNullException.ThrowIfNull(rule);
 		Dictionary<string, SysSettingOperandDescriptor> result = new(StringComparer.Ordinal);
+		ISysSettingsManager? sysSettingsManager = null;
 		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
-			CollectOperand(condition?.LeftExpression, result);
-			CollectOperand(condition?.RightExpression, result);
+			CollectOperand(condition?.LeftExpression, result, ref sysSettingsManager);
+			CollectOperand(condition?.RightExpression, result, ref sysSettingsManager);
 		}
 
 		return result;
@@ -41,19 +31,19 @@ internal sealed class SysSettingConditionOperandResolver(ISysSettingsManager sys
 
 	private void CollectOperand(
 		BusinessRuleExpression? expression,
-		Dictionary<string, SysSettingOperandDescriptor> result) {
+		Dictionary<string, SysSettingOperandDescriptor> result,
+		ref ISysSettingsManager? sysSettingsManager) {
 		if (expression is null
 			|| !string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			return;
 		}
 
 		string code = expression.SysSettingName;
-		// A missing code is a structural error reported by the validator with the exact field path; the
-		// resolver only types settings that are actually referenced by code.
 		if (string.IsNullOrWhiteSpace(code) || result.ContainsKey(code)) {
 			return;
 		}
 
+		sysSettingsManager ??= sysSettingsManagerFactory(environmentSettings);
 		(string ValueTypeName, string? ReferenceSchemaName)? resolved =
 			sysSettingsManager.GetSysSettingTypeByCode(code);
 		if (resolved is null) {
@@ -75,10 +65,6 @@ internal sealed class SysSettingConditionOperandResolver(ISysSettingsManager sys
 		result[code] = new SysSettingOperandDescriptor(code, dataValueTypeName, referenceSchemaName);
 	}
 
-	/// <summary>
-	/// Maps a sys-setting value-type name to the canonical business-rule data value type, normalizing the
-	/// two sys-setting-only aliases and rejecting types that cannot participate in a condition comparison.
-	/// </summary>
 	private static string ResolveDataValueTypeName(string sysSettingName, string sysSettingValueTypeName) {
 		string normalized = sysSettingValueTypeName switch {
 			"Decimal" => "Float",
@@ -86,9 +72,8 @@ internal sealed class SysSettingConditionOperandResolver(ISysSettingsManager sys
 			_ => sysSettingValueTypeName
 		};
 
-		// SecureText is classified as a (filterable) Text kind by CreatioDataValueType, so this explicit
-		// guard is the ONLY barrier that keeps a secret-bearing setting out of a client-side rule
-		// condition. Do not drop it in favour of the IsFilterable check below.
+		// SecureText is a filterable Text kind, so this explicit guard is the only barrier that keeps a
+		// secret-bearing setting out of a client-side rule condition.
 		if (string.Equals(normalized, SecureTextValueTypeName, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException(
 				$"System setting '{sysSettingName}' is a SecureText setting and cannot be used as a business-rule condition operand.");
@@ -99,8 +84,6 @@ internal sealed class SysSettingConditionOperandResolver(ISysSettingsManager sys
 				$"System setting '{sysSettingName}' is a Binary setting and cannot be used as a business-rule condition operand.");
 		}
 
-		// A null/empty type name (malformed setting row) would throw inside IsFilterable, so reject it
-		// with the same friendly error rather than an opaque ArgumentNullException.
 		if (string.IsNullOrEmpty(normalized) || !CreatioDataValueType.IsFilterable(normalized)) {
 			throw new ArgumentException(
 				$"System setting '{sysSettingName}' has value type '{sysSettingValueTypeName}', which is not supported as a business-rule condition operand.");

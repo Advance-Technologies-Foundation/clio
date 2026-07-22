@@ -33,13 +33,16 @@ public sealed class SysSettingConditionOperandResolverTests {
 		return manager;
 	}
 
+	private static SysSettingConditionOperandResolver CreateResolver(ISysSettingsManager manager) =>
+		new(_ => manager, new EnvironmentSettings());
+
 	[Test]
 	[Category("Unit")]
 	[Description("Resolves a Boolean sys-setting operand to the Boolean business-rule data value type.")]
 	public void Resolve_Should_Map_Boolean_Setting() {
 		// Arrange
 		ISysSettingsManager manager = ManagerReturning("UseNewShell", ("Boolean", null));
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 
 		// Act
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor> map = sut.Resolve(RuleWithSetting("UseNewShell"));
@@ -59,7 +62,7 @@ public sealed class SysSettingConditionOperandResolverTests {
 	public void Resolve_Should_Normalize_Numeric_Aliases(string settingType, string expected) {
 		// Arrange
 		ISysSettingsManager manager = ManagerReturning("MySetting", (settingType, null));
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 
 		// Act
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor> map = sut.Resolve(RuleWithSetting("MySetting"));
@@ -75,7 +78,7 @@ public sealed class SysSettingConditionOperandResolverTests {
 	public void Resolve_Should_Map_Lookup_Setting_With_Reference_Schema() {
 		// Arrange
 		ISysSettingsManager manager = ManagerReturning("DefaultOfficeCountry", ("Lookup", "Country"));
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 
 		// Act
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor> map = sut.Resolve(RuleWithSetting("DefaultOfficeCountry"));
@@ -93,7 +96,7 @@ public sealed class SysSettingConditionOperandResolverTests {
 	public void Resolve_Should_Throw_For_Lookup_Without_Reference_Schema() {
 		// Arrange
 		ISysSettingsManager manager = ManagerReturning("BrokenLookup", ("Lookup", null));
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 
 		// Act
 		Action act = () => sut.Resolve(RuleWithSetting("BrokenLookup"));
@@ -113,7 +116,7 @@ public sealed class SysSettingConditionOperandResolverTests {
 	public void Resolve_Should_Reject_Unsupported_Setting_Types(string settingType, string expectedWord) {
 		// Arrange
 		ISysSettingsManager manager = ManagerReturning("Sensitive", (settingType, null));
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 
 		// Act
 		Action act = () => sut.Resolve(RuleWithSetting("Sensitive"));
@@ -130,7 +133,7 @@ public sealed class SysSettingConditionOperandResolverTests {
 	public void Resolve_Should_Throw_For_Unknown_Setting() {
 		// Arrange
 		ISysSettingsManager manager = ManagerReturning("Missing", null);
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 
 		// Act
 		Action act = () => sut.Resolve(RuleWithSetting("Missing"));
@@ -147,7 +150,7 @@ public sealed class SysSettingConditionOperandResolverTests {
 	public void Resolve_Should_Return_Empty_When_No_SysSetting_Operand() {
 		// Arrange
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		SysSettingConditionOperandResolver sut = new(manager);
+		SysSettingConditionOperandResolver sut = CreateResolver(manager);
 		BusinessRule rule = new(
 			"caption",
 			new BusinessRuleConditionGroup(
