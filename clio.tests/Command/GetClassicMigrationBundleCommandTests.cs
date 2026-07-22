@@ -764,6 +764,70 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
+	[Description("TryAssembleBundle re-anchors on the root schema UId and re-fetches the full hierarchy when the name->UId metadata resolves to a mid-chain layer, using the full re-fetched chain rather than the partial initial fetch.")]
+	public void TryAssembleBundle_ShouldReanchorOnRootAndRefetch_WhenMetadataResolvesToMidChainLayer() {
+		// Arrange — the name->UId metadata resolves to a MID-CHAIN layer (uid-mid), not the most-base same-named
+		// layer. The initial GetParentSchemas(uid-mid) is a partial leaf-first list whose last UsrPage entry
+		// carries a DIFFERENT (root) UId, so FindRootSchemaUId returns uid-root != uid-mid and the else branch
+		// re-anchors: GetParentSchemas(uid-root) returns the FULL base->top chain, which must supersede initial.
+		AddLayer("UsrPage", "uid-mid", "UsrApp", 300); // only metadata row -> schemaUId resolves to uid-mid
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
+		_hierarchyClient.GetParentSchemas("uid-mid", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrPage", "pkgMid", "uid-mid", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });"),
+			Hier("UsrPage", "pkgRoot", "uid-root", "define(\"UsrPage\", [], function() { return {}; });")
+		}); // leaf-first partial fetch; last UsrPage entry (uid-root) != metadata UId -> else branch
+		_hierarchyClient.GetParentSchemas("uid-root", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrPage", "pkgTop", "uid-top", "define(\"UsrPage\", [], function() { return {}; });"),
+			Hier("UsrPage", "pkgMid", "uid-mid", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });"),
+			Hier("UsrPage", "pkgRoot", "uid-root", "define(\"UsrPage\", [], function() { return {}; });"),
+			Hier("BaseTpl", "Core", "uid-tpl", "define(\"BaseTpl\", [], function() { return { baseContainer: true }; });")
+		}); // full leaf-first chain re-fetched from the root anchor
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the re-anchored full hierarchy resolves the page chain and seed");
+		_hierarchyClient.Received(1).GetParentSchemas("uid-mid", Arg.Any<string>());
+		_hierarchyClient.Received(1).GetParentSchemas("uid-root", Arg.Any<string>());
+		response.LayerCount.Should().Be(3,
+			because: "the full re-fetched chain (three UsrPage layers) is used, not the two-layer partial initial fetch");
+		response.SeedCount.Should().Be(1, because: "the parent template from the full re-fetched chain becomes the seed");
+		JObject manifest = JObject.Parse(_writtenContent);
+		var schemas = (JArray)manifest["schemas"];
+		schemas[0]["pkg"]!.ToString().Should().Be("pkgRoot", because: "the full chain is ordered base->top (most-base root layer first)");
+		schemas[2]["pkg"]!.ToString().Should().Be("pkgTop", because: "the most-derived layer of the full chain sorts last");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle keeps the initial hierarchy fetch when the root re-anchor re-fetch returns empty, so re-anchoring never collapses an already-resolved chain (the full.Count > 0 ? full : initial guard).")]
+	public void TryAssembleBundle_ShouldKeepInitialHierarchy_WhenRootReanchorRefetchIsEmpty() {
+		// Arrange — metadata resolves to uid-mid; the initial fetch's last same-named entry is uid-root
+		// (!= uid-mid), so the else re-anchor is entered, but GetParentSchemas(uid-root) returns EMPTY, so the
+		// guard must retain 'initial' rather than dropping the already-resolved chain.
+		AddLayer("UsrPage", "uid-mid", "UsrApp", 300);
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
+		_hierarchyClient.GetParentSchemas("uid-mid", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrPage", "pkgMid", "uid-mid", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });"),
+			Hier("UsrPage", "pkgRoot", "uid-root", "define(\"UsrPage\", [], function() { return {}; });")
+		});
+		_hierarchyClient.GetParentSchemas("uid-root", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema>());
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "an empty re-fetch must fall back to the initial hierarchy, not fail assembly");
+		_hierarchyClient.Received(1).GetParentSchemas("uid-root", Arg.Any<string>());
+		response.LayerCount.Should().Be(2,
+			because: "the initial two-layer fetch is retained when the re-anchor re-fetch yields nothing (full.Count > 0 ? full : initial)");
+	}
+
+	[Test]
 	[Description("TryAssembleBundle falls back to the legacy per-layer enumeration (and logs it) when the GetParentSchemas hierarchy call fails, still producing a manifest.")]
 	public void TryAssembleBundle_ShouldFallBackToLegacy_WhenGetParentSchemasThrows() {
 		// Arrange — a full legacy fake (layers + bodies + parent template), but the hierarchy call throws.
