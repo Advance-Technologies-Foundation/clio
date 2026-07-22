@@ -1,6 +1,6 @@
 # ADR: Decompose clio into Core / CLI / MCP assemblies (extract the embedded MCP server)
 
-- **Status:** Proposed
+- **Status:** Accepted (open questions Q1–Q5 resolved 2026-07-22 — maintainer accepted the recommended answers)
 - **Date:** 2026-07-22
 - **Feature:** `clio-modularization`
 - **Author:** Architect Agent (BMAD Phase 2)
@@ -396,21 +396,22 @@ is the deferred Core/Cli split.
 
 ---
 
-## Open questions (maintainer must answer before implementation)
+## Resolved decisions (Q1–Q5 — maintainer accepted the recommended answers, 2026-07-22)
 
-- **Q1 — Tool assembly name.** Keep the packed tool's **assembly file name `clio.dll`** (recommended:
-  preserves `dotnet clio.dll …` invocations in AGENTS.md/CI and minimizes `InternalsVisibleTo` churn)
-  while the project is named `Clio.Cli`, or rename the output to `Clio.Cli.dll`? `PackageId` stays `clio`
-  either way.
-- **Q2 — Sequencing.** Accept D9 (ship the `Clio.Mcp` extraction first, defer the Core/Cli split), or do
-  all three assemblies in one pass?
-- **Q3 — StageEvent namespace.** Rename the moved contract to `Clio.Core.Progress` (clearer, small
-  mechanical `using` churn in ≈4 emitters + MCP consumers) or keep its current namespace to minimize the
-  diff?
-- **Q4 — Split the MCP HTTP host further?** `Microsoft.AspNetCore.App` + `JwtBearer` are needed **only**
-  by the `mcp-http` transport, not stdio. Should `Clio.Mcp` own both, or should the ASP.NET host be a
-  fourth assembly (e.g. `Clio.Mcp.Http`) so stdio-only consumers never pull ASP.NET? (Deeper decoupling;
-  more projects.)
-- **Q5 — Dual-target confirmation.** Confirm `net8.0` + conditional `net10.0` multi-target for all three
-  new projects, and that `ModelContextProtocol.AspNetCore` + `Microsoft.AspNetCore.App` resolve on both
-  frameworks in `Clio.Mcp` only.
+All five open questions were resolved by the maintainer accepting the architect's recommendations. They
+are now binding inputs for story-writing / implementation:
+
+- **Q1 — Tool assembly name → RESOLVED: keep `clio.dll`.** The packed tool keeps assembly file name
+  `clio.dll` (preserves `dotnet clio.dll …` invocations in AGENTS.md/CI and minimizes `InternalsVisibleTo`
+  churn); the project is named `Clio.Cli`; `PackageId` stays `clio`.
+- **Q2 — Sequencing → RESOLVED: D9 accepted.** Extract `Clio.Mcp` first (Phases 1–4) on top of today's
+  single `clio` assembly; defer the physical `Clio.Core` ↔ `Clio.Cli` split (Phase 5) to a follow-up.
+- **Q3 — StageEvent namespace → RESOLVED: rename to `Clio.Core.Progress`.** The moved contract adopts the
+  `Clio.Core.Progress` namespace (mechanical `using` churn in the ≈4 emitters + MCP consumers), preserving
+  JSON wire/byte/schema parity per D4.
+- **Q4 — MCP HTTP host → RESOLVED: `Clio.Mcp` owns ASP.NET for v1.** `Microsoft.AspNetCore.App` +
+  `JwtBearer` live in `Clio.Mcp`; **no** separate `Clio.Mcp.Http` assembly for now. A stdio-only-footprint
+  split may be revisited later if warranted; it does not block this ADR.
+- **Q5 — Dual-target → RESOLVED: confirmed.** All new projects multi-target `net8.0` + conditional
+  `net10.0` (matching `clio.csproj:5-6`); `ModelContextProtocol.AspNetCore` + `Microsoft.AspNetCore.App`
+  resolve on both frameworks in `Clio.Mcp` only.
