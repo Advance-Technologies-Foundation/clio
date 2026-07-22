@@ -31,6 +31,7 @@
 		     directly to the CPM version (10.0.10): Central Package Management only versions DIRECT
 		     references, so without this the project restores the vulnerable transitive 10.0.6 and
 		     fails NU1903 (CVE-2026-50648). -->
+
 		<PackageReference Include="System.Security.Cryptography.Xml" />
 	</ItemGroup>
 

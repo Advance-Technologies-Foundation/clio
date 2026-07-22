@@ -135,6 +135,7 @@ open-settings:open-settings,conf,configuration,os,settings
 open-web-app:open-web-app,open
 pack-nuget-pkg:pack-nuget-pkg,pack
 get-page:get-page,page-get
+get-page-hierarchy:get-page-hierarchy,page-hierarchy-get
 list-app-sections:list-app-sections
 list-pages:list-pages,page-list
 update-page:update-page,page-update

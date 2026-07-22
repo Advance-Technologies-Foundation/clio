@@ -113,6 +113,10 @@ NOTES
     - For default-value-config source=Settings:
       value-source can be setting code, setting name, or setting id; values are
       normalized to setting code before save
+    - For default-value-config source=Sequence (text columns only):
+      set the static prefix via sequence-prefix (e.g. LN-) or a value mask
+      ending with {0} (e.g. LN-{0} produces LN-00001), not both; masks with
+      static text after {0} are rejected with a validation error
     - If Settings or SystemValue lookup is ambiguous, the command fails with a
       validation error and requests explicit code/Guid input
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const

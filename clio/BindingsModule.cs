@@ -363,6 +363,9 @@ public class BindingsModule {
 		services.AddTransient<BuildThemeCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
+		// Singleton so its per-key SemaphoreSlim registry is process-wide (shared across the CLI verb and the
+		// MCP tool); injected into ApplicationSectionCreateService, so it stays CLIO005-alive (ENG-93089).
+		services.AddSingleton<ISectionCreateSerializationGuard, SectionCreateSerializationGuard>();
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
@@ -407,6 +410,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).

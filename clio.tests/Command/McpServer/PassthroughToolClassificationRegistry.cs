@@ -289,6 +289,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-page"] = PassthroughClassification.NotApplicable,
+			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,

@@ -32,6 +32,15 @@ not what you want.
 By default clio creates web and mobile pages. Set --with-mobile-pages false
 when the new section must stay web-only.
 
+**Create sections in one application sequentially, not in parallel.** Each
+section insert is a long (~90–100 second) backend operation, so overlapping
+inserts against the same application contend server-side and abort with a
+detail-less `InsertQuery failed` (classified `contention`). clio serializes
+section creations per environment + application in-process and automatically
+retries a detail-less rejection once after verifying the section is absent, so a
+single burst usually still succeeds — but do not deliberately launch parallel
+`create-app-section` calls against the same application (ENG-93089).
+
 Clio always selects an application icon automatically. Use --icon-background
 to set a specific icon background color from the Freedom UI palette, or omit
 it to pick a random palette color. Values outside the palette are rejected
@@ -143,7 +152,8 @@ and `retry-guidance`.
 | --- | --- | --- |
 | `transport` | The request never reached the Creatio server (DNS, connect, or TLS failure). | No section was created; retrying is safe once the environment is reachable. |
 | `creatio-timeout` | The request was sent but Creatio produced no response within the budget. | clio automatically checks whether the section appeared anyway: if it did, the command continues and succeeds. If not, do **not** retry blindly — the server may still be processing the insert. Wait a few minutes, run `clio list-app-sections`, and retry only if the section is still absent. |
-| `server-error` | Creatio rejected the operation (HTTP error, non-JSON/HTML response, or a rejected insert). | Retrying the same arguments will most likely fail again; fix the inputs or the server state first. |
+| `contention` | The insert was aborted without a detailed reason (a detail-less `InsertQuery failed`). The server returns no detail, so this may be parallel creation in one application **or** a server-side rejection unrelated to concurrency. No section was created (verified). | clio serializes section creations per application and auto-retries this **once** after verifying the section is absent. Run `clio list-app-sections` to confirm it is absent; create sections one at a time if you were creating them concurrently. If a single sequential create still fails, treat it as a server-side issue — check `clio healthcheck` and the Creatio server logs rather than retrying (ENG-93089). |
+| `server-error` | Creatio rejected the operation with a real reason (HTTP error, non-JSON/HTML response, or a detailed rejected insert). | Retrying the same arguments will most likely fail again; fix the inputs or the server state first. |
 
 ### MCP response deadline (`in-progress`)
 
@@ -191,12 +201,17 @@ retry once the underlying issue is resolved.
 - **"Section code ... is invalid ..."** — the value passed via `--code` is not
   a Latin identifier. Section codes must start with a Latin letter and contain
   only Latin letters, digits, or underscore.
-- **Detail-less "Failed to create section ..." rejection** — the server
-  rejected the insert without details. A section with the generated or explicit
-  code may already exist. Run `clio list-app-sections` to inspect existing
-  sections, then change the caption or pass a different `--code`. Several
-  sections may target the same object, so reusing an object that already backs a
-  section is allowed.
+- **Detail-less "Failed to create section ..." (`contention`) rejection** —
+  Creatio aborted the insert without details. Because the server returns no
+  detail, this may be contention from creating sections in parallel **or** a
+  server-side rejection unrelated to concurrency. No section was created
+  (verified). clio serializes section creations per application and retries this
+  once automatically. Run `clio list-app-sections` to confirm the section is
+  absent; if you were creating sections concurrently, create them one at a time.
+  If a single sequential create still fails, it is almost certainly a
+  server-side issue — check `clio healthcheck` and the Creatio server logs
+  rather than retrying. A *detailed* server rejection (a real error message) is
+  classified `server-error` instead.
 - When the underlying Creatio insert returns its own error text, that message
   is surfaced after `Server error:` so the root cause is visible instead of a
   generic failure.
