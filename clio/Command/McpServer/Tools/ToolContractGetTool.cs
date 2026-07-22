@@ -382,6 +382,8 @@ public sealed record ToolContractFieldError(
 
 internal static class ToolContractCatalog {
 	private const string ActionFieldName = "action";
+	// The 'Lookup' data-value-type token, reused across sync-schemas contract examples.
+	private const string LookupColumnTypeValue = "Lookup";
 	private const string AppCodeFieldName = "app-code";
 	private const string AppNameFieldName = "app-name";
 	private const string ApplicationCodeFieldName = "application-code";
@@ -1378,7 +1380,7 @@ internal static class ToolContractCatalog {
 				Field(EntityFieldName, ObjectType, "Created or targeted entity metadata when available."),
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'server-error' (Creatio rejected the operation — fix inputs or server state first)."),
+				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'contention' (insert aborted without a detailed reason — may be parallel creation in one app OR a server-side rejection unrelated to concurrency; no section created (verified); run list-app-sections, create sections one at a time if you were creating them concurrently (clio serializes and auto-retries once), and if a single sequential create still fails treat it as server-side), 'server-error' (Creatio rejected the operation with a real, detailed reason — fix inputs or server state first)."),
 				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
 				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
 			),
@@ -1941,8 +1943,18 @@ internal static class ToolContractCatalog {
 					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
-			[]);
+			[],
+			OdataUnregisteredEntityAntiPatterns());
 	}
+
+	// Shared by odata-read and odata-create: both funnel through ODataResponseError.TryDetect and
+	// surface the identical routing-error hint, so the anti-pattern text is derived from the single
+	// UnregisteredEntityHint constant to keep the two contracts from drifting apart.
+	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns() => [
+		new ToolAntiPattern(
+			"Reading or writing a freshly-created custom object or lookup by entity name immediately after creating it and treating the routing error as a data gap.",
+			$"{ODataResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
+	];
 
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
@@ -1976,7 +1988,8 @@ internal static class ToolContractCatalog {
 					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
 					"Create the record, then read it back by the returned id to confirm persisted values.")
 			],
-			[]);
+			[],
+			OdataUnregisteredEntityAntiPatterns());
 	}
 
 	private static ToolContractDefinition BuildODataUpdate() {
@@ -3402,11 +3415,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
+			"Batches create-lookup, create-entity, update-entity, and seed-data operations in one call. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan — resubmit only resume-plan.operations, never the whole batch.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -3424,7 +3437,8 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation execution results keyed by canonical `type`.")
+				Field("results", ArrayType, "Per-operation execution results for the operations that ran. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed|resumed-existing), `operation-index` (zero-based index into the request operations), and — only when the operation was retried for a transient fault — `attempts`. `resumed-existing` (create-lookup only) is a success where the schema already existed in the target package but the requested columns could NOT be verified (column read failed); registration is completed and a warning states the columns are NOT confirmed present — verify with get-entity-schema-properties or resubmit. Operations that never ran are NOT in this array; see `resume-plan`."),
+				Field("resume-plan", ObjectType, "Present only when the batch aborted before completing. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — the failed operation followed by every not-run operation, echoed in re-submittable input shape. Resubmit ONLY resume-plan.operations as a new sync-schemas call; never resend the already-completed operations.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -3448,7 +3462,7 @@ internal static class ToolContractCatalog {
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "add",
 									[ColumnNameFieldName] = "UsrStatus",
-									["type"] = "Lookup",
+									["type"] = LookupColumnTypeValue,
 									[TitleLocalizationsFieldName] = LocalizationMap("Status"),
 									[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 								}
@@ -3468,13 +3482,40 @@ internal static class ToolContractCatalog {
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "modify",
 									["name"] = "UsrStatus",
-									["data-value-type"] = "Lookup",
+									["data-value-type"] = LookupColumnTypeValue,
 									["reference-schema"] = ExampleTaskStatusSchemaName
 								},
 								// remove a column echoing only the read-shape `name`
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "remove",
 									["name"] = "UsrObsolete"
+								}
+							}
+						}
+					}
+				}),
+				Example("Resume after a transient mid-batch abort: resubmit only resume-plan.operations", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					// These operations came verbatim from the previous response's resume-plan.operations
+					// (the failed create-lookup followed by the update-entity that never ran). The
+					// operations already marked completed are intentionally omitted.
+					[OperationsFieldName] = new object[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
+							[TitleLocalizationsFieldName] = LocalizationMap("Task Status")
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							[SchemaNameFieldName] = ExamplePackageName,
+							["update-operations"] = new object[] {
+								new Dictionary<string, object?> {
+									[ActionFieldName] = "add",
+									[ColumnNameFieldName] = "UsrStatus",
+									["type"] = LookupColumnTypeValue,
+									[TitleLocalizationsFieldName] = LocalizationMap("Status"),
+									[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 								}
 							}
 						}
@@ -3795,7 +3836,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							[ActionFieldName] = "add",
 							[ColumnNameFieldName] = "UsrStatus",
-							["type"] = "Lookup",
+							["type"] = LookupColumnTypeValue,
 							[TitleLocalizationsFieldName] = LocalizationMap("Status"),
 							[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 						}
@@ -4173,7 +4214,7 @@ internal static class ToolContractCatalog {
 					Field("required", BooleanType, "Optional required flag."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
-					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."),
+					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected). For Sequence (text columns only), set the static prefix via sequence-prefix (e.g. LN-) or a value mask ending with {0} (e.g. LN-{0} produces LN-00001), not both; a mask with static text after {0} is rejected with a validation error."),
 					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,

@@ -363,6 +363,9 @@ public class BindingsModule {
 		services.AddTransient<BuildThemeCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
+		// Singleton so its per-key SemaphoreSlim registry is process-wide (shared across the CLI verb and the
+		// MCP tool); injected into ApplicationSectionCreateService, so it stays CLIO005-alive (ENG-93089).
+		services.AddSingleton<ISectionCreateSerializationGuard, SectionCreateSerializationGuard>();
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
@@ -407,6 +410,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
@@ -575,6 +579,11 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
+		// Synchronous backoff for the sync-schemas per-operation transient-retry loop (ENG-93374). The
+		// loop runs inside the per-tenant McpToolExecutionLock where await is illegal, so the delay must
+		// be synchronous. Registered as the shared stateless singleton; tests substitute a zero-delay
+		// double so retry logic runs instantly.
+		services.AddSingleton<IRetryDelay>(ThreadSleepRetryDelay.Shared);
 		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
 		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
 		// the real accessor/validator are absent). The mcp-http host registers the REAL

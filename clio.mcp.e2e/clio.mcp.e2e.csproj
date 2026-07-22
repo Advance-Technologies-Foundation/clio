@@ -27,6 +27,11 @@
 		<PackageReference Include="ModelContextProtocol" />
 		<PackageReference Include="Allure.NUnit" />
 		<PackageReference Include="FluentAssertions" />
+		<!-- Pin the transitively-pulled System.Security.Cryptography.Xml (via Microsoft.PowerShell.SDK)
+		     to the patched CPM version (10.0.10) directly. CPM only versions DIRECT references, so
+		     without this the project restores the vulnerable transitive 10.0.6 and fails NU1903
+		     (CVE-2026-50648). -->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
 	</ItemGroup>
 
 	<ItemGroup>
