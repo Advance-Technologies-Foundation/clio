@@ -2219,3 +2219,77 @@ stories:
     depends_on:
       - story-clio-guidance-development-1
     blocks: []
+  # --- clio-modularization stories (ADR spec/adr/adr-clio-modularization.md, Accepted 2026-07-22) — added 2026-07-22 ---
+  # Internal modularization: extract the embedded MCP server into Clio.Mcp; the Core/Cli split is DEFERRED (D9/Q2).
+  # No PRD — the ADR is self-contained (problem + requirements in its Context). No FR/AC numbering; the six stories
+  # map 1:1 to the ADR "Scope / work items" Phases 1-6 and cite ADR decision IDs (D1-D9) + risk IDs (R1-R6).
+  # Order: 1, 2, 3 (independent leak-bucket lifts, parallelizable) -> 4 (Clio.Mcp extraction; needs 1,2,3) ->
+  #   5 (DEFERRED Core/Cli split follow-up per D9/Q2) ; 6 (extraction verification & docs; closes 1-4, NOT 5).
+  # Stories 2 and 4 move a Ring-consumed contract -> the ClioRing MCP compatibility gate is MANDATORY in their DoD.
+  # Stories 1-4 and 6 touch BindingsModule.cs/Program.cs or Common/** -> full unit suite (smart-regression rule 4).
+  - id: story-clio-modularization-1
+    title: "Phase 1 — Core run-mode service replaces the Program.IsMcpServerMode static (bucket 1)"
+    feature: "clio-modularization"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    note: "ADR Phase 1 · D3; risk R4. Leak-bucket 1 lift. Full-unit-suite trigger (ConsoleLogger in Common + Program.cs/BindingsModule.cs). Blocks the Clio.Mcp extraction (Story 4). No separate PRD (ADR self-contained)."
+    file: spec/stories/story-clio-modularization-1.md
+    adr: spec/adr/adr-clio-modularization.md
+    depends_on: []
+    blocks: [story-clio-modularization-4]
+  - id: story-clio-modularization-2
+    title: "Phase 2 — Move the StageEvent/progress contract to Clio.Core.Progress and decouple Start/Stop from the MCP SDK (buckets 2 + 2b)"
+    feature: "clio-modularization"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    note: "ADR Phase 2 · D4, Q3; risks R2, R4. Neutral contract -> Clio.Core.Progress (byte/schema parity frozen); StageEventProgressForwarder stays in MCP; StartCommand/StopCommand decoupled from ProgressNotificationValue. MANDATORY ClioRing gate (Ring-consumed _meta.clioStageEvent). Full-unit-suite trigger. Blocks Story 4."
+    file: spec/stories/story-clio-modularization-2.md
+    adr: spec/adr/adr-clio-modularization.md
+    depends_on: []
+    blocks: [story-clio-modularization-4]
+  - id: story-clio-modularization-3
+    title: "Phase 3 — Relocate MCP-hosted utilities into Core/Common and neutralize config templating (buckets 3 + 4)"
+    feature: "clio-modularization"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    note: "ADR Phase 3 · D5; risk R4. Move CompactPrimitiveArrayJsonElementConverter, McpToolExecutionLock/CwdLock, IToolCommandResolver/ToolCommandResolver into Core/Common (keep interfaces + DI regs); convert 2 <see cref> doc refs; assert MergeClioMcpServer still emits the mcp-server verb. Full-unit-suite trigger (BindingsModule.cs DI reg + Common). Blocks Story 4."
+    file: spec/stories/story-clio-modularization-3.md
+    adr: spec/adr/adr-clio-modularization.md
+    depends_on: []
+    blocks: [story-clio-modularization-4]
+  - id: story-clio-modularization-4
+    title: "Phase 4 — Extract the embedded MCP server into a new Clio.Mcp project"
+    feature: "clio-modularization"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    note: "ADR Phase 4 · D1, D2, D6, D7, D8, Q1, Q4, Q5; risks R1, R3, R4, R5, R6. New Clio.Mcp.csproj owns McpServer/** + ASP.NET + MCP-SDK (off core); IVT(Clio.Mcp) + minimal public promotions; re-point RegisterEnabledPrimitives + ExperimentalCommand at the Clio.Mcp assembly; re-point clio.tests/clio.mcp.e2e IVT; host-startup tool-count assertion (R3). Pure move (D8). MANDATORY ClioRing gate + full unit suite. Needs all four leak buckets lifted first (Alternative C infeasible)."
+    file: spec/stories/story-clio-modularization-4.md
+    adr: spec/adr/adr-clio-modularization.md
+    depends_on: [story-clio-modularization-1, story-clio-modularization-2, story-clio-modularization-3]
+    blocks: [story-clio-modularization-5, story-clio-modularization-6]
+  - id: story-clio-modularization-5
+    title: "Phase 5 (DEFERRED follow-up) — Split the single assembly into Clio.Core (library) + Clio.Cli (Exe)"
+    feature: "clio-modularization"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    note: "ADR Phase 5 · D1, D2, D9, Q1, Q2, Q5; risks R5, R6. DEFERRED per D9/Q2 — do NOT start before Story 4 merges. Clio.Core=Library, Clio.Cli=Exe/PackAsTool/PackageId=clio (assembly file name stays clio.dll, Q1). Verify pack bundles Clio.Core.dll + Clio.Mcp.dll on net8.0+net10.0 (R6). ready-for-dev but gated on depends_on: story-clio-modularization-4."
+    file: spec/stories/story-clio-modularization-5.md
+    adr: spec/adr/adr-clio-modularization.md
+    depends_on: [story-clio-modularization-4]
+    blocks: []
+  - id: story-clio-modularization-6
+    title: "Cross-cutting — verification & docs closure for the Clio.Mcp extraction"
+    feature: "clio-modularization"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    note: "ADR work item 6 · D2, D8, Q5; risks R3, R6. Full unit suite + ClioRing gate commands + WorkspaceTemplateGuidanceDriftTests green (no clio/tpl/** edits) + MCP 'pure move' note + csproj/solution doc updates + net8.0/net10.0 dual-target confirmation. Closes Stories 1-4; does NOT depend on the deferred Story 5."
+    file: spec/stories/story-clio-modularization-6.md
+    adr: spec/adr/adr-clio-modularization.md
+    depends_on: [story-clio-modularization-4]
+    blocks: []
