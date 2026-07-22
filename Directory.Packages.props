@@ -26,6 +26,10 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Avalonia.Skia" Version="$(AvaloniaVersion)" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- ENG-93885: ToolContractGetTool.IsLegacyStdioClient relies on this SDK capturing Server.ClientInfo
+         at initialize-REQUEST time (no notifications/initialized required) — verified on 1.4.1. Before
+         bumping, re-run ToolContractGetToolLegacyClientRawStdioE2ETests (clio.mcp.e2e), which pins that
+         wire behavior against the unpatchable CAADT 1.4.0 stdio client. -->
     <PackageVersion Include="ModelContextProtocol" Version="1.4.1" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MsPackageVersion)" />

@@ -2472,6 +2472,8 @@ public sealed class ToolContractGetToolTests {
 	[TestCase("mcp_client", "1.0.0", false)]
 	[TestCase("mcp_client", "", false)]
 	[TestCase("clio.mcp.e2e", "1.0.0", false)]
+	[TestCase("some_other_client", "1.0", false)]
+	[TestCase("MCP_CLIENT", "1.0", false)]
 	[Description("IsLegacyStdioClient returns true only for the exact legacy CAADT 1.4.0 identity (name=mcp_client, version=1.0, both ordinal) - a version bump such as 1.0.0, an empty version, or a different client name must all opt OUT of the legacy branch.")]
 	public void IsLegacyStdioClient_Should_MatchOnlyExactLegacyIdentity(string name, string version, bool expected) {
 		// Arrange
@@ -2540,10 +2542,14 @@ public sealed class ToolContractGetToolTests {
 	[Category("Unit")]
 	[Description("Mixed-toggle drift guard (reviewer finding, ENG-93885): with a feature-gated uncurated tool family toggled OFF, the legacy full-shape name set stays set-EQUAL with the compact index, the disabled tool leaks into NEITHER set (no toggle-blind reflection re-entry via the live registry), and the toggle is proven non-vacuous against the all-enabled registry. Complements the all-enabled set-equality test, which only exercised the toggle-on universe.")]
 	public void ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_UnderMixedFeatureToggles() {
-		// Arrange: disable the whole deploy-identity gated (uncurated, registry-only) tool family so the
-		// registry is in a realistic mixed-toggle production state, not the all-enabled state BuildInvokerRegistry
-		// forces by default. These tool names are NOT in CanonicalToolNames, so they appear only via
-		// registry.ToolNames and must vanish when their feature flag is off.
+		// Arrange: disable the whole feature-gated deploy-identity tool family so the registry is in a
+		// realistic mixed-toggle production state, not the all-enabled state BuildInvokerRegistry forces
+		// by default. None of these names is in CanonicalToolNames, so index membership comes only via
+		// registry.ToolNames and must vanish when the feature flag is off. Note: deploy-identity itself
+		// IS curated (Contracts[DeployIdentityTool.DeployIdentityToolName]) though non-canonical, so for
+		// it the theoretical leak vector is the curated Contracts lookup; its siblings (for example
+		// get-identity-service-config) are genuinely uncurated and could only leak via the toggle-blind
+		// reflection catalog.
 		Type[] disabledToolTypes = [
 			typeof(DeployIdentityTool),
 			typeof(GetIdentityServiceConfigTool),
@@ -2579,6 +2585,35 @@ public sealed class ToolContractGetToolTests {
 			because: "the same tool IS visible when its feature flag is on - proving the toggle, not a typo, drove its absence from the mixed-toggle sets above (non-vacuous guard)");
 		indexNames.Count.Should().BeLessThan(allEnabledIndexNames.Count,
 			because: "disabling the deploy-identity family must actually shrink the visible tool universe");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degraded no-registry path (toolInvokerRegistry: null): the legacy full-shape name set stays set-EQUAL with the compact index name set - both fall back to the same toggle-blind reflection universe. This is the only condition under which the reflection fallback can fire on the legacy branch, previously asserted only by prose in ResolveNoNamesContracts.")]
+	public void ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_WithoutRegistry() {
+		// Arrange: no registry - the ctor accepts null, and only then does BuildIndexToolNames fall back
+		// to the toggle-blind reflection catalog on both the index and the legacy full-shape paths.
+
+		// Act
+		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
+			null, toolInvokerRegistry: null, detail: null, legacyNoNamesFullShape: true);
+		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
+			null, toolInvokerRegistry: null, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		legacyFullResult.Success.Should().BeTrue(
+			because: "a no-names legacy request must still succeed on the degraded no-registry path");
+		legacyFullResult.Tools.Should().NotBeNullOrEmpty(
+			because: "the legacy client must still receive a full tools array when no invoker registry is available");
+		legacyFullResult.Index.Should().BeNull(
+			because: "the legacy full-shape response must not also carry the compact index on the no-registry path");
+		indexResult.Index.Should().NotBeNullOrEmpty(
+			because: "the compact index must still be built from the reflection catalog when no invoker registry is available");
+
+		IEnumerable<string> legacyNames = legacyFullResult.Tools!.Select(tool => tool.Name);
+		IEnumerable<string> indexNames = indexResult.Index!.Select(entry => entry.Name);
+		legacyNames.Should().BeEquivalentTo(indexNames,
+			because: "on the no-registry path both branches enumerate the same reflection universe, so the legacy full-shape name set must stay set-EQUAL with the compact index name set");
 	}
 
 	[Test]
