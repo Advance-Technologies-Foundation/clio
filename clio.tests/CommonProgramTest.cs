@@ -550,6 +550,46 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Treats a -h that is the VALUE of a preceding value-taking option as a real argument, not a help request, so a genuine command is never silently swapped for a help screen (ENG-93886 position-aware dispatch).")]
+	public void ArgvRequestsUnclaimedHelp_WithDashHAsValueOfPrecedingOption_ShouldReturnFalse() {
+		bool result = Program.ArgvRequestsUnclaimedHelp(
+			["create-data-binding", "--package", "Foo", "--schema", "Bar", "--binding-name", "-h"],
+			typeof(CreateDataBindingOptions));
+
+		result.Should().BeFalse(because: "-h is the literal value of the value-taking --binding-name option here, so the real create-data-binding invocation must run instead of being replaced by help output");
+	}
+
+	[Test]
+	[Description("Treats --help that is the value of a preceding value-taking option as a real argument, mirroring the -h companion case (ENG-93886 position-aware dispatch).")]
+	public void ArgvRequestsUnclaimedHelp_WithLongHelpAsValueOfPrecedingOption_ShouldReturnFalse() {
+		bool result = Program.ArgvRequestsUnclaimedHelp(
+			["create-data-binding", "--binding-name", "--help"],
+			typeof(CreateDataBindingOptions));
+
+		result.Should().BeFalse(because: "--help is the literal value of the value-taking --binding-name option here, so it must not be misread as a help request");
+	}
+
+	[Test]
+	[Description("Still fires help for a bare --help at a fresh (non-value) position, even when an earlier token is a value-taking option that already consumed its own value (ENG-93886 position-aware dispatch).")]
+	public void ArgvRequestsUnclaimedHelp_WithHelpAfterConsumedOptionValue_ShouldReturnTrue() {
+		bool result = Program.ArgvRequestsUnclaimedHelp(
+			["create-data-binding", "--package", "Foo", "--help"],
+			typeof(CreateDataBindingOptions));
+
+		result.Should().BeTrue(because: "--package consumes only Foo, so the following --help sits at a fresh position and must be treated as a genuine help request");
+	}
+
+	[Test]
+	[Description("Fires help for a plain <verb> --help with no other arguments (ENG-93886 core dispatch happy path).")]
+	public void ArgvRequestsUnclaimedHelp_WithPlainHelpSwitch_ShouldReturnTrue() {
+		bool result = Program.ArgvRequestsUnclaimedHelp(
+			["create-data-binding", "--help"],
+			typeof(CreateDataBindingOptions));
+
+		result.Should().BeTrue(because: "a bare create-data-binding --help is the primary case the dispatch short-circuit must render help for");
+	}
+
+	[Test]
 	[Description("Excludes hidden commands from the unknown-command suggestions.")]
 	public void ExecuteCommands_WithHiddenCommandAlias_ShouldNotSuggestHiddenCommand() {
 		ThreadSafeStringWriter consoleOutput = new();
