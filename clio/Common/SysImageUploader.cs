@@ -129,13 +129,17 @@ public sealed class SysImageUploader : ISysImageUploader {
 		upload.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
 		// The File API range end is zero-indexed and inclusive: a 123-byte file is "bytes 0-122/123".
 		upload.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, payload.LongLength - 1, payload.LongLength);
-		// The file name travels percent-encoded inside the plain filename parameter, matching what the
-		// platform's own upload page sends. A raw non-ASCII name gets mangled on the Latin-1 header
-		// channel and the upload fails verification, and the image API rejects the RFC 5987 filename*
-		// parameter outright with HTTP 400 "Content-Disposition" — both verified live.
-		upload.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") {
-			FileName = $"\"{Uri.EscapeDataString(fileName)}\""
-		};
+		// The file name travels percent-encoded inside a plain, UNQUOTED filename parameter, byte-for-byte
+		// like the platform's own upload page sends. This shape is load-bearing and verified live against
+		// the image API: the server derives the image type from the filename's extension with a naive
+		// parse that does not strip quotes, so a quoted filename (filename="x.png") is read as extension
+		// 'png"' and the upload is rejected with HTTP 200 {"error":"File is not an image."}. Percent-
+		// encoding keeps a non-ASCII name (which would otherwise be mangled on the Latin-1 header channel)
+		// intact while staying a valid unquoted header token; the RFC 5987 filename* form is rejected
+		// outright with HTTP 400 "Content-Disposition". Set as a raw header so no quoting is reintroduced
+		// by the typed ContentDispositionHeaderValue.FileName setter.
+		upload.Content.Headers.TryAddWithoutValidation("Content-Disposition",
+			$"attachment; filename={Uri.EscapeDataString(fileName)}");
 
 		using HttpResponseMessage uploadResponse = await http.SendAsync(upload, cancellationToken)
 			.ConfigureAwait(false);

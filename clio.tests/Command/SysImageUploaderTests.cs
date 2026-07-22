@@ -231,28 +231,30 @@ public sealed class SysImageUploaderTests
 	}
 
 	[Test]
-	[Description("A non-ASCII file name travels percent-encoded inside the plain Content-Disposition filename parameter (the form the image API accepts; it rejects RFC 5987 filename* with HTTP 400 and a raw Unicode name is mangled on the Latin-1 header channel — both verified live).")]
-	public async Task UploadAsync_ShouldSendPercentEncodedFileName_WhenFileNameIsNotAscii() {
+	[Description("A non-ASCII file name travels percent-encoded inside a plain, UNQUOTED Content-Disposition filename parameter — the exact form the image API accepts. The server derives the image type from the extension with a naive parse that does not strip quotes, so a quoted filename is rejected with {\"error\":\"File is not an image.\"}; RFC 5987 filename* is rejected with HTTP 400; a raw Unicode name is mangled on the Latin-1 header channel — all verified live.")]
+	public async Task UploadAsync_ShouldSendUnquotedPercentEncodedFileName_WhenFileNameIsNotAscii() {
 		// Arrange
 		(SysImageUploader sut, RecordingHandler handler, IFileSystem fileSystem) = BuildSut(isNetCore: false);
 		const string unicodePath = "C:/brand/логотип.png";
 		fileSystem.ExistsFile(unicodePath).Returns(true);
 		fileSystem.GetFileSize(unicodePath).Returns(PngPayload.LongLength);
 		fileSystem.ReadAllBytes(unicodePath).Returns(PngPayload);
+		string expectedEncoded = Uri.EscapeDataString("логотип.png");
 
 		// Act
 		SysImageUploadResult result = await sut.UploadAsync(unicodePath);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a unicode file name must not break the upload");
-		System.Net.Http.Headers.ContentDispositionHeaderValue disposition =
-			handler.Requests[0].Content!.Headers.ContentDisposition!;
-		disposition.FileNameStar.Should().BeNull(
-			because: "the image API rejects the RFC 5987 filename* parameter with HTTP 400 (verified live)");
-		disposition.FileName!.Trim('"').Should().Be(Uri.EscapeDataString("логотип.png"),
-			because: "the name must travel percent-encoded in the plain filename parameter, the form the image API accepts "
-				+ "(the getter quotes the value on some target frameworks and not others)");
-		foreach (char character in disposition.FileName!) {
+		handler.Requests[0].Content!.Headers.TryGetValues("Content-Disposition", out IEnumerable<string> rawValues)
+			.Should().BeTrue(because: "the upload must carry a Content-Disposition header");
+		string rawDisposition = string.Concat(rawValues!);
+		rawDisposition.Should().Be($"attachment; filename={expectedEncoded}",
+			because: "the filename must travel percent-encoded and UNQUOTED, byte-for-byte like the platform upload page — "
+				+ "the image API's naive extension parse reads a quoted name as extension 'png\"' and rejects it as not an image (verified live)");
+		rawDisposition.Should().NotContain("\"",
+			because: "a quoted filename is the exact shape the image API rejects with {\"error\":\"File is not an image.\"} (verified live)");
+		foreach (char character in expectedEncoded) {
 			((int)character).Should().BeLessThan(128,
 				because: "the encoded filename must stay pure ASCII so the Latin-1 header channel cannot mangle it");
 		}
