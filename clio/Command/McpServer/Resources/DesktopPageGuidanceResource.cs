@@ -141,6 +141,9 @@ public sealed class DesktopPageGuidanceResource {
 		         the selector); use `template: "CentralAreaDesktopTemplate"` so the group is `Desktop`.
 		       - Do not register the desktop in the `Desktop` entity manually (see above).
 		       - Do not guess the designer URL; `get-page` success is sufficient verification.
+		       - Do not auto-open a browser to verify a created or changed desktop. Ask the user whether to verify
+		         automatically (you open the app and check) or they will check manually, and save the answer in
+		         your persistent memory so future runs do not ask again.
 		       """
 	};
 

@@ -278,6 +278,9 @@ public sealed class DashboardDesignGuidanceResource {
 		       - Titles and value colors use theme defaults (red only for overdue/negative).
 		       - If the dashboard has a `DashboardsEntitySchemaName`, every data-bound widget has a `dependencies`
 		         entry to `DashboardDS.Id` (`attributePath` = `Id` when the widget entity matches it, else its FK column).
+		       - Checklist done? Do NOT auto-open a browser to verify the result. Ask the user whether to verify
+		         automatically (you open the app and check) or they will check manually, and save the answer in
+		         your persistent memory so future runs do not ask again.
 		       """
 	};
 
