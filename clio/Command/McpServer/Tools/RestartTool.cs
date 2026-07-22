@@ -41,7 +41,7 @@ public class RestartTool(
 	public async Task<CommandExecutionResult> RestartInstanceByName(
 		[Description("Target Environment name to restart")] [Required] string environmentName,
 		[DefaultValue(true)] [Description("Poll the application after restart until it answers health-check; default true")] bool waitReady = true,
-		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600")] int waitTimeoutSeconds = 600,
+		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600, capped at 3600")] int waitTimeoutSeconds = 600,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default
@@ -49,6 +49,10 @@ public class RestartTool(
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
+		// Clamp to a bounded ceiling (Finding 3): the readiness wait pins the session container for its whole
+		// duration, so an unbounded caller-chosen timeout is a hardening gap. Clamp here so the tracked options,
+		// the in-progress notice, and the readiness budget all reflect the same effective value.
+		waitTimeoutSeconds = Math.Clamp(waitTimeoutSeconds, 1, RestartOptions.MaxReadyTimeoutSeconds);
 		RestartOptions options = new() {
 			Environment = environmentName,
 			TimeOut = 30_000,
@@ -75,7 +79,7 @@ public class RestartTool(
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false,
 		[DefaultValue(true)] [Description("Poll the application after restart until it answers health-check; default true")] bool waitReady = true,
-		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600")] int waitTimeoutSeconds = 600,
+		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600, capped at 3600")] int waitTimeoutSeconds = 600,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default
@@ -84,6 +88,8 @@ public class RestartTool(
 		if (validationError != null) {
 			return validationError;
 		}
+		// Clamp to a bounded ceiling (Finding 3) — see RestartInstanceByName; keeps the pinned-container wait bounded.
+		waitTimeoutSeconds = Math.Clamp(waitTimeoutSeconds, 1, RestartOptions.MaxReadyTimeoutSeconds);
 		RestartOptions options = new() {
 			Login = userName,
 			Password = password,
@@ -163,6 +169,10 @@ public class RestartTool(
 	private CommandExecutionResult RunReadinessWait(
 		RestartOptions options, CommandExecutionResult requestResult, RestartWaitContext waitContext,
 		string tenantKey, string operationId) {
+		// Pin the session container in-use for the wait (FR-08) WITHOUT taking the per-tenant lock (GetLock) —
+		// the readiness poll is read-only and must not serialize other same-tenant calls. Because no GetLock was
+		// taken, the release must NOT go through MarkAvailable (which decrements the GetLock-owned in-use count and
+		// would stray-decrement an unrelated holder); use the session-container-only release instead (Finding 2).
 		McpToolExecutionLock.MarkInUse(tenantKey);
 		try {
 			RestartCommand readinessCommand = commandResolver.Resolve<RestartCommand>(options);
@@ -180,7 +190,7 @@ public class RestartTool(
 			return CommandExecutionResult.FromException(
 				exception, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
 		} finally {
-			McpToolExecutionLock.MarkAvailable(tenantKey);
+			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
 		}
 	}
 

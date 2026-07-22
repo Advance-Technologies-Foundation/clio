@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -308,6 +309,55 @@ public sealed class RestartToolTests {
 		} finally {
 			readinessGate.Set(); // release the detached readiness wait so it completes
 			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Finding 3: waitTimeoutSeconds above the ceiling is clamped to MaxReadyTimeoutSeconds before it reaches the readiness options, so a caller cannot pin the session container for an arbitrarily long, caller-chosen duration.")]
+	public async Task RestartInstanceByName_Should_Clamp_WaitTimeout_To_Ceiling() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeRestartCommand defaultCommand = new();
+		FakeRestartCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RestartCommand>(Arg.Any<RestartOptions>()).Returns(resolvedCommand);
+		RestartTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new RestartOperationRegistry());
+
+		try {
+			// Act — request a wildly larger-than-ceiling readiness budget.
+			CommandExecutionResult result = await tool.RestartInstanceByName("sandbox", waitTimeoutSeconds: 999_999);
+
+			// Assert
+			result.ExitCode.Should().Be(0, because: "the request succeeded and the instance became ready");
+			resolvedCommand.CapturedReadinessOptions!.ReadyTimeout.Should().Be(RestartOptions.MaxReadyTimeoutSeconds,
+				because: "an over-ceiling waitTimeoutSeconds must be clamped so the detached, session-pinning readiness wait stays bounded");
+		} finally {
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("Finding 2: the lock-free readiness wait's release touches ONLY the session-container marker, never the lock-provider in-use count that only GetLock increments — so it cannot stray-decrement a concurrent GetLock holder and reopen the eviction window.")]
+	public void MarkSessionContainerAvailable_Should_Release_SessionContainer_Only_NotLockProvider() {
+		// Arrange — wire substitutes into the static facade, restoring the real ones in finally (BaseToolTests pattern).
+		string tenantKey = "tenant-finding2-" + Guid.NewGuid();
+		ITenantExecutionLockProvider lockProvider = Substitute.For<ITenantExecutionLockProvider>();
+		ISessionContainerCache sessionCache = Substitute.For<ISessionContainerCache>();
+		McpToolExecutionLock.Configure(lockProvider, sessionCache);
+		try {
+			// Act
+			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
+
+			// Assert
+			sessionCache.Received(1).MarkAvailable(tenantKey);
+			lockProvider.DidNotReceive().MarkAvailable(Arg.Any<string>());
+		} finally {
+			McpToolExecutionLock.Configure(
+				TenantExecutionLockProvider.Shared,
+				new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
 		}
 	}
 

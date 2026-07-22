@@ -7,12 +7,21 @@ namespace Clio.Command;
 [Verb("restart-web-app", Aliases = ["restart"], HelpText = "Restart a web application")]
 public class RestartOptions : RemoteCommandOptions {
 
+	/// <summary>
+	/// Hard upper bound for <see cref="ReadyTimeout"/> / the MCP <c>waitTimeoutSeconds</c> parameter (review
+	/// Finding 3, ENG-91315). The readiness wait now runs detached and lock-free while pinning the (non-evictable)
+	/// session container for its whole duration, so an unbounded, caller-chosen timeout could pin a container
+	/// arbitrarily long. 3600s (1h) is well above the 600s default — generous for genuinely slow environments —
+	/// while still bounding the pin. Adjustable if a longer legitimate wait is ever needed.
+	/// </summary>
+	internal const int MaxReadyTimeoutSeconds = 3600;
+
 	[Option("wait-ready", Required = false, Default = false,
 		HelpText = "After requesting the restart, poll the application's health-check endpoint until it answers before returning")]
 	public bool WaitReady { get; set; }
 
 	[Option("ready-timeout", Required = false, Default = 600,
-		HelpText = "Max seconds to wait for readiness when --wait-ready is set (default: 600)")]
+		HelpText = "Max seconds to wait for readiness when --wait-ready is set (default: 600, max: 3600)")]
 	public int ReadyTimeout { get; set; }
 
 }
@@ -73,7 +82,10 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 		_readinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = EnvironmentSettings.Uri,
 			IsNetCore = EnvironmentSettings.IsNetCore,
-			Timeout = TimeSpan.FromSeconds(options.ReadyTimeout)
+			// Clamp to a sane ceiling (Finding 3): this wait pins the session container for its whole duration,
+			// so an unbounded caller-chosen timeout is a hardening gap. Bounds both the CLI --ready-timeout and
+			// the MCP waitTimeoutSeconds paths, which both funnel through here.
+			Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ReadyTimeout, 1, RestartOptions.MaxReadyTimeoutSeconds))
 		});
 
 	#endregion

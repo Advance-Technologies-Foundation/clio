@@ -128,6 +128,23 @@ internal static class McpToolExecutionLock {
 		}
 	}
 
+	/// <summary>
+	/// Releases ONLY the session-container in-flight marker for <paramref name="cacheKey"/> — the lock-free
+	/// counterpart to <see cref="MarkAvailable"/>. For paths that pinned the session container via
+	/// <see cref="MarkInUse"/> WITHOUT ever taking <see cref="GetLock"/> (e.g. the restart readiness wait,
+	/// which deliberately runs lock-free). It skips <c>_lockProvider.MarkAvailable</c> on purpose: that call
+	/// decrements the lock-provider in-use count which only <see cref="GetLock"/> increments, so calling the
+	/// full <see cref="MarkAvailable"/> from a GetLock-free path would stray-decrement a DIFFERENT in-flight
+	/// holder's count, reopening the eviction/mutual-exclusion window <see cref="TenantExecutionLockProvider"/>
+	/// guarantees against (review Finding 2, ENG-91315).
+	/// </summary>
+	internal static void MarkSessionContainerAvailable(string cacheKey) {
+		string key = Normalize(cacheKey);
+		if (!IsFallback(key)) {
+			_sessionContainerCache?.MarkAvailable(key);
+		}
+	}
+
 	// Null/blank normalizes to the single shared fallback key so GetLock, MarkInUse, and MarkAvailable
 	// all key the same lock-provider entry for an environment-less / test-double call.
 	private static string Normalize(string cacheKey) =>
