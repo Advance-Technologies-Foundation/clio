@@ -1523,9 +1523,10 @@ internal class Program {
 		// Reuses the same renderer the `help <verb>` branch above already uses (confirmed byte-identical
 		// to what already-working verbs render via CustomHelpViewer/LocalHelpViewer today), and defers to
 		// the existing parser path unchanged for --WEB/-W (browser docs), for verbs the renderer doesn't
-		// recognize (typo suggestions, disabled feature toggles), and for a `-h`/`--help` token that the
-		// target verb has already claimed as its own option name (e.g. healthcheck's `-h, --web-host`;
-		// treating that as a help request would silently replace a real invocation with a help screen).
+		// recognize (typo suggestions, disabled feature toggles), and for a help-like token that the
+		// target verb has already claimed as one of its own option names (for instance healthcheck binds
+		// the short h to its web-host option); treating that as a help request would silently replace a
+		// real invocation with a help screen.
 		// The `normalizedArgs[0] == "help"` case is already handled unconditionally by the branch above,
 		// so it can never reach here - no guard needed. The cheap ContainsHelpLikeToken pre-check runs
 		// before the CommandHelpCatalog lookup (which lazily builds a ~200-verb reflection catalog on
