@@ -55,6 +55,21 @@ public sealed class CompileCreatioTool(
 
 		string packageName = string.IsNullOrWhiteSpace(args.PackageName) ? null : args.PackageName.Trim();
 		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
+
+		// Compile<->compile mutual exclusion via a NARROW reservation, not the broad per-tenant execution
+		// monitor (review Blocker, ENG-91315). The Creatio core itself serializes compilation and rejects a
+		// second concurrent compile, so a same-tenant compile that arrives while one is running fails fast
+		// here — matching that reject semantics — instead of queueing on a monitor that would also block
+		// every unrelated same-tenant tool for the multi-minute (past-deadline detached) compile duration.
+		// Reserved BEFORE registry.Begin so a rejected duplicate creates no tracked record (also curbs the
+		// unbounded-record growth a bogus-env loop could cause).
+		if (!McpToolExecutionLock.TryReserveCompile(tenantKey))
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage(CompileAlreadyInProgressMessage(args.EnvironmentName))
+			]);
+		}
+
 		CompileOperationRecord operation = registry.Begin(tenantKey, args.EnvironmentName, packageName);
 
 		try
@@ -82,6 +97,12 @@ public sealed class CompileCreatioTool(
 						// compile-status message tail. The trusted stdio / -e path stays full-fidelity.
 						result = CommandExecutionResult.FromException(
 							exception, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
+					} finally {
+						// Release the reservation where the ACTUAL compile work ends. This finally is inside the
+						// heartbeat work delegate, so it runs on the (possibly detached, past-deadline)
+						// continuation — spanning the real compile duration — and covers a resolution throw too
+						// (which happens before Execute's own try/finally is ever entered).
+						McpToolExecutionLock.ReleaseCompile(tenantKey);
 					}
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					return result;
@@ -103,9 +124,21 @@ public sealed class CompileCreatioTool(
 	internal static string BuildInProgressMessage(string environmentName, string operationId) =>
 		$"Compilation for '{environmentName}' (operation-id '{operationId}') was accepted "
 		+ "and is still running server-side (MCP response deadline reached). Poll compile-status with the "
-		+ "same environment-name (or this operation-id) for its current state — do NOT retry compile-creatio; "
-		+ "a concurrent compile for the same environment would only queue behind the running one. Typical "
-		+ "full compilation is 3-15 minutes.";
+		+ "same environment-name (or this operation-id) for its current state — do NOT retry compile-creatio: "
+		+ "the Creatio core serializes compilation, so a second concurrent compile for the same environment is "
+		+ "rejected, not queued. Do NOT issue other environment-bound calls (e.g. restart-by-environment-name) "
+		+ "for this environment until compile-status reports completion. Typical full compilation is 3-15 minutes.";
+
+	/// <summary>
+	/// Message returned when a same-tenant compile is requested while one is already in flight. The compile
+	/// path takes a narrow compile-scoped reservation (not the broad per-tenant monitor), so a duplicate is
+	/// failed fast here rather than queued — matching the Creatio core's own reject-on-concurrent-compile
+	/// behavior. Extracted for direct unit testing.
+	/// </summary>
+	internal static string CompileAlreadyInProgressMessage(string environmentName) =>
+		$"A compilation is already in progress for '{environmentName}'. The Creatio core serializes "
+		+ "compilation (a second concurrent compile is rejected), so this request was not started. Poll "
+		+ "compile-status for the running operation and wait for it to finish before compiling again.";
 
 	private CommandExecutionResult ExecuteFullCompile(string environmentName)
 	{
@@ -132,47 +165,51 @@ public sealed class CompileCreatioTool(
 	private CommandExecutionResult Execute<TOptions>(Command<TOptions> command, TOptions options)
 	{
 		int exitCode = -1;
-		// FR-05: per-tenant lock keyed by the environment this compilation resolves under (replaces the
-		// former tool-local static lock that serialized compile-creatio across ALL tenants).
 		string tenantKey = options is EnvironmentOptions environmentOptions
 			? commandResolver.GetTenantKey(environmentOptions)
 			: McpToolExecutionLock.SharedFallbackKey;
-		lock (McpToolExecutionLock.GetLock(tenantKey))
+		// Compile<->compile exclusion is handled by the narrow TryReserveCompile reservation in the caller,
+		// NOT by the broad per-tenant execution monitor: the multi-minute compile (detached past the MCP
+		// response deadline) must not serialize unrelated same-tenant tools, and the core only forbids a
+		// concurrent COMPILE (review Blocker, ENG-91315). So this path takes no GetLock. It still pins the
+		// session container in-use for the compile duration (FR-08) so a concurrent different-tenant Acquire
+		// cannot LRU-evict and dispose the resolved command's client mid-compile. Because no GetLock was
+		// taken, the pin is released via the session-container-only path (MarkSessionContainerAvailable),
+		// never MarkAvailable — the latter decrements the GetLock-owned in-use count and would
+		// stray-decrement an unrelated holder (Finding 2).
+		McpToolExecutionLock.MarkInUse(tenantKey);
+		// CompileCreatioTool builds its result from logger.LogMessages, which ConsoleLogger only
+		// populates while PreserveMessages is true. Set/restore it locally (like BaseTool,
+		// SchemaSyncTool, EntitySchemaTool, AddItemModelTool) so compilation output is captured
+		// regardless of transport: the stdio path sets the flag process-wide, the HTTP transport
+		// does not, so relying on the global flag returns empty output over HTTP.
+		bool previousPreserveMessages = logger.PreserveMessages;
+		logger.PreserveMessages = true;
+		try
 		{
-			McpToolExecutionLock.MarkInUse(tenantKey);
-			// CompileCreatioTool builds its result from logger.LogMessages, which ConsoleLogger only
-			// populates while PreserveMessages is true. Set/restore it locally (like BaseTool,
-			// SchemaSyncTool, EntitySchemaTool, AddItemModelTool) so compilation output is captured
-			// regardless of transport: the stdio path sets the flag process-wide, the HTTP transport
-			// does not, so relying on the global flag returns empty output over HTTP.
-			bool previousPreserveMessages = logger.PreserveMessages;
-			logger.PreserveMessages = true;
-			try
-			{
-				exitCode = command.Execute(options);
-				Thread.Sleep(500);
-				// FR-11 (review): redact the self-captured snapshot on a passthrough request before it
-				// crosses the MCP boundary — the main path does this via RunCommandUnderHeldLock, this
-				// self-managed-capture tool must do it too. No-op off passthrough.
-				CommandExecutionResult result = new(exitCode,
-					[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]);
-				logger.ClearMessages();
-				return result;
-			}
-			catch (Exception exception)
-			{
-				List<LogMessage> logMessages = [
-					.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
-					new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
-				CommandExecutionResult result = new(1, logMessages);
-				logger.ClearMessages();
-				return result;
-			}
-			finally
-			{
-				logger.PreserveMessages = previousPreserveMessages;
-				McpToolExecutionLock.MarkAvailable(tenantKey);
-			}
+			exitCode = command.Execute(options);
+			Thread.Sleep(500);
+			// FR-11 (review): redact the self-captured snapshot on a passthrough request before it
+			// crosses the MCP boundary — the main path does this via RunCommandUnderHeldLock, this
+			// self-managed-capture tool must do it too. No-op off passthrough.
+			CommandExecutionResult result = new(exitCode,
+				[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]);
+			logger.ClearMessages();
+			return result;
+		}
+		catch (Exception exception)
+		{
+			List<LogMessage> logMessages = [
+				.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
+				new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
+			CommandExecutionResult result = new(1, logMessages);
+			logger.ClearMessages();
+			return result;
+		}
+		finally
+		{
+			logger.PreserveMessages = previousPreserveMessages;
+			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
 		}
 	}
 }

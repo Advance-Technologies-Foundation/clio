@@ -17,6 +17,15 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class CompileCreatioToolTests
 {
+	[TearDown]
+	public void TearDown()
+	{
+		// A deadline-branch test detaches its compile; its compile reservation is released on that detached
+		// continuation, which can outlive the test method. Clear the process-global reservations so a leaked
+		// one cannot fast-fail the next test's compile for the shared "sandbox-tenant" key.
+		McpToolExecutionLock.ResetCompileReservationsForTests();
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for Creatio compilation.")]
@@ -322,6 +331,111 @@ public sealed class CompileCreatioToolTests
 			because: "the full compilation prompt should explain the corresponding CLI behavior");
 		packagePrompt.Should().Contain("MyPackage",
 			because: "the package compilation prompt should preserve the requested package name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A same-tenant compile requested while one is already in flight fails fast with a poll-and-wait notice — mirroring the Creatio core's reject-on-concurrent-compile — instead of resolving/starting a second compile or tracking a duplicate operation.")]
+	public async Task CompileCreatio_Should_FailFast_When_Compile_Already_In_Flight_For_Same_Tenant()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		// Simulate a compile already running for this tenant by holding its reservation.
+		McpToolExecutionLock.TryReserveCompile("sandbox-tenant").Should().BeTrue(
+			because: "the first reservation for a tenant must succeed");
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+
+			// Assert
+			result.ExitCode.Should().Be(1,
+				because: "a second concurrent same-tenant compile must not start — the core would reject it");
+			result.Output.Should().Contain(
+				message => message.Value != null && message.Value.ToString()!.Contains(CompileStatusTool.CompileStatusToolName),
+				because: "the fast-fail must point the caller at compile-status to poll the running compile");
+			commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+			registry.GetLatest("sandbox-tenant").Should().BeNull(
+				because: "a rejected duplicate compile must not create a tracked operation record");
+		}
+		finally
+		{
+			McpToolExecutionLock.ReleaseCompile("sandbox-tenant");
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("After a compile reservation is released, a fresh same-tenant compile proceeds normally — the reservation does not leak.")]
+	public async Task CompileCreatio_Should_Proceed_After_Reservation_Released()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		FakeCompileConfigurationCommand resolvedCommand = new();
+		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		McpToolExecutionLock.TryReserveCompile("sandbox-tenant").Should().BeTrue();
+		McpToolExecutionLock.ReleaseCompile("sandbox-tenant");
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+
+			// Assert
+			result.ExitCode.Should().Be(0,
+				because: "once the prior reservation is released the tenant is free to compile again");
+			commandResolver.Received(1).Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The already-in-progress notice states the compile was NOT started, points at compile-status, and reflects the core's reject (not queue) semantics.")]
+	public void CompileAlreadyInProgressMessage_Should_Explain_Reject_And_PollTarget()
+	{
+		// Act
+		string message = CompileCreatioTool.CompileAlreadyInProgressMessage("sandbox");
+
+		// Assert
+		message.Should().Contain("sandbox", because: "the caller must know which environment is already compiling");
+		message.Should().Contain("already in progress",
+			because: "the caller must understand a compile is already running");
+		message.Should().Contain("not started",
+			because: "the caller must know this duplicate request did not launch a compile");
+		message.Should().Contain(CompileStatusTool.CompileStatusToolName,
+			because: "the notice must point the caller at compile-status rather than retrying");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The in-progress (deadline) notice reflects the core reject-not-queue semantics and warns against other environment-bound calls during compilation.")]
+	public void BuildInProgressMessage_Should_Reflect_Reject_Semantics_And_Warn_Against_Concurrent_Ops()
+	{
+		// Act
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123");
+
+		// Assert
+		message.Should().Contain("rejected, not queued",
+			because: "the core serializes compilation and rejects a concurrent compile — the notice must not promise queueing");
+		message.Should().Contain("restart-by-environment-name",
+			because: "the notice must warn against restarting the environment mid-compile");
 	}
 
 	private sealed class FakeCompileConfigurationCommand : CompileConfigurationCommand
