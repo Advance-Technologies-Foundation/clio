@@ -127,6 +127,23 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
+	[Description("The branding guide maps the two favicon system settings so the agent can replace the browser-tab icon through the existing sys-settings surface.")]
+	public void BrandingGuidanceResource_Should_Map_The_Favicon_Settings() {
+		// Arrange
+		BrandingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("`FaviconImage`",
+			because: "the favicon binary slot is what the agent writes the icon into");
+		article.Text.Should().Contain("`UseFaviconFromSysSettings`",
+			because: "the boolean gate must be enabled or the platform ignores the uploaded favicon");
+	}
+
+	[Test]
 	[Description("The routing map carries a branding row so an agent asked to change logos or the shell background is routed to the branding guide.")]
 	public void RoutingGuidanceResource_Should_Route_Branding_Assets_To_The_Branding_Guide() {
 		// Arrange
