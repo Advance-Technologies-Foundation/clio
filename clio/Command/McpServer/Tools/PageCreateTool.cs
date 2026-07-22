@@ -58,7 +58,11 @@ public sealed class PageCreateTool(
 			}
 			resolvedCommand.TryCreatePage(options, out PageCreateResponse response);
 			if (response is { Success: true }) {
-				response.Note = CommandExecutionResult.CompileNotRequiredNote;
+				// Preserve any warning the command already set (e.g. the design-package mismatch note); just
+				// append the standard "compile not required" note rather than clobbering it.
+				response.Note = string.IsNullOrWhiteSpace(response.Note)
+					? CommandExecutionResult.CompileNotRequiredNote
+					: response.Note + " " + CommandExecutionResult.CompileNotRequiredNote;
 			}
 			return response;
 		});

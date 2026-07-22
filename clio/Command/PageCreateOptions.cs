@@ -54,18 +54,21 @@ namespace Clio.Command {
 		private readonly ISchemaTemplateCatalog _templateCatalog;
 		private readonly ILogger _logger;
 		private readonly ICaptionCultureResolver _captionCultureResolver;
+		private readonly IPageDesignerHierarchyClient _hierarchyClient;
 
 		public PageCreateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			ISchemaTemplateCatalog templateCatalog,
 			ILogger logger,
-			ICaptionCultureResolver captionCultureResolver) {
+			ICaptionCultureResolver captionCultureResolver,
+			IPageDesignerHierarchyClient hierarchyClient = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_templateCatalog = templateCatalog;
 			_logger = logger;
 			_captionCultureResolver = captionCultureResolver;
+			_hierarchyClient = hierarchyClient;
 		}
 
 		public virtual bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
@@ -170,11 +173,43 @@ namespace Clio.Command {
 					EntitySchemaName = options.EntitySchemaName,
 					EntitySchemaUId = entitySchemaUId
 				};
+				WarnIfNotDesignPackage(response, newSchemaUId, packageUId);
 				return true;
 			} catch (Exception ex) {
 				response = new PageCreateResponse { Success = false, Error = ex.Message };
 				LogFailure(response.Error);
 				return false;
+			}
+		}
+
+		/// <summary>
+		/// Best-effort: after creating the schema in the chosen package, resolve the app's design (editing)
+		/// package. If it differs from the chosen package, a later <c>update-page</c> WITHOUT
+		/// <c>target-schema-uid</c> would write the body as a replacing schema in the design package and leave
+		/// THIS schema empty (a crash for a mobile page). Surface that on the response so the caller can pass
+		/// <c>target-schema-uid=&lt;schemaUId&gt;</c>. Never fails the create — a probe error is swallowed.
+		/// </summary>
+		private void WarnIfNotDesignPackage(PageCreateResponse response, string newSchemaUId, string chosenPackageUId) {
+			if (_hierarchyClient is null) {
+				return;
+			}
+			try {
+				string designPackageUId = _hierarchyClient.GetDesignPackageUId(newSchemaUId);
+				if (string.IsNullOrWhiteSpace(designPackageUId)
+					|| string.Equals(designPackageUId, chosenPackageUId, StringComparison.OrdinalIgnoreCase)) {
+					return;
+				}
+				response.DesignPackageUId = designPackageUId;
+				response.WillCreateReplacingInDesignPackage = true;
+				string note = $"Chosen package '{response.PackageName}' is not the app's design package "
+					+ $"(uId={designPackageUId}). A subsequent update-page WITHOUT target-schema-uid would create a "
+					+ $"replacing schema in the design package and leave this schema empty"
+					+ (PageSchemaTypeExtensions.FromNumericValue(response.SchemaType) == PageSchemaType.Mobile
+						? " (an empty mobile page crashes the Creatio Mobile app)" : "")
+					+ $". Pass target-schema-uid={newSchemaUId} on update-page to write into this schema.";
+				response.Note = string.IsNullOrWhiteSpace(response.Note) ? note : response.Note + " " + note;
+			} catch (Exception) {
+				// Best-effort: a failed design-package probe must not fail page creation.
 			}
 		}
 

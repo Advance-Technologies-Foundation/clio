@@ -105,7 +105,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   step 3 until the developer explicitly approves. The user's initial request is not approval.
 			3. Create the target mobile page from recommendedMobileTemplate — ONLY after Gate M — (list-page-templates with
 			   schema-type "mobile" to confirm; create-page). The template provides the Scaffold root —
-			   do NOT add a second Scaffold.
+			   do NOT add a second Scaffold. CAPTURE the schemaUId from the create-page result and pass it as
+			   target-schema-uid on every later update-page (see step 7): otherwise, when the chosen package is not
+			   the app's design package, update-page writes a REPLACING schema in the design package and leaves this
+			   mobile schema EMPTY — the Mobile app then loads the empty schema and crashes. (create-page returns
+			   willCreateReplacingInDesignPackage + designPackageUId when this split would happen.)
 			4. Build the mobile body (plain JSON: viewConfigDiff / viewModelConfigDiff / modelConfigDiff)
 			   by iterating elementMap. For each entry act on its operation:
 			   - merge — the element is provided by the mobile template (a "twin", e.g. Tabs→Tabs,
@@ -166,7 +170,8 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   stack on the phone, keep <n> columns on a tablet — adjust?"); they may change it or decline.
 			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
-			7. Persist with update-page. Recreate the page-level business rules: for each
+			7. Persist with update-page — pass target-schema-uid=<create-page schemaUId> so the body lands in the
+			   created schema, not a replacing schema in the design package. Recreate the page-level business rules: for each
 			   guide.pageBusinessRules.convertedRules entry, pass its `rule` VERBATIM to
 			   create-page-business-rule on the MOBILE page (after the user approves). Surface any
 			   droppedRules to the user (they did not convert). Then tell the user to open the result in
