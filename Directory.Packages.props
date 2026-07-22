@@ -53,7 +53,13 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
                     Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11"
                     Condition="'$(TargetFramework)' != 'net10.0'" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
+    <!-- Decoupled from MsPackageVersion on purpose: 10.0.6/10.0.9 carry a high severity advisory
+         (GHSA-23rf-6693-g89p family / CVE-2026-50648); 10.0.10 contains the fix. Do NOT fold this
+         back into MsPackageVersion — bumping the whole family to 10.0.10 drags JwtBearer/Extensions
+         up too, which raises the Microsoft.IdentityModel.Tokens floor to 8.19.2 and breaks restore
+         with NU1605 against the 8.19.1 pin below. Test projects reference this directly so the
+         transitive 10.0.6 pulled via PowerShell.SDK is lifted as well. -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
