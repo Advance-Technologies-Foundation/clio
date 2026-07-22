@@ -728,6 +728,9 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		// page layer's UId equals the metadata UId so no root re-anchor re-fetch is needed.
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);   // metadata resolve target (UId + PackageUId)
 		AddSchema("uid-top", "define(\"UsrPage\", [], function() { return {}; });", EmptyGuid, "pkgB"); // BuildResources reads topLayerUId
+		// The top page layer's UId (topLayerUId) is the one resolved FROM the hierarchy call, not the legacy
+		// enumeration; a localizable string on it proves BuildResources still merges resources off that UId.
+		AddLocalizable("uid-top", "HeaderCaption", "Header");
 		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
 		_hierarchyClient.GetParentSchemas("uid-page", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
 			Hier("UsrPage", "pkgB", "uid-top", "define(\"UsrPage\", [], function() { return {}; });"),
@@ -754,6 +757,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		seed.Should().HaveCount(1, because: "only the parent template is seed content");
 		seed[0]["pkg"]!.ToString().Should().Be("Core",
 			because: "the parent-template layer (never registered as a DataService layer) came from the hierarchy call");
+		response.ResourceCount.Should().Be(1,
+			because: "BuildResources merges localizable strings off the hierarchy-resolved topLayerUId");
+		manifest["resources"]!["HeaderCaption"]!.ToString().Should().Be("Header",
+			because: "the top page layer's merged localizable string becomes a resource in the hierarchy path too");
 	}
 
 	[Test]

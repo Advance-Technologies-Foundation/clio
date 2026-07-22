@@ -408,8 +408,12 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		try {
 			designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
 		}
-		catch {
-			designPackageUId = null; // best-effort: the design package resolves to the schema's own package below.
+		catch (Exception ex) {
+			// best-effort: the design package resolves to the schema's own package below. Logged at debug so the
+			// degradation is diagnosable without adding noise to the common case (the fallback yields a correct anchor).
+			_logger.WriteDebug(
+				$"GetDesignPackageUId failed for '{schemaName}' ({ex.Message}); anchoring on the schema's own package.");
+			designPackageUId = null;
 		}
 		if (string.IsNullOrWhiteSpace(designPackageUId)) {
 			designPackageUId = packageUId;
