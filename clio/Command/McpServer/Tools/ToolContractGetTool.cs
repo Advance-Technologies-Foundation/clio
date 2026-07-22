@@ -81,6 +81,16 @@ public sealed class ToolContractGetTool {
 			// pre-ENG-90312 full "tools" shape for a no-tool-names request instead of the compact "index",
 			// since it hard-crashes on the index shape and cannot be patched. Every other client is
 			// unaffected — this only flips the no-names/non-full-detail branch inside GetContracts.
+			//
+			// Load-bearing SDK assumption (pinned to ModelContextProtocol 1.4.1, see Directory.Packages.props):
+			// Server.ClientInfo is captured while the SDK handles the `initialize` REQUEST, independent of the
+			// `notifications/initialized` notification. This is what makes detection work for the real CAADT
+			// 1.4.0 client, which deliberately never sends `notifications/initialized`: ClientInfo is already
+			// populated by the time any `tools/call` (including this one) is dispatched. If a future SDK bump
+			// ever moved ClientInfo capture onto the `initialized` notification, requestContext.Server.ClientInfo
+			// would be null here for that client and IsLegacyStdioClient(null) => false would silently re-break
+			// it (no exception, every shipped test still passes). If you upgrade the SDK, re-verify this
+			// initialize-time capture behavior against the real client before trusting it.
 			bool legacyNoNamesFullShape = IsLegacyStdioClient(requestContext?.Server?.ClientInfo);
 			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
 			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
@@ -729,6 +739,18 @@ internal static class ToolContractCatalog {
 			// smaller curated set the legacy client historically received pre-ENG-90312. Alex's explicit
 			// call for ENG-93885 — the legacy client now sees every tool the index would list, just as
 			// full contracts instead of index entries.
+			//
+			// The set-equality holds under feature toggles (not only in the all-enabled state): this loop
+			// and BuildCompactIndex both enumerate the SAME BuildIndexToolNames(toolInvokerRegistry), whose
+			// long tail is registry.ToolNames — already feature-filtered (McpToolInvokerRegistry only keeps
+			// McpFeatureToggleFilter.GetEnabledTypes). A feature-gated-OFF uncurated tool is therefore
+			// absent from that enumeration for BOTH paths, so neither index nor legacy lists it — no
+			// divergence. The toggle-blind reflection catalog can only re-enter via TryResolveFullContract's
+			// `toolInvokerRegistry is null` fallback, which never fires while a live registry is present; and
+			// on the degraded no-registry path both paths fall back to the same reflection universe, so they
+			// stay set-equal there too. legacy drops a name only when TryResolveFullContract cannot build it,
+			// which never happens for a name the shared enumeration produced (guarded by the mixed-toggle
+			// drift test ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_UnderMixedFeatureToggles).
 			List<ToolContractDefinition> legacyTools = [];
 			foreach (string name in BuildIndexToolNames(toolInvokerRegistry)) {
 				if (TryResolveFullContract(name, toolInvokerRegistry, out ToolContractDefinition contract)) {

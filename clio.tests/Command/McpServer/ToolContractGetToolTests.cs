@@ -20,10 +20,21 @@ public sealed class ToolContractGetToolTests {
 	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
 	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
 	// directly against the registry without going through the tool's requestContext plumbing.
-	private static McpToolInvokerRegistry BuildInvokerRegistry() {
+	private static McpToolInvokerRegistry BuildInvokerRegistry() => BuildInvokerRegistry(disabledToolTypes: null);
+
+	// Same registry, but with the given tool types feature-toggled OFF so ENG-93885 tests can exercise a
+	// realistic mixed-toggle production state (some experimental/gated tools disabled) rather than only the
+	// all-enabled universe. The registry keeps exactly McpFeatureToggleFilter.GetEnabledTypes, so a disabled
+	// type never lands in registry.ToolNames.
+	private static McpToolInvokerRegistry BuildInvokerRegistry(IReadOnlyCollection<Type>? disabledToolTypes) {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
 		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
+		if (disabledToolTypes is not null) {
+			foreach (Type disabled in disabledToolTypes) {
+				featureToggle.IsEnabled(disabled).Returns(false);
+			}
+		}
 		return new McpToolInvokerRegistry(
 			provider,
 			typeof(SchemaSyncTool).Assembly,
@@ -2523,6 +2534,51 @@ public sealed class ToolContractGetToolTests {
 		IEnumerable<string> indexNames = indexResult.Index!.Select(entry => entry.Name);
 		legacyNames.Should().BeEquivalentTo(indexNames,
 			because: "the legacy client's full-shape name set must be set-EQUAL with the compact index universe (curated + registry-derived long tail) - no extra tools, no missing tools, not a subset");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Mixed-toggle drift guard (reviewer finding, ENG-93885): with a feature-gated uncurated tool family toggled OFF, the legacy full-shape name set stays set-EQUAL with the compact index, the disabled tool leaks into NEITHER set (no toggle-blind reflection re-entry via the live registry), and the toggle is proven non-vacuous against the all-enabled registry. Complements the all-enabled set-equality test, which only exercised the toggle-on universe.")]
+	public void ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_UnderMixedFeatureToggles() {
+		// Arrange: disable the whole deploy-identity gated (uncurated, registry-only) tool family so the
+		// registry is in a realistic mixed-toggle production state, not the all-enabled state BuildInvokerRegistry
+		// forces by default. These tool names are NOT in CanonicalToolNames, so they appear only via
+		// registry.ToolNames and must vanish when their feature flag is off.
+		Type[] disabledToolTypes = [
+			typeof(DeployIdentityTool),
+			typeof(GetIdentityServiceConfigTool),
+			typeof(ResolveOAuthSystemUserTool),
+			typeof(VerifyOAuthAppTool),
+			typeof(CreateServerToServerOAuthAppTool),
+			typeof(CreateOAuthTechnicalUserTool)
+		];
+		McpToolInvokerRegistry allEnabledRegistry = BuildInvokerRegistry();
+		McpToolInvokerRegistry mixedToggleRegistry = BuildInvokerRegistry(disabledToolTypes);
+		const string disabledToolName = DeployIdentityTool.DeployIdentityToolName;
+
+		// Act
+		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
+			null, mixedToggleRegistry, detail: null, legacyNoNamesFullShape: true);
+		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
+			null, mixedToggleRegistry, detail: null, legacyNoNamesFullShape: false);
+		ToolContractGetResponse allEnabledIndexResult = ToolContractCatalog.GetContracts(
+			null, allEnabledRegistry, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		IReadOnlyList<string> legacyNames = legacyFullResult.Tools!.Select(tool => tool.Name).ToList();
+		IReadOnlyList<string> indexNames = indexResult.Index!.Select(entry => entry.Name).ToList();
+		IReadOnlyList<string> allEnabledIndexNames = allEnabledIndexResult.Index!.Select(entry => entry.Name).ToList();
+
+		legacyNames.Should().BeEquivalentTo(indexNames,
+			because: "even with a feature-gated tool family OFF the legacy full-shape universe must stay set-EQUAL with the compact index - both enumerate the same feature-filtered BuildIndexToolNames, and legacy drops only names TryResolveFullContract cannot build (here: none)");
+		indexNames.Should().NotContain(disabledToolName,
+			because: "a feature-toggle-OFF uncurated tool must not appear in the compact index built from a live, feature-filtered registry");
+		legacyNames.Should().NotContain(disabledToolName,
+			because: "the toggle-blind reflection catalog must NOT leak a feature-gated-OFF tool back into legacy visibility - TryResolveFullContract only reaches reflection on the null-registry path, which does not fire here");
+		allEnabledIndexNames.Should().Contain(disabledToolName,
+			because: "the same tool IS visible when its feature flag is on - proving the toggle, not a typo, drove its absence from the mixed-toggle sets above (non-vacuous guard)");
+		indexNames.Count.Should().BeLessThan(allEnabledIndexNames.Count,
+			because: "disabling the deploy-identity family must actually shrink the visible tool universe");
 	}
 
 	[Test]
