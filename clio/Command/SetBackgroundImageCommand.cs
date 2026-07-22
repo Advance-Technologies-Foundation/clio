@@ -94,38 +94,8 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// <param name="options">Command options carrying the image source and connection settings.</param>
 	/// <returns>The outcome, carrying the applied image id or a failure message.</returns>
 	public virtual SetBackgroundResult SetBackground(SetBackgroundImageOptions options) {
-		bool hasFile = !string.IsNullOrWhiteSpace(options.File);
-		bool hasImageId = !string.IsNullOrWhiteSpace(options.ImageId);
-		if (hasFile && hasImageId) {
-			return SetBackgroundResult.Failure(BothSourcesError);
-		}
-		if (!hasFile && !hasImageId) {
-			return SetBackgroundResult.Failure(NoSourceError);
-		}
-		Guid imageId;
-		if (hasFile) {
-			SysImageUploadResult uploadResult = _sysImageUploader.UploadAsync(options.File)
-				.ConfigureAwait(false).GetAwaiter().GetResult();
-			if (!uploadResult.Success) {
-				return SetBackgroundResult.Failure(uploadResult.Error);
-			}
-			imageId = uploadResult.ImageId;
-		} else {
-			if (!Guid.TryParse(options.ImageId, out imageId) || imageId == Guid.Empty) {
-				return SetBackgroundResult.Failure(
-					$"image-id '{options.ImageId}' is not a valid id. Pass the id printed by upload-image.");
-			}
-			if (!TryQuerySingleId(
-				$"{ODataKeyFormatter.CollectionPath("SysImage")}?$filter=Id eq {imageId}&$select=Id&$top=1",
-				out string existingImageId, out string imageCheckError)) {
-				return SetBackgroundResult.Failure(
-					$"Could not check the image in the environment: {imageCheckError}");
-			}
-			if (existingImageId is null) {
-				return SetBackgroundResult.Failure(
-					$"No uploaded image with id '{imageId}' was found in the environment. " +
-					"Upload the file first with upload-image and pass the id it prints.");
-			}
+		if (!TryResolveSourceImageId(options, out Guid imageId, out string sourceError)) {
+			return SetBackgroundResult.Failure(sourceError);
 		}
 		string galleryError = EnsureInBackgroundGallery(imageId);
 		if (galleryError is not null) {
@@ -138,6 +108,54 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting failed.");
 		}
 		return SetBackgroundResult.Successful(imageId);
+	}
+
+	/// <summary>
+	/// Resolves the id of the image to apply from exactly one of the two mutually exclusive sources:
+	/// <see cref="SetBackgroundImageOptions.File"/> (uploaded first, then its new id is used) or
+	/// <see cref="SetBackgroundImageOptions.ImageId"/> (an already-uploaded image, validated to exist).
+	/// Returns false with a caller-facing message when both or neither source is given, an upload fails,
+	/// the id is malformed, or the referenced image is absent.
+	/// </summary>
+	private bool TryResolveSourceImageId(SetBackgroundImageOptions options, out Guid imageId, out string error) {
+		imageId = Guid.Empty;
+		error = null;
+		bool hasFile = !string.IsNullOrWhiteSpace(options.File);
+		bool hasImageId = !string.IsNullOrWhiteSpace(options.ImageId);
+		if (hasFile && hasImageId) {
+			error = BothSourcesError;
+			return false;
+		}
+		if (!hasFile && !hasImageId) {
+			error = NoSourceError;
+			return false;
+		}
+		if (hasFile) {
+			SysImageUploadResult uploadResult = _sysImageUploader.UploadAsync(options.File)
+				.ConfigureAwait(false).GetAwaiter().GetResult();
+			if (!uploadResult.Success) {
+				error = uploadResult.Error;
+				return false;
+			}
+			imageId = uploadResult.ImageId;
+			return true;
+		}
+		if (!Guid.TryParse(options.ImageId, out imageId) || imageId == Guid.Empty) {
+			error = $"image-id '{options.ImageId}' is not a valid id. Pass the id printed by upload-image.";
+			return false;
+		}
+		if (!TryQuerySingleId(
+			$"{ODataKeyFormatter.CollectionPath("SysImage")}?$filter=Id eq {imageId}&$select=Id&$top=1",
+			out string existingImageId, out string imageCheckError)) {
+			error = $"Could not check the image in the environment: {imageCheckError}";
+			return false;
+		}
+		if (existingImageId is null) {
+			error = $"No uploaded image with id '{imageId}' was found in the environment. " +
+				"Upload the file first with upload-image and pass the id it prints.";
+			return false;
+		}
+		return true;
 	}
 
 	/// <inheritdoc />
