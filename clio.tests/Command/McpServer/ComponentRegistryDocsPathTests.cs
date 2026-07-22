@@ -14,7 +14,10 @@ public sealed class ComponentRegistryDocsPathTests {
 	[TestCase("docs/A_B-C.0.1.md")]
 	[TestCase("request-docs/close-page.request.md")]
 	[TestCase("request-docs/some-folder/nested.request.md")]
-	[Description("Well-formed docs paths emitted by the producer pass the validator unchanged — both the component docs/ namespace and the request-docs/ namespace referenced from RequestRegistry.json.")]
+	[TestCase("mobile-docs/mobile-button.component.md")]
+	[TestCase("mobile-request-docs/mobile-close-page.request.md")]
+	[TestCase("mobile-request-docs/mobile-run-business-process.request.md")]
+	[Description("Well-formed docs paths emitted by the producer pass the validator unchanged — all four documentation namespaces: component docs/, mobile-docs/ (mobile components), request-docs/ (web requests), and mobile-request-docs/ (mobile requests).")]
 	public void TryNormalise_Accepts_WellFormed_Paths(string input) {
 		bool ok = ComponentRegistryDocsPath.TryNormalise(input, out string normalised);
 

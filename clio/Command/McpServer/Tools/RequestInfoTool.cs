@@ -29,11 +29,19 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class RequestInfoTool(
 	IRequestInfoCatalog catalog,
+	IMobileRequestInfoCatalog mobileCatalog,
 	IComponentRegistryDocsClient docsClient,
 	IPlatformVersionResolverFactory resolverFactory,
 	IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "get-request-info";
+
+	/// <summary>
+	/// <c>schema-type</c> value that selects the mobile request catalog. Mirrors
+	/// <see cref="ComponentInfoTool.SchemaTypeMobile"/>: any other value (or omission) uses the
+	/// default web catalog.
+	/// </summary>
+	internal const string SchemaTypeMobile = "mobile";
 
 	/// <summary>
 	/// Canonical kebab-case name of the request selector parameter — the JSON property bound
@@ -71,6 +79,8 @@ public sealed class RequestInfoTool(
 		["request-name"] = RequestTypeParameterName,
 		["requestName"] = RequestTypeParameterName,
 		["request_name"] = RequestTypeParameterName,
+		["schemaType"] = "schema-type",
+		["schema_type"] = "schema-type",
 		["environmentName"] = "environment-name",
 		["environment_name"] = "environment-name"
 	};
@@ -91,14 +101,16 @@ public sealed class RequestInfoTool(
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list requests that do NOT exist in that environment. " +
 		"When resolvedFrom is 'latest-fallback' the version is unknown and the response sets requiresVersionConfirmation: true — tell the user the version is unknown and request confirmation before proceeding (resolvedFromReason says whether a retry might help). " +
+		"If schema-type is omitted, defaults to the web request catalog. " +
+		"Use schema-type: 'mobile' when wiring a request on a MOBILE page — the mobile request registry is separate and scoped to only the requests available on Freedom UI mobile (their parameters can also differ from desktop). " +
 		"Read get-guidance name=when-to-use-requests FIRST for the request-selection decision rules and the wiring discipline.")]
 	public async Task<RequestInfoResponse> GetRequestInfo(
-		[Description("request-type (optional; omit or 'list' for the catalog of requests), search (optional, filters the list and not-found suggestions). environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
+		[Description("request-type (optional; omit or 'list' for the catalog of requests), search (optional, filters the list and not-found suggestions). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
 		[Required] RequestInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: request-type, search, environment-name, version, uri, login, password.");
+			"Valid: request-type, search, schema-type, environment-name, version, uri, login, password.");
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return CreateErrorResponse(legacyAliasError);
 		}
@@ -118,6 +130,7 @@ public sealed class RequestInfoTool(
 	/// <c>requiresVersionConfirmation</c>) behave identically across both catalogs.
 	/// </summary>
 	private async Task<RequestInfoResponse> BuildResponseAsync(RequestInfoArgs args, CancellationToken cancellationToken) {
+		bool isMobile = IsMobile(args.SchemaType);
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(args.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri);
 		if (hasExplicitVersion && hasEnvironment) {
@@ -130,7 +143,12 @@ public sealed class RequestInfoTool(
 
 		PlatformVersionResolution versionResolution = await ResolveVersionAsync(args, hasExplicitVersion, hasEnvironment, cancellationToken)
 			.ConfigureAwait(false);
-		RequestCatalogState state = await catalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+		// The isMobile branch only picks the catalog source; version resolution, envelope parse,
+		// documentation lazy-load, and the resolver markers are identical on both flavors — the same
+		// symmetry get-component-info relies on to keep the response shape stable across schema-type.
+		RequestCatalogState state = isMobile
+			? await mobileCatalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false)
+			: await catalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
 			versionResolution.Source, versionResolution.ResolvedVersion, state.ResolvedVersion);
 		string? resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason);
@@ -204,6 +222,9 @@ public sealed class RequestInfoTool(
 		};
 		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
+
+	private static bool IsMobile(string? schemaType) =>
+		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Builds the detail response for a catalog hit. Unlike the component catalog's
@@ -412,6 +433,13 @@ public sealed record RequestInfoArgs(
 	[property: JsonPropertyName("search")]
 	[property: Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'close'.")]
 	string? Search = null,
+
+	// Declared after `search` (not next to `request-type`) so the record's positional order
+	// stays backward-compatible: existing callers pass `request-type` positionally and reach
+	// every other field by name. `schema-type` is reached by name.
+	[property: JsonPropertyName("schema-type")]
+	[property: Description("Request registry: 'web' (default) or 'mobile'. The mobile registry is separate and scoped to the requests available on Freedom UI mobile.")]
+	string? SchemaType = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered environment name; scopes the catalog to its real platform version. Preferred. Mutually exclusive with version.")]

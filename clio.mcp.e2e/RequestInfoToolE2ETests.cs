@@ -72,6 +72,45 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 	""";
 
+	/// <summary>
+	/// Offline MOBILE registry fixture: a deliberately different set from the web fixture so a
+	/// schema-type=mobile call is proven to read the mobile registry (via
+	/// <c>CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE</c>), not the web one — it drops the web-only
+	/// crt.DeleteRecordRequest and carries a crt.RunBusinessProcessRequest whose mobile-only
+	/// activeRow parameter has no desktop twin.
+	/// </summary>
+	private const string MobileRegistryFixtureJson = """
+	{
+	  "requests": [
+	    {
+	      "requestType": "crt.ClosePageRequest",
+	      "parameters": {},
+	      "description": "Closes the currently open mobile page."
+	    },
+	    {
+	      "requestType": "crt.RunBusinessProcessRequest",
+	      "parameters": {
+	        "processName": { "type": "string", "required": true, "description": "Code of the business process to run." },
+	        "activeRow": { "type": "string", "description": "Mobile-only: current row context on a mobile list." }
+	      },
+	      "description": "Runs a business process from a mobile page."
+	    }
+	  ],
+	  "references": {
+	    "baseParameters": {
+	      "$context": { "type": "ViewModelContext", "description": "Platform-injected view-model context." }
+	    },
+	    "typeDefinitions": {
+	      "RequestBindingConfig": {
+	        "fields": {
+	          "request": { "type": "string", "required": true }
+	        }
+	      }
+	    }
+	  }
+	}
+	""";
+
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		string clioHome = CreateIsolatedClioHome(
@@ -90,12 +129,15 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 			}
 			""",
 			GetType().Name);
-		// The registry fixture lives inside the isolated home so the base fixture-directory
-		// cleanup removes both together.
+		// The registry fixtures live inside the isolated home so the base fixture-directory
+		// cleanup removes them together.
 		string fixturePath = Path.Combine(clioHome, "RequestRegistry.e2e-fixture.json");
 		File.WriteAllText(fixturePath, RegistryFixtureJson);
+		string mobileFixturePath = Path.Combine(clioHome, "MobileRequestRegistry.e2e-fixture.json");
+		File.WriteAllText(mobileFixturePath, MobileRegistryFixtureJson);
 		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
 		settings.ProcessEnvironmentVariables[RegistryFlavor.Requests.LocalFileEnvironmentVariable] = fixturePath;
+		settings.ProcessEnvironmentVariables[RegistryFlavor.MobileRequests.LocalFileEnvironmentVariable] = mobileFixturePath;
 	}
 
 	[Test]
@@ -273,6 +315,34 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 			because: "the wiring contract is reachable from the closure seed");
 		response.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
 			because: "every request is wired through RequestBindingConfig, so the detail inlines its schema");
+	}
+
+	[Test]
+	[Description("schema-type=mobile over the wire routes to the MOBILE request registry (via CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE): list mode returns the mobile-only set (crt.RunBusinessProcessRequest, NOT the web-only crt.DeleteRecordRequest), proving the schema-type argument survives the args-record wrapping and selects the mobile catalog end-to-end.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-request-info routes schema-type=mobile to the mobile registry over the wire")]
+	[AllureDescription("Calls get-request-info with schema-type=mobile against the local mobile registry fixture and verifies the mobile-scoped catalog is returned rather than the web one.")]
+	public async Task RequestInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
+		// Arrange
+		await using var context = Arrange();
+
+		// Act
+		RequestInfoResponse response = await CallRequestInfoAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["schema-type"] = "mobile" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "list mode against the local mobile fixture must succeed");
+		response.Mode.Should().Be("list",
+			because: "omitting request-type selects list mode on the mobile flavor too");
+		response.Count.Should().Be(2,
+			because: "the mobile fixture registry declares exactly two requests, distinct from the web set");
+		response.Items!.Select(item => item.RequestType).Should().Contain("crt.RunBusinessProcessRequest",
+			because: "the mobile-registry request must surface when schema-type=mobile routes to the mobile catalog");
+		response.Items!.Select(item => item.RequestType).Should().NotContain("crt.DeleteRecordRequest",
+			because: "crt.DeleteRecordRequest exists only in the web fixture — schema-type=mobile must not read the web catalog");
 	}
 
 	[Test]
