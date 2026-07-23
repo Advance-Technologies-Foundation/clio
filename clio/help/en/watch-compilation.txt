@@ -1,0 +1,107 @@
+COMMAND TYPE
+    Development commands (experimental)
+
+NAME
+    watch-compilation - observe Creatio compilation status without triggering a compile
+
+DESCRIPTION
+    The watch-compilation command observes an already-running or about-to-run
+    Creatio compilation that was started OUTSIDE clio - from Creatio Studio UI,
+    by another user/process, or implicitly via an IIS recycle after a package
+    install. It never triggers a compile itself.
+
+    The command monitors the CompilationHistory table and reports when the
+    compilation settles:
+    - It waits for an adaptive quiet period (no new compilation records) that
+      automatically stretches to cover the slowest project seen this session,
+      so a single large package is not mistaken for "finished".
+    - It separately tracks whether the polling channel itself is healthy, so a
+      network fault or IIS recycle mid-compile is never reported as "finished"
+      based on stale data.
+    - Success requires zero errors across the observed session AND (if any new
+      activity was observed) that Terrasoft.Configuration.ODataEntities.csproj
+      was seen - it is always the last project built in a full compile, so
+      seeing it confirms a genuine full finish rather than a partial/package
+      compile.
+
+    This command is experimental and disabled by default. Enable it with:
+        clio experimental --name watch-compilation --enable
+
+ALIASES
+    (none)
+
+SYNOPSIS
+    watch-compilation [options]
+
+OPTIONS
+    --give-up-after                     Seconds to wait for compilation to settle
+                                        before giving up (exit code 2)
+                                        Default: 300 (5 minutes)
+
+    --timeout                           Request timeout in milliseconds
+                                        (inherited; not used by this command)
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+    --Maintainer            -m          Maintainer name
+
+    --clientId                          OAuth client id
+
+    --clientSecret                      OAuth client secret
+
+    --authAppUri                        OAuth app URI
+
+EXAMPLES
+    clio experimental --name watch-compilation --enable
+        Enables the experimental command (one-time, off by default)
+
+    clio watch-compilation -e development
+        Watches compilation status on the development environment, waiting
+        up to the default 5 minutes
+
+    clio watch-compilation -e production --give-up-after 120
+        Watches with a 2-minute deadline instead of the 5-minute default
+
+OUTPUT
+    The command provides real-time output including:
+    - Watch start time
+    - Progress updates for each newly observed compilation record (duration
+      color-coded: green < 5s, yellow 5-10s, red > 10s)
+    - Highlighted output for the ODataEntities marker project
+    - Poll-channel warnings when a poll attempt fails and is being retried
+    - Final settled status and total elapsed watch time
+
+PREREQUISITES
+    - Valid Creatio environment with accessible web services
+    - Appropriate credentials
+    - Network connectivity to the target Creatio instance
+    - Feature enabled via `clio experimental --name watch-compilation --enable`
+
+NOTES
+    - This command never triggers a compile; it only observes CompilationHistory
+    - The quiet window before declaring "settled" is 45 seconds minimum (longer for a
+      slow-running project), even on an already-idle environment - this is required
+      to distinguish "nothing happening" from "a compile was just triggered and
+      hasn't written its first row yet" (observed live: ~18s startup gap on a full
+      recompile)
+    - Because it only reads CompilationHistory rows, it may report "settled" a short
+      time before Creatio finishes any final internal work that does not itself
+      produce a row (observed live: up to ~2 minutes after the last row on a large
+      full recompile) - there is no available signal to close this gap
+    - Exit codes are a stable contract for scripting - see RETURN VALUES
+
+RETURN VALUES
+    0       Compilation settled successfully (or was already idle)
+    1       Compilation finished with errors, or activity was observed but the
+            ODataEntities marker was never seen (cannot confirm a full finish)
+    2       Gave up waiting after --give-up-after seconds
+    3       Startup error - could not read compilation history at all
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -13,7 +13,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     
-    <MsPackageVersion>10.0.9</MsPackageVersion>
+    <MsPackageVersion>10.0.10</MsPackageVersion>
     <SIOVersion>22.1.1</SIOVersion>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
     
@@ -43,7 +43,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
          this version is effectively a build-time floor, not the operative security control. The mcp-http OAuth edge
          exposes a public Kestrel endpoint, and CVE-2025-55315 (request-smuggling / security-feature-bypass, CVSS 9.9)
          affects ASP.NET Core 8 runtimes <= 8.0.20. The real control is deploying on a PATCHED runtime:
-         .NET 8 >= 8.0.21 (current servicing) or .NET 10 >= 10.0.9. See docs/commands/mcp-http.md (Deployment / runtime). -->
+         .NET 8 >= 8.0.21 or .NET 10 >= 10.0.10 (current servicing). See docs/commands/mcp-http.md (Deployment / runtime). -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="$(MsPackageVersion)"
                     Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11"
@@ -62,7 +62,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <PackageVersion Include="creatio.client" Version="1.0.38" />
     <PackageVersion Include="CommandLineSDK" Version="1.0.11" />

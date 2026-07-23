@@ -757,6 +757,7 @@ public class BindingsModule {
 		services.AddTransient<ConsoleProgressbar>();
 		services.AddTransient<ApplicationLogProvider>();
 		services.AddTransient<LastCompilationLogCommand>();
+		services.AddTransient<WatchCompilationCommand>();
 		services.AddTransient<LinkWorkspaceWithTideRepositoryCommand>();
 		services.AddTransient<CheckWebFarmNodeConfigurationsCommand>();
 		services.AddTransient<GetAppHashCommand>();
