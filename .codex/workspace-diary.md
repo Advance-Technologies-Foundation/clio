@@ -6768,6 +6768,55 @@ Discovery: mid-task, re-verifying the DataForge (#925) precedent surfaced that m
 Files: clio/Command/McpServer/McpCoreToolProfile.cs, clio.tests/Command/McpServer/McpProfileGatingTests.cs (ratchet MaxLazyToolCount 30->28, MaxLazyToolsSerializedBytes 39*1024->37*1024 measured 36852; +2 NotContain assertions)
 Impact: tools/list 26 tools (was 28, -2), payload 36852 bytes (ratchet locks the win). Verified live: get-sys-setting/list-sys-settings resident=false + contract-available=true in get-tool-contract, sit alongside the already-long-tail create-/update-sys-setting. Full McpServer unit suite green (2483 passed). For any FUTURE "move resident tool to long-tail": Session.CallToolAsync auto-routes any unadvertised tool (destructive or not) through clio-run correctly on its own — do NOT add a special CallDestructiveAsync/clio-run-destructive path unless the durable RAW/bare-name path specifically needs testing (McpDurableCallToolHandler is the only place that still gates destructive on residency).
 
+## 2026-07-23 09:18 – Trace missing configuration web-service skill (#951)
+Context: Issue #951 reported that generated workspace instructions require `$creatio-config-webservice`, but the JM_Test_Systems Codex skill catalog does not contain it.
+Decision: Treat the report as a template contract drift rather than a missing personal skill; defer implementation until choosing between restoring the workspace skill and routing the instruction to the existing MCP guides.
+Discovery: Commit e034be1d added the workspace-local skill on 2026-03-10. Commit 03ddd4a9 promoted its subject into the `configuration-webservice` and `configuration-webservice-tests` MCP guides on 2026-05-12. Commit 689f2f3d then deleted the three skill files while leaving the mandatory instruction in `clio/tpl/workspace/AGENTS.md`; its message mentioned only `.serena`, obscuring the removal. Current master still registers and tests both MCP guides, while ignored `tmp` and `bin` copies are stale build artifacts rather than shipped template sources.
+Files: clio/tpl/workspace/AGENTS.md, clio/Command/McpServer/Resources/ConfigurationWebServiceGuidanceResource.cs, clio/Command/McpServer/Resources/ConfigurationWebServiceTestsGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs
+Impact: Newly generated workspaces can mandate a skill they do not receive. The guidance content still exists through `get-guidance`, so the likely repair is to align the shipped workspace instruction with that supported surface and add a drift test.
+
+## 2026-07-23 09:22 – Locate the canonical web-service skill pair
+Context: The implementation skill needed to be surfaced for review together with its unit-test guidance before deciding how issue #951 should restore or expose it.
+Decision: Use the existing curated skill pair as the review source instead of reconstructing the older March clio template snapshot.
+Discovery: `creatio-config-webservice` and `creatio-config-webservice-tests` remain complete under `C:\Projects\creatio-composableapp-skills\.curated`; their descriptions link to each other, and the test companion requires NUnit-style fixtures, explicit AAA sections, `[Description]`, FluentAssertions because reasons, status/payload assertions, and application-service substitutes injected through the package composition root.
+Files: C:\Projects\creatio-composableapp-skills\.curated\configuration-webservice\SKILL.md, C:\Projects\creatio-composableapp-skills\.curated\configuration-webservice-tests\SKILL.md
+Impact: The exact paired artifacts are available for review and can serve as the source if the workspace template is changed to ship skills again.
+
+## 2026-07-23 09:23 – Confirm guide replacement for the removed skill
+Context: Revalidate whether issue #951 is truly a missing artifact or only a stale name now that equivalent clio guidance may exist.
+Decision: Do not restore the deleted workspace skill; replace the template's `$creatio-config-webservice` instruction with explicit `get-guidance name=configuration-webservice` and `get-guidance name=configuration-webservice-tests` calls.
+Discovery: `origin/master` contains no tracked files under `clio/tpl/workspace/.codex/skills`, while commit 689f2f3d explicitly deletes all three web-service skill files. Current master registers both equivalent articles in `GuidanceCatalog` and verifies them through unit and MCP E2E tests. The routing guide does not currently contain a configuration-web-service row, so it has a second drift alongside the stale template instruction.
+Files: clio/tpl/workspace/AGENTS.md, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/RoutingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: The complete repair is instruction and routing alignment plus a drift guard; duplicating the guidance as a restored local skill is unnecessary.
+
+## 2026-07-23 09:25 – Replace stale web-service skill instruction
+Context: Issue #951 required the shipped workspace template to stop mandating the deleted `$creatio-config-webservice` skill.
+Decision: Replace the single skill instruction with explicit implementation and paired-test calls to `get-guidance name=configuration-webservice` and `get-guidance name=configuration-webservice-tests`.
+Discovery: The existing `WorkspaceTemplateGuidanceDriftTests` accepts both guide calls and resolves their supported MCP surface. A normal restore is currently blocked because NuGet audit treats newly reported `System.Security.Cryptography.Xml` advisories as errors; the focused validation passes when audit is disabled locally.
+Files: clio/tpl/workspace/AGENTS.md
+Impact: Newly generated workspaces now request the canonical implementation and unit-test guidance that clio actually exposes instead of an unavailable local skill.
+
+## 2026-07-23 09:34 – Verify feature-toggle guidance pair
+Context: Check whether the curated `feature-toggle` and `feature-toggle-tests` skills also need to be restored or are already represented in clio.
+Decision: Treat both as existing MCP guidance articles; no duplicate workspace skills are needed.
+Discovery: Current master exposes `docs://mcp/guides/feature-toggle` and `docs://mcp/guides/feature-toggle-tests` through `ComposableAppSkillGuidanceResources`, including three supporting references for each and bidirectional production/test pairing. `GuidanceGetToolTests` includes both names in the recoverable catalog. Neither guide currently has a row in `RoutingGuidanceResource`.
+Files: clio/Command/McpServer/Resources/ComposableAppSkillGuidanceResources.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio/Command/McpServer/Resources/RoutingGuidanceResource.cs
+Impact: Agents can retrieve both guides by exact name today, but routing or template instructions must name them explicitly until the routing map is extended.
+
+## 2026-07-23 09:43 – Harden issue 951 template guidance drift guard
+Context: Mandatory pre-PR agentic review found that the initial template fix covered only the historical singular WebService directory and that the existing drift test did not parse `get-guidance name=...` references.
+Decision: Cover both WebService and canonical WebServices directory conventions and extend the shipped-template drift test to resolve every explicitly named guidance article through `GuidanceCatalog`.
+Discovery: The previous resident-or-bridged scanner intentionally tokenized only standalone backticked kebab-case names, so both new guide pointers were invisible to it. The focused fixture now contains seven passing tests and explicitly pins the implementation/test guide pair.
+Files: clio/tpl/workspace/AGENTS.md, clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs
+Impact: Workspace templates cannot silently regress to a renamed or removed configuration web-service guide, and both directory conventions trigger the live guidance.
+
+## 2026-07-23 09:48 – Make guidance drift checks syntax- and toggle-aware
+Context: Final re-review found that the first catalog guard recognized only contiguous `get-guidance name=...` syntax and ignored feature-gated visibility.
+Decision: Extract every `name=` argument from any template line that invokes `get-guidance`, resolve it through the toggle-aware catalog with default-disabled feature state, and pin core-rules, routing, and both configuration web-service guides to the workspace template specifically.
+Discovery: The shipped template already uses both compact and Markdown-separated invocation forms; line-oriented extraction handles both without treating unrelated `name=` arguments as guidance. The focused fixture remains green at seven tests.
+Files: clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs
+Impact: Renamed, removed, disabled, moved, or syntax-varied guidance references now fail the shipped-template contract instead of silently passing.
+
 ## 2026-07-23 10:09 – Restore security unblock (#957)
 Context: Required PR checks began failing during NuGet restore after new high-severity System.Security.Cryptography.Xml advisories were published.
 Decision: Move the existing direct System.Security.Cryptography.Xml pin outside the net8-only branch, update the centrally managed Microsoft family to 10.0.10, and align Microsoft.IdentityModel.Tokens with the existing SqlClient minimum of 8.19.2.
