@@ -6809,3 +6809,10 @@ Decision: Cover both WebService and canonical WebServices directory conventions 
 Discovery: The previous resident-or-bridged scanner intentionally tokenized only standalone backticked kebab-case names, so both new guide pointers were invisible to it. The focused fixture now contains seven passing tests and explicitly pins the implementation/test guide pair.
 Files: clio/tpl/workspace/AGENTS.md, clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs
 Impact: Workspace templates cannot silently regress to a renamed or removed configuration web-service guide, and both directory conventions trigger the live guidance.
+
+## 2026-07-23 09:48 – Make guidance drift checks syntax- and toggle-aware
+Context: Final re-review found that the first catalog guard recognized only contiguous `get-guidance name=...` syntax and ignored feature-gated visibility.
+Decision: Extract every `name=` argument from any template line that invokes `get-guidance`, resolve it through the toggle-aware catalog with default-disabled feature state, and pin core-rules, routing, and both configuration web-service guides to the workspace template specifically.
+Discovery: The shipped template already uses both compact and Markdown-separated invocation forms; line-oriented extraction handles both without treating unrelated `name=` arguments as guidance. The focused fixture remains green at seven tests.
+Files: clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs
+Impact: Renamed, removed, disabled, moved, or syntax-varied guidance references now fail the shipped-template contract instead of silently passing.

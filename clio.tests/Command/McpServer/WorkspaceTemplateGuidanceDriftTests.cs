@@ -4,11 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using CommandLine;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -53,7 +55,7 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		RegexOptions.Compiled);
 
 	private static readonly Regex GuidanceNameReference = new(
-		@"get-guidance\s+name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
+		@"name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
 	// `do\W{1,4}not` tolerates markdown emphasis between the words ("Do **NOT** use").
@@ -196,29 +198,37 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			("tpl/ui-project/AGENTS.md", TemplatePath("ui-project", "AGENTS.md")),
 			("tpl/ui-project-Empty/AGENTS.md", TemplatePath("ui-project-Empty", "AGENTS.md"))
 		];
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
 
 		// Act
-		HashSet<string> references = new(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, HashSet<string>> referencesByTemplate = new(StringComparer.OrdinalIgnoreCase);
 		List<string> unresolved = [];
 		foreach ((string name, string path) in templates) {
 			string text = File.ReadAllText(path);
-			foreach (Match match in GuidanceNameReference.Matches(text)) {
-				string guidanceName = match.Groups[1].Value;
-				references.Add(guidanceName);
-				if (!GuidanceCatalog.TryGet(guidanceName, out _)) {
-					unresolved.Add($"{name}: '{guidanceName}'");
+			HashSet<string> references = new(StringComparer.OrdinalIgnoreCase);
+			referencesByTemplate[name] = references;
+			foreach (string line in text.Split('\n')) {
+				if (!line.Contains("get-guidance", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				foreach (Match match in GuidanceNameReference.Matches(line)) {
+					string guidanceName = match.Groups[1].Value;
+					references.Add(guidanceName);
+					if (!GuidanceCatalog.TryGet(guidanceName, featureToggleService, out _)) {
+						unresolved.Add($"{name}: '{guidanceName}'");
+					}
 				}
 			}
 		}
 
 		// Assert
-		references.Should().Contain(
-			["configuration-webservice", "configuration-webservice-tests"],
-			because: "the workspace template must route configuration web-service implementation and tests " +
-				"to their canonical live guidance articles");
+		referencesByTemplate["tpl/workspace/AGENTS.md"].Should().Contain(
+			["core-rules", "routing", "configuration-webservice", "configuration-webservice-tests"],
+			because: "the workspace template must retain its mandatory core/routing guidance and route " +
+				"configuration web-service implementation and tests to their canonical live articles");
 		unresolved.Should().BeEmpty(
 			because: "shipped templates are frozen into user workspaces and every named live guidance article " +
-				"must remain resolvable");
+				"must remain visible with the default feature-toggle state");
 	}
 
 	[Test]
