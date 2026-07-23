@@ -31,7 +31,7 @@ not clio's NuGet pins — clio references ASP.NET Core through `Microsoft.AspNet
 (`FrameworkReference`), so the Kestrel/JwtBearer assemblies loaded at runtime come from the machine's
 shared runtime. CVE-2025-55315 (request-smuggling / security-feature-bypass, CVSS 9.9) affects
 ASP.NET Core 8 runtimes `<= 8.0.20`. Deploy the OAuth-enabled edge on a **patched** runtime:
-**.NET 8 `>= 8.0.21`** (current servicing) or **.NET 10 `>= 10.0.9`**.
+**.NET 8 `>= 8.0.21`** or **.NET 10 `>= 10.0.10`** (current servicing).
 
 ## Security
 
