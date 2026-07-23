@@ -186,7 +186,7 @@ public static class SchemaValidationService
 	/// component (image-input.component.md, "Common pitfalls" #8: tooltip must be a literal string).
 	/// </para>
 	/// <para>
-	/// TODO(ENG-92940): the component registry carries no machine-readable literal-vs-resource flag today
+	/// Follow-up (tracked in ENG-92940): the component registry carries no machine-readable literal-vs-resource flag today
 	/// (only the prose <c>.component.md</c> doc and the input <c>description</c> text distinguish them),
 	/// and the validator is a synchronous static path with no registry access. When the producer emits a
 	/// structured signal, derive this map from the same metadata <c>get-component-info</c> uses instead of
