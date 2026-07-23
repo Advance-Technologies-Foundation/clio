@@ -685,3 +685,5 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-app-version`](docs/commands/set-app-version.md) - Set application version, `appversion`
 <a id="unregister"></a>
 - [`unregister`](docs/commands/unregister.md) - Remove clio shell integrations
+<a id="watch-compilation"></a>
+- [`watch-compilation`](docs/commands/watch-compilation.md) - Observe Creatio compilation status without triggering a compile (experimental)

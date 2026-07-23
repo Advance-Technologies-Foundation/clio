@@ -221,7 +221,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (126): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (127): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -296,6 +296,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
 			["install-application"] = PassthroughClassification.NotApplicable,
+			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,
