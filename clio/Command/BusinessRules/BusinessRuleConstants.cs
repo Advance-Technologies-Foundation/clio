@@ -18,6 +18,7 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleAttributeExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleAttributeExpression";
 	internal const string BusinessRuleValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleValueExpression";
 	internal const string BusinessRuleSysValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysValueExpression";
+	internal const string BusinessRuleSysSettingExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysSettingExpression";
 	internal const string BusinessRuleFormulaExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleFormulaExpression";
 	internal const string BusinessRuleContextExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleContextExpression";
 	internal const string BusinessRuleParameterMappingTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.ParameterMapping";
@@ -44,6 +45,7 @@ internal static class BusinessRuleConstants {
 	internal const string ConstExpressionType = "Const";
 	internal const string FormulaExpressionType = "Formula";
 	internal const string SysValueExpressionType = "SysValue";
+	internal const string SysSettingExpressionType = "SysSetting";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
@@ -64,6 +66,13 @@ internal static class BusinessRuleConstants {
 		"make-editable, make-read-only, make-required, make-optional, set-values, apply-filter, apply-static-filter";
 	internal const string SupportedPageActionTypesDescription =
 		"hide-element, show-element, make-editable, make-read-only, make-required, make-optional";
+
+	/// <summary>
+	/// Shared empty system-setting operand map. Threaded through the pure converter/validator when a rule
+	/// references no <c>SysSetting</c> operand, so those code paths never need a null check or allocation.
+	/// </summary>
+	internal static readonly IReadOnlyDictionary<string, SysSettingOperandDescriptor> EmptySysSettingOperandMap =
+		new Dictionary<string, SysSettingOperandDescriptor>(0);
 
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

@@ -383,6 +383,7 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
+		services.AddTransient<ISysSettingConditionOperandResolver, SysSettingConditionOperandResolver>();
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();

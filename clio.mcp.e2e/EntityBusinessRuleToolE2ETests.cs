@@ -226,6 +226,41 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
+	[Description("Binds a system-setting condition payload (SysSetting operand compared to a Boolean constant) through the real MCP server and reports an invalid environment failure from command execution (ENG-91254).")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool binds system-setting conditions")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rules with a SysSetting condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_SysSetting_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-sys-setting-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rules"] = new object[] { CreateSysSettingConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid system-setting condition payload should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the SysSetting payload");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
 	[Description("Binds a role-gate condition payload (CurrentUserRoles CONTAIN role on the left) through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
 	[AllureName("Entity business-rule MCP tool binds role-gate conditions")]
@@ -1091,6 +1126,33 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				new Dictionary<string, object?> {
 					["type"] = "make-required",
 					["items"] = new object[] { "Status" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateSysSettingConditionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Lock owner when equipment is locked after submission",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = new Dictionary<string, object?> {
+							["type"] = "SysSetting",
+							["sysSettingName"] = "LockEquipmentAfterSubmission"
+						},
+						["comparisonType"] = "equal",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "Const",
+							["value"] = true
+						}
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "make-read-only",
+					["items"] = new object[] { "Owner" }
 				}
 			}
 		};

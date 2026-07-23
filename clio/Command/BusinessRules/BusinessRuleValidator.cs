@@ -27,9 +27,11 @@ internal interface IBusinessRuleValidator {
 	/// </summary>
 	/// <param name="rule">Business rule to validate.</param>
 	/// <param name="attributeMap">Business-rule attributes keyed by payload path.</param>
+	/// <param name="sysSettingMap">Resolved system-setting condition operands keyed by setting code. Optional when the rule references no SysSetting operand.</param>
 	void Validate(
 		BusinessRule rule,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null);
 
 	/// <summary>
 	/// Validates a business-rule definition with a custom action validator.
@@ -37,10 +39,12 @@ internal interface IBusinessRuleValidator {
 	/// <param name="rule">Business rule to validate.</param>
 	/// <param name="attributeMap">Business-rule attributes keyed by payload path.</param>
 	/// <param name="validateAction">Action validator for the rule scope.</param>
+	/// <param name="sysSettingMap">Resolved system-setting condition operands keyed by setting code. Optional when the rule references no SysSetting operand.</param>
 	void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction);
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null);
 
 	/// <summary>
 	/// Validates an entity business-rule definition with schema-aware checks for apply-static-filter.
@@ -48,10 +52,12 @@ internal interface IBusinessRuleValidator {
 	/// <param name="rule">Business rule to validate.</param>
 	/// <param name="attributeMap">Business-rule attributes keyed by payload path.</param>
 	/// <param name="filterSchemaProvider">Schema provider used for apply-static-filter validation. Optional for non-static-filter rules.</param>
+	/// <param name="sysSettingMap">Resolved system-setting condition operands keyed by setting code. Optional when the rule references no SysSetting operand.</param>
 	void ValidateEntity(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		Filters.Schema.IFilterSchemaProvider? filterSchemaProvider);
+		Filters.Schema.IFilterSchemaProvider? filterSchemaProvider,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null);
 }
 
 internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidator lookupReferenceValidator)
@@ -64,14 +70,17 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 	public void Validate(
 		BusinessRule rule,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
-		Validate(rule, attributeMap, ValidateEntityAction);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) =>
+		Validate(rule, attributeMap, ValidateEntityAction, sysSettingMap);
 
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
 		ArgumentNullException.ThrowIfNull(rule);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettings = sysSettingMap ?? EmptySysSettingOperandMap;
 		bool isApplyFilterRule = IsApplyFilterOnlyRule(rule);
 		bool isApplyStaticFilterRule = IsApplyStaticFilterOnlyRule(rule);
 		bool isUnconditionalRule = isApplyFilterRule || isApplyStaticFilterRule;
@@ -100,7 +109,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
-		ValidateAllConditions(rule.Condition.Conditions, attributeMap);
+		ValidateAllConditions(rule.Condition.Conditions, attributeMap, sysSettings);
 		ValidateAllActions(rule.Actions, attributeMap, validateAction);
 		lookupReferenceValidator.Validate(rule, attributeMap);
 	}
@@ -111,8 +120,9 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	public void ValidateEntity(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		IFilterSchemaProvider? filterSchemaProvider) {
-		Validate(rule, attributeMap, (action, map) => ValidateEntityAction(action, map, filterSchemaProvider));
+		IFilterSchemaProvider? filterSchemaProvider,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
+		Validate(rule, attributeMap, (action, map) => ValidateEntityAction(action, map, filterSchemaProvider), sysSettingMap);
 	}
 
 	private static void ValidateNoMixedApplyFilter(BusinessRule rule, bool isApplyFilterRule) {
@@ -146,13 +156,14 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 	private static void ValidateAllConditions(
 		List<BusinessRuleCondition> conditions,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap) {
 		foreach (BusinessRuleCondition condition in conditions) {
 			if (condition is null) {
 				throw new ArgumentException("rule.condition.conditions[*] is required.");
 			}
 
-			ValidateCondition(condition, attributeMap);
+			ValidateCondition(condition, attributeMap, sysSettingMap);
 		}
 	}
 
@@ -171,7 +182,8 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 	private static void ValidateCondition(
 		BusinessRuleCondition condition,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap) {
 		if (condition.LeftExpression is null) {
 			throw new ArgumentException("rule.condition.conditions[*].leftExpression is required.");
 		}
@@ -179,10 +191,10 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		string comparisonType = GetSupportedComparisonType(condition.ComparisonType);
 		bool requiresRight = !IsUnaryComparisonType(comparisonType);
 
-		// Either side may be an AttributeValue, Const, or SysValue; type/reference-schema
+		// Either side may be an AttributeValue, Const, SysValue, or SysSetting; type/reference-schema
 		// compatibility is the only constraint, so resolve and structurally validate each operand.
 		ConditionOperand left = ResolveOperand(
-			condition.LeftExpression, attributeMap, "rule.condition.conditions[*].leftExpression");
+			condition.LeftExpression, attributeMap, sysSettingMap, "rule.condition.conditions[*].leftExpression");
 
 		if (!requiresRight) {
 			if (condition.RightExpression is not null) {
@@ -199,7 +211,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		}
 
 		ConditionOperand right = ResolveOperand(
-			condition.RightExpression, attributeMap, "rule.condition.conditions[*].rightExpression");
+			condition.RightExpression, attributeMap, sysSettingMap, "rule.condition.conditions[*].rightExpression");
 
 		ValidateComparison(comparisonType, left, right);
 	}
@@ -440,6 +452,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	private static ConditionOperand ResolveOperand(
 		BusinessRuleExpression expression,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		string fieldName) {
 		if (expression is null) {
 			throw new ArgumentException($"{fieldName} is required.");
@@ -478,6 +491,27 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 				expression);
 		}
 
+		if (string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			if (string.IsNullOrWhiteSpace(expression.SysSettingName)) {
+				throw new ArgumentException($"{fieldName}.sysSettingName is required when {fieldName}.type is 'SysSetting'.");
+			}
+
+			// In the service flow the resolver runs first and already rejects an unresolvable setting with a
+			// dedicated message; this defensive branch is the barrier when the validator is used directly
+			// (e.g. unit tests) with a hand-built map.
+			if (!sysSettingMap.TryGetValue(expression.SysSettingName, out SysSettingOperandDescriptor? sysSetting)) {
+				throw new ArgumentException(
+					$"System setting '{expression.SysSettingName}' in {fieldName} does not exist on the target environment.");
+			}
+
+			return new ConditionOperand(
+				fieldName,
+				OperandKind.SysSetting,
+				$"system setting '{sysSetting.SysSettingName}'",
+				new OperandType(sysSetting.DataValueTypeName, sysSetting.ReferenceSchemaName),
+				expression);
+		}
+
 		if (string.Equals(expression.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			if (expression.Value is null) {
 				throw new ArgumentException($"{fieldName}.value is required when {fieldName}.type is 'Const'.");
@@ -486,7 +520,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			return new ConditionOperand(fieldName, OperandKind.Const, "constant value", null, expression);
 		}
 
-		throw new ArgumentException($"{fieldName}.type must be 'AttributeValue', 'Const', or 'SysValue'.");
+		throw new ArgumentException($"{fieldName}.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.");
 	}
 
 	private static void ValidateComparison(string comparisonType, ConditionOperand left, ConditionOperand right) {
@@ -501,7 +535,16 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		if (leftType is not null && rightType is not null) {
 			OperandType leftValue = leftType.AsValueType();
 			OperandType rightValue = rightType.AsValueType();
-			if (!string.Equals(leftValue.DataValueTypeName, rightValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+			// Operands are compatible when they share the same data value type OR the same text/numeric
+			// FAMILY: a system setting is usually the bare `Text` type while entity/page string columns
+			// are a text subtype (ShortText/MediumText/...), and likewise Integer/Float/Money are all
+			// numeric — the platform's rule engine accepts these cross-subtype comparisons (verified on a
+			// live environment). DateTime subtypes (Date/Time/DateTime) and Lookup are intentionally kept
+			// exact, since mixing those is not a meaningful comparison.
+			bool sameType = string.Equals(leftValue.DataValueTypeName, rightValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)
+				|| (IsTextDataValueType(leftValue.DataValueTypeName) && IsTextDataValueType(rightValue.DataValueTypeName))
+				|| (IsNumericDataValueType(leftValue.DataValueTypeName) && IsNumericDataValueType(rightValue.DataValueTypeName));
+			if (!sameType) {
 				throw new ArgumentException(
 					$"rule.condition.conditions[*] compares {left.Label} ({Describe(leftType)}) to {right.Label} ({Describe(rightType)}). Both operands must resolve to the same data value type.");
 			}
@@ -610,7 +653,8 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	private enum OperandKind {
 		Attribute,
 		Const,
-		SysValue
+		SysValue,
+		SysSetting
 	}
 
 	private sealed record ConditionOperand(
