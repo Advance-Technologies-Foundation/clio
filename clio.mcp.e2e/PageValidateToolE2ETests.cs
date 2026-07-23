@@ -350,6 +350,44 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid: true when an inserted crt.ImageInput carries an inline literal tooltip — the ImageInput control renders the raw tooltip and never reads a localizable resource, so the localizable-text rule must NOT reject it (ENG-92940). Proves the component-scoped exemption reaches through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts inline tooltip literal on crt.ImageInput")]
+	[AllureDescription("Sends a page body whose inserted crt.ImageInput (bound to a declared DS attribute) sets tooltip to a plain string literal, and verifies validate-page accepts it — the control shows the raw tooltip and a $Resources.Strings binding would render empty, so the literal is the only working form.")]
+	public async Task PageValidateTool_Should_Accept_Inline_Tooltip_Literal_On_ImageInput() {
+		// Arrange
+		string bodyWithImageInputTooltip = ValidPageBody
+			.Replace(
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+					"{\"operation\":\"insert\",\"name\":\"UsrPhoto\",\"values\":{\"type\":\"crt.ImageInput\"," +
+					"\"value\":\"$UsrPhoto\",\"size\":\"large\",\"tooltip\":\"Upload a photo of the task owner\"}}" +
+					"]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
+					"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"UsrPhoto\":{\"modelConfig\":{\"path\":\"PDS.UsrPhoto\"}}}}}" +
+					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithImageInputTooltip);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "crt.ImageInput.tooltip is literal-only — a localizable binding renders empty, so the literal must be accepted (ENG-92940)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "no content-level validator, including the localizable-text rule, should reject the ImageInput tooltip literal");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the ImageInput tooltip literal is a valid, working authoring form and must not produce an error");
+	}
+
+	[Test]
 	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects inline placeholder literal")]

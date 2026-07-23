@@ -2874,6 +2874,252 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A literal tooltip on crt.ImageInput is allowed — the control renders the raw text and never reads a localizable resource, so the mandated resource form would show no tooltip (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "crt.ImageInput.tooltip is literal-only — a localizable binding renders empty at runtime");
+		result.Errors.Should().BeEmpty(because: "the ImageInput tooltip literal must not be flagged");
+	}
+
+	[Test]
+	[Description("The inverse of the exemption: a $Resources.Strings.* binding on crt.ImageInput.tooltip is rejected — the control never reads localizableStrings, so the resource form renders empty at runtime and the literal form must be forced (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceBinding_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "crt.ImageInput.tooltip must be a plain literal — a $Resources.Strings binding renders empty at runtime");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the resource-bound ImageInput tooltip must be reported");
+	}
+
+	[Test]
+	[Description("The inverse rule also rejects the #ResourceString(Key)# macro form on crt.ImageInput.tooltip — it is equally unread by the control at runtime (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceMacro_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"#ResourceString(PhotoTip)#"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the #ResourceString(...)# macro is also unread by crt.ImageInput.tooltip and renders empty");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the macro-bound ImageInput tooltip must be reported");
+	}
+
+	[Test]
+	[Description("The crt.ImageInput tooltip exemption is applied by component type regardless of property order — a body that lists tooltip before type must still validate (EnumerateObject preserves document order).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipBeforeType_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"tooltip":"Upload a photo of the task owner","type":"crt.ImageInput","value":"$UsrPhoto"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the component type is resolved before the property loop, so tooltip-before-type is still exempt");
+		result.Errors.Should().BeEmpty(because: "property ordering must not affect the exemption");
+	}
+
+	[Test]
+	[Description("The tooltip exemption is scoped to the specific component — a literal tooltip on crt.Input (which DOES consume a localizable resource) is still rejected.")]
+	public void ValidateLocalizableTextLiterals_InputTooltipLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","tooltip":"Work email"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only crt.ImageInput.tooltip is exempt; a tooltip literal on a resource-backed component stays rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("EmailField") && e.Contains("tooltip"),
+			because: "the resource-backed tooltip literal must be reported");
+	}
+
+	[Test]
+	[Description("The exemption is scoped to the specific property — a literal label on crt.ImageInput is still rejected because label IS backed by a localizable resource.")]
+	public void ValidateLocalizableTextLiterals_ImageInputLabelLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","label":"Owner photo"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only tooltip is exempt for crt.ImageInput; label stays subject to the localizable-binding rule");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("label"),
+			because: "the ImageInput label literal must be reported");
+	}
+
+	[Test]
+	[Description("Regression lock for the per-node currentType scoping invariant: the crt.ImageInput.tooltip exemption is derived per object and must not bleed to sibling nodes. A body mixing an exempt ImageInput literal tooltip with a sibling non-exempt crt.Input literal placeholder must flag only the non-exempt node (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_MixedExemptAndNonExemptSiblings_FlagsOnlyNonExemptNode() {
+		// Arrange — one body, two sibling nodes: the exempt ImageInput tooltip and a second exempt
+		// ImageInput tooltip (cross-node bleed guard) alongside a non-exempt crt.Input placeholder.
+		// The exemption is resolved from each node's own type, so it must not leak across siblings.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"Upload a photo of the task owner"}},
+				{"operation":"insert","name":"UsrCover","values":{"type":"crt.ImageInput","value":"$UsrCover","tooltip":"Upload a cover image"}},
+				{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","placeholder":"name@firm.com"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the non-exempt crt.Input placeholder literal must still be rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("EmailField"),
+			because: "exactly the non-exempt sibling must be flagged");
+		result.Errors.Should().NotContain(e => e.Contains("UsrPhoto"),
+			because: "the exempt ImageInput tooltip must not be flagged");
+		result.Errors.Should().NotContain(e => e.Contains("UsrCover"),
+			because: "the exemption must not bleed across sibling nodes — the second ImageInput stays exempt");
+	}
+
+	[Test]
+	[Description("A non-resource dynamic binding (e.g. $SomeAttr) on crt.ImageInput.tooltip is accepted — only $Resources.Strings.* / #ResourceString(...)# forms render empty at runtime, so a plain view-model binding is left untouched (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipDynamicBinding_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$SomeAttr"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a plain view-model binding is neither an inline literal nor a localizable-resource reference");
+		result.Errors.Should().BeEmpty(because: "the exempt tooltip only rejects the empty-rendering resource forms");
+	}
+
+	[Test]
+	[Description("A whitespace-only tooltip on crt.ImageInput is accepted — an empty value is neither an inline literal nor a resource reference, so neither branch of the exempt-property rule fires (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipWhitespace_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"   "}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "a whitespace-only value is not a rejectable resource binding");
+		result.Errors.Should().BeEmpty(because: "the exempt-property rule must not flag an empty tooltip");
+	}
+
+	[Test]
+	[Description("The LiteralAllowedTextProperties map lookup is case-insensitive — a lowercase crt.imageinput type still resolves the tooltip exemption, so a resource binding on it is rejected exactly as on the canonically-cased type (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceBinding_CaseInsensitiveType_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.imageinput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the exemption resolves regardless of type casing, so the resource form is still rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the resource-bound tooltip on a lowercase-typed ImageInput must be reported");
+	}
+
+	[Test]
+	[Description("The >60-char echoed-value truncation branch of BuildLiteralRequiredError is exercised — a long resource key is truncated with an ellipsis so the diagnostic stays bounded (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipLongResourceBinding_TruncatesDiagnostic() {
+		// Arrange — the resource binding is well over 60 characters, forcing the truncation branch.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.AnExtremelyLongLocalizableResourceKeyThatExceedsSixtyCharactersForTruncation"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the resource form on the exempt tooltip is rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("…"),
+			because: "the over-length resource value must be truncated with an ellipsis in the diagnostic");
+	}
+
+	[Test]
+	[Description("The mobile localizable-text rule shares the same scan engine as the web rule, so the crt.ImageInput.tooltip exemption applies on mobile too. Locks the shared-engine behavior — the mobile ImageInput runtime was not independently verified; the ticket scope is web (ENG-92940).")]
+	public void ValidateMobileLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"Upload a photo"}}]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the mobile rule runs through the same ScanNodeForTextLiterals engine, so the component-scoped exemption applies there by construction");
+		result.Errors.Should().BeEmpty(because: "the shared scan must not flag the ImageInput tooltip literal on mobile");
+	}
+
+	[Test]
+	[Description("The full ENG-92940 reproduction body — a properly bound crt.ImageInput with a literal tooltip inside a FlexContainer — passes every content validator that validate-page/update-page/sync-pages run, so content-ok is true.")]
+	public void ContentValidation_ImageInputWithLiteralTooltip_ReproductionBody_PassesAllContentValidators() {
+		// Arrange — the exact minimal reproduction from the ticket: crt.ImageInput "UsrPhoto" bound to
+		// PDS.UsrPhoto with a literal tooltip, nested in a crt.FlexContainer, with the binding attribute
+		// declared in viewModelConfigDiff in the required path:[]/attributes nesting.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"OwnerFlex","values":{"type":"crt.FlexContainer","direction":"column"}},
+				{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
+			]
+			""",
+			"""[{"operation":"merge","path":[],"values":{"attributes":{"UsrPhoto":{"modelConfig":{"path":"PDS.UsrPhoto"}}}}}]""");
+
+		// Act — mirror the content validators PageValidateTool runs that could fire on this body.
+		SchemaValidationResult localizable = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+		SchemaValidationResult insertedField = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, null);
+		SchemaValidationResult standardField = SchemaValidationService.ValidateStandardFieldBindings(body, null);
+
+		// Assert
+		localizable.IsValid.Should().BeTrue(because: "the ImageInput tooltip literal is exempt (ENG-92940)");
+		insertedField.IsValid.Should().BeTrue(
+			because: "the ImageInput binding attribute UsrPhoto is declared with the required nesting and no label is set");
+		standardField.IsValid.Should().BeTrue(
+			because: "no other content validator fires, so validate-page reports content-ok:true for the reproduction body");
+	}
+
+	[Test]
 	[Description("The mobile variant reads viewConfigDiff from the plain-JSON root and rejects an inline placeholder literal the same way the web variant does.")]
 	public void ValidateMobileLocalizableTextLiterals_PlaceholderInlineLiteral_ReturnsInvalid() {
 		// Arrange

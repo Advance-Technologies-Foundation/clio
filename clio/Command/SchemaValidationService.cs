@@ -172,6 +172,34 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Per-component text properties that are authored as INLINE LITERALS, not localizable-string
+	/// bindings, because the component does not consume or auto-register a localizable resource for
+	/// them — a <c>$Resources.Strings.&lt;Key&gt;</c> binding resolves to empty and renders nothing at
+	/// runtime. Keyed by component type → the property names on that type that are exempt from the
+	/// <see cref="ValidateLocalizableTextLiterals"/> literal rule. Everything not listed here stays
+	/// subject to the rule (<see cref="LocalizableTextLiteralClause"/>), so <c>label</c>/<c>caption</c>/
+	/// <c>title</c>/<c>placeholder</c> and a <c>tooltip</c> on any other component are still rejected.
+	/// <para>
+	/// <c>crt.ImageInput.tooltip</c> — the ImageInput control renders its tooltip straight from the raw
+	/// value and never reads the schema's <c>localizableStrings</c>, so the mandated resource form shows
+	/// no tooltip at all (ENG-92940). This mirrors <c>get-component-info</c>'s own contract for the
+	/// component (image-input.component.md, "Common pitfalls" #8: tooltip must be a literal string).
+	/// </para>
+	/// <para>
+	/// Follow-up (tracked in ENG-92940): the component registry carries no machine-readable literal-vs-resource flag today
+	/// (only the prose <c>.component.md</c> doc and the input <c>description</c> text distinguish them),
+	/// and the validator is a synchronous static path with no registry access. When the producer emits a
+	/// structured signal, derive this map from the same metadata <c>get-component-info</c> uses instead of
+	/// hard-coding it — and revisit sibling cases (e.g. <c>crt.ImageInput.placeholder</c> is an icon /
+	/// abbreviation seed, not localizable text either).
+	/// </para>
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, HashSet<string>> LiteralAllowedTextProperties =
+		new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ImageInput"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "tooltip" }
+		};
+
+	/// <summary>
 	/// User-visible caption properties on inserted view nodes whose localizable-string bindings are
 	/// checked for resolvability by the widget-caption validators. Deliberately EXCLUDES <c>label</c>:
 	/// <see cref="ValidateInsertedFieldSelfConsistency"/> already resolvability-checks <c>label</c> for
@@ -211,6 +239,18 @@ public static class SchemaValidationService
 		"register the key with its default-language value through the 'resources' parameter " +
 		"(e.g. resources: '{\"<Key>\": \"<text>\"}'), or use the #ResourceString(<Key>)# macro form for " +
 		"data-grid column captions and validator messages";
+
+	/// <summary>
+	/// Canonical clause describing the inverse of <see cref="LocalizableTextLiteralClause"/>: the few
+	/// (component, property) pairs listed in <see cref="LiteralAllowedTextProperties"/> render the text
+	/// straight from its raw value and never read <c>localizableStrings</c>, so they MUST carry a plain
+	/// literal — a resource binding resolves to empty at runtime (ENG-92940).
+	/// </summary>
+	internal const string LiteralRequiredTextClause =
+		"a few components render a text property straight from its raw value and never read the schema's " +
+		"localizableStrings (e.g. crt.ImageInput.tooltip), so for those the property MUST be a plain inline " +
+		"literal: a $Resources.Strings.<Key> or #ResourceString(<Key>)# binding resolves to empty and renders " +
+		"nothing at runtime";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -1685,11 +1725,26 @@ public static class SchemaValidationService
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				// The component type sits as a sibling of the text properties on the same object
+				// (e.g. { "type":"crt.ImageInput", "tooltip":"..." }). Derive it up-front, BEFORE the
+				// property loop — EnumerateObject yields in document order, so a body that lists a text
+				// property ahead of "type" must still see the type to apply LiteralAllowedTextProperties.
+				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : string.Empty;
 				foreach (JsonProperty property in node.EnumerateObject()) {
 					if (property.Value.ValueKind == JsonValueKind.String &&
-					    LocalizableTextProperties.Contains(property.Name) &&
-					    IsInlineUserVisibleTextLiteral(property.Value.GetString())) {
-						result.Errors.Add(BuildTextLiteralError(currentName, property.Name, property.Value.GetString()!));
+					    LocalizableTextProperties.Contains(property.Name)) {
+						string? textValue = property.Value.GetString();
+						if (IsLiteralAllowedTextProperty(currentType, property.Name)) {
+							// The exempt component renders this property from its raw value and never reads
+							// localizableStrings, so a $Resources.Strings.<Key> / #ResourceString(<Key>)# binding
+							// resolves to empty at runtime. Reject the resource form and force the working literal —
+							// the mirror of the inline-literal rule applied to everything else (ENG-92940).
+							if (IsLocalizableResourceReference(textValue)) {
+								result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue!));
+							}
+						} else if (IsInlineUserVisibleTextLiteral(textValue)) {
+							result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue!));
+						}
 					}
 					ScanNodeForTextLiterals(property.Value, currentName, result);
 				}
@@ -1712,6 +1767,35 @@ public static class SchemaValidationService
 		}
 		return false;
 	}
+
+	// Reads a view node's raw component type (the "type" sibling of its text properties). Unlike
+	// TryGetFieldType this does NOT filter to StandardFieldComponentTypes — LiteralAllowedTextProperties
+	// is keyed on the raw type so a future non-standard-field exemption keeps working.
+	private static bool TryGetComponentType(JsonElement element, out string type) {
+		type = string.Empty;
+		if (element.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
+		    typeElement.ValueKind == JsonValueKind.String &&
+		    !string.IsNullOrWhiteSpace(typeElement.GetString())) {
+			type = typeElement.GetString()!;
+			return true;
+		}
+		return false;
+	}
+
+	// True when an inline literal is legitimately allowed for (componentType, property) — the component
+	// does not consume a localizable resource for that property (see LiteralAllowedTextProperties).
+	private static bool IsLiteralAllowedTextProperty(string componentType, string property) =>
+		!string.IsNullOrEmpty(componentType) &&
+		LiteralAllowedTextProperties.TryGetValue(componentType, out HashSet<string>? properties) &&
+		properties.Contains(property);
+
+	// True when the value is a localizable-string binding that flows through localizableStrings — either a
+	// $Resources.Strings.<Key> binding or a #ResourceString(Key)# macro (bare, concatenated, or wrapped).
+	// These are exactly the forms that render empty on a LiteralAllowedTextProperties component.
+	private static bool IsLocalizableResourceReference(string? value) =>
+		!string.IsNullOrWhiteSpace(value) &&
+		(value.StartsWith(ResourceBindingPrefix, StringComparison.OrdinalIgnoreCase) ||
+		 ResourceStringReferencePattern.IsMatch(value));
 
 	private static bool IsInlineUserVisibleTextLiteral(string? value) {
 		if (string.IsNullOrWhiteSpace(value)) {
@@ -1736,11 +1820,25 @@ public static class SchemaValidationService
 	private static bool IsBindingExpression(string value) =>
 		value.Length >= 2 && value[0] == '$' && (char.IsLetter(value[1]) || value[1] == '_');
 
+	// Shared owner-node label idiom: an unnamed node reads as "a view node", a named one is quoted.
+	// Keeps BuildTextLiteralError / BuildLiteralRequiredError from drifting on the fallback wording.
+	private static string FormatOwnerNode(string ownerName) =>
+		string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+
 	private static string BuildTextLiteralError(string ownerName, string property, string value) {
-		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
-		string shown = value.Length > 60 ? value[..60] + "…" : value;
+		string node = FormatOwnerNode(ownerName);
+		string shown = Truncate(value);
 		return $"View node {node} sets user-visible text property '{property}' to the inline literal " +
 			$"\"{shown}\" instead of a localizable string. Rule: {LocalizableTextLiteralClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
+	private static string BuildLiteralRequiredError(string ownerName, string componentType, string property, string value) {
+		string node = FormatOwnerNode(ownerName);
+		string owner = string.IsNullOrEmpty(componentType) ? node : $"{node} ({componentType})";
+		string shown = Truncate(value);
+		return $"View node {owner} binds text property '{property}' to the localizable resource " +
+			$"\"{shown}\", but this property must be a plain inline literal. Rule: {LiteralRequiredTextClause}. " +
 			"See the page-schema-resources guide.";
 	}
 
