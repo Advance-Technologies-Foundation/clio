@@ -60,6 +60,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
          (see clio.tests / clio.mcp.e2e) so the transitive 10.0.6 pulled via PowerShell.SDK is
          also lifted to the patched version. Drop this override once MsPackageVersion moves to
          >= 10.0.10. -->
+
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />

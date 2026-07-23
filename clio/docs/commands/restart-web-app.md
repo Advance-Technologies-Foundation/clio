@@ -15,6 +15,12 @@ when you need forcible restart a web application (website). Be attentive,
 the command restart only web application and doesn't clear application
 cache.
 
+By default the command returns as soon as the restart request is sent,
+without waiting for the application to come back up. Pass `--wait-ready`
+to poll the application's health-check endpoint after the restart and
+return only once it answers (or exit non-zero on timeout) — this is the
+signal to rely on before verifying a fix, instead of hand-rolled polling.
+
 ## Synopsis
 
 ```bash
@@ -35,6 +41,13 @@ Name (pos. 0)	Application name
 --Environment           -e          Environment name
 
 --Maintainer            -m          Maintainer name
+
+--wait-ready                        After requesting the restart, poll the application's
+                                     health-check endpoint until it answers before returning.
+                                     Exits non-zero if it does not become ready in time.
+
+--ready-timeout                     Max seconds to wait for readiness when --wait-ready is
+                                     set (default: 600).
 ```
 
 ## Example
@@ -45,6 +58,13 @@ restarts current web application(website)
 
 clio restart-web-app myapp
 restarts web application(website) that registered as a myapp
+
+clio restart-web-app -e myapp --wait-ready
+restarts myapp and waits (up to the default 600s) until it answers its
+health-check before returning
+
+clio restart-web-app -e myapp --wait-ready --ready-timeout 900
+same as above, with a 900s readiness budget for a slow-starting instance
 ```
 
 ## Reporting Bugs

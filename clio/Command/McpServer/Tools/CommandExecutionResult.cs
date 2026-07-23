@@ -48,7 +48,10 @@ public record CommandExecutionResult(
 	//   • exit code -1  → UNEXPECTED runtime failure: an exception the caller cannot have anticipated
 	//                     (DI/bootstrap/wiring bugs, a failed HTTP/verification call). Use FromError(...)
 	//                     for a message or FromException(...) for the full exception chain.
-	//   • exit code  0  → success.
+	//   • exit code  0  → success. Also used for an IN-PROGRESS notice (FromInfo): the requested
+	//                     operation was accepted and is still running server-side past the MCP response
+	//                     deadline — not a failure, so it stays on the success code, with the actionable
+	//                     "poll for status" guidance carried in the message (ENG-91315).
 	// Keeping the failure classes on distinct codes lets MCP callers / e2e tell "you passed bad
 	// input" apart from "clio itself broke". See docs/McpCapabilityMap.md → "MCP tool exit codes".
 
@@ -75,6 +78,16 @@ public record CommandExecutionResult(
 	/// </summary>
 	public static CommandExecutionResult FromValidationError(string message) =>
 		new(1, [new ErrorMessage(message)]);
+
+	/// <summary>
+	/// Creates a successful <see cref="CommandExecutionResult"/> (exit code 0) carrying an informational
+	/// message instead of command output. Use for an IN-PROGRESS notice — a long-running operation
+	/// (e.g. <c>restart-by-environment-name</c> waiting for readiness, or <c>compile-creatio</c> exceeding
+	/// the MCP response deadline) that was accepted and is still running server-side: not a failure, so
+	/// it stays on the success code, with actionable "poll for status" guidance in <paramref name="message"/>.
+	/// </summary>
+	public static CommandExecutionResult FromInfo(string message) =>
+		new(0, [new InfoMessage(message)]);
 
 	/// <summary>
 	/// Creates a failed <see cref="CommandExecutionResult"/> for a Creatio platform version-gate refusal,

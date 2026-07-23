@@ -83,7 +83,7 @@ The running app reads packages from the filesystem. Do **NOT** use `push-workspa
 
 | You changed… | Do this |
 |---|---|
-| **C# (`Files/src/cs`)** and/or **Angular (`projects/...`)** | `dotnet build MainSolution.slnx -c dev-n8` (one build covers both — the Angular `.esproj` runs the npm build), **then** restart via `clio-run` (tool `restart-by-environment-name`). Nothing else. (`npm run build` alone also works for a client-only iteration, but still restart afterwards.) |
+| **C# (`Files/src/cs`)** and/or **Angular (`projects/...`)** | `dotnet build MainSolution.slnx -c dev-n8` (one build covers both — the Angular `.esproj` runs the npm build), **then** restart via `clio-run` (tool `restart-by-environment-name`, which waits for readiness by default). Nothing else. (`npm run build` alone also works for a client-only iteration, but still restart afterwards.) |
 | **Schema via clio MCP** (schema tools such as `modify-entity-schema-column`, `update-entity-schema` — resolve the current set via `get-tool-contract`) | After the MCP call, flush the DB changes to the filesystem via `clio-run` (tool `pkg-to-file-system`, aka **2fs**) so they land in the workspace and persist. |
 | **Schema/metadata edited directly on the filesystem** | Load the filesystem packages into the running database/runtime via `clio-run` (tool `pkg-to-db`, aka **2db**). |
 
@@ -96,8 +96,8 @@ Key FSM facts learned the hard way:
 
 Use the default flow (read each contract via `get-tool-contract` first):
 1. `push-workspace` (via `clio-run`) — install local packages into the environment.
-2. `compile-creatio` (via `clio-run`) — **only** if C# schemas / source-code / executable process code changed (or the runtime reports "schema missing in runtime").
-3. `restart-by-environment-name` (via `clio-run`) — only if server assemblies were rebuilt or Redis was cleared.
+2. `compile-creatio` (via `clio-run`) — **only** if C# schemas / source-code / executable process code changed (or the runtime reports "schema missing in runtime"). A full compilation can take minutes; if it returns exit-code 0 with an in-progress note, it is still running — poll `compile-status` (via `clio-run`) instead of retrying.
+3. `restart-by-environment-name` (via `clio-run`) — only if server assemblies were rebuilt or Redis was cleared. New C# does **not** load until this restart. It waits for readiness by default (`waitReady=true`), so the call itself already confirms the app answered before returning; typical warm-up is 1–10 minutes.
 
 ### Shared gotcha — clio auth dies after a restart
 
