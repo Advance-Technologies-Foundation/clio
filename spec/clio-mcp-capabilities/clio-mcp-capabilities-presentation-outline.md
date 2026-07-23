@@ -126,6 +126,9 @@ design**, а не «ми виставили CLI».
 **Мета:** показати композицію областей 2→6 живцем (об'єкт → сторінка → компонент → правило) і
 **непомітно посіяти** ньюанси Блоку 2 (агент читає guidance, тягне component-info під версію, диспатчить через clio-run).
 
+> 📄 Повний покроковий скрипт із точними промптами, очікуваними tool-calls і troubleshooting:
+> **`clio-mcp-capabilities-demo-script.md`**.
+
 **Передумови (чек-лист перед виступом):**
 - [ ] MCP-клієнт (Claude Desktop / Claude Code / IDE) підключений до `clio mcp-server` (stdio).
 - [ ] Готове dev-середовище зареєстроване (env-name); `get-info`/`describe-environment` проходить.
