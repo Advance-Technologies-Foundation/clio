@@ -6816,3 +6816,10 @@ Decision: Extract every `name=` argument from any template line that invokes `ge
 Discovery: The shipped template already uses both compact and Markdown-separated invocation forms; line-oriented extraction handles both without treating unrelated `name=` arguments as guidance. The focused fixture remains green at seven tests.
 Files: clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs
 Impact: Renamed, removed, disabled, moved, or syntax-varied guidance references now fail the shipped-template contract instead of silently passing.
+
+## 2026-07-23 10:09 – Restore security unblock (#957)
+Context: Required PR checks began failing during NuGet restore after new high-severity System.Security.Cryptography.Xml advisories were published.
+Decision: Move the existing direct System.Security.Cryptography.Xml pin outside the net8-only branch, update the centrally managed Microsoft family to 10.0.10, and align Microsoft.IdentityModel.Tokens with the existing SqlClient minimum of 8.19.2.
+Discovery: The net10 target had only the vulnerable transitive cryptography package, while a fresh audited restore also exposed a pre-existing NU1605 downgrade from Microsoft.Data.SqlClient 7.0.2. On net10, the cryptography package is supplied by Microsoft.AspNetCore.App, so the installed shared runtime must also be current.
+Files: Directory.Packages.props, clio/clio.csproj, clio/docs/commands/mcp-http.md, clio/help/en/mcp-http.txt
+Impact: Audited restores succeed for both clio target frameworks; full unit tests, Ring tests, and Windows x64 NativeAOT publish pass.
