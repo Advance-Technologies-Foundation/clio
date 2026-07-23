@@ -39,7 +39,9 @@ public static class FsmAndCompilePrompt
 		 Use clio mcp server `{Tools.FsmModeTool.SetFsmModeToolName}` to turn FSM mode `{mode}` for registered
 		 Creatio environment `{environmentName}`.
 		 After changing FSM mode, run `{Tools.CompileCreatioTool.CompileCreatioToolName}` without `package-name`
-		 to perform the full `clio cc -e ENV_NAME --all` compilation.
+		 to perform the full `clio cc -e ENV_NAME --all` compilation. On .NET Framework hosts, also run
+		 `{Tools.RestartTool.RestartByEnvironmentNameToolName}` afterward — new C# does not load until the
+		 app restarts; it waits for readiness by default, so no separate poll is needed.
 		 """;
 
 	/// <summary>
@@ -57,10 +59,14 @@ public static class FsmAndCompilePrompt
 			  Use clio mcp server `{Tools.CompileCreatioTool.CompileCreatioToolName}` to run a full compilation for
 			  registered Creatio environment `{environmentName}`.
 			  Do not pass `package-name` when you need the equivalent of `clio cc -e {environmentName} --all`.
+			  A full compilation can take several minutes; if the tool returns exit-code 0 with an
+			  in-progress note, it is still running server-side — poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying.
 			  """
 			: $"""
 			  Use clio mcp server `{Tools.CompileCreatioTool.CompileCreatioToolName}` to compile only package
 			  `{packageName}` for registered Creatio environment `{environmentName}`.
 			  Pass `package-name` exactly as provided to avoid switching to full compilation.
+			  If the tool returns exit-code 0 with an in-progress note, it is still running server-side —
+			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying.
 			  """;
 }

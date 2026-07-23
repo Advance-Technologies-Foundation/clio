@@ -221,7 +221,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (126): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (127): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -235,6 +235,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["clio-run"] = PassthroughClassification.NotApplicable,
 			["clio-run-destructive"] = PassthroughClassification.NotApplicable,
 			["compile-creatio"] = PassthroughClassification.NotApplicable,
+			["compile-status"] = PassthroughClassification.NotApplicable,
 			["create-business-process"] = PassthroughClassification.NotApplicable,
 			["create-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["create-data-binding"] = PassthroughClassification.NotApplicable,
@@ -327,6 +328,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,
+			["restart-status"] = PassthroughClassification.NotApplicable, // ENG-91315 readiness-wait status poll; reads the in-memory RestartOperationRegistry only (mirrors compile-status), never makes a credential-passthrough Creatio call
 			["restore-db-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
