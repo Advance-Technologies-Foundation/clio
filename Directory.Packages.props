@@ -53,7 +53,9 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
                     Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11"
                     Condition="'$(TargetFramework)' != 'net10.0'" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
+    <!-- Kept ahead of $(MsPackageVersion): 10.0.9 has known high-severity advisories (NU1903);
+         10.0.10 is the servicing fix. See the pin note in clio.csproj (net8.0 PowerShell.SDK transitive). -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
