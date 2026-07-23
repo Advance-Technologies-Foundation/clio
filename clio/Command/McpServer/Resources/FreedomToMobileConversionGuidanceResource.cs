@@ -55,9 +55,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    re-derive placement from containerMap + componentSuggestions.
 			  - mobileContracts — for each suggested mobile type: allowedProperties + example +
 			    designerDefaults, so you can build the component's values inline.
-			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs (each a single root merge of the
-			    full config). Paste them VERBATIM as the page's modelConfigDiff / viewModelConfigDiff
-			    (see DATA SECTIONS below). This is the supported way to apply the data sections.
+			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs. BOTH are a set of FOCUSED
+			    targeted merges, NOT a single root merge: modelConfigDiff carries one merge per top-level key
+			    (e.g. ["dataSources"]) plus a per-array override unioned with the template's own natives;
+			    viewModelConfigDiff carries a page-owned ["attributes"] merge + per-collection augments +
+			    per-array modelConfig overrides unioned with the template's own natives. Paste them VERBATIM as
+			    the page's modelConfigDiff / viewModelConfigDiff (see DATA SECTIONS below). This is the
+			    supported way to apply the data sections.
 			  - modelConfig / viewModelConfig — the same configs in full-object form, for REFERENCE only.
 			    viewModelConfig is already FILTERED (attributes used only by dropped components removed).
 			  - adaptiveLayout — the responsive layout for each MULTI-column grid container (phone collapses to
@@ -115,11 +119,15 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   by iterating elementMap. For each entry act on its operation:
 			   - merge — the element is provided by the mobile template (a "twin", e.g. Tabs→Tabs,
 			     FeedTabContainer→FeedContainer). REUSE the existing mobileName; do NOT insert it. (Insert
-			     vs merge is the #1 mistake — the template already contains these elements.) If the mobile
-			     list template already provides the List / ListItem elements, configure them by MERGE-BY-NAME
-			     (the row goes on the ListItem element: title + body) — do NOT insert a second crt.List and
-			     do NOT put itemLayout inside a merge of the parent List (silent no-op; ListItem is a
-			     separate named element).
+			     vs merge is the #1 mistake — the template already contains these elements.) A merge entry MAY
+			     also carry a prebuilt mobileValues (for component twins whose rule declares carryProperties,
+			     e.g. FolderTree->FolderTreeActions carrying sourceSchemaName/rootSchemaName) — paste it onto
+			     the merged element verbatim, deterministically, as part of this same step. This does NOT
+			     require a separate confirmation beyond Gate M — it is a mechanical property fill-in, not a new
+			     decision. If the mobile list template already provides the List / ListItem elements, configure
+			     them by MERGE-BY-NAME (the row goes on the ListItem element: title + body) — do NOT insert a
+			     second crt.List and do NOT put itemLayout inside a merge of the parent List (silent no-op;
+			     ListItem is a separate named element).
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
 			     When elementMap[].index is present, add it to the insert op at that 0-based position (a
 			     positional element mapped above/below an anchor, e.g. above the mobile Tabs); otherwise omit
@@ -200,10 +208,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			DISCARD its data-source section and rebuild it from guide.modelConfigDiff.
 
 			- modelConfigDiff (guide.modelConfigDiff): paste it VERBATIM as the page's modelConfigDiff. It is a
-			  single root merge that carries the full modelConfig (data sources + attributes) with every
-			  attribute's "type" and "path" intact. Do not omit, rename, or reconstruct any fields. (Own columns
-			  that are not declared in attributes resolve automatically; only related/lookup-path columns are
-			  declared, and each MUST keep its "type".)
+			  set of FOCUSED targeted merges (one per top-level key, e.g. ["dataSources"], plus a per-array
+			  override unioned with the mobile template's own natives) — NOT a single root merge, so the mobile
+			  diff engine cannot replace a data source's native array and drop entries. It carries the full
+			  modelConfig (data sources + attributes) with every attribute's "type" and "path" intact. Do not
+			  omit, rename, reconstruct, or collapse it back into one root merge. (Own columns that are not
+			  declared in attributes resolve automatically; only related/lookup-path columns are declared, and
+			  each MUST keep its "type".)
 			- viewModelConfigDiff (guide.viewModelConfigDiff): paste it VERBATIM as the page's
 			  viewModelConfigDiff. The guide ALREADY removed attributes referenced only by dropped/unsupported
 			  components. Converters: reference only OOTB mobile converters; a definitive mobile converter list

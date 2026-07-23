@@ -110,6 +110,26 @@ public sealed class ComponentMappingRule {
 	[JsonPropertyName("mobile")]
 	public string Mobile { get; init; }
 
+	/// <summary>
+	/// Optional mobile component TYPE of the mapped element (e.g. "crt.FolderTreeActions"). Set it only
+	/// together with <see cref="CarryProperties"/> and only when the web type has no same-name twin in the
+	/// mobile registry (so the type cannot be inferred from the web node) — it is used to shape-coerce the
+	/// carried values against the mobile registry contract. Null for a plain advisory twin (e.g. DataTable).
+	/// </summary>
+	[JsonPropertyName("mobileType")]
+	public string MobileType { get; init; }
+
+	/// <summary>
+	/// Optional whitelist of web-node property names carried VERBATIM onto the mapped mobile element as a
+	/// deterministic merge — e.g. <c>["sourceSchemaName", "rootSchemaName"]</c> for the folder tree, whose
+	/// app-authored folder-schema binding the mobile template does not itself supply. Without this the web
+	/// node (inherited template chrome) is pruned and the value is lost. Empty (the default) keeps the
+	/// advisory-merge behavior — e.g. <c>DataTable → List</c>, whose grid→row transform is structural, not a
+	/// property copy, and is left to the caller per <c>componentSuggestions</c>.
+	/// </summary>
+	[JsonPropertyName("carryProperties")]
+	public IReadOnlyList<string> CarryProperties { get; init; } = [];
+
 	/// <summary>Business meaning of the element (e.g. "Primary list component"), not conversion mechanics.</summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }

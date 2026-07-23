@@ -13,13 +13,14 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 internal static partial class ComponentRegistryDocsPath {
 	/// <summary>
-	/// Permitted shape: starts with <c>docs/</c> (component/composite docs) or
+	/// Permitted shape: starts with one of the docs namespaces — <c>docs/</c>
+	/// (web/component registry), <c>mobile-docs/</c> (mobile registry), or
 	/// <c>request-docs/</c> (Freedom UI request docs referenced from
-	/// <c>RequestRegistry.json</c>), followed by one or more dot/dash/underscore-friendly
+	/// <c>RequestRegistry.json</c>) — followed by one or more dot/dash/underscore-friendly
 	/// segments separated by <c>/</c>, ending in <c>.md</c>. No <c>..</c>, no leading
 	/// slash, no backslashes, no whitespace.
 	/// </summary>
-	[GeneratedRegex(@"^(?:docs|request-docs)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.md$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"^(?:mobile-|request-)?docs/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.md$", RegexOptions.CultureInvariant)]
 	private static partial Regex AllowedPathRegex();
 
 	/// <summary>
