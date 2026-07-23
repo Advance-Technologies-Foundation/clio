@@ -155,6 +155,10 @@ internal static class GuidanceCatalog {
 				"record-rights",
 				"Canonical MCP guidance for record-level access rights: read/change who can access a record or dashboard with get-record-rights / set-record-rights, addressing a dashboard as SysSchemaAdminUnit + schema UId, and the record-level (SysSchemaAdminUnitRight) vs operation-level (SysSchemaOperationRight) distinction.",
 				RecordRightsGuidanceResource.Guide),
+			["workplaces"] = Create(
+				"workplaces",
+				"Canonical MCP guidance for managing Creatio navigation workplaces: create/update/delete a SysWorkplace, grant/remove role access (SysAdminUnitInWorkplace), and add/remove/move sections (SysModuleInWorkplace) via the odata tools, shipping every change as a package data binding.",
+				WorkplacesGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
