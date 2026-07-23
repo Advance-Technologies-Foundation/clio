@@ -104,14 +104,6 @@
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
 				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
-
-				<!--
-				 NU1903 : PowerShell.SDK pulls a vulnerable System.Security.Cryptography.Xml
-				 transitively. Pin directly to the patched build (version comes from
-				 Directory.Packages.props, currently 10.0.10 — fixes the GHSA-23rf-6693-g89p
-				 advisory family that flagged 10.0.6/10.0.9).
-				-->
-				<PackageReference Include="System.Security.Cryptography.Xml" />
 			</ItemGroup>
 		</When>
 		<Otherwise>
@@ -141,6 +133,9 @@
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />
+		<!-- PowerShell brings this package transitively. Pin the audited dependency graph for every target;
+		     framework-provided assemblies still require a current installed ASP.NET Core runtime. -->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
 		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />
 		<PackageReference Include="OneOf" />

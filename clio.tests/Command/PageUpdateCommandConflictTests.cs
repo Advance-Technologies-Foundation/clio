@@ -26,6 +26,20 @@ public sealed class PageUpdateCommandConflictTests
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	// A valid web body that inserts a crt.IndicatorWidget whose title binds an unregistered, non-Usr,
+	// non-DS-bound localizable key — the ENG-93098 shape.
+	private const string MetricBodyUnregisteredTitle =
+		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\"," +
+		"\"parentName\":\"Main\",\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+		"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
+		"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private PageUpdateCommand _command;
@@ -331,5 +345,47 @@ public sealed class PageUpdateCommandConflictTests
 		response.Conflict.Should().BeTrue(because: "dry-run reports the same conflict contract as a real save");
 		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.ChecksumMismatch,
 			because: "the conflict reason is identical regardless of dry-run");
+	}
+
+	[Test]
+	[Description("TryUpdatePage on a dry run surfaces an unresolved inserted widget title as a WARNING (not a hard failure) so update-page --dry-run does not report clean for exactly the ENG-93098 body a real save rejects.")]
+	public void TryUpdatePage_ShouldWarnOnUnresolvedWidgetTitle_WhenDryRun() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions(dryRun: true);
+		options.Body = MetricBodyUnregisteredTitle;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "a dry run validates without saving and must not hard-fail on the body-only heuristic (no schema context)");
+		response.Success.Should().BeTrue(because: "dry run does not save, so it reports success");
+		response.DryRun.Should().BeTrue(because: "the response reflects dry-run mode");
+		response.Warnings.Should().NotBeNullOrEmpty(
+			because: "the unresolved widget title must surface as a dry-run warning instead of a silent green result");
+		response.Warnings.Should().Contain(
+			w => w.Contains("IndicatorWidget_CriticalRequests_title") && w.Contains("render raw"),
+			because: "the advisory must name the unresolved key and the raw-render failure");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryUpdatePage on a dry run does NOT warn when the widget-title resource is supplied — the binding will resolve.")]
+	public void TryUpdatePage_ShouldNotWarnOnWidgetTitle_WhenDryRunAndResourceProvided() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions(dryRun: true);
+		options.Body = MetricBodyUnregisteredTitle;
+		options.Resources = "{\"IndicatorWidget_CriticalRequests_title\": \"Critical Requests\"}";
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the dry run validates successfully");
+		response.Success.Should().BeTrue(because: "dry run does not save");
+		response.Warnings.Should().BeNullOrEmpty(
+			because: "the title key is registered via resources, so the binding resolves and no warning is emitted");
 	}
 }
