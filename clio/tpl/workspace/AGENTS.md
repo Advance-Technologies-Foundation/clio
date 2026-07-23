@@ -11,7 +11,7 @@ This is a repository created by `clio` for `Creatio` CRM development. Use this f
 Typical locations:
 - Backend C#: `./packages/<PACKAGE_NAME>/Files/src/cs/`
 - A package may build a standalone assembly via `./packages/<PACKAGE_NAME>/Files/<PACKAGE_NAME>.csproj` (output → `Files/Bin/...`).
-- Entry-point web services: `./packages/<PACKAGE_NAME>/Files/src/cs/EntryPoints/WebService/`
+- Entry-point web services: `./packages/<PACKAGE_NAME>/Files/src/cs/EntryPoints/WebService/` or `./packages/<PACKAGE_NAME>/Files/src/cs/EntryPoints/WebServices/`
 - Configuration schemas (entities, pages, processes, source-code units): `./packages/<PACKAGE_NAME>/Schemas/<SCHEMA_NAME>/` (each is `metadata.json` + `properties.json` + optional `<Schema>.cs`).
 
 ### /projects (Angular / Freedom UI clients)
@@ -136,8 +136,8 @@ Paging uses `options.pagingConfig { rowsOffset, rowCount }`; sorting uses
 
 ## Agent usage guidance
 
-- For custom configuration web-service implementation or review under `packages/<PKG>/Files/src/cs/EntryPoints/WebService`, call `get-guidance name=configuration-webservice` before planning or editing.
-- For corresponding test work under `tests/<PKG>/EntryPoints/WebService`, or whenever the production change includes tests, also call `get-guidance name=configuration-webservice-tests`.
+- For custom configuration web-service implementation or review under `packages/<PKG>/Files/src/cs/EntryPoints/WebService` or `packages/<PKG>/Files/src/cs/EntryPoints/WebServices`, call `get-guidance name=configuration-webservice` before planning or editing.
+- For corresponding test work under `tests/<PKG>/EntryPoints/WebService` or `tests/<PKG>/EntryPoints/WebServices`, or whenever the production change includes tests, also call `get-guidance name=configuration-webservice-tests`.
 - If a `dbhub` (or equivalent) MCP database tool is configured, use it to **verify** data-layer outcomes directly (row counts, column types, stored content) instead of guessing.
 
 ## Workspace diary

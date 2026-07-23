@@ -6802,3 +6802,10 @@ Decision: Treat both as existing MCP guidance articles; no duplicate workspace s
 Discovery: Current master exposes `docs://mcp/guides/feature-toggle` and `docs://mcp/guides/feature-toggle-tests` through `ComposableAppSkillGuidanceResources`, including three supporting references for each and bidirectional production/test pairing. `GuidanceGetToolTests` includes both names in the recoverable catalog. Neither guide currently has a row in `RoutingGuidanceResource`.
 Files: clio/Command/McpServer/Resources/ComposableAppSkillGuidanceResources.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio/Command/McpServer/Resources/RoutingGuidanceResource.cs
 Impact: Agents can retrieve both guides by exact name today, but routing or template instructions must name them explicitly until the routing map is extended.
+
+## 2026-07-23 09:43 – Harden issue 951 template guidance drift guard
+Context: Mandatory pre-PR agentic review found that the initial template fix covered only the historical singular WebService directory and that the existing drift test did not parse `get-guidance name=...` references.
+Decision: Cover both WebService and canonical WebServices directory conventions and extend the shipped-template drift test to resolve every explicitly named guidance article through `GuidanceCatalog`.
+Discovery: The previous resident-or-bridged scanner intentionally tokenized only standalone backticked kebab-case names, so both new guide pointers were invisible to it. The focused fixture now contains seven passing tests and explicitly pins the implementation/test guide pair.
+Files: clio/tpl/workspace/AGENTS.md, clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs
+Impact: Workspace templates cannot silently regress to a renamed or removed configuration web-service guide, and both directory conventions trigger the live guidance.

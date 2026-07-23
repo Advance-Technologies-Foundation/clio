@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using CommandLine;
 using FluentAssertions;
@@ -50,6 +51,10 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	private static readonly Regex BacktickedKebabToken = new(
 		@"`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`",
 		RegexOptions.Compiled);
+
+	private static readonly Regex GuidanceNameReference = new(
+		@"get-guidance\s+name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
+		RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
 	// `do\W{1,4}not` tolerates markdown emphasis between the words ("Do **NOT** use").
 	private static readonly Regex NegationMarker = new(
@@ -178,7 +183,42 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		// Assert
 		violations.Should().BeEmpty(
 			because: "shipped static guidance is frozen in every user/partner repo; a long-tail tool named " +
-				"imperatively without the discovery bridge dead-ends the agent (the PR #743 regression)");
+			"imperatively without the discovery bridge dead-ends the agent (the PR #743 regression)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every get-guidance article named in a SHIPPED template resolves through the current guidance catalog.")]
+	public void ShippedTemplates_ShouldReferenceRegisteredGuidance_WhenNamingGuidanceArticles() {
+		// Arrange
+		(string Name, string Path)[] templates = [
+			("tpl/workspace/AGENTS.md", TemplatePath("workspace", "AGENTS.md")),
+			("tpl/ui-project/AGENTS.md", TemplatePath("ui-project", "AGENTS.md")),
+			("tpl/ui-project-Empty/AGENTS.md", TemplatePath("ui-project-Empty", "AGENTS.md"))
+		];
+
+		// Act
+		HashSet<string> references = new(StringComparer.OrdinalIgnoreCase);
+		List<string> unresolved = [];
+		foreach ((string name, string path) in templates) {
+			string text = File.ReadAllText(path);
+			foreach (Match match in GuidanceNameReference.Matches(text)) {
+				string guidanceName = match.Groups[1].Value;
+				references.Add(guidanceName);
+				if (!GuidanceCatalog.TryGet(guidanceName, out _)) {
+					unresolved.Add($"{name}: '{guidanceName}'");
+				}
+			}
+		}
+
+		// Assert
+		references.Should().Contain(
+			["configuration-webservice", "configuration-webservice-tests"],
+			because: "the workspace template must route configuration web-service implementation and tests " +
+				"to their canonical live guidance articles");
+		unresolved.Should().BeEmpty(
+			because: "shipped templates are frozen into user workspaces and every named live guidance article " +
+				"must remain resolvable");
 	}
 
 	[Test]
