@@ -6823,3 +6823,17 @@ Decision: Move the existing direct System.Security.Cryptography.Xml pin outside 
 Discovery: The net10 target had only the vulnerable transitive cryptography package, while a fresh audited restore also exposed a pre-existing NU1605 downgrade from Microsoft.Data.SqlClient 7.0.2. On net10, the cryptography package is supplied by Microsoft.AspNetCore.App, so the installed shared runtime must also be current.
 Files: Directory.Packages.props, clio/clio.csproj, clio/docs/commands/mcp-http.md, clio/help/en/mcp-http.txt
 Impact: Audited restores succeed for both clio target frameworks; full unit tests, Ring tests, and Windows x64 NativeAOT publish pass.
+
+## 2026-07-23 12:16 – Handle read-only Codex toolkit cache files (#962)
+Context: `clio update-toolkit` failed before invoking Codex because legacy cache cleanup recursively deleted a read-only Git pack index.
+Decision: Keep the repair scoped to `CodexAgent` and route only its installer-owned legacy directories through the existing read-only-safe deletion path.
+Discovery: `System.IO.Abstractions.TestingHelpers` reproduces the Windows `UnauthorizedAccessException`, so a unit test can pin both ordinary directory cleanup and nested read-only Git pack cleanup without physical filesystem I/O.
+Files: clio/Common/Skills/Agents/CodexAgent.cs, clio.tests/Common/Skills/SkillAgentTests.cs
+Impact: Codex toolkit install/update can refresh caches containing read-only Git objects without changing cleanup behavior for other agents.
+
+## 2026-07-23 12:31 – Bound Codex cache cleanup at reparse points (#962)
+Context: Comprehensive pre-PR review found that the first repair reused a helper that follows directory links and can spin indefinitely after deletion.
+Decision: Clear read-only attributes only within ordinary directories, treat file and directory reparse points as leaves, then use recursive directory deletion, which unlinks reparse points without traversing them.
+Discovery: The legacy delete primitive already preserves the link boundary; only its read-only preparation was missing. A substitute-backed unit test pins that no file or directory enumeration occurs beneath a reparse-point child.
+Files: clio/Common/Skills/Agents/CodexAgent.cs, clio.tests/Common/Skills/SkillAgentTests.cs
+Impact: The update handles read-only Git objects without following cache links or inheriting the existing unbounded post-delete spin.
