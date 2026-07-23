@@ -63,6 +63,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleBodyTooDeeplyNested = "body-too-deeply-nested";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
+	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
 
 	#endregion
 
@@ -138,6 +139,7 @@ internal static class PageBodyAstLinter {
 		switch (node) {
 			case ObjectExpression obj:
 				CheckSchemaSectionShapes(obj, findings);
+				CheckEntityDataSourceStaticFilters(obj, findings);
 				break;
 			case Property prop:
 				CheckProperty(prop, ctx, findings);
@@ -267,6 +269,50 @@ internal static class PageBodyAstLinter {
 				Line: entry.Location.Start.Line,
 				Column: entry.Location.Start.Column + 1,
 				Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
+		}
+	}
+
+	// Rule 11: a `crt.EntityDataSource` descriptor that carries a `config.filters` block.
+	// The EntityDataSource consumes ONLY `entitySchemaName` and `attributes` from its
+	// `config`; `config.filters` is never read at runtime, so update-page persists it and
+	// returns success while the list silently shows UNFILTERED data (ENG-93867). Keyed off
+	// the object shape (`type` literal == "crt.EntityDataSource" AND a `config`
+	// ObjectExpression owning a DIRECT `filters` key), NOT tree position — no valid Freedom
+	// Designer output uses this key, so the match surface is exact. No regex counterpart in
+	// SchemaValidationService — the invalid shape is JSON-structural, not a text pattern the
+	// regex layer inspects. Warning severity: the block is an invisible no-op, not a
+	// structural break, so it must not fail the write.
+	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, List<PageBodyLintFinding> findings) {
+		Property configProp = null;
+		bool isEntityDataSource = false;
+		foreach (Node element in obj.Properties) {
+			if (!TryGetInitProperty(element, out Property prop, out string key)) {
+				continue;
+			}
+			if (key == "type" && prop.Value is Literal { Value: "crt.EntityDataSource" }) {
+				isEntityDataSource = true;
+			} else if (key == "config" && prop.Value is ObjectExpression) {
+				configProp = prop;
+			}
+		}
+		if (!isEntityDataSource || configProp is null) {
+			return;
+		}
+		var configObj = (ObjectExpression)configProp.Value;
+		foreach (Node element in configObj.Properties) {
+			if (!TryGetInitProperty(element, out Property filtersProp, out string configKey)) {
+				continue;
+			}
+			if (configKey != "filters") {
+				continue;
+			}
+			findings.Add(new PageBodyLintFinding(
+				Rule: RuleEntityDataSourceStaticFilters,
+				Severity: LintSeverity.Warning,
+				Line: filtersProp.Location.Start.Line,
+				Column: filtersProp.Location.Start.Column + 1,
+				Message: "`config.filters` on a `crt.EntityDataSource` is never applied — the data source reads only `entitySchemaName` and `attributes`. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
+			return; // one finding per data source is enough
 		}
 	}
 

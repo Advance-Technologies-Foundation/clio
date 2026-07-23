@@ -523,6 +523,43 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance");
 	}
 
+	[Test]
+	[Description("validate-page returns a WARNING (not a hard failure) when a crt.EntityDataSource carries a config.filters block — the key is a silent runtime no-op, so the agent is advised to move the static filter to a _PredefinedFilter attribute while the body stays valid (ENG-93867). Proves the entity-data-source-static-filters lint rule surfaces through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about config.filters on a crt.EntityDataSource")]
+	[AllureDescription("Sends a body whose modelConfigDiff registers a crt.EntityDataSource with a config.filters block and verifies validate-page surfaces an advisory WARNING carrying entity-data-source-static-filters while keeping valid=true — the block is an invisible no-op, not a structural break.")]
+	public async Task PageValidateTool_Should_Warn_On_EntityDataSource_Config_Filters() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithDataSourceFilters = ValidPageBody.Replace(
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[" +
+				"{\"operation\":\"merge\",\"path\":[\"dataSources\"],\"values\":{" +
+				"\"EmailDS\":{\"type\":\"crt.EntityDataSource\",\"scope\":\"viewElement\",\"config\":{" +
+				"\"entitySchemaName\":\"Activity\",\"attributes\":{\"Title\":{\"path\":\"Title\"}}," +
+				"\"filters\":{\"items\":{},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6,\"rootSchemaName\":\"Activity\"}}}}}" +
+				"]/**SCHEMA_MODEL_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithDataSourceFilters);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "config.filters on a crt.EntityDataSource is a silent no-op, not a structural break — validate-page must advise rather than block so the page still saves");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a Warning-severity lint finding must not demote content-ok — only Error findings block");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must flag the ignored config.filters block as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("entity-data-source-static-filters", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the warning to the related-list static-filter guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
