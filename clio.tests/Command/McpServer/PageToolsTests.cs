@@ -1927,6 +1927,35 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("validate-page returns valid:true with content-ok:true for the ENG-92940 reproduction body — a properly bound crt.ImageInput with a literal tooltip — proving the fix through the tool's REAL aggregate content-ok composition, not a hand-picked validator subset.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenImageInputCarriesLiteralTooltip_ReturnsValidAndContentOk() {
+		// Arrange
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		string body = CreatePageBody(
+			viewConfigDiff: """
+				[
+					{"operation":"insert","name":"OwnerFlex","values":{"type":"crt.FlexContainer","direction":"column"}},
+					{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
+				]
+				""",
+			viewModelConfigDiff: """[{"operation":"merge","path":[],"values":{"attributes":{"UsrPhoto":{"modelConfig":{"path":"PDS.UsrPhoto"}}}}}]""");
+		PageValidateArgs args = new(body);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the ImageInput literal tooltip is the only working authoring form and must validate (ENG-92940)");
+		response.Validation.ContentOk.Should().BeTrue(
+			because: "the tool's full content-ok composition must accept the reproduction body once the tooltip false-positive is removed");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no content validator should report an error for the reproduction body");
+	}
+
+	[Test]
 	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
 	[Category("Unit")]
 	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {

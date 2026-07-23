@@ -42,6 +42,7 @@ internal static class McpToolDescriptions {
 		"(custom titles, button captions, validator messages, explicit caption overrides). Omit keys that " +
 		"match an existing DS-bound attribute (auto-provided). Inline placeholder/label/caption/title/tooltip " +
 		"literals in the body are REJECTED — bind via $Resources.Strings.<Key> and register the key here " +
-		"(an unregistered inserted widget/metric title is REJECTED too). " +
+		"(an unregistered inserted widget/metric title is REJECTED too), except for the rare controls whose " +
+		"property does not read a resource (e.g. crt.ImageInput.tooltip, which must stay a literal). " +
 		"See get-guidance `page-schema-resources` for the full rule.";
 }
