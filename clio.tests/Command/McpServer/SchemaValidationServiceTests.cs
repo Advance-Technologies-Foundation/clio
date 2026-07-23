@@ -2980,6 +2980,35 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Regression lock for the per-node currentType scoping invariant: the crt.ImageInput.tooltip exemption is derived per object and must not bleed to sibling nodes. A body mixing an exempt ImageInput literal tooltip with a sibling non-exempt crt.Input literal placeholder must flag only the non-exempt node (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_MixedExemptAndNonExemptSiblings_FlagsOnlyNonExemptNode() {
+		// Arrange — one body, two sibling nodes: the exempt ImageInput tooltip and a second exempt
+		// ImageInput tooltip (cross-node bleed guard) alongside a non-exempt crt.Input placeholder.
+		// The exemption is resolved from each node's own type, so it must not leak across siblings.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"Upload a photo of the task owner"}},
+				{"operation":"insert","name":"UsrCover","values":{"type":"crt.ImageInput","value":"$UsrCover","tooltip":"Upload a cover image"}},
+				{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","placeholder":"name@firm.com"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the non-exempt crt.Input placeholder literal must still be rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("EmailField"),
+			because: "exactly the non-exempt sibling must be flagged");
+		result.Errors.Should().NotContain(e => e.Contains("UsrPhoto"),
+			because: "the exempt ImageInput tooltip must not be flagged");
+		result.Errors.Should().NotContain(e => e.Contains("UsrCover"),
+			because: "the exemption must not bleed across sibling nodes — the second ImageInput stays exempt");
+	}
+
+	[Test]
 	[Description("The mobile localizable-text rule shares the same scan engine as the web rule, so the crt.ImageInput.tooltip exemption applies on mobile too. Locks the shared-engine behavior — the mobile ImageInput runtime was not independently verified; the ticket scope is web (ENG-92940).")]
 	public void ValidateMobileLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
 		// Arrange
