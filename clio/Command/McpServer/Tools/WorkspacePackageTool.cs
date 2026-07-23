@@ -72,6 +72,32 @@ public class CreateTestProjectTool(
 	}
 }
 
+/// <summary>MCP tool for creating a portable Creatio integration-test project.</summary>
+public class CreateIntegrationTestProjectTool(
+	CreateIntegrationTestProjectCommand command,
+	ILogger logger)
+	: BaseTool<CreateIntegrationTestProjectOptions>(command, logger) {
+
+	/// <summary>Creates a scenario-neutral integration-test project in a local clio workspace.</summary>
+	[McpServerTool(Name = "new-integration-test-project", ReadOnly = false, Destructive = false,
+		Idempotent = false, OpenWorld = false)]
+	[Description("""
+		Creates a portable NUnit, ATF.Repository, FluentAssertions, and Allure integration-test project.
+		Read get-guidance name=integration-testing before adding scenario-specific tests. The generated
+		project accepts Creatio URL, runtime, and password or access-token authentication from NUnit
+		parameters or environment variables and does not depend on a local clio environment registry.
+		""")]
+	public CommandExecutionResult Create(
+		[Description("new-integration-test-project parameters")] [Required] CreateIntegrationTestProjectArgs args) {
+		CreateIntegrationTestProjectOptions options = new() {
+			PackageName = args.PackageName,
+			TargetFramework = args.TargetFramework ?? "net10.0",
+			WorkspacePath = args.WorkspacePath
+		};
+		return InternalExecute(options);
+	}
+}
+
 /// <summary>
 /// Arguments for the <c>add-package</c> MCP tool.
 /// </summary>
@@ -118,3 +144,12 @@ public record CreateTestProjectArgs(
 	[property:Required]
 	string EnvironmentName
 );
+
+/// <summary>Arguments for the <c>new-integration-test-project</c> MCP tool.</summary>
+public record CreateIntegrationTestProjectArgs(
+	[property: JsonPropertyName("package-name"), Description("Workspace package name"), Required]
+	string PackageName,
+	[property: JsonPropertyName("workspace-path"), Description("Absolute path to the local workspace"), Required]
+	string WorkspacePath,
+	[property: JsonPropertyName("target-framework"), Description("Generated project target framework; defaults to net10.0")]
+	string TargetFramework = null);

@@ -24,6 +24,49 @@ public sealed class SettingsRepositoryFeatureTests {
 	}
 
 	[Test]
+	[Description("Persists a normalized IIS certificate thumbprint at the appsettings root and clears it without affecting environments.")]
+	public void PinnedIisCertificateThumbprint_ShouldRoundTrip_AndClear() {
+		// Arrange
+		SettingsRepository sut = new(_fileSystem);
+
+		// Act
+		sut.SetPinnedIisCertificateThumbprint("aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc dd");
+		SettingsRepository pinned = new(_fileSystem);
+		string persistedThumbprint = pinned.GetPinnedIisCertificateThumbprint();
+		pinned.SetPinnedIisCertificateThumbprint(null);
+		SettingsRepository cleared = new(_fileSystem);
+
+		// Assert
+		persistedThumbprint.Should().Be("AABBCCDDEEFF00112233445566778899AABBCCDD",
+			because: "thumbprints should be stored in one canonical uppercase hex representation");
+		cleared.GetPinnedIisCertificateThumbprint().Should().BeNull(
+			because: "clearing the preference should remove it from subsequent repository loads");
+		cleared.GetAllEnvironments().Should().NotBeEmpty(
+			because: "updating the root certificate preference must preserve registered environments");
+	}
+
+	[Test]
+	[Description("Refreshes an existing stale generated schema from the bundled template and leaves no temporary artifacts.")]
+	public void Constructor_ShouldRefreshStaleSchema_WithoutLeavingTemporaryFiles() {
+		// Arrange
+		const string currentTemplate = "{\"schema-version\":2}";
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
+		_fileSystem.AddFile(templatePath, new MockFileData(currentTemplate));
+		_fileSystem.AddFile(SettingsRepository.SchemaFilePath, new MockFileData("{\"schema-version\":1}"));
+
+		// Act
+		_ = new SettingsRepository(_fileSystem);
+		_ = new SettingsRepository(_fileSystem);
+
+		// Assert
+		_fileSystem.File.ReadAllText(SettingsRepository.SchemaFilePath).Should().Be(currentTemplate,
+			because: "existing generated schemas must receive new appsettings fields from the bundled template");
+		_fileSystem.AllFiles.Should().NotContain(path => path.Contains("schema.json.", StringComparison.Ordinal)
+			&& path.EndsWith(".tmp", StringComparison.Ordinal),
+			because: "atomic refresh and an idempotent second load must clean every temporary schema artifact");
+	}
+
+	[Test]
 	[Description("IsFeatureEnabled returns false when the feature flag is absent from settings.")]
 	public void IsFeatureEnabled_ShouldReturnFalse_WhenFeatureAbsent() {
 		// Arrange

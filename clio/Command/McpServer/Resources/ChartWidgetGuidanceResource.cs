@@ -85,7 +85,7 @@ public sealed class ChartWidgetGuidanceResource {
 		       ## Filters
 
 		       - Static filters live in each series' `data.providing.filters.filter`; the filter/leaf contract
-		         is owned by the `esq-filters` guidance. Keep the filter-group envelope even when empty.
+		         is owned by the `esq-filters-frontend` guidance. Keep the filter-group envelope even when empty.
 		       - "Filter by page data" on a record page is wiring you MUST author — see the next section.
 
 		       ## Filter by page data (record pages) — you MUST wire it
@@ -130,23 +130,15 @@ public sealed class ChartWidgetGuidanceResource {
 		         `hideTools` flags: `hideTitle: true` removes the title, `hideTools: true` removes the header tools
 		         (including the full-screen button). Leave both unset so the platform shows the title and full-screen.
 
-		       ## Style (theme) by page surface — match the indicator-widget policy
+		       ## Style (theme)
 
-		       Pick `config.theme` from the surface you add the chart to (this also covers a `tsfunnel`/funnel chart —
-		       it is a chart-widget series). If the user named a style/theme in the prompt (plain white, fully colored,
-		       glass, or an explicit theme value), use that and IGNORE these defaults.
+		       The card theme is set by the SURFACE's guide, not here: `dashboard-and-home-page-layout` for dashboards and home
+		       pages (plain-white / `config.theme` "without-fill"), `desktop-page` for desktops (glassmorphism).
+		       This also covers a `tsfunnel`/funnel chart — it is a chart-widget series. If the user explicitly
+		       names a different style/theme in the prompt, use that instead.
 
-		       `config.color` is REQUIRED (see Title and header). It colors the title on `without-fill` and the card on
-		       `full-fill`. On Home guess it from other components; for glassmorphism mirror the indicator color;
-		       otherwise "dark-blue" is a safe default.
-
-		       - **Dashboards** (page inheriting `BaseDashboardTemplate`): plain-white card policy — `theme`: "without-fill".
-		         This WINS even if the dashboard sits on a Home page or Desktop. See the `dashboards` guidance.
-		       - **Desktops** (`BaseDesktop` in the page hierarchy): `layout.color`: "transparent", `theme`: "glassmorphism".
-		       - **Home pages** (`BaseHomePage` in the page hierarchy): `theme`: "full-fill"; guess the color from other
-		         components on the page.
-		       - **List pages and Form pages** (everything else): `theme`: "without-fill". Never use a transparent color
-		         unless the user explicitly asked for glassmorphism (applies to all surfaces).
+		       `config.color` is REQUIRED (see Title and header): it colors the title. Default to "dark-blue" when
+		       the user gives none.
 
 		       ## Placement and preserving existing widgets
 
@@ -157,12 +149,15 @@ public sealed class ChartWidgetGuidanceResource {
 		         (platform default 9; funnels 15). In a `crt.FlexContainer` the parent uses `FlexLayoutConfig` —
 		         set `layoutConfig.height` >= 350 (px) so the flex child doesn't collapse. The same floor applies
 		         to list/pivot widgets; metric/gauge TILES are exempt (they stay ~3 rows).
+		         EXCEPTION — on a DESKTOP page (`CentralAreaDesktopTemplate`) the desktop sizing rule replaces
+		         this floor: every widget (charts included) may be as short as 3 rows, targeting <= 10 rows total.
+		         See `desktop-page`.
 		       - For WHERE a chart goes on a dashboard, HOW BIG it is, and HOW it is styled, see the
 		         `dashboards` guidance.
 		       - On a DESKTOP page whose parent is `CentralAreaDesktopTemplate`, insert the chart into the slot
 		         `FixedGridSlot_qwe4asds` (the template's editable area; an ~8-column, 60px-row grid — fixed name, not a
 		         per-page id), NOT the top `Main` (the template's locked frame) — else the chart can't be moved, resized,
-		         or deleted in the designer. `parentName: "FixedGridSlot_qwe4asds"`. See `page-modification`.
+		         or deleted in the designer. `parentName: "FixedGridSlot_qwe4asds"`. See `desktop-page`.
 		       - Before saving, validate each series' aggregation + filter with `execute-esq` against the
 		         target environment to confirm the returned data matches the intended metric. For a by-date-part
 		         chart, sanity-check the periods against the real data — a single period is FINE when the data

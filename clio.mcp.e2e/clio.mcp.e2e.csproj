@@ -20,6 +20,7 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="NRedisStack" />
+		<PackageReference Include="Npgsql" />
 		<PackageReference Include="NUnit" />
 		<PackageReference Include="NUnit.Analyzers" />
 		<PackageReference Include="NUnit3TestAdapter" />

@@ -127,6 +127,7 @@ public static class WebToMobileAnalysisService {
 		//    provides those (Scaffold + header). Only the page's DELTA over its web template is
 		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
+		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
 			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames);
@@ -138,6 +139,16 @@ public static class WebToMobileAnalysisService {
 		var structure = new List<SourceComponentInfo>();
 		var namesByType = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 		WalkStructure(tree, parentName: null, map, webByType, mobileByType, structure, namesByType);
+
+		// Diagnostic: the source page had components but the converted layout is empty. Do not return this
+		// silently — a caller would mistake it for a legitimately layout-less page. The usual cause is an
+		// unresolved web-template baseline (a replacing schema layered over a same-named base whose chrome
+		// subtraction consumed the whole tree).
+		string layoutResolution = structure.Count == 0 && sourceNamedCount > 0
+			? $"empty: the source page has {sourceNamedCount} component(s) but the converted layout is empty — "
+				+ "the web-template baseline may be unresolved (e.g. a replacing schema over a same-named base, "
+				+ "or the parent template could not be read). Verify the source page and its template ancestry."
+			: null;
 
 		// 2. Component suggestions: classify each distinct present web type via the rules matrix,
 		//    then the registry type sets (direct/unsupported/manual).
@@ -219,6 +230,7 @@ public static class WebToMobileAnalysisService {
 			SourceType = SourceTypeFreedomWeb,
 			SourceTemplate = string.IsNullOrWhiteSpace(sourceTemplate) ? null : sourceTemplate,
 			SourceStructure = structure,
+			LayoutResolution = layoutResolution,
 			WebOnlySections = webOnly.Count > 0 ? webOnly : null,
 			DataSources = dataSources.Count > 0 ? dataSources : null,
 			ModelConfig = modelConfig,

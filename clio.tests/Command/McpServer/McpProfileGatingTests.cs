@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -23,27 +24,42 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpProfileGatingTests
 {
-	// The surface keeps the core set + the 3 always-on lazy types. 18 core types +
-	// {ClioRunTool, ClioRunDestructiveTool} (ToolContractGetTool is already a core member) = 20
-	// distinct flat tool TYPES. Per-TYPE granularity (ADR resolved decision #5) keeps the WHOLE class,
-	// and several core classes declare more than one [McpServerTool] (DataForgeTool declares 8 — only
-	// 3 are "core" but all 8 ride along; SysSettings/Application/Entity classes a few each), so the
-	// registered TOOL count (what lands in tools/list) is ~27, higher than the 20 TYPE count. The
-	// budget asserts on the registered tool count and is set to 30 to leave a small headroom over the
-	// current 27 while still catching a regression that would re-grow the surface toward the ~124-tool
-	// full catalog.
-	private const int MaxLazyToolCount = 30;
+	// The surface keeps the core set + the 3 always-on lazy types. Moving SysSettingGetTool /
+	// SysSettingsListTool to the long tail dropped 2 single-method resident types (and thus exactly 2
+	// resident tools, no ride-along — unlike DataForgeTool, whose class still bundles 8 methods for only
+	// 3 "core" reasons). Per-TYPE granularity (ADR resolved decision #5) keeps the WHOLE class, so the
+	// registered TOOL count (what lands in tools/list) can still exceed the TYPE count while
+	// DataForgeTool remains resident. Measured at 26 tools today; the budget is set to 28 to leave a
+	// small headroom while still catching a regression that would re-grow the surface toward the
+	// ~124-tool full catalog.
+	private const int MaxLazyToolCount = 28;
 
 	// tools/list budget ceiling. ADR target is ~5-8k tokens (~32k bytes at ~4 bytes/tok) for the clio
 	// surface. We measure the serialized ProtocolTool set (name + description + input schema) as a
 	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
 	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
-	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet is
-	// tightened to 34k bytes — below the post-slim measurement with headroom for master's growth
-	// (validate-page version param + composites data) — to lock in the win and catch any silent re-growth.
-	private const int MaxLazyToolsSerializedBytes = 34 * 1024;
+	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ceiling grew to
+	// 35*1024 when origin/master added resident tools (desktop-page, related-page-binding, business-rule
+	// CRUD, ...), and to 39*1024 when get-request-info (the Freedom UI request catalog, ~3.1k of
+	// description + schema) joined the resident core tools. Moving get-sys-setting / list-sys-settings
+	// to the long tail brought the measured payload down to 36852 bytes; the ratchet is lowered to
+	// 37*1024 (37888) — just above the measurement — to lock in that win. Each raise/drop is a
+	// deliberate budget decision; the ratchet exists so the next resident change trips it and forces
+	// that decision again.
+	private const int MaxLazyToolsSerializedBytes = 37 * 1024;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
+
+	/// <summary>
+	/// The default-surface predicate for the budget ratchets: every ungated type is enabled,
+	/// every <see cref="FeatureToggleAttribute"/>-gated type is disabled — exactly the
+	/// fail-closed default of <c>IFeatureToggleService</c> in a fresh install. Gated
+	/// experimental CORE tools do not ship in the default <c>tools/list</c>, so they must
+	/// not consume the byte budget; removing a <c>[FeatureToggle]</c> lands the tool's cost
+	/// on the ratchet at exactly the moment the deliberate budget decision is due.
+	/// </summary>
+	private static bool DefaultSurfaceEnabled(Type type) =>
+		type.GetCustomAttribute<FeatureToggleAttribute>() is null;
 
 	private static Type[] EnabledToolTypes() =>
 		McpFeatureToggleFilter.GetEnabledTypes(
@@ -70,6 +86,10 @@ public sealed class McpProfileGatingTests
 			because: "the schema-describe tool stays flat so the long tail is discoverable");
 		selected.Should().Contain(typeof(DataForgeTool),
 			because: "a core profile tool type stays flat");
+		selected.Should().NotContain(typeof(SysSettingGetTool),
+			because: "get-sys-setting was moved to the long tail; it is reachable via clio-run / get-tool-contract, not flat in tools/list");
+		selected.Should().NotContain(typeof(SysSettingsListTool),
+			because: "list-sys-settings was moved to the long tail; it is reachable via clio-run / get-tool-contract, not flat in tools/list");
 	}
 
 	[Test]
@@ -135,7 +155,7 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Registering yields a tools/list whose tool count is within the budget cap, guarding against silent core-set bloat.")]
+	[Description("Registering the DEFAULT surface (feature-gated types off, matching a fresh install) yields a tools/list whose tool count is within the budget cap, guarding against silent core-set bloat.")]
 	public void RegisterEnabledPrimitives_ShouldKeepToolCountWithinBudget_WhenCalled() {
 		// Arrange
 		ServiceCollection services = new();
@@ -143,7 +163,7 @@ public sealed class McpProfileGatingTests
 
 		// Act
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default);
+			builder, ClioAssembly, DefaultSurfaceEnabled, JsonSerializerOptions.Default);
 		int lazyToolCount = services.Count(descriptor => descriptor.ServiceType == typeof(McpServerTool));
 
 		// Assert
@@ -155,13 +175,13 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("The serialized tools/list payload stays within the byte budget, ratcheting the context cost of the core set.")]
+	[Description("The serialized DEFAULT-surface tools/list payload (feature-gated types off, matching a fresh install) stays within the byte budget, ratcheting the context cost of the core set.")]
 	public void RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled() {
 		// Arrange
 		ServiceCollection services = new();
 		IMcpServerBuilder builder = services.AddMcpServer();
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default);
+			builder, ClioAssembly, DefaultSurfaceEnabled, JsonSerializerOptions.Default);
 		using ServiceProvider provider = services.BuildServiceProvider();
 
 		// Act

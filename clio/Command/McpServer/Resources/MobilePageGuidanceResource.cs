@@ -444,10 +444,11 @@ public sealed class MobilePageGuidanceResource {
 		         (e.g. 'ForTheSelectedPage' for the current record; 'RegardlessOfThePage' for none).
 		         "For the selected page" maps to processRunType: 'ForTheSelectedPage' — setting
 		         recordIdProcessParameterName alone does NOT select the run type.
-		         FULL parameter contract is the run-process-button guide (single source of truth):
-		         call get-guidance run-process-button and resolve the process with get-process-signature
-		         FIRST. Keys in processParameters / parameterMappings / recordIdProcessParameterName are
-		         process parameter CODES, NOT captions — a wrong code is silently dropped.
+		         FULL parameter contract is the request catalog (single source of truth): call
+		         get-request-info request-type=crt.RunBusinessProcessRequest and resolve the process with
+		         get-process-signature FIRST. Keys in processParameters / parameterMappings /
+		         recordIdProcessParameterName are process parameter CODES, NOT captions — a wrong code
+		         is silently dropped.
 
 		       ── Files ───────────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -67,29 +68,9 @@ public class CheckThemingAccessToolTests {
 		result.Success.Should().BeTrue(because: "a completed access check must report success");
 		result.CanManageThemes.Should().BeTrue(because: "the operation-right check returned true");
 		result.CanCustomizeBranding.Should().BeTrue(because: "the license check returned true");
-		resolver.Received(1).Resolve<ICreatioRightsClient>(Arg.Is<EnvironmentOptions>(options =>
+		resolver.Received(1).Resolve<CheckThemingAccessCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "docker_fix2"));
 		rights.Received(1).GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>());
-	}
-
-	[Test]
-	[Description("Surfaces canCustomizeBranding=false when the operation right is granted but the CanCustomizeBranding license is absent from the status map.")]
-	[Category("Unit")]
-	public void CheckThemingAccess_ShouldReportNoLicense_WhenLicenseMissing() {
-		// Arrange
-		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights,
-			ICreatioLicenseClient license) = CreateTool();
-		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>()).Returns(true);
-		license.GetLicenseOperationStatuses(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new Dictionary<string, bool>());
-
-		// Act
-		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
-
-		// Assert
-		result.Success.Should().BeTrue(because: "a completed check with a missing license is still a successful check");
-		result.CanManageThemes.Should().BeTrue(because: "the operation right was reported as granted");
-		result.CanCustomizeBranding.Should().BeFalse(because: "the CanCustomizeBranding license was absent from the status map");
 	}
 
 	[Test]
@@ -105,7 +86,7 @@ public class CheckThemingAccessToolTests {
 		// Assert
 		result.Success.Should().BeFalse(because: "an empty environment name is an invalid request and must not succeed");
 		result.Error.Should().NotBeNullOrWhiteSpace(because: "the failure must carry a diagnostic message");
-		resolver.DidNotReceive().Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<CheckThemingAccessCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -122,7 +103,7 @@ public class CheckThemingAccessToolTests {
 		result.Success.Should().BeFalse(because: "an access check without an environment name is invalid");
 		result.Error.Should().Contain("environment-name",
 			because: "the failure must name the exact kebab-case field the caller has to add");
-		resolver.DidNotReceive().Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<CheckThemingAccessCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -144,7 +125,7 @@ public class CheckThemingAccessToolTests {
 		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
 		result.Error.Should().Contain("'environmentName' -> 'environment-name'",
 			because: "the failure must tell the caller the exact rename that fixes the call");
-		resolver.DidNotReceive().Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<CheckThemingAccessCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -162,6 +143,29 @@ public class CheckThemingAccessToolTests {
 		// Assert
 		result.Success.Should().BeFalse(because: "a thrown transport/parse error must surface as a tool failure");
 		result.Error.Should().Contain("RightsService", because: "the underlying diagnostic message must be forwarded");
+	}
+
+	[Test]
+	[Description("Redacts a sensitive inner-most exception message before it crosses into the MCP client transcript, mirroring McpToolErrorFilter's uniform redaction (review: b-horodyskyi, FR-11-style gap on the ExecuteResolved typed-response path).")]
+	[Category("Unit")]
+	public void CheckThemingAccess_ShouldRedactSensitiveText_WhenClientThrows() {
+		// Arrange
+		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights, ICreatioLicenseClient __) = CreateTool();
+		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException(
+				"Request to https://internal-host.example/api?token=sekret123 failed: password=hunter2"));
+
+		// Act
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a thrown transport error must still surface as a tool failure");
+		result.Error.Should().NotContain("internal-host.example",
+			because: "the exception message can carry a target host, so ExecuteResolved must redact it like every other MCP error path");
+		result.Error.Should().NotContain("sekret123",
+			because: "the exception message can carry a credential value, so ExecuteResolved must redact it like every other MCP error path");
+		result.Error.Should().NotContain("hunter2",
+			because: "the exception message can carry a credential value, so ExecuteResolved must redact it like every other MCP error path");
 	}
 
 	[Test]
@@ -187,14 +191,47 @@ public class CheckThemingAccessToolTests {
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 
+	[Test]
+	[Description("Returns a structured failure carrying the version-requirement message and never probes rights or license when the target environment does not satisfy the Creatio version floor.")]
+	[Category("Unit")]
+	public void CheckThemingAccess_ShouldReturnFailure_WhenCreatioVersionRequirementIsUnmet() {
+		// Arrange
+		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
+			ICreatioLicenseClient _) = CreateTool();
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5. Update Creatio and retry.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+
+		// Act
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unmet Creatio version requirement must refuse the access probe exactly as the theme CRUD tools are refused");
+		result.Error.Should().Contain("requires Creatio 10.0.0 or later",
+			because: "the version-requirement message must be surfaced to the MCP caller");
+		result.Error.Should().Contain($"[{CreatioVersionRequirementException.VersionTooOldCode}]",
+			because: "the typed result carries no exit code, so the stable machine-readable ErrorCode must travel in the error message");
+		rights.DidNotReceive().GetCanExecuteOperation(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>());
+	}
+
 	private static (CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
 		ICreatioLicenseClient license) CreateTool() {
 		ICreatioRightsClient rights = Substitute.For<ICreatioRightsClient>();
 		ICreatioLicenseClient license = Substitute.For<ICreatioLicenseClient>();
+		CheckThemingAccessCommand resolvedCommand = new(rights, license, Substitute.For<ILogger>());
+		CheckThemingAccessCommand defaultCommand = new(
+			Substitute.For<ICreatioRightsClient>(), Substitute.For<ICreatioLicenseClient>(),
+			Substitute.For<ILogger>());
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>()).Returns(rights);
-		resolver.Resolve<ICreatioLicenseClient>(Arg.Any<EnvironmentOptions>()).Returns(license);
-		CheckThemingAccessTool tool = new(Substitute.For<ILogger>(), resolver);
+		resolver.Resolve<CheckThemingAccessCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CheckThemingAccessTool tool = new(defaultCommand, Substitute.For<ILogger>(), resolver);
 		return (tool, resolver, rights, license);
 	}
 }

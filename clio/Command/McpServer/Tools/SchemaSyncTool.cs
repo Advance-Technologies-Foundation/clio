@@ -5,9 +5,11 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.DataForge;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -36,15 +38,44 @@ public sealed class SchemaSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
+		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
+		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones. " +
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
-		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch.")]
+		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch. " +
+		"Long-running: streams notifications/progress (a per-operation stage marker before each op) while " +
+		"working — await completion and do not retry on a perceived timeout.")]
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
-		[Required] SchemaSyncArgs args) {
+		[Required] SchemaSyncArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
+		// Heartbeat-only overload (no RunWithProgressAndDeadlineAsync): sync-schemas returns per-operation
+		// results and has no single "in-progress, poll" envelope. It executes stop-on-first-failure under
+		// McpToolExecutionLock and each operation is individually bounded, so the deadline/background-
+		// continuation contract used by create-app-section does not map cleanly here.
+		return await McpProgressHeartbeat.RunWithProgressAsync(
+			server,
+			requestContext?.Params?.ProgressToken,
+			ToolName,
+			reportStage => ExecuteBatch(args, reportStage, cancellationToken),
+			cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Runs the batch synchronously, pushing a stage marker through <paramref name="reportStage"/> before
+	/// each operation (and its seed step) so a long publish sequence shows per-operation progress.
+	/// </summary>
+	internal SchemaSyncResponse ExecuteBatch(SchemaSyncArgs args, Action<string> reportStage,
+		CancellationToken cancellationToken = default) {
+		// Materialize the operations once so the enrichment collectors and the execution loop share a single
+		// enumeration pass (args.Operations may be a lazy IEnumerable).
+		IReadOnlyList<SchemaSyncOperation> operations =
+			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
 		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
 		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
 		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
@@ -55,8 +86,8 @@ public sealed class SchemaSyncTool(
 			try {
 				dataForge = enrichmentService.Enrich(
 					args.EnvironmentName,
-					CollectCandidateTerms(args),
-					CollectLookupHints(args));
+					CollectCandidateTerms(operations),
+					CollectLookupHints(operations));
 			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
 				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here
@@ -75,25 +106,34 @@ public sealed class SchemaSyncTool(
 					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 			}
 		}
+		int total = operations.Count;
 		var results = new List<SchemaSyncOperationResult>();
-		lock (McpToolExecutionLock.SyncRoot) {
+		// FR-05: serialize on the per-tenant lock keyed by the environment the batch's schema commands
+		// resolve under, so different tenants run concurrently instead of behind one global lock.
+		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
-				foreach ((SchemaSyncOperation op, int index) in args.Operations.Select((operation, operationIndex) => (operation, operationIndex))) {
+				for (int index = 0; index < total; index++) {
+					cancellationToken.ThrowIfCancellationRequested();
+					SchemaSyncOperation op = operations[index];
 					logger.ClearMessages();
 					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
 						results.Add(seedValidationFailure);
 						break;
 					}
-					SchemaSyncOperationResult result = ExecuteOperation(op, args, index);
+					reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
+					SchemaSyncOperationResult result = ExecuteOperation(op, args, index, tenantKey);
 					results.Add(result);
 					if (!result.Success) {
 						break;
 					}
 					if (op.SeedRows?.Any() == true) {
+						reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
 						logger.ClearMessages();
-						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args);
+						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args, tenantKey);
 						results.Add(seedResult);
 						if (!seedResult.Success) {
 							break;
@@ -103,6 +143,7 @@ public sealed class SchemaSyncTool(
 			} finally {
 				logger.ClearMessages();
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		return new SchemaSyncResponse {
@@ -112,11 +153,11 @@ public sealed class SchemaSyncTool(
 		};
 	}
 
-	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncArgs args) {
-		return args.Operations
+	private static IReadOnlyList<string> CollectCandidateTerms(IReadOnlyList<SchemaSyncOperation> operations) {
+		return operations
 			.Where(op => !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
-			.Concat(args.Operations
+			.Concat(operations
 				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
 				.Where(title => !string.IsNullOrWhiteSpace(title))
 				.Select(title => title.Trim()))
@@ -124,12 +165,12 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncArgs args) {
-		return args.Operations
+	private static IReadOnlyList<string> CollectLookupHints(IReadOnlyList<SchemaSyncOperation> operations) {
+		return operations
 			.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal)
 				&& !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
-			.Concat(args.Operations
+			.Concat(operations
 				.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal))
 				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
 				.Where(title => !string.IsNullOrWhiteSpace(title))
@@ -138,11 +179,11 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
+	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex, string tenantKey) {
 		return op.Type switch {
-			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
-			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName),
-			UpdateEntityOperationName => ExecuteUpdateEntity(op, args),
+			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName, tenantKey),
+			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName, tenantKey),
+			UpdateEntityOperationName => ExecuteUpdateEntity(op, args, tenantKey),
 			_ => new SchemaSyncOperationResult {
 				Type = GetReportedOperationType(op),
 				SchemaName = op.SchemaName,
@@ -160,6 +201,15 @@ public sealed class SchemaSyncTool(
 		if (op.SeedRows?.Any() != true) {
 			return false;
 		}
+		if (string.Equals(op.Type, CreateEntityOperationName, StringComparison.Ordinal) && op.IsVirtual) {
+			validationFailure = new SchemaSyncOperationResult {
+				Type = CreateEntityOperationName,
+				SchemaName = op.SchemaName,
+				Success = false,
+				Error = $"sync-schemas operations[{operationIndex}] is invalid: virtual create-entity operations cannot include seed-rows because virtual entities have no physical database table."
+			};
+			return true;
+		}
 
 		if (op.SeedRows.Any(row => row is null || row.Values is null)) {
 			validationFailure = new SchemaSyncOperationResult {
@@ -176,7 +226,7 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteCreateSchema(
 		SchemaSyncOperation op, SchemaSyncArgs args,
-		string parentSchemaName, bool extendParent, string operationName) {
+		string parentSchemaName, bool extendParent, string operationName, string tenantKey) {
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
 			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
@@ -191,7 +241,9 @@ public sealed class SchemaSyncTool(
 					args.PackageName, op.SchemaName,
 					new Dictionary<string, string>(titleLocalizations, StringComparer.OrdinalIgnoreCase), args.EnvironmentName,
 					op.Columns),
-				parentSchemaName, extendParent);
+				parentSchemaName, extendParent,
+				isVirtual: string.Equals(operationName, CreateEntityOperationName, StringComparison.Ordinal)
+					&& op.IsVirtual);
 			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
 			if (exitCode == 0 && string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
@@ -202,7 +254,7 @@ public sealed class SchemaSyncTool(
 					op.SchemaName,
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
 			SchemaSyncCollisionInfo? collisionInfo = exitCode != 0
 				? TryGetCollisionInfo(op.SchemaName, args)
 				: null;
@@ -221,7 +273,7 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 				CollisionInfo = collisionInfo
 			};
 		}
@@ -248,7 +300,7 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
 		try {
 				IReadOnlyList<UpdateEntitySchemaOperationArgs> updateOperations = ResolveUpdateOperations(op);
 				if (updateOperations.Count == 0) {
@@ -266,7 +318,7 @@ public sealed class SchemaSyncTool(
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
 				return new SchemaSyncOperationResult {
 					Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
@@ -280,7 +332,7 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
 			};
 		}
 	}
@@ -354,7 +406,7 @@ public sealed class SchemaSyncTool(
 			+ "add an 'action' for modify/remove.";
 	}
 
-	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
 		try {
 			string rowsJson = JsonSerializer.Serialize(op.SeedRows);
 			CreateDataBindingDbOptions options = new() {
@@ -365,7 +417,7 @@ public sealed class SchemaSyncTool(
 			};
 			CreateDataBindingDbCommand command = commandResolver.Resolve<CreateDataBindingDbCommand>(options);
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
 			return new SchemaSyncOperationResult {
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
@@ -379,7 +431,7 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
 			};
 		}
 	}
@@ -495,6 +547,13 @@ public sealed record SchemaSyncOperation(
 	[property: Description("Rows to seed after creating the schema. Each object must have a 'values' key.")]
 	IEnumerable<SchemaSyncSeedRow>? SeedRows = null
 ) {
+	/// <summary>
+	/// Gets whether a <c>create-entity</c> operation creates a virtual schema without a physical database table.
+	/// </summary>
+	[property: JsonPropertyName("is-virtual")]
+	[property: Description("For create-entity only: create a virtual schema without a physical database table. Defaults to false. Virtual entities cannot include seed-rows.")]
+	public bool IsVirtual { get; init; }
+
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
 	public string? LegacyTitle { get; init; }

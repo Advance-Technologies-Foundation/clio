@@ -1641,6 +1641,102 @@ public sealed class WebToMobileConversionServiceTests {
 		names.Should().BeEquivalentTo("Root", "Header", "Title", "Body");
 	}
 
+	// ── Effective web-template resolution (replacing schema, parentSchemaName == schemaName) ──
+
+	private static PageMetadataInfo Page(string schemaName, string parentSchemaName) =>
+		new() { SchemaName = schemaName, ParentSchemaName = parentSchemaName };
+
+	private static PageBundleInfo Chain(params string[] schemaNames) =>
+		new() {
+			Schemas = schemaNames.Select(n => new PageSchemaChainEntry { SchemaName = n }).ToList()
+		};
+
+	[Test]
+	[Description("Non-replacing page: the direct parent already differs from the page's own name, so it is used verbatim — no chain climb, no behavior change.")]
+	public void ResolveEffectiveTemplateName_NonReplacing_ReturnsDirectParent() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("Leads_FormPage", "PageWithTabsFreedomTemplate"),
+			Chain("Leads_FormPage", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
+			Rules);
+		result.Should().Be("PageWithTabsFreedomTemplate");
+	}
+
+	[Test]
+	[Description("Replacing form page (parentSchemaName == schemaName): climb past the same-named base to the first rule-matching template ancestor.")]
+	public void ResolveEffectiveTemplateName_ReplacingForm_ClimbsToTemplate() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("Cases_FormPage", "Cases_FormPage"),
+			Chain("Cases_FormPage", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
+			Rules);
+		result.Should().Be("PageWithTabsFreedomTemplate");
+	}
+
+	[Test]
+	[Description("Multi-level replacing chain (page → same-named base → another same-named base → template): every same-named layer is skipped.")]
+	public void ResolveEffectiveTemplateName_MultiLevelReplacing_ClimbsPastAllSameNamed() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("Cases_FormPage", "Cases_FormPage"),
+			Chain("Cases_FormPage", "Cases_FormPage", "PageWithTabsFreedomTemplate"),
+			Rules);
+		result.Should().Be("PageWithTabsFreedomTemplate");
+	}
+
+	[Test]
+	[Description("Replacing LIST page uses the same mechanism and resolves the list template rule.")]
+	public void ResolveEffectiveTemplateName_ReplacingList_ClimbsToListTemplate() {
+		var rules = new WebToMobilePageConversionRules {
+			Templates = [new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" }]
+		};
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("UsrDemo_ListPage", "UsrDemo_ListPage"),
+			Chain("UsrDemo_ListPage", "ListPageV3Template", "BaseTemplate"),
+			rules);
+		result.Should().Be("ListPageV3Template");
+	}
+
+	[Test]
+	[Description("Replacing page with no rule-matching ancestor falls back to the first differently-named ancestor — never the page itself.")]
+	public void ResolveEffectiveTemplateName_NoRuleMatch_ReturnsFirstDistinctAncestor() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("Foo_FormPage", "Foo_FormPage"),
+			Chain("Foo_FormPage", "Bar_BaseFormPage", "BazTemplate"),
+			Rules);
+		result.Should().Be("Bar_BaseFormPage");
+	}
+
+	[Test]
+	[Description("Empty-layout diagnostic: when the source has components but the baseline subtracts the whole tree (the self-parent bug), LayoutResolution reports 'empty' instead of returning a silently-empty layout.")]
+	public void Analyze_LayoutSubtractedToEmpty_SetsLayoutResolutionDiagnostic() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.Tabs", "items": [
+				{ "name": "GeneralTab", "type": "crt.TabContainer", "items": [
+					{ "name": "UsrName", "type": "crt.Input" } ] } ] } ]
+			""");
+		var web = Reg(("crt.Tabs", true), ("crt.TabContainer", true), ("crt.Input", false));
+		// Pathological baseline: EVERY name is treated as template chrome (what the self-parent bug produced).
+		IReadOnlySet<string> everything = Names("Tabs", "GeneralTab", "UsrName");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web, templateComponentNames: everything);
+
+		guide.SourceStructure.Should().BeEmpty();
+		guide.LayoutResolution.Should().StartWith("empty:");
+	}
+
+	[Test]
+	[Description("A normal, non-empty conversion leaves LayoutResolution null and classifies a registry-known widget (crt.IndicatorWidget) as convertible, not dropped.")]
+	public void Analyze_NonEmptyLayout_LeavesLayoutResolutionNullAndClassifiesWidget() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "UsrMetric", "type": "crt.IndicatorWidget" } ]
+			""");
+		var web = Reg(("crt.IndicatorWidget", false));
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web);
+
+		guide.SourceStructure.Should().NotBeEmpty();
+		guide.LayoutResolution.Should().BeNull();
+		ForType(guide, "crt.IndicatorWidget").Category.Should().Be("DirectMapping");
+	}
+
 	[Test]
 	[Description("A component mapped in the template's components block (DataTable→List) is KEPT through baseline subtraction and recorded as a merge-by-name twin; no duplicate is inserted. clio adds no component-specific transform — the row how-to is type-driven and surfaced in componentSuggestions.")]
 	public void Analyze_TemplateComponentTwin_IsKeptAndMergedByName_NoHardcodedTransform() {

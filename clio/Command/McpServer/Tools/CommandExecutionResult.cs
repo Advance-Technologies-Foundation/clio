@@ -56,6 +56,14 @@ public record CommandExecutionResult(
 	/// Creates a failed <see cref="CommandExecutionResult"/> with exit code -1 (an UNEXPECTED runtime
 	/// failure). For an EXPECTED, caller-actionable validation error use <see cref="FromValidationError"/>.
 	/// </summary>
+	/// <remarks>
+	/// The <paramref name="message"/> is surfaced to the MCP client VERBATIM — it is NOT run through
+	/// <see cref="SensitiveErrorTextRedactor"/>. Callers must pass only static / secret-free text; route
+	/// any dynamic exception text (which on a credential-passthrough request can carry the target URI,
+	/// host, or a credential value) through <see cref="FromException"/> with <c>redactSensitive: true</c>
+	/// instead, which redacts before the message crosses the MCP boundary (FR-11, ENG-93208). Breaking this
+	/// keeps the audited secret-hygiene invariant silently.
+	/// </remarks>
 	public static CommandExecutionResult FromError(string message) =>
 		new(-1, [new ErrorMessage(message)]);
 
@@ -112,12 +120,34 @@ public record CommandExecutionResult(
 	/// including inner exception chain, preserving diagnostic information for debugging. Use for UNEXPECTED
 	/// runtime failures; for an expected validation error use <see cref="FromValidationError"/>.
 	/// </summary>
-	public static CommandExecutionResult FromException(Exception exception, IEnumerable<LogMessage> priorLogs = null, string correlationId = null) {
+	/// <param name="exception">The unexpected runtime exception to surface on the -1 envelope.</param>
+	/// <param name="priorLogs">Optional log messages captured before the failure, prepended verbatim.</param>
+	/// <param name="correlationId">Optional correlation id threaded onto the envelope for tracing.</param>
+	/// <param name="redactSensitive">
+	/// When <see langword="true"/> the formatted exception chain is scrubbed through
+	/// <see cref="SensitiveErrorTextRedactor"/> before it crosses the MCP boundary. Pass <see langword="true"/>
+	/// ONLY on a credential-passthrough request (FR-11, ENG-93208), where an inner-most data/HTTP/DB message
+	/// routinely carries the target URI, host, or a Bearer/cookie/password value. The default
+	/// <see langword="false"/> preserves the full exception text — the stdio / CLI / <c>-e &lt;env&gt;</c>
+	/// paths carry no injected passthrough secret and must stay full-fidelity for diagnosability.
+	/// </param>
+	public static CommandExecutionResult FromException(Exception exception, IEnumerable<LogMessage> priorLogs = null, string correlationId = null, bool redactSensitive = false) {
 		var messages = new List<LogMessage>();
 		if (priorLogs != null) {
 			messages.AddRange(priorLogs);
 		}
-		messages.Add(new ErrorMessage(FormatExceptionChain(exception)));
+		// FR-11 (ENG-93208): the -1 catch-all envelope surfaces an unanticipated exception verbatim to the
+		// MCP client, and an inner-most data/HTTP/DB message on a credential-passthrough request routinely
+		// carries the target URI, host, or a Bearer/cookie/password value. Unlike the per-tool error paths
+		// (which redact at each call site) and the McpToolErrorFilter (which only redacts EXCEPTIONS that
+		// propagate — this envelope is RETURNED, so the filter never sees it), this chain is unredacted by
+		// default. Scrub it ONLY when the caller flags a passthrough request (redactSensitive); the trusted
+		// stdio / CLI / -e paths carry no injected secret and keep full-fidelity text (no diagnosability
+		// regression). The exit-1 caller-actionable messages (FromResolverError/FromValidationError) are
+		// deliberately secret-free and are never redacted.
+		string exceptionChain = FormatExceptionChain(exception);
+		messages.Add(new ErrorMessage(
+			redactSensitive ? SensitiveErrorTextRedactor.Redact(exceptionChain) : exceptionChain));
 		return new CommandExecutionResult(-1, messages, CorrelationId: correlationId);
 	}
 

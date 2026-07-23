@@ -82,7 +82,8 @@ public sealed class DeleteAppSectionCommandTests : BaseCommandTests<DeleteAppSec
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when environment resolution input is missing");
-		_sectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default!, default!);
+		_sectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default(string)!, default!);
+		_sectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default(EnvironmentSettings)!, default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Environment name is required")));
 	}
 

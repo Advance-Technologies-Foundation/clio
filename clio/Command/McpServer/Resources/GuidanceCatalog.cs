@@ -27,6 +27,10 @@ internal static class GuidanceCatalog {
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
 				AppModelingGuidanceResource.Guide),
+			["virtual-entities"] = Create(
+				"virtual-entities",
+				"Canonical guidance for creating and verifying a Creatio virtual entity object, implementing its IEntityQueryExecutor, and version-gating EntityEventListener writes to Creatio 10.0+.",
+				VirtualEntitiesGuidanceResource.Guide),
 			["data-bindings"] = Create(
 				"data-bindings",
 				"Canonical MCP guidance for generic lookup seeding and local or remote data-binding workflows.",
@@ -47,6 +51,10 @@ internal static class GuidanceCatalog {
 				"configuration-webservice-tests",
 				"Canonical MCP guidance for testing Creatio configuration web services.",
 				ConfigurationWebServiceTestsGuidanceResource.Guide),
+			["integration-testing"] = Create(
+				"integration-testing",
+				"Canonical guidance for portable Creatio integration tests, CI authentication, ATF.Repository, Allure, process scenarios, cleanup, and optional browser testing.",
+				IntegrationTestingGuidanceResource.Guide),
 			["page-schema-converters"] = Create(
 				"page-schema-converters",
 				"Canonical MCP guidance for creating and editing Freedom UI page converters inside raw page schema bodies.",
@@ -71,6 +79,10 @@ internal static class GuidanceCatalog {
 				"page-creation",
 				"Canonical MCP guidance for creating Freedom UI pages from supported templates via create-page: the list-page-templates -> create-page -> get-page flow, the supported web/mobile template catalog, required and optional inputs, validation/failure modes, and designer-type mapping.",
 				PageCreationGuidanceResource.Guide),
+			["home-page"] = Create(
+				"home-page",
+				"Canonical MCP guidance for creating a Freedom UI home page (BaseHomePage) and making it a workplace's home page by binding SysWorkplace.HomePageUId as a package data binding.",
+				HomePageGuidanceResource.Guide),
 			["page-modification"] = Create(
 				"page-modification",
 				"Entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides (each kept small so one get-guidance response fits the agent token limit).",
@@ -97,8 +109,20 @@ internal static class GuidanceCatalog {
 				EsqGuidanceResource.Guide),
 			["esq-filters"] = Create(
 				"esq-filters",
-				"Canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.",
+				"Stable ESQ filter guidance router: choose frontend/DataService construction, native backend C# construction, or runtime C# parsing without duplicating detailed rules.",
 				EsqFiltersGuidanceResource.Guide),
+			["esq-filters-frontend"] = Create(
+				"esq-filters-frontend",
+				"Canonical frontend ESQ filter construction guidance for JavaScript, Freedom UI, page JSON, and DataService SelectQuery payloads.",
+				EsqFiltersGuidanceResource.FrontendGuide),
+			["esq-filters-backend"] = Create(
+				"esq-filters-backend",
+				"Canonical and Lab-verified native Creatio backend C# guidance for constructing EntitySchemaQuery filter groups and compare leaves.",
+				EsqFiltersBackendGuidanceResource.Guide),
+			["esq-filter-parsing"] = Create(
+				"esq-filter-parsing",
+				"Lab-verified runtime C# guidance for recursively parsing EntitySchemaQuery.Filters without access to Creatio backend source code.",
+				EsqFilterParsingGuidanceResource.Guide),
 			["indicator-widget"] = Create(
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
@@ -109,7 +133,7 @@ internal static class GuidanceCatalog {
 				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
-				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-design (widget layout/sizing/styling), and indicator-widget / chart-widget (per-widget payload).",
+				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-and-home-page-layout (widget layout/sizing/styling), dashboard-design (the DashboardDS filter-by-page-data binding), and indicator-widget / chart-widget (per-widget payload).",
 				DashboardGuidanceResource.Guide),
 			["dashboard-creation"] = Create(
 				"dashboard-creation",
@@ -117,12 +141,28 @@ internal static class GuidanceCatalog {
 				DashboardCreationGuidanceResource.Guide),
 			["dashboard-design"] = Create(
 				"dashboard-design",
-				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
+				"Canonical MCP guidance for the dashboard-specific DashboardDS hidden page data source that a dashboard's widgets filter by via a dependencies entry; general widget layout/sizing/styling lives in the dashboard-and-home-page-layout guide.",
 				DashboardDesignGuidanceResource.Guide),
+			["dashboard-and-home-page-layout"] = Create(
+				"dashboard-and-home-page-layout",
+				"Canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white (without-fill) card theme used on dashboards and home pages alike.",
+				DashboardAndHomePageLayoutGuidanceResource.Guide),
+			["dashboard-rights"] = Create(
+				"dashboard-rights",
+				"Canonical MCP guidance for reading and changing a dashboard's record-level access rights (new or existing dashboard) via get-record-rights / set-record-rights, and shipping those grants with the dashboard's package as a SysSchemaAdminUnitRight data binding so they survive a transfer.",
+				DashboardRightsGuidanceResource.Guide),
+			["record-rights"] = Create(
+				"record-rights",
+				"Canonical MCP guidance for record-level access rights: read/change who can access a record or dashboard with get-record-rights / set-record-rights, addressing a dashboard as SysSchemaAdminUnit + schema UId, and the record-level (SysSchemaAdminUnitRight) vs operation-level (SysSchemaOperationRight) distinction.",
+				RecordRightsGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
 				RelatedListGuidanceResource.Guide),
+			["related-page-binding"] = Create(
+				"related-page-binding",
+				"Canonical MCP guidance for binding Freedom UI pages to an object via create-related-page-addon: choosing the default record page and the add-record page (optionally per role and type), name discovery, the replace-not-merge semantics, and error handling.",
+				RelatedPageBindingGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
@@ -133,7 +173,7 @@ internal static class GuidanceCatalog {
 				DeployLifecycleGuidanceResource.Guide),
 			["describe-environment"] = Create(
 				"describe-environment",
-				"Canonical MCP guidance for describe-environment: the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
+				"Canonical MCP guidance for describe-environment: classified base-probe failures, the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
 				DescribeEnvironmentGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
@@ -151,6 +191,10 @@ internal static class GuidanceCatalog {
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
 				MobilePageGuidanceResource.Guide),
+			["desktop-page"] = Create(
+				"desktop-page",
+				"Canonical MCP guidance for Creatio desktop pages (desktop-selector workspaces): create-page with template CentralAreaDesktopTemplate, the Desktop schema-group invariant, automatic Desktop-entity registration by the platform, the FixedGridSlot_qwe4asds editable-slot rule, and record-rights-based selector visibility.",
+				DesktopPageGuidanceResource.Guide),
 			["freedom-page-web-to-mobile-conversion"] = Create(
 				"freedom-page-web-to-mobile-conversion",
 				"Canonical MCP guidance for converting a source page into a Freedom UI MOBILE page via get-mobile-page-conversion-guide: advisory guide (detected sourceType, recommended template, container map, component suggestions, inline mobile contracts), the model-driven flow where you build the body with create-page/update-page/validate-page, the five component categories, the Freedom-UI-only precondition (Classic UI must be converted to Freedom UI web first), mobile constraints, and how to finish in Freedom UI Mobile Designer.",
@@ -160,7 +204,7 @@ internal static class GuidanceCatalog {
 				"sys-settings",
 				"""
 				Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, 
-				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.
+				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary (write-only, via value-file-path) upload.
 				""",
 				SysSettingsGuidanceResource.Guide),
 			["ui-project"] = Create(
@@ -187,15 +231,16 @@ internal static class GuidanceCatalog {
 				"theming",
 				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
 				ThemingGuidanceResource.Guide),
-			["run-process-button"] = Create(
-				"run-process-button",
+			["when-to-use-requests"] = Create(
+				"when-to-use-requests",
 				"""
-				Canonical MCP guidance for adding a Freedom UI button that runs a business process
-				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
-				key = CODE not caption (silent-skip warning), and the static-constant /
-				view-model-attribute-binding / current-record variants.
+				Canonical MCP guidance for wiring Freedom UI page actions to platform requests:
+				when to reuse a built-in crt.*Request vs chain a handler vs author a usr.*Request,
+				and the mandatory get-request-info catalog discipline — parameters as the only
+				authorable keys (empty map = no params block), platform-injected baseParameters
+				never in params, per-request documentation, and version scoping.
 				""",
-				RunProcessButtonGuidanceResource.Guide),
+				WhenToUseRequestsGuidanceResource.Guide),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "

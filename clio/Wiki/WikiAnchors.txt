@@ -27,6 +27,7 @@ component-registry-refresh:component-registry-refresh,component-registry
 get-component-info:get-component-info,component-info
 get-user-culture:get-user-culture,profile-language
 compressApp:compressApp,comp-app
+config:config
 create-app:create-app
 create-app-section:create-app-section
 create-data-binding:create-data-binding
@@ -48,6 +49,7 @@ delete-schema:delete-schema
 delete-toolkit:delete-toolkit
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
+pin-certificate:pin-certificate
 deploy-identity:deploy-identity
 get-identity-service-config:get-identity-service-config
 resolve-oauth-system-user:resolve-oauth-system-user
@@ -69,14 +71,18 @@ get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 build-theme:build-theme
+get-record-rights:get-record-rights
+set-record-rights:set-record-rights
 list-themes:list-themes,get-themes
 create-theme:create-theme
 update-theme:update-theme
 delete-theme:delete-theme
+set-user-theme:set-user-theme,apply-user-theme
 get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
+set-entity-schema-properties:set-entity-schema-properties
 get-browser-session:get-browser-session,get-session
 clear-browser-session:clear-browser-session,clear-session
 find-entity-schema:find-entity-schema
@@ -101,6 +107,7 @@ idp-unbind:idp-unbind
 idp-upsert:idp-upsert
 info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
+install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
@@ -121,6 +128,7 @@ modify-entity-schema-column:modify-entity-schema-column
 modify-user-task-parameters:modify-user-task-parameters
 new-pkg:new-pkg,init
 new-test-project:new-test-project,create-test-project,unit-test
+new-integration-test-project:new-integration-test-project,integration-test
 new-ui-project:new-ui-project,create-ui-project,createup,new-ui,ui,uiproject
 open-k8-files:open-k8-files,cfg-k8,cfg-k8f,cfg-k8s
 open-settings:open-settings,conf,configuration,os,settings
@@ -132,6 +140,8 @@ list-pages:list-pages,page-list
 update-page:update-page,page-update
 create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
+create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages
+get-related-page-addon:get-related-page-addon,related-page-addon-get,get-related-pages
 ping-app:ping-app,ping
 pkg-hotfix:pkg-hotfix,hf,hotfix
 pkg-to-db:pkg-to-db,2db,todb
@@ -143,6 +153,7 @@ push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
 register:register
+ring:ring
 remove-data-binding-row:remove-data-binding-row
 remove-data-binding-row-db:remove-data-binding-row-db
 restart-web-app:restart-web-app,restart
@@ -166,6 +177,7 @@ show-local-envs:show-local-envs,localenvs
 show-package-file-content:show-package-file-content,files,show-files
 list-environments:list-environments,show-web-app-list,env,envs,show-web-app
 start:start,sc,start-creatio,start-server
+sync-dbhub:sync-dbhub
 stop:stop,stop-creatio
 switch-nuget-to-dll-reference:switch-nuget-to-dll-reference,nuget2dll
 turn-farm-mode:turn-farm-mode,farm-mode,tfm
@@ -183,6 +195,7 @@ update-schema:update-schema,schema-update
 update-toolkit:update-toolkit
 update-sql-schema:update-sql-schema,sql-schema-update
 upload-license:upload-license,license,load-license,loadlicense
+distribute-license:distribute-license,grant-license
 upload-licenses:upload-licenses,lic
 upsert-data-binding-row-db:upsert-data-binding-row-db
 get-identity-assertion:get-identity-assertion,identity-assertion

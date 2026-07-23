@@ -100,6 +100,21 @@ public sealed record RegistryFlavor(
 		CacheSubdirectoryName: "mobile");
 
 	/// <summary>
+	/// Requests flavor: the Freedom UI request catalog (<c>crt.*Request</c> types wired
+	/// through <c>RequestBindingConfig</c> outputs) —
+	/// <c>academy/api/mcp/{version}/RequestRegistry.json</c>. The envelope differs from
+	/// the component registries (<c>requests[]</c> + <c>references.baseParameters</c>),
+	/// so only the byte-transport chain is shared; parsing lives in
+	/// <c>RequestInfoCatalog</c>, not <c>ComponentInfoCatalog</c>. OOTB button-action
+	/// requests initiative (ENG-93187).
+	/// </summary>
+	public static readonly RegistryFlavor Requests = new(
+		DisplayName: "requests",
+		CdnRegistryFileName: "RequestRegistry.json",
+		LocalFileEnvironmentVariable: "CLIO_REQUEST_REGISTRY_LOCAL_FILE",
+		CacheSubdirectoryName: "requests");
+	
+	/// <summary>
 	/// Web→mobile page-conversion-rules flavor: same wrapped fallback chain, separate file —
 	/// <c>academy/api/mcp/{version}/WebToMobilePageConversionRules.json</c>. Cache lives under a
 	/// dedicated <c>web-to-mobile-page-conversion-rules/</c> subfolder. The CDN file is not
@@ -535,6 +550,32 @@ public sealed class MobileComponentRegistryClient : ComponentRegistryClient, IMo
 		IFileSystem fileSystem,
 		ILogger<MobileComponentRegistryClient> logger)
 		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile) {
+	}
+}
+
+/// <summary>
+/// Marker interface that selects the requests-flavored registry client at DI time.
+/// Adds no new methods over <see cref="IComponentRegistryClient"/> — the byte-transport
+/// contract is identical, the implementation is the same <see cref="ComponentRegistryClient"/>
+/// type, only the constructor-time <see cref="RegistryFlavor"/> differs. The payload it
+/// serves (<c>RequestRegistry.json</c>) has its own envelope, parsed by
+/// <c>RequestInfoCatalog</c> rather than <c>ComponentInfoCatalog</c>.
+/// </summary>
+public interface IRequestRegistryClient : IComponentRegistryClient {
+}
+
+/// <summary>
+/// Concrete subtype used to register the requests flavor through standard DI. The
+/// implementation is inherited verbatim from <see cref="ComponentRegistryClient"/>;
+/// only the flavor selection happens here.
+/// </summary>
+public sealed class RequestRegistryClient : ComponentRegistryClient, IRequestRegistryClient {
+	public RequestRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<RequestRegistryClient> logger)
+		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Requests) {
 	}
 }
 

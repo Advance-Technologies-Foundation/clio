@@ -348,6 +348,70 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		response.Error.Should().Contain("Unknown schema-type");
 	}
 
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Creates a desktop page from CentralAreaDesktopTemplate, reads it back via get-page to confirm the parent template, and deletes the schema (which auto-removes the platform-registered selector record).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-page creates a desktop from CentralAreaDesktopTemplate and get-page reads it back")]
+	public async Task PageCreateTool_Should_Create_Desktop_From_Desktop_Template() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		string schemaName = $"UsrE2E_Desktop_{Guid.NewGuid():N}".Substring(0, 40);
+
+		try {
+			// Act
+			CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["template"] = "CentralAreaDesktopTemplate",
+						["package-name"] = PackageName,
+						["caption"] = "E2E desktop",
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			PageCreateResponse createResponse = EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(createResult);
+
+			// Assert create
+			createResult.IsError.Should().NotBeTrue();
+			createResponse.Success.Should().BeTrue(
+				because: $"create-page must create a desktop from CentralAreaDesktopTemplate for a fresh schema name '{schemaName}'. Error: {createResponse.Error}");
+			createResponse.TemplateName.Should().Be("CentralAreaDesktopTemplate",
+				because: "a desktop is created from the CentralAreaDesktopTemplate parent");
+
+			// Act read-back
+			CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+
+			// Assert read-back
+			getResult.IsError.Should().NotBeTrue();
+			getResponse.Success.Should().BeTrue(because: "the freshly created desktop page must be readable through get-page");
+			getResponse.Page.ParentSchemaName.Should().Be("CentralAreaDesktopTemplate",
+				because: "the desktop page must inherit the platform desktop template");
+		} finally {
+			// Teardown: deleting the schema auto-removes its Desktop selector row (platform listener),
+			// so the sandbox selector is not polluted by E2E desktops.
+			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
+			await ClioCliCommandRunner.RunAsync(
+				settings,
+				["delete-schema", schemaName, "--remote", "-e", environmentName],
+				cancellationToken: cleanupCts.Token);
+		}
+	}
+
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&

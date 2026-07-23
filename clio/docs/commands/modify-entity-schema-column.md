@@ -51,7 +51,9 @@ Text50,
 Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 Currency0,
-Currency1, Currency2, Currency3.
+Currency1, Currency2, Currency3, Color.
+`Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
+(multiline / accent-insensitive / format-validated / masked) do not apply to it.
 ImageLink is accepted as an alias for ImageLookup.
 For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use
 `ImageLookup` ("Image link") — the binary `Image` type does not work with `crt.ImageInput`.
@@ -92,6 +94,8 @@ Set simple-lookup flag
 Set cascade-connection flag
 --do-not-control-integrity
 Set do-not-control-integrity flag
+--usage-type
+Column usage type: General (default), Advanced, or None (case-insensitive; applies to any column type). On modify the stored value is left unchanged when omitted.
 --timeout <NUMBER>
 Request timeout in milliseconds. Default: 100000.
 ```
@@ -153,6 +157,7 @@ cliogate must be installed on the target Creatio environment.
 
 ## Notes
 
+- Own columns support all mutations. An **inherited** column can have only its **caption/description** overridden (`--title`/`title-localizations`, `--description`/`description-localizations`) on a replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed. The override is persisted on the child schema (keyed `<Schema>.Columns.<Column>.Caption`) and does not change the parent. Attempting a non-caption change to an inherited column fails with `Error: Column '<C>' is inherited; only its caption and description can be overridden. Its name, type, and flags are read-only.`
 - CLI flags `--default-value-source/--default-value` remain shorthand for `Const` and `None`.
 - MCP structured `default-value-config` also supports `Settings` and `SystemValue`.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.

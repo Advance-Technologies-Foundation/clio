@@ -8,7 +8,8 @@ namespace Clio.Command.McpServer.Resources;
 /// Canonical AI-facing guidance for managing custom Creatio themes through clio MCP: guides the palette
 /// conversation via the read-only <c>advise-theme-palette</c> tool (verdict per colour decision), builds the
 /// theme CSS with the native <c>build-theme</c> tool (deterministic palette engine + bundled, version-pinned
-/// template), and routes between the workspace/dev and no-code/server delivery flows.
+/// template), routes between the workspace/dev and no-code/server delivery flows, applies a theme to the
+/// current user's profile (<c>set-user-theme</c>), and gets/sets the global default theme.
 /// </summary>
 [McpServerResourceType]
 public sealed class ThemingGuidanceResource {
@@ -17,7 +18,7 @@ public sealed class ThemingGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	[McpServerResource(UriTemplate = ResourceUri, Name = "theming-guidance")]
-	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.")]
+	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, apply a theme to the current user (or reset it), and get/set the default — and shipping them to a Creatio environment.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -31,9 +32,11 @@ public sealed class ThemingGuidanceResource {
 		       - Choose the brand colours with guidance — see "Choosing the colours".
 		       - Create, restyle, or delete a theme on an environment — see "Which flow".
 		       - List existing themes — see "List themes".
+		       - Apply a theme to the current user (or reset it) — see "Apply to the current user".
 		       - Get or set the default theme — see "Get / set the default theme".
 
 		       Constraints
+		       - Theming is supported only on Creatio 10.0.0 or later. On an older environment the theme tools refuse with an explicit version-requirement error — relay it to the user and stop; do not retry or work around it.
 		       - Do not change font sizes or line heights — only the font family is meant to change. The interface is not yet adapted to altered typography metrics, so overriding them degrades or breaks the layout. When the user wants to change them, tell them this and leave them at their defaults. If the user keeps insisting, change them only when the user explicitly tells you to ignore this guide. Hand-authored `css-content` must not override them unless that explicit override was given.
 
 		       Calling the tools
@@ -78,7 +81,7 @@ public sealed class ThemingGuidanceResource {
 		       Use it when you have only a registered environment (no clio workspace/package); the theme is created and edited directly on the environment via the native ThemeService — no files and no push.
 		       Prerequisites: the `CanCustomizeBranding` license and the `CanManageThemes` system operation — see "Checking access".
 		       1. Produce the theme CSS first — call `build-theme` (returns the `theme.css` string; see "Building the theme CSS"). It goes into `create-theme` as text in `css-content` (step 2), so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
-		       2. Create with `create-theme`: pass the theme name as `caption` and the CSS as inline `css-content`. `css-class-name` is optional (derived from the caption when omitted — see "Building the theme CSS"). `id` is optional — omit it to get an auto-generated id back; `package-name` is optional — omit it to use the environment's CurrentPackageId system setting.
+		       2. Create with `create-theme`: pass the theme name as `caption` and the CSS as inline `css-content`. `css-class-name` is optional (derived from the caption when omitted — see "Building the theme CSS"). `id` is optional — omit it to get an auto-generated id back; `package-name` is optional — omit it to use the environment's CurrentPackageId system setting. After a successful create, apply it to the current user by default — see "Apply to the current user".
 		       3. Restyle with `update-theme` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed).
 		       4. Delete with `delete-theme` (by id; deleting an unknown id is an error). If you delete the theme that is currently the default, see "Get / set the default theme".
 		       5. Confirm the change with `list-themes`.
@@ -86,6 +89,13 @@ public sealed class ThemingGuidanceResource {
 		       List themes
 		       - List the custom themes on an environment with `list-themes`: it returns each theme's `id`, `caption`, `cssClassName`, and `cssFilePath`. Use it to confirm a theme is available and to find a theme's `id`.
 		       - An empty list means the environment has no custom themes, or the caller lacks the `CanCustomizeBranding` license.
+
+		       Apply to the current user — set-user-theme
+		       This applies a theme to the profile of the account clio is authenticated as — only that user, not everyone (that is the global default; see "Get / set the default theme"). It overwrites the account's current theme, so `set-user-theme` is a confirmed (destructive-annotated) write: the MCP host prompts to confirm before it runs, and on the lazy tool surface it is re-issued through `clio-run-destructive`. It stays safe and reversible — it touches only the caller's own profile, and `reset` restores the default.
+		       - After a successful no-code `create-theme`, apply the new theme to the current user by default: call `set-user-theme` with the theme's `id` (or its caption / css-class-name) and confirm the write when the host asks, then tell the user to refresh the page — the change is visible on the next page load, and no cache flush or session-refresh call is needed. Do NOT set the global `DefaultTheme` to "apply" a theme unless the user asked to change it for everyone.
+		       - Skip the apply step when the user's request indicates they do not want to switch now (for example "just create it", "don't apply it yet", or they are preparing themes for other people). In that case tell them how to apply it later: `set-user-theme <theme>` (or the `set-user-theme` MCP tool).
+		       - Clear the current user's theme with `set-user-theme reset=true` (CLI: `--reset`), restoring the environment default. `theme` and `reset` are mutually exclusive.
+		       - Requires the `CanCustomizeBranding` license and the `CanChangeOwnTheme` system operation (granted to employees by default), and the server-side `ChangeTheme` feature must be enabled — clio reads the value back after writing and reports an actionable error rather than a false success when a gate is unmet. Relay the error and stop; do not retry.
 
 		       Get / set the default theme
 		       The default is the `DefaultTheme` system setting (value = a theme `id`) and applies to all users — unless the user asked you to make a theme the default, confirm before changing it. Read the current value with `get-sys-setting`. To change it:

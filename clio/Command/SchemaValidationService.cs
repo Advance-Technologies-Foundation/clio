@@ -161,13 +161,9 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
-	/// localizable-string bindings (<c>$Resources.Strings.&lt;Key&gt;</c> or the
-	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro), never as inline string literals. Enforced by
+	/// localizable-string bindings, never as inline string literals. Enforced by
 	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
-	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile). The set is deliberately limited to
-	/// properties that are unambiguously rendered to the user; overloaded keys such as <c>description</c>
-	/// (which also names non-display metadata on entity columns, components, and APIs) are intentionally
-	/// excluded from the hard reject and covered by the <c>page-schema-resources</c> guidance only.
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile).
 	/// </summary>
 	internal static readonly HashSet<string> LocalizableTextProperties = new(StringComparer.OrdinalIgnoreCase) {
 		LabelPropertyName,
@@ -178,12 +174,38 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// User-visible caption properties on inserted view nodes whose localizable-string bindings are
+	/// checked for resolvability by the widget-caption validators. Deliberately EXCLUDES <c>label</c>:
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/> already resolvability-checks <c>label</c> for
+	/// STANDARD FIELD components (<see cref="StandardFieldComponentTypes"/>), so re-checking it here would
+	/// double-report on those. The residual seam — a <c>label</c> bound to an unresolvable key on a
+	/// NON-standard inserted node (a widget/container/custom component) — is not resolvability-checked by
+	/// either validator (only its inline-literal form is, by <see cref="ValidateLocalizableTextLiterals"/>);
+	/// that is accepted because a non-field node carrying a bound <c>label</c> is rare, whereas this set owns
+	/// the common widget/container caption surface (most importantly a metric or chart widget's <c>title</c>).
+	/// </summary>
+	private static readonly HashSet<string> InsertedWidgetCaptionProperties = new(StringComparer.OrdinalIgnoreCase) {
+		"title",
+		"caption",
+		"tooltip",
+		"placeholder"
+	};
+
+	/// <summary>
+	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
+	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
+	/// </summary>
+	internal const string InsertedWidgetCaptionClause =
+		"a user-visible caption on a freshly inserted widget/container (title, caption, tooltip, placeholder) " +
+		"bound via $Resources.Strings.<Key> or #ResourceString(<Key>)# must resolve: register <Key> with its " +
+		"default-language value through the 'resources' parameter (e.g. resources: '{\"<Key>\": \"<text>\"}'), " +
+		"unless it is a DS-bound attribute the platform auto-provides or a Usr* key clio auto-derives. A metric " +
+		"or chart widget title (e.g. IndicatorWidget_<slug>_title) is NONE of these, so it MUST be registered — " +
+		"otherwise the binding renders raw (e.g. \"$Resources.Strings.IndicatorWidget_<slug>_title\") instead of the title";
+
+	/// <summary>
 	/// Canonical clause describing the localizable-text rule enforced by
-	/// <see cref="ValidateLocalizableTextLiterals"/>. Authored ONCE here and reused by the per-occurrence
-	/// diagnostic (<see cref="BuildTextLiteralError"/>) and surfaced verbatim to MCP agents through the
-	/// update-page / sync-pages / validate-page tool descriptions and the <c>page-schema-resources</c>
-	/// guidance, so the rule the validator rejects on is stated in identical words everywhere. Kept
-	/// <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time constants only).
+	/// <see cref="ValidateLocalizableTextLiterals"/>.
 	/// </summary>
 	internal const string LocalizableTextLiteralClause =
 		"user-visible text on a view node (label, caption, title, tooltip, placeholder) must be a " +
@@ -1625,6 +1647,146 @@ public static class SchemaValidationService
 		}
 		return result;
 	}
+
+	/// <summary>
+	/// Validates that captions on inserted widgets reference resolvable localizable resource keys.
+	/// </summary>
+	/// <remarks>
+	/// Pre-flight check based only on the body and <paramref name="explicitResources"/>.
+	/// Use <see cref="ValidateInsertedWidgetCaptionsRegistered"/> for the authoritative save-time validation.
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when an inserted widget caption uses an unresolvable localizable key.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionResources(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return new SchemaValidationResult { IsValid = true };
+		}
+		var dsBoundKeys = CollectViewModelPaths(jsBody).Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		return ScanInsertedWidgetCaptions(
+			jsBody, key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys));
+	}
+
+	/// <summary>
+	/// Validates that captions on inserted widgets use resource keys present in the final saved registration set.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body being saved (the merged body in append mode).</param>
+	/// <param name="registeredNames">Names present in the final <c>localizableStrings</c> to be saved.</param>
+	/// <param name="dsBoundKeys">View-model attribute names bound to a data source.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when a saved inserted widget caption uses an unresolved resource key.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionsRegistered(
+		string jsBody,
+		IReadOnlySet<string> registeredNames,
+		IReadOnlySet<string> dsBoundKeys) =>
+		ScanInsertedWidgetCaptions(
+			jsBody,
+			key => (registeredNames != null && registeredNames.Contains(key)) ||
+			       (dsBoundKeys != null && dsBoundKeys.Contains(key)));
+
+	// Shared engine for both the body-only (pre-flight) and the registered-set (save-gate) checks: walks
+	// every operation:"insert" entry's values subtree and flags a widget caption (title/caption/tooltip/
+	// placeholder) whose localizable key does not satisfy <paramref name="resolves"/>. Merges are skipped
+	// (a merge may target a caption a parent schema already provides). Fail-open on empty/missing marker/
+	// unparseable body, matching the sibling content validators.
+	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object || !IsInsertOperation(entry)) {
+					continue;
+				}
+				if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				    values.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
+				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanNodeForUnresolvedCaptionBindings(
+		JsonElement node,
+		string ownerName,
+		Func<string, bool> resolves,
+		SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (property.Value.ValueKind == JsonValueKind.String &&
+					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
+						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
+					}
+					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, result);
+				}
+				break;
+		}
+	}
+
+	private static void CheckCaptionBinding(
+		string ownerName,
+		string property,
+		string value,
+		Func<string, bool> resolves,
+		SchemaValidationResult result) {
+		// ExtractKeys returns the keys referenced by both binding forms ($Resources.Strings.K and
+		// #ResourceString(K)#). A literal (no resource reference) yields no keys and is left to
+		// ValidateLocalizableTextLiterals; a non-resource binding ($SomeAttr) also yields no keys.
+		// Fail-open on a regex timeout (mirrors ValidateContextAccessAwait): an advisory/gate heuristic
+		// must never surface a pathological body as an unhandled crash.
+		HashSet<string> keys;
+		try {
+			keys = ResourceStringHelper.ExtractKeys(value);
+		} catch (RegexMatchTimeoutException) {
+			return;
+		}
+		foreach (string key in keys) {
+			if (!resolves(key)) {
+				result.Errors.Add(BuildUnresolvedCaptionError(ownerName, property, key));
+			}
+		}
+	}
+
+	private static string BuildUnresolvedCaptionError(string ownerName, string property, string key) {
+		// Cap the echoed body-supplied values (mirrors BuildTextLiteralError): the key comes from an
+		// unbounded #ResourceString([^)]+)# / $Resources.Strings.<...> match and is echoed into the MCP
+		// transcript and the update-page log, so truncate it to keep the diagnostic bounded and avoid
+		// newline/oversize log noise.
+		string shownOwner = Truncate(ownerName);
+		string shownKey = Truncate(key);
+		string node = string.IsNullOrWhiteSpace(shownOwner) ? "a view node" : $"'{shownOwner}'";
+		return $"View node {node} binds user-visible text property '{property}' to localizable key '{shownKey}', " +
+			"but that key will not be registered and the binding will render raw " +
+			$"(e.g. \"{ResourceBindingPrefix}{shownKey}\") instead of the localized text. Rule: {InsertedWidgetCaptionClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
+	private static string Truncate(string value) =>
+		string.IsNullOrEmpty(value) || value.Length <= 60 ? value : value[..60] + "…";
 
 	/// <summary>
 	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>

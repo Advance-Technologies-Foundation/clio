@@ -19,6 +19,8 @@ DESCRIPTION
     Publishing also requests an OData entities rebuild, so the schema becomes
     reachable over OData (/0/odata/<Entity>) without a manual full compile;
     that rebuild runs in the background and appears within a few minutes.
+    Use --is-virtual when the schema must not have a physical database table.
+    The option defaults to false.
 
     Current clio entity-schema commands are part of the canonical clio MCP
     contract. Keep using create-entity-schema / modify-entity-schema-column
@@ -36,6 +38,7 @@ DESCRIPTION
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
+    - Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
 
     For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
     ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
@@ -46,6 +49,8 @@ OPTIONS
     --title                Entity schema title/caption
     --parent               Parent schema name
     --extend-parent        Create a replacement schema. Requires --parent
+    --is-virtual           Create a virtual entity schema without a physical
+                           database table. Default: false
     --column               Column definition in format
                            <name>:<type>[:<title>[:<refSchema>]]
                            or JSON with name/type/title or caption/
@@ -89,10 +94,16 @@ EXAMPLES
     # Create a replacement schema
     clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Account" --parent Account --extend-parent
 
+    # Create a virtual entity without a physical database table
+    clio create-entity-schema -e dev --package Custom --name UsrExternalVehicle --title "External vehicle" --is-virtual
+
 NOTES
     - The command works against a remote Creatio environment only
     - Package resolution requires cliogate to be installed on the target environment
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
+    - A schema with a parent keeps the parent's primary column; custom Guid columns
+      remain ordinary columns
+    - --is-virtual is independent of parent and replacement-schema settings
     - If no display column is set, the first text-like column is used as primary display column
     - Prefer default-value-config for Settings, SystemValue, or Sequence; keep
       default-value-source/default-value as shorthand only for Const and None

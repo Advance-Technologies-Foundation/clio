@@ -183,6 +183,71 @@ public sealed class PageCreateCommandTests
 			Arg.Is<string>(s => s.Contains(TemplateUId) && s.Contains("\"useFullHierarchy\":false")));
 	}
 
+	private PageCreateCommand CommandWithDesignPackage(string designPackageUId, bool throws = false) {
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		if (throws) {
+			hierarchyClient.GetDesignPackageUId(Arg.Any<string>())
+				.Returns(_ => throw new System.InvalidOperationException("probe failed"));
+		} else {
+			hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns(designPackageUId);
+		}
+		return new PageCreateCommand(_applicationClient, _serviceUrlBuilder, _catalog, _logger,
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>(), hierarchyClient);
+	}
+
+	private void StubHappyPathSelectAndSave() {
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+	}
+
+	[Test]
+	[Description("When the app design package differs from the chosen package, create-page surfaces designPackageUId + willCreateReplacingInDesignPackage and a note pointing to target-schema-uid.")]
+	public void TryCreatePage_WhenChosenPackageIsNotDesignPackage_WarnsAboutSplit() {
+		StubHappyPathSelectAndSave();
+		PageCreateCommand command = CommandWithDesignPackage(designPackageUId: "design-pkg-uid");
+		PageCreateOptions options = new() { SchemaName = "UsrDemo_BlankPage", Template = TemplateName, PackageName = "Custom" };
+
+		bool result = command.TryCreatePage(options, out PageCreateResponse response);
+
+		result.Should().BeTrue(response.Error);
+		response.WillCreateReplacingInDesignPackage.Should().BeTrue();
+		response.DesignPackageUId.Should().Be("design-pkg-uid");
+		response.Note.Should().Contain("target-schema-uid=" + response.SchemaUId);
+	}
+
+	[Test]
+	[Description("When the chosen package IS the design package there is no split, so no warning is emitted.")]
+	public void TryCreatePage_WhenChosenPackageIsDesignPackage_NoWarning() {
+		StubHappyPathSelectAndSave();
+		PageCreateCommand command = CommandWithDesignPackage(designPackageUId: PackageUId);
+		PageCreateOptions options = new() { SchemaName = "UsrDemo_BlankPage", Template = TemplateName, PackageName = "Custom" };
+
+		bool result = command.TryCreatePage(options, out PageCreateResponse response);
+
+		result.Should().BeTrue(response.Error);
+		response.WillCreateReplacingInDesignPackage.Should().BeNull();
+		response.DesignPackageUId.Should().BeNull();
+	}
+
+	[Test]
+	[Description("The design-package probe is best-effort: a failure must not fail page creation.")]
+	public void TryCreatePage_WhenDesignPackageProbeThrows_StillSucceeds() {
+		StubHappyPathSelectAndSave();
+		PageCreateCommand command = CommandWithDesignPackage(designPackageUId: null, throws: true);
+		PageCreateOptions options = new() { SchemaName = "UsrDemo_BlankPage", Template = TemplateName, PackageName = "Custom" };
+
+		bool result = command.TryCreatePage(options, out PageCreateResponse response);
+
+		result.Should().BeTrue(response.Error);
+		response.WillCreateReplacingInDesignPackage.Should().BeNull();
+	}
+
 	[Test]
 	public void TryCreatePage_Rejects_Caption_Whose_Script_Mismatches_Resolved_Culture() {
 		// Arrange — resolve the profile culture to the Latin-script en-US, then pass a Cyrillic caption.
@@ -396,6 +461,44 @@ public sealed class PageCreateCommandTests
 		result.Should().BeTrue(response.Error);
 		((JArray)JObject.Parse(savePayload)["optionalProperties"]).Should().BeEmpty(
 			because: "omitting optional-properties must preserve the prior empty-array behavior");
+	}
+
+	[Test]
+	[Description("Stamps group Desktop on the SaveSchema payload when the CentralAreaDesktopTemplate is used, because the schema group (not the parent) is what makes the platform register the desktop in the selector.")]
+	public void TryCreatePage_Desktop_Template_Stamps_Desktop_Group() {
+		// Arrange
+		_catalog.FindTemplate(SchemaTemplateCatalog.DesktopTemplateName).Returns(new PageTemplateInfo {
+			UId = SchemaTemplateCatalog.DesktopTemplateUId,
+			Name = SchemaTemplateCatalog.DesktopTemplateName,
+			Title = "Desktop",
+			GroupName = SchemaTemplateCatalog.DesktopGroupName,
+			SchemaType = 9
+		});
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		PageCreateOptions options = new() {
+			SchemaName = "UsrSalesDesktop",
+			Template = SchemaTemplateCatalog.DesktopTemplateName,
+			PackageName = "Custom",
+			Caption = "Sales desktop"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		response.TemplateName.Should().Be(SchemaTemplateCatalog.DesktopTemplateName,
+			because: "a desktop is created from the CentralAreaDesktopTemplate like any other page");
+		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(s => s.Contains(SchemaTemplateCatalog.DesktopTemplateUId)
+				&& s.Contains("\"group\":\"Desktop\"")));
 	}
 
 	private void StubSelectQueryResponse(string url, string responseJson) {
