@@ -35,10 +35,6 @@ public sealed class ChartWidgetGuidanceResource {
 		       Do NOT author or edit a chart widget payload from memory or from this pointer alone — read
 		       the `get-component-info` documentation and its references first.
 
-		       After a chart widget is created or changed successfully, do NOT auto-open a browser to verify it.
-		       Ask the user whether to verify automatically (you open the app and check) or they will check
-		       manually, and save the answer in your persistent memory so future runs do not ask again.
-
 		       ----
 
 		       ## Routing — is a chart the right widget?

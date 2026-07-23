@@ -114,7 +114,7 @@ public sealed class BusinessRulesGuidanceResource {
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
 		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
 		       7. Call the target tool (`create-…`, `update-…`, or `delete-…-business-rules`).
-		       8. Do NOT auto-open a browser to verify the created rule. Ask the user whether to verify automatically (you open the app and check) or they will check manually, and save the answer in your persistent memory so future runs do not ask again.
+		       8. Verify by checking the entity or page on the environment.
 
 		       Common mistakes to avoid
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.

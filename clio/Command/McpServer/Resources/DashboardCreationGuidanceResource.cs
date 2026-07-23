@@ -46,9 +46,6 @@ public sealed class DashboardCreationGuidanceResource {
 		          properties below.
 		       4. `get-page` to verify the schema reads back; its `bundle.json` `optionalProperties` array holds the
 		          values you set.
-		       5. Do NOT auto-open a browser to verify the created dashboard. Ask the user whether to verify
-		          automatically (you open the app and check) or they will check manually, and save the answer in
-		          your persistent memory so future runs do not ask again.
 
 		       `optional-properties` is a JSON array of `{key, value}` objects, e.g.:
 		       `[{"key":"DashboardsEntitySchemaName","value":"Contact"},
