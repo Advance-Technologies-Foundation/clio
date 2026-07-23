@@ -121,7 +121,7 @@ public sealed class ComponentInfoTool(
 		}
 		return await ComponentInfoResolution.RunWithSchemaTypeWarningAsync(
 			args.SchemaType,
-			() => BuildResponseAsync(args, cancellationToken),
+			isMobile => BuildResponseAsync(args, isMobile, cancellationToken),
 			errorMessage => new ComponentInfoResponse {
 				Success = false,
 				Mode = "list",
@@ -166,8 +166,7 @@ public sealed class ComponentInfoTool(
 	/// <c>documentation</c> / <c>resolvedTargetVersion</c> / <c>resolvedFrom</c>)
 	/// stable across the <c>schema-type</c> dimension.
 	/// </summary>
-	private async Task<ComponentInfoResponse> BuildResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
-		bool isMobile = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).IsMobile;
+	private async Task<ComponentInfoResponse> BuildResponseAsync(ComponentInfoArgs args, bool isMobile, CancellationToken cancellationToken) {
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(args.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri);
 		if (hasExplicitVersion && hasEnvironment) {

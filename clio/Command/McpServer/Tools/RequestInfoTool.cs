@@ -109,7 +109,7 @@ public sealed class RequestInfoTool(
 		}
 		return await ComponentInfoResolution.RunWithSchemaTypeWarningAsync(
 			args.SchemaType,
-			() => BuildResponseAsync(args, cancellationToken),
+			isMobile => BuildResponseAsync(args, isMobile, cancellationToken),
 			CreateErrorResponse,
 			(response, warning) => response.SchemaTypeWarning = warning).ConfigureAwait(false);
 	}
@@ -121,8 +121,7 @@ public sealed class RequestInfoTool(
 	/// (<c>resolvedTargetVersion</c> / <c>resolvedFrom</c> / <c>versionWarning</c> /
 	/// <c>requiresVersionConfirmation</c>) behave identically across both catalogs.
 	/// </summary>
-	private async Task<RequestInfoResponse> BuildResponseAsync(RequestInfoArgs args, CancellationToken cancellationToken) {
-		bool isMobile = ComponentInfoResolution.ResolveSchemaType(args.SchemaType).IsMobile;
+	private async Task<RequestInfoResponse> BuildResponseAsync(RequestInfoArgs args, bool isMobile, CancellationToken cancellationToken) {
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(args.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri);
 		if (hasExplicitVersion && hasEnvironment) {

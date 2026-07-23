@@ -194,24 +194,25 @@ public static class ComponentInfoResolution {
 	/// </summary>
 	/// <typeparam name="TResponse">The tool's response type.</typeparam>
 	/// <param name="schemaType">The raw <c>schema-type</c> argument (already alias-checked by the caller).</param>
-	/// <param name="buildResponse">Builds the mode-specific response (list / detail / not-found / errors).</param>
+	/// <param name="buildResponse">Builds the mode-specific response (list / detail / not-found / errors); receives the resolved <c>isMobile</c> so the builder never re-resolves schema-type.</param>
 	/// <param name="buildErrorResponse">Builds the tool's error response from an exception message that has already been redacted of sensitive text.</param>
 	/// <param name="applyWarning">Assigns the resolved warning to the response's <c>schemaTypeWarning</c> field.</param>
 	internal static async Task<TResponse> RunWithSchemaTypeWarningAsync<TResponse>(
 		string? schemaType,
-		Func<Task<TResponse>> buildResponse,
+		Func<bool, Task<TResponse>> buildResponse,
 		Func<string, TResponse> buildErrorResponse,
 		Action<TResponse, string?> applyWarning) {
-		// Resolve once here; args.SchemaType is null when a camelCase alias was already rejected upstream,
-		// so a valid/alias-rejected call yields no warning and this is a no-op beyond the build itself.
-		string? warning = ResolveSchemaType(schemaType).Warning;
+		// Resolve schema-type ONCE here: the flavor (isMobile) is handed to the builder and the warning is
+		// stamped below, so a call never re-resolves it. schemaType is null when a camelCase alias was
+		// already rejected upstream, so a valid/alias-rejected call yields no warning.
+		SchemaTypeResolution schema = ResolveSchemaType(schemaType);
 		try {
-			TResponse response = await buildResponse().ConfigureAwait(false);
-			applyWarning(response, warning);
+			TResponse response = await buildResponse(schema.IsMobile).ConfigureAwait(false);
+			applyWarning(response, schema.Warning);
 			return response;
 		} catch (Exception ex) {
 			TResponse error = buildErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
-			applyWarning(error, warning);
+			applyWarning(error, schema.Warning);
 			return error;
 		}
 	}
