@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -47,17 +48,50 @@ public sealed class ToolContractGetTool {
 		_toolInvokerRegistry = toolInvokerRegistry;
 	}
 
+	/// <summary>
+	/// Detects the CAADT 1.4.0 stdio fallback client (<c>runtime/scripts/mcp_client.py</c>), which is
+	/// already distributed to customers and cannot be patched. That client sends
+	/// <c>clientInfo = {"name": "mcp_client", "version": "1.0"}</c> on <c>initialize</c> and deliberately
+	/// never sends <c>notifications/initialized</c>; it still expects the pre-ENG-90312 full
+	/// <c>tools</c> array from a no-tool-names <c>get-tool-contract</c> call and crashes with
+	/// "did not return a tools array" against the compact index shape (ENG-93885). The match is
+	/// deliberately exact (ordinal, both fields) — a coincidental future client sharing one of these two
+	/// values should NOT be redirected onto legacy behavior.
+	/// </summary>
+	/// <param name="clientInfo">The MCP client's self-reported identity from the initialize handshake, or <c>null</c> when unavailable.</param>
+	internal static bool IsLegacyStdioClient(Implementation? clientInfo) {
+		return clientInfo is not null
+			&& string.Equals(clientInfo.Name, "mcp_client", StringComparison.Ordinal)
+			&& string.Equals(clientInfo.Version, "1.0", StringComparison.Ordinal);
+	}
+
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
-		ToolContractGetArgs? args = null) {
+		ToolContractGetArgs? args = null,
+		RequestContext<CallToolRequestParams>? requestContext = null) {
 		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
 		// Treat a missing args object exactly like an omitted-tool-names call so it yields the compact index:
 		// new ToolContractGetArgs() has ToolNames=null / Detail=null, which the downstream logic resolves to
 		// the index path unchanged. All recovery/alias/detail handling below then operates on a non-null args.
 		args ??= new ToolContractGetArgs();
 		try {
+			// ENG-93885: the legacy CAADT 1.4.0 stdio client (see IsLegacyStdioClient) must get back the
+			// pre-ENG-90312 full "tools" shape for a no-tool-names request instead of the compact "index",
+			// since it hard-crashes on the index shape and cannot be patched. Every other client is
+			// unaffected — this only flips the no-names/non-full-detail branch inside GetContracts.
+			//
+			// Load-bearing SDK assumption (pinned to ModelContextProtocol 1.4.1, see Directory.Packages.props):
+			// Server.ClientInfo is captured while the SDK handles the `initialize` REQUEST, independent of the
+			// `notifications/initialized` notification. This is what makes detection work for the real CAADT
+			// 1.4.0 client, which deliberately never sends `notifications/initialized`: ClientInfo is already
+			// populated by the time any `tools/call` (including this one) is dispatched. If a future SDK bump
+			// ever moved ClientInfo capture onto the `initialized` notification, requestContext.Server.ClientInfo
+			// would be null here for that client and IsLegacyStdioClient(null) => false would silently re-break
+			// it (no exception, every shipped test still passes). If you upgrade the SDK, re-verify this
+			// initialize-time capture behavior against the real client before trusting it.
+			bool legacyNoNamesFullShape = IsLegacyStdioClient(requestContext?.Server?.ClientInfo);
 			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
 			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
 			// overflow bag rather than binding to ToolNames. Recover a flat tool-names / name (and the
@@ -69,7 +103,7 @@ public sealed class ToolContractGetTool {
 			string? detail = TryRecoverFlatDetail(args) ?? args.Detail;
 			IReadOnlyList<string>? flatToolNames = TryRecoverFlatToolNames(args);
 			if (flatToolNames is not null) {
-				return ToolContractCatalog.GetContracts(flatToolNames, _toolInvokerRegistry, detail);
+				return ToolContractCatalog.GetContracts(flatToolNames, _toolInvokerRegistry, detail, legacyNoNamesFullShape);
 			}
 			string? aliasError = CollectLegacyAliasError(args);
 			if (aliasError is not null) {
@@ -79,7 +113,7 @@ public sealed class ToolContractGetTool {
 						"invalid-parameter-alias",
 						aliasError + " " + ExpectedArgsShapeHint));
 			}
-			return ToolContractCatalog.GetContracts(args.ToolNames, _toolInvokerRegistry, detail);
+			return ToolContractCatalog.GetContracts(args.ToolNames, _toolInvokerRegistry, detail, legacyNoNamesFullShape);
 		} catch (Exception ex) {
 			return new ToolContractGetResponse(
 				false,
@@ -656,30 +690,87 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
-	/// on <paramref name="detail"/>: any value other than <c>full</c> (the default) returns the cheap
-	/// compact INDEX of EVERY invokable tool — curated core plus the hidden long tail reachable through
-	/// clio-run (names + one-line purpose + safety flags, <c>Tools</c> null);
-	/// <c>full</c> returns every canonical tool's full contract (legacy behavior, <c>Index</c> null). When
-	/// <paramref name="toolNames"/> is supplied the named tools' full contracts are returned via the
-	/// curated → registry → reflection → not-found cascade (unchanged).
+	/// on <paramref name="detail"/> and <paramref name="legacyNoNamesFullShape"/>: any <paramref name="detail"/>
+	/// other than <c>full</c> (the default) returns the cheap compact INDEX of EVERY invokable tool — curated
+	/// core plus the hidden long tail reachable through clio-run (names + one-line purpose + safety flags,
+	/// <c>Tools</c> null) — UNLESS <paramref name="legacyNoNamesFullShape"/> is set, in which case the SAME
+	/// index name universe is returned as full <c>Tools</c> contracts instead (ENG-93885, see
+	/// <see cref="ToolContractGetTool.IsLegacyStdioClient"/>); <c>full</c> returns every CANONICAL tool's full
+	/// contract (legacy behavior, <c>Index</c> null) regardless of <paramref name="legacyNoNamesFullShape"/> —
+	/// an explicit <c>detail=full</c> request is unaffected by client detection. When <paramref name="toolNames"/>
+	/// is supplied the named tools' full contracts are returned via the curated → registry → reflection →
+	/// not-found cascade (unchanged; also unaffected by <paramref name="legacyNoNamesFullShape"/>).
 	/// </summary>
 	/// <param name="toolNames">The requested tool names, or <c>null</c>/empty to discover all tools.</param>
 	/// <param name="toolInvokerRegistry">Optional invoker registry used to derive uncurated contracts and the index destructive hint.</param>
 	/// <param name="detail">Optional detail level for a no-names request: <c>index</c> (default) or <c>full</c>.</param>
+	/// <param name="legacyNoNamesFullShape">
+	/// When <c>true</c>, a no-names/non-full-detail request returns the full <c>Tools</c> contracts for the
+	/// index name universe instead of the compact index. Set only for the legacy CAADT 1.4.0 stdio client
+	/// (ENG-93885); every other caller passes <c>false</c>.
+	/// </param>
 	internal static ToolContractGetResponse GetContracts(
 		IReadOnlyList<string>? toolNames,
 		IMcpToolInvokerRegistry? toolInvokerRegistry = null,
-		string? detail = null) {
-		if (toolNames is null || toolNames.Count == 0) {
-			if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
-				return new ToolContractGetResponse(
-					true,
-					CanonicalToolNames.Select(name => Contracts[name]).ToArray());
-			}
+		string? detail = null,
+		bool legacyNoNamesFullShape = false) {
+		return toolNames is null || toolNames.Count == 0
+			? ResolveNoNamesContracts(toolInvokerRegistry, detail, legacyNoNamesFullShape)
+			: ResolveNamedContracts(toolNames, toolInvokerRegistry);
+	}
+
+	/// <summary>
+	/// Resolves the no-tool-names branch of <see cref="GetContracts"/>: <c>detail=full</c> (legacy, curated
+	/// only), the ENG-93885 legacy-client full shape (set-equal with the index universe), or the default
+	/// compact index — extracted purely to keep <see cref="GetContracts"/>'s cognitive complexity low
+	/// (Sonar S3776), no behavior change.
+	/// </summary>
+	private static ToolContractGetResponse ResolveNoNamesContracts(
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		string? detail,
+		bool legacyNoNamesFullShape) {
+		if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
 			return new ToolContractGetResponse(
 				true,
-				Index: BuildCompactIndex(toolInvokerRegistry));
+				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
 		}
+		if (legacyNoNamesFullShape) {
+			// Deliberate: set-EQUAL with the index name universe (curated + long-tail), not just the
+			// smaller curated set the legacy client historically received pre-ENG-90312. Alex's explicit
+			// call for ENG-93885 — the legacy client now sees every tool the index would list, just as
+			// full contracts instead of index entries.
+			//
+			// The set-equality holds under feature toggles (not only in the all-enabled state): this loop
+			// and BuildCompactIndex both enumerate the SAME BuildIndexToolNames(toolInvokerRegistry), whose
+			// long tail is registry.ToolNames — already feature-filtered (McpToolInvokerRegistry only keeps
+			// McpFeatureToggleFilter.GetEnabledTypes). A feature-gated-OFF uncurated tool is therefore
+			// absent from that enumeration for BOTH paths, so neither index nor legacy lists it — no
+			// divergence. The toggle-blind reflection catalog can only re-enter via TryResolveFullContract's
+			// `toolInvokerRegistry is null` fallback, which never fires while a live registry is present; and
+			// on the degraded no-registry path both paths fall back to the same reflection universe, so they
+			// stay set-equal there too. legacy drops a name only when TryResolveFullContract cannot build it,
+			// which never happens for a name the shared enumeration produced (guarded by the mixed-toggle
+			// drift test ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_UnderMixedFeatureToggles).
+			List<ToolContractDefinition> legacyTools = [];
+			foreach (string name in BuildIndexToolNames(toolInvokerRegistry)) {
+				if (TryResolveFullContract(name, toolInvokerRegistry, out ToolContractDefinition contract)) {
+					legacyTools.Add(contract);
+				}
+			}
+			return new ToolContractGetResponse(true, legacyTools);
+		}
+		return new ToolContractGetResponse(
+			true,
+			Index: BuildCompactIndex(toolInvokerRegistry));
+	}
+
+	/// <summary>
+	/// Resolves the explicit tool-names branch of <see cref="GetContracts"/> — extracted purely to keep
+	/// <see cref="GetContracts"/>'s cognitive complexity low (Sonar S3776), no behavior change.
+	/// </summary>
+	private static ToolContractGetResponse ResolveNamedContracts(
+		IReadOnlyList<string> toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
 			string? name = toolNames[index];
@@ -698,27 +789,8 @@ internal static class ToolContractCatalog {
 		}
 		List<ToolContractDefinition> results = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
-			// Curated contracts take precedence over any derived contract.
-			if (Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
+			if (TryResolveFullContract(normalizedName, toolInvokerRegistry, out ToolContractDefinition contract)) {
 				results.Add(contract);
-				continue;
-			}
-			// No curated contract: derive the contract from the SAME registered MCP tool input schema that
-			// clio-run / clio-run-destructive dispatch against, so the advertised contract matches the real
-			// invokable argument shape (Codex review #1). This captures single-scalar params (e.g.
-			// stop-creatio's environmentName) the lossy reflection fallback drops.
-			if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, normalizedName, out ToolContractDefinition registryContract)) {
-				results.Add(registryContract);
-				continue;
-			}
-			// Last resort: reflection over the options type. The toggle-blind reflection catalog is
-			// consulted ONLY when no invoker registry is available (degraded path): with a live registry
-			// every feature-enabled tool already resolved above, so the only names reflection would add
-			// are feature-gated-OFF tools — and a disabled tool must stay invisible on every MCP surface,
-			// the named-contract lookup included.
-			if (toolInvokerRegistry is null
-				&& McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
-				results.Add(schemaContract);
 				continue;
 			}
 			return new ToolContractGetResponse(
@@ -729,6 +801,36 @@ internal static class ToolContractCatalog {
 					BuildSuggestions(normalizedName, toolInvokerRegistry)));
 		}
 		return new ToolContractGetResponse(true, results);
+	}
+
+	/// <summary>
+	/// Resolves one tool's full contract through the curated → registry → reflection cascade shared by the
+	/// named-tools path and the legacy full-shape path (ENG-93885): a handwritten <see cref="Contracts"/>
+	/// entry takes precedence, then a contract derived from the SAME registered MCP tool input schema
+	/// <c>clio-run</c> / <c>clio-run-destructive</c> dispatch against (Codex review #1 — this captures
+	/// single-scalar params the lossy reflection fallback drops), then — only when no invoker registry is
+	/// available, since a live registry already resolved every feature-enabled tool above and reflection
+	/// would otherwise leak feature-gated-OFF tools back into visibility — the toggle-blind reflection
+	/// catalog.
+	/// </summary>
+	/// <param name="name">The tool name to resolve.</param>
+	/// <param name="toolInvokerRegistry">Optional invoker registry providing registry-derived contracts.</param>
+	/// <param name="contract">The resolved contract when found; otherwise <c>null</c>.</param>
+	private static bool TryResolveFullContract(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		out ToolContractDefinition contract) {
+		if (Contracts.TryGetValue(name, out contract)) {
+			return true;
+		}
+		if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, name, out contract)) {
+			return true;
+		}
+		if (toolInvokerRegistry is null && McpToolSchemaCatalog.TryGetSchemaContract(name, out contract)) {
+			return true;
+		}
+		contract = null;
+		return false;
 	}
 
 	/// <summary>

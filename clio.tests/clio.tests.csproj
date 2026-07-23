@@ -26,12 +26,12 @@
     <PackageReference Include="NUnit.Analyzers" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <!-- Pin the transitively-pulled System.Security.Cryptography.Xml (via Microsoft.PowerShell.SDK)
-         to the CPM version (10.0.10). Central Package Management only versions DIRECT references,
-         so without this explicit reference the test project restores the vulnerable transitive
-         10.0.6 and fails NU1903 (CVE-2026-50648). See Directory.Packages.props. -->
+    <!-- Direct reference so the centrally-managed version ($(MsPackageVersion)) wins over the older
+         vulnerable transitive System.Security.Cryptography.Xml 10.0.6 pulled in by
+         clio -> Microsoft.PowerShell.SDK -> Microsoft.Windows.Compatibility. CPM only versions DIRECT
+         references, so without this the project restores 10.0.6 and fails NU1903 (CVE-2026-50648). -->
     <PackageReference Include="System.Security.Cryptography.Xml" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
          TestServer request/response, not just config-object assertions). -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />

@@ -6,6 +6,7 @@ using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
@@ -15,18 +16,36 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
-	// Builds the get-tool-contract tool over the REAL invoker registry so contracts for uncurated tools
-	// derive from the same MCP tool input schema clio-run dispatches against (Codex review #1, story-6).
-	private static ToolContractGetTool BuildToolWithRegistry() {
+	// Builds the same REAL invoker registry BuildToolWithRegistry wraps in a tool, so contracts for
+	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
+	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
+	// directly against the registry without going through the tool's requestContext plumbing.
+	private static McpToolInvokerRegistry BuildInvokerRegistry() => BuildInvokerRegistry(disabledToolTypes: null);
+
+	// Same registry, but with the given tool types feature-toggled OFF so ENG-93885 tests can exercise a
+	// realistic mixed-toggle production state (some experimental/gated tools disabled) rather than only the
+	// all-enabled universe. The registry keeps exactly McpFeatureToggleFilter.GetEnabledTypes, so a disabled
+	// type never lands in registry.ToolNames.
+	private static McpToolInvokerRegistry BuildInvokerRegistry(IReadOnlyCollection<Type>? disabledToolTypes) {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
 		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
-		McpToolInvokerRegistry registry = new(
+		if (disabledToolTypes is not null) {
+			foreach (Type disabled in disabledToolTypes) {
+				featureToggle.IsEnabled(disabled).Returns(false);
+			}
+		}
+		return new McpToolInvokerRegistry(
 			provider,
 			typeof(SchemaSyncTool).Assembly,
 			featureToggle,
 			JsonSerializerOptions.Default);
-		return new ToolContractGetTool(registry);
+	}
+
+	// Builds the get-tool-contract tool over the REAL invoker registry so contracts for uncurated tools
+	// derive from the same MCP tool input schema clio-run dispatches against (Codex review #1, story-6).
+	private static ToolContractGetTool BuildToolWithRegistry() {
+		return new ToolContractGetTool(BuildInvokerRegistry());
 	}
 	[Test]
 	[Category("Unit")]
@@ -2442,5 +2461,257 @@ public sealed class ToolContractGetToolTests {
 		contract.AntiPatterns!.Should().Contain(pattern =>
 				pattern.Pattern.Contains("memory", StringComparison.OrdinalIgnoreCase),
 			because: "authoring request names or params from memory is the core anti-pattern the catalog exists to prevent");
+	}
+
+	// ENG-93885: IsLegacyStdioClient must match the CAADT 1.4.0 stdio fallback client's exact reported
+	// identity (name="mcp_client", version="1.0", both ordinal) and nothing else - not a version prefix,
+	// not an empty version, not a different client name.
+	[Test]
+	[Category("Unit")]
+	[TestCase("mcp_client", "1.0", true)]
+	[TestCase("mcp_client", "1.0.0", false)]
+	[TestCase("mcp_client", "", false)]
+	[TestCase("clio.mcp.e2e", "1.0.0", false)]
+	[TestCase("some_other_client", "1.0", false)]
+	[TestCase("MCP_CLIENT", "1.0", false)]
+	[Description("IsLegacyStdioClient returns true only for the exact legacy CAADT 1.4.0 identity (name=mcp_client, version=1.0, both ordinal) - a version bump such as 1.0.0, an empty version, or a different client name must all opt OUT of the legacy branch.")]
+	public void IsLegacyStdioClient_Should_MatchOnlyExactLegacyIdentity(string name, string version, bool expected) {
+		// Arrange
+		Implementation clientInfo = new() { Name = name, Version = version };
+
+		// Act
+		bool result = ToolContractGetTool.IsLegacyStdioClient(clientInfo);
+
+		// Assert
+		result.Should().Be(expected,
+			because: $"IsLegacyStdioClient must return {expected} for clientInfo name='{name}', version='{version}'");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("IsLegacyStdioClient returns false for a null clientInfo (handshake identity unavailable), never defaulting an unknown client onto the legacy branch.")]
+	public void IsLegacyStdioClient_Should_ReturnFalse_ForNullClientInfo() {
+		// Arrange
+		Implementation? clientInfo = null;
+
+		// Act
+		bool result = ToolContractGetTool.IsLegacyStdioClient(clientInfo);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a null clientInfo means the handshake identity is unavailable and must never be treated as the legacy client");
+	}
+
+	// ENG-93885 AC-6 drift guard: this is the critical regression guard. legacyNoNamesFullShape=true must
+	// restore SET-EQUIVALENCE with the compact index's name universe (curated + registry-derived long
+	// tail) - not merely a non-empty subset. Before this feature, a no-names request always returned the
+	// compact index for every client, so this assertion would have failed against the pre-fix code: the
+	// old code path had no way to produce a non-null Tools array here at all.
+	[Test]
+	[Category("Unit")]
+	[Description("ToolContractCatalog.GetContracts(legacyNoNamesFullShape:true) returns full tool contracts whose name set is EXACTLY equal (case-insensitive, no extra, no missing) to the compact index's name set built from the same registry - the legacy stdio client must see the full enumerable surface, not a narrowed subset.")]
+	public void ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
+			null, registry, detail: null, legacyNoNamesFullShape: true);
+		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
+			null, registry, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		legacyFullResult.Success.Should().BeTrue(
+			because: "a no-names request from the legacy client must still succeed");
+		legacyFullResult.Tools.Should().NotBeNullOrEmpty(
+			because: "the legacy client must receive a non-empty full tools array instead of the compact index");
+		legacyFullResult.Tools!.Should().OnlyContain(tool => tool.InputSchema != null,
+			because: "every legacy full-shape entry must carry a real input schema, not a stub");
+		legacyFullResult.Index.Should().BeNull(
+			because: "the legacy full-shape response must not also carry the compact index");
+		indexResult.Index.Should().NotBeNullOrEmpty(
+			because: "the same registry with legacyNoNamesFullShape=false must still yield the ordinary compact index");
+
+		IEnumerable<string> legacyNames = legacyFullResult.Tools!.Select(tool => tool.Name);
+		IEnumerable<string> indexNames = indexResult.Index!.Select(entry => entry.Name);
+		legacyNames.Should().BeEquivalentTo(indexNames,
+			because: "the legacy client's full-shape name set must be set-EQUAL with the compact index universe (curated + registry-derived long tail) - no extra tools, no missing tools, not a subset");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Mixed-toggle drift guard (reviewer finding, ENG-93885): with a feature-gated uncurated tool family toggled OFF, the legacy full-shape name set stays set-EQUAL with the compact index, the disabled tool leaks into NEITHER set (no toggle-blind reflection re-entry via the live registry), and the toggle is proven non-vacuous against the all-enabled registry. Complements the all-enabled set-equality test, which only exercised the toggle-on universe.")]
+	public void ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_UnderMixedFeatureToggles() {
+		// Arrange: disable the whole feature-gated deploy-identity tool family so the registry is in a
+		// realistic mixed-toggle production state, not the all-enabled state BuildInvokerRegistry forces
+		// by default. None of these names is in CanonicalToolNames, so index membership comes only via
+		// registry.ToolNames and must vanish when the feature flag is off. Note: deploy-identity itself
+		// IS curated (Contracts[DeployIdentityTool.DeployIdentityToolName]) though non-canonical, so for
+		// it the theoretical leak vector is the curated Contracts lookup; its siblings (for example
+		// get-identity-service-config) are genuinely uncurated and could only leak via the toggle-blind
+		// reflection catalog.
+		Type[] disabledToolTypes = [
+			typeof(DeployIdentityTool),
+			typeof(GetIdentityServiceConfigTool),
+			typeof(ResolveOAuthSystemUserTool),
+			typeof(VerifyOAuthAppTool),
+			typeof(CreateServerToServerOAuthAppTool),
+			typeof(CreateOAuthTechnicalUserTool)
+		];
+		McpToolInvokerRegistry allEnabledRegistry = BuildInvokerRegistry();
+		McpToolInvokerRegistry mixedToggleRegistry = BuildInvokerRegistry(disabledToolTypes);
+		const string disabledToolName = DeployIdentityTool.DeployIdentityToolName;
+
+		// Act
+		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
+			null, mixedToggleRegistry, detail: null, legacyNoNamesFullShape: true);
+		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
+			null, mixedToggleRegistry, detail: null, legacyNoNamesFullShape: false);
+		ToolContractGetResponse allEnabledIndexResult = ToolContractCatalog.GetContracts(
+			null, allEnabledRegistry, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		IReadOnlyList<string> legacyNames = legacyFullResult.Tools!.Select(tool => tool.Name).ToList();
+		IReadOnlyList<string> indexNames = indexResult.Index!.Select(entry => entry.Name).ToList();
+		IReadOnlyList<string> allEnabledIndexNames = allEnabledIndexResult.Index!.Select(entry => entry.Name).ToList();
+
+		legacyNames.Should().BeEquivalentTo(indexNames,
+			because: "even with a feature-gated tool family OFF the legacy full-shape universe must stay set-EQUAL with the compact index - both enumerate the same feature-filtered BuildIndexToolNames, and legacy drops only names TryResolveFullContract cannot build (here: none)");
+		indexNames.Should().NotContain(disabledToolName,
+			because: "a feature-toggle-OFF uncurated tool must not appear in the compact index built from a live, feature-filtered registry");
+		legacyNames.Should().NotContain(disabledToolName,
+			because: "the toggle-blind reflection catalog must NOT leak a feature-gated-OFF tool back into legacy visibility - TryResolveFullContract only reaches reflection on the null-registry path, which does not fire here");
+		allEnabledIndexNames.Should().Contain(disabledToolName,
+			because: "the same tool IS visible when its feature flag is on - proving the toggle, not a typo, drove its absence from the mixed-toggle sets above (non-vacuous guard)");
+		indexNames.Count.Should().BeLessThan(allEnabledIndexNames.Count,
+			because: "disabling the deploy-identity family must actually shrink the visible tool universe");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degraded no-registry path (toolInvokerRegistry: null): the legacy full-shape name set stays set-EQUAL with the compact index name set - both fall back to the same toggle-blind reflection universe. This is the only condition under which the reflection fallback can fire on the legacy branch, previously asserted only by prose in ResolveNoNamesContracts.")]
+	public void ToolContractCatalog_GetContracts_LegacyFullShape_NameSet_Should_Equal_IndexNameSet_WithoutRegistry() {
+		// Arrange: no registry - the ctor accepts null, and only then does BuildIndexToolNames fall back
+		// to the toggle-blind reflection catalog on both the index and the legacy full-shape paths.
+
+		// Act
+		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
+			null, toolInvokerRegistry: null, detail: null, legacyNoNamesFullShape: true);
+		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
+			null, toolInvokerRegistry: null, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		legacyFullResult.Success.Should().BeTrue(
+			because: "a no-names legacy request must still succeed on the degraded no-registry path");
+		legacyFullResult.Tools.Should().NotBeNullOrEmpty(
+			because: "the legacy client must still receive a full tools array when no invoker registry is available");
+		legacyFullResult.Index.Should().BeNull(
+			because: "the legacy full-shape response must not also carry the compact index on the no-registry path");
+		indexResult.Index.Should().NotBeNullOrEmpty(
+			because: "the compact index must still be built from the reflection catalog when no invoker registry is available");
+
+		IEnumerable<string> legacyNames = legacyFullResult.Tools!.Select(tool => tool.Name);
+		IEnumerable<string> indexNames = indexResult.Index!.Select(entry => entry.Name);
+		legacyNames.Should().BeEquivalentTo(indexNames,
+			because: "on the no-registry path both branches enumerate the same reflection universe, so the legacy full-shape name set must stay set-EQUAL with the compact index name set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ToolContractCatalog.GetContracts(legacyNoNamesFullShape:false) - the default, non-legacy-client path - keeps the ENG-90312 compact-index behavior unchanged: Index populated, Tools null.")]
+	public void ToolContractCatalog_GetContracts_Should_ReturnCompactIndex_When_LegacyFlagFalse() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		ToolContractGetResponse result = ToolContractCatalog.GetContracts(
+			null, registry, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a no-names, non-full-detail, non-legacy request is a valid discovery call");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the default non-legacy no-names request must still return the compact index (ENG-90312 behavior, unaffected by ENG-93885)");
+		result.Tools.Should().BeNull(
+			because: "the default non-legacy no-names request must not pay for full contracts");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("detail=full stays scoped to the static curated CanonicalToolNames set (Index null) regardless of legacyNoNamesFullShape - the ticket's AC-3 guard against conflating an explicit detail=full request with the legacy full-shape branch, which covers the larger curated+long-tail universe.")]
+	public void ToolContractCatalog_GetContracts_DetailFull_Should_BeUnaffected_By_LegacyFlag() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		ToolContractGetResponse legacyTrue = ToolContractCatalog.GetContracts(
+			null, registry, detail: "full", legacyNoNamesFullShape: true);
+		ToolContractGetResponse legacyFalse = ToolContractCatalog.GetContracts(
+			null, registry, detail: "full", legacyNoNamesFullShape: false);
+		ToolContractGetResponse legacyFullShapeResult = ToolContractCatalog.GetContracts(
+			null, registry, detail: null, legacyNoNamesFullShape: true);
+
+		// Assert
+		legacyTrue.Index.Should().BeNull(
+			because: "detail=full never carries the compact index, regardless of legacyNoNamesFullShape");
+		legacyFalse.Index.Should().BeNull(
+			because: "detail=full never carries the compact index, regardless of legacyNoNamesFullShape");
+		legacyTrue.Tools.Should().NotBeNullOrEmpty(
+			because: "detail=full must still return the curated full-contract set when legacyNoNamesFullShape is true");
+		legacyTrue.Tools!.Select(tool => tool.Name).Should().BeEquivalentTo(
+			legacyFalse.Tools!.Select(tool => tool.Name),
+			because: "legacyNoNamesFullShape must not affect the explicit detail=full branch at all - both bool values must resolve the identical curated set");
+		legacyTrue.Tools!.Select(tool => tool.Name).Should().NotBeEquivalentTo(
+			legacyFullShapeResult.Tools!.Select(tool => tool.Name),
+			because: "detail=full (static curated CanonicalToolNames only) must stay a strictly smaller, differently-scoped set than the legacyNoNamesFullShape no-names branch (curated + registry-derived long tail) - the two must never be conflated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit tool-names request returns the identical named-tool contract regardless of legacyNoNamesFullShape - the bool governs only the no-names branch (AC-3).")]
+	public void ToolContractCatalog_GetContracts_NamedTools_Should_BeUnaffected_By_LegacyFlag() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+		string[] toolNames = [ExecuteEsqTool.ToolName];
+
+		// Act
+		ToolContractGetResponse legacyTrue = ToolContractCatalog.GetContracts(
+			toolNames, registry, detail: null, legacyNoNamesFullShape: true);
+		ToolContractGetResponse legacyFalse = ToolContractCatalog.GetContracts(
+			toolNames, registry, detail: null, legacyNoNamesFullShape: false);
+
+		// Assert
+		legacyTrue.Success.Should().BeTrue(because: "a named-tool lookup must succeed regardless of legacyNoNamesFullShape");
+		legacyFalse.Success.Should().BeTrue(because: "a named-tool lookup must succeed regardless of legacyNoNamesFullShape");
+		legacyTrue.Tools!.Single().Name.Should().Be(ExecuteEsqTool.ToolName,
+			because: "the named-tools branch must return the requested tool's contract");
+		legacyTrue.Should().BeEquivalentTo(legacyFalse,
+			because: "the named-tools branch is fully deterministic and must be completely independent of legacyNoNamesFullShape");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GetToolContracts derives legacyNoNamesFullShape end-to-end from a live RequestContext whose ClientInfo matches the legacy CAADT 1.4.0 stdio identity, dispatching a no-names call to full tool contracts instead of the compact index.")]
+	public void ToolContractGet_Should_ReturnFullShape_ForLegacyClientInfo_EndToEnd() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		ModelContextProtocol.Server.McpServer server = Substitute.For<ModelContextProtocol.Server.McpServer>();
+		server.ClientInfo.Returns(new Implementation { Name = "mcp_client", Version = "1.0" });
+		JsonRpcRequest jsonRpcRequest = new() { Method = "tools/call" };
+		RequestContext<CallToolRequestParams> requestContext = new(
+			server,
+			jsonRpcRequest,
+			new CallToolRequestParams { Name = ToolContractGetTool.ToolName });
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(), requestContext);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a legacy-client no-names request must still succeed");
+		result.Tools.Should().NotBeNullOrEmpty(
+			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
+		result.Index.Should().BeNull(
+			because: "the legacy client's full-shape response must not also carry the compact index");
 	}
 }

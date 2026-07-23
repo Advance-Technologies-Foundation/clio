@@ -56,7 +56,10 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		}, NullLoggerFactory.Instance);
 
 		McpClientOptions options = new() {
-			ClientInfo = new Implementation {
+			// ENG-93885: settings.ClientInfo lets a fixture impersonate a specific real-world MCP client
+			// (e.g. the CAADT 1.4.0 legacy stdio client) during the "initialize" handshake. Defaulting to
+			// the harness's standard identity keeps every fixture that never sets it byte-for-byte unaffected.
+			ClientInfo = settings.ClientInfo ?? new Implementation {
 				Name = "clio.mcp.e2e",
 				Version = "1.0.0"
 			}
