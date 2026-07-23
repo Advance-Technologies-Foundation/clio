@@ -608,7 +608,11 @@ internal static class EntitySchemaDesignerSupport
 			},
 			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
 				Source = source,
-				SequencePrefix = NormalizeTextValue(defValue.SequencePrefix, allowEmpty: true),
+				// Preserve the persisted prefix verbatim on readback. Trimming here would drop a
+				// mask's accepted edge whitespace ('INV {0}' persists 'INV ') so the structured
+				// readback would report 'INV', and a consumer reusing it would recreate INV00001
+				// instead of INV 00001 (ENG-93375).
+				SequencePrefix = PreserveSequencePrefix(defValue.SequencePrefix),
 				SequenceNumberOfChars = defValue.SequenceNumberOfChars > 0 ? defValue.SequenceNumberOfChars : null
 			},
 			// A None source means the column has no default. Project it the same as a missing
@@ -664,7 +668,7 @@ internal static class EntitySchemaDesignerSupport
 			},
 			EntitySchemaColumnDefSource.Sequence => new EntitySchemaColumnDefValueDto {
 				ValueSourceType = source,
-				SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
+				SequencePrefix = ResolveSequencePrefix(config, context),
 				SequenceNumberOfChars = RequirePositiveNumber(
 					config.SequenceNumberOfChars,
 					$"{context} requires default-value-config.sequence-number-of-chars when source is Sequence.")
@@ -738,11 +742,7 @@ internal static class EntitySchemaDesignerSupport
 				Source = GetFriendlyDefaultValueSource(source),
 				ValueSource = NormalizeTextValue(config.ValueSource)
 			},
-			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
-				Source = GetFriendlyDefaultValueSource(source),
-				SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
-				SequenceNumberOfChars = config.SequenceNumberOfChars
-			},
+			EntitySchemaColumnDefSource.Sequence => NormalizeSequenceDefaultValueConfig(config, source, context),
 			EntitySchemaColumnDefSource.None => new EntitySchemaDefaultValueConfig {
 				Source = GetFriendlyDefaultValueSource(source)
 			},
@@ -795,6 +795,76 @@ internal static class EntitySchemaDesignerSupport
 			return decimalValue;
 		}
 		return value.GetDouble();
+	}
+
+	// The platform sequence default supports only a static prefix before the padded number;
+	// a mask therefore must keep '{0}' as its single, trailing placeholder.
+	private const string SequenceMaskPlaceholder = "{0}";
+
+	// Normalizes a Sequence default without consuming the mask. The mask/prefix/value-source
+	// combination is validated up front (throws on conflict or unsupported mask), but the raw
+	// mask stays in Value so the single authoritative parse happens later in CreateDefaultValueDto.
+	// Parsing here and again there would run the extracted prefix through the prefix trim twice and
+	// silently drop a mask's edge whitespace ('INV {0}' -> 'INV') on the request path only (ENG-93375).
+	private static EntitySchemaDefaultValueConfig NormalizeSequenceDefaultValueConfig(
+		EntitySchemaDefaultValueConfig config,
+		EntitySchemaColumnDefSource source,
+		string context) {
+		_ = ResolveSequencePrefix(config, context);
+		return new EntitySchemaDefaultValueConfig {
+			Source = GetFriendlyDefaultValueSource(source),
+			Value = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value"),
+			// Preserve an explicit prefix verbatim so it stays whitespace-significant like the mask
+			// and readback paths; trimming here would drop 'INV ' to 'INV' on the explicit-prefix
+			// path and break the round-trip a mask-created config relies on (ENG-93375).
+			SequencePrefix = PreserveSequencePrefix(config.SequencePrefix),
+			SequenceNumberOfChars = config.SequenceNumberOfChars
+		};
+	}
+
+	private static string? ResolveSequencePrefix(EntitySchemaDefaultValueConfig config, string context) {
+		if (NormalizeTextValue(config.ValueSource) != null) {
+			throw new EntitySchemaDesignerException(
+				$"{context} cannot set default-value-config.value-source when source is Sequence.");
+		}
+		// Keep an explicit prefix whitespace-significant so re-applying a mask-created readback config
+		// (which persists 'INV ' verbatim) does not silently trim it back to 'INV' here (ENG-93375).
+		string? explicitPrefix = PreserveSequencePrefix(config.SequencePrefix);
+		object? maskValue = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value");
+		if (maskValue == null) {
+			return explicitPrefix;
+		}
+		if (explicitPrefix != null) {
+			throw new EntitySchemaDesignerException(
+				$"{context} cannot combine default-value-config.value and sequence-prefix when source is Sequence. Set the static prefix in one of them.");
+		}
+		if (maskValue is not string mask) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default-value-config.value for source Sequence must be a text mask that ends with '{{0}}' (for example 'LN-{{0}}'), or use sequence-prefix for the static prefix.");
+		}
+		return ParseSequenceMask(mask, context);
+	}
+
+	private static string? ParseSequenceMask(string mask, string context) {
+		int placeholderIndex = mask.IndexOf(SequenceMaskPlaceholder, StringComparison.Ordinal);
+		if (placeholderIndex < 0) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default-value-config.value '{mask}' for source Sequence must contain the sequence placeholder '{{0}}' (for example 'LN-{{0}}'), or use sequence-prefix for the static prefix.");
+		}
+		// When the first '{0}' is the string tail there can be no second one, so a single
+		// trailing-placeholder check also rejects repeated placeholders.
+		if (placeholderIndex != mask.Length - SequenceMaskPlaceholder.Length) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default-value-config.value mask '{mask}' is not supported: sequence defaults apply only a static prefix before a single trailing '{{0}}' (for example 'LN-{{0}}' produces LN-00001). Static text after the number cannot be applied.");
+		}
+		string prefix = mask[..placeholderIndex];
+		return prefix.Length == 0 ? null : prefix;
+	}
+
+	// Keeps a persisted sequence prefix exactly as stored (including significant edge whitespace
+	// such as the trailing space of 'INV '), collapsing only null/empty to "no prefix".
+	private static string? PreserveSequencePrefix(string? value) {
+		return string.IsNullOrEmpty(value) ? null : value;
 	}
 
 	private static string? NormalizeTextValue(string? value, bool allowEmpty = false) {

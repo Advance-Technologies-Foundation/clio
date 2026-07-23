@@ -59,6 +59,13 @@ name instead of trying to edit a non-existent local `insert`.
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
   for the full rule.
+- **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
+  freshly inserted (`operation:"insert"`) widget/container bound as 
+  `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
+  `--resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key clio auto-derives. This
+  guards the metric/chart-widget-title case (a title such as
+  `#ResourceString(IndicatorWidget_<slug>_title)#` is registered only when you pass it in `--resources`;
+  otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
 
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
@@ -109,6 +116,20 @@ can report a conflict against a page that has not actually changed. This edge fa
 (it blocks the save rather than overwriting), but if you mix the two, keep
 `--expected-checksum` current or omit it and let the on-disk baseline drive the check.
 
+## Write modes
+
+`--mode replace` (default) saves the body verbatim. `--mode append` loads the current
+schema body from the server and merges your incoming fragment into it — `viewConfigDiff`
+entries dedupe by `name` (incoming wins), handlers dedupe by `request`.
+
+Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
+`SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
+of the `*_DIFF` markers — cannot be merged. Such a body is rejected with an actionable hint;
+use `--mode replace` to save it verbatim. Both surfaces refuse it: the CLI verb rejects it
+while merging, and the MCP `update-page` tool detects it up front, before any server
+round-trip. Note the `--body` value is always a raw string with `/**MARKER*/` pairs, never a
+structured object.
+
 ## Synopsis
 
 ```bash
@@ -120,7 +141,16 @@ clio update-page [options]
 ```bash
 --schema-name                      Page schema name to update
 
---body                             Full raw JavaScript schema body
+--body                             Full raw JavaScript schema body (a string
+with /**MARKER*/ pairs, not a structured object)
+
+--body-file                        Path to a file containing the body.
+Alternative to --body for large bodies
+
+--mode                             Write mode: 'replace' (default) or 'append'
+(merge with the current body). Append requires the
+diff form; a full-config body is rejected up front —
+use 'replace' for such a body
 
 --dry-run                          Validate only and do not save
 

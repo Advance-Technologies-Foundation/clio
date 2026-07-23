@@ -116,7 +116,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly string[] _excludedDirectories = ["db"];
 	private readonly string[] _excludedExtensions = [".bak", ".backup"];
 	private readonly IFileSystem _fileSystem;
-	private readonly HealthCheckCommand _healthCheckCommand;
+	private readonly IServerReadinessWaiter _serverReadinessWaiter;
 
 	private readonly string _iisRootFolder;
 	private readonly k8Commands _k8;
@@ -154,7 +154,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="msFileSystem">System.IO.Abstractions filesystem facade.</param>
 	/// <param name="logger">Logger for user-facing deployment output.</param>
 	/// <param name="deploymentStrategyFactory">Factory for platform-specific deployment strategy selection.</param>
-	/// <param name="healthCheckCommand">Health check command used for readiness verification.</param>
+	/// <param name="serverReadinessWaiter">Waiter that polls the deployed instance's health-check endpoint until it responds.</param>
 	/// <param name="dbClientFactory">Factory for database client instances.</param>
 	/// <param name="dbConnectionTester">Service for validating DB connectivity before restore.</param>
 	/// <param name="backupFileDetector">Service for detecting a backup file type.</param>
@@ -170,7 +170,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		IConfigureConnectionStringHandler configureConnectionStringHandler, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, MsFileSystem msFileSystem, ILogger logger,
 		DeploymentStrategyFactory deploymentStrategyFactory,
-		HealthCheckCommand healthCheckCommand, IDbClientFactory dbClientFactory,
+		IServerReadinessWaiter serverReadinessWaiter, IDbClientFactory dbClientFactory,
 		IDbConnectionTester dbConnectionTester, IBackupFileDetector backupFileDetector,
 		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor,
 		IRedisDatabaseSelector redisDatabaseSelector,
@@ -192,7 +192,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_remoteArtefactServerPath = settingsRepository.GetRemoteArtefactServerPath();
 		_logger = logger;
 		_deploymentStrategyFactory = deploymentStrategyFactory;
-		_healthCheckCommand = healthCheckCommand;
+		_serverReadinessWaiter = serverReadinessWaiter;
 		_settingsRepository = settingsRepository;
 		_dbClientFactory = dbClientFactory;
 		_dbConnectionTester = dbConnectionTester;
@@ -1139,34 +1139,18 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private bool WaitForServerReady(string baseUri, bool isNetCore) {
-		const int initialDelaySeconds = 15;
-		const int maxAttempts = 10;
-		const int delaySeconds = 3;
-
-		_logger.WriteInfo($"Waiting {initialDelaySeconds} seconds for server to start...");
-		Thread.Sleep(initialDelaySeconds * 1000);
-
-		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-			HealthCheckOptions healthOptions = new() {
-				Uri = baseUri,
-				IsNetCore = isNetCore
-			};
-			int result = _healthCheckCommand.Execute(healthOptions);
-			if (result == 0) {
-				_logger.WriteInfo($"Server is ready after {attempt} attempt(s).");
-				return true;
-			}
-
-			if (attempt < maxAttempts) {
-				_logger.WriteInfo(
-					$"Waiting for server to become ready... ({attempt}/{maxAttempts}). Next check in {delaySeconds} seconds.");
-				Thread.Sleep(delaySeconds * 1000);
-			}
-		}
-
-		_logger.WriteWarning(
-			$"Server did not become ready after {initialDelaySeconds + maxAttempts * delaySeconds} seconds.");
-		return false;
+		// Keeps the historical readiness parameters: a fifteen-second initial delay, a forty-five-second
+		// probe budget, and three-second polls; the polling mechanics moved to the shared
+		// IServerReadinessWaiter (ENG-91315). Note the budget is now measured from AFTER the initial
+		// delay (so ~45s of polling, ~60s total) rather than including it — a deliberate consequence of
+		// fixing the deadline-before-delay defect in the waiter, so a short budget always probes at least once.
+		return _serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
+			Uri = baseUri,
+			IsNetCore = isNetCore,
+			InitialDelay = TimeSpan.FromSeconds(15),
+			Timeout = TimeSpan.FromSeconds(45),
+			PollInterval = TimeSpan.FromSeconds(3)
+		});
 	}
 
 	#endregion

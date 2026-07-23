@@ -32,6 +32,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
 	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
+	private string? _entityIdProbeResponseJson;
 	private string _schemaResponseJson = string.Empty;
 
 	public override void Setup() {
@@ -47,6 +48,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			}
 		});
 		_schemaResponseJson = SchemaResponseJson;
+		_entityIdProbeResponseJson = null;
 	}
 
 	public override void TearDown() {
@@ -377,6 +379,111 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Updates the live row through upsert-data-binding-row-db when the Id is not yet bound to the package but the row already exists in the table, binding it instead of attempting an insert that would fail on required columns.")]
+	public void UpsertDataBindingRowDb_Should_Update_Live_Row_When_Unbound_But_Exists_In_Table() {
+		// Arrange
+		Guid unboundLiveRowId = Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb");
+		_existingEntityNamesJson = $$"""{"rows":[{"Id":"{{unboundLiveRowId}}"}],"success":true}""";
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{unboundLiveRowId}}","Name":"Updated existing"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "upsert should adopt and update a row that exists in the table even when it is not yet bound to the package");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Is<string>(body =>
+				body.Contains("\"rootSchemaName\":\"SysSettings\"") &&
+				body.Contains(unboundLiveRowId.ToString())),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains(unboundLiveRowId.ToString())),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Inserts a genuinely new row through upsert-data-binding-row-db when the Id is neither bound to the package nor present in the table, preserving the insert path for brand-new records.")]
+	public void UpsertDataBindingRowDb_Should_Insert_When_Unbound_And_Not_In_Table() {
+		// Arrange
+		Guid brandNewRowId = Guid.Parse("cccccccc-1111-2222-3333-444444444444");
+		_existingEntityNamesJson = """{"rows":[],"success":true}""";
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{brandNewRowId}}","Name":"Brand new"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "upsert should still insert a row that exists in neither the binding nor the table");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body =>
+				body.Contains("\"rootSchemaName\":\"SysSettings\"") &&
+				body.Contains("\"Brand new\"")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Propagates a failed row-existence probe through upsert-data-binding-row-db instead of silently inserting, so the caller sees the real read/permission error rather than a misleading insert failure.")]
+	public void UpsertDataBindingRowDb_Should_Propagate_Probe_Failure_Instead_Of_Inserting() {
+		// Arrange
+		Guid unboundRowId = Guid.Parse("eeeeeeee-1111-2222-3333-444444444444");
+		_entityIdProbeResponseJson = """{"success":false,"errorInfo":{"message":"Access denied"}}""";
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{unboundRowId}}","Name":"Probe fails"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a failed existence probe must surface the real error, not be swallowed into a silent insert");
+		_logger.Received(1).WriteError(
+			Arg.Is<string>(message => message.Contains("Access denied")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Projects SaveSchema metadata from the remaining bound rows after remove-data-binding-row-db so unrelated unsupported runtime columns do not block removal.")]
 	public void RemoveDataBindingRowDb_Should_Project_SaveSchema_From_Remaining_Bound_Rows() {
 		// Arrange
@@ -485,7 +592,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("TC-U-23: A stable-Id, no-Name row is non-convergent - CreateBinding routes it to the InsertQuery branch with its explicit Id (reported in CreatedRows, never skipped), so replaying it would PK-conflict. The seed path dedups only by Name.")]
+	[Description("TC-U-23: A no-Name row whose explicit Id is ABSENT from the table is inserted with that Id (reported in CreatedRows), because Name-keyed dedup cannot apply to a row that carries no Name. A no-Name row whose Id already EXISTS is instead adopted by the Id-fallback - see CreateDataBindingDb_Should_Skip_Insert_And_Bind_By_Id_When_Row_Exists_In_Table.")]
 	public void CreateBinding_Should_Insert_With_Explicit_Id_And_Not_Skip_When_Row_Has_Stable_Id_But_No_Name() {
 		// Arrange - the row carries an explicit Id but no Name, so Name-keyed dedup cannot apply
 		const string stableRowId = "cccccccc-dddd-eeee-ffff-000000000000";
@@ -505,10 +612,65 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		result.CreatedRows.Should().ContainSingle(row => row.Id == stableRowId,
 			because: "a no-Name row cannot be deduped by Name, so it is inserted with its explicit Id and reported as created");
 		result.SkippedRows.Should().BeEmpty(
-			because: "no-Name rows are never skipped - the seed path only dedups by Name, so this row is non-convergent and would PK-conflict on replay");
+			because: "a no-Name row whose Id is absent from the table is inserted, not skipped - Name-keyed dedup cannot match it and its Id is not yet present in the table");
 		_applicationClient.Received().ExecutePostRequest(
 			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
 			Arg.Is<string>(body => body.Contains(stableRowId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Skips InsertQuery and binds an already-existing row by Id when the row has no Name to match on, so a keyed row (e.g. SysSchemaAdminUnitRight) is adopted instead of inserting a duplicate.")]
+	public void CreateDataBindingDb_Should_Skip_Insert_And_Bind_By_Id_When_Row_Exists_In_Table() {
+		// Arrange - the row carries an explicit Id that already exists in the entity table (matched by Id, not Name)
+		const string existingRowId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+		_existingEntityNamesJson = $$"""{"rows":[{"Id":"{{existingRowId}}"}],"success":true}""";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrByIdBinding",
+			RowsJson = "[{\"values\":{\"Id\":\"" + existingRowId + "\"}}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding-db should register a row that already exists in the table by Id without inserting a duplicate");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains(existingRowId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Inserts through create-data-binding-db when the row carries an explicit Id that is NOT present in the table, preserving the insert path for brand-new keyed records.")]
+	public void CreateDataBindingDb_Should_Insert_When_Explicit_Id_Not_In_Table() {
+		// Arrange - explicit Id that is not present in the table
+		const string newRowId = "cccccccc-1111-2222-3333-444444444444";
+		_existingEntityNamesJson = """{"rows":[],"success":true}""";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrNewIdBinding",
+			RowsJson = "[{\"values\":{\"Id\":\"" + newRowId + "\"}}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding-db should still insert a keyed row when its Id is not present in the table");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => body.Contains(newRowId)),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -524,7 +686,20 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
 			!requestBody.Contains("\"rootSchemaName\":\"SysPackageSchemaData\"", StringComparison.Ordinal)) {
-			return _existingEntityNamesJson;
+			// FetchExistingEntityNameToId selects the Name column; RowExistsInTable selects only Id and filters
+			// by Id. Route the name-map fetch to the full response, and answer an Id-existence probe positively
+			// only when the probed Id is among the known existing rows.
+			if (requestBody.Contains("\"columnPath\":\"Name\"", StringComparison.Ordinal)) {
+				return _existingEntityNamesJson;
+			}
+			if (_entityIdProbeResponseJson is not null) {
+				return _entityIdProbeResponseJson;
+			}
+			string? existingId = ExtractExistingIds(_existingEntityNamesJson)
+				.FirstOrDefault(id => requestBody.Contains(id, StringComparison.OrdinalIgnoreCase));
+			return existingId is null
+				? """{"rows":[],"success":true}"""
+				: "{\"rows\":[{\"Id\":\"" + existingId + "\"}],\"success\":true}";
 		}
 
 		if (url.Contains("GetBoundSchemaData", StringComparison.Ordinal)) {
@@ -546,6 +721,23 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		}
 
 		return """{"success":true}""";
+	}
+
+	private static IEnumerable<string> ExtractExistingIds(string json) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		if (!document.RootElement.TryGetProperty("rows", out JsonElement rows) ||
+			rows.ValueKind != JsonValueKind.Array) {
+			yield break;
+		}
+		foreach (JsonElement row in rows.EnumerateArray()) {
+			if (row.TryGetProperty("Id", out JsonElement idElement) &&
+				idElement.ValueKind == JsonValueKind.String) {
+				string? id = idElement.GetString();
+				if (!string.IsNullOrWhiteSpace(id)) {
+					yield return id;
+				}
+			}
+		}
 	}
 
 	private static string BuildBindingLookupResponse(string schemaName, string? bindingName = null) {

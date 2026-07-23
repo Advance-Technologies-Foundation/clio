@@ -86,6 +86,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should name the derived page schemas so agents can reference them without re-discovery");
 		article.Text.Should().Contain("`create-app` already creates the default section for the canonical main entity",
 			because: "the guide should state the positive fact before explaining when create-app-section is appropriate");
+		article.Text.Should().Contain("SEQUENTIALLY, not in parallel",
+			because: "the guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
+		article.Text.Should().Contain("contention",
+			because: "the guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -175,6 +181,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the maintenance guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("operations[*].operation",
 			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
+		article.Text.Should().Contain("SEQUENTIALLY, not in parallel",
+			because: "the maintenance guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
+		article.Text.Should().Contain("contention",
+			because: "the maintenance guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -1570,10 +1582,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must tell the agent to always set and register a title so the widget header is not blank");
 		article.Text.Should().Contain("hideTools",
 			because: "the guide must warn against the hidden hideTitle/hideTools flags that strip the title and the full-screen button");
-		article.Text.Should().Contain("Style (theme) by page surface",
-			because: "the guide must set the chart theme by page surface (dashboard→white, desktop→glassmorphism, home→full-fill), mirroring the indicator policy");
-		article.Text.Should().Contain("glassmorphism",
-			because: "Desktop charts must use the glassmorphism theme");
+		article.Text.Should().Contain("set by the SURFACE's guide",
+			because: "the chart guide must route the card theme to the surface guide (dashboard-and-home-page-layout / desktop-page), not restate a per-surface policy");
+		article.Text.Should().Contain("without-fill",
+			because: "the chart card theme on dashboards and home pages is plain-white (without-fill), per dashboard-and-home-page-layout");
 		article.Text.Should().Contain("ONLY when the user explicitly asks to sort",
 			because: "the guide must tell the agent not to impose a default sort — emit seriesOrder only on explicit request");
 		article.Text.Should().Contain("`config.color` is REQUIRED for a VISIBLE title",

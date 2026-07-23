@@ -221,7 +221,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (125): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (127): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -235,6 +235,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["clio-run"] = PassthroughClassification.NotApplicable,
 			["clio-run-destructive"] = PassthroughClassification.NotApplicable,
 			["compile-creatio"] = PassthroughClassification.NotApplicable,
+			["compile-status"] = PassthroughClassification.NotApplicable,
 			["create-business-process"] = PassthroughClassification.NotApplicable,
 			["create-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["create-data-binding"] = PassthroughClassification.NotApplicable,
@@ -288,7 +289,9 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-page"] = PassthroughClassification.NotApplicable,
+			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
+			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
@@ -325,11 +328,13 @@ internal static class PassthroughToolClassificationRegistry {
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,
+			["restart-status"] = PassthroughClassification.NotApplicable, // ENG-91315 readiness-wait status poll; reads the in-memory RestartOperationRegistry only (mirrors compile-status), never makes a credential-passthrough Creatio call
 			["restore-db-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
+			["set-record-rights"] = PassthroughClassification.NotApplicable,
 			["set-user-theme"] = PassthroughClassification.NotApplicable, // BaseTool ExecuteResolved<SetUserThemeCommand> per-call env resolution (ENG-93302) — already passthrough-capable, like create-theme/list-themes
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,

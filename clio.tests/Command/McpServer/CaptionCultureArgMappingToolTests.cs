@@ -129,7 +129,7 @@ public sealed class CaptionCultureArgMappingToolTests {
 		commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(options => options.Environment == "dev"))
 			.Returns(resolvedSettings);
-		service.CreateSection(resolvedSettings, Arg.Do<ApplicationSectionCreateRequest>(request => capturedRequest = request), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<Action<string>>());
+		service.CreateSection(resolvedSettings, Arg.Do<ApplicationSectionCreateRequest>(request => capturedRequest = request), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>());
 		ApplicationSectionCreateTool tool = new(Substitute.For<ILogger>(), commandResolver, service);
 		ApplicationSectionCreateArgs args = new(
 			ApplicationCode: "UsrApp", Caption: "Orders", EnvironmentName: "dev", CaptionCulture: CaptionCultureValue);

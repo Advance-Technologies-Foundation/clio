@@ -71,6 +71,8 @@ get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 build-theme:build-theme
+get-record-rights:get-record-rights
+set-record-rights:set-record-rights
 list-themes:list-themes,get-themes
 create-theme:create-theme
 update-theme:update-theme
@@ -133,6 +135,7 @@ open-settings:open-settings,conf,configuration,os,settings
 open-web-app:open-web-app,open
 pack-nuget-pkg:pack-nuget-pkg,pack
 get-page:get-page,page-get
+get-page-hierarchy:get-page-hierarchy,page-hierarchy-get
 list-app-sections:list-app-sections
 list-pages:list-pages,page-list
 update-page:update-page,page-update

@@ -370,6 +370,58 @@ public sealed class McpToolErrorFilterTests
 		text.Should().Contain("{\"args\":", because: "the correct wrapping format should be shown");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A retry-safe matched tool is wrapped by the read-response deadline yet stays transparent on a fast completion — the real result is returned unchanged (ENG-93373).")]
+	public async Task HandleCallToolErrors_ShouldReturnResultUnchanged_WhenRetrySafeToolCompletesFast() {
+		// Arrange
+		CallToolResult expected = new() {
+			IsError = false,
+			Content = [new TextContentBlock { Text = "fast-read-payload" }]
+		};
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => new ValueTask<CallToolResult>(expected));
+		RequestContext<CallToolRequestParams> context = CreateContext("fake-read-tool");
+		context.MatchedPrimitive = CreateRetrySafeTool();
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "a fast retry-safe read must pass through the deadline wrapper unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An exception thrown by a retry-safe tool still surfaces as a structured error through the deadline wrapper, not as a timeout (ENG-93373).")]
+	public async Task HandleCallToolErrors_ShouldSurfaceException_WhenRetrySafeToolThrows() {
+		// Arrange
+		InvalidOperationException executionException = new("Environment with key 'NoSuchEnv' not found.");
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
+		RequestContext<CallToolRequestParams> context = CreateContext("fake-read-tool");
+		context.MatchedPrimitive = CreateRetrySafeTool();
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "a tool exception must still become a structured error even on the deadline-wrapped path");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("Environment with key 'NoSuchEnv' not found",
+			because: "the real cause must survive the deadline wrapper so the agent can self-correct");
+		text.Should().NotContain("timed out",
+			because: "an immediate exception is not a deadline timeout and must not be mislabeled");
+	}
+
+	private static McpServerTool CreateRetrySafeTool() =>
+		McpServerTool.Create(
+			typeof(FakeRetrySafeTool).GetMethod(
+				nameof(FakeRetrySafeTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeRetrySafeTool());
+
 	private static RequestContext<CallToolRequestParams> CreateContext(
 		string toolName, IDictionary<string, JsonElement>? arguments = null) {
 		RequestContext<CallToolRequestParams> context =
@@ -424,6 +476,14 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithStringArg {
 		public string Execute(string value) => value;
+	}
+
+	// A retry-safe tool: ReadOnly + Idempotent + non-Destructive, so its SDK-built annotations satisfy
+	// McpReadDeadlineGate.IsRetrySafe and the filter wraps it in the read-response deadline.
+	public sealed class FakeRetrySafeTool {
+		[McpServerTool(Name = "fake-read-tool", ReadOnly = true, Destructive = false, Idempotent = true)]
+		[System.ComponentModel.Description("A retry-safe fake read tool for deadline-wrapper tests.")]
+		public string Execute(FakeCompositeArgs args) => "ok";
 	}
 
 	private sealed class FakeToolWithoutMethodInfo : McpServerTool {

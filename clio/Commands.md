@@ -422,6 +422,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="get-page-hierarchy"></a>
+<a id="page-hierarchy-get"></a>
+- [`get-page-hierarchy`](docs/commands/get-page-hierarchy.md) - Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, `page-hierarchy-get`
 <a id="list-pages"></a>
 <a id="page-list"></a>
 - [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
@@ -544,7 +547,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
 <a id="restart-web-app"></a>
 <a id="restart"></a>
-- [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart`
+- [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)
 <a id="set-fsm-config"></a>
 <a id="fsmc"></a>
 <a id="sfsmc"></a>
@@ -593,6 +596,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-user-theme`](docs/commands/set-user-theme.md) - Apply a theme to the current user's profile on an environment (Creatio 10.0.0+), `apply-user-theme`
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
+
+## Record rights
+
+<a id="get-record-rights"></a>
+- [`get-record-rights`](docs/commands/get-record-rights.md) - Read the record-level access rights of a single Creatio record
+<a id="set-record-rights"></a>
+- [`set-record-rights`](docs/commands/set-record-rights.md) - Grant or revoke a record-level access right on a single Creatio record (destructive)
 
 ## Integrations & Tools
 

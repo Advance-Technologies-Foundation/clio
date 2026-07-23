@@ -42,7 +42,7 @@ public sealed class AgentExecutionGuidanceResource {
 
 			       Execution order
 			       1. Verify MCP reachability through the consumer-repo MCP client wrapper.
-			       2. Call `tools/list` and verify required tools exist for the planned steps.
+			       2. Call `tools/list` and verify required tools exist for the planned steps. Long-tail (non-resident) tools such as the DataForge family are intentionally absent from `tools/list`; confirm them through `get-tool-contract` (`resident: false`) instead and invoke them via `clio-run` / `clio-run-destructive` — do not treat their absence as missing.
 			       3. Resolve executable contract metadata through `get-tool-contract` for each tool the plan invokes.
 			       4. Resolve the execution branch (new-app vs existing-app) through the current clio contract and the relevant guidance resources.
 			       5. Execute the approved schema mutation step using the current clio-owned preferred or fallback tool path.
@@ -95,7 +95,7 @@ public sealed class AgentExecutionGuidanceResource {
 			       - Retry transient MCP transport failures up to 3 attempts with a short delay before fail-fast classification.
 			       - `sync-schemas` already performs this per-operation transient retry internally and returns a `resume-plan` on a mid-batch abort; consume the resume-plan instead of re-running the whole batch (see Schema sync recovery patterns).
 			       - For transient site reachability errors (DNS resolution failures, connect timeouts, temporary host-unreachable), retry the same registration/healthcheck path up to 3 additional attempts with 15-second delays before fail-fast classification.
-			       - If required tools are missing in `tools/list`, stop with a blocker.
+			       - If required tools are missing in `tools/list`, stop with a blocker — but first check whether the tool is long-tail (non-resident): DataForge and other `resident: false` tools are expected to be absent from `tools/list` and are reached via `clio-run` / `clio-run-destructive`, so their absence is not a blocker.
 			       - If `get-tool-contract` cannot provide executable metadata, stop with a blocker.
 			       - If any normalized tool result is unsuccessful, stop with a blocker and persist the raw evidence.
 			       - Use standalone `dataforge-status`, `dataforge-context`, `dataforge-initialize`, and `dataforge-update` only in explicit inspection or remediation branches. Do not use them as automatic retries for the standard create flow.

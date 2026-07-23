@@ -53,7 +53,15 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
                     Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11"
                     Condition="'$(TargetFramework)' != 'net10.0'" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
+    <!-- Decoupled from MsPackageVersion: 10.0.9 has known high severity advisories
+         (GHSA-23rf-6693-g89p / GHSA-8q5v-6pqq-x66h / GHSA-cvvh-rhrc-wg4q / GHSA-g8r8-53c2-pm3f;
+         tracked as CVE-2026-50648, DoS via crafted encrypted XML) and fires NU1903
+         Warning-As-Error at restore. 10.0.10 contains the fix. Test projects pin it directly
+         (see clio.tests / clio.mcp.e2e) so the transitive 10.0.6 pulled via PowerShell.SDK is
+         also lifted to the patched version. Drop this override once MsPackageVersion moves to
+         >= 10.0.10. -->
+
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />

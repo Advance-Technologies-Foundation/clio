@@ -24,29 +24,28 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpProfileGatingTests
 {
-	// The surface keeps the core set + the 3 always-on lazy types. 19 core types +
-	// {ClioRunTool, ClioRunDestructiveTool} (ToolContractGetTool is already a core member) = 21
-	// distinct flat tool TYPES. Per-TYPE granularity (ADR resolved decision #5) keeps the WHOLE class,
-	// and several core classes declare more than one [McpServerTool] (DataForgeTool declares 8 — only
-	// 3 are "core" but all 8 ride along; SysSettings/Application/Entity classes a few each), so the
-	// registered TOOL count (what lands in tools/list) is ~28, higher than the 21 TYPE count. The
-	// budget asserts on the registered tool count and is set to 30 to leave a small headroom over the
-	// current ~28 while still catching a regression that would re-grow the surface toward the ~124-tool
-	// full catalog.
-	private const int MaxLazyToolCount = 30;
+	// The surface keeps the core set + the 3 always-on lazy types. ENG-92761 removed DataForgeTool (the
+	// only resident class declaring more than one [McpServerTool] — 8 methods) from the resident profile,
+	// and SysSettingGetTool / SysSettingsListTool (single-method, no ride-along) also moved to the long
+	// tail. With DataForgeTool gone, every remaining resident type declares exactly one tool, so the
+	// registered TOOL count (what lands in tools/list) equals the TYPE count, measured at 18 today. The
+	// budget is set to 20 to leave a small headroom while still catching a regression that would re-grow
+	// the surface toward the ~124-tool full catalog.
+	private const int MaxLazyToolCount = 20;
 
 	// tools/list budget ceiling. ADR target is ~5-8k tokens (~32k bytes at ~4 bytes/tok) for the clio
 	// surface. We measure the serialized ProtocolTool set (name + description + input schema) as a
 	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
-	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
-	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The 34k ratchet
-	// locked that win in. The ceiling grew to 35*1024 when origin/master added resident tools
-	// (desktop-page, related-page-binding, business-rule CRUD, ...), and to 39*1024 when
-	// get-request-info (the Freedom UI request catalog, ~3.1k of description + schema) joined the
-	// resident core tools, putting the default surface at ~38.3k. Each raise is a deliberate budget
-	// decision; the ratchet exists so the next resident addition trips it and forces that decision
-	// again.
-	private const int MaxLazyToolsSerializedBytes = 39 * 1024;
+	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes; the
+	// remaining bulk is the input-schema bodies, which Story 2 does not touch. The ceiling grew to 35*1024
+	// when origin/master added resident tools (desktop-page, related-page-binding, business-rule CRUD,
+	// ...), and to 39*1024 when get-request-info joined the resident core tools. ENG-92761 then dropped
+	// DataForgeTool's 8-method schema block, and moving get-sys-setting / list-sys-settings to the long
+	// tail dropped 2 more single-method schemas, bringing the measured payload down to 30233 bytes. The
+	// ratchet is set to 31000 — just above the measurement with a small headroom — to lock in the win and
+	// catch any silent re-growth. Each raise/drop is a deliberate budget decision; the ratchet exists so
+	// the next resident change trips it and forces that decision again.
+	private const int MaxLazyToolsSerializedBytes = 31_000;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 
@@ -84,8 +83,14 @@ public sealed class McpProfileGatingTests
 			because: "the destructive executor stays flat so destructive long-tail commands are reachable");
 		selected.Should().Contain(typeof(ToolContractGetTool),
 			because: "the schema-describe tool stays flat so the long tail is discoverable");
-		selected.Should().Contain(typeof(DataForgeTool),
+		selected.Should().Contain(typeof(PageListTool),
 			because: "a core profile tool type stays flat");
+		selected.Should().NotContain(typeof(DataForgeTool),
+			because: "DataForgeTool was moved to the long tail (ENG-92761); it is reachable via clio-run / get-tool-contract, not flat in tools/list");
+		selected.Should().NotContain(typeof(SysSettingGetTool),
+			because: "get-sys-setting was moved to the long tail; it is reachable via clio-run / get-tool-contract, not flat in tools/list");
+		selected.Should().NotContain(typeof(SysSettingsListTool),
+			because: "list-sys-settings was moved to the long tail; it is reachable via clio-run / get-tool-contract, not flat in tools/list");
 	}
 
 	[Test]
