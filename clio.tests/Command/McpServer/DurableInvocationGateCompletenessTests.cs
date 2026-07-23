@@ -31,6 +31,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 	// decision: reproduce the pre-#743 per-tool gate as-is). If this test fails, either the new tool's
 	// annotation is wrong (a genuinely destructive tool must declare Destructive=true) or the baseline
 	// must be consciously extended in the same PR that adds the tool.
+	// GH-953: odata-create was intentionally REMOVED from this baseline — it is now Destructive=true, so
+	// the durable gate host-confirms it instead of silently executing (the intended mutation-gating change).
 	private static readonly IReadOnlyCollection<string> ReviewedSilentWriteCapableTools = new HashSet<string>(
 		StringComparer.OrdinalIgnoreCase) {
 		"add-package",
@@ -57,7 +59,6 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"new-integration-test-project",
 		"new-test-project",
 		"new-ui-project",
-		"odata-create",
 		"reg-web-app",
 		"send-telemetry",
 		"start-creatio",
