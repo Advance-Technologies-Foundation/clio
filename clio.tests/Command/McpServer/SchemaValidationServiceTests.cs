@@ -2891,6 +2891,42 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("The inverse of the exemption: a $Resources.Strings.* binding on crt.ImageInput.tooltip is rejected — the control never reads localizableStrings, so the resource form renders empty at runtime and the literal form must be forced (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceBinding_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "crt.ImageInput.tooltip must be a plain literal — a $Resources.Strings binding renders empty at runtime");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the resource-bound ImageInput tooltip must be reported");
+	}
+
+	[Test]
+	[Description("The inverse rule also rejects the #ResourceString(Key)# macro form on crt.ImageInput.tooltip — it is equally unread by the control at runtime (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceMacro_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"#ResourceString(PhotoTip)#"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the #ResourceString(...)# macro is also unread by crt.ImageInput.tooltip and renders empty");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the macro-bound ImageInput tooltip must be reported");
+	}
+
+	[Test]
 	[Description("The crt.ImageInput tooltip exemption is applied by component type regardless of property order — a body that lists tooltip before type must still validate (EnumerateObject preserves document order).")]
 	public void ValidateLocalizableTextLiterals_ImageInputTooltipBeforeType_ReturnsValid() {
 		// Arrange
