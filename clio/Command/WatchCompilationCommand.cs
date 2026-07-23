@@ -11,7 +11,7 @@ namespace Clio.Command;
 
 #region Class: WatchCompilationOptions
 
-[Verb("watch-compilation", HelpText = "Observe Creatio compilation status without triggering a compile")]
+[Verb("watch-compilation", Hidden = true, HelpText = "Observe Creatio compilation status without triggering a compile")]
 [FeatureToggle("watch-compilation")]
 public class WatchCompilationOptions : RemoteCommandOptions {
 
@@ -72,22 +72,42 @@ public class WatchCompilationCommand : RemoteCommand<WatchCompilationOptions> {
 
 	public override int Execute(WatchCompilationOptions options){
 		Stopwatch sw = Stopwatch.StartNew();
-		DateTime deadline = DateTime.UtcNow.AddSeconds(Math.Max(0, options.GiveUpAfterSeconds));
+		int giveUpAfterSeconds = Math.Max(0, options.GiveUpAfterSeconds);
+		DateTime deadline = DateTime.UtcNow.AddSeconds(giveUpAfterSeconds);
 
-		CompilationHistory baseline;
-		try {
-			baseline = _compilationHistoryPoller.GetBaseline();
-		} catch (Exception e) {
-			Logger.WriteError($"Could not read compilation history: {e.Message}");
+		if (!TryGetBaseline(out CompilationHistory baseline)) {
 			return ExitStartupError;
 		}
 
 		DateTime startedAt = DateTime.UtcNow;
 		_settleTracker.SeedFromBaseline(baseline, startedAt);
 		DateTime currentBaseline = baseline?.CreatedOn ?? startedAt;
-
 		Logger.WriteInfo($"At: {DateTime.Now:HH:mm:ss} Watching compilation status on {EnvironmentSettings.Uri}...");
 
+		int? giveUpExitCode = RunPollLoop(deadline, giveUpAfterSeconds, ref currentBaseline);
+		return giveUpExitCode ?? ReportOutcome(sw);
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private bool TryGetBaseline(out CompilationHistory baseline) {
+		try {
+			baseline = _compilationHistoryPoller.GetBaseline();
+			return true;
+		} catch (Exception e) {
+			Logger.WriteError($"Could not read compilation history: {e.Message}");
+			baseline = null;
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Polls until either the settle tracker reports done on a healthy channel (returns
+	/// <c>null</c>) or the deadline is exceeded (returns the give-up exit code).
+	/// </summary>
+	private int? RunPollLoop(DateTime deadline, int giveUpAfterSeconds, ref DateTime currentBaseline) {
 		// PollOnce filters by "CreatedOn > baseline", but a real Creatio CompilationHistory table can
 		// return the same row again across rounds (observed live: duplicate CreatedOn timestamps at
 		// whole-second precision). Without this guard a repeated row keeps resetting the settle
@@ -96,42 +116,46 @@ public class WatchCompilationCommand : RemoteCommand<WatchCompilationOptions> {
 		HashSet<Guid> seenRecordIds = [];
 
 		while (true) {
+			if (deadline - DateTime.UtcNow <= TimeSpan.Zero) {
+				return GiveUp(giveUpAfterSeconds);
+			}
+
+			PollOnceAndObserve(seenRecordIds, ref currentBaseline);
+
 			DateTime now = DateTime.UtcNow;
-			TimeSpan remaining = deadline - now;
-			if (remaining <= TimeSpan.Zero) {
-				return GiveUp(options);
-			}
-
-			try {
-				foreach (CompilationHistory record in _compilationHistoryPoller.PollOnce(currentBaseline)) {
-					if (record.CreatedOn > currentBaseline) {
-						currentBaseline = record.CreatedOn;
-					}
-					if (!seenRecordIds.Add(record.Id)) {
-						continue;
-					}
-					LogRecord(record);
-					_settleTracker.Observe(record, DateTime.UtcNow);
-				}
-				_retryPolicy.RecordSuccess(DateTime.UtcNow);
-			} catch (Exception e) {
-				_retryPolicy.RecordFailure(DateTime.UtcNow);
-				Logger.WriteWarning($"Poll attempt failed (attempt {_retryPolicy.ConsecutiveFailures}): {e.Message}. Retrying...");
-			}
-
-			now = DateTime.UtcNow;
 			if (_retryPolicy.IsChannelHealthy(now) && _settleTracker.IsSettled(now)) {
-				break;
+				return null;
 			}
 
-			remaining = deadline - DateTime.UtcNow;
+			TimeSpan remaining = deadline - DateTime.UtcNow;
 			if (remaining <= TimeSpan.Zero) {
-				return GiveUp(options);
+				return GiveUp(giveUpAfterSeconds);
 			}
 			TimeSpan sleepFor = _retryPolicy.ConsecutiveFailures > 0 ? _retryPolicy.NextDelay : PollInterval;
 			Thread.Sleep(sleepFor < remaining ? sleepFor : remaining);
 		}
+	}
 
+	private void PollOnceAndObserve(HashSet<Guid> seenRecordIds, ref DateTime currentBaseline) {
+		try {
+			foreach (CompilationHistory record in _compilationHistoryPoller.PollOnce(currentBaseline)) {
+				if (record.CreatedOn > currentBaseline) {
+					currentBaseline = record.CreatedOn;
+				}
+				if (!seenRecordIds.Add(record.Id)) {
+					continue;
+				}
+				LogRecord(record);
+				_settleTracker.Observe(record, DateTime.UtcNow);
+			}
+			_retryPolicy.RecordSuccess(DateTime.UtcNow);
+		} catch (Exception e) {
+			_retryPolicy.RecordFailure(DateTime.UtcNow);
+			Logger.WriteWarning($"Poll attempt failed (attempt {_retryPolicy.ConsecutiveFailures}): {e.Message}. Retrying...");
+		}
+	}
+
+	private int ReportOutcome(Stopwatch sw) {
 		sw.Stop();
 		CompilationSettleSnapshot snapshot = _settleTracker.Snapshot;
 		if (snapshot.HasErrors) {
@@ -148,12 +172,8 @@ public class WatchCompilationCommand : RemoteCommand<WatchCompilationOptions> {
 		return ExitSuccess;
 	}
 
-	#endregion
-
-	#region Methods: Private
-
-	private int GiveUp(WatchCompilationOptions options) {
-		Logger.WriteWarning($"Gave up waiting after {options.GiveUpAfterSeconds}s - compilation did not settle.");
+	private int GiveUp(int giveUpAfterSeconds) {
+		Logger.WriteWarning($"Gave up waiting after {giveUpAfterSeconds}s - compilation did not settle.");
 		return ExitGaveUpWaiting;
 	}
 

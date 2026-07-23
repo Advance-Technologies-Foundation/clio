@@ -89,7 +89,12 @@ public class CompilationSettleTracker : ICompilationSettleTracker {
 	#region Methods: Public
 
 	public void SeedFromBaseline(CompilationHistory baseline, DateTime now) {
-		_lastActivityAt = baseline?.CreatedOn ?? now;
+		// Always seed the quiet-window clock from wall-clock "now", never from baseline.CreatedOn.
+		// A stale baseline (last known compile could be hours old) must not let the very first
+		// empty poll look instantly settled - that would return success before a compile someone
+		// just triggered has had a chance to write its first row. baseline is still used below to
+		// carry over error/marker state, and separately as the query cutoff in WatchCompilationCommand.
+		_lastActivityAt = now;
 		if (baseline is not null) {
 			ApplyRecordState(baseline);
 		}

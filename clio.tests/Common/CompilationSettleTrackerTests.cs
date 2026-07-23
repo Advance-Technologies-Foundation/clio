@@ -254,4 +254,23 @@ public class CompilationSettleTrackerTests {
 		sut.Snapshot.SawFinalMarker.Should().BeFalse(because: "there is no baseline record to carry marker state from");
 	}
 
+	[Test]
+	[Description("Verifies seeding from a STALE non-null baseline (last known compile hours ago) still uses 'now' as the last-activity timestamp, not the old baseline.CreatedOn - otherwise the very first empty poll would look instantly settled while a just-triggered external compile hasn't written its first row yet")]
+	public void SeedFromBaseline_WithStaleNonNullBaseline_UsesNowAsLastActivity_NotTheOldBaselineTimestamp() {
+		// Arrange
+		CompilationSettleTracker sut = new();
+		DateTime now = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+		DateTime hoursAgo = now.AddHours(-3);
+		CompilationHistory staleBaseline = NewRecord(hoursAgo, projectName: CompilationSettleTracker.FinalMarkerProjectName);
+
+		// Act
+		sut.SeedFromBaseline(staleBaseline, now);
+
+		// Assert
+		sut.Snapshot.LastActivityAt.Should().Be(now,
+			because: "the quiet-window clock must start from watch-start, not from a baseline timestamp that could be hours stale");
+		sut.IsSettled(now.AddSeconds(1)).Should().BeFalse(
+			because: "only 1s has passed since watch-start; a stale baseline must not make the very first check look already settled");
+	}
+
 }
