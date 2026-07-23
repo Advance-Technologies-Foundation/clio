@@ -13,7 +13,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     
-    <MsPackageVersion>10.0.9</MsPackageVersion>
+    <MsPackageVersion>10.0.10</MsPackageVersion>
     <SIOVersion>22.1.1</SIOVersion>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
     
