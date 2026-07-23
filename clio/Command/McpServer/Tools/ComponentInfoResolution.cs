@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -12,6 +13,12 @@ public static class ComponentInfoResolution {
 	public const string ResolvedFromEnvironment = "environment";
 	public const string ResolvedFromEnvironmentSuperset = "environment-superset";
 	public const string ResolvedFromLatestFallback = "latest-fallback";
+
+	/// <summary>The <c>schema-type</c> value selecting the web catalog — the default and the fallback.</summary>
+	public const string SchemaTypeWeb = "web";
+
+	/// <summary>The <c>schema-type</c> value selecting the mobile catalog.</summary>
+	public const string SchemaTypeMobile = "mobile";
 
 	/// <summary>
 	/// Soft caveat surfaced on every <c>environment-superset</c> response: the platform
@@ -147,4 +154,86 @@ public static class ComponentInfoResolution {
 		new(PlatformVersionResolver.LatestVersion, VersionResolutionSource.LatestFallback) {
 			Reason = VersionFallbackReason.NoActiveEnvironment
 		};
+
+	/// <summary>
+	/// Resolves the <c>schema-type</c> argument shared by <c>get-component-info</c> and
+	/// <c>get-request-info</c> to a web/mobile catalog selection, validating it against the allowed
+	/// set — omitted/null, <c>"web"</c>, or <c>"mobile"</c> (case-insensitive). An unrecognized value
+	/// is NOT silently treated as web: it still degrades to the web catalog (so a typo never hard-fails
+	/// the call), but a non-null <see cref="SchemaTypeResolution.Warning"/> is returned naming the
+	/// offending value, so the caller can tell an intentional web request apart from a mis-typed mobile
+	/// one (e.g. <c>"moblie"</c>). Centralised so both MCP tools apply identical validation and identical
+	/// warning text; the warning is surfaced on the tool response (the channel the MCP consumer reads),
+	/// not only in server logs.
+	/// </summary>
+	/// <param name="schemaType">The raw <c>schema-type</c> argument (already alias-checked by the tool).</param>
+	/// <returns>The catalog flavor to load plus an optional warning for an unrecognized value.</returns>
+	public static SchemaTypeResolution ResolveSchemaType(string? schemaType) {
+		if (string.IsNullOrWhiteSpace(schemaType)) {
+			return SchemaTypeResolution.Web;
+		}
+		string trimmed = schemaType.Trim();
+		if (string.Equals(trimmed, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase)) {
+			return SchemaTypeResolution.Mobile;
+		}
+		if (string.Equals(trimmed, SchemaTypeWeb, StringComparison.OrdinalIgnoreCase)) {
+			return SchemaTypeResolution.Web;
+		}
+		return new SchemaTypeResolution(false,
+			$"Unrecognized schema-type '{trimmed}'. Expected '{SchemaTypeWeb}' (default) or '{SchemaTypeMobile}'. "
+			+ $"Falling back to the {SchemaTypeWeb.ToUpperInvariant()} catalog — if you intended the mobile catalog "
+			+ $"this is likely a typo; re-call with schema-type='{SchemaTypeMobile}'.");
+	}
+
+	/// <summary>
+	/// Runs a tool's response builder and stamps the <c>schema-type</c> warning (from
+	/// <see cref="ResolveSchemaType"/>) onto whichever response comes back — the successful build or a
+	/// redacted error — so <c>get-component-info</c> and <c>get-request-info</c> share one control flow
+	/// instead of each duplicating the resolve → build → stamp → (catch → redact → stamp) block. The
+	/// warning is <see langword="null"/> for a valid selection, so a valid call is unaffected.
+	/// </summary>
+	/// <typeparam name="TResponse">The tool's response type.</typeparam>
+	/// <param name="schemaType">The raw <c>schema-type</c> argument (already alias-checked by the caller).</param>
+	/// <param name="buildResponse">Builds the mode-specific response (list / detail / not-found / errors); receives the resolved <c>isMobile</c> so the builder never re-resolves schema-type.</param>
+	/// <param name="buildErrorResponse">Builds the tool's error response from an exception message that has already been redacted of sensitive text.</param>
+	/// <param name="applyWarning">Assigns the resolved warning to the response's <c>schemaTypeWarning</c> field.</param>
+	internal static async Task<TResponse> RunWithSchemaTypeWarningAsync<TResponse>(
+		string? schemaType,
+		Func<bool, Task<TResponse>> buildResponse,
+		Func<string, TResponse> buildErrorResponse,
+		Action<TResponse, string?> applyWarning) {
+		// Resolve schema-type ONCE here: the flavor (isMobile) is handed to the builder and the warning is
+		// stamped below, so a call never re-resolves it. schemaType is null when a camelCase alias was
+		// already rejected upstream, so a valid/alias-rejected call yields no warning.
+		SchemaTypeResolution schema = ResolveSchemaType(schemaType);
+		try {
+			TResponse response = await buildResponse(schema.IsMobile).ConfigureAwait(false);
+			applyWarning(response, schema.Warning);
+			return response;
+		} catch (Exception ex) {
+			TResponse error = buildErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+			applyWarning(error, schema.Warning);
+			return error;
+		}
+	}
+}
+
+/// <summary>
+/// Outcome of <see cref="ComponentInfoResolution.ResolveSchemaType"/>: which catalog flavor to load,
+/// and — when the input was an unrecognized value — a human-readable warning to surface on the response.
+/// </summary>
+/// <param name="IsMobile">
+/// <see langword="true"/> when the mobile catalog should be loaded; <see langword="false"/> for web
+/// (the default and the unrecognized-value fallback).
+/// </param>
+/// <param name="Warning">
+/// Non-<see langword="null"/> only when <c>schema-type</c> was an unrecognized value; names the value
+/// and explains the web fallback. <see langword="null"/> for a valid selection (omitted / <c>web</c> / <c>mobile</c>).
+/// </param>
+public readonly record struct SchemaTypeResolution(bool IsMobile, string? Warning) {
+	/// <summary>The web selection with no warning (omitted or explicit <c>web</c>).</summary>
+	internal static SchemaTypeResolution Web => new(false, null);
+
+	/// <summary>The mobile selection with no warning (explicit <c>mobile</c>).</summary>
+	internal static SchemaTypeResolution Mobile => new(true, null);
 }
