@@ -159,16 +159,22 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The guidance discloses the surviving signal-start 'modified' limit: it fires on any field change and cannot be restricted to specific tracked-change columns, with an instruction to confirm before building.")]
-	public void GetGuide_ShouldDiscloseSignalTriggerLimits_WhenRead() {
+	[Description("The guidance documents the buildable tracked-change columns capability (changedColumns restricts an on:modified signal to specific columns) and the in-place setSignal op, and no longer claims column-level restriction is unbuildable.")]
+	public void GetGuide_ShouldDocumentTrackedChangeColumns_WhenRead() {
 		// Act
 		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
 
 		// Assert
-		text.Should().Contain("column-level restriction cannot be built yet",
-			because: "a signalStart record filter IS buildable now, but the agent must still disclose that WHICH columns count as a change cannot be restricted");
 		text.Should().Contain("ANY field change",
-			because: "the agent must disclose that a 'modified' trigger cannot be limited to specific columns");
+			because: "the default (a 'modified' trigger fires on any field change) must still be documented");
+		text.Should().Contain("changedColumns",
+			because: "tracked-change columns are now buildable — the agent must know the field that restricts which columns fire a 'modified' signal");
+		text.Should().Contain("\"changedColumns\": [\"Amount\", \"StatusId\"]",
+			because: "the concrete signal example must show the changedColumns shape so an agent copies a valid descriptor");
+		text.Should().Contain("setSignal",
+			because: "the in-place setSignal op must be documented for changing an existing signal's trigger/columns");
+		text.Should().NotContain("column-level restriction cannot be built yet",
+			because: "the old 'not buildable' disclaimer must be removed now that changedColumns ships");
 	}
 
 	[Test]

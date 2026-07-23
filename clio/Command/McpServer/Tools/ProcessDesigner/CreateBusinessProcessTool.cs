@@ -30,7 +30,7 @@ public class CreateBusinessProcessTool(
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask "
 		 + "(aliases readData/performTask; readData and other data-operation tasks land UNCONFIGURED — their "
-		 + "source object/filters/columns cannot be set yet, tell the user), caption, userTaskName?, signal?, "
+		 + "source object/filters/read columns cannot be set yet, tell the user), caption, userTaskName?, signal?, "
 		 + "filter?}), flows[] ({source, target} of "
 		 + "element names), parameters[] ({name, type (a supported scalar or Lookup — other types rejected), "
 		 + "referenceSchema? (object name, e.g. City — makes it a Lookup), direction, caption, description?, "
@@ -42,8 +42,11 @@ public class CreateBusinessProcessTool(
 		 + "(another element's output), processParameter, value, or expression; parameter-to-parameter mappings "
 		 + "require compatible types). To run the process when a record "
 		 + "is saved/added/changed, use a "
-		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event) instead "
-		 + "of a page save handler. To fire that trigger only for matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
+		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted (one event), "
+		 + "changedColumns?:[<ColumnName>,...]} instead of a page save handler. changedColumns restricts an "
+		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
+		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
+		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

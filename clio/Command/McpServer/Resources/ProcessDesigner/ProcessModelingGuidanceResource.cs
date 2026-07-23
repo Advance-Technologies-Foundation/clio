@@ -89,11 +89,15 @@ public sealed class ProcessModelingGuidanceResource {
 			  wired Start1 -> activity -> end. (`entity` is the page's object, e.g. UsrTestRunButton.)
 			- `on` is a SINGLE event: "added" | "modified" | "deleted" (the designer has no combined
 			  "added or modified"). "On save" of a record edited on a page = "modified"; a brand-new record = "added".
-			- A "modified" trigger fires on ANY field change. You CAN restrict WHICH records fire it (add a `filter`,
-			  next bullet), but you CANNOT restrict WHICH columns count as a change — tracked-change columns are not
-			  buildable yet. If the request limits the trigger to one field ("only when Amount changes"), tell the user
-			  that column-level restriction cannot be built yet and confirm a whole-record "modified" trigger is
-			  acceptable BEFORE building.
+			- A "modified" trigger fires on ANY field change by default. To restrict it to fire ONLY when specific
+			  columns change, add `changedColumns` (an array of column NAMES on the trigger entity) to the signal:
+			    { "name": "Start1", "type": "signalStart",
+			      "signal": { "entity": "Order", "on": "modified", "changedColumns": ["Amount", "StatusId"] } }
+			  `changedColumns` is valid ONLY for `on: "modified"` (the designer's "expect changes" case) — the server
+			  rejects it for "added"/"deleted", and rejects a name that is not a column on the entity. Use entity COLUMN
+			  names (e.g. `Amount`), not field captions; omit `changedColumns` (or pass []) to fire on any change. This is
+			  INDEPENDENT of `filter`: `changedColumns` narrows WHICH columns count as a change, `filter` narrows WHICH
+			  records qualify — combine them freely.
 			- To fire the trigger ONLY for records matching a condition (e.g. only when Name = "Start"), add a
 			  `filter` to the signalStart element (full shape in "Data source filters" below):
 			    { "name": "Start1", "type": "signalStart",
@@ -103,6 +107,13 @@ public sealed class ProcessModelingGuidanceResource {
 			  Use the entity COLUMN name (here `UsrName`), not the field caption ("Name").
 			- To convert an EXISTING process to start on a record event, use `modify-business-process`:
 			  removeElement the current start, addElement a `signalStart`, addFlow signalStart -> (first activity).
+			- To change an EXISTING signal's trigger or tracked columns IN PLACE (without re-adding it), use the
+			  `setSignal` op — it preserves the element and its flows:
+			    { "op": "setSignal", "elementName": "Start1",
+			      "signal": { "on": "modified", "changedColumns": ["Amount"] } }
+			  Partial update: omit `changedColumns` to clear column tracking (fire on any change), omit `on` to keep the
+			  current change type, and include `entity` only to retarget the trigger object (retargeting clears any
+			  filter bound to the old entity).
 
 			== Data source filters (signalStart trigger condition) ==
 			- A `filter` declares, high-level, WHICH records a filtered element acts on. The server serializes it to
@@ -180,7 +191,9 @@ public sealed class ProcessModelingGuidanceResource {
 			   — an output you can map FROM has `isResult:true` or `direction:"Out"`; the signal trigger) /
 			   `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
-			   addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter — same parameter/mapping/filter shapes as a build).
+			   addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter / setSignal — same
+			   parameter/mapping/filter/signal shapes as a build; setSignal reconfigures an existing signalStart's
+			   record trigger + tracked columns in place).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.

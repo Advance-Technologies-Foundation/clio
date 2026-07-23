@@ -137,6 +137,50 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a signal start's record trigger — entity, on, and the tracked-change columns array — from the server response into the DescribedSignal DTO, so describe read-back surfaces changedColumns instead of dropping them.")]
+	public void Describe_ShouldReadSignalTrackedColumns_WhenServerReportsThem() {
+		// Arrange — a signalStart on Order, on:modified, restricted to the Amount + StatusId columns
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"signal\":{\"entity\":\"Order\",\"entitySchemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\",\"on\":\"modified\",\"changedColumns\":[\"Amount\",\"StatusId\"]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedSignal signal = result.Value.Elements[0].Signal;
+		signal.Should().NotBeNull(because: "a signal start's record trigger must be surfaced, not dropped by the clio DTO");
+		signal.Entity.Should().Be("Order", because: "the trigger entity round-trips");
+		signal.On.Should().Be("modified", because: "the change type round-trips");
+		signal.ChangedColumns.Should().BeEquivalentTo(new[] { "Amount", "StatusId" },
+			because: "the tracked-change columns array must be deserialized so describe round-trips them into a build/modify");
+	}
+
+	[Test]
+	[Description("Leaves the signal's changedColumns null when the server omits them (an any-change signal), so the absent field serializes away cleanly.")]
+	public void Describe_ShouldLeaveSignalChangedColumnsNull_WhenServerOmitsThem() {
+		// Arrange — an any-change signalStart (no changedColumns)
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"signal\":{\"entity\":\"Order\",\"on\":\"modified\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Elements[0].Signal.ChangedColumns.Should().BeNull(
+			because: "an omitted changedColumns stays null so it serializes away (WhenWritingNull) for an any-change signal");
+	}
+
+	[Test]
 	[Description("Deserializes a lookup condition's displayValue (the resolved caption) alongside its raw id value, so a lookup reads back as a human-readable caption instead of the clio DTO dropping it and leaving only a GUID.")]
 	public void Describe_ShouldReadFilterConditionDisplayValue_WhenServerReportsLookupCaption() {
 		// Arrange — UsrStage = <guid> with the resolved caption "Approved" carried on displayValue

@@ -27,10 +27,11 @@ public static class ModifyBusinessProcessPrompt {
 		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`, `setParameter`, `removeParameter`,
-		 `setFilter`, or `clearFilter`
-		 — plus that op's arguments (the element / parameter / mapping / filter shapes match a build; `setParameter`
-		 updates a parameter in place, `removeParameter` is dependency-checked, and `setFilter`/`clearFilter` set or
-		 remove a `signalStart`'s record filter). Any failed operation aborts the whole edit
+		 `setFilter`, `clearFilter`, or `setSignal`
+		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build;
+		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked, `setFilter`/`clearFilter`
+		 set or remove a `signalStart`'s record filter, and `setSignal` reconfigures a `signalStart`'s record trigger
+		 and its tracked-change `changedColumns` in place). Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter`) with the user before proceeding.

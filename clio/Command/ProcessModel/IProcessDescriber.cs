@@ -235,6 +235,14 @@ public sealed class DescribedSignal {
 	/// <summary>The record change that starts the process: <c>added</c>, <c>modified</c>, or <c>deleted</c> (a single event — the designer has no combined trigger).</summary>
 	[JsonPropertyName("on")]
 	public string On { get; set; }
+
+	/// <summary>
+	/// For an <c>on: modified</c> signal restricted to specific columns: the tracked column names (the process fires
+	/// only when one of them changes). <c>null</c> for an any-change signal or a non-modified trigger. Round-trips into
+	/// a <c>create-business-process</c>/<c>modify-business-process</c> <c>signal.changedColumns</c>.
+	/// </summary>
+	[JsonPropertyName("changedColumns")]
+	public List<string> ChangedColumns { get; set; }
 }
 
 /// <summary>A data source filter group read back from an element — a recursive AND/OR tree of conditions.</summary>

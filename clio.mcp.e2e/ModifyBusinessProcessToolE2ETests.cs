@@ -169,6 +169,61 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, builds a signal-start process then restricts it to a tracked-change column via modify-business-process setSignal (describe confirms changedColumns round-trips), then clears column tracking via setSignal with no changedColumns (describe confirms it is gone). Covers the setSignal modify op end-to-end (mandatory MCP e2e gate).")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setSignal sets then clears tracked-change columns through describe")]
+	public async Task ModifyBusinessProcess_Should_SetThenClearSignalTrackedColumns() {
+		// Arrange — a signal-start process firing on ANY change (no tracked columns yet).
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetSignalE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSignalStartDescriptor(processName)
+		});
+
+		// Act 1 — setSignal restricts the trigger to the Name column.
+		CallToolResult setResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetSignalColumnsOperations()
+		});
+
+		// Assert 1 — set succeeds and describe reads the tracked column back (the distinctive changedColumns field
+		// proves the op applied, not merely that a signalStart still exists).
+		setResult.IsError.Should().NotBeTrue(
+			because: "setSignal restricting a signalStart to a tracked column must apply without a transport error");
+		JsonSerializer.Serialize(setResult).Should().Contain(processName,
+			because: "a successful setSignal reports the edited schema name");
+		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		afterSet.Should().Contain("changedColumns",
+			because: "setSignal stored the tracked column and describe decodes the signal's changedColumns back");
+		afterSet.Should().Contain("Name",
+			because: "the tracked column Name round-trips: setSignal resolved it to a column UId and describe decoded it back to the name");
+
+		// Act 2 — setSignal with no changedColumns clears column tracking.
+		CallToolResult clearResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildClearSignalColumnsOperations()
+		});
+
+		// Assert 2 — clear succeeds and changedColumns is gone on read-back (fires on any change again).
+		clearResult.IsError.Should().NotBeTrue(
+			because: "setSignal without changedColumns must clear column tracking without a transport error");
+		string afterClear = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		afterClear.Should().NotContain("changedColumns",
+			because: "setSignal cleared column tracking, so the signal fires on any change and describe emits no changedColumns");
+	}
+
+	[Test]
 	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older clioprocessbuilder package is deployed on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process setFilter date-only equal round-trips as a bare date")]
@@ -275,6 +330,26 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		"""
 		[
 		  { "op": "clearFilter", "elementName": "SignalStart1" }
+		]
+		""";
+
+	// setSignal restricting the existing signalStart to a tracked-change column (Contact.Name, a base column on every
+	// stand). setSignal resolves the name to a column UId in place; describe decodes it back — proving the tracked
+	// column round-trips through the setSignal op, not merely that the signal still exists.
+	private static string BuildSetSignalColumnsOperations() =>
+		"""
+		[
+		  { "op": "setSignal", "elementName": "SignalStart1",
+		    "signal": { "on": "modified", "changedColumns": ["Name"] } }
+		]
+		""";
+
+	// setSignal with NO changedColumns clears column tracking, so the signal fires on any change again.
+	private static string BuildClearSignalColumnsOperations() =>
+		"""
+		[
+		  { "op": "setSignal", "elementName": "SignalStart1",
+		    "signal": { "on": "modified" } }
 		]
 		""";
 
