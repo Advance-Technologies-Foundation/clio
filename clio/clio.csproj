@@ -104,14 +104,6 @@
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
 				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
-
-				<!--
-				 NU1903 : PowerShell.SDK pulls a vulnerable System.Security.Cryptography.Xml
-				 transitively. Pin directly to the patched build (version comes from
-				 Directory.Packages.props, currently 10.0.10 — fixes the GHSA-23rf-6693-g89p
-				 advisory family that flagged 10.0.6/10.0.9).
-				-->
-				<PackageReference Include="System.Security.Cryptography.Xml" />
 			</ItemGroup>
 		</When>
 		<Otherwise>
@@ -120,6 +112,22 @@
 			</ItemGroup>
 		</Otherwise>
 	</Choose>
+
+	<!--
+	 Warning NU1903 : Microsoft.PowerShell.SDK (via Microsoft.Windows.Compatibility)
+	 pulls in a vulnerable transitive 'System.Security.Cryptography.Xml' on both
+	 target frameworks (10.0.9 on net8.0, 10.0.6 on net10.0).
+
+	 Workaround: pin it to the patched version managed centrally via MsPackageVersion
+	 in Directory.Packages.props (currently 10.0.10, which fixes
+	 CVE-2026-50648 / 50525 / 47302 / 47304). Kept unconditional so both TFMs restore
+	 the patched build.
+
+	 Offending package Powershell.SDK
+	-->
+	<ItemGroup>
+		<PackageReference Include="System.Security.Cryptography.Xml" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"

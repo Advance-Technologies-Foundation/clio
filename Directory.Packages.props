@@ -13,7 +13,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     
-    <MsPackageVersion>10.0.9</MsPackageVersion>
+    <MsPackageVersion>10.0.10</MsPackageVersion>
     <SIOVersion>22.1.1</SIOVersion>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
     
@@ -64,7 +64,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <PackageVersion Include="creatio.client" Version="1.0.38" />
     <PackageVersion Include="CommandLineSDK" Version="1.0.11" />
