@@ -1,0 +1,57 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-classic-migration-bundle - Assemble a Classic->Freedom migration bundle and write the manifest JSON to disk
+
+ALIASES
+    classic-migration-bundle
+
+SYNOPSIS
+    clio get-classic-migration-bundle [OPTIONS]
+
+DESCRIPTION
+    Assembles, server-side, everything the Classic->Freedom migration engine
+    needs to fold a classic page, and writes it to disk as a manifest JSON.
+
+    The manifest contains the replacing-schema layer chain, parent-template
+    seed layers, merged resources, entity columns, column titles, and best-effort
+    related schemas such as details, sections, and child edit pages.
+
+    Layer bodies are written to the manifest file, not returned in stdout. The
+    response reports only the absolute manifest path and a small summary.
+
+OPTIONS
+    --schema-name                      Classic client-unit (page) schema name to assemble
+                                       the bundle for (required)
+
+    --entity                           Entity schema name (optional; inferred from the page
+                                       body when omitted). Drives entityColumns/columnTitles
+
+    --output-file                      Manifest output path. Default:
+                                       <workspace-root>/.clio-migration/<schema>/manifest.json
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+EXAMPLES
+    clio get-classic-migration-bundle --schema-name ContactPageV2 -e dev
+        Assemble ContactPageV2 into the default manifest path
+
+    clio get-classic-migration-bundle --schema-name UsrCasePage --entity UsrCase --output-file ./bundle.json -e dev
+        Assemble with an explicit entity and output path
+
+    clio classic-migration-bundle --schema-name ContactPageV2 -e dev
+        Same as the first example using the alias
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-client-unit-schema - Read body and metadata of a client unit schema
+    update-client-unit-schema - Update the body of a JavaScript schema

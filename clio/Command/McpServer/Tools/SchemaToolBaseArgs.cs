@@ -3,11 +3,9 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command.McpServer.Tools;
 
-public abstract record SchemaGetBaseArgs {
-	[JsonPropertyName("output-file")]
-	[Description("Optional absolute path to write the schema body to. When set, body is omitted from the response.")]
-	public string? OutputFile { get; init; }
-
+// Connection args shared by the schema read/list MCP tools: prefer environment-name; uri/login/password are
+// the direct-connection fallback. Centralized so every tool exposes an identical connection arg surface.
+public abstract record ConnectionArgsBase {
 	[JsonPropertyName("environment-name")]
 	[Description(McpToolDescriptions.EnvironmentName)]
 	public string? EnvironmentName { get; init; }
@@ -23,6 +21,12 @@ public abstract record SchemaGetBaseArgs {
 	[JsonPropertyName("password")]
 	[Description(McpToolDescriptions.Password)]
 	public string? Password { get; init; }
+}
+
+public abstract record SchemaGetBaseArgs : ConnectionArgsBase {
+	[JsonPropertyName("output-file")]
+	[Description("Optional absolute path to write the schema body to. When set, body is omitted from the response.")]
+	public string? OutputFile { get; init; }
 }
 
 public abstract record SchemaCreateBaseArgs {

@@ -269,6 +269,8 @@ internal sealed class CommandHelpCatalog {
 			"create-lookup",
 			"dataservice",
 			"delete-schema",
+			"get-classic-migration-bundle",
+			"list-entity-client-schemas",
 			"download-configuration",
 			"externalLink",
 			"generate-process-model",

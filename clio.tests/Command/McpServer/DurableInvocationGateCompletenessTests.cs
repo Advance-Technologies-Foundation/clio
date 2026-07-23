@@ -50,6 +50,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"finish-hotfix",
 		"generate-source-code",
 		"get-browser-session",
+		"get-classic-migration-bundle",
+		"get-client-unit-schema",
 		"get-identity-assertion",
 		"get-page",
 		"install-gate",

@@ -1,7 +1,6 @@
 namespace Clio.Command;
 
 using System;
-using System.Linq;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
@@ -48,7 +47,7 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		_logger = logger;
 	}
 
-	public bool TryUpdateSchema(
+	public virtual bool TryUpdateSchema(
 		ClientUnitSchemaUpdateOptions options,
 		out ClientUnitSchemaUpdateResponse response) {
 		try {
@@ -112,27 +111,23 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		string schemaName,
 		out string schemaUId,
 		out ClientUnitSchemaUpdateResponse response) {
-		var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+		// Resolve through the SAME deterministic top-layer resolution get-client-unit-schema uses.
+		// A row-order-dependent single-row query here would read the top layer but WRITE a random
+		// layer of a multi-package schema, corrupting a base layer with top-layer content.
+		(string resolvedUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
 			_applicationClient,
 			_serviceUrlBuilder,
 			schemaName,
-			("UId", "UId"));
-		if (metadata == null) {
+			SchemaDesignerKind.ClientUnit);
+		if (resolveError != null) {
 			schemaUId = null;
 			response = new ClientUnitSchemaUpdateResponse {
 				Success = false,
-				Error = queryError
+				Error = resolveError
 			};
 			return false;
 		}
-		schemaUId = metadata["UId"]?.ToString();
-		if (string.IsNullOrWhiteSpace(schemaUId)) {
-			response = new ClientUnitSchemaUpdateResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' metadata is missing UId"
-			};
-			return false;
-		}
+		schemaUId = resolvedUId;
 		response = null;
 		return true;
 	}
@@ -142,20 +137,20 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		string schemaUId,
 		out JObject schemaToSave,
 		out ClientUnitSchemaUpdateResponse response) {
-		var getSchemaRequest = new JObject {
-			["schemaUId"] = schemaUId,
-			["useFullHierarchy"] = false
-		};
-		string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		string getSchemaJson = _applicationClient.ExecutePostRequest(
-			designerUrl,
-			getSchemaRequest.ToString(Formatting.None));
-		var getSchemaResponse = JObject.Parse(getSchemaJson);
-		if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] is not JObject schema) {
+		// Route through the shared SchemaDesignerHelper.LoadSchema so load failures surface the designer
+		// service's own errorInfo.message (permission / locked package / invalid UId) via single-sourced
+		// routes and failure detection, instead of a hand-rolled hardcoded URL + generic message.
+		(JObject schema, string error) = SchemaDesignerHelper.LoadSchema(
+			_applicationClient,
+			_serviceUrlBuilder,
+			schemaUId,
+			SchemaDesignerKind.ClientUnit,
+			schemaName);
+		if (error != null) {
 			schemaToSave = null;
 			response = new ClientUnitSchemaUpdateResponse {
 				Success = false,
-				Error = $"Failed to load schema '{schemaName}' via ClientUnitSchemaDesignerService"
+				Error = error
 			};
 			return false;
 		}
@@ -167,40 +162,23 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 	private bool TrySaveSchema(
 		JObject schemaToSave,
 		out ClientUnitSchemaUpdateResponse response) {
-		string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
-		string saveJson = _applicationClient.ExecutePostRequest(
-			saveUrl,
-			schemaToSave.ToString(Formatting.None));
-		var saveResponse = JObject.Parse(saveJson);
-		if (saveResponse["success"]?.Value<bool>() ?? false) {
+		// Route through the shared SchemaDesignerHelper.SaveSchema for single-sourced save route and error
+		// parsing (errorInfo / validationErrors / addonsErrors) — same behavior the local BuildSaveErrorMessage
+		// hand-rolled, now via PageSchemaMetadataHelper.ParseSaveErrorMessage.
+		string error = SchemaDesignerHelper.SaveSchema(
+			_applicationClient,
+			_serviceUrlBuilder,
+			schemaToSave,
+			SchemaDesignerKind.ClientUnit);
+		if (error == null) {
 			response = null;
 			return true;
 		}
 		response = new ClientUnitSchemaUpdateResponse {
 			Success = false,
-			Error = BuildSaveErrorMessage(saveResponse)
+			Error = error
 		};
 		return false;
-	}
-
-	private static string BuildSaveErrorMessage(JObject saveResponse) {
-		string errorMessage = "Failed to save schema";
-		if (saveResponse["errorInfo"] is JObject errorInfo) {
-			string infoMessage = errorInfo["message"]?.ToString();
-			if (!string.IsNullOrWhiteSpace(infoMessage)) {
-				errorMessage = infoMessage;
-			}
-		}
-		if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
-			var messages = validationErrors
-				.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
-				.Where(m => !string.IsNullOrWhiteSpace(m));
-			errorMessage = string.Join("; ", messages);
-		}
-		if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
-			errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-		}
-		return errorMessage;
 	}
 
 	private static ClientUnitSchemaUpdateResponse CreateSuccessResponse(
