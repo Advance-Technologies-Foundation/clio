@@ -37,6 +37,7 @@ public sealed class CoreRulesGuidanceResource {
 		       - uninstall-creatio preserves an application pool and its Windows profile when another IIS application still uses that pool; a skipped profile stage in this case is expected and requires no manual cleanup.
 		       - Every response carries a correlation-id; on error, inspect the inner-exception chain.
 		       - Resident tools (get-tool-contract index: resident=true) are called natively; every other tool is invoked via clio-run <command>. Never wrap a resident tool in clio-run.
+		       - Verification preference (any task where you would verify a create/change): after a tool reports success, do NOT automatically open a browser, Playwright, or navigate the app to confirm the result. Read your saved "verification" preference from persistent memory - automatic (you open the app and check) or manual (the user checks). If none is saved, ask the user once and persist the answer so future work does not re-ask; if you cannot persist it, honor the choice for this session. On manual, briefly tell the user what to check instead of opening a browser. Machine read-backs a guide already prescribes (for example get-page, validate-page) are NOT browser verification - keep doing them regardless.
 		       """
 	};
 
@@ -44,6 +45,6 @@ public sealed class CoreRulesGuidanceResource {
 	/// Returns the non-negotiable invariants that apply to every clio MCP operation.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "core-rules-guidance")]
-	[Description("Returns the non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, correlation-id) that apply to every operation.")]
+	[Description("Returns the non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, verification preference, correlation-id) that apply to every operation.")]
 	public ResourceContents GetGuide() => Guide;
 }
