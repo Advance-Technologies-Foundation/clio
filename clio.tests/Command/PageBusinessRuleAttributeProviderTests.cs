@@ -70,6 +70,79 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes page parameters from bundle.parameters as PageParameters-scoped condition sources, including parameters that have no view-model attribute, and skips nameless or unsupported-type parameters.")]
+	public void GetAttributes_Should_Expose_Page_Parameters_As_Scoped_Condition_Sources() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBundleInfo bundle = CreateBundleWithParameters([
+			new PageParameterInfo { Name = "UsrBooleanParameter1", DataValueType = 12 },
+			new PageParameterInfo { Name = "UsrIntegerParameter1", DataValueType = 4 },
+			new PageParameterInfo { Name = "UsrOwnerParameter", DataValueType = 10, ReferenceSchemaName = "Contact" },
+			new PageParameterInfo { Name = "UsrUnsupported", DataValueType = 999 },
+			new PageParameterInfo { Name = "   ", DataValueType = 4 }
+		]);
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.Keys.Should().BeEquivalentTo(
+			["PageParameters.UsrBooleanParameter1", "PageParameters.UsrIntegerParameter1", "PageParameters.UsrOwnerParameter"],
+			because: "every named page parameter with a supported data value type is a PageParameters-scoped condition source, whether or not it is bound to a control");
+		result["PageParameters.UsrIntegerParameter1"].Should().Be(
+			new BusinessRuleAttributeDescriptor("UsrIntegerParameter1", "Integer", null, "PageParameters"),
+			because: "a page parameter with no view-model attribute is still addressable via the PageParameters scope using its raw name as the metadata path");
+		result["PageParameters.UsrBooleanParameter1"].Should().Be(
+			new BusinessRuleAttributeDescriptor("UsrBooleanParameter1", "Boolean", null, "PageParameters"),
+			because: "the parameter data value type code maps to the Creatio type name and the scope is PageParameters");
+		result["PageParameters.UsrOwnerParameter"].Should().Be(
+			new BusinessRuleAttributeDescriptor("UsrOwnerParameter", "Lookup", "Contact", "PageParameters"),
+			because: "lookup page parameters keep their reference schema so equality comparisons can be type-checked");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes a page parameter bound to a control under BOTH its raw view-model attribute name (unscoped) and the PageParameters-scoped key, so either addressing form resolves.")]
+	public void GetAttributes_Should_Expose_Bound_Page_Parameter_Under_Both_Addressing_Forms() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBundleInfo bundle = new() {
+			ViewModelConfig = new JsonObject {
+				["attributes"] = JsonSerializer.SerializeToNode(new Dictionary<string, object?> {
+					["PageParameters_UsrBooleanParameter1_uno0kqd"] = CreateAttribute("PageParameters.UsrBooleanParameter1")
+				})
+			},
+			Parameters = [new PageParameterInfo { Name = "UsrBooleanParameter1", DataValueType = 12 }]
+		};
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.Keys.Should().BeEquivalentTo(
+			["PageParameters_UsrBooleanParameter1_uno0kqd", "PageParameters.UsrBooleanParameter1"],
+			because: "a bound page parameter is addressable both by its raw view-model attribute name and by the PageParameters scope");
+		result["PageParameters_UsrBooleanParameter1_uno0kqd"].Should().Be(
+			new BusinessRuleAttributeDescriptor("PageParameters_UsrBooleanParameter1_uno0kqd", "Boolean", null),
+			because: "the raw view-model attribute form is unscoped (local ViewModel scope) with the flat attribute key as the metadata path");
+		result["PageParameters.UsrBooleanParameter1"].Should().Be(
+			new BusinessRuleAttributeDescriptor("UsrBooleanParameter1", "Boolean", null, "PageParameters"),
+			because: "the scoped form uses the raw parameter name and the PageParameters scope");
+	}
+
+	private static PageBundleInfo CreateBundleWithParameters(IReadOnlyList<PageParameterInfo> parameters) =>
+		new() {
+			Parameters = parameters
+		};
+
 	private static PageBundleInfo CreateBundleWithAttributes(IReadOnlyDictionary<string, object?> attributes) =>
 		new() {
 			ViewModelConfig = new JsonObject {

@@ -173,6 +173,41 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
+	[Description("Binds a page-parameter condition payload (a 'PageParameters.<name>' path) through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds page-parameter condition paths")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a condition comparing a 'PageParameters.<name>' path and an intentionally missing environment, then verifies the page-parameter payload binds and reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_Page_Parameter_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-parameter-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] { CreatePageParameterConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a condition using a 'PageParameters.<name>' path should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the page-parameter payload");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
 	[Description("Binds a show-element page business-rule gated on an is-filled-in condition (unary; no rightExpression) through the real MCP server and reports an invalid environment failure from command execution. Pins the ENG-92154 fix path: 'hide/show an element until a field is entered' is a page business rule, not a visible-bound-attribute handler.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool binds an is-filled-in show/hide payload")]
@@ -981,6 +1016,31 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 						["leftExpression"] = CreateAttributeExpression("PDS.ModifiedOn"),
 						["comparisonType"] = "greater-than",
 						["rightExpression"] = CreateAttributeExpression("PDS.CreatedOn")
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "show-element",
+					["items"] = new object[] { "Name" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreatePageParameterConditionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Show label when partner offer flag is set",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression("PageParameters.UsrHasPartnerOffer"),
+						["comparisonType"] = "equal",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "Const",
+							["dataValueTypeName"] = "Boolean",
+							["value"] = true
+						}
 					}
 				}
 			},

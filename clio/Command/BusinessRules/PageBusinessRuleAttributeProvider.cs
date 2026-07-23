@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using Clio.Common;
 
 namespace Clio.Command.BusinessRules;
 
@@ -12,12 +13,15 @@ internal sealed class PageBusinessRuleAttributeProvider(
 	IEntityBusinessRuleAttributeProvider entityAttributeProvider)
 	: IPageBusinessRuleAttributeProvider {
 
+	private const string PageParametersScopeName = "PageParameters";
+
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
 
 		Dictionary<string, BusinessRuleAttributeDescriptor> result = new(StringComparer.Ordinal);
 		JsonObject attributes = bundle.ViewModelConfig["attributes"] as JsonObject ?? [];
 		JsonObject dataSources = bundle.ModelConfig["dataSources"] as JsonObject ?? [];
+		Dictionary<string, PageParameterInfo> parametersByName = BuildParameterMap(bundle);
 		Dictionary<string, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> entityAttributeMaps =
 			new(StringComparer.Ordinal);
 
@@ -25,8 +29,22 @@ internal sealed class PageBusinessRuleAttributeProvider(
 			if (string.IsNullOrWhiteSpace(attributeName)
 				|| attributeNode is not JsonObject attribute
 				|| IsCollectionAttribute(attribute)
-				|| !TryResolveDatasourcePath(attribute, out string? datasourceName, out string? columnName)
-				|| !TryResolveEntitySchemaName(dataSources, datasourceName, out string? entitySchemaName)) {
+				|| !TryResolveDatasourcePath(attribute, out string? datasourceName, out string? columnName)) {
+				continue;
+			}
+
+			// A page parameter surfaced on the page as a bound control: its type comes from
+			// bundle.parameters[], not an entity data source. Expose it under the raw view-model
+			// attribute name (unscoped, local ViewModel scope).
+			if (string.Equals(datasourceName, PageParametersScopeName, StringComparison.Ordinal)) {
+				if (parametersByName.TryGetValue(columnName, out PageParameterInfo? parameter)
+					&& TryResolveParameterType(parameter, out string parameterType, out string? parameterReferenceSchema)) {
+					result[attributeName] = new BusinessRuleAttributeDescriptor(attributeName, parameterType, parameterReferenceSchema);
+				}
+				continue;
+			}
+
+			if (!TryResolveEntitySchemaName(dataSources, datasourceName, out string? entitySchemaName)) {
 				continue;
 			}
 
@@ -42,7 +60,58 @@ internal sealed class PageBusinessRuleAttributeProvider(
 		}
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
+		AddPageParameterAttributes(result, parametersByName);
 		return result;
+	}
+
+	// Page parameters come from the schema-level bundle.parameters[] (bound or not), exposed as
+	// PageParameters-scoped condition sources keyed "PageParameters.<Name>". A parameter that is
+	// also bound to a control is additionally exposed under its raw view-model attribute name by
+	// the main attribute loop, so both addressing forms resolve.
+	private static void AddPageParameterAttributes(
+		IDictionary<string, BusinessRuleAttributeDescriptor> result,
+		IReadOnlyDictionary<string, PageParameterInfo> parametersByName) {
+		foreach ((string name, PageParameterInfo parameter) in parametersByName) {
+			if (!TryResolveParameterType(parameter, out string dataValueTypeName, out string? referenceSchemaName)) {
+				continue;
+			}
+
+			result[$"{PageParametersScopeName}.{name}"] = new BusinessRuleAttributeDescriptor(
+				name,
+				dataValueTypeName,
+				referenceSchemaName,
+				PageParametersScopeName);
+		}
+	}
+
+	private static Dictionary<string, PageParameterInfo> BuildParameterMap(PageBundleInfo bundle) {
+		Dictionary<string, PageParameterInfo> map = new(StringComparer.Ordinal);
+		foreach (PageParameterInfo parameter in bundle.Parameters) {
+			if (parameter is not null && !string.IsNullOrWhiteSpace(parameter.Name)) {
+				map[parameter.Name] = parameter;
+			}
+		}
+		return map;
+	}
+
+	private static bool TryResolveParameterType(
+		PageParameterInfo parameter,
+		out string dataValueTypeName,
+		out string? referenceSchemaName) {
+		dataValueTypeName = string.Empty;
+		referenceSchemaName = null;
+		if (parameter is null || !parameter.DataValueType.HasValue) {
+			return false;
+		}
+
+		string? name = CreatioDataValueType.GetName(parameter.DataValueType.Value);
+		if (string.IsNullOrEmpty(name)) {
+			return false;
+		}
+
+		dataValueTypeName = name;
+		referenceSchemaName = string.IsNullOrWhiteSpace(parameter.ReferenceSchemaName) ? null : parameter.ReferenceSchemaName;
+		return true;
 	}
 
 	private void AddDatasourceScopedAttributes(
