@@ -221,7 +221,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileContainerParents: mobileContainerParents,
 				mobileTemplateArraysByPath: mobileTemplateProbe.NativeArraysByPath,
 				mobileTemplateArraysUnavailable: mobileTemplateProbe.Unavailable,
-				mobileTemplateCollectionKeys: mobileTemplateProbe.CollectionKeys);
+				mobileTemplateCollectionKeys: mobileTemplateProbe.CollectionKeys,
+				mobileTemplateModelArraysByPath: mobileTemplateProbe.NativeModelArraysByPath);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -440,14 +441,19 @@ public sealed class MobilePageConversionGuideTool {
 	private sealed record MobileTemplateProbe(
 		IReadOnlyDictionary<string, string> ContainerParents,
 		IReadOnlyDictionary<string, JsonArray> NativeArraysByPath,
+		IReadOnlyDictionary<string, JsonArray> NativeModelArraysByPath,
 		IReadOnlySet<string> CollectionKeys,
 		bool Unavailable);
 
 	/// <summary>
-	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle, used for two
+	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle, used for several
 	/// independent probes: mapping each mobile container to its parent — resolving where a positional
-	/// (<c>:top</c> / <c>:bottom</c>) insert attaches — and collecting EVERY array found anywhere in the
-	/// template's own merged viewModelConfig (e.g. <c>Items/modelConfig/filterAttributes</c> ->
+	/// (<c>:top</c> / <c>:bottom</c>) insert attaches; collecting the template's own list-collection keys; and
+	/// collecting EVERY array found anywhere in the template's own merged viewModelConfig AND modelConfig (the
+	/// latter from the config root, e.g. a data source's <c>dataSources/&lt;ds&gt;/config/…</c> array), so the
+	/// converted page's own arrays can be unioned with the template's natives rather than the mobile diff
+	/// engine's array-replace merge silently dropping one side. viewModelConfig example:
+	/// <c>Items/modelConfig/filterAttributes</c> ->
 	/// [QuickFilterGroup_Filters, FolderTreeActions_active_folder_filter] for BaseMobileListTemplate, but
 	/// equally any other array), so the converted page's own arrays can be unioned with the template's
 	/// natives rather than the mobile diff engine's array-replace merge silently dropping one side. Mirrors
@@ -458,9 +464,10 @@ public sealed class MobilePageConversionGuideTool {
 	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyArrays = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
+		var emptyModelArrays = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
 		var emptyCollections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
-			return new MobileTemplateProbe(emptyParents, emptyArrays, emptyCollections, Unavailable: false);
+			return new MobileTemplateProbe(emptyParents, emptyArrays, emptyModelArrays, emptyCollections, Unavailable: false);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -486,15 +493,18 @@ public sealed class MobilePageConversionGuideTool {
 				IReadOnlyDictionary<string, JsonArray> natives = bundle.ViewModelConfig is { } viewModelConfig
 					? WebToMobileAnalysisService.CollectNativeArraysByPath(viewModelConfig)
 					: emptyArrays;
+				IReadOnlyDictionary<string, JsonArray> modelNatives = bundle.ModelConfig is { } modelConfig
+					? WebToMobileAnalysisService.CollectNativeArraysByPathFromRoot(modelConfig)
+					: emptyModelArrays;
 				IReadOnlySet<string> collectionKeys = bundle.ViewModelConfig is { } collectionsVmc
 					? WebToMobileAnalysisService.CollectTemplateCollectionKeys(collectionsVmc)
 					: emptyCollections;
-				return new MobileTemplateProbe(parents, natives, collectionKeys, Unavailable: false);
+				return new MobileTemplateProbe(parents, natives, modelNatives, collectionKeys, Unavailable: false);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
-		return new MobileTemplateProbe(emptyParents, emptyArrays, emptyCollections, Unavailable: true);
+		return new MobileTemplateProbe(emptyParents, emptyArrays, emptyModelArrays, emptyCollections, Unavailable: true);
 	}
 
 	/// <summary>

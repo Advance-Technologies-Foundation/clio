@@ -82,7 +82,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null,
 		IReadOnlyDictionary<string, JsonArray> mobileTemplateArraysByPath = null,
 		bool mobileTemplateArraysUnavailable = false,
-		IReadOnlySet<string> mobileTemplateCollectionKeys = null) =>
+		IReadOnlySet<string> mobileTemplateCollectionKeys = null,
+		IReadOnlyDictionary<string, JsonArray> mobileTemplateModelArraysByPath = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -94,7 +95,8 @@ public sealed class WebToMobileConversionServiceTests {
 			componentNameMap: componentNameMap,
 			mobileTemplateArraysByPath: mobileTemplateArraysByPath,
 			mobileTemplateArraysUnavailable: mobileTemplateArraysUnavailable,
-			mobileTemplateCollectionKeys: mobileTemplateCollectionKeys);
+			mobileTemplateCollectionKeys: mobileTemplateCollectionKeys,
+			mobileTemplateModelArraysByPath: mobileTemplateModelArraysByPath);
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -733,8 +735,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("modelConfigDiff stays a single root merge carrying the full data-source config verbatim (attribute types preserved); viewModelConfigDiff is SPLIT into focused targeted merges — a page-owned attribute lands in an [\"attributes\"] merge with no path-[] root merge remaining.")]
-	public void Analyze_PrebuiltDiffs_ModelConfigRootMerge_ViewModelConfigSplitIntoTargetedMerges() {
+	[Description("Both diffs are SPLIT into focused targeted merges with no path-[] root merge remaining: modelConfigDiff (no arrays here) becomes a single [\"dataSources\"] merge carrying the attribute type verbatim; viewModelConfigDiff's page-owned attribute lands in an [\"attributes\"] merge.")]
+	public void Analyze_PrebuiltDiffs_BothConfigsSplitIntoTargetedMerges() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
@@ -750,14 +752,16 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
 
-		// modelConfigDiff: single root merge that carries the attribute type verbatim.
+		// modelConfigDiff: the whole-config root merge is split — with no arrays, its single top-level key
+		// becomes a focused ["dataSources"] merge (no path-[] operation) carrying the attribute type verbatim.
 		guide.ModelConfigDiff.Should().NotBeNull();
 		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
-		mcd.Should().HaveCount(1);
-		JsonObject op = mcd[0]!.AsObject();
+		mcd.Should().NotContain(n => n!.AsObject()["path"]!.AsArray().Count == 0,
+			because: "the whole-config root merge is split into targeted merges");
+		JsonObject op = mcd.Single(n =>
+			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>()).SequenceEqual(new[] { "dataSources" }))!.AsObject();
 		op["operation"]!.GetValue<string>().Should().Be("merge");
-		op["path"]!.AsArray().Should().BeEmpty();
-		op["values"]!["dataSources"]!["PDS"]!["config"]!["attributes"]!
+		op["values"]!["PDS"]!["config"]!["attributes"]!
 			["QualifiedContactJobTitle"]!["type"]!.GetValue<string>().Should().Be("ForwardReference");
 
 		// viewModelConfigDiff: the whole-config root merge is SPLIT into targeted merges — the page-owned
@@ -1171,6 +1175,112 @@ public sealed class WebToMobileConversionServiceTests {
 		result.Should().Contain("Items", because: "Items is marked isCollection:true");
 		result.Should().NotContain("Title", because: "Title carries no isCollection flag");
 		result.Should().NotContain("Details", because: "Details is explicitly isCollection:false");
+	}
+
+	[Test]
+	[Description("An array in the page's modelConfig (e.g. a data source's config.sortColumns) is hoisted out of the root merge into a TARGETED merge at its own parent path, UNIONED with the mobile template's native array at that same path (natives first, page entries after) — so the mobile diff engine's array-replace on a root merge cannot drop either side. No path-[] operation remains.")]
+	public void Analyze_ModelConfigArray_HoistedToTargetedMerge_UnionedWithTemplateNatives() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
+			""",
+			modelConfigJson: """
+			{ "dataSources": { "PDS": { "config": {
+				"sortColumns": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
+			mobileTemplateModelArraysByPath: new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase) {
+				["dataSources/PDS/config/sortColumns"] =
+					JsonNode.Parse("""[ { "columnName": "UsrNativeSort", "direction": "asc" } ]""")!.AsArray()
+			});
+
+		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
+		mcd.Should().NotContain(n => n!.AsObject()["path"]!.AsArray().Count == 0,
+			because: "the whole-config root merge is split into targeted merges");
+		JsonObject targeted = mcd.Single(n =>
+			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
+				.SequenceEqual(new[] { "dataSources", "PDS", "config" }))!.AsObject();
+		targeted["values"]!["sortColumns"]!.AsArray().Select(n => n!["columnName"]!.GetValue<string>())
+			.Should().Equal(new[] { "UsrNativeSort", "CreatedOn" },
+				because: "the hoisted array unions the template native (first) with the page's own entry (after)");
+	}
+
+	[Test]
+	[Description("When a modelConfig array is hoisted but the mobile template bundle could not be read (mobileTemplateArraysUnavailable), the hoisted array carries ONLY the page's own entries and the same 'template natives unavailable' constraint is raised as for viewModelConfig arrays.")]
+	public void Analyze_ModelConfigArrayHoisted_AndTemplateUnavailable_AddsMissingNativesConstraint() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
+			""",
+			modelConfigJson: """
+			{ "dataSources": { "PDS": { "config": {
+				"sortColumns": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
+			mobileTemplateArraysUnavailable: true);
+
+		JsonObject targeted = guide.ModelConfigDiff!.AsArray().Single(n =>
+			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
+				.SequenceEqual(new[] { "dataSources", "PDS", "config" }))!.AsObject();
+		targeted["values"]!["sortColumns"]!.AsArray().Should().HaveCount(1,
+			because: "with no template natives the union degrades to just the page's own entry");
+		guide.Constraints.Any(c => c.Contains("Could not read the mobile template's bundle"))
+			.Should().BeTrue(because: "a hoisted modelConfig array without template natives is surfaced as an explicit risk");
+		guide.Constraints.Any(c => c.Contains("viewModelConfig or modelConfig"))
+			.Should().BeTrue(because: "the constraint text must name modelConfig too, since a modelConfig array (not only viewModelConfig) can trigger it");
+	}
+
+	[Test]
+	[Description("CollectNativeArraysByPathFromRoot walks the WHOLE config from its root (not only 'attributes'), so it collects arrays anywhere in a template's merged modelConfig — e.g. under dataSources/<ds>/config — keyed by their full /-joined path.")]
+	public void CollectNativeArraysByPathFromRoot_ReturnsArraysAnywhereFromRoot() {
+		JsonObject templateModelConfig = JsonNode.Parse("""
+			{ "dataSources": { "PDS": { "config": {
+				"sortColumns": [ { "columnName": "CreatedOn" } ],
+				"filter": { "items": [ { "columnPath": "Name" } ] } } } } }
+			""")!.AsObject();
+
+		IReadOnlyDictionary<string, JsonArray> result =
+			WebToMobileAnalysisService.CollectNativeArraysByPathFromRoot(templateModelConfig);
+
+		result.Should().ContainKey("dataSources/PDS/config/sortColumns",
+			because: "an array under a data source's config is collected by its full path from the root");
+		result.Should().ContainKey("dataSources/PDS/config/filter/items",
+			because: "a deeply nested array is collected by its full path");
+		WebToMobileAnalysisService.CollectNativeArraysByPathFromRoot(null)
+			.Should().BeEmpty(because: "a null config yields no native arrays");
+	}
+
+	[Test]
+	[Description("A top-level modelConfig key that is NOT an object (a scalar) cannot be expressed as a nested-key merge, so it stays in a residual path-[] root merge. That residual is EXPECTED-SAFE, not a regression: it carries only scalars — never an array — so the mobile diff engine's array-replace cannot drop the page's own entries, and the split invariant treats it as legitimate.")]
+	public void Analyze_ModelConfigTopLevelScalar_KeptInArrayFreeResidualRootMerge() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
+			""",
+			modelConfigJson: """
+			{ "dataSources": { "PDS": { "config": { "attributes": {} } } },
+			  "primaryDataSourceName": "PDS" }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
+
+		// Assert
+		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
+		JsonObject residual = mcd.Single(n => n!.AsObject()["path"]!.AsArray().Count == 0)!.AsObject();
+		residual["values"]!["primaryDataSourceName"]!.GetValue<string>().Should().Be("PDS",
+			because: "a top-level scalar that cannot be a nested-key merge is preserved verbatim in the residual root merge");
+		residual["values"]!.AsObject().Any(kv => kv.Value is JsonArray).Should().BeFalse(
+			because: "a scalar-only residual root merge carries no array, so the mobile diff engine's array-replace cannot drop a page array — the shape is expected-safe, not a regression");
 	}
 
 	[Test]

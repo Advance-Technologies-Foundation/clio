@@ -55,12 +55,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    re-derive placement from containerMap + componentSuggestions.
 			  - mobileContracts — for each suggested mobile type: allowedProperties + example +
 			    designerDefaults, so you can build the component's values inline.
-			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs. modelConfigDiff is a single
-			    root merge of the full data-source config; viewModelConfigDiff is a set of FOCUSED targeted
-			    merges (page-owned ["attributes"] merge + per-collection augments + per-array modelConfig
-			    overrides unioned with the template's own natives), NOT a single root merge. Paste them
-			    VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (see DATA SECTIONS below). This
-			    is the supported way to apply the data sections.
+			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs. BOTH are a set of FOCUSED
+			    targeted merges, NOT a single root merge: modelConfigDiff carries one merge per top-level key
+			    (e.g. ["dataSources"]) plus a per-array override unioned with the template's own natives;
+			    viewModelConfigDiff carries a page-owned ["attributes"] merge + per-collection augments +
+			    per-array modelConfig overrides unioned with the template's own natives. Paste them VERBATIM as
+			    the page's modelConfigDiff / viewModelConfigDiff (see DATA SECTIONS below). This is the
+			    supported way to apply the data sections.
 			  - modelConfig / viewModelConfig — the same configs in full-object form, for REFERENCE only.
 			    viewModelConfig is already FILTERED (attributes used only by dropped components removed).
 			  - adaptiveLayout — the responsive layout for each MULTI-column grid container (phone collapses to
@@ -207,10 +208,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			DISCARD its data-source section and rebuild it from guide.modelConfigDiff.
 
 			- modelConfigDiff (guide.modelConfigDiff): paste it VERBATIM as the page's modelConfigDiff. It is a
-			  single root merge that carries the full modelConfig (data sources + attributes) with every
-			  attribute's "type" and "path" intact. Do not omit, rename, or reconstruct any fields. (Own columns
-			  that are not declared in attributes resolve automatically; only related/lookup-path columns are
-			  declared, and each MUST keep its "type".)
+			  set of FOCUSED targeted merges (one per top-level key, e.g. ["dataSources"], plus a per-array
+			  override unioned with the mobile template's own natives) — NOT a single root merge, so the mobile
+			  diff engine cannot replace a data source's native array and drop entries. It carries the full
+			  modelConfig (data sources + attributes) with every attribute's "type" and "path" intact. Do not
+			  omit, rename, reconstruct, or collapse it back into one root merge. (Own columns that are not
+			  declared in attributes resolve automatically; only related/lookup-path columns are declared, and
+			  each MUST keep its "type".)
 			- viewModelConfigDiff (guide.viewModelConfigDiff): paste it VERBATIM as the page's
 			  viewModelConfigDiff. The guide ALREADY removed attributes referenced only by dropped/unsupported
 			  components. Converters: reference only OOTB mobile converters; a definitive mobile converter list
