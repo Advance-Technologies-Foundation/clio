@@ -377,28 +377,55 @@ public sealed class PageBusinessRuleProbeTests {
 	}
 
 	[Test]
-	[Description("Page rules carry only element actions; an anomalous non-page action (e.g. set-values, which cannot be authored at page level) is NOT silently skipped — it surfaces loudly so the data anomaly is visible (in Probe this degrades to ProbeOk=false).")]
-	public void ParseRules_NonPageAction_SurfacesLoudly() {
+	[Description("An anomalous action with an unmapped/absent typeName (e.g. set-values, which cannot be authored at page level, or a new/renamed OOTB action) is skipped at action granularity — it never throws and never discards the rest. A rule left with a valid action keeps converting; a rule whose ONLY action is unmapped is dropped; an unrelated fully-valid rule always survives.")]
+	public void ParseRules_UnmappedAction_IsSkipped_AndOtherRulesSurvive() {
 		string meta = $$"""
 		{
 		  "typeName": "{{BusinessRulesMetadataTypeName}}",
 		  "rules": [
 		    {
 		      "typeName": "{{BusinessRuleTypeName}}",
-		      "uId": "r",
-		      "caption": "Only set-values",
+		      "uId": "r1",
+		      "caption": "Mixed",
+		      "cases": [
+		        { "typeName": "{{BusinessRuleCaseTypeName}}", "condition": null,
+		          "actions": [
+		            { "typeName": "{{BusinessRuleSetValuesElementTypeName}}", "items": [] },
+		            { "typeName": "{{BusinessRuleHideElementTypeName}}", "items": "Field1" }
+		          ] }
+		      ]
+		    },
+		    {
+		      "typeName": "{{BusinessRuleTypeName}}",
+		      "uId": "r2",
+		      "caption": "Only unmapped",
 		      "cases": [
 		        { "typeName": "{{BusinessRuleCaseTypeName}}", "condition": null,
 		          "actions": [ { "typeName": "{{BusinessRuleSetValuesElementTypeName}}", "items": [] } ] }
+		      ]
+		    },
+		    {
+		      "typeName": "{{BusinessRuleTypeName}}",
+		      "uId": "r3",
+		      "caption": "Fully valid",
+		      "cases": [
+		        { "typeName": "{{BusinessRuleCaseTypeName}}", "condition": null,
+		          "actions": [ { "typeName": "{{BusinessRuleShowElementTypeName}}", "items": "Hint" } ] }
 		      ]
 		    }
 		  ]
 		}
 		""";
 
-		System.Action parse = () => PageBusinessRuleProbe.ParseRules(Schema(meta));
+		List<SourcePageBusinessRule> rules = PageBusinessRuleProbe.ParseRules(Schema(meta));
 
-		parse.Should().Throw<System.Collections.Generic.KeyNotFoundException>();
+		// "Only unmapped" (r2) is dropped (0 recognized actions); the mixed and the valid rule survive —
+		// one anomalous action must never take down the whole page.
+		rules.Should().HaveCount(2, because: "an unmapped action is skipped, not fatal — only the rule left with no action drops");
+		rules.Select(r => r.Caption).Should().Equal("Mixed", "Fully valid");
+		rules[0].Actions.Single().ActionType.Should().Be("hide-element",
+			because: "the unmapped set-values action is skipped while the valid hide-element keeps converting");
+		rules[1].Actions.Single().ActionType.Should().Be("show-element");
 	}
 
 	[Test]

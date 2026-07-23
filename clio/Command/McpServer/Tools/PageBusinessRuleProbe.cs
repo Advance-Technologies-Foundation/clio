@@ -153,15 +153,21 @@ public static class PageBusinessRuleProbe {
 			if (actionNode is not JsonObject action) {
 				continue;
 			}
-			// Page-level business rules carry ONLY element actions (hide/show + make-editable/read-only/
-			// required/optional): the probe reads strictly the page's ClientUnitSchema BusinessRule add-on,
-			// while object-level rules live on the EntitySchema (a different schema manager) and never reach
-			// here. So every action type maps; there is no need to filter by action type. An unmapped typeName
-			// is a data anomaly that surfaces loudly (the probe degrades to ProbeOk=false) rather than being
-			// silently dropped.
+			// Page-level business rules normally carry ONLY element actions (hide/show + make-editable/
+			// read-only/required/optional): the probe reads strictly the page's ClientUnitSchema BusinessRule
+			// add-on, while object-level rules live on the EntitySchema (a different schema manager). A missing
+			// or unmapped typeName is a data anomaly (a new/renamed OOTB action, a custom action, or an
+			// object-level action leaking in). Skip that ONE action and keep parsing the rest — a single
+			// anomalous action must never discard every rule on the page (the tolerant-probe contract). A rule
+			// left with no recognized action is dropped downstream. (The dictionary indexer would throw here on
+			// an unmapped/null key, unwinding through ParseRules to Probe and degrading the whole probe.)
 			string typeName = StringOf(action["typeName"]);
+			if (string.IsNullOrEmpty(typeName)
+				|| !ActionShortByTypeName.TryGetValue(typeName, out string actionType)) {
+				continue;
+			}
 			actions.Add(new SourcePageRuleAction {
-				ActionType = ActionShortByTypeName[typeName],
+				ActionType = actionType,
 				ElementItems = SplitItems(action["items"])
 			});
 		}

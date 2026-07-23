@@ -55,6 +55,22 @@ public sealed class JsonDiffApplierTests {
 	}
 
 	[Test]
+	[Description("A merge whose values is a non-object (array/scalar) is a tolerant no-op — the target element is left unchanged instead of throwing an InvalidCastException.")]
+	public void Apply_Merge_NonObjectValues_IsNoOp() {
+		var applier = new JsonDiffApplier();
+		JToken source = applier.Apply(new JArray(), Arr("""
+			[ { "operation": "insert", "name": "Name", "values": { "keep": true } } ]
+			"""));
+
+		// Pre-fix this threw InvalidCastException from casting a JArray to JObject; now it is a tolerant no-op.
+		JToken result = applier.Apply(source, Arr("""
+			[ { "operation": "merge", "name": "Name", "values": [ 1, 2 ] } ]
+			"""));
+
+		AssertEqual(result, Arr("""[ { "name": "Name", "keep": true } ]"""));
+	}
+
+	[Test]
 	[Description("alias excludeOperations makes move / remove / merge no-ops, but remove-properties still applies.")]
 	public void Apply_Alias_ExcludeOperations() {
 		const string insert = """

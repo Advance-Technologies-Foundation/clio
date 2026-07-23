@@ -652,9 +652,9 @@ public class JsonDiffApplier {
 		ItemInfo itemInfo = FindMergeOrRemoveItemInfo(config);
 		bool parentExists = !IsEmpty(itemInfo);
 		if (parentExists) {
-			var values = (JObject)config["values"];
+			var values = config["values"] as JObject;
 			if (values is null) {
-				return parentExists; // a merge with no values object is a no-op
+				return parentExists; // a merge with no (or non-object) values is a no-op
 			}
 			foreach (JProperty property in ((JObject)itemInfo.Item).Properties().ToList()) {
 				JToken firstChild = property.Value is JArray arr ? (arr.Count > 0 ? arr[0] : null) : property.Value;
