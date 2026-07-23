@@ -27,6 +27,23 @@ Clio — це CLI і MCP‑сервер для Creatio. Через MCP будь�
 
 ---
 
+## Teaser (EN)
+
+> English version of the announcement blurb.
+
+**Clio MCP: Capabilities**
+*What an AI agent can do on Creatio — and how it's built to work with an LLM.*
+
+🔵 **Block 1 — Functional capabilities.** We'll walk the path from idea to a finished application:
+explore the core functions for working with an app, modify the object model and a page, add a
+component with a handler, and create a business rule.
+
+🟣 **Block 2 — Technical nuances.** How to give an LLM 120+ tools over MCP without polluting its
+context. One MCP for different Creatio versions — how the component‑catalog versioning works. And
+why **guidance is an API**: we give the agent not just the buttons, but also how to use them correctly.
+
+---
+
 ## Тема
 
 **Clio MCP: capabilities**
