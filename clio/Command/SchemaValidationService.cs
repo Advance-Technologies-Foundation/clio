@@ -1820,18 +1820,23 @@ public static class SchemaValidationService
 	private static bool IsBindingExpression(string value) =>
 		value.Length >= 2 && value[0] == '$' && (char.IsLetter(value[1]) || value[1] == '_');
 
+	// Shared owner-node label idiom: an unnamed node reads as "a view node", a named one is quoted.
+	// Keeps BuildTextLiteralError / BuildLiteralRequiredError from drifting on the fallback wording.
+	private static string FormatOwnerNode(string ownerName) =>
+		string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+
 	private static string BuildTextLiteralError(string ownerName, string property, string value) {
-		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
-		string shown = value.Length > 60 ? value[..60] + "…" : value;
+		string node = FormatOwnerNode(ownerName);
+		string shown = Truncate(value);
 		return $"View node {node} sets user-visible text property '{property}' to the inline literal " +
 			$"\"{shown}\" instead of a localizable string. Rule: {LocalizableTextLiteralClause}. " +
 			"See the page-schema-resources guide.";
 	}
 
 	private static string BuildLiteralRequiredError(string ownerName, string componentType, string property, string value) {
-		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+		string node = FormatOwnerNode(ownerName);
 		string owner = string.IsNullOrEmpty(componentType) ? node : $"{node} ({componentType})";
-		string shown = value.Length > 60 ? value[..60] + "…" : value;
+		string shown = Truncate(value);
 		return $"View node {owner} binds text property '{property}' to the localizable resource " +
 			$"\"{shown}\", but this property must be a plain inline literal. Rule: {LiteralRequiredTextClause}. " +
 			"See the page-schema-resources guide.";

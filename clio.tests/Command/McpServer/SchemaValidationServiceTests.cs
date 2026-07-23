@@ -3009,6 +3009,74 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A non-resource dynamic binding (e.g. $SomeAttr) on crt.ImageInput.tooltip is accepted — only $Resources.Strings.* / #ResourceString(...)# forms render empty at runtime, so a plain view-model binding is left untouched (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipDynamicBinding_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$SomeAttr"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a plain view-model binding is neither an inline literal nor a localizable-resource reference");
+		result.Errors.Should().BeEmpty(because: "the exempt tooltip only rejects the empty-rendering resource forms");
+	}
+
+	[Test]
+	[Description("A whitespace-only tooltip on crt.ImageInput is accepted — an empty value is neither an inline literal nor a resource reference, so neither branch of the exempt-property rule fires (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipWhitespace_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"   "}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "a whitespace-only value is not a rejectable resource binding");
+		result.Errors.Should().BeEmpty(because: "the exempt-property rule must not flag an empty tooltip");
+	}
+
+	[Test]
+	[Description("The LiteralAllowedTextProperties map lookup is case-insensitive — a lowercase crt.imageinput type still resolves the tooltip exemption, so a resource binding on it is rejected exactly as on the canonically-cased type (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceBinding_CaseInsensitiveType_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.imageinput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the exemption resolves regardless of type casing, so the resource form is still rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the resource-bound tooltip on a lowercase-typed ImageInput must be reported");
+	}
+
+	[Test]
+	[Description("The >60-char echoed-value truncation branch of BuildLiteralRequiredError is exercised — a long resource key is truncated with an ellipsis so the diagnostic stays bounded (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipLongResourceBinding_TruncatesDiagnostic() {
+		// Arrange — the resource binding is well over 60 characters, forcing the truncation branch.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.AnExtremelyLongLocalizableResourceKeyThatExceedsSixtyCharactersForTruncation"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the resource form on the exempt tooltip is rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("…"),
+			because: "the over-length resource value must be truncated with an ellipsis in the diagnostic");
+	}
+
+	[Test]
 	[Description("The mobile localizable-text rule shares the same scan engine as the web rule, so the crt.ImageInput.tooltip exemption applies on mobile too. Locks the shared-engine behavior — the mobile ImageInput runtime was not independently verified; the ticket scope is web (ENG-92940).")]
 	public void ValidateMobileLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
 		// Arrange
