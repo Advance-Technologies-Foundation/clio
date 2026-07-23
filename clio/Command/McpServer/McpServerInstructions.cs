@@ -14,7 +14,7 @@ internal static class McpServerInstructions
 		Most tools need a registered environment-name (list-environments / reg-web-app). Read docs://help/command/{name} for any command.
 
 		## ALWAYS read these FIRST (mandatory on every operation; skipping either is a defect, not a shortcut)
-		- get-guidance name=core-rules - the non-negotiable invariants (compile/restart, long-running await, profile culture, destructive confirmation, verification preference, correlation-id); apply them to every action.
+		- get-guidance name=core-rules - the non-negotiable invariants (compile/restart, long-running await, profile culture, destructive confirmation, verification in browser preference, correlation-id); apply them to every action.
 		- get-guidance name=routing - the routing map from the task (pages, entities, data, applications) to the exact guide(s) to read before acting.
 		An unknown name returns availableGuides.
 
