@@ -212,13 +212,10 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			//     primed through ONE batched SelectQuery so the fan-out does not pay a round-trip per name.
 			List<string> detailNames = CollectDetailNames(schemas, seed);
 			var enricherNames = new List<string>(detailNames);
-			if (!string.IsNullOrWhiteSpace(entity)) {
-				enricherNames.Add(entity + "SectionV2");
-				enricherNames.Add(entity + "Section");
-			}
+			enricherNames.AddRange(BuildSectionCandidates(options.SchemaName, entity));
 			PrimeLayerBatch(ctx, enricherNames);
 			JObject detailSchemas = BuildDetailSchemas(ctx, detailNames);
-			JArray section = BuildSection(ctx, entity);
+			JArray section = BuildSection(ctx, options.SchemaName, entity);
 			JObject childPageSchemas = BuildChildPageSchemas(ctx, detailSchemas);
 
 			// 7. Assemble the manifest in the engine's contract shape (omit empty fields, never null-fill).
@@ -735,13 +732,11 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return detailSchemas;
 	}
 
-	private JArray BuildSection(BundleRunContext ctx, string entity) {
+	private JArray BuildSection(BundleRunContext ctx, string schemaName, string entity) {
 		var section = new JArray();
-		if (string.IsNullOrWhiteSpace(entity)) {
-			return section;
-		}
-		// The classic list-page section follows the <Entity>Section[V2] naming convention.
-		foreach (string candidate in new[] { entity + "SectionV2", entity + "Section" }) {
+		// The classic list-page section follows the <Entity>Section[V2] convention, or the <PagePrefix>Section[V2]
+		// convention when a section was cloned/renamed off the page (e.g. Applicant1Page -> Applicant1Section).
+		foreach (string candidate in BuildSectionCandidates(schemaName, entity)) {
 			try {
 				(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, candidate);
 				if (enumError != null) {
@@ -766,6 +761,41 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			}
 		}
 		return section;
+	}
+
+	// Section candidates, most-specific first: the <PagePrefix>Section[V2] variants (derived by stripping the
+	// trailing Page/PageV2 suffix off the page schema name) take precedence over the bare <Entity>Section[V2]
+	// variants, so a section cloned/renamed off the page (e.g. Applicant1Page -> Applicant1Section) is preferred
+	// over the base-entity section when both exist. Deduped so the common case (page prefix == entity) does not
+	// enumerate the same name twice.
+	private static IReadOnlyList<string> BuildSectionCandidates(string schemaName, string entity) {
+		var candidates = new List<string>();
+		AddSectionPair(candidates, StripPageSuffix(schemaName));
+		AddSectionPair(candidates, entity);
+		return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+	}
+
+	private static void AddSectionPair(List<string> candidates, string prefix) {
+		if (string.IsNullOrWhiteSpace(prefix)) {
+			return;
+		}
+		candidates.Add(prefix + "SectionV2");
+		candidates.Add(prefix + "Section");
+	}
+
+	// The page prefix is the page schema name without its trailing Page/PageV2 suffix (Applicant1Page ->
+	// Applicant1). Returns null when the name carries no such suffix, so no spurious "<name>Section" candidate is
+	// derived from a non-page schema name.
+	private static string StripPageSuffix(string schemaName) {
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			return null;
+		}
+		foreach (string suffix in new[] { "PageV2", "Page" }) {
+			if (schemaName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && schemaName.Length > suffix.Length) {
+				return schemaName.Substring(0, schemaName.Length - suffix.Length);
+			}
+		}
+		return null;
 	}
 
 	private JObject BuildChildPageSchemas(BundleRunContext ctx, JObject detailSchemas) {

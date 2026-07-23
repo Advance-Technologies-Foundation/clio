@@ -437,6 +437,55 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
+	[Description("TryAssembleBundle resolves a section named after the page prefix (UsrApplicant1Page -> UsrApplicant1Section) when no <Entity>Section[V2] schema exists, so a section cloned/renamed off the page is not silently dropped.")]
+	public void TryAssembleBundle_ShouldGatherSection_ViaPagePrefixNaming_WhenEntitySectionDoesNotExist() {
+		// Arrange — the page prefix (UsrApplicant1) differs from the bare entity (UsrApplicant); only the
+		// page-prefixed section schema exists, so the <Entity>Section[V2] candidates cannot resolve it.
+		AddLayer("UsrApplicant1Page", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrApplicant1Page\", [], function() { return { entitySchemaName: \"UsrApplicant\" }; });", EmptyGuid, "UsrApp");
+		AddLayer("UsrApplicant1Section", "uid-section", "UsrApp", 200);
+		AddSchema("uid-section", "define(\"UsrApplicant1Section\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrApplicant1Page" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.SectionLayerCount.Should().Be(1,
+			because: "the section named off the page prefix resolves even though no <Entity>Section[V2] schema exists");
+		JObject manifest = JObject.Parse(_writtenContent);
+		((JArray)manifest["section"]).Should().ContainSingle(because: "the page-prefixed section layer is gathered")
+			.Which["body"]!.ToString().Should().Contain("UsrApplicant1Section",
+				because: "the resolved section is the page-prefixed schema, not a bare-entity section");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle prefers the page-prefixed section (UsrApplicant1Section) over the bare-entity section (UsrApplicantSection) when both exist, so a cloned page maps to its own section rather than the base one.")]
+	public void TryAssembleBundle_ShouldPreferPagePrefixSection_OverEntitySection_WhenBothExist() {
+		// Arrange — both the page-prefixed section and the bare-entity section exist; the page-prefixed one must win.
+		AddLayer("UsrApplicant1Page", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrApplicant1Page\", [], function() { return { entitySchemaName: \"UsrApplicant\" }; });", EmptyGuid, "UsrApp");
+		AddLayer("UsrApplicant1Section", "uid-page-section", "PagePkg", 200);
+		AddSchema("uid-page-section", "define(\"UsrApplicant1Section\", [], function() { return {}; });", EmptyGuid, "PagePkg");
+		AddLayer("UsrApplicantSection", "uid-entity-section", "EntityPkg", 200);
+		AddSchema("uid-entity-section", "define(\"UsrApplicantSection\", [], function() { return {}; });", EmptyGuid, "EntityPkg");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrApplicant1Page" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.SectionLayerCount.Should().Be(1, because: "the first section candidate that resolves wins, and only one chain is emitted");
+		JObject manifest = JObject.Parse(_writtenContent);
+		((JArray)manifest["section"])[0]["pkg"]!.ToString().Should().Be("PagePkg",
+			because: "the page-prefixed section (UsrApplicant1Section) takes precedence over the bare-entity section (UsrApplicantSection)");
+	}
+
+	[Test]
 	[Description("TryAssembleBundle seeds EVERY layer of a multi-package parent template (base->top), not just the single parent.uId layer, so base containers in sibling layers are not dropped.")]
 	public void TryAssembleBundle_ShouldSeedAllParentTemplateLayers_WhenParentIsMultiLayer() {
 		// Arrange — a single-layer page whose parent template "BaseTpl" is replaced across TWO packages;
