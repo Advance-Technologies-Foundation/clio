@@ -232,7 +232,8 @@ internal sealed class CommandHelpCatalog {
 			"turn-farm-mode",
 			"turn-fsm",
 			"uninstall-creatio",
-			"upload-license"
+			"upload-license",
+			"watch-compilation"
 		];
 
 	private static readonly HashSet<string> ThemingCommands =
