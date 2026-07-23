@@ -136,7 +136,8 @@ Paging uses `options.pagingConfig { rowsOffset, rowCount }`; sorting uses
 
 ## Agent usage guidance
 
-- For custom configuration web services or their tests, use the `$creatio-config-webservice` skill. Trigger it for changes under `packages/<PKG>/Files/src/cs/EntryPoints/WebService` or `tests/<PKG>/EntryPoints/WebService`.
+- For custom configuration web-service implementation or review under `packages/<PKG>/Files/src/cs/EntryPoints/WebService`, call `get-guidance name=configuration-webservice` before planning or editing.
+- For corresponding test work under `tests/<PKG>/EntryPoints/WebService`, or whenever the production change includes tests, also call `get-guidance name=configuration-webservice-tests`.
 - If a `dbhub` (or equivalent) MCP database tool is configured, use it to **verify** data-layer outcomes directly (row counts, column types, stored content) instead of guessing.
 
 ## Workspace diary
