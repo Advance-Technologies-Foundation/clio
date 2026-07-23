@@ -43,7 +43,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
          this version is effectively a build-time floor, not the operative security control. The mcp-http OAuth edge
          exposes a public Kestrel endpoint, and CVE-2025-55315 (request-smuggling / security-feature-bypass, CVSS 9.9)
          affects ASP.NET Core 8 runtimes <= 8.0.20. The real control is deploying on a PATCHED runtime:
-         .NET 8 >= 8.0.21 (current servicing) or .NET 10 >= 10.0.9. See docs/commands/mcp-http.md (Deployment / runtime). -->
+         .NET 8 >= 8.0.21 or .NET 10 >= 10.0.10 (current servicing). See docs/commands/mcp-http.md (Deployment / runtime). -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="$(MsPackageVersion)"
                     Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11"
