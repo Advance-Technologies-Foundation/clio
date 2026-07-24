@@ -126,6 +126,62 @@ public sealed class TypeReferenceClosureTests {
 	}
 
 	[Test]
+	[Description("Record-shaped schemas reference their key/value types through `keyType`/`valueType` strings, not `type` — the closure must follow them, else a Record-valued input names types it never defines.")]
+	public void Resolve_Follows_KeyType_And_ValueType_References() {
+		IReadOnlyDictionary<string, JsonElement> inputs = ParseDict("""
+		{
+		  "parameters": { "type": "Record", "keyType": "BrandedKey", "valueType": "string | Payload | PayloadItem[]" }
+		}
+		""");
+		IReadOnlyDictionary<string, JsonElement> global = ParseDict("""
+		{
+		  "BrandedKey":  { "type": "string" },
+		  "Payload":     { "fields": { "inner": { "type": "Nested" } } },
+		  "PayloadItem": { "type": "string" },
+		  "Nested":      { "type": "string" },
+		  "Unrelated":   { "type": "string" }
+		}
+		""");
+
+		IReadOnlyDictionary<string, JsonElement>? resolved = TypeReferenceClosure.Resolve(
+			inputs: inputs, outputs: null,
+			perComponentTypeDefinitions: null, globalTypeDefinitions: global);
+
+		resolved.Should().NotBeNull();
+		resolved!.Should().ContainKey("BrandedKey", because: "a `keyType` string is a type reference, not payload");
+		resolved.Should().ContainKey("Payload", because: "every PascalCase member of a `valueType` union is a type reference");
+		resolved.Should().ContainKey("PayloadItem", because: "an array-suffixed `valueType` member must tokenise to its element type");
+		resolved.Should().ContainKey("Nested", because: "types reached via `valueType` contribute their own inner references transitively");
+		resolved.Should().NotContainKey("Unrelated",
+			because: "following keyType/valueType must not weaken the closure filter");
+	}
+
+	[Test]
+	[Description("A typedef whose field references another type only through `valueType` (the RequestBindingConfig.params shape) must still pull that type in — the wiring chain is broken at exactly this hop otherwise.")]
+	public void Resolve_Follows_ValueType_References_Inside_Typedefs() {
+		IReadOnlyDictionary<string, JsonElement> inputs = ParseDict("""
+		{ "binding": { "type": "Wiring" } }
+		""");
+		IReadOnlyDictionary<string, JsonElement> global = ParseDict("""
+		{
+		  "Wiring":      { "fields": { "params": { "type": "Record", "keyType": "string", "valueType": "WiringValue" } } },
+		  "WiringValue": { "type": "string" },
+		  "Unrelated":   { "type": "string" }
+		}
+		""");
+
+		IReadOnlyDictionary<string, JsonElement>? resolved = TypeReferenceClosure.Resolve(
+			inputs: inputs, outputs: null,
+			perComponentTypeDefinitions: null, globalTypeDefinitions: global);
+
+		resolved.Should().NotBeNull();
+		resolved!.Should().ContainKey("Wiring");
+		resolved.Should().ContainKey("WiringValue",
+			because: "the only reference to WiringValue lives in a `valueType` string inside the Wiring typedef");
+		resolved.Should().NotContainKey("Unrelated");
+	}
+
+	[Test]
 	[Description("`values` payload arrays must not be misread as type names — 'close-icon' is a literal allowed value, not a type identifier.")]
 	public void Resolve_Does_Not_Tokenise_Values_Payload() {
 		IReadOnlyDictionary<string, JsonElement> inputs = ParseDict("""
