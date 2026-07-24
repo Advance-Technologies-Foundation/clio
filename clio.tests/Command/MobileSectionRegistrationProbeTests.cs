@@ -143,4 +143,25 @@ public sealed class MobileSectionRegistrationProbeTests {
 		info.ProbeOk.Should().BeFalse();
 		info.SourcePageIsSection.Should().BeFalse();
 	}
+
+	[Test]
+	[Description("A non-GUID page schema UId is rejected by the Guid.TryParse guard before any OData request is issued " +
+		"— proving the injected filter never reaches the wire (the guard is the only thing keeping a non-GUID value " +
+		"out of the unquoted OData $filter).")]
+	public void Probe_ShouldReturnNotProbed_WhenPageSchemaUIdIsNotAGuid() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(Arg.Any<string>()).Returns(ci => ci.Arg<string>());
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+
+		SectionRegistrationInfo info = MobileSectionRegistrationProbe.Probe(
+			resolver, "env", null, null, null, pageSchemaUId: "x or 1 eq 1", isFormPage: false);
+
+		info.ProbeOk.Should().BeFalse();
+		info.Note.Should().Contain("not a valid GUID");
+		client.DidNotReceive().ExecuteGetRequest(
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
 }

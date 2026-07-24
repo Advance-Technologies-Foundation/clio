@@ -79,6 +79,18 @@ public sealed class MobilePageConversionGuideToolTests {
 			because: "the diagnostic must name the supported source type so the caller knows what to migrate to");
 	}
 
+	[TestCase("environment", "environment", ExpectedResult = "environment")]
+	[TestCase("environment", "environment-superset", ExpectedResult = "environment-superset")]
+	[TestCase("environment-superset", "environment", ExpectedResult = "environment-superset")]
+	[TestCase("environment", "latest-fallback", ExpectedResult = "latest-fallback")]
+	[TestCase("latest-fallback", "environment-superset", ExpectedResult = "latest-fallback")]
+	[TestCase("environment-superset", "environment-superset", ExpectedResult = "environment-superset")]
+	[Description("WorseResolvedFrom returns the LESS authoritative tier (environment < environment-superset < latest-fallback) " +
+		"so when the mobile and web catalogs resolve to different tiers, a superset/fallback on either side is reported and " +
+		"never masked by the other catalog's exact tier.")]
+	public string WorseResolvedFrom_ReturnsLeastAuthoritativeTier(string a, string b) =>
+		MobilePageConversionGuideTool.WorseResolvedFrom(a, b);
+
 	[Test]
 	[Description("The detection and the gate compose: a 'web' schema-type detects as freedom-web and passes the gate (no rejection).")]
 	public void DetectThenReject_AcceptsWebSchemaType() {

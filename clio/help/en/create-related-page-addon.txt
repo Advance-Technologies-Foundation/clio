@@ -53,6 +53,11 @@ OPTIONS
         Optional UId of the type column that drives type-specific page sets. Omit for a single
         page set.
 
+    --schema-type WEB|MOBILE
+        Target UI surface: 'web' (the RelatedPage add-on, default) or 'mobile' (the MobileRelatedPage
+        add-on - the page the Creatio Mobile app opens for a record). The two add-ons are independent;
+        writing one never affects the other.
+
 EXAMPLES
     # Bind a default record page and a separate add page.
     clio create-related-page-addon -e dev --entity-schema-name UsrDeliveryItem --package-name Custom \
@@ -85,6 +90,7 @@ NOTES
     `page-schema-name` when both are present (`page-schema-uid` is an MCP-only field; the scalar CLI
     resolves by page name).
 
-    This tool manages the DESKTOP related-page add-on only. Mobile pages (the SchemaGroup.MobilePage set)
-    are a separate add-on and are neither read nor written here, so a desktop write - including an empty
-    reset - never affects the object's mobile page configuration.
+    This tool manages the WEB related-page add-on (RelatedPage) by default. Pass --schema-type mobile to
+    manage the MOBILE related-page add-on (MobileRelatedPage) instead - the page the Creatio Mobile app opens
+    for a record. The two add-ons are independent: a write to one (including an empty reset) is neither read
+    nor written against the other, so it never affects the other surface's page configuration.

@@ -130,6 +130,17 @@ public sealed class MobilePageConversionGuideTool {
 			return sourceTypeRejection;
 		}
 
+		// Validate an explicit version BEFORE it reaches CDN URL composition, mirroring get-component-info.
+		// The raw value flows into BuildCdnUrl's relative-Uri composition, so an unvalidated value like
+		// "//host/x" would be an RFC 3986 network-path reference and redirect the fetch to another host.
+		// Accept a 3-part semver or the literal "latest"; reject anything else up front.
+		if (!string.IsNullOrWhiteSpace(args.Version)
+			&& !string.Equals(args.Version.Trim(), ComponentRegistryClient.LatestVersion, StringComparison.OrdinalIgnoreCase)
+			&& !PlatformVersionResolver.TryNormaliseToThreePartSemver(args.Version, out _)) {
+			return Fail(args, sourceType,
+				$"'version' value '{args.Version}' is not a valid platform version. Use a 3-part semver, for example '8.3.3', or 'latest'.");
+		}
+
 		// Resolve the component-registry version against the TARGET environment (mirrors get-component-info):
 		// explicit version wins; else probe the environment's platform version; else degrade to "latest" and
 		// flag it so the caller confirms with the user (a "latest" superset may list components absent from the
@@ -137,12 +148,21 @@ public sealed class MobilePageConversionGuideTool {
 		PlatformVersionResolution versionResolution =
 			await ResolveVersionAsync(args, cancellationToken).ConfigureAwait(false);
 		string version = versionResolution.ResolvedVersion;
-		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
-			versionResolution.Source, versionResolution.ResolvedVersion, versionResolution.ResolvedVersion);
-		IReadOnlyList<ComponentRegistryEntry> mobileEntries =
-			await _mobileCatalog.GetAllAsync(version, cancellationToken).ConfigureAwait(false) ?? [];
-		IReadOnlyList<ComponentRegistryEntry> webEntries =
-			await _webCatalog.GetAllAsync(version, cancellationToken).ConfigureAwait(false) ?? [];
+		// Load both catalogs via LoadAsync so the version the CDN chain ACTUALLY served
+		// (state.ResolvedVersion) is captured — GetAllAsync discards it. Compute resolvedFrom from the served
+		// version (mirrors get-component-info): when the environment resolves e.g. 8.2.1 but the chain falls
+		// back to "latest"/bundled, this reports environment-superset (+ versionWarning) instead of the
+		// false "environment" (exact). When the mobile and web catalogs land on different tiers, report the
+		// worse one so a superset/fallback on either side is never hidden.
+		ComponentCatalogState mobileState =
+			await _mobileCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		ComponentCatalogState webState =
+			await _webCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		string resolvedFrom = WorseResolvedFrom(
+			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, mobileState.ResolvedVersion),
+			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, webState.ResolvedVersion));
+		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState.Entries;
+		IReadOnlyList<ComponentRegistryEntry> webEntries = webState.Entries;
 		HashSet<string> mobileTypes = new(mobileEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		Dictionary<string, ComponentRegistryEntry> mobileByType = new(StringComparer.OrdinalIgnoreCase);
@@ -558,6 +578,20 @@ public sealed class MobilePageConversionGuideTool {
 			SourceType = sourceType,
 			Error = error
 		};
+
+	/// <summary>
+	/// Picks the less-authoritative of two <see cref="ComponentInfoResolution.MapResolvedFrom"/> tiers
+	/// (severity <c>environment</c> &lt; <c>environment-superset</c> &lt; <c>latest-fallback</c>) so that when
+	/// the mobile and web catalogs resolve to different tiers, the guide reports the worse one — a superset or
+	/// fallback on either catalog is surfaced to the caller rather than masked by the exact tier of the other.
+	/// </summary>
+	internal static string WorseResolvedFrom(string a, string b) {
+		static int Rank(string tier) =>
+			string.Equals(tier, ComponentInfoResolution.ResolvedFromLatestFallback, StringComparison.OrdinalIgnoreCase) ? 2
+			: string.Equals(tier, ComponentInfoResolution.ResolvedFromEnvironmentSuperset, StringComparison.OrdinalIgnoreCase) ? 1
+			: 0;
+		return Rank(a) >= Rank(b) ? a : b;
+	}
 
 	/// <summary>
 	/// Gates a detected source type against what the converter supports today. Returns a failure
