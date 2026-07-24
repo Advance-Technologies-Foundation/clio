@@ -129,6 +129,37 @@ public sealed class RequestRegistrySnapshotTests {
 			because: "templateId must be resolved from the list-printables probe - pinned at the data layer, not as a guide-text substring");
 	}
 
+	[Test]
+	[Description("A detail response against the pinned payload must inline type definitions referenced ONLY through `keyType`/`valueType` strings — crt.OpenPageRequest's parameters map (valueType: JsonData, transitively JsonObject) and the RequestBindingConfig.params wiring hop (valueType: ...RequestParamBindingConfigValue...) — otherwise the response names types it never defines and stops being self-contained.")]
+	public void Pinned_Snapshot_Detail_Should_Inline_ValueType_Referenced_TypeDefinitions() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.OpenPageRequest", out RequestRegistryEntry? openPage).Should().BeTrue(
+			because: "crt.OpenPageRequest is the pinned entry whose parameters map declares valueType: JsonData");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			openPage!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the parameter-level valueType reference resolves...
+		detail.References.Should().NotBeNull(
+			because: "crt.OpenPageRequest references named types, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("JsonData",
+			because: "parameters.valueType names JsonData, and a named type must ship its definition");
+		// ...transitively through the resolved type's own union string...
+		detail.References.TypeDefinitions.Should().ContainKey("JsonObject",
+			because: "JsonData's union references JsonObject, so the closure must pull it through");
+		// ...and the wiring chain broken at the same valueType hop heals for every request.
+		detail.References.TypeDefinitions.Should().ContainKey("RequestParamBindingConfigValue",
+			because: "RequestBindingConfig.params references its value type only through a valueType string");
+	}
+
 	private const string MobileSnapshotRelativePath = "Command/McpServer/Fixtures/MobileRequestRegistry.live-snapshot.json";
 
 	[Test]
