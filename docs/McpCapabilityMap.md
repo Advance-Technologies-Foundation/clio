@@ -408,16 +408,34 @@ Why `sync-schemas` matters:
 - it batches create/update/seed actions
 - it is a better fit for agents that want one atomic plan execution instead of many tiny tool calls
 
-**Per-operation `status` values.** Each entry in `results` carries a machine-readable `status`:
-`completed` or `failed`. `create-lookup` can additionally report the additive `resumed-existing`
-status: on a resubmit where the lookup already exists in the target package but the requested
-columns could NOT be verified (the column read threw or failed), the operation still completes the
-outstanding registration with `success: true` but returns `status: "resumed-existing"` plus a
-warning that the requested columns are NOT confirmed present — verify with
-`get-entity-schema-properties` or resubmit. When the read succeeds and a requested column is
-genuinely missing, the operation fails honestly (`success: false`) with the "use update-entity to
-add columns" hint rather than masquerading as `completed`. Consumers should treat any
-non-`completed` status as not-fully-verified.
+`sync-schemas` is **convergent (re-run-safe)**. `create-lookup`, `create-entity`, and `update-entity`
+read current server state first and apply only the missing delta (create-if-absent,
+add-only-missing-columns, per-column add/modify/remove; unlisted columns untouched), so re-submitting
+the identical batch after an ambiguous failure is safe. Details an external AI relies on:
+
+- **`outcome` discriminator** on each per-operation result: `created` | `reconciled` |
+  `already-satisfied` | `collision` (additive; omitted for `seed-data`). `reconciled` and
+  `already-satisfied` are successes, not failures.
+- **Collision failure** is pre-emptive: a same-name schema in a DIFFERENT package (or a same-package
+  schema whose parent/kind is incompatible with the request) fails that op with `success: false`,
+  `outcome: "collision"`, and `collision-info` (owning package); the batch stops on first failure.
+  Exceptions: a `create-entity` with `extend-parent: true` treats a same-name/other-package schema as
+  its replacement target (`created`, not a collision), and a per-column type mismatch is a
+  modify-conflict, not a collision.
+- **Seed-data `Name` contract**: a row is replay-safe only when the target schema has a `Name` column
+  AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are
+  non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay.
+
+**Per-operation `status`, transient retry, and resume-plan.** Each entry in `results` carries a
+machine-readable `status` (`completed` | `failed`), an `operation-index` (zero-based index into the
+request `operations`), and — only when the operation was retried for a transient network fault — an
+`attempts` count. Transient network failures (DNS/reset/timeout/gateway) are retried per operation
+(up to 3 attempts with short backoff) before the op fails. On a mid-batch abort the response carries
+a `resume-plan` (the failed op plus the not-run ops, in re-submittable shape). Because the schema ops
+are convergent, re-submitting the whole batch verbatim is safe; resubmitting only
+`resume-plan.operations` is the efficient path and is required for `seed-data` (NOT replay-safe),
+which the plan converts to a standalone op instead of recreating the schema.
+
 
 ### 4. User Task Engineering
 

@@ -2299,6 +2299,127 @@ stories:
       - story-clio-guidance-development-1
     blocks: []
 
+  # --- sync-schemas-ensure-semantics stories (ENG-93807, sub-task of ENG-93367) — added 2026-07-20 ---
+  # Follow-up to PR #910 / ENG-93374. Convergent "ensure" semantics for the sync-schemas MCP tool.
+  # Story-N maps 1:1 to ADR implementation unit U-N. Recommended order: 1 -> 2 -> 3 -> 4 -> 5;
+  # story 6 (#910 rebase/heuristic-shrink) depends only on 1,2 and is gated on A-06 (#910 merged) —
+  # sequence it as the final integration once #910 lands. Dependency graph is acyclic; no story
+  # depends on a later-numbered story. clio.mcp.e2e is NOT in CI — story 5's E2E runs manually.
+  # Per-story DoD carries its own unit tests + MCP result-shape review (stories 1/2); U4 owns
+  # guidance/docs/contract-text; U5 is the consolidated re-run/e2e/read-budget story.
+  - id: story-sync-schemas-ensure-1
+    title: "ensure-create — convergent create-lookup (+ shared create-entity)"
+    feature: "sync-schemas-ensure-semantics"
+    repo: "clio"
+    size: L
+    status: review
+    jira: ENG-93807
+    file: spec/stories/story-sync-schemas-ensure-1.md
+    prd: spec/prd/prd-sync-schemas-ensure-semantics.md
+    adr: spec/adr/adr-sync-schemas-ensure-semantics.md
+    fr: [FR-01, FR-02, FR-03, FR-06, FR-10]
+    ac: [AC-01, AC-02, AC-04, AC-ERR]
+    oq: [OQ-05]
+    status_note: "in-progress 2026-07-20 — critical path; blocks 2/4/5/6. Owns the shared additive column-add helper (reconcile column-add via UpdateEntitySchemaCommand's add-column op; CreateEntitySchemaCommand is create-only, AC-02) that Story 2 extends — the helper lands here so Story 2's per-column reconcile has a mechanism to build on. Also owns deleting TryGetCollisionInfo (removes its last caller) and recompiling the existing ~40 SchemaSyncToolTests cases against the new ctor."
+    depends_on: []
+    blocks:
+      - story-sync-schemas-ensure-2
+      - story-sync-schemas-ensure-4
+      - story-sync-schemas-ensure-5
+      - story-sync-schemas-ensure-6
+
+  - id: story-sync-schemas-ensure-2
+    title: "ensure-update-entity — per-column reconcile"
+    feature: "sync-schemas-ensure-semantics"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-93807
+    file: spec/stories/story-sync-schemas-ensure-2.md
+    prd: spec/prd/prd-sync-schemas-ensure-semantics.md
+    adr: spec/adr/adr-sync-schemas-ensure-semantics.md
+    fr: [FR-04, FR-05, FR-06]
+    ac: [AC-05, AC-06, AC-07, AC-ERR]
+    depends_on: [story-sync-schemas-ensure-1]
+    blocks:
+      - story-sync-schemas-ensure-4
+      - story-sync-schemas-ensure-5
+      - story-sync-schemas-ensure-6
+
+  - id: story-sync-schemas-ensure-3
+    title: "seed-data contract decision — Name-keyed dedup (docs + regression test)"
+    feature: "sync-schemas-ensure-semantics"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93807
+    file: spec/stories/story-sync-schemas-ensure-3.md
+    prd: spec/prd/prd-sync-schemas-ensure-semantics.md
+    adr: spec/adr/adr-sync-schemas-ensure-semantics.md
+    fr: [FR-08]
+    ac: [AC-08]
+    oq: [OQ-01]
+    depends_on: []
+    blocks:
+      - story-sync-schemas-ensure-4
+      - story-sync-schemas-ensure-5
+
+  - id: story-sync-schemas-ensure-4
+    title: "Contract, guidance, and docs for convergent semantics"
+    feature: "sync-schemas-ensure-semantics"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-93807
+    note: "No operation-type rename (OQ-03 -> keep create-lookup/update-entity); zero McpToolCompatibilityCatalog / WorkspaceTemplateGuidanceDriftTests churn. Checks clio/tpl/** for catch-up-batch language (SM-04c). MCP-only tool: no CLI-help change."
+    file: spec/stories/story-sync-schemas-ensure-4.md
+    prd: spec/prd/prd-sync-schemas-ensure-semantics.md
+    adr: spec/adr/adr-sync-schemas-ensure-semantics.md
+    fr: [FR-07]
+    depends_on:
+      - story-sync-schemas-ensure-1
+      - story-sync-schemas-ensure-2
+      - story-sync-schemas-ensure-3
+    blocks:
+      - story-sync-schemas-ensure-5
+
+  - id: story-sync-schemas-ensure-5
+    title: "Test coverage — ambiguous-failure re-run class, E2E, read-budget counter-metric"
+    feature: "sync-schemas-ensure-semantics"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-93807
+    note: "clio.mcp.e2e is NOT in CI — SchemaSyncToolE2ETests / ToolContractGetToolE2ETests run manually against a live stand; the manual E2E run is a HARD, RECORDED merge gate (PR must not merge without the recorded result) since AC-03/AC-09 are only E2E-verifiable. Read-budget AC uses the round-trip formulation (zero added MCP round-trips, no verify read-back; server-side reads not counted, up to 2 on the reconcile path) per ADR OQ-04/OI-01 — NOT the literal AC-09 one-state-read wording."
+    file: spec/stories/story-sync-schemas-ensure-5.md
+    prd: spec/prd/prd-sync-schemas-ensure-semantics.md
+    adr: spec/adr/adr-sync-schemas-ensure-semantics.md
+    fr: [FR-05, FR-06]
+    ac: [AC-03, AC-09]
+    depends_on:
+      - story-sync-schemas-ensure-1
+      - story-sync-schemas-ensure-2
+      - story-sync-schemas-ensure-3
+      - story-sync-schemas-ensure-4
+    blocks: []
+
+  - id: story-sync-schemas-ensure-6
+    title: "#910 integration — rebase, preserve resume-plan shape, shrink heuristics"
+    feature: "sync-schemas-ensure-semantics"
+    repo: "clio"
+    size: L
+    status: review
+    jira: ENG-93807
+    note: "Gated on A-06 (PR #910 / ENG-93374 merged). Sized L (not M): must reconcile TWO overlapping rewrites of ExecuteCreateSchema/ExecuteUpdateEntity (this branch's convergence vs #910's per-op retry + resume-plan) and re-verify the preserved result shape — a substantial rebase, not a half-day merge. Sequence as the final integration: rebase onto #910, preserve resume-plan/partial-result shape, delete the now-redundant convergent-op #910 resume special-cases. TryGetCollisionInfo is deleted in Story 1 (its last caller), NOT here. Depends only on stories 1,2."
+    file: spec/stories/story-sync-schemas-ensure-6.md
+    prd: spec/prd/prd-sync-schemas-ensure-semantics.md
+    adr: spec/adr/adr-sync-schemas-ensure-semantics.md
+    fr: [FR-09]
+    depends_on:
+      - story-sync-schemas-ensure-1
+      - story-sync-schemas-ensure-2
+    blocks: []
+
   # --- sync-schemas-verify-resume stories (ENG-93374, refines PR #910) — added 2026-07-20 ---
   # Internal fix to ExecuteCreateSchema in SchemaSyncTool.cs: verify requested columns against
   # the existing schema before forcing resume success. 3 files touched, no new CLI surface.

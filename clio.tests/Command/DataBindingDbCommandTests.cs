@@ -564,6 +564,62 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("TC-U-22/26: Replaying seed-data rows that carry a Name already present on a schema that HAS a Name column reports them in SkippedRows with the existing Id, leaves CreatedRows empty, and issues no duplicate InsertQuery - the seed path's Name-keyed replay contract.")]
+	public void CreateBinding_Should_Report_SkippedRows_And_No_Duplicate_Insert_When_Replayed_With_NameBearing_Rows() {
+		// Arrange - the target schema HAS a Name column and the row's Name already exists in the entity table
+		const string existingNewId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		_existingEntityNamesJson = $$"""{"rows":[{"Name":"New","Id":"{{existingNewId}}"}],"success":true}""";
+		IDataBindingDbService service = Container.GetRequiredService<IDataBindingDbService>();
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"}}]"""
+		};
+
+		// Act
+		DataBindingResult result = service.CreateBinding(options);
+
+		// Assert
+		result.SkippedRows.Should().ContainSingle(row => row.Id == existingNewId,
+			because: "a Name-bearing row already present by Name must be reported as skipped and reuse the existing Id, not create a duplicate");
+		result.CreatedRows.Should().BeEmpty(
+			because: "the seed path dedups by Name, so replaying an already-present Name creates no new row");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => body.Contains("\"New\"")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TC-U-23: A no-Name row whose explicit Id is ABSENT from the table is inserted with that Id (reported in CreatedRows), because Name-keyed dedup cannot apply to a row that carries no Name. A no-Name row whose Id already EXISTS is instead adopted by the Id-fallback - see CreateDataBindingDb_Should_Skip_Insert_And_Bind_By_Id_When_Row_Exists_In_Table.")]
+	public void CreateBinding_Should_Insert_With_Explicit_Id_And_Not_Skip_When_Row_Has_Stable_Id_But_No_Name() {
+		// Arrange - the row carries an explicit Id but no Name, so Name-keyed dedup cannot apply
+		const string stableRowId = "cccccccc-dddd-eeee-ffff-000000000000";
+		_existingEntityNamesJson = """{"rows":[],"success":true}""";
+		IDataBindingDbService service = Container.GetRequiredService<IDataBindingDbService>();
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = "[{\"values\":{\"Id\":\"" + stableRowId + "\"}}]"
+		};
+
+		// Act
+		DataBindingResult result = service.CreateBinding(options);
+
+		// Assert
+		result.CreatedRows.Should().ContainSingle(row => row.Id == stableRowId,
+			because: "a no-Name row cannot be deduped by Name, so it is inserted with its explicit Id and reported as created");
+		result.SkippedRows.Should().BeEmpty(
+			because: "a no-Name row whose Id is absent from the table is inserted, not skipped - Name-keyed dedup cannot match it and its Id is not yet present in the table");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => body.Contains(stableRowId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Skips InsertQuery and binds an already-existing row by Id when the row has no Name to match on, so a keyed row (e.g. SysSchemaAdminUnitRight) is adopted instead of inserting a duplicate.")]
 	public void CreateDataBindingDb_Should_Skip_Insert_And_Bind_By_Id_When_Row_Exists_In_Table() {
 		// Arrange - the row carries an explicit Id that already exists in the entity table (matched by Id, not Name)
