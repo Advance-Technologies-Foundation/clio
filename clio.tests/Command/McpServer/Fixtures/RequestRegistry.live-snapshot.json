@@ -236,7 +236,7 @@
 			"parameters": {
 				"entityName": {
 					"type": "string",
-					"description": "Schema name of the entity whose record edit page is opened (e.g. \"Contact\"). Provide it for a button that opens a specific record. On a list or detail row action you may omit it and set `itemsAttributeName` instead - the handler then resolves the entity from that collection's bound data source (falling back to the page's primary data source). At least one of `entityName` or `itemsAttributeName` must be present, otherwise the handler shows a settings error and opens nothing."
+					"description": "Schema name of the entity whose record edit page is opened (e.g. \"Contact\"). Provide it for a button that opens a specific record. On a list or detail row action you may omit it and set `itemsAttributeName` instead - the handler then resolves the entity from that collection's bound data source (falling back to the page's primary data source when the attribute is not bound). At least one of `entityName` or `itemsAttributeName` must be present, otherwise the handler shows a settings error and opens nothing."
 				},
 				"itemsAttributeName": {
 					"type": "string",
@@ -249,7 +249,7 @@
 				},
 				"replaceHistoryState": {
 					"type": "boolean",
-					"description": "When `true`, the edit page replaces the current browser-history entry instead of pushing a new one, so Back skips the originating page. Optional; omit it for the default push. Rarely authored - most page surfaces leave it unset."
+					"description": "When `true`, the edit page replaces the current browser-history entry instead of pushing a new one, so Back skips the originating page. Optional; omit it for the default push. Rarely authored - used on a transient page (e.g. a mini page opening the full record); not set by the standard platform surfaces."
 				}
 			},
 			"description": "Opens the edit page of an existing record so the user can view or change it. Bound to record links (a list row's primary-column link), row and tile \"Open\" menu actions, and buttons wired to the \"Open existing record\" action of the Designer's event panel. Prompts to discard unsaved changes on the current page before navigating.",
