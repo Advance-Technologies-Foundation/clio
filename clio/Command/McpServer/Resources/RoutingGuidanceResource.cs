@@ -50,7 +50,8 @@ public sealed class RoutingGuidanceResource {
 		         - environment inspection (version / db engine / framework / product / license) -> name=describe-environment
 		         - executing an approved plan -> name=agent-execution
 		         - identity assertion / Identity Service V3 -> name=identity-assertion
-		       - Theming & branding: brand colours / fonts / custom themes (create, restyle, delete, list, set the default) -> name=theming
+		       - Branding & theming: product logos / shell background image -> name=branding
+		         - brand colours / fonts / custom themes (create, restyle, delete, list, set the default) -> name=theming
 		       - Access rights (record-level): who can read/edit/delete a record, or grant/revoke that access -> name=record-rights; for a DASHBOARD's access rights (and shipping them with the package so they survive a transfer) -> name=dashboard-rights
 		       """
 	};

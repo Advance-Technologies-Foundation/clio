@@ -254,6 +254,15 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
+		// Dedicated client for the SysImage upload + verification read (upload-image). Same handler
+		// shape as the auth client (manual Cookie header, raw 3xx on expired session), but with a
+		// 100-second budget: a cold IIS site routinely exceeds the auth client's 30 seconds.
+		services.AddHttpClient(Clio.Common.SysImageUploader.HttpClientName)
+			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(100))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		// Named HttpClient for background telemetry uploads — same registration-time-only
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
@@ -569,6 +578,8 @@ public class BindingsModule {
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
 		services.AddTransient<SetUserThemeTool>();
+		services.AddTransient<UploadImageTool>();
+		services.AddTransient<SetBackgroundImageTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
@@ -723,6 +734,9 @@ public class BindingsModule {
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
+		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<UploadImageCommand>();
+		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
