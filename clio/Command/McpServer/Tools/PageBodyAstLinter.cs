@@ -63,6 +63,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleBodyTooDeeplyNested = "body-too-deeply-nested";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
+	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
 
 	#endregion
 
@@ -138,6 +139,7 @@ internal static class PageBodyAstLinter {
 		switch (node) {
 			case ObjectExpression obj:
 				CheckSchemaSectionShapes(obj, findings);
+				CheckEntityDataSourceStaticFilters(obj, findings);
 				break;
 			case Property prop:
 				CheckProperty(prop, ctx, findings);
@@ -268,6 +270,48 @@ internal static class PageBodyAstLinter {
 				Column: entry.Location.Start.Column + 1,
 				Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
 		}
+	}
+
+	// Rule 11: a `crt.EntityDataSource` config that carries a `filters` block. `filters` is not a
+	// recognized `crt.EntityDataSource` config key (unlike entitySchemaName / attributes /
+	// loadParameters / useRecordDeactivation …), so it is never applied at runtime — update-page
+	// persists it and returns success while the list silently shows UNFILTERED data (ENG-93867).
+	//
+	// Keyed off the config SIGNATURE — an object holding BOTH a `filters` key and an `entitySchemaName`
+	// key — rather than the enclosing `type: "crt.EntityDataSource"` descriptor. This matches the config
+	// object whether it is emitted inline inside the full descriptor (`{ type, scope, config: { … } }`)
+	// OR carried by a separate/narrower diff `merge` op that splits the descriptor from its config (the
+	// config merge still carries `entitySchemaName` alongside the ignored `filters`). `entitySchemaName`
+	// is unique to an EntityDataSource config, so this does NOT fire on a `crt.IndicatorWidget`'s
+	// `config.data.providing.filters` — that object exposes `schemaName`, never `entitySchemaName`.
+	//
+	// Known residual gap: a `filters`-ONLY narrow merge into a `[…, "config"]` path, with no co-located
+	// `entitySchemaName`, is not flagged — catching that needs diff-path semantics, out of scope for this
+	// AST-shape Warning (the common inline + split-with-schema shapes ARE covered). No regex counterpart
+	// in SchemaValidationService — the invalid shape is JSON-structural. Warning severity: an invisible
+	// no-op, not a structural break, so it must not fail the write.
+	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, List<PageBodyLintFinding> findings) {
+		Property filtersProp = null;
+		bool hasEntitySchemaName = false;
+		foreach (Node element in obj.Properties) {
+			if (!TryGetInitProperty(element, out Property prop, out string key)) {
+				continue;
+			}
+			if (key == "filters") {
+				filtersProp = prop;
+			} else if (key == "entitySchemaName") {
+				hasEntitySchemaName = true;
+			}
+		}
+		if (filtersProp is null || !hasEntitySchemaName) {
+			return;
+		}
+		findings.Add(new PageBodyLintFinding(
+			Rule: RuleEntityDataSourceStaticFilters,
+			Severity: LintSeverity.Warning,
+			Line: filtersProp.Location.Start.Line,
+			Column: filtersProp.Location.Start.Column + 1,
+			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — `filters` is not a recognized data-source config key. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
 	}
 
 	// CheckProperty intentionally has no rules left: `params-empty` and

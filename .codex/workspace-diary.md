@@ -6837,3 +6837,50 @@ Decision: Clear read-only attributes only within ordinary directories, treat fil
 Discovery: The legacy delete primitive already preserves the link boundary; only its read-only preparation was missing. A substitute-backed unit test pins that no file or directory enumeration occurs beneath a reparse-point child.
 Files: clio/Common/Skills/Agents/CodexAgent.cs, clio.tests/Common/Skills/SkillAgentTests.cs
 Impact: The update handles read-only Git objects without following cache links or inheriting the existing unbounded post-delete spin.
+
+## 2026-07-23 – ENG-93867 static filter on Freedom detail (related-list guidance)
+Context: clio MCP static filter on crt.DataGrid detail was a silent no-op; worked on crt.IndicatorWidget. Root cause + guidance gap.
+Decision: Documented the canonical static-filter mechanism in the related-list guide (#1 of 3 ticket asks). Static business filter = collection attribute modelConfig.filterAttributes naming a `<CollectionAttr>_PredefinedFilter` sibling attribute holding `{ value: <ESQ group> }`; coexists with dependencies (AND). Added config.filters-on-datasource anti-pattern to Common mistakes.
+Discovery: crt.EntityDataSource.config only reads entitySchemaName+attributes (entity-data-source.ts); NEVER config.filters. Grid filtering comes solely from modelConfig.dependencies (scope) + collection attribute filterAttributes (base-view-model.ts _setupFiltersAttributes -> viewModel[name]; model-parameters-builder _getDataSourceFilteringParameters adds each as query Filter). IndicatorWidget differs: self-contained config.data.providing.filters.filter. OOTB proof: Accounts_ListPage GridDetail_uvku73w_PredefinedFilter.
+Files: clio/Command/McpServer/Resources/RelatedListGuidanceResource.cs
+Impact: Agents get authoritative static-filter recipe; stops the config.filters guess. #2 (creatio-ui data-grid.component.md docs) and #3 (update-page lint reject of config.filters, PageBodyAstLinter) still open.
+
+## 2026-07-23 – ENG-93867 #3: lint warning for config.filters on crt.EntityDataSource
+Context: #3 of ticket — reject/warn the invalid config.filters-on-datasource shape at update-page time (was silently accepted).
+Decision: Added lint rule `entity-data-source-static-filters` (Warning, not Error) to PageBodyAstLinter. Warning = additive, non-blocking, no ClioRing gate, ~0 false-positive risk (no valid Designer output uses the key). Fires on any object with type=="crt.EntityDataSource" whose config ObjectExpression owns a `filters` key. Message points to related-list guidance (#1). Surfaces via update-page/sync-pages/validate-page Warnings[].
+Discovery: validate-page FoldInLintFindings routes Warning findings to Warnings[] and keeps valid=true (only Error demotes ContentOk). Ring does NOT invoke validate-page/update-page/sync-pages (grep clio-ring = 0) -> ClioRing gate not triggered. Lint rules NOT enumerated in command docs/help (crt-prefix precedent) -> no command-doc change.
+Files: clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs (+4), clio.mcp.e2e/PageValidateToolE2ETests.cs (+1)
+Verification: PageBodyAstLinter 23/23; full McpServer module 2531/2531 (net8+net10); new E2E passes through real MCP transport (526ms). Regression: 0 existing tests broke.
+Impact: config.filters on a datasource caught pre-save as advisory, closing the silent-success gap; complements #1 guidance.
+
+## 2026-07-23 – ENG-93867 A+B: ownership split of static-filter guidance
+Context: Project convention — component-specific detail belongs in creatio-ui .md; cross-cutting wiring stays in clio guidance.
+Decision: (B) Enriched creatio-ui data-grid.component.md §2.4 as authoritative home for the exact _PredefinedFilter shape — reframed "predefined/static filters", added real lookup-filter example (Account), config.filters anti-pattern, coexistence with dependencies (AND) + standalone, and §7 pitfall 13. (A) Trimmed the clio related-list _PredefinedFilter example to a minimal wiring skeleton + pointer to get-component-info crt.DataGrid, removing shape duplication. clio keeps the DECISION (static/scope/search), the config.filters anti-pattern, and dependencies wiring; component md owns the SHAPE.
+Discovery: data-grid.component.md §2.4 already documented filterAttributes+_PredefinedFilter (as "predefined filters"); the gap was the static-business-filter framing + the config.filters anti-pattern, now closed. related-list guide's stated boundary ("owns master-detail WIRING; no single detail component") makes clio the correct home for decision/anti-pattern.
+Files: C:/Projects/creatio-ui/.../data-grid/.../data-grid.component.md (separate repo), clio/Command/McpServer/Resources/RelatedListGuidanceResource.cs
+Verification: clio guidance tests 88/88 (net8+net10) after trim. creatio-ui edit is doc-only (CDN-published content), fences/cross-refs valid.
+Impact: No cross-repo duplication — shape lives once in the component doc, wiring/decision/anti-pattern once in clio. Completes ticket asks #1 (guidance), #2 (component md), #3 (lint).
+
+## 2026-07-23 – ENG-93867 pre-PR self-review (3-lens fan-out) + fixes
+Context: Comprehensive pre-PR self-review of the full diff across clio + creatio-ui via 3 parallel reviewer subagents (correctness/bug, quality, testing).
+Decision: No Blocker/High found. Applied Medium/Low fixes before PR: (quality) removed duplicated rationale from the RuleEntityDataSourceStaticFilters constant comment (siblings carry none) — rationale stays in method comment, added "no regex counterpart" note; harmonized message "(see …)"->"(per related-list guidance)". (testing) added 3 tests — type-gate isolation (crt.DataGrid with DIRECT config.filters -> no fire, locks the type gate a prior test didn't isolate), multi-datasource targeting (2 sources, only one flagged -> ContainSingle), and anchor test (filters on line 2 -> finding.Line==2, proves it anchors to the filters property not the object).
+Discovery: bug-detector confirmed linear traversal cost, no exception risk, only false-positives require malformed duplicate-keys (not worth guarding). Reviewer noted the IndicatorWidget negative test passed for two reasons (type + nesting) so didn't isolate the type gate — new crt.DataGrid test closes that.
+Files: clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs (now +7)
+Verification: PageBodyAstLinter 26/26 (net8+net10); config.filters E2E green through real MCP transport (511ms).
+Impact: Review gate 1 (pre-PR) cleared; diff hardened before opening PR.
+
+## 2026-07-23 – ENG-93867 PR #972 Codex review — validate & fix
+Context: /validate-and-fix-review-comments on clio PR #972. Codex bot left 2 inline P2 findings (SonarQube passed, no human comments). Both validated CONFIRMED against source.
+Decision:
+- RC-1 (discoverability): related-list guidance gained static-filter capability but its catalog description (GuidanceCatalog.cs), [Description] (RelatedListGuidanceResource.cs), and the routing map (RoutingGuidanceResource.cs) still advertised only dependencies-scoping — agents asking for a "static filter" were routed to business-rule-filters. Fixed: updated both descriptions to name the _PredefinedFilter/filterAttributes mechanism + config.filters anti-pattern; added a Pages routing row -> related-list for "detail / filter a list / static business filter"; disambiguated the business-rule-filters row.
+- RC-2 (lint false-negative): rule required type=="crt.EntityDataSource" + inline config in the SAME object, so a split/narrower diff merge evaded it. Re-keyed detection off the config SIGNATURE (filters + entitySchemaName in one object) — catches inline full descriptor AND split-descriptor-with-schema; no IndicatorWidget false-positive (providing uses schemaName, not entitySchemaName). Residual gap documented: a filters-only merge into a [...,"config"] path with no co-located entitySchemaName needs diff-path semantics (out of scope for a Warning).
+Files: clio/Command/McpServer/Resources/{GuidanceCatalog,RelatedListGuidanceResource,RoutingGuidanceResource}.cs, clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs (replaced type-gate test with split-descriptor test; anchor test now carries entitySchemaName)
+Verification: linter+guidance 114/114 (net8+net10); config.filters E2E green.
+Impact: static-filter guidance now discoverable via routing/description; lint catches split-descriptor config.filters. NOT yet committed — awaiting approval to push to PR #972.
+
+## 2026-07-23 – ENG-93867 PR #2714 (creatio-ui) Copilot review — validate & fix
+Context: /validate-and-fix-review-comments on creatio-ui PR #2714. Copilot left 1 inline comment (data-grid.component.md L187+L440): "reads only entitySchemaName + attributes" is inaccurate.
+Decision: CONFIRMED via entity-data-source.ts — config also honors loadParameters (:822), useRecordDeactivation (:179), adminUnitRoleSources (:178). Reworded to "filters is not a recognized EntityDataSource config key, so it is never applied" (focused on the ignored key). Fixed the SAME wording I authored in clio PR #972 too (RelatedListGuidanceResource.cs Common-mistakes bullet + PageBodyAstLinter.cs rule comment & finding Message) — identical defect, sibling artifact.
+Files: creatio-ui data-grid.component.md (2 spots); clio RelatedListGuidanceResource.cs, PageBodyAstLinter.cs.
+Verification: clio linter+guidance 114/114 (net8+net10); no test asserts the reworded text.
+Impact: doc/guidance/lint no longer overstate an exhaustive config allowlist; claim is now accurate and focused on config.filters.

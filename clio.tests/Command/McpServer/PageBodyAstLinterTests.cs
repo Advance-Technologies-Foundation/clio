@@ -311,4 +311,142 @@ internal class PageBodyAstLinterTests {
 
 	#endregion
 
+	#region Tests: entity-data-source-static-filters (ENG-93867, Warning severity)
+
+	[Test]
+	[Description("A `crt.EntityDataSource` carrying a `config.filters` block raises a single entity-data-source-static-filters Warning — the key is never applied at runtime, so the list silently shows unfiltered data")]
+	public void Lint_ShouldEmitWarning_WhenEntityDataSourceHasConfigFilters() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, modelConfigDiff: [ " +
+			"{ \"operation\": \"merge\", \"path\": [\"dataSources\"], \"values\": { " +
+			"\"EmailDS\": { \"type\": \"crt.EntityDataSource\", \"scope\": \"viewElement\", \"config\": { " +
+			"\"entitySchemaName\": \"Activity\", \"attributes\": { \"Title\": { \"path\": \"Title\" } }, " +
+			"\"filters\": { \"items\": {}, \"logicalOperation\": 0, \"isEnabled\": true, \"filterType\": 6, \"rootSchemaName\": \"Activity\" } } } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters && f.Severity == LintSeverity.Warning,
+			because: "config.filters on a crt.EntityDataSource is a silent no-op (the source reads only entitySchemaName + attributes); the agent must be warned to move the static filter to a _PredefinedFilter attribute, but the write must not be blocked since the body still renders");
+	}
+
+	[Test]
+	[Description("A `crt.EntityDataSource` with only `entitySchemaName` + `attributes` (the canonical shape) raises no entity-data-source-static-filters finding — the rule must fire only when a `filters` key is actually present")]
+	public void Lint_ShouldNotEmitWarning_WhenEntityDataSourceHasNoConfigFilters() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, modelConfigDiff: [ " +
+			"{ \"operation\": \"merge\", \"path\": [\"dataSources\"], \"values\": { " +
+			"\"EmailDS\": { \"type\": \"crt.EntityDataSource\", \"scope\": \"viewElement\", \"config\": { " +
+			"\"entitySchemaName\": \"Activity\", \"attributes\": { \"Title\": { \"path\": \"Title\" } } } } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters,
+			because: "the canonical EntityDataSource shape (entitySchemaName + attributes, no filters) is what every valid detail emits — flagging it would fire on essentially every page and destroy the signal");
+	}
+
+	[Test]
+	[Description("A `crt.IndicatorWidget` whose `config.data.providing.filters` carries an inline filter raises no entity-data-source-static-filters finding — the widget legitimately reads its own providing filter, and its providing object exposes `schemaName`, never `entitySchemaName`, so the EntityDataSource config signature does not match")]
+	public void Lint_ShouldNotEmitWarning_WhenIndicatorWidgetHasProvidingFilters() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, viewConfigDiff: [ " +
+			"{ \"operation\": \"insert\", \"name\": \"IndicatorWidget_a\", \"values\": { \"type\": \"crt.IndicatorWidget\", \"config\": { " +
+			"\"data\": { \"providing\": { \"schemaName\": \"Account\", \"filters\": { \"filter\": { \"items\": {}, \"filterType\": 6, \"rootSchemaName\": \"Account\" } } } } } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters,
+			because: "the IndicatorWidget applies config.data.providing.filters at render time — that is the correct, runtime-honored mechanism for that component; its providing object carries `schemaName` (not `entitySchemaName`), so the EntityDataSource config signature does not match and the rule must not misfire");
+	}
+
+	[Test]
+	[Description("The canonical static-filter mechanism — a `_PredefinedFilter` view-model attribute referenced from the collection attribute's `filterAttributes` — raises no entity-data-source-static-filters finding because no `filters` key sits on a crt.EntityDataSource config")]
+	public void Lint_ShouldNotEmitWarning_WhenStaticFilterUsesPredefinedFilterAttribute() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, viewModelConfigDiff: [ " +
+			"{ \"operation\": \"merge\", \"path\": [\"attributes\"], \"values\": { " +
+			"\"Grid\": { \"isCollection\": true, \"modelConfig\": { \"path\": \"GridDS\", \"filterAttributes\": [ { \"name\": \"Grid_PredefinedFilter\", \"loadOnChange\": true } ] } }, " +
+			"\"Grid_PredefinedFilter\": { \"value\": { \"items\": {}, \"logicalOperation\": 0, \"isEnabled\": true, \"filterType\": 6, \"rootSchemaName\": \"Contact\" } } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters,
+			because: "the _PredefinedFilter attribute + filterAttributes wiring is the correct, runtime-honored channel the guidance recommends — the rule must green-light it so agents that follow the guidance are never warned");
+	}
+
+	[Test]
+	[Description("A crt.EntityDataSource config carried by a narrower/split diff merge — the config keys reach the body without an enclosing `type` descriptor in the same object — still raises entity-data-source-static-filters, because the rule keys off the config signature (filters + entitySchemaName), not the enclosing type wrapper (ENG-93867 PR review follow-up)")]
+	public void Lint_ShouldEmitWarning_WhenConfigFiltersSplitFromDescriptor() {
+		// Arrange — descriptor and config are split across merge ops: the config merge targets the
+		// dataSources.<name>.config path and carries entitySchemaName alongside the ignored filters,
+		// so the filters-bearing object has NO sibling `type`. The old type-gated rule missed this.
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, modelConfigDiff: [ " +
+			"{ \"operation\": \"merge\", \"path\": [\"dataSources\", \"EmailDS\", \"config\"], \"values\": { " +
+			"\"entitySchemaName\": \"Activity\", \"attributes\": { \"Title\": { \"path\": \"Title\" } }, " +
+			"\"filters\": { \"items\": {}, \"logicalOperation\": 0, \"isEnabled\": true, \"filterType\": 6, \"rootSchemaName\": \"Activity\" } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters && f.Severity == LintSeverity.Warning,
+			because: "config.filters is ignored no matter how the EntityDataSource config reaches the body; a split/narrower merge that still carries entitySchemaName must be flagged, not evaded just because the `type` descriptor lives in a separate operation");
+	}
+
+	[Test]
+	[Description("Two crt.EntityDataSource descriptors where only one carries config.filters raise exactly one entity-data-source-static-filters finding — the rule targets the offending source and stays silent on the clean sibling")]
+	public void Lint_ShouldEmitSingleWarning_WhenOnlyOneOfTwoDataSourcesHasConfigFilters() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, modelConfigDiff: [ " +
+			"{ \"operation\": \"merge\", \"path\": [\"dataSources\"], \"values\": { " +
+			"\"CleanDS\": { \"type\": \"crt.EntityDataSource\", \"scope\": \"viewElement\", \"config\": { " +
+			"\"entitySchemaName\": \"Contact\", \"attributes\": { \"Name\": { \"path\": \"Name\" } } } }, " +
+			"\"EmailDS\": { \"type\": \"crt.EntityDataSource\", \"scope\": \"viewElement\", \"config\": { " +
+			"\"entitySchemaName\": \"Activity\", " +
+			"\"filters\": { \"items\": {}, \"logicalOperation\": 0, \"isEnabled\": true, \"filterType\": 6, \"rootSchemaName\": \"Activity\" } } } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters,
+			because: "the rule runs per data source and must flag only the source that actually carries config.filters, not fire once-per-page or spill onto the clean sibling");
+	}
+
+	[Test]
+	[Description("The entity-data-source-static-filters finding anchors to the offending `filters` property, not to the enclosing data-source object — proven by placing `filters` on its own line and asserting the finding's line")]
+	public void Lint_ShouldAnchorWarning_AtTheFiltersProperty() {
+		// Arrange — the data-source object opens on line 1; the `filters` property is on line 2.
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, modelConfigDiff: [ { \"operation\": \"merge\", \"path\": [\"dataSources\"], \"values\": { \"EmailDS\": { \"type\": \"crt.EntityDataSource\", \"config\": { \"entitySchemaName\": \"Activity\",\n" +
+			"\"filters\": { \"items\": {}, \"filterType\": 6, \"rootSchemaName\": \"Activity\" } } } } } ] }; });";
+
+		// Act
+		PageBodyLintFinding finding = LintBody(body)
+			.Single(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters);
+
+		// Assert
+		finding.Line.Should().Be(2,
+			because: "the finding must point the operator at the `filters` property itself (line 2), not the data-source object opening on line 1, so the reported location is actionable");
+		finding.Column.Should().BeGreaterThan(0,
+			because: "the column must be a populated 1-based position, not an unset default");
+	}
+
+	#endregion
+
 }

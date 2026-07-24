@@ -193,11 +193,66 @@ public sealed class RelatedListGuidanceResource {
 		         (see `app-modeling` and `existing-app-maintenance`).
 
 		       When `filterAttributes` IS appropriate (NOT for record scoping)
-		       - `filterAttributes` + `loadOnChange` is the channel for an interactive SEARCH/quick-filter on the
-		         list (e.g. a `crt.SearchFilter` the user types into) — a UI filter the user changes, not the
-		         master-record scope. The designer emits these alongside `dependencies`, never instead of it. Use
-		         `dependencies` for "records that belong to the open record"; use `filterAttributes` only for a
-		         user-driven filter on top.
+		       - `filterAttributes` + `loadOnChange` is the channel for BOTH (a) an interactive SEARCH/quick-filter
+		         the user changes (e.g. a `crt.SearchFilter` the user types into) AND (b) a STATIC business filter
+		         (see next section) — a fixed condition applied to the list. It is NEVER the record-scope mechanism:
+		         the designer emits `filterAttributes` ALONGSIDE `dependencies`, never instead of it. Use
+		         `dependencies` for "records that belong to the open record"; use `filterAttributes` for a static
+		         business filter or a user-driven filter ON TOP of that scope.
+
+		       Adding a STATIC business filter (Emails vs Activities, status/type-restricted lists)
+		       Some lists need a fixed condition — e.g. an "Emails" detail = `Activity` where `Type = Email`, an
+		       "Activities" detail = `Activity` where `Type != Email`, a "Current vacancies" list =
+		       `InternalRequest` where `Status IN (...)`, or a plain grid of `Contact` where `Account = <fixed>`.
+		       The static condition is a PREDEFINED FILTER carried by the COLLECTION ATTRIBUTE (step 2 of the recipe
+		       above) — NOT by the data source. It works BOTH standalone (a list with a fixed condition and no
+		       master scope) AND on top of a `dependencies` record scope; when a `dependencies` entry is also
+		       present the two filters apply together (AND-combined) at runtime. This is EXACTLY the shape the
+		       Freedom Designer emits when you add a filter in the list's filter panel (verified against Designer
+		       output). Two coupled edits on the SAME collection attribute:
+
+		       1. On the collection attribute's `modelConfig`, add a `filterAttributes` entry naming the filter
+		          attribute: `"filterAttributes": [ { "name": "<CollectionAttr>_PredefinedFilter", "loadOnChange": true } ]`.
+		       2. Add a SIBLING view-model attribute of that EXACT name holding the serialized ESQ filter group as
+		          its `value`: `"<CollectionAttr>_PredefinedFilter": { "value": <filter group> }`.
+
+		       The runtime reads that attribute's value and adds it to the grid's ESQ query as a filter parameter
+		       (verified: `_setupFiltersAttributes` sets `viewModel[<name>]` from the attribute value, and the
+		       data-source load reads every `filterAttributes[].name` value and adds it as a query `Filter`). Naming
+		       rule: use `<CollectionAttr>_PredefinedFilter` (the step-2 collection attribute name + the
+		       `_PredefinedFilter` suffix) so the Freedom Designer ROUND-TRIPS it — shows it in the detail filter
+		       panel and re-emits it on save. An arbitrary name still filters at runtime but the Designer will not
+		       recognise it. The filter group is the standard serialized ESQ group — build it with
+		       `esq-filters-frontend`; its `rootSchemaName` MUST equal the child data source `entitySchemaName`, and
+		       keep the full group envelope (`filterType: 6`, `logicalOperation`, `isEnabled`, `rootSchemaName`).
+		       Validate the group with `execute-esq` over the child entity before saving.
+
+		       Diff-form: one `viewModelConfigDiff` merge into `["attributes"]` carrying BOTH the collection
+		       attribute (with `filterAttributes` inside its `modelConfig`) AND the sibling `_PredefinedFilter`
+		       attribute. The exact `_PredefinedFilter` value shape and a worked example live in the `crt.DataGrid`
+		       component doc — fetch it via `get-component-info crt.DataGrid` (§ "predefined / static filters"); do
+		       NOT re-derive it here. Minimal wiring skeleton — an Emails detail (`Activity` where `Type = Email`) on
+		       top of the `Account`→`PDS.Id` scope:
+
+		       ```jsonc
+		       "EmailGrid": {
+		         "isCollection": true,
+		         "modelConfig": {
+		           "path": "EmailDS",
+		           "filterAttributes": [ { "name": "EmailGrid_PredefinedFilter", "loadOnChange": true } ]
+		         }
+		         // ...viewModelConfig.attributes as in the recipe above
+		       },
+		       "EmailGrid_PredefinedFilter": { "value": { /* ESQ filter group, rootSchemaName == "Activity";
+		         build the Type=Email lookup leaf with esq-filters-frontend */ } }
+		       // modelConfig.dependencies still scopes to the open master (unchanged):
+		       //   { "EmailDS": [ { "attributePath": "Account", "relationPath": "PDS.Id" } ] }
+		       ```
+
+		       Resolve the `Email` `ActivityType` Id before saving (the lookup leaf takes a value object, not a bare
+		       GUID — see `esq-filters-frontend`) and validate the group with `execute-esq`. For the sibling
+		       "Activities" detail add the mirror `Type != Email` group to ITS OWN `_PredefinedFilter` attribute so
+		       the two details do not overlap.
 
 		       Common mistakes (these are why a detail shows ALL records or none — or the page will not render)
 		       - Inserting the `crt.ExpansionPanel` (or any wrapping container) without `"items": []` in its
@@ -223,6 +278,15 @@ public sealed class RelatedListGuidanceResource {
 		         simple line-item list, and then ensure the FK column is present in the grid collection.
 		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters-frontend` column-path
 		         normalization; use the bare reference column name.
+		       - Putting a static filter in the `crt.EntityDataSource` `config.filters` (on the viewElement data
+		         source under `modelConfig.dataSources`). That key is NEVER applied: `filters` is not a
+		         recognized `crt.EntityDataSource` config option, and grid filtering comes
+		         EXCLUSIVELY from `modelConfig.dependencies` (record scope) and the collection attribute's
+		         `filterAttributes` (predefined/search filter). A `config.filters` block persists in the saved body
+		         and `update-page` returns `success: true`, but it is silently ignored — the detail shows UNFILTERED
+		         data and the Designer's filter panel shows nothing. Put the static condition in a
+		         `<CollectionAttr>_PredefinedFilter` attribute referenced from `filterAttributes` instead (see
+		         "Adding a STATIC business filter on top of the record scope" above).
 		       """
 	};
 
@@ -230,6 +294,6 @@ public sealed class RelatedListGuidanceResource {
 	/// Returns the canonical guidance article for adding and filtering a Freedom UI related/child list (detail).
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "related-list-guidance")]
-	[Description("Returns canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.")]
+	[Description("Returns canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it: master-detail scoping by the current page record (declarative dependencies — no handler) AND a STATIC business filter on the list (the <CollectionAttr>_PredefinedFilter attribute via filterAttributes — never config.filters on the datasource). Fetch the 'Expanded list' composite structure via get-component-info.")]
 	public ResourceContents GetGuide() => Guide;
 }
