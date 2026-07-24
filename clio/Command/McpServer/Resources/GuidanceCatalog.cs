@@ -17,7 +17,7 @@ internal static class GuidanceCatalog {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
 			["core-rules"] = Create(
 				"core-rules",
-				"The non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, correlation-id) that apply to every operation. The server instructions mandate reading this first on any operation.",
+				"The non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, verification in browser preference, correlation-id) that apply to every operation. The server instructions mandate reading this first on any operation.",
 				CoreRulesGuidanceResource.Guide),
 			["routing"] = Create(
 				"routing",
