@@ -18,7 +18,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 	internal const string ToolName = "odata-create";
 
 	/// <summary>Creates one or more Creatio records using OData v4.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Create one or more Creatio records via OData v4 (POST) in a single call. " +
 		"Provide the entity set name and a 'rows' array of field/value objects; pass all rows for the same " +
