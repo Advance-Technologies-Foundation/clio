@@ -34,6 +34,7 @@ public sealed class SchemaSyncTool(
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
 	private const string SeedDataOperationName = "seed-data";
+	private const string AddAction = "add";
 	private const string ModifyAction = "modify";
 	private const string RemoveAction = "remove";
 	private const string CreatedOutcome = "created";
@@ -48,12 +49,13 @@ public sealed class SchemaSyncTool(
 	internal const int MaxAttempts = 3;
 
 	/// <summary>
-	/// Sentinel exit code the retry attempt returns when a durable collision is only observable on a
-	/// re-classify (retry) read. It is distinct from any command exit code so the post-loop code can
-	/// rebuild the structured collision result from the (captured) reclassified plan via the same helper
-	/// as the pre-emptive path, without a separate captured-nullable flag.
+	/// Sentinel exit code an attempt returns when its classify read observes a durable collision (on the
+	/// first read or any retry re-classify). It is distinct from any command exit code so the post-loop
+	/// code can rebuild the structured collision result from the (captured) plan via a single helper. A
+	/// collision is not a transient fault (the sentinel carries no error message, so the classifier reports
+	/// it non-transient), so RunAttempts fails fast on it instead of spinning the retry loop.
 	/// </summary>
-	private const int ReclassifiedCollisionExitCode = int.MinValue;
+	private const int CollisionExitCode = int.MinValue;
 
 	/// <summary>
 	/// Backoff applied before each retry of a transient failure. Index 0 is the wait after the first
@@ -87,6 +89,7 @@ public sealed class SchemaSyncTool(
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones. " +
 		"create-lookup, create-entity, and update-entity are convergent (create-if-absent + reconcile only the missing delta), so after a failure, fix the cause and re-submit the whole batch verbatim — already-applied schema operations replay as already-satisfied/reconciled with no duplicate mutation; do NOT hand-compose a batch of only the remaining operations. " +
+		"Whole-batch verbatim replay is safe for the convergent SCHEMA operations only; when the batch contains seed-data (or the response carried a 'resume-plan'), prefer resume-plan.operations, because seed-data is NOT replay-safe for rows without a 'Name' (a stable-Id, no-Name row PK-conflicts on replay). " +
 		"Transient network failures (DNS resolution, connection reset/refused, timeouts, gateway errors) are retried per operation " +
 		"(up to 3 attempts with short backoff) before the operation is failed. " +
 		"On a mid-batch abort the response carries a 'resume-plan' with per-operation status (completed/failed/not-run) and a ready-to-resubmit 'operations' array; " +
@@ -328,54 +331,39 @@ public sealed class SchemaSyncTool(
 				ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(op.Columns);
 			}
 
-			// Read the current server state ONCE and classify (create-if-absent / reconcile-delta /
-			// already-satisfied / durable collision) BEFORE any mutation, replacing the old
-			// create-unconditionally-then-probe path. All reads are server-side within this batch call.
+			// Run the FULL convergent operation (classify → apply) inside the transient-network-retry wrapper
+			// (ENG-93374/ENG-93807). Every attempt — including the FIRST — starts by reading the current server
+			// state and classifying (create-if-absent / reconcile-delta / already-satisfied / durable collision)
+			// BEFORE any mutation, replacing the old create-unconditionally-then-probe path. All reads are
+			// server-side within this batch call. Keeping the first classify inside the loop means a transient
+			// network fault on that initial read is retried like any other transient step (rather than aborting
+			// the operation), honouring the advertised "transient network failures are retried per operation"
+			// contract; the happy path still issues a single read (attempt 1). On a retry the re-classify lets a
+			// transient/lost-response flap on the mutation converge IN-CALL (a `created` first attempt becomes
+			// `already-satisfied`/`reconciled`) instead of failing on a spurious "already exists". Classifying is
+			// side-effect-free, so it cannot duplicate a mutation, and a Collision observed on any read fails fast
+			// (it is not a transient fault, so the loop never spins on it).
 			IReadOnlyList<CreateEntitySchemaColumnArgs> requestedColumns =
 				op.Columns as IReadOnlyList<CreateEntitySchemaColumnArgs> ?? op.Columns?.ToList() ?? [];
 			SchemaConvergenceTarget target = new(
 				args.EnvironmentName, args.PackageName, op.SchemaName,
 				isLookup ? "BaseLookup" : parentSchemaName, isLookup, extendParent, requestedColumns);
-			SchemaConvergencePlan plan = convergenceService.Classify(target);
-
-			if (plan.Outcome == SchemaConvergenceOutcome.Collision) {
-				// Pre-emptive durable collision (cross-package or incompatible parent/kind): surfaced as a
-				// success:false result before any create attempt, so a stale schema can no longer masquerade
-				// as "completed" (this replaces the ENG-93374 reactive collision-probe/verify-against-intent
-				// heuristic, which convergence subsumes).
-				return BuildCollisionResult(operationName, op.SchemaName, plan, tenantKey);
-			}
-
-			// Run the FULL convergent operation (classify → apply) inside the transient-network-retry wrapper
-			// (ENG-93374). On a retry the operation RE-CLASSIFIES first: a transient/lost-response flap on the
-			// mutation may have actually applied server-side, so re-reading the current state lets the op
-			// converge IN-CALL (a `created` first attempt becomes `already-satisfied`/`reconciled` on the retry)
-			// instead of failing on a spurious "already exists" and deferring recovery to a batch resubmit.
-			// The pre-emptive classify above is reused on the FIRST attempt, so the happy path still issues a
-			// single read; the extra read happens only on the exception/retry path. Re-classifying is
-			// side-effect-free, so it cannot duplicate a mutation, and a Collision observed on re-read fails
-			// fast (it is not a transient fault, so the loop never spins on it).
-			SchemaConvergencePlan currentPlan = plan;
-			bool reclassify = false;
+			SchemaConvergencePlan? currentPlan = null;
 			OperationExecution execution = RunAttempts(() => {
-				if (reclassify) {
-					currentPlan = convergenceService.Classify(target);
-				}
-				reclassify = true;
+				currentPlan = convergenceService.Classify(target);
 				if (currentPlan.Outcome == SchemaConvergenceOutcome.Collision) {
-					// A durable collision only observable on a re-read (near-impossible once the first attempt was
-					// non-collision, since our own apply would land in the target package). Return the distinct
-					// message-less ReclassifiedCollisionExitCode so RunAttempts fails fast without retrying (a
-					// collision is not a transient fault); the structured collision result (outcome:collision +
-					// collision-info) is built after the loop from the (captured) currentPlan by the SAME helper as
-					// the pre-emptive path, keeping the contract shape.
-					return ReclassifiedCollisionExitCode;
+					// Durable collision (cross-package or incompatible parent/kind), whether surfaced on the first
+					// read or a retry re-classify: return the distinct message-less CollisionExitCode so RunAttempts
+					// fails fast without retrying (a collision is not a transient fault). The structured collision
+					// result (success:false + outcome:collision + collision-info) is built after the loop from the
+					// captured currentPlan by BuildCollisionResult, keeping one contract shape for every collision.
+					return CollisionExitCode;
 				}
 				return ApplyConvergencePlan(currentPlan, op, args, parentSchemaName, extendParent, operationName, titleLocalizations);
 			}, retryBudget);
 
-			if (execution.ExitCode == ReclassifiedCollisionExitCode && execution.CaughtException is null) {
-				return BuildCollisionResult(operationName, op.SchemaName, currentPlan, tenantKey);
+			if (execution.ExitCode == CollisionExitCode && execution.CaughtException is null) {
+				return BuildCollisionResult(operationName, op.SchemaName, currentPlan!, tenantKey);
 			}
 
 			// FR-02: ensure the Lookups registration on EVERY successful create-lookup path (created,
@@ -396,7 +384,7 @@ public sealed class SchemaSyncTool(
 			}
 
 			return FinalizeResult(operationName, op.SchemaName, execution, tenantKey,
-				outcome: execution.ExitCode == 0 && execution.CaughtException is null ? MapOutcome(currentPlan.Outcome) : null);
+				outcome: execution.ExitCode == 0 && execution.CaughtException is null ? MapOutcome(currentPlan!.Outcome) : null);
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 			// Deterministic option-building failures (localization/guardrail validation) are not network
 			// faults and are never retried — surface them exactly as before.
@@ -566,8 +554,19 @@ public sealed class SchemaSyncTool(
 				delta.Add(operation);
 				continue;
 			}
+			bool isAdd = IsAddAction(operation.Action);
+			bool isModify = IsModifyAction(operation.Action);
+			bool isRemove = IsRemoveAction(operation.Action);
+			if (!isAdd && !isModify && !isRemove) {
+				// Unsupported action verb (e.g. 'rename', a typo, or a missing action) — never converge or
+				// rewrite it. Forward it unchanged so UpdateEntitySchemaCommand's own validator rejects it with
+				// "Action must be one of: add, modify, remove.", instead of silently dropping it (present, same
+				// type) or coercing it to a modify (present, different type) and bypassing that validation.
+				delta.Add(operation);
+				continue;
+			}
 			bool present = existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
-			if (IsRemoveAction(operation.Action)) {
+			if (isRemove) {
 				if (present) {
 					delta.Add(operation);
 				}
@@ -580,23 +579,27 @@ public sealed class SchemaSyncTool(
 				continue;
 			}
 			if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn!.Type)) {
-				// Present but different type: converge via a modify so a re-add does not fail as a duplicate.
-				// An incompatible modify is surfaced by the backend command as a modify-conflict error
-				// (success:false), NOT a whole-schema collision.
-				delta.Add(operation with { Action = ModifyAction });
+				// Present but different type: an explicit modify is forwarded as-is; an add (explicit or the
+				// implicit add-batch coerced from a `columns` payload) is converged to a modify so a re-add does
+				// not fail as a duplicate. An incompatible modify is surfaced by the backend command as a
+				// modify-conflict error (success:false), NOT a whole-schema collision.
+				delta.Add(isModify ? operation : operation with { Action = ModifyAction });
 				continue;
 			}
-			if (IsModifyAction(operation.Action)) {
+			if (isModify) {
 				// Present, matching type: the add/columns shape reconciles by TYPE only, so a caller changing a
 				// non-type attribute (required/reference/flags/caption) must use an explicit modify — forward it
 				// unconditionally (a re-run to the same value is a backend no-op, never a failure).
 				delta.Add(operation);
 			}
-			// Present add/columns entry with a matching type → the type-only add-shape contract is satisfied,
+			// Present add entry with a matching type → the type-only add-shape contract is satisfied,
 			// so drop it (idempotent replay). Non-type changes require an explicit modify op.
 		}
 		return delta;
 	}
+
+	private static bool IsAddAction(string? action) =>
+		string.Equals(action, AddAction, StringComparison.OrdinalIgnoreCase);
 
 	private static bool IsRemoveAction(string? action) =>
 		string.Equals(action, RemoveAction, StringComparison.OrdinalIgnoreCase);

@@ -237,9 +237,12 @@ operation type names are unchanged.
 
 **Re-run safety.** Because the ops apply only the delta, **re-submitting the identical batch verbatim
 is the safe recovery path** after an ambiguous failure (the request may have reached the server but
-the response was lost). Already-applied operations replay as `already-satisfied`/`reconciled` with no
-duplicate mutation. Do **not** hand-compose a catch-up batch of only the operations that failed or did
-not run.
+the response was lost) — **for a schema-only batch**. Already-applied schema operations replay as
+`already-satisfied`/`reconciled` with no duplicate mutation. Do **not** hand-compose a catch-up batch
+of only the operations that failed or did not run. When the batch also carries `seed-data` (inline
+`seed-rows` or a standalone `seed-data` op), a whole-batch replay is **only** safe when every seed row
+is `Name`-keyed (see [Seed Data Replay Contract](#seed-data-replay-contract)); otherwise resubmit
+`resume-plan.operations` instead, because a no-`Name` seed row is not replay-safe.
 
 ### `outcome` discriminator
 
@@ -348,8 +351,10 @@ create), so resuming never recreates the already-created schema.
 
 A failed operation carries `success: false` and a user-friendly `error`. A durable collision
 additionally carries `outcome: "collision"` and `collision-info` (owning package). The safe recovery
-after an ambiguous failure is to fix the real cause (if any) and **re-submit the identical batch** —
-the convergent ops replay already-applied work as `already-satisfied`/`reconciled`.
+after an ambiguous failure is to fix the real cause (if any) and **re-submit the identical batch** when
+it is schema-only — the convergent ops replay already-applied work as `already-satisfied`/`reconciled`.
+If the batch seeds data, resubmit `resume-plan.operations` instead unless every seed row is
+`Name`-keyed, since a no-`Name` seed row is not replay-safe.
 
 ## See Also
 

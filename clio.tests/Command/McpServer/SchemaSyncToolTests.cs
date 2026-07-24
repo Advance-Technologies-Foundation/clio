@@ -96,6 +96,10 @@ public sealed class SchemaSyncToolTests {
 			because: "the tool contract must state that already-applied schema operations replay convergently with no duplicate mutation");
 		description.Should().Contain("do NOT hand-compose a batch of only the remaining operations",
 			because: "the tool contract must forbid a hand-composed catch-up batch of only the remaining operations");
+		description.Should().Contain("Whole-batch verbatim replay is safe for the convergent SCHEMA operations only",
+			because: "the whole-batch re-run safety must be explicitly scoped to schema operations so it does not overstate replay safety when seed data is present");
+		description.Should().Contain("seed-data is NOT replay-safe",
+			because: "the tool contract must warn that seed-data is not replay-safe and steer callers to resume-plan.operations");
 	}
 
 	[Test]
@@ -1711,6 +1715,111 @@ public sealed class SchemaSyncToolTests {
 			because: "the create is attempted once on the transient flap; the retry re-classifies to a collision and must NOT re-create");
 		registrationService.DidNotReceive().EnsureLookupRegistration(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A transient network fault on the FIRST convergence classify read is retried in-call (ENG-93807): the initial classify runs inside the retry loop, so a lost/flapped first read converges on the retry instead of aborting the operation.")]
+	public async Task ExecuteCreateSchema_ShouldRetryFirstClassify_WhenInitialClassifyFaultsTransiently() {
+		// Arrange - the FIRST classify read throws a transient timeout; the retry's classify then succeeds
+		// with a Create plan and the create applies. If the first classify were outside the retry loop (the
+		// pre-ENG-93807 behaviour) this would abort with a failed result instead of retrying.
+		var logger = new TestLogger();
+		var fakeCreate = new FakeCreateEntitySchemaCommand();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
+			.Returns(
+				_ => throw new TimeoutException("The operation has timed out."),
+				_ => new SchemaConvergencePlan(SchemaConvergenceOutcome.Create, [], [], null, null));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger, convergence, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a transient fault on the first classify read must be retried in-call, not surfaced as a failure");
+		response.Results[0].Outcome.Should().Be("created",
+			because: "the retry's classify returns Create and the create applies, so the outcome is created");
+		convergence.Received(2).Classify(Arg.Any<SchemaConvergenceTarget>());
+		fakeCreate.CapturedOptions.Should().NotBeNull(
+			because: "the create runs once, on the successful retry attempt");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the operation was retried once after the first classify's transient fault");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrGenre", "Genre");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("An update-entity operation with an unsupported action verb on a present same-type column is FORWARDED unchanged, not silently dropped (ENG-93807 review): the reconcile never treats a non add|modify|remove action as satisfied, so UpdateEntitySchemaCommand's own validator can reject it.")]
+	public async Task ExecuteUpdateEntity_ShouldForwardUnsupportedAction_WhenColumnPresentSameType() {
+		// Arrange - the schema already has UsrCol as Text; the caller sends an invalid 'rename' action for it.
+		// Pre-fix, a present same-type column with a non-remove/non-modify action fell through and was dropped
+		// as already-satisfied, bypassing update validation.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCol", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("rename", "UsrCol", Type: "Text")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "an unsupported action must reach the update command, not be dropped as already-satisfied");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrCol\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"rename\"", StringComparison.Ordinal),
+			because: "the invalid action is forwarded verbatim so the downstream validator can reject it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("An update-entity operation with an unsupported action verb on a present DIFFERENT-type column is FORWARDED verbatim, never rewritten to modify (ENG-93807 review): only an add is coerced to modify on a type divergence, so an invalid action cannot masquerade as a modify and bypass validation.")]
+	public async Task ExecuteUpdateEntity_ShouldNotRewriteUnsupportedActionToModify_WhenColumnPresentDifferentType() {
+		// Arrange - the schema already has UsrCol as Text; the caller sends an invalid 'rename' action with a
+		// divergent type. Pre-fix, a present different-type column had ANY action rewritten to 'modify'.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCol", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("rename", "UsrCol", Type: "Integer")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the invalid action must reach the update command");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"action\":\"rename\"", StringComparison.Ordinal),
+			because: "an unsupported action on a type-divergent column must be forwarded, not silently coerced to modify");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
+			operation => operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "only an add is coerced to modify on a type divergence — an invalid action must never be rewritten");
 	}
 
 	[Test]
