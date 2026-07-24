@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -57,6 +58,44 @@ public sealed class RequestInfoToolTests {
 	      },
 	      "UnrelatedType": {
 	        "fields": { "noise": { "type": "string" } }
+	      }
+	    }
+	  }
+	}
+	""";
+
+	/// <summary>
+	/// Mobile request registry served to the mobile catalog. Deliberately a DIFFERENT set from
+	/// <see cref="TestRegistryJson"/> so a schema-type=mobile call is proven to read the mobile
+	/// registry, not the web one: it drops the web-only crt.DeleteRecordRequest and adds a
+	/// crt.RunBusinessProcessRequest whose mobile-only activeRow parameter has no desktop twin.
+	/// </summary>
+	private const string TestMobileRegistryJson = """
+	{
+	  "requests": [
+	    {
+	      "requestType": "crt.ClosePageRequest",
+	      "parameters": {},
+	      "description": "Closes the currently open mobile page."
+	    },
+	    {
+	      "requestType": "crt.RunBusinessProcessRequest",
+	      "parameters": {
+	        "processName": { "type": "string", "required": true, "description": "Code of the business process to run." },
+	        "activeRow": { "type": "string", "description": "Mobile-only: current row context on a mobile list." }
+	      },
+	      "description": "Runs a business process from a mobile page."
+	    }
+	  ],
+	  "references": {
+	    "baseParameters": {
+	      "$context": { "type": "ViewModelContext", "description": "Platform-injected view-model context." }
+	    },
+	    "typeDefinitions": {
+	      "RequestBindingConfig": {
+	        "fields": {
+	          "request": { "type": "string", "required": true }
+	        }
 	      }
 	    }
 	  }
@@ -434,7 +473,7 @@ public sealed class RequestInfoToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
-		RequestInfoTool tool = new(catalog, new FakeDocsClient(), factory, commandResolver);
+		RequestInfoTool tool = new(catalog, new InMemoryMobileRequestCatalog(TestMobileRegistryJson), new FakeDocsClient(), factory, commandResolver);
 
 		// Act
 		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(EnvironmentName: "prod-stand"));
@@ -462,7 +501,7 @@ public sealed class RequestInfoToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings { Uri = "http://explicit-uri" });
-		RequestInfoTool tool = new(catalog, new FakeDocsClient(), factory, commandResolver);
+		RequestInfoTool tool = new(catalog, new InMemoryMobileRequestCatalog(TestMobileRegistryJson), new FakeDocsClient(), factory, commandResolver);
 
 		// Act
 		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(Uri: "http://explicit-uri"));
@@ -492,7 +531,7 @@ public sealed class RequestInfoToolTests {
 		commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(o => o.Environment == "other-registered-env"))
 			.Returns(_ => throw new EnvironmentResolutionException(rejectionMessage));
-		RequestInfoTool tool = new(catalog, new FakeDocsClient(), factory, commandResolver);
+		RequestInfoTool tool = new(catalog, new InMemoryMobileRequestCatalog(TestMobileRegistryJson), new FakeDocsClient(), factory, commandResolver);
 
 		// Act
 		RequestInfoResponse response = await tool.GetRequestInfo(
@@ -542,13 +581,191 @@ public sealed class RequestInfoToolTests {
 			because: "the operator remedy must name the requests-flavor override, not the web one");
 	}
 
+	[Test]
+	[Description("When the MOBILE registry chain is exhausted the tool converts ComponentRegistryUnavailableException into a graceful MCP error naming the mobile-requests-flavor override (CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE), not the web one — proving the schema-type=mobile branch routes exhaustion through the mobile flavor's client/env var.")]
+	public async Task GetRequestInfo_ShouldReturnGracefulError_WhenMobileRegistryChainIsExhausted() {
+		// Arrange
+		IMobileRequestInfoCatalog throwingMobileCatalog = Substitute.For<IMobileRequestInfoCatalog>();
+		throwingMobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns<Task<RequestCatalogState>>(_ => throw new ComponentRegistryUnavailableException(
+				"latest", "https://academy.creatio.com/api/mcp/", RegistryFlavor.MobileRequests.LocalFileEnvironmentVariable));
+		RequestInfoTool tool = BuildTool(
+			new RequestInfoCatalog(new InMemoryRequestRegistryClient(TestRegistryJson)),
+			mobileCatalog: throwingMobileCatalog);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the mobile catalog could not be served from any tier");
+		response.Error.Should().Contain("CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE",
+			because: "the mobile branch's exhaustion must name the mobile-requests-flavor override, not the web one");
+	}
+
+	[Test]
+	[Description("schema-type=mobile routes list mode to the mobile request catalog: it returns the mobile registry's requests (crt.RunBusinessProcessRequest) and NOT the web-only crt.DeleteRecordRequest, proving the isMobile branch selects mobileCatalog rather than the web catalog. Mirrors get-component-info's schema-type=mobile routing.")]
+	public async Task GetRequestInfo_ShouldReturnMobileCatalog_WhenSchemaTypeIsMobile() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "listing the mobile catalog must succeed");
+		response.Mode.Should().Be("list", because: "omitting request-type selects list mode on the mobile flavor too");
+		response.Count.Should().Be(2, because: "the mobile test registry declares exactly two requests, distinct from the web set");
+		response.Items!.Select(item => item.RequestType).Should().Contain("crt.RunBusinessProcessRequest",
+			because: "the mobile-registry request must surface from the mobile catalog");
+		response.Items!.Select(item => item.RequestType).Should().NotContain("crt.DeleteRecordRequest",
+			because: "crt.DeleteRecordRequest exists only in the web registry — the mobile branch must not read the web catalog");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "'mobile' is a valid selection, so no unrecognized-value warning is emitted");
+	}
+
+	[Test]
+	[Description("schema-type=mobile detail mode surfaces the mobile request's parameter contract, including the mobile-only activeRow parameter that has no desktop twin — proving parameters come from the mobile registry.")]
+	public async Task GetRequestInfo_ShouldReturnMobileDetail_WhenSchemaTypeIsMobileAndTypeIsKnown() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(
+			new RequestInfoArgs("crt.RunBusinessProcessRequest", SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "crt.RunBusinessProcessRequest exists in the mobile registry");
+		response.Mode.Should().Be("detail", because: "a known mobile request type selects detail mode");
+		response.RequestType.Should().Be("crt.RunBusinessProcessRequest",
+			because: "the detail response echoes the requested mobile request type");
+		response.Parameters.Should().ContainKey("activeRow",
+			because: "the mobile-only activeRow parameter must surface from the mobile registry, not the desktop one");
+	}
+
+	[Test]
+	[Description("Requesting a web-only request type from the mobile catalog returns a not-found response — the mobile registry is a separate, mobile-scoped set, so a web-only type must not resolve through schema-type=mobile.")]
+	public async Task GetRequestInfo_ShouldReturnNotFound_WhenWebOnlyTypeRequestedFromMobileCatalog() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(
+			new RequestInfoArgs("crt.DeleteRecordRequest", SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "crt.DeleteRecordRequest is a web-only request and must not resolve from the mobile catalog");
+		response.Error.Should().Contain("crt.DeleteRecordRequest",
+			because: "the not-found error must echo the unknown type");
+	}
+
+	[Test]
+	[Description("Cross-catalog isolation (both directions): a request type unique to one flavor never resolves under the other. crt.DeleteRecordRequest (web-only) resolves under web but not under schema-type=mobile; crt.RunBusinessProcessRequest (mobile-only) resolves under mobile but not under the default web catalog — proving the two registries are fully independent stores, not one shared pool filtered by flavor.")]
+	public async Task GetRequestInfo_ShouldIsolateWebAndMobileCatalogs_WhenTypeIsUniqueToOneFlavor() {
+		// Arrange — the web fixture uniquely owns crt.DeleteRecordRequest; the mobile fixture uniquely
+		// owns crt.RunBusinessProcessRequest (crt.ClosePageRequest is intentionally shared and not used here).
+		RequestInfoTool tool = CreateTool();
+
+		// Act — look each unique type up under both flavors.
+		RequestInfoResponse webOnlyUnderWeb = await tool.GetRequestInfo(new RequestInfoArgs("crt.DeleteRecordRequest"));
+		RequestInfoResponse webOnlyUnderMobile = await tool.GetRequestInfo(new RequestInfoArgs("crt.DeleteRecordRequest", SchemaType: "mobile"));
+		RequestInfoResponse mobileOnlyUnderMobile = await tool.GetRequestInfo(new RequestInfoArgs("crt.RunBusinessProcessRequest", SchemaType: "mobile"));
+		RequestInfoResponse mobileOnlyUnderWeb = await tool.GetRequestInfo(new RequestInfoArgs("crt.RunBusinessProcessRequest"));
+
+		// Assert — each unique type resolves ONLY under its own flavor.
+		webOnlyUnderWeb.Success.Should().BeTrue(
+			because: "crt.DeleteRecordRequest exists in the web catalog");
+		webOnlyUnderMobile.Success.Should().BeFalse(
+			because: "the web-only request must NOT resolve under the mobile catalog");
+		mobileOnlyUnderMobile.Success.Should().BeTrue(
+			because: "crt.RunBusinessProcessRequest exists in the mobile catalog");
+		mobileOnlyUnderWeb.Success.Should().BeFalse(
+			because: "the mobile-only request must NOT resolve under the default web catalog");
+	}
+
+	[Test]
+	[Description("Omitting schema-type defaults to the web request catalog — the default flavor must be web, matching get-component-info.")]
+	public async Task GetRequestInfo_ShouldDefaultToWebCatalog_WhenSchemaTypeIsOmitted() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs());
+
+		// Assert
+		response.Count.Should().Be(3, because: "the web test registry declares three requests");
+		response.Items!.Select(item => item.RequestType).Should().Contain("crt.DeleteRecordRequest",
+			because: "omitting schema-type must read the web catalog, which contains the web-only request");
+	}
+
+	[Test]
+	[Description("An unrecognized schema-type value (typo 'moblie') is NOT silently treated as web: the call still succeeds against the WEB catalog (documented fallback) but the response carries a schemaTypeWarning naming the offending value, so a mis-typed mobile request surfaces instead of quietly serving web metadata for a mobile page.")]
+	public async Task GetRequestInfo_ShouldWarnAndFallBackToWeb_WhenSchemaTypeIsUnrecognized() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(SchemaType: "moblie"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an unrecognized schema-type must fall back to web, not hard-fail the call");
+		response.Count.Should().Be(3,
+			because: "the fallback serves the web catalog (three requests), not the mobile one");
+		response.Items!.Select(item => item.RequestType).Should().Contain("crt.DeleteRecordRequest",
+			because: "the web-only request proves the web catalog was served on the fallback");
+		response.SchemaTypeWarning.Should().NotBeNullOrEmpty(
+			because: "an unrecognized schema-type must surface a warning instead of a silent web fallback");
+		response.SchemaTypeWarning.Should().Contain("moblie",
+			because: "the warning must name the offending value so the typo is obvious to the caller");
+		response.SchemaTypeWarning.Should().Contain("mobile",
+			because: "the warning must point at the likely intended value");
+	}
+
+	[Test]
+	[Description("An explicit schema-type='web' is a valid selection: web catalog and NO schemaTypeWarning — the warning is reserved for unrecognized values, never emitted for the explicit default.")]
+	public async Task GetRequestInfo_ShouldNotWarn_WhenSchemaTypeIsExplicitWeb() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(SchemaType: "web"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "'web' is a valid explicit schema-type selection");
+		response.Count.Should().Be(3, because: "'web' selects the web catalog");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "a valid explicit selection must not emit the unrecognized-value warning");
+	}
+
+	[Test]
+	[Description("A camelCase 'schemaType' selector is rejected with a precise rename hint pointing at 'schema-type', instead of silently dropping it and defaulting to the web catalog.")]
+	public async Task GetRequestInfo_ShouldRejectLegacyAlias_WhenCamelCaseSchemaTypeIsUsed() {
+		// Arrange
+		RequestInfoTool tool = CreateTool();
+		RequestInfoArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["schemaType"] = JsonDocument.Parse("\"mobile\"").RootElement.Clone()
+			}
+		};
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unbound camelCase field must be rejected, not ignored");
+		response.Error.Should().Contain("schema-type",
+			because: "the rename hint must point at the canonical kebab-case parameter");
+	}
+
 	private static RequestInfoTool CreateTool(
 		IComponentRegistryDocsClient? docsClient = null,
 		string? environmentVersion = null,
 		string? catalogResolvedVersion = null,
-		PlatformVersionResolution? resolution = null) {
+		PlatformVersionResolution? resolution = null,
+		IMobileRequestInfoCatalog? mobileCatalog = null) {
 		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson, catalogResolvedVersion));
-		return BuildTool(catalog, docsClient, environmentVersion, resolution);
+		return BuildTool(catalog, docsClient, environmentVersion, resolution, mobileCatalog: mobileCatalog);
 	}
 
 	/// <summary>
@@ -564,7 +781,8 @@ public sealed class RequestInfoToolTests {
 		IComponentRegistryDocsClient? docsClient = null,
 		string? environmentVersion = null,
 		PlatformVersionResolution? resolution = null,
-		IToolCommandResolver? commandResolver = null) {
+		IToolCommandResolver? commandResolver = null,
+		IMobileRequestInfoCatalog? mobileCatalog = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		if (resolution is not null || environmentVersion is not null) {
 			IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
@@ -579,6 +797,7 @@ public sealed class RequestInfoToolTests {
 		}
 		return new RequestInfoTool(
 			catalog,
+			mobileCatalog ?? new InMemoryMobileRequestCatalog(TestMobileRegistryJson),
 			docsClient ?? new FakeDocsClient(),
 			factory,
 			commandResolver);
@@ -602,6 +821,23 @@ public sealed class RequestInfoToolTests {
 
 		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
 			return Task.FromResult(false);
+		}
+	}
+
+	/// <summary>
+	/// In-memory mobile request catalog: parses a JSON snippet through the shared
+	/// <see cref="RequestInfoCatalog.LoadFromStream"/> so the mobile flavor exercises the exact same
+	/// envelope parse as the web flavor, with no filesystem or registry client. Echoes the requested
+	/// version as the resolved version unless <paramref name="resolvedVersionOverride"/> is set
+	/// (models the CDN 404 -> latest alias fallback).
+	/// </summary>
+	private sealed class InMemoryMobileRequestCatalog(string registryJson, string? resolvedVersionOverride = null) : IMobileRequestInfoCatalog {
+		private readonly byte[] _payload = Encoding.UTF8.GetBytes(registryJson);
+
+		public Task<RequestCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			using MemoryStream stream = new(_payload, writable: false);
+			return Task.FromResult(RequestInfoCatalog.LoadFromStream(
+				stream, resolvedVersionOverride ?? requestedVersion, ComponentRegistrySource.Cdn));
 		}
 	}
 

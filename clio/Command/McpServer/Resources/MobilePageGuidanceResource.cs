@@ -445,8 +445,12 @@ public sealed class MobilePageGuidanceResource {
 		         "For the selected page" maps to processRunType: 'ForTheSelectedPage' — setting
 		         recordIdProcessParameterName alone does NOT select the run type.
 		         FULL parameter contract is the request catalog (single source of truth): call
-		         get-request-info request-type=crt.RunBusinessProcessRequest and resolve the process with
-		         get-process-signature FIRST. Keys in processParameters / parameterMappings /
+		         get-request-info request-type=crt.RunBusinessProcessRequest schema-type=mobile and resolve
+		         the process with get-process-signature FIRST. On mobile pages ALWAYS pass
+		         schema-type=mobile — the mobile request catalog is a separate registry scoped to the
+		         requests available on Freedom UI mobile, and their parameters can differ from desktop
+		         (e.g. crt.RunBusinessProcessRequest adds mobile-only activeRow / activeRowAttributeName).
+		         Keys in processParameters / parameterMappings /
 		         recordIdProcessParameterName are process parameter CODES, NOT captions — a wrong code
 		         is silently dropped.
 

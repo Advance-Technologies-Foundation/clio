@@ -460,6 +460,18 @@ public class BindingsModule {
 				RegistryFlavor.Requests.CacheSubdirectoryName),
 			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
 			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RequestRegistryClient>>()));
+		// Mobile requests flavor (get-request-info schema-type=mobile): same transport chain as the
+		// web requests flavor, its own CDN file (MobileRequestRegistry.json) / cache subdirectory /
+		// local-override env var. Envelope is identical to the web request catalog, so parsing reuses
+		// RequestInfoCatalog through the mobile catalog below.
+		services.AddSingleton<IMobileRequestRegistryClient>(sp => new MobileRequestRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.MobileRequests.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileRequestRegistryClient>>()));
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
@@ -467,6 +479,7 @@ public class BindingsModule {
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
 		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
 		services.AddSingleton<IRequestInfoCatalog, RequestInfoCatalog>();
+		services.AddSingleton<IMobileRequestInfoCatalog, MobileRequestInfoCatalog>();
 		services.AddSingleton<IWebToMobilePageConversionRulesRegistryClient>(sp => new WebToMobilePageConversionRulesRegistryClient(
 			sp.GetRequiredService<IHttpClientFactory>(),
 			ComponentRegistryCacheStore.WithSubdirectory(

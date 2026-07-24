@@ -4335,6 +4335,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': the version is unknown — tell the user and request explicit confirmation before proceeding instead of assuming the 'latest' superset. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4386,6 +4387,7 @@ internal static class ToolContractCatalog {
 				[
 					Field("request-type", StringType, "Freedom UI request type, e.g. 'crt.PrintablesRequest'. Omit or use 'list' to return the catalog (list mode); a known type returns that request's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'print'."),
+					Field("schema-type", StringType, "Request registry to query: 'web' (default) or 'mobile'. The mobile registry is separate and scoped to the requests available on Freedom UI mobile (parameters can differ from desktop). Use 'mobile' when wiring a request on a mobile page."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
 					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
@@ -4415,6 +4417,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': tell the user the version is unknown and request explicit confirmation before proceeding. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4426,6 +4429,8 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, "request-type", "request-name", RejectedStatus, "Use 'request-type' instead of 'request-name'."),
 				Alias(ParameterScope, "request-type", "requestName", RejectedStatus, "Use 'request-type' instead of 'requestName'."),
 				Alias(ParameterScope, "request-type", "request_name", RejectedStatus, "Use 'request-type' instead of 'request_name'."),
+				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
+				Alias(ParameterScope, "schema-type", "schema_type", RejectedStatus, "Use 'schema-type' instead of 'schema_type'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environment_name", RejectedStatus, "Use 'environment-name' instead of 'environment_name'.")
 			],
@@ -4437,6 +4442,9 @@ internal static class ToolContractCatalog {
 				Example("List the full request catalog", new Dictionary<string, object?>()),
 				Example("Search the catalog by keyword", new Dictionary<string, object?> {
 					["search"] = "print"
+				}),
+				Example("List the mobile request catalog", new Dictionary<string, object?> {
+					["schema-type"] = "mobile"
 				})
 			],
 			Flow([RequestInfoTool.ToolName],
