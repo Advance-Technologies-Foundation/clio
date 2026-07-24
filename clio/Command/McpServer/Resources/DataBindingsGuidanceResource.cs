@@ -37,7 +37,7 @@ public sealed class DataBindingsGuidanceResource {
 			         - `sync-schemas` for inline lookup seed rows
 			         - `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db` for remote DB-first binding work
 			         - `create-data-binding`, `add-data-binding-row`, and `remove-data-binding-row` for local artifact workflows
-			       - When the task depends on current binding or schema context, inspect that context before binding mutations.
+			       - Before creating or removing a binding, inspect what the package already ships: the binding tools have no list mode, so read `SysPackageSchemaData` with `execute-esq` (filter `SysPackage.Name`; columns `Name`, `SysSchema.Name`). `binding-name` defaults to the schema name, so pass it explicitly to target an existing binding (often a suffixed folder) instead of creating a parallel one.
 
 			       Preferred workflows
 			       - Canonical lookup seeding flow: `get-tool-contract` -> `sync-schemas` -> refresh/read-back.

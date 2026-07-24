@@ -63,11 +63,10 @@ public sealed class HomePageGuidanceResource {
 		          - Reconcile with the requested audience: if the request scopes the page to a role (e.g. "only
 		            Sales Manager"), the target should be a workplace whose audience matches (see Access / roles
 		            below). If the app's own workplace doesn't match that role, surface it and confirm.
-		          - The workplace must ALREADY exist — if a named one is not found, stop and ask rather than
-		            creating it: a workplace spans several tables (`SysWorkplace` + `SysModuleInWorkplace` sections +
-		            `SysAdminUnitInWorkplace` access), clio has no tool to create one, and it is set up in the
-		            Creatio UI. This is the app workplace `SysWorkplace` — NOT clio's `create-workspace` (a local
-		            project folder) and NOT the dev `SysWorkspace` table.
+		          - The workplace must ALREADY exist for this flow — if a named one is not found, stop and ask.
+		            To create or otherwise manage a workplace and its sections, see `workplaces` (which also
+		            disambiguates the navigation `SysWorkplace` from clio's `create-workspace` and the dev
+		            `SysWorkspace`). This is the app workplace `SysWorkplace`.
 		       6. Point each target workplace at the page and persist it as a package data binding so it ships.
 		          You are UPDATING an existing workplace row (not creating one) and then shipping it:
 		          a. `odata-update` `SysWorkplace` with `id` = the workplace `Id`,
@@ -91,11 +90,8 @@ public sealed class HomePageGuidanceResource {
 		       A home page is NOT role-secured on its own — a user sees it because they opened a workplace whose
 		       `HomePageUId` points at it. Its audience therefore equals the audience of the workplace(s) you bind
 		       it to, controlled by `SysAdminUnitInWorkplace` (which roles/users see the workplace). To scope a home
-		       page to specific roles, bind it to a workplace whose audience is those roles. To ADD a role to an
-		       existing workplace, insert a `SysAdminUnitInWorkplace` row via `create-data-binding-db` (schema
-		       `SysAdminUnitInWorkplace`, `rows` a new `{Id, SysWorkplaceId, SysAdminUnitId}`; resolve the role
-		       `Id` from `SysAdminUnit` by name) — a security-relevant write, so confirm with the user first. clio
-		       has no tool to CREATE a workplace or its sections — that stays in the Creatio UI.
+		       page to specific roles, bind it to a workplace whose audience is those roles. To change which roles
+		       see a workplace — or to create a workplace or add its sections — see `workplaces`.
 		       """
 	};
 
