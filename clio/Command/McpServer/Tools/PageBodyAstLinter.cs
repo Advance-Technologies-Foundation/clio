@@ -272,10 +272,10 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
-	// Rule 11: a `crt.EntityDataSource` config that carries a `filters` block. The EntityDataSource
-	// consumes ONLY `entitySchemaName` and `attributes` from its `config`; a `filters` key there is
-	// never read at runtime, so update-page persists it and returns success while the list silently
-	// shows UNFILTERED data (ENG-93867).
+	// Rule 11: a `crt.EntityDataSource` config that carries a `filters` block. `filters` is not a
+	// recognized `crt.EntityDataSource` config key (unlike entitySchemaName / attributes /
+	// loadParameters / useRecordDeactivation …), so it is never applied at runtime — update-page
+	// persists it and returns success while the list silently shows UNFILTERED data (ENG-93867).
 	//
 	// Keyed off the config SIGNATURE — an object holding BOTH a `filters` key and an `entitySchemaName`
 	// key — rather than the enclosing `type: "crt.EntityDataSource"` descriptor. This matches the config
@@ -311,7 +311,7 @@ internal static class PageBodyAstLinter {
 			Severity: LintSeverity.Warning,
 			Line: filtersProp.Location.Start.Line,
 			Column: filtersProp.Location.Start.Column + 1,
-			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — the data source reads only `entitySchemaName` and `attributes`. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
+			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — `filters` is not a recognized data-source config key. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
 	}
 
 	// CheckProperty intentionally has no rules left: `params-empty` and

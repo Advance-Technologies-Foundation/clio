@@ -279,8 +279,8 @@ public sealed class RelatedListGuidanceResource {
 		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters-frontend` column-path
 		         normalization; use the bare reference column name.
 		       - Putting a static filter in the `crt.EntityDataSource` `config.filters` (on the viewElement data
-		         source under `modelConfig.dataSources`). That key is NEVER read: the `crt.EntityDataSource`
-		         consumes only `entitySchemaName` and `attributes` from its `config`, and grid filtering comes
+		         source under `modelConfig.dataSources`). That key is NEVER applied: `filters` is not a
+		         recognized `crt.EntityDataSource` config option, and grid filtering comes
 		         EXCLUSIVELY from `modelConfig.dependencies` (record scope) and the collection attribute's
 		         `filterAttributes` (predefined/search filter). A `config.filters` block persists in the saved body
 		         and `update-page` returns `success: true`, but it is silently ignored — the detail shows UNFILTERED

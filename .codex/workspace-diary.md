@@ -6877,3 +6877,10 @@ Decision:
 Files: clio/Command/McpServer/Resources/{GuidanceCatalog,RelatedListGuidanceResource,RoutingGuidanceResource}.cs, clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs (replaced type-gate test with split-descriptor test; anchor test now carries entitySchemaName)
 Verification: linter+guidance 114/114 (net8+net10); config.filters E2E green.
 Impact: static-filter guidance now discoverable via routing/description; lint catches split-descriptor config.filters. NOT yet committed — awaiting approval to push to PR #972.
+
+## 2026-07-23 – ENG-93867 PR #2714 (creatio-ui) Copilot review — validate & fix
+Context: /validate-and-fix-review-comments on creatio-ui PR #2714. Copilot left 1 inline comment (data-grid.component.md L187+L440): "reads only entitySchemaName + attributes" is inaccurate.
+Decision: CONFIRMED via entity-data-source.ts — config also honors loadParameters (:822), useRecordDeactivation (:179), adminUnitRoleSources (:178). Reworded to "filters is not a recognized EntityDataSource config key, so it is never applied" (focused on the ignored key). Fixed the SAME wording I authored in clio PR #972 too (RelatedListGuidanceResource.cs Common-mistakes bullet + PageBodyAstLinter.cs rule comment & finding Message) — identical defect, sibling artifact.
+Files: creatio-ui data-grid.component.md (2 spots); clio RelatedListGuidanceResource.cs, PageBodyAstLinter.cs.
+Verification: clio linter+guidance 114/114 (net8+net10); no test asserts the reworded text.
+Impact: doc/guidance/lint no longer overstate an exhaustive config allowlist; claim is now accurate and focused on config.filters.
