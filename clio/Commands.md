@@ -594,6 +594,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 
+## Customization
+
+<a id="upload-image"></a>
+- [`upload-image`](docs/commands/upload-image.md) - Upload a local image to an environment and print its image id
+<a id="set-background-image"></a>
+- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background, from a local file or an uploaded image id
+
 ## Record rights
 
 <a id="get-record-rights"></a>

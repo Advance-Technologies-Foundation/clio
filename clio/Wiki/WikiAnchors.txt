@@ -78,6 +78,8 @@ create-theme:create-theme
 update-theme:update-theme
 delete-theme:delete-theme
 set-user-theme:set-user-theme,apply-user-theme
+upload-image:upload-image
+set-background-image:set-background-image
 get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties

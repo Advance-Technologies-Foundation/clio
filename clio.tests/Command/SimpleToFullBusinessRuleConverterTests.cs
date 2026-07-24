@@ -1842,6 +1842,116 @@ public sealed class SimpleToFullBusinessRuleConverterTests {
 			}
 			""")!;
 
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a BusinessRuleSysSettingExpression carrying the resolved data value type and setting code, and the compared Const inherits that type.")]
+	public void ToMetadata_Should_Emit_SysSetting_Expression_With_Resolved_Type() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["DisableEquipmentDelivery"] = new("DisableEquipmentDelivery", "Boolean", null)
+			};
+		BusinessRule rule = new(
+			"Hide shipping address when equipment delivery is disabled",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("SysSetting", sysSettingName: "DisableEquipmentDelivery"),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonRaw("true")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, rule, sysSettingMap);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition =
+			((BusinessRuleGroupConditionMetadataDto)metadata.Cases[0].Condition!).Conditions[0];
+		condition.LeftExpression.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSysSettingExpressionTypeName,
+			because: "a SysSetting operand must serialize as the platform BusinessRuleSysSettingExpression");
+		condition.LeftExpression.Type.Should().Be(BusinessRuleConstants.SysSettingExpressionType,
+			because: "the expression type discriminator must be SysSetting");
+		condition.LeftExpression.SysSettingName.Should().Be("DisableEquipmentDelivery",
+			because: "the setting code must round-trip into the persisted metadata");
+		condition.LeftExpression.DataValueTypeName.Should().Be("Boolean",
+			because: "the setting's data value type resolved from the environment must be persisted on the operand");
+		condition.RightExpression!.DataValueTypeName.Should().Be("Boolean",
+			because: "a Const operand inherits its data value type from the SysSetting it is compared against");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a SysSetting expression on the RIGHT side and lets a Const on the LEFT inherit the setting's resolved type.")]
+	public void ToMetadata_Should_Emit_Right_SysSetting_And_Const_Inherits_Type() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["DisableEquipmentDelivery"] = new("DisableEquipmentDelivery", "Boolean", null)
+			};
+		BusinessRule rule = new(
+			"Const on left, setting on right",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("Const", null, JsonRaw("true")),
+						"equal",
+						new BusinessRuleExpression("SysSetting", sysSettingName: "DisableEquipmentDelivery"))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, rule, sysSettingMap);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition =
+			((BusinessRuleGroupConditionMetadataDto)metadata.Cases[0].Condition!).Conditions[0];
+		condition.RightExpression!.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSysSettingExpressionTypeName,
+			because: "a SysSetting operand must serialize as a SysSetting expression on the right side too");
+		condition.LeftExpression.DataValueTypeName.Should().Be("Boolean",
+			because: "a Const on the left inherits its data value type from the SysSetting it is compared against");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws when a SysSetting condition operand has no resolved descriptor in the sys-setting map.")]
+	public void ToMetadata_Should_Throw_When_SysSetting_Is_Unresolved() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal);
+		BusinessRule rule = new(
+			"Unresolved setting",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("SysSetting", sysSettingName: "MissingSetting"),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonRaw("true")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+
+		// Act
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, rule);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*was not resolved*",
+				because: "an unresolved SysSetting operand cannot be typed and must not silently serialize as Text");
+	}
+
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
 		Dictionary<string, EntitySchemaColumnDto> result = new(StringComparer.Ordinal);
 		foreach (EntitySchemaColumnDto column in columns) {

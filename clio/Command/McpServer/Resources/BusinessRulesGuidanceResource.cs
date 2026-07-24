@@ -86,6 +86,7 @@ public sealed class BusinessRulesGuidanceResource {
 		          - a field being FILLED or EMPTY ("hidden until a value is entered") → comparisonType is-filled-in or is-not-filled-in.
 		          - the current user's ROLE ("Resolved visible only for administrators") → condition CurrentUserRoles CONTAIN <role id>, plus the inverse NOT_CONTAIN → opposite action. Do NOT write a HandleViewModelInitRequest handler or use column access rights just to hide a control — role-based field state IS a business rule. Use column/object permissions only to restrict the underlying DATA, not just the UI control.
 		          - WHO the current user is ("Assignee group visible only for Supervisor") → condition compares CurrentUser / CurrentUserContact / CurrentUserAccount to the target id. Not a handler.
+		          - a SYSTEM SETTING value ("hide Shipping address when the DisableEquipmentDelivery setting is enabled", "make Equipment read-only when LockEquipmentAfterSubmission is on") → condition operand type SysSetting with sysSettingName set to the setting code. The setting can be on either side and its value type is resolved from the environment; a Boolean setting compares against a Const true/false. Binary and SecureText settings are not supported as operands. Do NOT read the setting in a handler to toggle the control.
 
 		       B. Conditional field VALUE → ENTITY BUSINESS RULE with set-values. Do NOT write a handler.
 		          - set a field ("when field X equals Y, set field Z to W") → set-values with the value.

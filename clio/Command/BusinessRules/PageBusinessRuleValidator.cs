@@ -12,10 +12,12 @@ internal interface IPageBusinessRuleValidator {
 	/// <param name="rule">Business rule to validate.</param>
 	/// <param name="attributeMap">Page business-rule attributes keyed by payload path.</param>
 	/// <param name="elementNames">Available page element names.</param>
+	/// <param name="sysSettingMap">Resolved system-setting condition operands keyed by setting code. Optional when the rule references no SysSetting operand.</param>
 	void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		IReadOnlySet<string> elementNames);
+		IReadOnlySet<string> elementNames,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null);
 }
 
 internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessRuleValidator)
@@ -24,9 +26,10 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		IReadOnlySet<string> elementNames) {
+		IReadOnlySet<string> elementNames,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
 		try {
-			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames));
+			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames), sysSettingMap);
 		} catch (ArgumentException exception) {
 			throw new ArgumentException(AppendCandidateHint(exception.Message, attributeMap, elementNames), exception);
 		}

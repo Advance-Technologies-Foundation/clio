@@ -12,6 +12,13 @@ public interface ICompilationHistoryPoller {
 
 	CompilationHistory GetBaseline();
 
+	/// <summary>
+	/// Executes a single query round for records newer than <paramref name="baseline"/>.
+	/// </summary>
+	/// <param name="baseline">Only records with a later <c>CreatedOn</c> are returned.</param>
+	/// <returns>New records ordered by <c>CreatedOn</c> descending.</returns>
+	List<CompilationHistory> PollOnce(DateTime baseline);
+
 	void Poll(DateTime baseline, CancellationToken ct, Action<CompilationHistory> onNewRecord);
 
 }
@@ -32,14 +39,18 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 			.FirstOrDefault();
 	}
 
-	public void Poll(DateTime baseline, CancellationToken ct, Action<CompilationHistory> onNewRecord) {
+	public List<CompilationHistory> PollOnce(DateTime baseline) {
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+		return ctx.Models<CompilationHistory>()
+			.OrderByDescending(x => x.CreatedOn)
+			.Where(x => x.CreatedOn > baseline)
+			.ToList();
+	}
+
+	public void Poll(DateTime baseline, CancellationToken ct, Action<CompilationHistory> onNewRecord) {
 		var seen = new HashSet<Guid>();
 		while (!ct.IsCancellationRequested) {
-			List<CompilationHistory> records = ctx.Models<CompilationHistory>()
-				.OrderByDescending(x => x.CreatedOn)
-				.Where(x => x.CreatedOn > baseline)
-				.ToList();
+			List<CompilationHistory> records = PollOnce(baseline);
 
 			foreach (CompilationHistory record in records) {
 				if (seen.Add(record.Id)) {

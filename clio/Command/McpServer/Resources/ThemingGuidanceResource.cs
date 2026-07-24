@@ -28,7 +28,7 @@ public sealed class ThemingGuidanceResource {
 		       clio MCP custom-theme guide
 
 		       Scope
-		       Use this guide to manage a custom Creatio theme through clio:
+		       Theming is one part of branding a Creatio environment (`get-guidance name=branding` covers the product logos and the shell background image); this guide focuses on the theme itself:
 		       - Choose the brand colours with guidance — see "Choosing the colours".
 		       - Create, restyle, or delete a theme on an environment — see "Which flow".
 		       - List existing themes — see "List themes".

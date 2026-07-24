@@ -13,13 +13,17 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 internal static partial class ComponentRegistryDocsPath {
 	/// <summary>
-	/// Permitted shape: starts with <c>docs/</c> (component/composite docs) or
-	/// <c>request-docs/</c> (Freedom UI request docs referenced from
-	/// <c>RequestRegistry.json</c>), followed by one or more dot/dash/underscore-friendly
-	/// segments separated by <c>/</c>, ending in <c>.md</c>. No <c>..</c>, no leading
-	/// slash, no backslashes, no whitespace.
+	/// Permitted shape: starts with one of the four documentation namespaces the
+	/// static-files-mcp producer publishes —
+	/// <c>docs/</c> (web component/composite docs, from <c>ComponentRegistry.json</c>),
+	/// <c>mobile-docs/</c> (mobile component docs, from <c>MobileComponentRegistry.json</c>),
+	/// <c>request-docs/</c> (web Freedom UI request docs, from <c>RequestRegistry.json</c>), or
+	/// <c>mobile-request-docs/</c> (mobile request docs, from <c>MobileRequestRegistry.json</c>) —
+	/// followed by one or more dot/dash/underscore-friendly segments separated by <c>/</c>, ending
+	/// in <c>.md</c>. No <c>..</c>, no leading slash, no backslashes, no whitespace. All four flavors
+	/// share this single validator and the same docs CDN/cache pipeline.
 	/// </summary>
-	[GeneratedRegex(@"^(?:docs|request-docs)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.md$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"^(?:docs|mobile-docs|request-docs|mobile-request-docs)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.md$", RegexOptions.CultureInvariant)]
 	private static partial Regex AllowedPathRegex();
 
 	/// <summary>

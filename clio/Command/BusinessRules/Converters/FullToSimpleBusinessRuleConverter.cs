@@ -182,6 +182,14 @@ internal static class FullToSimpleBusinessRuleConverter {
 			};
 		}
 
+		if (string.Equals(typeName, BusinessRuleSysSettingExpressionTypeName, StringComparison.Ordinal)
+			|| string.Equals(type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			return new BusinessRuleExpression(SysSettingExpressionType,
+				sysSettingName: GetString(expressionObject, "sysSettingName")) {
+				UId = uId
+			};
+		}
+
 		if (string.Equals(typeName, BusinessRuleFormulaExpressionTypeName, StringComparison.Ordinal)
 			|| string.Equals(type, FormulaExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			string? formulaText = GetString(expressionObject["expressionSchema"] as JsonObject, "expression");

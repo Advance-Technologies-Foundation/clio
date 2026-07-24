@@ -51,7 +51,8 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)),
+			Substitute.For<ISysSettingConditionOperandResolver>());
 
 		// Act
 		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -114,7 +115,8 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)),
+			Substitute.For<ISysSettingConditionOperandResolver>());
 
 		// Act
 		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -162,7 +164,8 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)),
+			Substitute.For<ISysSettingConditionOperandResolver>());
 
 		// Act
 		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -484,6 +487,74 @@ public sealed class PageBusinessRuleServiceTests {
 			Arg.Is<IReadOnlyList<string>>(names => names.Count == 1 && names[0] == "BusinessRule_pg"));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves system-setting operand types via ISysSettingConditionOperandResolver and threads the resolved map into the converter so the saved page metadata carries a typed SysSetting expression.")]
+	public void Create_Should_Resolve_And_Persist_SysSetting_Operand() {
+		// Arrange
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
+		IPageBusinessRuleElementProvider elementProvider = Substitute.For<IPageBusinessRuleElementProvider>();
+		IBusinessRuleAddonService addonService = Substitute.For<IBusinessRuleAddonService>();
+		IBusinessRuleLookupReferenceValidator lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
+		ISysSettingConditionOperandResolver sysSettingResolver = Substitute.For<ISysSettingConditionOperandResolver>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new();
+		BusinessRule rule = new(
+			"Hide input when equipment delivery is disabled",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("SysSetting", sysSettingName: "DisableEquipmentDelivery"),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
+				]),
+			[
+				new HideElementBusinessRuleAction(["Input_One"])
+			]);
+		IReadOnlyList<BusinessRuleMetadataDto>? capturedMetadata = null;
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
+		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) { "Input_One" });
+		sysSettingResolver.Resolve(Arg.Any<BusinessRule>()).Returns(
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["DisableEquipmentDelivery"] = new("DisableEquipmentDelivery", "Boolean", null)
+			});
+		addonService.AppendRule(
+				Arg.Any<AddonGetRequestDto>(),
+				rule,
+				Arg.Do<IReadOnlyList<BusinessRuleMetadataDto>>(metadata => capturedMetadata = metadata))
+			.Returns(new BusinessRuleCreateResult("BusinessRule_sysset"));
+		PageBusinessRuleService service = new(
+			packageResolver,
+			schemaProvider,
+			attributeProvider,
+			elementProvider,
+			addonService,
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)),
+			sysSettingResolver);
+
+		// Act
+		service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		sysSettingResolver.Received(1).Resolve(rule);
+		capturedMetadata.Should().NotBeNull(
+			because: "the resolved SysSetting rule must be converted and handed to the add-on service");
+		BusinessRuleConditionMetadataDto condition =
+			((BusinessRuleGroupConditionMetadataDto)capturedMetadata![0].Cases[0].Condition!).Conditions[0];
+		condition.LeftExpression.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSysSettingExpressionTypeName,
+			because: "the resolved type must reach the converter so the persisted operand is a SysSetting expression");
+		condition.LeftExpression.DataValueTypeName.Should().Be("Boolean",
+			because: "the resolver-provided data value type must be persisted on the operand");
+	}
+
 	private static PageBusinessRuleService BuildBatchService(out IBusinessRuleAddonService addonService) {
 		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
 		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
@@ -514,7 +585,8 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)),
+			Substitute.For<ISysSettingConditionOperandResolver>());
 	}
 
 	private static AddonSchemaDto BuildPageAddonSchema(params (string Name, string UId)[] rules) {

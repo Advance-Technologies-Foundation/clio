@@ -226,6 +226,10 @@ internal static class GuidanceCatalog {
 				"theming",
 				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
 				ThemingGuidanceResource.Guide),
+			["branding"] = Create(
+				"branding",
+				"Canonical MCP guidance for branding a Creatio environment: replacing the product logos and applying a shell background image.",
+				BrandingGuidanceResource.Guide),
 			["when-to-use-requests"] = Create(
 				"when-to-use-requests",
 				"""

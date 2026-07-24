@@ -185,6 +185,10 @@ internal class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyName("sysValueName")]
 	public string? SysValueName { get; set; }
 
+	[JsonPropertyOrder(8)]
+	[JsonPropertyName("sysSettingName")]
+	public string? SysSettingName { get; set; }
+
 	[JsonPropertyOrder(9)]
 	[JsonPropertyName("parameterMappings")]
 	public List<BusinessRuleFormulaParameterMappingDto>? ParameterMappings { get; set; }
