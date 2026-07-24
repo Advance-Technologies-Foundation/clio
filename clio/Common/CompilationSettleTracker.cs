@@ -109,7 +109,16 @@ public class CompilationSettleTracker : ICompilationSettleTracker {
 
 	public bool IsSettled(DateTime now) {
 		double windowSeconds = Math.Max(BaseQuietWindowSeconds, _slowestDurationSeconds * DurationScaleFactor);
-		return (now - _lastActivityAt).TotalSeconds >= windowSeconds;
+		if ((now - _lastActivityAt).TotalSeconds < windowSeconds) {
+			return false;
+		}
+		// Activity started (e.g. a package-only compile) but the full-compile marker never
+		// showed up: assume a full compile may still be running rather than declaring an
+		// unconfirmed partial finish after just one quiet gap (observed live in a CI/TeamCity
+		// trigger: a single package row, then 45s quiet, while the actual full compile was
+		// still running). The caller keeps polling, bounded by its own overall give-up-after
+		// budget, until either the marker appears or that budget is exhausted.
+		return _newRecordCount == 0 || _sawFinalMarker;
 	}
 
 	public CompilationSettleSnapshot Snapshot =>

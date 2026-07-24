@@ -98,7 +98,9 @@ public class CompilationSettleTrackerTests {
 		DateTime baselineTime = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 		sut.SeedFromBaseline(null, baselineTime);
 		DateTime slowRecordAt = baselineTime.AddSeconds(1);
-		sut.Observe(NewRecord(slowRecordAt, durationSeconds: 40), slowRecordAt);
+		// The marker is observed here too so this test isolates the duration-scaling behavior
+		// from the separate marker-gating rule covered by its own tests below.
+		sut.Observe(NewRecord(slowRecordAt, projectName: CompilationSettleTracker.FinalMarkerProjectName, durationSeconds: 40), slowRecordAt);
 		// Adaptive window = max(45, 40 * 1.5) = 60s; only 50s have passed since the slow record.
 		DateTime stillWithinAdaptiveWindow = slowRecordAt.AddSeconds(50);
 
@@ -117,14 +119,53 @@ public class CompilationSettleTrackerTests {
 		DateTime baselineTime = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 		sut.SeedFromBaseline(null, baselineTime);
 		DateTime slowRecordAt = baselineTime.AddSeconds(1);
-		sut.Observe(NewRecord(slowRecordAt, durationSeconds: 40), slowRecordAt);
+		sut.Observe(NewRecord(slowRecordAt, projectName: CompilationSettleTracker.FinalMarkerProjectName, durationSeconds: 40), slowRecordAt);
 		DateTime pastAdaptiveWindow = slowRecordAt.AddSeconds(61);
 
 		// Act
 		bool settled = sut.IsSettled(pastAdaptiveWindow);
 
 		// Assert
-		settled.Should().BeTrue(because: "61s have passed, exceeding the 60s adaptive window (40 * DurationScaleFactor)");
+		settled.Should().BeTrue(because: "61s have passed, exceeding the 60s adaptive window (40 * DurationScaleFactor), and the marker was observed");
+	}
+
+	[Test]
+	[Description("Verifies the tracker does NOT settle when activity was observed (e.g. a package-only compile) but the full-compile marker never appeared, even long after the quiet window would otherwise have elapsed - observed live via a CI/TeamCity trigger where a single package row was followed by 45s of quiet while the actual full compile was still running")]
+	public void IsSettled_ReturnsFalse_WhenActivityObservedButMarkerNeverSeen_EvenLongAfterQuietWindow() {
+		// Arrange
+		CompilationSettleTracker sut = new();
+		DateTime baselineTime = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+		sut.SeedFromBaseline(null, baselineTime);
+		DateTime recordAt = baselineTime.AddSeconds(1);
+		sut.Observe(NewRecord(recordAt, projectName: "CecDataPackage.csproj"), recordAt);
+		DateTime longAfterQuietWindow = recordAt.AddMinutes(10);
+
+		// Act
+		bool settled = sut.IsSettled(longAfterQuietWindow);
+
+		// Assert
+		settled.Should().BeFalse(
+			because: "activity was observed but the ODataEntities marker never appeared, so a full compile is assumed to still be running regardless of how long the quiet gap has been - the caller's own give-up-after budget is what eventually stops the wait, not this method");
+	}
+
+	[Test]
+	[Description("Verifies the tracker DOES settle once the full-compile marker appears after other activity, even if it arrives well past the initial quiet window's worth of elapsed time")]
+	public void IsSettled_ReturnsTrue_OnceMarkerAppearsAfterOtherActivity_ThenQuietWindowElapses() {
+		// Arrange
+		CompilationSettleTracker sut = new();
+		DateTime baselineTime = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+		sut.SeedFromBaseline(null, baselineTime);
+		sut.Observe(NewRecord(baselineTime.AddSeconds(1), projectName: "CecDataPackage.csproj"), baselineTime.AddSeconds(1));
+		DateTime markerAt = baselineTime.AddMinutes(5);
+		sut.Observe(NewRecord(markerAt, projectName: CompilationSettleTracker.FinalMarkerProjectName), markerAt);
+		DateTime afterMarkerQuietWindow = markerAt.AddSeconds(46);
+
+		// Act
+		bool settled = sut.IsSettled(afterMarkerQuietWindow);
+
+		// Assert
+		settled.Should().BeTrue(
+			because: "the marker was eventually observed and the quiet window has since elapsed, confirming a genuine full finish");
 	}
 
 	[Test]
