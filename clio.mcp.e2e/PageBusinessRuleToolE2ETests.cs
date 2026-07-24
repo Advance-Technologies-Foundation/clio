@@ -138,6 +138,41 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
+	[Description("Binds a system-setting page condition payload (SysSetting operand compared to a Boolean constant) through the real MCP server and reports an invalid environment failure from command execution. Pins the ENG-91254 path: hide a control when a Boolean system setting is enabled.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds system-setting conditions")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a SysSetting condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_SysSetting_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-sys-setting-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrOrder_FormPage",
+					["rules"] = new object[] { CreateSysSettingConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid system-setting page condition payload should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the SysSetting page payload");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
 	[Description("Binds a show-element page business-rule gated on an is-filled-in condition (unary; no rightExpression) through the real MCP server and reports an invalid environment failure from command execution. Pins the ENG-92154 fix path: 'hide/show an element until a field is entered' is a page business rule, not a visible-bound-attribute handler.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool binds an is-filled-in show/hide payload")]
@@ -932,6 +967,33 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 				new Dictionary<string, object?> {
 					["type"] = "hide-element",
 					["items"] = new object[] { "ReminderLabel" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateSysSettingConditionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Hide shipping address when equipment delivery is disabled",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = new Dictionary<string, object?> {
+							["type"] = "SysSetting",
+							["sysSettingName"] = "DisableEquipmentDelivery"
+						},
+						["comparisonType"] = "equal",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "Const",
+							["value"] = true
+						}
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "hide-element",
+					["items"] = new object[] { "ShippingAddress" }
 				}
 			}
 		};

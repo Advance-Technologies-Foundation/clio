@@ -91,6 +91,15 @@ public interface ISysSettingsManager
 
 	Guid? FindSchemaUIdByName(string schemaName);
 
+	/// <summary>
+	/// Resolves a sys-setting's definition metadata by code: its <c>ValueTypeName</c> and, for Lookup
+	/// settings, the referenced entity schema name. Returns <c>null</c> when no setting with the given
+	/// code exists on the environment. Used by the business-rule engine to type a system-setting
+	/// condition operand.
+	/// </summary>
+	/// <param name="code">The unique code identifier of the system setting.</param>
+	(string ValueTypeName, string? ReferenceSchemaName)? GetSysSettingTypeByCode(string code);
+
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "Text");
 
 	/// <summary>
@@ -286,7 +295,7 @@ public class SysSettingsManager : ISysSettingsManager
 			.Models<SysSchema>()
 			.Where(i => i.UId == uid)
 			.ToList().FirstOrDefault();
-		return sysSchema.Name;
+		return sysSchema?.Name;
 	}
 	
 
@@ -451,6 +460,14 @@ public class SysSettingsManager : ISysSettingsManager
 				if (!isGuid) {
 					Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
 					string entityName = GetSysSchemaNameByUid(referenceSchemaUIduid);
+					if (string.IsNullOrEmpty(entityName)) {
+						// GetSysSchemaNameByUid returns null when the reference schema cannot be resolved.
+						// Fail loudly instead of resolving the display value against a null root schema,
+						// which would silently write Guid.Empty and clear the lookup.
+						_logger.WriteError(
+							$"SysSettings with code: {code} is not updated. Reference schema for the lookup could not be resolved.");
+						return false;
+					}
 					Guid entityId = GetEntityIdByDisplayValue(entityName, stringValue);
 					stringValue = entityId.ToString();
 				}
@@ -580,6 +597,21 @@ public class SysSettingsManager : ISysSettingsManager
 			.Where(s => s.Name == schemaName)
 			.AsEnumerable().FirstOrDefault();
 		return sysSchema?.UId;
+	}
+
+	/// <inheritdoc cref="ISysSettingsManager.GetSysSettingTypeByCode" />
+	public (string ValueTypeName, string? ReferenceSchemaName)? GetSysSettingTypeByCode(string code) {
+		if (string.IsNullOrWhiteSpace(code)) {
+			return null;
+		}
+		SysSettings sysSetting = GetSysSettingByCode(code);
+		if (sysSetting is null) {
+			return null;
+		}
+		string referenceSchemaName = sysSetting.ReferenceSchemaUIdId != Guid.Empty
+			? GetSysSchemaNameByUid(sysSetting.ReferenceSchemaUIdId)
+			: null;
+		return (sysSetting.ValueTypeName, referenceSchemaName);
 	}
 
 	public List<SysSettings> GetAllSysSettingsWithValues(bool includeBinary = false) {

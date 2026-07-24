@@ -383,6 +383,7 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
+		services.AddTransient<ISysSettingConditionOperandResolver, SysSettingConditionOperandResolver>();
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
@@ -766,6 +767,7 @@ public class BindingsModule {
 		services.AddTransient<ConsoleProgressbar>();
 		services.AddTransient<ApplicationLogProvider>();
 		services.AddTransient<LastCompilationLogCommand>();
+		services.AddTransient<WatchCompilationCommand>();
 		services.AddTransient<LinkWorkspaceWithTideRepositoryCommand>();
 		services.AddTransient<CheckWebFarmNodeConfigurationsCommand>();
 		services.AddTransient<GetAppHashCommand>();

@@ -35,18 +35,20 @@ internal static class SimpleToFullBusinessRuleConverter {
 		string entitySchemaName,
 		IFilterSchemaProvider? filterSchemaProvider,
 		ILookupValueResolver? lookupValueResolver,
-		JsonObject? existingRule = null) {
+		JsonObject? existingRule = null,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettings = sysSettingMap ?? EmptySysSettingOperandMap;
 		ExistingRuleIdentity? identity = existingRule is null ? null : new ExistingRuleIdentity(existingRule);
 		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? applyFilterAction)) {
-			return BuildApplyFilterRules(attributeMap, rule, applyFilterAction!, identity);
+			return BuildApplyFilterRules(attributeMap, sysSettings, rule, applyFilterAction!, identity);
 		}
 
 		if (TryGetApplyStaticFilterAction(rule, out ApplyStaticFilterBusinessRuleAction? applyStaticFilterAction)) {
 			return [BuildApplyStaticFilterRule(
-				attributeMap, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver, identity)];
+				attributeMap, sysSettings, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver, identity)];
 		}
 
-		return [ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity)];
+		return [ToMetadata(attributeMap, sysSettings, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity)];
 	}
 
 	internal static BusinessRuleMetadataDto ToMetadata(
@@ -62,31 +64,38 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		BusinessRule rule) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: null, identity: null);
+		BusinessRule rule,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) =>
+		ToMetadata(attributeMap, sysSettingMap ?? EmptySysSettingOperandMap, rule,
+			includeAttributeReferenceSchemaName: true, entitySchemaName: null, identity: null);
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		string entitySchemaName) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity: null);
+		string entitySchemaName,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) =>
+		ToMetadata(attributeMap, sysSettingMap ?? EmptySysSettingOperandMap, rule,
+			includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity: null);
 
 	internal static BusinessRuleMetadataDto ToPageMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		JsonObject? existingRule = null) {
+		JsonObject? existingRule = null,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
 		ExistingRuleIdentity? identity = existingRule is null ? null : new ExistingRuleIdentity(existingRule);
-		return ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: false, entitySchemaName: null, identity);
+		return ToMetadata(attributeMap, sysSettingMap ?? EmptySysSettingOperandMap, rule,
+			includeAttributeReferenceSchemaName: false, entitySchemaName: null, identity);
 	}
 
 	private static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRule rule,
 		bool includeAttributeReferenceSchemaName,
 		string? entitySchemaName,
 		ExistingRuleIdentity? identity) {
 		string ruleUId = identity?.RuleUId ?? Guid.NewGuid().ToString();
-		BusinessRuleCaseMetadataDto @case = BuildCase(attributeMap, rule, includeAttributeReferenceSchemaName, entitySchemaName, identity);
+		BusinessRuleCaseMetadataDto @case = BuildCase(attributeMap, sysSettingMap, rule, includeAttributeReferenceSchemaName, entitySchemaName, identity);
 		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(attributeMap, rule, entitySchemaName, identity);
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
@@ -101,6 +110,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static BusinessRuleCaseMetadataDto BuildCase(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRule rule,
 		bool includeAttributeReferenceSchemaName,
 		string? entitySchemaName,
@@ -108,7 +118,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
 			UId = identity?.CaseUId ?? Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName, identity),
+			Condition = BuildConditionGroup(attributeMap, sysSettingMap, rule.Condition, includeAttributeReferenceSchemaName, identity),
 			Actions = rule.Actions
 				.Select(action => BuildAction(attributeMap, action, includeAttributeReferenceSchemaName, entitySchemaName))
 				.ToList()
@@ -117,6 +127,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static BusinessRuleGroupConditionMetadataDto BuildConditionGroup(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRuleConditionGroup group,
 		bool includeAttributeReferenceSchemaName,
 		ExistingRuleIdentity? identity = null) {
@@ -125,23 +136,24 @@ internal static class SimpleToFullBusinessRuleConverter {
 			UId = identity?.GroupConditionUId ?? Guid.NewGuid().ToString(),
 			LogicalOperation = string.Equals(group.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase) ? LogicalOr : LogicalAnd,
 			Conditions = (group.Conditions ?? [])
-				.Select(condition => BuildCondition(attributeMap, condition, includeAttributeReferenceSchemaName))
+				.Select(condition => BuildCondition(attributeMap, sysSettingMap, condition, includeAttributeReferenceSchemaName))
 				.ToList()
 		};
 	}
 
 	private static BusinessRuleConditionMetadataDto BuildCondition(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRuleCondition condition,
 		bool includeAttributeReferenceSchemaName) {
 		bool hasRight = RequiresRightExpression(condition.ComparisonType);
 
-		// Each operand can be an AttributeValue, Const, or SysValue. The data value type and
+		// Each operand can be an AttributeValue, Const, SysValue, or SysSetting. The data value type and
 		// reference schema of a Const operand are inferred from the OTHER (typed) operand, so
 		// resolve both sides first.
-		OperandTypeContext? leftType = ResolveOperandTypeContext(attributeMap, condition.LeftExpression);
+		OperandTypeContext? leftType = ResolveOperandTypeContext(attributeMap, sysSettingMap, condition.LeftExpression);
 		OperandTypeContext? rightType = hasRight
-			? ResolveOperandTypeContext(attributeMap, condition.RightExpression!)
+			? ResolveOperandTypeContext(attributeMap, sysSettingMap, condition.RightExpression!)
 			: null;
 		OperandTypeContext fallback = leftType?.AsValueType() ?? rightType?.AsValueType() ?? OperandTypeContext.Text;
 
@@ -151,12 +163,14 @@ internal static class SimpleToFullBusinessRuleConverter {
 			ComparisonType = MapComparisonType(condition.ComparisonType),
 			LeftExpression = BuildOperandExpression(
 				attributeMap,
+				sysSettingMap,
 				condition.LeftExpression,
 				rightType?.AsValueType() ?? fallback,
 				includeAttributeReferenceSchemaName),
 			RightExpression = hasRight
 				? BuildOperandExpression(
 					attributeMap,
+					sysSettingMap,
 					condition.RightExpression!,
 					leftType?.AsValueType() ?? fallback,
 					includeAttributeReferenceSchemaName)
@@ -166,11 +180,12 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	/// <summary>
 	/// Resolves the data value type and reference schema carried by a typed operand
-	/// (AttributeValue or SysValue). Returns <c>null</c> for a Const operand, which has no
+	/// (AttributeValue, SysValue, or SysSetting). Returns <c>null</c> for a Const operand, which has no
 	/// intrinsic type and inherits its type from the operand it is compared against.
 	/// </summary>
 	private static OperandTypeContext? ResolveOperandTypeContext(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRuleExpression expression) {
 		if (string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			BusinessRuleAttributeDescriptor descriptor = attributeMap[expression.Path!];
@@ -182,11 +197,17 @@ internal static class SimpleToFullBusinessRuleConverter {
 			return new OperandTypeContext(sysValue.DataValueTypeName, sysValue.ReferenceSchemaName);
 		}
 
+		if (string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)
+			&& sysSettingMap.TryGetValue(expression.SysSettingName!, out SysSettingOperandDescriptor? sysSetting)) {
+			return new OperandTypeContext(sysSetting.DataValueTypeName, sysSetting.ReferenceSchemaName);
+		}
+
 		return null;
 	}
 
 	private static BusinessRuleExpressionMetadataDto BuildOperandExpression(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRuleExpression expression,
 		OperandTypeContext constValueType,
 		bool includeAttributeReferenceSchemaName) {
@@ -201,12 +222,30 @@ internal static class SimpleToFullBusinessRuleConverter {
 				expression.UId);
 		}
 
+		if (string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			// The service resolves every referenced setting's type before conversion, so a missing entry
+			// is an invariant violation: fail loudly rather than persist an untyped (Text) operand.
+			if (!sysSettingMap.TryGetValue(expression.SysSettingName!, out SysSettingOperandDescriptor? sysSetting)) {
+				throw new InvalidOperationException(
+					$"System setting '{expression.SysSettingName}' was not resolved for the business rule.");
+			}
+
+			return new BusinessRuleExpressionMetadataDto {
+				TypeName = BusinessRuleSysSettingExpressionTypeName,
+				UId = ResolveBlockUId(expression.UId),
+				Type = SysSettingExpressionType,
+				DataValueTypeName = sysSetting.DataValueTypeName,
+				ReferenceSchemaName = sysSetting.ReferenceSchemaName,
+				SysSettingName = expression.SysSettingName
+			};
+		}
+
 		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			// Persist the canonical catalog name rather than the caller-supplied casing: the
 			// validator accepts the name case-insensitively, but the platform resolves system
 			// variables by exact name at runtime, so a casing variant must be normalized here.
 			OperandTypeContext sysValueType =
-				ResolveOperandTypeContext(attributeMap, expression) ?? OperandTypeContext.Text;
+				ResolveOperandTypeContext(attributeMap, sysSettingMap, expression) ?? OperandTypeContext.Text;
 			string sysValueName =
 				SupportedSystemVariables.TryGetValue(expression.SysValueName!, out SystemVariableDescriptor? descriptor)
 					? descriptor.SysValueName
@@ -407,6 +446,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static IReadOnlyList<BusinessRuleMetadataDto> BuildApplyFilterRules(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRule rule,
 		ApplyFilterBusinessRuleAction action,
 		ExistingRuleIdentity? identity = null) {
@@ -423,6 +463,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 			Caption = rule.Caption.Trim(),
 			Cases = [BuildApplyFilterParentCase(
 				attributeMap,
+				sysSettingMap,
 				rule,
 				action,
 				normalizedTargetFilterPath,
@@ -457,6 +498,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static BusinessRuleCaseMetadataDto BuildApplyFilterParentCase(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRule rule,
 		ApplyFilterBusinessRuleAction action,
 		string normalizedTargetFilterPath,
@@ -468,7 +510,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
 			UId = identity?.CaseUId ?? Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true, identity),
+			Condition = BuildConditionGroup(attributeMap, sysSettingMap, rule.Condition, includeAttributeReferenceSchemaName: true, identity),
 			Actions = [
 				new BusinessRuleFilterLookupActionMetadataDto {
 					TypeName = BusinessRuleFilterLookupElementTypeName,
@@ -729,6 +771,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static BusinessRuleMetadataDto BuildApplyStaticFilterRule(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap,
 		BusinessRule rule,
 		ApplyStaticFilterBusinessRuleAction action,
 		IFilterSchemaProvider? filterSchemaProvider,
@@ -761,7 +804,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 		BusinessRuleCaseMetadataDto @case = new() {
 			TypeName = BusinessRuleCaseTypeName,
 			UId = identity?.CaseUId ?? Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true, identity),
+			Condition = BuildConditionGroup(attributeMap, sysSettingMap, rule.Condition, includeAttributeReferenceSchemaName: true, identity),
 			Actions = [setFilterAction]
 		};
 
