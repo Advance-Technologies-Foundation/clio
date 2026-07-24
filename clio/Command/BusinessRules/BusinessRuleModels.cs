@@ -83,7 +83,7 @@ public sealed record BusinessRuleCondition
     }
 
     [JsonPropertyName("leftExpression")]
-    [Description("Left expression. Must be an attribute reference with type AttributeValue.")]
+    [Description("Left expression. Supports AttributeValue, SysValue, or SysSetting.")]
     [Required]
     public BusinessRuleExpression LeftExpression { get; init; } = null!;
 
@@ -95,7 +95,7 @@ public sealed record BusinessRuleCondition
 
     [JsonPropertyName("rightExpression")]
     [Description(
-        "Right expression. Supports AttributeValue, Const, or SysValue for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
+        "Right expression. Supports AttributeValue, Const, SysValue, or SysSetting for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
     public BusinessRuleExpression? RightExpression { get; init; }
 
     [JsonPropertyName("uId")]
@@ -114,17 +114,19 @@ public sealed record BusinessRuleExpression
         string? path = null,
         JsonElement? value = null,
         string? expression = null,
-        string? sysValueName = null)
+        string? sysValueName = null,
+        string? sysSettingName = null)
     {
         Type = type;
         Path = path;
         Value = value;
         Expression = expression;
         SysValueName = sysValueName;
+        SysSettingName = sysSettingName;
     }
 
     [JsonPropertyName("type")]
-    [Description("Expression type. Supported values: AttributeValue, Const, Formula, SysValue.")]
+    [Description("Expression type. Supported values: AttributeValue, Const, Formula, SysValue, SysSetting.")]
     [Required]
     public string Type { get; init; } = null!;
 
@@ -151,6 +153,14 @@ public sealed record BusinessRuleExpression
     [Description(
         "System variable name when type is SysValue. A SysValue may be on either side of a condition. Supported values: CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime), CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (ObjectList of SysAdminUnit roles; use comparisonType contain/not-contain against a role). Both operands must resolve to the same data value type, and lookup operands must reference the same schema.")]
     public string? SysValueName { get; init; }
+
+    /// <summary>
+    /// System-setting code when <see cref="Type"/> is <c>SysSetting</c>.
+    /// </summary>
+    [JsonPropertyName("sysSettingName")]
+    [Description(
+        "System-setting code when type is SysSetting (for example 'DisableEquipmentDelivery'). A SysSetting may be on either side of a condition. The setting's data value type is resolved from the target environment and both operands must resolve to the same data value type (lookup operands must reference the same schema). Binary and SecureText settings are not supported as a condition operand.")]
+    public string? SysSettingName { get; init; }
 
     [JsonPropertyName("uId")]
     [Description("Stable expression identity (GUID). Pass the value returned by read back on update to preserve block identity; omit on create to generate a fresh id.")]

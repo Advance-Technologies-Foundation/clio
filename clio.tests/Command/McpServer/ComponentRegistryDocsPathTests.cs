@@ -14,7 +14,10 @@ public sealed class ComponentRegistryDocsPathTests {
 	[TestCase("docs/A_B-C.0.1.md")]
 	[TestCase("request-docs/close-page.request.md")]
 	[TestCase("request-docs/some-folder/nested.request.md")]
-	[Description("Well-formed docs paths emitted by the producer pass the validator unchanged — both the component docs/ namespace and the request-docs/ namespace referenced from RequestRegistry.json.")]
+	[TestCase("mobile-docs/mobile-button.component.md")]
+	[TestCase("mobile-request-docs/mobile-close-page.request.md")]
+	[TestCase("mobile-request-docs/mobile-run-business-process.request.md")]
+	[Description("Well-formed docs paths emitted by the producer pass the validator unchanged — all four documentation namespaces: component docs/, mobile-docs/ (mobile components), request-docs/ (web requests), and mobile-request-docs/ (mobile requests).")]
 	public void TryNormalise_Accepts_WellFormed_Paths(string input) {
 		bool ok = ComponentRegistryDocsPath.TryNormalise(input, out string normalised);
 
@@ -29,6 +32,9 @@ public sealed class ComponentRegistryDocsPathTests {
 	[TestCase("https://academy.creatio.com/api/mcp/8.3.4/docs/data-grid.component.md", Description = "Full URLs are rejected — only relative repo paths are allowed.")]
 	[TestCase("not-docs/data-grid.component.md", Description = "Must start with the docs/ or request-docs/ namespace.")]
 	[TestCase("requests-docs/close-page.request.md", Description = "Near-miss namespace (requests-docs) is rejected — only the exact request-docs/ prefix is allowed.")]
+	[TestCase("mobile-doc/mobile-button.component.md", Description = "Near-miss (mobile-doc, missing trailing 's') is rejected — only the exact mobile-docs/ prefix is allowed.")]
+	[TestCase("mobile-request-doc/mobile-close-page.request.md", Description = "Near-miss (mobile-request-doc, missing trailing 's') is rejected — only the exact mobile-request-docs/ prefix is allowed.")]
+	[TestCase("mobile-requests-docs/mobile-close-page.request.md", Description = "Near-miss (mobile-requests-docs, extra 's' on 'request') is rejected — only the exact mobile-request-docs/ prefix is allowed.")]
 	[TestCase("request-docs/../docs/escape.md", Description = "Embedded ../ in the request-docs namespace is blocked.")]
 	[TestCase("docs/data-grid.component", Description = "Must end with .md (extension is part of the contract).")]
 	[TestCase("docs/data-grid component.md", Description = "Spaces are not part of the allowed character class.")]

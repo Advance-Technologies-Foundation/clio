@@ -143,6 +143,9 @@
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />
+		<!-- PowerShell brings this package transitively. Pin the audited dependency graph for every target;
+		     framework-provided assemblies still require a current installed ASP.NET Core runtime. -->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
 		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />
 		<PackageReference Include="OneOf" />
