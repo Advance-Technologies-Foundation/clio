@@ -12,36 +12,34 @@ namespace Clio.Tests.Command;
 public sealed class PageBusinessRuleValidatorTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects datasource paths in left page condition expressions before shared attribute validation.")]
-	public void Validate_Should_Reject_Left_Datasource_Path() {
+	[Description("Accepts a datasource-scoped left condition path that resolves to a data source column not surfaced on the page.")]
+	public void Validate_Should_Accept_Left_Datasource_Scoped_Path() {
 		// Arrange
 		BusinessRule rule = CreatePageRule(
-			leftPath: "PDS.Name");
+			leftPath: "PDS.CreatedOn");
 
 		// Act
-		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateScopedAttributeMap(), CreateElementNames());
 
 		// Assert
-		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].leftExpression.path must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path 'PDS.Name'.",
-				because: "page rules must target declared view-model attributes rather than datasource paths");
+		act.Should().NotThrow(
+			because: "a page condition may reference a data source column that is not on the page via the '<dataSource>.<column>' path");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects datasource paths in right page condition attribute expressions before shared attribute validation.")]
-	public void Validate_Should_Reject_Right_Datasource_Path() {
+	[Description("Accepts a datasource-scoped right condition path when both operands resolve to the same data value type.")]
+	public void Validate_Should_Accept_Right_Datasource_Scoped_Path() {
 		// Arrange
 		BusinessRule rule = CreatePageRule(
-			rightExpression: new BusinessRuleExpression("AttributeValue", "PDS.Status"));
+			rightExpression: new BusinessRuleExpression("AttributeValue", "PDS.UsrText"));
 
 		// Act
-		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateScopedAttributeMap(), CreateElementNames());
 
 		// Assert
-		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.path must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path 'PDS.Status'.",
-				because: "right-side page attribute comparisons must also use declared page attribute names");
+		act.Should().NotThrow(
+			because: "a right-side page condition operand may also reference a data-source-scoped column not on the page");
 	}
 
 	[Test]
@@ -158,6 +156,13 @@ public sealed class PageBusinessRuleValidatorTests {
 		new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
 			["PDS_Name"] = new("PDS_Name", "Text", null),
 			["PDS_Status"] = new("PDS_Status", "Text", null)
+		};
+
+	private static IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> CreateScopedAttributeMap() =>
+		new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+			["PDS_Name"] = new("PDS_Name", "Text", null),
+			["PDS.CreatedOn"] = new("CreatedOn", "DateTime", null, "PDS"),
+			["PDS.UsrText"] = new("UsrText", "Text", null, "PDS")
 		};
 
 	private static IReadOnlySet<string> CreateElementNames() =>

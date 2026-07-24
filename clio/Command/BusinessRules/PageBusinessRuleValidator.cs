@@ -28,7 +28,6 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames,
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
-		RejectDatasourcePaths(rule);
 		try {
 			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames), sysSettingMap);
 		} catch (ArgumentException exception) {
@@ -63,23 +62,6 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 				}
 			}
 		};
-
-	private static void RejectDatasourcePaths(BusinessRule rule) {
-		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
-			RejectDatasourcePath(condition.LeftExpression, "rule.condition.conditions[*].leftExpression.path");
-			if (condition.RightExpression is not null
-				&& string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-				RejectDatasourcePath(condition.RightExpression, "rule.condition.conditions[*].rightExpression.path");
-			}
-		}
-	}
-
-	private static void RejectDatasourcePath(BusinessRuleExpression? expression, string fieldName) {
-		if (expression?.Path?.Contains('.', StringComparison.Ordinal) == true) {
-			throw new ArgumentException(
-				$"{fieldName} must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path '{expression.Path}'.");
-		}
-	}
 
 	private static string AppendCandidateHint(
 		string message,

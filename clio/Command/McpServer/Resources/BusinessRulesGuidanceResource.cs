@@ -66,7 +66,8 @@ public sealed class BusinessRulesGuidanceResource {
 		          - Tool: `create-page-business-rules`
 		          - Supported actions: hide-element, show-element, make-editable, make-read-only, make-required, make-optional.
 		          - Use when the rule should apply only on a specific page.
-		          - Element names come from `get-page` bundle.viewConfig (recursive). Attribute names come from bundle.viewModelConfig.attributes.
+		          - Element names come from `get-page` bundle.viewConfig (recursive). Condition attribute names come from bundle.viewModelConfig.attributes; a data source column that is NOT surfaced on the page is addressed in a condition as `<dataSource>.<column>` (data source names come from bundle.modelConfig.dataSources).
+		          - Page parameters are a condition source too, exposed through the system `PageParameters` scope. The authoritative list is `get-page` bundle.parameters[] (each entry has `name` + `dataValueType` + `caption`); it includes EVERY parameter, even one not bound to any control (so not present in viewModelConfig.attributes or modelConfig.dataSources). Address a page parameter in a condition as `PageParameters.<ParameterName>` (same `<scope>.<name>` shape as a data source column) — prefer this form: it is uniform and works for every parameter, including ones not bound to a control. A parameter that IS bound to a control is additionally addressable by its raw viewModelConfig attribute name (e.g. `PageParameters_<Name>_<hash>`), but `PageParameters.<ParameterName>` is the recommended, portable form.
 
 		       Rule lifecycle (read / update / delete)
 		       - Six maintenance tools complete the CRUD matrix: `read-entity-business-rules` / `read-page-business-rules`, `update-entity-business-rules` / `update-page-business-rules`, `delete-entity-business-rules` / `delete-page-business-rules`.
