@@ -6868,3 +6868,12 @@ Discovery: bug-detector confirmed linear traversal cost, no exception risk, only
 Files: clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs (now +7)
 Verification: PageBodyAstLinter 26/26 (net8+net10); config.filters E2E green through real MCP transport (511ms).
 Impact: Review gate 1 (pre-PR) cleared; diff hardened before opening PR.
+
+## 2026-07-23 – ENG-93867 PR #972 Codex review — validate & fix
+Context: /validate-and-fix-review-comments on clio PR #972. Codex bot left 2 inline P2 findings (SonarQube passed, no human comments). Both validated CONFIRMED against source.
+Decision:
+- RC-1 (discoverability): related-list guidance gained static-filter capability but its catalog description (GuidanceCatalog.cs), [Description] (RelatedListGuidanceResource.cs), and the routing map (RoutingGuidanceResource.cs) still advertised only dependencies-scoping — agents asking for a "static filter" were routed to business-rule-filters. Fixed: updated both descriptions to name the _PredefinedFilter/filterAttributes mechanism + config.filters anti-pattern; added a Pages routing row -> related-list for "detail / filter a list / static business filter"; disambiguated the business-rule-filters row.
+- RC-2 (lint false-negative): rule required type=="crt.EntityDataSource" + inline config in the SAME object, so a split/narrower diff merge evaded it. Re-keyed detection off the config SIGNATURE (filters + entitySchemaName in one object) — catches inline full descriptor AND split-descriptor-with-schema; no IndicatorWidget false-positive (providing uses schemaName, not entitySchemaName). Residual gap documented: a filters-only merge into a [...,"config"] path with no co-located entitySchemaName needs diff-path semantics (out of scope for a Warning).
+Files: clio/Command/McpServer/Resources/{GuidanceCatalog,RelatedListGuidanceResource,RoutingGuidanceResource}.cs, clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs (replaced type-gate test with split-descriptor test; anchor test now carries entitySchemaName)
+Verification: linter+guidance 114/114 (net8+net10); config.filters E2E green.
+Impact: static-filter guidance now discoverable via routing/description; lint catches split-descriptor config.filters. NOT yet committed — awaiting approval to push to PR #972.

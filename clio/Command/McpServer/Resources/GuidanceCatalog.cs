@@ -157,7 +157,7 @@ internal static class GuidanceCatalog {
 				RecordRightsGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
-				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
+				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it: master-detail scoping by the current page record (declarative modelConfig.dependencies — no handler) AND applying a STATIC business filter to the list (the <CollectionAttr>_PredefinedFilter attribute via filterAttributes — never config.filters on the datasource). Fetch the 'Expanded list' composite structure via get-component-info.",
 				RelatedListGuidanceResource.Guide),
 			["related-page-binding"] = Create(
 				"related-page-binding",

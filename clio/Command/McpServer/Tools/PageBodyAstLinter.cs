@@ -272,48 +272,46 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
-	// Rule 11: a `crt.EntityDataSource` descriptor that carries a `config.filters` block.
-	// The EntityDataSource consumes ONLY `entitySchemaName` and `attributes` from its
-	// `config`; `config.filters` is never read at runtime, so update-page persists it and
-	// returns success while the list silently shows UNFILTERED data (ENG-93867). Keyed off
-	// the object shape (`type` literal == "crt.EntityDataSource" AND a `config`
-	// ObjectExpression owning a DIRECT `filters` key), NOT tree position — no valid Freedom
-	// Designer output uses this key, so the match surface is exact. No regex counterpart in
-	// SchemaValidationService — the invalid shape is JSON-structural, not a text pattern the
-	// regex layer inspects. Warning severity: the block is an invisible no-op, not a
-	// structural break, so it must not fail the write.
+	// Rule 11: a `crt.EntityDataSource` config that carries a `filters` block. The EntityDataSource
+	// consumes ONLY `entitySchemaName` and `attributes` from its `config`; a `filters` key there is
+	// never read at runtime, so update-page persists it and returns success while the list silently
+	// shows UNFILTERED data (ENG-93867).
+	//
+	// Keyed off the config SIGNATURE — an object holding BOTH a `filters` key and an `entitySchemaName`
+	// key — rather than the enclosing `type: "crt.EntityDataSource"` descriptor. This matches the config
+	// object whether it is emitted inline inside the full descriptor (`{ type, scope, config: { … } }`)
+	// OR carried by a separate/narrower diff `merge` op that splits the descriptor from its config (the
+	// config merge still carries `entitySchemaName` alongside the ignored `filters`). `entitySchemaName`
+	// is unique to an EntityDataSource config, so this does NOT fire on a `crt.IndicatorWidget`'s
+	// `config.data.providing.filters` — that object exposes `schemaName`, never `entitySchemaName`.
+	//
+	// Known residual gap: a `filters`-ONLY narrow merge into a `[…, "config"]` path, with no co-located
+	// `entitySchemaName`, is not flagged — catching that needs diff-path semantics, out of scope for this
+	// AST-shape Warning (the common inline + split-with-schema shapes ARE covered). No regex counterpart
+	// in SchemaValidationService — the invalid shape is JSON-structural. Warning severity: an invisible
+	// no-op, not a structural break, so it must not fail the write.
 	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, List<PageBodyLintFinding> findings) {
-		Property configProp = null;
-		bool isEntityDataSource = false;
+		Property filtersProp = null;
+		bool hasEntitySchemaName = false;
 		foreach (Node element in obj.Properties) {
 			if (!TryGetInitProperty(element, out Property prop, out string key)) {
 				continue;
 			}
-			if (key == "type" && prop.Value is Literal { Value: "crt.EntityDataSource" }) {
-				isEntityDataSource = true;
-			} else if (key == "config" && prop.Value is ObjectExpression) {
-				configProp = prop;
+			if (key == "filters") {
+				filtersProp = prop;
+			} else if (key == "entitySchemaName") {
+				hasEntitySchemaName = true;
 			}
 		}
-		if (!isEntityDataSource || configProp is null) {
+		if (filtersProp is null || !hasEntitySchemaName) {
 			return;
 		}
-		var configObj = (ObjectExpression)configProp.Value;
-		foreach (Node element in configObj.Properties) {
-			if (!TryGetInitProperty(element, out Property filtersProp, out string configKey)) {
-				continue;
-			}
-			if (configKey != "filters") {
-				continue;
-			}
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleEntityDataSourceStaticFilters,
-				Severity: LintSeverity.Warning,
-				Line: filtersProp.Location.Start.Line,
-				Column: filtersProp.Location.Start.Column + 1,
-				Message: "`config.filters` on a `crt.EntityDataSource` is never applied — the data source reads only `entitySchemaName` and `attributes`. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
-			return; // one finding per data source is enough
-		}
+		findings.Add(new PageBodyLintFinding(
+			Rule: RuleEntityDataSourceStaticFilters,
+			Severity: LintSeverity.Warning,
+			Line: filtersProp.Location.Start.Line,
+			Column: filtersProp.Location.Start.Column + 1,
+			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — the data source reads only `entitySchemaName` and `attributes`. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
 	}
 
 	// CheckProperty intentionally has no rules left: `params-empty` and
