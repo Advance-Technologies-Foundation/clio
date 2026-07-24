@@ -1078,6 +1078,28 @@ public sealed class PageCreateResponse {
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
 
+	/// <summary>
+	/// The app's design (editing) package UId, when it differs from <see cref="PackageUId"/>. Present only
+	/// when the chosen package is not the design package — see <see cref="WillCreateReplacingInDesignPackage"/>.
+	/// </summary>
+	[DataMember(Name = "designPackageUId")]
+	[JsonProperty("designPackageUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("designPackageUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string DesignPackageUId { get; set; }
+
+	/// <summary>
+	/// True when the chosen <see cref="PackageUId"/> is not the app's design package. A subsequent
+	/// <c>update-page</c> WITHOUT <c>target-schema-uid</c> would then materialize a replacing schema in the
+	/// design package and leave THIS freshly-created schema empty (for a mobile page that empty base crashes
+	/// the Creatio Mobile app). Callers should pass <c>target-schema-uid=&lt;schemaUId&gt;</c> on update-page.
+	/// </summary>
+	[DataMember(Name = "willCreateReplacingInDesignPackage")]
+	[JsonProperty("willCreateReplacingInDesignPackage", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("willCreateReplacingInDesignPackage")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? WillCreateReplacingInDesignPackage { get; set; }
+
 	[DataMember(Name = "note")]
 	[JsonProperty("note", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("note")]

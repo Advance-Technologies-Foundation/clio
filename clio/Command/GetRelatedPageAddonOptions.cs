@@ -22,6 +22,9 @@ namespace Clio.Command {
 
 		[Option("package-name", Required = true, HelpText = "Package that owns the add-on configuration")]
 		public string PackageName { get; set; }
+
+		[Option("schema-type", Required = false, HelpText = "Which add-on to read: 'web' (RelatedPage, default) or 'mobile' (MobileRelatedPage)")]
+		public string SchemaType { get; set; }
 	}
 
 	/// <summary>
@@ -53,7 +56,8 @@ namespace Clio.Command {
 			}
 			try {
 				RelatedPageAddonReadResult result = _relatedPageAddonService.Get(
-					new RelatedPageAddonReadRequest(options.PackageName, options.EntitySchemaName));
+					new RelatedPageAddonReadRequest(options.PackageName, options.EntitySchemaName,
+						RelatedPageSchemaTypeParser.Parse(options.SchemaType)));
 
 				response = new GetRelatedPageAddonResponse {
 					Success = true,

@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -28,6 +29,7 @@ public static class SchemaValidationService
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
+	private const string PathPropertyName = "path";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -239,6 +241,12 @@ public static class SchemaValidationService
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
+
+		SchemaValidationResult dsAttrTypeResult = ValidateMobileDataSourceAttributeTypes(body);
+		if (!dsAttrTypeResult.IsValid) errors.AddRange(dsAttrTypeResult.Errors);
+
+		SchemaValidationResult insertedLabelResult = ValidateMobileInsertedFieldLabels(body);
+		if (!insertedLabelResult.IsValid) errors.AddRange(insertedLabelResult.Errors);
 
 		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
 		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
@@ -565,6 +573,153 @@ public static class SchemaValidationService
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Validates data-source attributes in a mobile body: a related/lookup-path attribute (its <c>path</c>
+	/// contains a dot, e.g. <c>QualifiedContact.JobTitle</c>) MUST declare a <c>type</c> (e.g.
+	/// <c>ForwardReference</c>). Without it the design-time data schema never registers the attribute and its
+	/// binding resolves to nothing in Mobile Designer (<c>Item with the path … not found</c>). Scans the whole
+	/// body so it also covers list / viewElement-scoped data sources, not just the page data source.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when a lookup-path attribute has no type.</returns>
+	public static SchemaValidationResult ValidateMobileDataSourceAttributeTypes(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			ScanDataSourceAttributeTypes(document.RootElement, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Recursively finds every <c>attributes</c> map and flags any attribute whose direct <c>path</c> is a
+	/// related/lookup path (contains a dot) but is missing <c>type</c>. Attribute maps in viewModelConfig use
+	/// <c>modelConfig.path</c> (no direct <c>path</c>) and own columns have a dot-free path — neither is flagged.
+	/// </summary>
+	private static void ScanDataSourceAttributeTypes(JsonElement element, SchemaValidationResult result) {
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					if (string.Equals(property.Name, AttributesPropertyName, StringComparison.OrdinalIgnoreCase) &&
+						property.Value.ValueKind == JsonValueKind.Object) {
+						CheckDataSourceAttributes(property.Value, result);
+					}
+					ScanDataSourceAttributeTypes(property.Value, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					ScanDataSourceAttributeTypes(item, result);
+				}
+				break;
+		}
+	}
+
+	private static void CheckDataSourceAttributes(JsonElement attributes, SchemaValidationResult result) {
+		foreach (JsonProperty attr in attributes.EnumerateObject()) {
+			if (attr.Value.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!attr.Value.TryGetProperty(PathPropertyName, out JsonElement pathEl) ||
+				pathEl.ValueKind != JsonValueKind.String) {
+				continue; // not a data-source attribute (a viewModel attribute uses modelConfig.path)
+			}
+			string? path = pathEl.GetString();
+			if (string.IsNullOrEmpty(path) || !path.Contains('.')) {
+				continue; // own column (dot-free path) — no related-column type required
+			}
+			if (attr.Value.TryGetProperty(TypePropertyName, out _)) {
+				continue; // type present — OK
+			}
+			result.Errors.Add(
+				$"\"{attr.Name}\" has a related path \"{path}\" but no \"type\" (expected \"ForwardReference\" " +
+				"or other valid related-column type). The binding may resolve to nothing in Mobile Designer " +
+				"(\"Item with the path … not found\").");
+		}
+	}
+
+	/// <summary>
+	/// Validates that every standard FIELD component INSERTED into a mobile page (a top-level
+	/// <c>viewConfigDiff</c> entry with <c>operation: "insert"</c> whose type is in
+	/// <see cref="StandardFieldComponentTypes"/>) declares a non-empty <c>label</c>. A mobile field renders
+	/// its caption ONLY via <c>label</c>; an inserted field without one renders blank. Only top-level inserts
+	/// are checked, so fields nested inside a list's <c>itemLayout.body</c> (which legitimately omit labels)
+	/// are not flagged, and <c>merge</c> entries (partial updates) are skipped. A field that explicitly hides
+	/// its label (<c>labelPosition: "hidden"</c>) is allowed.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when an inserted field has no label.</returns>
+	[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "A single-pass walk over the diff that only flags labelless top-level field inserts; splitting the guard conditions would obscure the exact rule.")]
+	public static SchemaValidationResult ValidateMobileInsertedFieldLabels(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object ||
+				!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff) ||
+				viewConfigDiff.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				if (!TryGetStringProperty(entry, "operation", out string operation) ||
+					!string.Equals(operation, "insert", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				string? type = GetMobileEntryType(entry);
+				if (type is null || !StandardFieldComponentTypes.Contains(type)) {
+					continue;
+				}
+				JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v) && v.ValueKind == JsonValueKind.Object
+					? v
+					: entry;
+				if (TryGetStringProperty(values, "label", out _)) {
+					continue; // label present
+				}
+				if (TryGetStringProperty(values, "labelPosition", out string labelPosition) &&
+					string.Equals(labelPosition, "hidden", StringComparison.OrdinalIgnoreCase)) {
+					continue; // label intentionally hidden
+				}
+				string fieldName = GetMobileEntryName(entry, values);
+				result.Errors.Add(
+					$"Field '{fieldName}' (type {type}) is inserted without a 'label'. Mobile fields render their " +
+					$"caption only via 'label' — set values.label (e.g. \"$Resources.Strings.{fieldName}\").");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static string GetMobileEntryName(JsonElement entry, JsonElement values) {
+		if (TryGetStringProperty(entry, "name", out string name)) {
+			return name;
+		}
+		return TryGetStringProperty(values, "name", out string valuesName) ? valuesName : "(unnamed)";
 	}
 
 	/// <summary>

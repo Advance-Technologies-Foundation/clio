@@ -25,7 +25,8 @@ public sealed class CreateRelatedPageAddonTool(
 		"Writes the RelatedPage add-on via AddonSchemaDesignerService and rebuilds static content. " +
 		"The pages list fully REPLACES the object's current related-page configuration; an EMPTY pages list clears all bindings (reset to inline — the effective delete). " +
 		"A GENERAL base default page is MANDATORY: always include an is-default entry with no type-column-value scoped to the general audience — the 'All employees' role (or no role) — as the page opened for a record and the fallback for any record TYPE with no dedicated set (the general base is the INTERNAL audience; portal users still need their own 'All external users' default). The default page also serves record creation, so add a separate is-add page only when you want a DIFFERENT add page. Portal ('All external users') and type-specific pages layer on top; never bind only portal, only typed, or only add pages without the general base. " +
-		"Resolve page-schema-name values with list-pages and the object/package with get-app-info. " +
+		"Set schema-type=mobile to write the MobileRelatedPage add-on instead (the object's default mobile edit page in the Creatio Mobile app) — pass a single is-default page with no role and no type-column-value; roles, record types and portal audiences are web-only. Used at the end of a web→mobile conversion to register the converted mobile form page. " +
+			"Resolve page-schema-name values with list-pages and the object/package with get-app-info. " +
 		"Call get-guidance with name related-page-binding to learn the full flow. Prefer environment-name; keep direct connection args for emergency fallback only.")]
 	public CreateRelatedPageAddonResponse CreateRelatedPageAddon(
 		[Description("Parameters: entity-schema-name, package-name, pages (required); type-column-uid optional; environment-name preferred; uri/login/password emergency fallback only.")]
@@ -47,6 +48,7 @@ public sealed class CreateRelatedPageAddonTool(
 			EntitySchemaName = args.EntitySchemaName,
 			PackageName = args.PackageName,
 			TypeColumnUId = args.TypeColumnUId,
+			SchemaType = args.SchemaType,
 			Pages = args.Pages
 				.Select(p => new RelatedPageSpec(
 					p.PageSchemaName,
@@ -111,7 +113,11 @@ public sealed record CreateRelatedPageAddonArgs(
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+
+	[property: JsonPropertyName("schema-type")]
+	[property: Description("Target UI: 'web' (RelatedPage add-on, default) or 'mobile' (MobileRelatedPage add-on — the page opened for a record in the Creatio Mobile app). For 'mobile' pass a single is-default page with no role and no type-column-value (the object's default mobile edit page); roles, record types and portal audiences are web-only concepts.")]
+	string? SchemaType = null
 );
 
 public sealed record RelatedPageArg(

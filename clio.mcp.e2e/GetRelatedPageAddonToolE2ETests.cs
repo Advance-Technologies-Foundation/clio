@@ -74,6 +74,41 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 	}
 
 	[Test]
+	[Description("Binds schema-type=mobile through the real MCP server and reports an invalid environment inside the structured response, proving the mobile MobileRelatedPage read path is on the tool contract.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-related-page-addon MCP tool binds schema-type=mobile")]
+	[AllureDescription("Starts the real clio MCP server, calls get-related-page-addon with schema-type=mobile and an intentionally missing environment, and verifies the mobile schema-type binds and the structured response reports the unresolved environment instead of an MCP binding error.")]
+	public async Task GetRelatedPageAddon_ShouldBindMobileSchemaType_AndReportInvalidEnvironment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-get-mobile-related-page-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "Custom",
+					["entity-schema-name"] = "UsrOrder",
+					["schema-type"] = "mobile"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetRelatedPageAddonResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetRelatedPageAddonResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "schema-type=mobile should bind and stay inside the structured tool response, not surface as an MCP binding error");
+		response.Success.Should().BeFalse(
+			because: "the intentionally missing environment should fail before the mobile add-on read");
+		response.Error.Should().MatchRegex(
+			$"(?is)({System.Text.RegularExpressions.Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
+			because: "the failure should come from resolving the environment, not from rejecting the mobile schema-type");
+	}
+
+	[Test]
 	[Description("Rejects a blank entity-schema-name in the structured response before any remote call.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-related-page-addon MCP tool rejects a blank entity-schema-name")]

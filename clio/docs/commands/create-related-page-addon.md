@@ -42,6 +42,7 @@ clio create-related-page-addon -e ENVIRONMENT --entity-schema-name NAME --packag
 | `--portal-default-page` | No | | Page shown by default to portal (self-service / `All external users`) users. When any portal page is set, the `--default-page` / `--add-page` set is auto-scoped to `All employees` so the internal and portal sets stay separate. |
 | `--portal-add-page` | No | `--portal-default-page` | Page portal users use when adding a record. |
 | `--type-column-uid` | No | | UId of the type column that drives type-specific page sets. Omit for a single page set. |
+| `--schema-type` | No | `web` | Target UI surface: `web` (the `RelatedPage` add-on) or `mobile` (the `MobileRelatedPage` add-on — the page the Creatio Mobile app opens for a record). The two add-ons are independent; writing one never affects the other. |
 
 ## Examples
 
@@ -73,6 +74,7 @@ clio create-related-page-addon -e dev --entity-schema-name UsrRequest --package-
   `page-schema-uid` is accepted and used as-is — so a page whose name no longer reverse-resolves still
   round-trips instead of being silently dropped. `page-schema-uid` wins over `page-schema-name` when both
   are present. (`page-schema-uid` is an MCP-only field; the scalar CLI resolves by page name.)
-- This tool manages the **desktop** related-page add-on only. Mobile pages (the `SchemaGroup.MobilePage` set)
-  are a separate add-on and are neither read nor written here, so a desktop write — including an empty-clear
-  reset — never affects the object's mobile page configuration.
+- This tool manages the **web** related-page add-on (`RelatedPage`) by default. Pass `--schema-type mobile` to
+  manage the **mobile** related-page add-on (`MobileRelatedPage`) instead — the page the Creatio Mobile app
+  opens for a record. The two add-ons are independent: a write to one (including an empty-clear reset) is
+  neither read nor written against the other, so it never affects the other surface's page configuration.

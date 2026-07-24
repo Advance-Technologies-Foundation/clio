@@ -12,6 +12,8 @@ public sealed class ComponentRegistryDocsPathTests {
 	[TestCase("docs/some-folder/nested.md")]
 	[TestCase("docs/single.md")]
 	[TestCase("docs/A_B-C.0.1.md")]
+	[TestCase("mobile-docs/mobile-folder-tree-actions.component.md")]
+	[TestCase("mobile-docs/some-folder/nested.md")]
 	[TestCase("request-docs/close-page.request.md")]
 	[TestCase("request-docs/some-folder/nested.request.md")]
 	[TestCase("mobile-docs/mobile-button.component.md")]

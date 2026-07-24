@@ -16,6 +16,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class GetRelatedPageAddonToolTests {
 	private IRelatedPageAddonService _service = null!;
 	private GetRelatedPageAddonOptions _resolverOptions;
+	private RelatedPageAddonReadRequest _capturedRead;
 	private IToolCommandResolver _commandResolver = null!;
 	private GetRelatedPageAddonTool _tool = null!;
 
@@ -23,16 +24,20 @@ public sealed class GetRelatedPageAddonToolTests {
 	public void SetUp() {
 		ConsoleLogger.Instance.ClearMessages();
 		_resolverOptions = null;
+		_capturedRead = null;
 
 		// The environment-resolved command runs for real over a mocked service (no command subclass — sealed).
 		_service = Substitute.For<IRelatedPageAddonService>();
-		_service.Get(Arg.Any<RelatedPageAddonReadRequest>()).Returns(new RelatedPageAddonReadResult(
-			"UsrDeliveryItem", "bb000000-0000-0000-0000-000000000002", "Custom",
-			"aa000000-0000-0000-0000-000000000001", "RelatedPage", null, 1,
-			new[] {
-				new RelatedPageEntry("cc000000-0000-0000-0000-00000000000a", "UsrDeliveryItemFormPage",
-					true, false, false, null, null, null)
-			}));
+		_service.Get(Arg.Any<RelatedPageAddonReadRequest>()).Returns(call => {
+			_capturedRead = call.Arg<RelatedPageAddonReadRequest>();
+			return new RelatedPageAddonReadResult(
+				"UsrDeliveryItem", "bb000000-0000-0000-0000-000000000002", "Custom",
+				"aa000000-0000-0000-0000-000000000001", "RelatedPage", null, 1,
+				new[] {
+					new RelatedPageEntry("cc000000-0000-0000-0000-00000000000a", "UsrDeliveryItemFormPage",
+						true, false, false, null, null, null)
+				});
+		});
 		GetRelatedPageAddonCommand resolvedCommand = new(_service, ConsoleLogger.Instance);
 
 		_commandResolver = Substitute.For<IToolCommandResolver>();
@@ -56,8 +61,9 @@ public sealed class GetRelatedPageAddonToolTests {
 	private static GetRelatedPageAddonArgs Args(
 		string entitySchemaName = "UsrDeliveryItem",
 		string packageName = "Custom",
-		string environmentName = "dev") =>
-		new(entitySchemaName, packageName, environmentName, null, null, null);
+		string environmentName = "dev",
+		string schemaType = null) =>
+		new(entitySchemaName, packageName, environmentName, null, null, null, schemaType);
 
 	[Test]
 	[Description("Resolves the command for the requested environment, maps the args onto the options, and returns the resolved command's read response.")]
@@ -81,6 +87,28 @@ public sealed class GetRelatedPageAddonToolTests {
 			because: "package-name maps onto the command options");
 		_resolverOptions.Environment.Should().Be("dev",
 			because: "the requested environment-name is threaded onto the command options");
+	}
+
+	[Test]
+	[Description("Maps schema-type=mobile through the options and into the RelatedPageAddonReadRequest as SchemaType.Mobile, so the read targets the MobileRelatedPage add-on; an omitted schema-type defaults to the web RelatedPage add-on.")]
+	public void GetRelatedPageAddon_ShouldMapSchemaType_OntoReadRequest() {
+		// Act — mobile read.
+		_tool.GetRelatedPageAddon(Args(schemaType: "mobile"));
+
+		// Assert
+		_resolverOptions.Should().NotBeNull(because: "the tool must resolve an environment-bound command");
+		_resolverOptions.SchemaType.Should().Be("mobile",
+			because: "the schema-type arg maps onto the command options");
+		_capturedRead.Should().NotBeNull(because: "the resolved command forwards a read request to the service");
+		_capturedRead.SchemaType.Should().Be(RelatedPageSchemaType.Mobile,
+			because: "the command parses schema-type=mobile into SchemaType.Mobile so the MobileRelatedPage add-on is read");
+
+		// Act — omitted schema-type defaults to web.
+		_tool.GetRelatedPageAddon(Args());
+
+		// Assert
+		_capturedRead.SchemaType.Should().Be(RelatedPageSchemaType.Web,
+			because: "an omitted schema-type defaults to the web RelatedPage add-on");
 	}
 
 	[Test]

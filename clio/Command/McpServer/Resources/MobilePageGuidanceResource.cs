@@ -103,7 +103,7 @@ public sealed class MobilePageGuidanceResource {
 		         - What was requested.
 		         - Why mobile cannot do it (cite the rule: e.g. "validators are not supported
 		           on mobile", "crt.DataGrid is web-only", "page body must not declare
-		           handlers", "only one data source per page").
+		           handlers").
 		         - The closest supported alternative, if any (e.g. entity-level business rule
 		           via `create-entity-business-rules`, an OOTB converter from the allowed list,
 		           a remote handler the user must implement separately and reference by name).
@@ -187,10 +187,12 @@ public sealed class MobilePageGuidanceResource {
 		       - Patch it:  { "operation": "merge", "name": "Scaffold", "values": { ... } }
 		       - Add child: { "operation": "insert", ..., "parentName": "Scaffold", "propertyName": "items" }
 
+		       viewConfigDiff INSERTS ADDRESS THE SLOT BY propertyName ONLY — never use "path" in a
+		       viewConfigDiff insert (e.g. NOT "path": ["tools"]; use "propertyName": "tools"). "path" is
+		       the addressing mechanism for viewModelConfigDiff / modelConfigDiff only; a viewConfigDiff
+		       insert that uses "path" is silently dropped by the differ.
+
 		       ─────────────────────────────────────────────────────────────
-		       ONE DATA SOURCE PER PAGE (designer constraint)
-		       ─────────────────────────────────────────────────────────────
-		       The mobile designer disables multi-data-source. Define only one data source in modelConfigDiff.
 
 		       ─────────────────────────────────────────────────────────────
 		       COMPONENT REGISTRY — MOBILE COMPONENTS ONLY (CRITICAL)
@@ -231,8 +233,10 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       ADAPTIVE BREAKPOINTS
 		       ─────────────────────────────────────────────────────────────
-		       Apply this section only when the user explicitly asks for adaptive / responsive layout.
-		       Otherwise rely on the static `columns` / `layoutConfig` values.
+		       The web→mobile conversion PROPOSES an adaptive layout for containers that group 2+ fields
+		       (stack on phone, 2 columns on tablet) — present it to the user, who can adjust or decline.
+		       Apply this section whenever you want per-screen placement; otherwise rely on the static
+		       `columns` / `layoutConfig` values.
 
 		       Breakpoints: "small" (phone portrait), "medium" (landscape / tablet portrait), "large" (tablet landscape).
 		       The mobile designer "Tablet portrait" / "Tablet landscape" preview switcher maps to `medium` / `large`.
@@ -312,8 +316,10 @@ public sealed class MobilePageGuidanceResource {
 		       Rules of thumb:
 		         - Define `adaptive` on the GridContainer AND `layoutConfig.adaptive` on every child
 		           that needs to move between breakpoints. Skipping either side breaks the layout.
-		         - Use 1-based `row` and `column`. `colSpan` / `rowSpan` default to 1; include them
-		           explicitly to match the format produced by the mobile designer.
+		         - Use 1-based `row` and `column` — the runtime reflows children by these per breakpoint
+		           (one item per cell). `colSpan` / `rowSpan` are serialized as 1 to match the mobile
+		           designer's format, but are NOT honored per-item by the runtime; do not rely on them to
+		           span cells. To make an item wider, give the container fewer columns at that breakpoint.
 		         - Keep all three breakpoints (`small`, `medium`, `large`) populated even when two
 		           share the same cell — the designer always serialises the full set and partial maps
 		           may render as empty cells on the missing breakpoint.
@@ -406,6 +412,30 @@ public sealed class MobilePageGuidanceResource {
 		       crt.LoadDataRequest
 		         Reloads data from a data source.
 		         params: dataSourceName? (string), updateCache? (boolean)
+
+		       crt.QuickFilterRequest
+		         Applies a quick filter to a list/value attribute.
+		         params: filterValue? (depends on the filter attribute)
+
+		       ── List items ──────────────────────────────────────────────
+
+		       crt.CreateListItemRequest
+		         Creates an item in a list/collection.
+		         params: defaultValues? ([{attributeName, value}])
+
+		       crt.UpdateListItemRequest
+		         Updates an item in a list/collection.
+		         params: recordId? (string)
+
+		       crt.DeleteListItemRequest
+		         Deletes an item from a list/collection.
+		         params: recordId? (string)
+
+		       ── Advanced ────────────────────────────────────────────────
+
+		       crt.ExecuteExpressionRequest
+		         Evaluates an expression via the mobile expression engine.
+		         params: expression (string, required)
 
 		       ── Business process ────────────────────────────────────────
 

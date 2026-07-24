@@ -26,6 +26,9 @@ public sealed class PageValidateTool(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
+		// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
+		// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
+		// insert) to the caller for analysis — no heuristic body normalization.
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
