@@ -102,6 +102,7 @@ public class GetClassicMigrationBundleToolTests {
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<IRemoteEntitySchemaColumnManager>(),
 				Substitute.For<IPageDesignerHierarchyClient>(),
+				Substitute.For<IClassicSectionSchemaResolver>(),
 				Substitute.For<IFileSystem>(),
 				Substitute.For<System.IO.Abstractions.IFileSystem>(),
 				ConsoleLogger.Instance) {

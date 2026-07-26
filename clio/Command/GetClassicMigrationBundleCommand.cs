@@ -84,6 +84,13 @@ public sealed class GetClassicMigrationBundleResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("childPageCount")]
 	public int ChildPageCount { get; set; }
 
+	/// <summary>
+	/// Non-fatal gaps the caller must weigh before acting on the manifest (for example: no section resolved, so the
+	/// plan's List-page analysis will be empty). <c>null</c> when the bundle is complete.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
+	public IReadOnlyList<string> Warnings { get; set; }
+
 	/// <summary>Failure reason when <see cref="Success"/> is <c>false</c>; <c>null</c> otherwise.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
 	public string Error { get; set; }
@@ -131,6 +138,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
+	private readonly IClassicSectionSchemaResolver _sectionResolver;
 	private readonly IFileSystem _fileSystem;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
@@ -140,6 +148,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		IServiceUrlBuilder serviceUrlBuilder,
 		IRemoteEntitySchemaColumnManager columnManager,
 		IPageDesignerHierarchyClient hierarchyClient,
+		IClassicSectionSchemaResolver sectionResolver,
 		IFileSystem fileSystem,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
@@ -147,6 +156,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_columnManager = columnManager;
 		_hierarchyClient = hierarchyClient;
+		_sectionResolver = sectionResolver;
 		_fileSystem = fileSystem;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
@@ -210,13 +220,27 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 
 			// 6b. Enrichers (best-effort, heuristic; omit unresolved, never fabricate). All enricher names are
 			//     primed through ONE batched SelectQuery so the fan-out does not pay a round-trip per name.
+			var warnings = new List<string>();
 			List<string> detailNames = CollectDetailNames(schemas, seed);
+			IReadOnlyList<string> sectionCandidates = ResolveSectionCandidates(options.SchemaName, entity, warnings);
 			var enricherNames = new List<string>(detailNames);
-			enricherNames.AddRange(BuildSectionCandidates(options.SchemaName, entity));
+			enricherNames.AddRange(sectionCandidates);
 			PrimeLayerBatch(ctx, enricherNames);
 			JObject detailSchemas = BuildDetailSchemas(ctx, detailNames);
-			JArray section = BuildSection(ctx, options.SchemaName, entity);
+			JArray section = BuildSection(ctx, sectionCandidates);
 			JObject childPageSchemas = BuildChildPageSchemas(ctx, detailSchemas);
+			if (section.Count == 0) {
+				// sectionLayerCount:0 alone cannot be told apart from "this entity has no Classic section", and an
+				// omitted section silently empties the plan's List-page analysis (custom quick filters,
+				// getSectionActions, hardcoded list columns). Say so in the response — a logger warning would not
+				// reach an MCP caller, whose log buffer is cleared before the result is returned.
+				warnings.Add(
+					"No Classic section resolved for " +
+					(string.IsNullOrWhiteSpace(entity) ? $"page '{options.SchemaName}'" : $"entity '{entity}'") +
+					$" (tried: {string.Join(", ", sectionCandidates)}). The manifest carries no section, so the " +
+					"List-page side of the migration plan will be empty. Verify whether a section exists before " +
+					"treating this as 'nothing to migrate'.");
+			}
 
 			// 7. Assemble the manifest in the engine's contract shape (omit empty fields, never null-fill).
 			var manifest = new JObject { ["schemas"] = schemas };
@@ -264,7 +288,8 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 				ColumnCount = columnTitles.Count,
 				DetailCount = detailSchemas.Count,
 				SectionLayerCount = section.Count,
-				ChildPageCount = childPageSchemas.Count
+				ChildPageCount = childPageSchemas.Count,
+				Warnings = warnings.Count > 0 ? warnings : null
 			};
 			return true;
 		}
@@ -732,11 +757,31 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return detailSchemas;
 	}
 
-	private JArray BuildSection(BundleRunContext ctx, string schemaName, string entity) {
+	// Section candidates in priority order: the schema names SysModule metadata binds to the entity first, then the
+	// name-derived conventions as a fallback. Metadata leads because no name derivation can reach a section whose
+	// schema name carries a UId/app infix (entity ASPContractData -> section ASPContractDatac145c7efSection) or that
+	// was renamed; the conventions still cover stands where the metadata lookup is unavailable or the module row is
+	// missing. A metadata failure degrades to the conventions and is surfaced as a response warning, never fatal —
+	// the section is an enricher, not the bundle's payload.
+	private IReadOnlyList<string> ResolveSectionCandidates(string schemaName, string entity, List<string> warnings) {
+		var candidates = new List<string>();
+		if (!string.IsNullOrWhiteSpace(entity)) {
+			ClassicSectionLookup lookup = _sectionResolver.ResolveSectionSchemaNames(entity);
+			if (lookup.Error != null) {
+				_logger.WriteWarning($"Could not resolve the section from SysModule metadata: {lookup.Error}");
+				warnings.Add(
+					$"Section metadata lookup failed ({lookup.Error}); fell back to name conventions, which cannot " +
+					"reach a renamed section or one whose schema name carries a UId infix.");
+			}
+			candidates.AddRange(lookup.SectionSchemaNames);
+		}
+		candidates.AddRange(BuildSectionCandidates(schemaName, entity));
+		return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+	}
+
+	private JArray BuildSection(BundleRunContext ctx, IReadOnlyList<string> candidates) {
 		var section = new JArray();
-		// The classic list-page section follows the <Entity>Section[V2] convention, or the <PagePrefix>Section[V2]
-		// convention when a section was cloned/renamed off the page (e.g. Applicant1Page -> Applicant1Section).
-		foreach (string candidate in BuildSectionCandidates(schemaName, entity)) {
+		foreach (string candidate in candidates) {
 			try {
 				(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, candidate);
 				if (enumError != null) {

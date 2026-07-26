@@ -21,6 +21,12 @@ DESCRIPTION
     Layer bodies are written to the manifest file, not returned in stdout. The
     response reports only the absolute manifest path and a small summary.
 
+    The section is resolved from SysModule metadata first and only then by the
+    <Entity>Section[V2] / <PagePrefix>Section[V2] naming conventions, so a
+    renamed section or one whose name carries a UId infix is still found. When
+    the bundle is incomplete - no section resolved, or the metadata lookup
+    failed - the response carries a "warnings" list saying so.
+
 OPTIONS
     --schema-name                      Classic client-unit (page) schema name to assemble
                                        the bundle for (required)

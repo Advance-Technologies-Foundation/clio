@@ -27,7 +27,10 @@ public sealed class GetClassicMigrationBundleTool(
 		"the migration engine (migrate.mjs) folds: the whole replacing-schema layer chain (base->top) + the " +
 		"parent-template seed + resolution inputs (entityColumns/columnTitles/resources). The response returns the " +
 		"ABSOLUTE manifest file path and a small summary — the layer bodies are written to the file, NOT returned, " +
-		"so they never enter the caller's context. Prefer `environment-name`; keep direct connection args for fallback only.")]
+		"so they never enter the caller's context. ALWAYS read `warnings` before planning from the manifest: it is " +
+		"present only when the bundle is incomplete (e.g. no section resolved, so the plan's List-page side would be " +
+		"empty) — that is NOT the same as 'nothing to migrate'. " +
+		"Prefer `environment-name`; keep direct connection args for fallback only.")]
 	public GetClassicMigrationBundleResponse GetBundle(
 		[Description("Parameters: schema-name (required, the classic page); entity (optional); output-file (optional); environment-name preferred.")]
 		[Required]

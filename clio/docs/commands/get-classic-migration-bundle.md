@@ -77,10 +77,14 @@ clio get-classic-migration-bundle --schema-name UsrCasePage --entity UsrCase --o
 ## Output format
 
 The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `layerCount`, `seedCount`,
-`resourceCount`, `columnCount`, `detailCount`, `sectionLayerCount`, `childPageCount`, and `error`. The
-manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top), and, when resolvable,
-`seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`, `section`, and
+`resourceCount`, `columnCount`, `detailCount`, `sectionLayerCount`, `childPageCount`, `warnings`, and
+`error`. The manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top), and, when
+resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`, `section`, and
 `childPageSchemas`.
+
+`warnings` is present only when the bundle is incomplete in a way the caller must weigh — for example when
+no section could be resolved (`sectionLayerCount: 0`), which empties the List-page side of a migration plan
+and is not the same as "this entity has no section". It is omitted from a complete bundle.
 
 ## Notes
 
@@ -88,6 +92,11 @@ manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top),
   Creatio environment and does not invoke the Node engine.
 - A schema name that exists in several packages resolves its layers deterministically by package hierarchy
   level (see also `get-client-unit-schema`).
+- The section is resolved from `SysModule` metadata first (the module bound to the entity), and only then by
+  the `<Entity>Section[V2]` / `<PagePrefix>Section[V2]` naming conventions. Metadata leads because a section
+  can be renamed or carry a UId/app infix (entity `ASPContractData` -> section `ASPContractDatac145c7efSection`),
+  which no name derivation can reach. A failed metadata lookup degrades to the conventions and is reported in
+  `warnings`.
 
 ## Reporting Bugs
 

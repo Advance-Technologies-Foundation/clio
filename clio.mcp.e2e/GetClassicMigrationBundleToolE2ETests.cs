@@ -84,6 +84,50 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
+	[Description("Resolves the Classic section through live SysModule metadata and reports no warnings, so the manifest's List-page side is populated.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-migration-bundle resolves the section from SysModule metadata")]
+	[AllureDescription("Assembles the ContactPageV2 bundle on a real stand and verifies the section chain was gathered through the SysModule binding (not only the naming convention) and that the response carries no warnings — a broken metadata query would degrade to the conventions and surface a warning instead.")]
+	public async Task GetBundle_Should_Resolve_Section_Through_SysModule_Metadata() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string outputDirectory = CreateFixtureDirectory("classic-migration-bundle-section");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicMigrationBundleResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicMigrationBundleResponse>(callResult);
+
+		// Assert — the section resolved, so the caller gets no incompleteness warning
+		response.Success.Should().BeTrue(
+			because: $"the bundle must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		response.SectionLayerCount.Should().BeGreaterThan(0,
+			because: "the Contact entity has a Classic section bound through SysModule, so the section chain must be gathered");
+		response.Warnings.Should().BeNull(
+			because: "a complete bundle carries no warnings; a failed SysModule lookup would degrade to the naming " +
+				"conventions and report the reason here");
+
+		// Assert — the manifest carries the section bodies the engine folds into the Freedom List page
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		manifest.RootElement.TryGetProperty("section", out JsonElement section).Should().BeTrue(
+			because: "a resolved section must reach the manifest, not just the response counter");
+		section.GetArrayLength().Should().Be(response.SectionLayerCount,
+			because: "the reported section-layer count must match what was actually written");
+	}
+
+	[Test]
 	[Description("Reports a readable failure when get-classic-migration-bundle is asked for a schema that does not exist.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-migration-bundle reports a missing-schema failure")]

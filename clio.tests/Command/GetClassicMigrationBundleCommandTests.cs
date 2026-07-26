@@ -24,6 +24,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private IPageDesignerHierarchyClient _hierarchyClient;
+	private IClassicSectionSchemaResolver _sectionResolver;
 	private IFileSystem _fileSystem;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
@@ -52,6 +53,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		_sectionResolver = Substitute.For<IClassicSectionSchemaResolver>();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
@@ -61,12 +63,17 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		// tests exercise (and keep asserting) that fallback path. The hierarchy-path tests configure this explicitly.
 		_hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(new List<PageDesignerHierarchySchema>());
+		// Default: SysModule metadata binds no section, so section resolution falls through to the name
+		// conventions and the pre-existing tests keep asserting that path unchanged.
+		_sectionResolver.ResolveSectionSchemaNames(Arg.Any<string>())
+			.Returns(new ClassicSectionLookup(Array.Empty<string>(), null));
 		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
 			.Do(ci => { _writtenPath = ci.ArgAt<string>(0); _writtenContent = ci.ArgAt<string>(1); });
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_columnManager);
 		containerBuilder.AddSingleton(_hierarchyClient);
+		containerBuilder.AddSingleton(_sectionResolver);
 		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
@@ -483,6 +490,107 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		JObject manifest = JObject.Parse(_writtenContent);
 		((JArray)manifest["section"])[0]["pkg"]!.ToString().Should().Be("PagePkg",
 			because: "the page-prefixed section (UsrApplicant1Section) takes precedence over the bare-entity section (UsrApplicantSection)");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle resolves a section whose schema name carries a UId/app infix (ASPContractDatac145c7efSection) from SysModule metadata, which no name derivation off the entity or page can reach.")]
+	public void TryAssembleBundle_ShouldGatherSection_ViaMetadata_WhenNameCarriesUIdInfix() {
+		// Arrange — the real section name (…c145c7efSection) is not derivable from the entity (ASPContractData)
+		// nor from the page prefix (ASPContractData1); only the SysModule binding reaches it.
+		AddLayer("ASPContractData1Page", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"ASPContractData1Page\", [], function() { return { entitySchemaName: \"ASPContractData\" }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("ASPContractDatac145c7efSection", "uid-section", "SectionPkg", 200);
+		AddSchema("uid-section",
+			"define(\"ASPContractDatac145c7efSection\", [], function() { return {}; });", EmptyGuid, "SectionPkg");
+		_sectionResolver.ResolveSectionSchemaNames("ASPContractData")
+			.Returns(new ClassicSectionLookup(new[] { "ASPContractDatac145c7efSection" }, null));
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "ASPContractData1Page" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.SectionLayerCount.Should().Be(1,
+			because: "the SysModule binding resolves a section name that no naming convention can derive");
+		response.Warnings.Should().BeNull(because: "a resolved section leaves nothing for the caller to weigh");
+		JObject manifest = JObject.Parse(_writtenContent);
+		((JArray)manifest["section"]).Should().ContainSingle(because: "the metadata-resolved section layer is gathered")
+			.Which["pkg"]!.ToString().Should().Be("SectionPkg",
+				because: "the gathered chain is the section the metadata pointed at");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle prefers the metadata-bound section over a name-derived one when both resolve, so a renamed section wins over a same-named leftover.")]
+	public void TryAssembleBundle_ShouldPreferMetadataSection_OverNameDerivedSection_WhenBothExist() {
+		// Arrange — both the metadata-bound section and the <Entity>Section convention resolve; metadata must win.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\" }; });", EmptyGuid, "UsrApp");
+		AddLayer("UsrCaseRenamedSection", "uid-meta-section", "MetaPkg", 200);
+		AddSchema("uid-meta-section", "define(\"UsrCaseRenamedSection\", [], function() { return {}; });", EmptyGuid, "MetaPkg");
+		AddLayer("UsrCaseSection", "uid-name-section", "NamePkg", 200);
+		AddSchema("uid-name-section", "define(\"UsrCaseSection\", [], function() { return {}; });", EmptyGuid, "NamePkg");
+		_sectionResolver.ResolveSectionSchemaNames("UsrCase")
+			.Returns(new ClassicSectionLookup(new[] { "UsrCaseRenamedSection" }, null));
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.SectionLayerCount.Should().Be(1, because: "the first candidate that resolves wins and only one chain is emitted");
+		JObject manifest = JObject.Parse(_writtenContent);
+		((JArray)manifest["section"])[0]["pkg"]!.ToString().Should().Be("MetaPkg",
+			because: "the SysModule binding is authoritative and outranks the name convention");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle degrades to the name conventions and warns in the response when the SysModule metadata lookup fails, instead of losing the section silently.")]
+	public void TryAssembleBundle_ShouldFallBackToNaming_AndWarn_WhenMetadataLookupFails() {
+		// Arrange — the metadata lookup errors out, but the <Entity>Section convention still resolves.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\" }; });", EmptyGuid, "UsrApp");
+		AddLayer("UsrCaseSection", "uid-section", "NamePkg", 200);
+		AddSchema("uid-section", "define(\"UsrCaseSection\", [], function() { return {}; });", EmptyGuid, "NamePkg");
+		_sectionResolver.ResolveSectionSchemaNames("UsrCase")
+			.Returns(new ClassicSectionLookup(Array.Empty<string>(), "DataService call failed"));
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		response.SectionLayerCount.Should().Be(1, because: "the name convention still resolves the section after the metadata failure");
+		response.Warnings.Should().ContainSingle(because: "the degraded lookup must be visible to the caller")
+			.Which.Should().Contain("DataService call failed",
+				because: "the warning carries the underlying reason the metadata path was skipped");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle warns in the response when no section resolves at all, so sectionLayerCount:0 is not mistaken for 'this entity has no section'.")]
+	public void TryAssembleBundle_ShouldWarn_WhenNoSectionResolves() {
+		// Arrange — neither metadata nor any naming convention resolves a section.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a missing section is an enricher gap, not a bundle failure");
+		response.SectionLayerCount.Should().Be(0, because: "no section candidate resolved");
+		response.Warnings.Should().ContainSingle(because: "the empty section must be surfaced, not left silent")
+			.Which.Should().Contain("UsrCase",
+				because: "the warning names the entity whose section could not be found");
 	}
 
 	[Test]
