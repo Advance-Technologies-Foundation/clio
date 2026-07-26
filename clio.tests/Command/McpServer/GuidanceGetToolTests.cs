@@ -158,6 +158,51 @@ public sealed class GuidanceGetToolTests {
 			because: "the guide routes to theming tools by their canonical names only");
 		result.Article.Text.Should().Contain("build-theme",
 			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
+		result.Article.Text.Should().Contain("get-guidance name=branding",
+			because: "the theming guide must route branding-beyond-the-theme (logos, shell background) to the dedicated branding guide instead of carrying it");
+		result.Article.Text.Should().NotContain("Branding — logos and background",
+			because: "the branding mechanics moved to the dedicated branding guide (ENG-92981) and must not be duplicated here");
+		result.Article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the shell-background mechanics are owned by the branding guide, not the theming guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical branding guidance article when the caller requests branding: logo sys settings and the shell background flow routed through the dedicated upload-image and set-background-image tools.")]
+	public async Task GuidanceGet_Should_Return_Branding_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("branding"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "branding is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/branding",
+			because: "the guidance tool should preserve the canonical branding guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP branding guide",
+			because: "the guidance tool should return the canonical branding article text");
+		result.Article.Text.Should().Contain("get-guidance name=theming",
+			because: "the branding guide must route the theme part of branding (colours, fonts, custom themes) to the theming guide");
+		result.Article.Text.Should().Contain("CrtAppToolbarLogo",
+			because: "the logos section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		result.Article.Text.Should().Contain("value-file-path",
+			because: "logo uploads must route through the Binary sys-setting file path, never inline bytes");
+		result.Article.Text.Should().Contain("HideSplashScreenLogoImage",
+			because: "applying logos must also hide the stock splash logo");
+		result.Article.Text.Should().Contain("upload-image",
+			because: "the background image upload must route through the dedicated upload-image tool, since OData JSON cannot write the SysImage binary stream");
+		result.Article.Text.Should().NotContain("ImageAPIService",
+			because: "the raw image-API recipe (endpoint, query literals, headers) is owned by the upload-image tool implementation and must not be hand-executed from the guide");
+		result.Article.Text.Should().NotContain("get-browser-session",
+			because: "the browser-session upload recipe is retired in favor of the dedicated upload-image tool");
+		result.Article.Text.Should().Contain("set-background-image",
+			because: "the background activation must route through the dedicated set-background-image tool");
+		result.Article.Text.Should().NotContain("SysImageInTag",
+			because: "the gallery-registration mechanics are owned by the set-background-image tool implementation and must not be hand-executed from the guide");
 	}
 
 	[Test]

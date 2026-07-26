@@ -114,6 +114,16 @@
 	</Choose>
 
 	<ItemGroup>
+		<!--
+		 PowerShell.SDK drags in a System.Security.Cryptography.Xml version with known high-severity
+		 vulnerabilities (NU1903, e.g. GHSA-23rf-6693-g89p) on EVERY target framework, so the direct
+		 reference lifting it to the patched centrally-managed version must be unconditional — a
+		 TFM-scoped lift leaves the other TFM's transitive graph vulnerable and fails CI restore.
+		-->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"

@@ -129,6 +129,74 @@ public sealed class RequestRegistrySnapshotTests {
 			because: "templateId must be resolved from the list-printables probe - pinned at the data layer, not as a guide-text substring");
 	}
 
+	private const string MobileSnapshotRelativePath = "Command/McpServer/Fixtures/MobileRequestRegistry.live-snapshot.json";
+
+	[Test]
+	[Description("The pinned MOBILE request-registry payload (https://academy.creatio.com/api/mcp/latest/MobileRequestRegistry.json) must deserialise through the same wrapped envelope as the web payload with no fields landing on an UnmappedExtensions bucket — the snapshot guard is intentionally symmetric across the web and mobile request flavors, mirroring the component-registry mobile guard.")]
+	public void Pinned_Mobile_Request_Registry_Snapshot_Should_Have_No_Unmapped_Fields() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, MobileSnapshotRelativePath);
+		File.Exists(snapshotPath).Should().BeTrue(
+			because: $"the mobile snapshot fixture must be present at '{snapshotPath}' for this guard to be meaningful");
+
+		// Act
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+
+		// Assert — root-level envelope.
+		state.GlobalReferences.Should().NotBeNull(
+			because: "the mobile payload ships a top-level 'references' block (baseParameters + global typeDefinitions)");
+		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
+			because: "any new key under root.references.* on the mobile registry must be mapped or explicitly allowlisted");
+
+		// Assert — per-request entries.
+		state.Entries.Should().NotBeEmpty(
+			because: "the pinned mobile catalog must list at least one request");
+		foreach (RequestRegistryEntry entry in state.Entries) {
+			UnmappedKeys(entry.UnmappedExtensions).Should().BeEmpty(
+				because: $"any new top-level key on mobile entry '{entry.RequestType}' must be mapped");
+			if (entry.References is not null) {
+				UnmappedKeys(entry.References.UnmappedExtensions).Should().BeEmpty(
+					because: $"any new key under mobile '{entry.RequestType}'.references.* must be mapped");
+			}
+		}
+	}
+
+	[Test]
+	[Description("A detail response against the pinned MOBILE payload keeps the platform-injected baseParameters separate from the authorable parameters map and surfaces the mobile-only crt.RunBusinessProcessRequest.activeRow parameter — proving the mobile registry carries a parameter surface distinct from desktop and that it flows through the shared detail factory unchanged.")]
+	public void Pinned_Mobile_Snapshot_Detail_Should_Surface_MobileOnly_Parameter_And_Keep_BaseParameters_Separate() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, MobileSnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.RunBusinessProcessRequest", out RequestRegistryEntry? runProcess).Should().BeTrue(
+			because: "crt.RunBusinessProcessRequest is shipped in the pinned mobile payload");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			runProcess!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the mobile-only parameter is present on the authorable surface.
+		detail.Parameters.Should().NotBeNull(
+			because: "crt.RunBusinessProcessRequest declares authorable parameters on mobile");
+		detail.Parameters!.Should().ContainKey("activeRow",
+			because: "activeRow is a mobile-only parameter with no desktop twin — it must surface from the mobile registry");
+		// Assert — platform-injected base fields stay separate, never merged into parameters.
+		detail.BaseParameters.Should().NotBeNull(
+			because: "root.references.baseParameters must surface as its own field on the mobile flavor too");
+		detail.BaseParameters!.Should().ContainKey("$context",
+			because: "the platform-injected context is part of the published mobile base surface");
+		detail.Parameters.Should().NotContainKey("$context",
+			because: "platform-injected fields must never leak into the authorable parameters map");
+		// Assert — wiring contract inlined via the closure seed.
+		detail.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
+			because: "every request is wired through RequestBindingConfig, so the mobile detail inlines its schema");
+	}
+
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
 		bucket is null ? System.Array.Empty<string>() : bucket.Keys;
 }

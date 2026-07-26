@@ -2216,7 +2216,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RulesFieldName, ArrayType, "Array of one or more entity business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RulesFieldName, ArrayType, "Array of one or more entity business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example LockEquipmentAfterSubmission; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -2253,6 +2253,10 @@ internal static class ToolContractCatalog {
 				SysValueBusinessRuleExample("Create a readonly rule when due date is on or before the current date (SysValue)",
 					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Lock owner when due on or before today",
 					"DueDate", "less-than-or-equal", "CurrentDate",
+					MakeReadOnlyActionTypeName, [ExampleOwnerAttributeName]),
+				SysSettingBusinessRuleExample("Create a readonly rule when a Boolean system setting is enabled (SysSetting)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Lock owner when equipment is locked after submission",
+					"LockEquipmentAfterSubmission", ExampleEqualConditionComparison, true,
 					MakeReadOnlyActionTypeName, [ExampleOwnerAttributeName]),
 				RoleGateBusinessRuleExample("Require a field only for users in a role (CurrentUserRoles CONTAIN role)",
 					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Require status for administrators",
@@ -2473,7 +2477,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -2541,6 +2545,10 @@ internal static class ToolContractCatalog {
 					PageSchemaNameFieldName, ExampleOrderPageSchemaName, "Hide reminder when due on or before today",
 					"PDS_UsrDueDate", "less-than-or-equal", "CurrentDate",
 					"hide-element", ["ReminderLabel"]),
+				SysSettingBusinessRuleExample("Hide a control when a Boolean system setting is enabled (SysSetting)",
+					PageSchemaNameFieldName, ExampleOrderPageSchemaName, "Hide shipping address when equipment delivery is disabled",
+					"DisableEquipmentDelivery", ExampleEqualConditionComparison, true,
+					"hide-element", ["ShippingAddress"]),
 				RoleGateBusinessRuleExample("Show a control only for users in a role (CurrentUserRoles CONTAIN role)",
 					PageSchemaNameFieldName, "Cases_FormPage", "Show Resolved for administrators",
 					"CurrentUserRoles", "contain", ExampleLookupValueId,
@@ -3074,8 +3082,10 @@ internal static class ToolContractCatalog {
 				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id."),
 			new ToolContractValidator("sys-value", "unsupported-system-variable", "rules[*].condition.conditions[*].leftExpression|rightExpression.sysValueName",
 				Context: $"A SysValue may be on EITHER side of a condition. sysValueName must be one of: {BusinessRuleConstants.SupportedSystemVariablesDescription}. Types: CurrentDate=Date, CurrentTime=Time, CurrentDateTime=DateTime, CurrentUser/CurrentUserContact/CurrentUserAccount=Lookup, CurrentUserRoles=ObjectList (a collection of SysAdminUnit roles). Both operands must resolve to the same data value type and, for lookups, the same reference schema (CurrentUserContact=Contact, CurrentUserAccount=Account, CurrentUser/CurrentUserRoles=SysAdminUnit). Role-based visibility: CurrentUserRoles on the left, comparisonType contain/not-contain, and a Const SysAdminUnit role id on the right."),
+			new ToolContractValidator("sys-setting", "unsupported-system-setting", "rules[*].condition.conditions[*].leftExpression|rightExpression.sysSettingName",
+				Context: "A SysSetting may be on EITHER side of a condition. sysSettingName must be the code of a system setting that exists on the target environment; its data value type is resolved there (all text subtypes as Text; Boolean/Integer/Float/Money/Date/Time/DateTime as-is; Lookup carries its reference schema). Binary and SecureText settings are not supported as a condition operand. Both operands must resolve to the same data value type and, for lookups, the same reference schema."),
 			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rules[*].condition.conditions[*]",
-				Context: "Either side may be AttributeValue, Const, or SysValue, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
+				Context: "Either side may be AttributeValue, Const, SysValue, or SysSetting, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(
@@ -3330,6 +3340,50 @@ internal static class ToolContractCatalog {
 			["rightExpression"] = new Dictionary<string, object?> {
 				["type"] = BusinessRuleConstants.SysValueExpressionType,
 				["sysValueName"] = sysValueName
+			}
+		};
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[schemaFieldName] = schemaName,
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
+						condition
+					}
+				},
+				[ActionsFieldName] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			} }
+		});
+	}
+
+	private static ToolContractExample SysSettingBusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string sysSettingName,
+		string comparisonType,
+		object constValue,
+		string actionType,
+		object[] actionItems) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.SysSettingExpressionType,
+				["sysSettingName"] = sysSettingName
+			},
+			["comparisonType"] = comparisonType,
+			["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.ConstExpressionType,
+				[ValueFieldName] = constValue
 			}
 		};
 
@@ -4281,6 +4335,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': the version is unknown — tell the user and request explicit confirmation before proceeding instead of assuming the 'latest' superset. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4332,6 +4387,7 @@ internal static class ToolContractCatalog {
 				[
 					Field("request-type", StringType, "Freedom UI request type, e.g. 'crt.PrintablesRequest'. Omit or use 'list' to return the catalog (list mode); a known type returns that request's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'print'."),
+					Field("schema-type", StringType, "Request registry to query: 'web' (default) or 'mobile'. The mobile registry is separate and scoped to the requests available on Freedom UI mobile (parameters can differ from desktop). Use 'mobile' when wiring a request on a mobile page."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
 					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
@@ -4361,6 +4417,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': tell the user the version is unknown and request explicit confirmation before proceeding. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4372,6 +4429,8 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, "request-type", "request-name", RejectedStatus, "Use 'request-type' instead of 'request-name'."),
 				Alias(ParameterScope, "request-type", "requestName", RejectedStatus, "Use 'request-type' instead of 'requestName'."),
 				Alias(ParameterScope, "request-type", "request_name", RejectedStatus, "Use 'request-type' instead of 'request_name'."),
+				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
+				Alias(ParameterScope, "schema-type", "schema_type", RejectedStatus, "Use 'schema-type' instead of 'schema_type'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environment_name", RejectedStatus, "Use 'environment-name' instead of 'environment_name'.")
 			],
@@ -4383,6 +4442,9 @@ internal static class ToolContractCatalog {
 				Example("List the full request catalog", new Dictionary<string, object?>()),
 				Example("Search the catalog by keyword", new Dictionary<string, object?> {
 					["search"] = "print"
+				}),
+				Example("List the mobile request catalog", new Dictionary<string, object?> {
+					["schema-type"] = "mobile"
 				})
 			],
 			Flow([RequestInfoTool.ToolName],
