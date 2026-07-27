@@ -378,7 +378,7 @@ public sealed class SchemaSyncTool(
 			}, retryBudget);
 
 			if (execution.ExitCode == CollisionExitCode && execution.CaughtException is null) {
-				return BuildCollisionResult(operationName, op.SchemaName, currentPlan!, tenantKey);
+				return BuildCollisionResult(operationName, op.SchemaName, currentPlan, tenantKey);
 			}
 
 			// FR-02: ensure the Lookups registration on EVERY successful create-lookup path (created,
@@ -399,7 +399,7 @@ public sealed class SchemaSyncTool(
 			}
 
 			return FinalizeResult(operationName, op.SchemaName, execution, tenantKey,
-				outcome: execution.ExitCode == 0 && execution.CaughtException is null ? MapOutcome(currentPlan!.Outcome) : null);
+				outcome: execution.ExitCode == 0 && execution.CaughtException is null ? MapOutcome(currentPlan.Outcome) : null);
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 			// Deterministic option-building failures (localization/guardrail validation) are not network
 			// faults and are never retried — surface them exactly as before.
@@ -456,8 +456,8 @@ public sealed class SchemaSyncTool(
 			case SchemaConvergenceOutcome.Reconcile:
 				// Apply the full reconcile delta in a single UpdateEntitySchemaCommand batch: the missing
 				// columns as additive add operations plus the per-column modify operations the classifier
-				// surfaced for a present-but-different column (the modify write path Story 1 surfaced but
-				// deferred). CreateEntitySchemaCommand is never invoked here — it is create-only.
+				// surfaced for a present-but-different column (the modify write path converges the existing
+				// column's type here). CreateEntitySchemaCommand is never invoked here — it is create-only.
 				List<UpdateEntitySchemaOperationArgs> reconcileOperations = [
 					.. plan.ColumnsToAdd.Select(CoerceColumnToAddOperation),
 					.. plan.ColumnsToModify
@@ -593,7 +593,7 @@ public sealed class SchemaSyncTool(
 				delta.Add(operation);
 				continue;
 			}
-			if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn!.Type)) {
+			if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn.Type)) {
 				// Present but different type: an explicit modify is forwarded as-is; an add (explicit or the
 				// implicit add-batch coerced from a `columns` payload) is converged to a modify so a re-add does
 				// not fail as a duplicate. An incompatible modify is surfaced by the backend command as a

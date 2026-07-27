@@ -14,7 +14,7 @@ public enum SchemaConvergenceOutcome {
 	/// <summary>The schema is absent and must be created.</summary>
 	Create,
 
-	/// <summary>The schema already exists in the target package and only the missing columns must be added.</summary>
+	/// <summary>The schema already exists in the target package and must be converged: the missing columns are added and any present-but-type-divergent columns are modified to the requested shape.</summary>
 	Reconcile,
 
 	/// <summary>The schema already exists in the target package and matches the requested shape; no mutation is required.</summary>
@@ -48,7 +48,7 @@ public sealed record SchemaConvergenceTarget(
 /// </summary>
 /// <param name="Outcome">How the operation must converge.</param>
 /// <param name="ColumnsToAdd">The requested columns that are absent on the server and must be added (empty unless <see cref="SchemaConvergenceOutcome.Reconcile"/>).</param>
-/// <param name="ColumnsToModify">Requested columns present on the server with a differing shape, surfaced for the Story-2 modify write path (Story 1 does not apply them).</param>
+/// <param name="ColumnsToModify">Requested columns present on the server with a differing shape; the reconcile write path applies them (via <c>UpdateEntitySchemaCommand</c>) alongside <see cref="ColumnsToAdd"/> to converge the existing column to the requested type.</param>
 /// <param name="CollisionPackageName">The owning package of the colliding schema; set only when <see cref="Outcome"/> is <see cref="SchemaConvergenceOutcome.Collision"/>.</param>
 /// <param name="Error">A user-friendly <c>Error: {message}</c> string; set only when <see cref="Outcome"/> is <see cref="SchemaConvergenceOutcome.Collision"/>.</param>
 public sealed record SchemaConvergencePlan(
