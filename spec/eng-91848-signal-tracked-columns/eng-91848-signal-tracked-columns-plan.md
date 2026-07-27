@@ -2,19 +2,21 @@
 
 - **Jira:** [ENG-91848](https://creatio.atlassian.net/browse/ENG-91848) — *Signal start element: usability status + tracked-change columns* (Story, component `bpms tools`, priority Major).
 - **Parent research:** ENG-90883 (backend process designer). Source: Task 10 of *Add business process generation via AI instructions*.
-- **Status:** planned. Awaiting implementation.
+- **Status:** implemented; in review (PRs open — see §0).
 - **Repos involved:** `clioprocessbuilder` (Creatio package — server logic) at `C:\Projects\workspace\ProcessBuilder`, and `clio` (MCP surface + read DTO + guidance) at `C:\Projects\clio`.
 
 ---
 
 ## 0. Implementation status (2026-07-23)
 
-Implemented on branch `feature/ENG-91848-signal-tracked-columns` in **both** repos (D1 = Option A, in-place `setSignal`). Not yet committed (awaiting approval).
+Implemented on branch `feature/ENG-91848-signal-tracked-columns` in **both** repos (D1 = Option A, in-place `setSignal`), committed and open for review:
 
-- **Server (`clioprocessbuilder`)**: contracts + `SignalTriggerBinder` + handler create/describe + `setSignal` op/applier + DI. **411 unit tests pass** (net472).
-- **clio**: `DescribedSignal.ChangedColumns` + tool descriptions + `process-modeling` guidance + prompts; guidance test repurposed, 2 describer tests, 2 E2E round-trips (compile clean).
-- **Gates**: regression green both repos; ClioRing — no Ring-consumed contract changed; 3-lens adversarial review ran — no Blocker/High, all Medium + worthwhile Low fixed (setSignal `on`-omission now preserves the current change type; entity-retarget clears a stale filter; describe gated on the `modified` token; UId de-dup; doc alignment).
-- **Pending**: deploy the rebuilt package to a stand + run the two E2E round-trips (the authoritative persist→reload check); commit + PRs (needs approval); final ready-to-merge review gate.
+- **PRs**: clioprocessbuilder — `engineering/cli-process-builder#17` (GHE); clio — `Advance-Technologies-Foundation/clio#971`.
+- **Server (`clioprocessbuilder`)**: contracts + `SignalTriggerBinder` + handler create/describe + `setSignal` op/applier + DI, plus a shared `EntitySchemaResolver`. **431 unit tests pass** (net472); the three new files sit at 94–98 % line coverage.
+- **clio**: `DescribedSignal.ChangedColumns` + tool descriptions + `process-modeling` guidance + prompts; guidance test repurposed, 2 describer tests, 2 E2E round-trips.
+- **Verified live**: the full `McpE2E.ProcessDesigner` suite ran **35/35 green** against a stand with the rebuilt package, covering the authoritative build→save→describe persist/reload round-trip and the `setSignal` set/clear round-trip.
+- **Gates**: regression green in both repos; ClioRing — no Ring-consumed contract changed; 3-lens adversarial review + repeated Creatio code reviews — no Blocker/High, all Medium and worthwhile Low fixed (validate-before-mutate/atomic `setSignal`; `on`-omission preserves the current change type; entity-retarget clears the stale filter — with `string.Empty`, so the platform's localizable fallback cannot resurrect it; describe gated on the `modified` token; UId de-dup; entity-name trim; doc alignment). Copilot's PR #17 review addressed and all threads resolved.
+- **Remaining**: PR approval + merge; ship the package version bump/release as usual.
 
 ## 1. Background and the one architectural fact that shapes the work
 
