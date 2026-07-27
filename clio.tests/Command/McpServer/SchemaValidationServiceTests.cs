@@ -3009,6 +3009,94 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("update-page's canonical single-property patch — a merge that establishes the type on a sibling insert entry and patches only the tooltip on a merge entry in the SAME body — accepts the literal tooltip: the entry-root type is resolved from the sibling insert for the same name (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipMergeAfterSiblingInsert_ReturnsValid() {
+		// Arrange — the natural update-page editing shape: one insert entry declares the crt.ImageInput type,
+		// a later merge entry patches only the tooltip (no repeated "type"). The merge borrows the type the
+		// sibling insert established for the same name within this body.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto"}},
+				{"operation":"merge","name":"UsrPhoto","values":{"tooltip":"Upload a photo of the task owner"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a tooltip-only merge resolves the crt.ImageInput type from the same-body insert, so the literal is exempt");
+		result.Errors.Should().BeEmpty(because: "the merged literal tooltip on the resolved crt.ImageInput must not be flagged");
+	}
+
+	[Test]
+	[Description("The inverse rule is also reachable through a merge: a $Resources.Strings.* binding merged onto the tooltip of a crt.ImageInput inserted in the SAME body is rejected, because the resolved type makes the exempt-property inverse check fire (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceMergeAfterSiblingInsert_ReturnsInvalid() {
+		// Arrange — sibling insert establishes the type; the merge binds the exempt tooltip to a resource form
+		// that renders empty at runtime, so the resolved type must force the inverse ("literal required") error.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto"}},
+				{"operation":"merge","name":"UsrPhoto","values":{"tooltip":"$Resources.Strings.PhotoTip"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a resource binding on a merge-patched crt.ImageInput.tooltip still renders empty at runtime");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the type resolved from the sibling insert makes the inverse rule reject the merged resource binding");
+	}
+
+	[Test]
+	[Description("A standalone tooltip-only merge with NO type — and no sibling insert to establish it — cannot resolve the component type (the prior insert lived in a separate update-page call whose schema is not visible here), so the exemption is unreachable and the literal is rejected. Locks the documented requirement: a standalone crt.ImageInput.tooltip merge must repeat \"type\" (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipMergeOnlyNoType_StandaloneRejected() {
+		// Arrange — m-dymytrova's exact reproduction: a merge that patches only the tooltip, no "type" sibling
+		// and no sibling insert. This is the cross-call case (node inserted by a prior separate call); the
+		// validator sees only this body, so it cannot know the node is a crt.ImageInput.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"merge","name":"UsrPhoto","values":{"tooltip":"Upload a photo of the task owner"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "with no resolvable type the exemption cannot apply; the documented requirement is to repeat \"type\" on a standalone tooltip merge");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "an unresolved-type tooltip literal is treated as a plain literal and reported");
+	}
+
+	[Test]
+	[Description("Regression lock for the entry-root scoping of the merge type resolution: a nested nameless child object inside a crt.ImageInput insert entry must NOT inherit the entry's resolved type. Its own literal tooltip is still flagged — the exemption is bounded to the entry-root node (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputNestedChildTooltipLiteral_FlagsChild() {
+		// Arrange — the crt.ImageInput entry root is exempt for tooltip, but a nested nameless child object
+		// carries its own literal tooltip. The child has no "type" of its own; if the entry-root type leaked
+		// into the recursion it would wrongly be treated as exempt. It must stay flagged.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","content":{"tooltip":"Nested literal tooltip"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the exemption is scoped to the crt.ImageInput entry-root node and must not bleed into a nested child");
+		result.Errors.Should().ContainSingle(e => e.Contains("tooltip"),
+			because: "the nested child's literal tooltip is not exempt and must be reported");
+	}
+
+	[Test]
 	[Description("A non-resource dynamic binding (e.g. $SomeAttr) on crt.ImageInput.tooltip is accepted — only $Resources.Strings.* / #ResourceString(...)# forms render empty at runtime, so a plain view-model binding is left untouched (ENG-92940).")]
 	public void ValidateLocalizableTextLiterals_ImageInputTooltipDynamicBinding_ReturnsValid() {
 		// Arrange

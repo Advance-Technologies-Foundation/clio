@@ -248,9 +248,9 @@ public static class SchemaValidationService
 	/// </summary>
 	internal const string LiteralRequiredTextClause =
 		"a few components render a text property straight from its raw value and never read the schema's " +
-		"localizableStrings (e.g. crt.ImageInput.tooltip), so for those the property MUST be a plain inline " +
-		"literal: a $Resources.Strings.<Key> or #ResourceString(<Key>)# binding resolves to empty and renders " +
-		"nothing at runtime";
+		"localizableStrings (e.g. crt.ImageInput.tooltip), so for those the property MUST NOT be a " +
+		"$Resources.Strings.<Key> or #ResourceString(<Key>)# binding (it resolves to empty and renders nothing " +
+		"at runtime); a plain inline literal or a dynamic view-model binding is fine";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -1708,6 +1708,13 @@ public static class SchemaValidationService
 		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
 			return;
 		}
+		// The exempt-property rule is keyed on the component type, which normally sits in an entry's own
+		// "values":{"type":...}. A merge entry that patches only a text property (e.g. tooltip) of an
+		// already-inserted node in the SAME body carries no "type", so borrow the type an insert entry
+		// established for the same name. Scope is one body / one validate-page call: a node inserted by a
+		// PRIOR separate update-page call is NOT visible here (no saved schema), so a standalone tooltip-only
+		// merge still cannot resolve a type and must repeat "type" (documented requirement, ENG-92940).
+		Dictionary<string, string> entryNameToType = BuildEntryNameToTypeMap(viewConfigDiff);
 		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
 			if (entry.ValueKind != JsonValueKind.Object) {
 				continue;
@@ -1717,11 +1724,48 @@ public static class SchemaValidationService
 				continue;
 			}
 			string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
-			ScanNodeForTextLiterals(values, ownerName, result);
+			// Resolve the entry-root component type: its own "type" sibling, else a same-name sibling
+			// insert's type. Bounded to the entry-root object — nested child nodes still resolve type ONLY
+			// from their own "type" sibling (entryRootType is not threaded into the recursion), so the
+			// exemption never bleeds into a nested non-exempt node.
+			string entryRootType = TryGetComponentType(values, out string ownType)
+				? ownType
+				: (!string.IsNullOrEmpty(ownerName) && entryNameToType.TryGetValue(ownerName, out string mappedType)
+					? mappedType
+					: string.Empty);
+			ScanNodeForTextLiterals(values, ownerName, entryRootType, result);
 		}
 	}
 
-	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, SchemaValidationResult result) {
+	// Maps each entry's declared name to the component type carried on its own "values":{"type":...} sibling,
+	// so a later merge entry that patches a text property without repeating "type" can resolve the type an
+	// insert established for the SAME name within this body. Only entries that declare a type participate and
+	// the first declaration wins (an insert precedes its merges). Names are matched exactly (ordinal).
+	private static Dictionary<string, string> BuildEntryNameToTypeMap(JsonElement viewConfigDiff) {
+		Dictionary<string, string> map = new(StringComparer.Ordinal);
+		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!TryGetNodeName(entry, out string entryName)) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+			    values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (TryGetComponentType(values, out string type) && !map.ContainsKey(entryName)) {
+				map[entryName] = type;
+			}
+		}
+		return map;
+	}
+
+	// entryRootType carries the type resolved for the entry-root object (its own "type" sibling, or a
+	// same-name sibling insert's type for a bare merge). It is applied ONLY when this object has no "type" of
+	// its own AND is the entry root; nested children are recursed with an empty entryRootType so a nested
+	// non-exempt node can never inherit an ancestor's exemption.
+	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType, SchemaValidationResult result) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -1729,31 +1773,42 @@ public static class SchemaValidationService
 				// (e.g. { "type":"crt.ImageInput", "tooltip":"..." }). Derive it up-front, BEFORE the
 				// property loop — EnumerateObject yields in document order, so a body that lists a text
 				// property ahead of "type" must still see the type to apply LiteralAllowedTextProperties.
-				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : string.Empty;
+				// When the object carries no "type" of its own, fall back to entryRootType (non-empty only
+				// for the entry root — see the entryRootType note above).
+				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					if (property.Value.ValueKind == JsonValueKind.String &&
-					    LocalizableTextProperties.Contains(property.Name)) {
-						string? textValue = property.Value.GetString();
-						if (IsLiteralAllowedTextProperty(currentType, property.Name)) {
-							// The exempt component renders this property from its raw value and never reads
-							// localizableStrings, so a $Resources.Strings.<Key> / #ResourceString(<Key>)# binding
-							// resolves to empty at runtime. Reject the resource form and force the working literal —
-							// the mirror of the inline-literal rule applied to everything else (ENG-92940).
-							if (IsLocalizableResourceReference(textValue)) {
-								result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue!));
-							}
-						} else if (IsInlineUserVisibleTextLiteral(textValue)) {
-							result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue!));
-						}
-					}
-					ScanNodeForTextLiterals(property.Value, currentName, result);
+					ScanTextPropertyForLiterals(currentName, currentType, property, result);
+					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
 				}
 				break;
 			case JsonValueKind.Array:
 				foreach (JsonElement item in node.EnumerateArray()) {
-					ScanNodeForTextLiterals(item, ownerName, result);
+					ScanNodeForTextLiterals(item, ownerName, string.Empty, result);
 				}
 				break;
+		}
+	}
+
+	// Flags a single object property when it is a user-visible text property carrying a disallowed value:
+	// for an exempt (component, property) pair a localizable-resource binding is rejected (it renders empty),
+	// and everywhere else an inline user-visible literal is rejected (it should be a localizable binding).
+	private static void ScanTextPropertyForLiterals(
+		string currentName, string currentType, JsonProperty property, SchemaValidationResult result) {
+		if (property.Value.ValueKind != JsonValueKind.String ||
+		    !LocalizableTextProperties.Contains(property.Name)) {
+			return;
+		}
+		string? textValue = property.Value.GetString();
+		if (IsLiteralAllowedTextProperty(currentType, property.Name)) {
+			// The exempt component renders this property from its raw value and never reads
+			// localizableStrings, so a $Resources.Strings.<Key> / #ResourceString(<Key>)# binding
+			// resolves to empty at runtime. Reject the resource form and force the working literal —
+			// the mirror of the inline-literal rule applied to everything else (ENG-92940).
+			if (IsLocalizableResourceReference(textValue)) {
+				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue!));
+			}
+		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
+			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue!));
 		}
 	}
 
@@ -1838,7 +1893,8 @@ public static class SchemaValidationService
 		string owner = string.IsNullOrEmpty(componentType) ? node : $"{node} ({componentType})";
 		string shown = Truncate(value);
 		return $"View node {owner} binds text property '{property}' to the localizable resource " +
-			$"\"{shown}\", but this property must be a plain inline literal. Rule: {LiteralRequiredTextClause}. " +
+			$"\"{shown}\", but this property must not be a localizable-resource binding (a plain literal or a " +
+			$"dynamic $-binding is fine). Rule: {LiteralRequiredTextClause}. " +
 			"See the page-schema-resources guide.";
 	}
 
