@@ -58,8 +58,10 @@ public sealed class ProcessModelingGuidanceResource {
 			  kind's own default, which mirrors the visual designer's palette — a `signalStart` defaults to background
 			  mode, so a signal-started process runs asynchronously and its effects appear a moment after the record is
 			  saved. The platform ANDs the flag with the global `UseBackgroundProcessMode` setting (on by default), so
-			  with that setting off background mode is inactive regardless. `describe-business-process` reports the
-			  effective value per element, so it round-trips.
+			  with that setting off background mode is inactive regardless — and since the platform then does not
+			  persist the flag at all, `useBackgroundMode: true` is REJECTED with a clear error on such an environment
+			  instead of being silently dropped. `false` is always accepted (inline execution is what that environment
+			  already does). `describe-business-process` reports the effective value per element, so it round-trips.
 			- A data source `filter` on a `signalStart` to restrict WHICH records fire the trigger (see the
 			  "Data source filters" section below).
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
@@ -104,7 +106,9 @@ public sealed class ProcessModelingGuidanceResource {
 			      "signal": { "entity": "Order", "on": "modified", "changedColumns": ["Amount", "StatusId"] } }
 			  `changedColumns` is valid ONLY for `on: "modified"` (the designer's "expect changes" case) — the server
 			  rejects it for "added"/"deleted", and rejects a name that is not a column on the entity. Use entity COLUMN
-			  names (e.g. `Amount`), not field captions; omit `changedColumns` (or pass []) to fire on any change. This is
+			  names (e.g. `Amount`), not field captions; omit `changedColumns` (or pass []) to fire on any change — but an
+			  array that contains ONLY blank entries is rejected, since that reads as a mistake rather than as a request
+			  to widen the trigger (blanks mixed with real names are simply ignored). This is
 			  INDEPENDENT of `filter`: `changedColumns` narrows WHICH columns count as a change, `filter` narrows WHICH
 			  records qualify — combine them freely.
 			- To fire the trigger ONLY for records matching a condition (e.g. only when Name = "Start"), add a
