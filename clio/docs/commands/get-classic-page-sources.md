@@ -1,4 +1,4 @@
-# get-classic-migration-bundle
+# get-classic-page-sources
 
 ## Command Type
 
@@ -6,14 +6,16 @@
 
 ## Name
 
-get-classic-migration-bundle - Assemble a Classic->Freedom migration bundle and write the manifest JSON to disk
+get-classic-page-sources - Collect the Classic page sources for folding and write the manifest JSON to disk
 
-**Aliases:** `classic-migration-bundle`
+**Aliases:** `classic-page-sources` (deprecated: `get-classic-migration-bundle`, `classic-migration-bundle`)
 
 ## Description
 
-The get-classic-migration-bundle command assembles, server-side, everything the Classic->Freedom
+The get-classic-page-sources command collects, server-side, everything the Classic->Freedom
 migration engine (`migrate.mjs`) needs to fold a classic page, and writes it to disk as a manifest JSON.
+It gathers the raw page sources for folding — it does not itself fold them, so the same manifest is equally
+useful for page audits, layer diffing, and tracing where a container came from.
 
 It:
 
@@ -40,14 +42,14 @@ The manifest matches the input contract of the migration engine, so it can be fo
 ## Synopsis
 
 ```bash
-clio get-classic-migration-bundle [options]
+clio get-classic-page-sources [options]
 ```
 
 ## Options
 
 ```bash
---schema-name                      Classic client-unit (page) schema name to assemble
-                                   the bundle for (required)
+--schema-name                      Classic client-unit (page) schema name to collect
+                                   the page sources for (required)
 
 --entity                           Entity schema name (optional; inferred from the page
                                    body when omitted). Drives entityColumns/columnTitles
@@ -69,11 +71,11 @@ clio get-classic-migration-bundle [options]
 ## Example
 
 ```bash
-clio get-classic-migration-bundle --schema-name ContactPageV2 -e dev
-# Assemble the ContactPageV2 bundle -> <workspace-root>/.clio-migration/ContactPageV2/manifest.json
+clio get-classic-page-sources --schema-name ContactPageV2 -e dev
+# Collect the ContactPageV2 sources -> <workspace-root>/.clio-migration/ContactPageV2/manifest.json
 
-clio get-classic-migration-bundle --schema-name UsrCasePage --entity UsrCase --output-file ./bundle.json -e dev
-# Assemble with an explicit entity and output path
+clio get-classic-page-sources --schema-name UsrCasePage --entity UsrCase --output-file ./sources.json -e dev
+# Collect with an explicit entity and output path
 ```
 
 ## Output format
@@ -84,13 +86,13 @@ The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `la
 resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`, `section`, and
 `childPageSchemas`.
 
-`warnings` is present only when the bundle is incomplete in a way the caller must weigh, and is omitted from a
-complete bundle. It is raised when no section could be resolved (`sectionLayerCount: 0`) — which empties the
-List-page side of a migration plan and is not the same as "this entity has no section" — when the section
-metadata lookup failed and the run fell back to naming conventions, and when pattern matching over a schema
-body timed out and that body was skipped, so `detailCount` / `sectionLayerCount` may read lower than the page
-actually has. Over MCP the warning text is redacted the same way `error` is, so a backend host or URI carried
-in an underlying failure never reaches the caller's context.
+`warnings` is present only when the collected sources are incomplete in a way the caller must weigh, and is
+omitted from a complete collection. It is raised when no section could be resolved (`sectionLayerCount: 0`) —
+which empties the List-page side of a migration plan and is not the same as "this entity has no section" —
+when the section metadata lookup failed and the run fell back to naming conventions, and when pattern matching
+over a schema body timed out and that body was skipped, so `detailCount` / `sectionLayerCount` may read lower
+than the page actually has. Over MCP the warning text is redacted the same way `error` is, so a backend host or
+URI carried in an underlying failure never reaches the caller's context.
 
 ## Notes
 
@@ -112,4 +114,4 @@ in an underlying failure never reaches the caller's context.
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-- [Clio Command Reference](../../Commands.md#get-classic-migration-bundle)
+- [Clio Command Reference](../../Commands.md#get-classic-page-sources)

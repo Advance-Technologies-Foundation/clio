@@ -12,14 +12,17 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
-/// <summary>Options for the <c>get-classic-migration-bundle</c> command.</summary>
-[Verb("get-classic-migration-bundle", Aliases = ["classic-migration-bundle"],
-	HelpText = "Assemble a Classic->Freedom migration bundle (merged layer chain + parent-template seed + " +
-		"resolution inputs) and write the manifest JSON to disk for the migration engine to fold")]
-public class GetClassicMigrationBundleOptions : EnvironmentOptions {
+/// <summary>Options for the <c>get-classic-page-sources</c> command.</summary>
+// Legacy verb names (get-classic-migration-bundle / classic-migration-bundle) stay as aliases so guidance and
+// scripts written against the old name keep resolving after the rename (ENG-94218).
+[Verb("get-classic-page-sources",
+	Aliases = ["classic-page-sources", "get-classic-migration-bundle", "classic-migration-bundle"],
+	HelpText = "Collect the Classic page sources for folding (the full replacing-layer chain + parent-template " +
+		"seed + resolution inputs) and write the manifest JSON to disk for the migration engine to fold")]
+public class GetClassicPageSourcesOptions : EnvironmentOptions {
 
-	/// <summary>Classic client-unit (page) schema name the bundle is assembled for.</summary>
-	[Option("schema-name", Required = true, HelpText = "Classic client-unit (page) schema name to assemble the bundle for")]
+	/// <summary>Classic client-unit (page) schema name the page sources are collected for.</summary>
+	[Option("schema-name", Required = true, HelpText = "Classic client-unit (page) schema name to collect the page sources for")]
 	public string SchemaName { get; set; }
 
 	/// <summary>Optional entity schema name; inferred from the page bodies when omitted.</summary>
@@ -35,16 +38,16 @@ public class GetClassicMigrationBundleOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Summary envelope returned by <c>get-classic-migration-bundle</c>. Carries the absolute manifest path and
+/// Summary envelope returned by <c>get-classic-page-sources</c>. Carries the absolute manifest path and
 /// per-block counts — never the schema bodies themselves (those live only in the manifest file).
 /// </summary>
-public sealed class GetClassicMigrationBundleResponse {
+public sealed class GetClassicPageSourcesResponse {
 
-	/// <summary>Whether the bundle was assembled and written.</summary>
+	/// <summary>Whether the page sources were collected and written.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("success")]
 	public bool Success { get; set; }
 
-	/// <summary>The classic page schema the bundle was assembled for.</summary>
+	/// <summary>The classic page schema the page sources were collected for.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("schemaName")]
 	public string SchemaName { get; set; }
 
@@ -86,7 +89,7 @@ public sealed class GetClassicMigrationBundleResponse {
 
 	/// <summary>
 	/// Non-fatal gaps the caller must weigh before acting on the manifest (for example: no section resolved, so the
-	/// plan's List-page analysis will be empty). <c>null</c> when the bundle is complete.
+	/// plan's List-page analysis will be empty). <c>null</c> when the collected sources are complete.
 	/// </summary>
 	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
 	public IReadOnlyList<string> Warnings { get; set; }
@@ -97,12 +100,12 @@ public sealed class GetClassicMigrationBundleResponse {
 }
 
 /// <summary>
-/// Assembles a Classic-&gt;Freedom migration bundle server-side and writes it to disk in the shape the toolkit
+/// Collects the Classic page sources server-side and writes it to disk in the shape the toolkit
 /// Node engine (migrate.mjs) folds: the whole replacing-schema layer chain (base-&gt;top) plus the parent-template
 /// seed, plus resolution inputs (entityColumns/columnTitles/resources). The layer bodies are written to the
 /// manifest file, never returned in the response — the caller triggers the run and reads only the small summary.
 /// </summary>
-public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundleOptions> {
+public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions> {
 
 	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.ClientUnit;
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
@@ -143,7 +146,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
-	public GetClassicMigrationBundleCommand(
+	public GetClassicPageSourcesCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IRemoteEntitySchemaColumnManager columnManager,
@@ -166,7 +169,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// the whole assembly, so seed walks, sections, and child pages never re-fetch what an earlier step already
 	// loaded. Deliberately per-run (never on the command instance): the MCP path reuses resolved command
 	// instances per environment, and an instance-level cache would serve stale schemas across calls.
-	private sealed class BundleRunContext {
+	private sealed class PageSourcesRunContext {
 
 		public Dictionary<string, (JObject Schema, string Error)> SchemaByCacheKey { get; } =
 			new(StringComparer.OrdinalIgnoreCase);
@@ -175,17 +178,17 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			new(StringComparer.OrdinalIgnoreCase);
 
 		// Non-fatal gaps gathered anywhere in the assembly (including nested child manifests) and surfaced on
-		// GetClassicMigrationBundleResponse.Warnings. Lives here, not on the command, for the same reason as the
+		// GetClassicPageSourcesResponse.Warnings. Lives here, not on the command, for the same reason as the
 		// caches: the MCP path reuses command instances per environment.
 		public List<string> Warnings { get; } = [];
 	}
 
 	/// <summary>
-	/// Assembles the migration bundle for <paramref name="options"/> and writes the manifest to disk.
-	/// Returns <c>true</c> and a summary response on success; <c>false</c> with <see cref="GetClassicMigrationBundleResponse.Error"/>
+	/// Collects the Classic page sources for <paramref name="options"/> and writes the manifest to disk.
+	/// Returns <c>true</c> and a summary response on success; <c>false</c> with <see cref="GetClassicPageSourcesResponse.Error"/>
 	/// set when the schema cannot be resolved, a chain layer fails to load, or the manifest cannot be written.
 	/// </summary>
-	public virtual bool TryAssembleBundle(GetClassicMigrationBundleOptions options, out GetClassicMigrationBundleResponse response) {
+	public virtual bool TryAssemblePageSources(GetClassicPageSourcesOptions options, out GetClassicPageSourcesResponse response) {
 		try {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				response = Fail("schema-name is required");
@@ -197,7 +200,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 				response = Fail(PageSchemaMetadataHelper.SchemaNameFormatError);
 				return false;
 			}
-			var ctx = new BundleRunContext();
+			var ctx = new PageSourcesRunContext();
 
 			// 1-3. Resolve the page's full replacing-layer chain (schemas[]) AND the parent-template seed[] in ONE
 			//      GetParentSchemas designer round-trip (useFullHierarchy=true returns the whole effective chain),
@@ -285,7 +288,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			}
 			_fileSystem.WriteAllTextToFile(manifestPath, manifest.ToString(Formatting.Indented));
 
-			response = new GetClassicMigrationBundleResponse {
+			response = new GetClassicPageSourcesResponse {
 				Success = true,
 				SchemaName = options.SchemaName,
 				Entity = entity,
@@ -308,14 +311,14 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	}
 
 	/// <inheritdoc />
-	public override int Execute(GetClassicMigrationBundleOptions options) {
-		bool success = TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+	public override int Execute(GetClassicPageSourcesOptions options) {
+		bool success = TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 		_logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
 	}
 
 	private (JObject schema, string error) LoadSchemaCached(
-		BundleRunContext ctx, string schemaUId, string schemaName, bool useFullHierarchy = false) {
+		PageSourcesRunContext ctx, string schemaUId, string schemaName, bool useFullHierarchy = false) {
 		string cacheKey = schemaUId + (useFullHierarchy ? "|merged" : "|own");
 		if (ctx.SchemaByCacheKey.TryGetValue(cacheKey, out (JObject Schema, string Error) cached)) {
 			return cached;
@@ -326,7 +329,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return result;
 	}
 
-	private (IReadOnlyList<SchemaLayer> layers, string error) EnumerateLayersCached(BundleRunContext ctx, string schemaName) {
+	private (IReadOnlyList<SchemaLayer> layers, string error) EnumerateLayersCached(PageSourcesRunContext ctx, string schemaName) {
 		if (ctx.LayersByName.TryGetValue(schemaName, out IReadOnlyList<SchemaLayer> cached)) {
 			return (cached, null);
 		}
@@ -343,7 +346,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// Resolves many names in ONE SelectQuery and seeds the enumeration cache — including empty entries for
 	// names that do not exist, so later per-name lookups don't re-query them. A batch failure only logs:
 	// every consumer falls back to the memoized per-name path.
-	private void PrimeLayerBatch(BundleRunContext ctx, IReadOnlyCollection<string> schemaNames) {
+	private void PrimeLayerBatch(PageSourcesRunContext ctx, IReadOnlyCollection<string> schemaNames) {
 		List<string> missing = schemaNames
 			.Where(name => !string.IsNullOrWhiteSpace(name) && !ctx.LayersByName.ContainsKey(name))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -372,9 +375,9 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// per-layer LoadLayerChain + per-template-level BuildSeed fan-out (~30+ round-trips on a heavily-layered
 	// page). The flat hierarchy is ordered base->top; layers named schemaName become schemas[], the rest seed[].
 	// On any designer/transport failure or an unexpectedly empty result it degrades to the proven legacy fan-out,
-	// so the bundle is never worse than before.
+	// so the collected sources are never worse than before.
 	private (JArray schemas, JArray seed, string topLayerUId, string error) LoadChainAndSeed(
-		BundleRunContext ctx, string schemaName) {
+		PageSourcesRunContext ctx, string schemaName) {
 		try {
 			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = ResolveHierarchyBaseToTop(schemaName);
 			if (hierarchy is { Count: > 0 }) {
@@ -411,7 +414,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// The proven per-layer fan-out, kept as the fallback for LoadChainAndSeed (and still used directly by the
 	// section/child-page enrichers): the same-named layer chain -> schemas[], then the parent-template walk -> seed[].
 	private (JArray schemas, JArray seed, string topLayerUId, string error) LoadChainAndSeedLegacy(
-		BundleRunContext ctx, string schemaName) {
+		PageSourcesRunContext ctx, string schemaName) {
 		(JArray schemas, JObject topSchema, string topLayerUId, string chainError) = LoadLayerChain(ctx, schemaName);
 		if (chainError != null) {
 			return (null, null, null, chainError);
@@ -480,7 +483,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// [{pkg, body}] array base->top plus the most-derived layer (for parent walks). Shared by the main chain,
 	// the section gatherer, and child-page manifests.
 	private (JArray schemas, JObject topSchema, string topUId, string error) LoadLayerChain(
-		BundleRunContext ctx, string schemaName) {
+		PageSourcesRunContext ctx, string schemaName) {
 		(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, schemaName);
 		if (enumError != null) {
 			return (null, null, null, enumError);
@@ -506,7 +509,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return (schemas, topSchema, topUId, null);
 	}
 
-	private JArray BuildSeed(BundleRunContext ctx, JObject topSchema) {
+	private JArray BuildSeed(PageSourcesRunContext ctx, JObject topSchema) {
 		// Walk `parent` from the top layer up to the base template. At EACH template level, enumerate every
 		// same-named layer (a parent template can itself be replaced across packages) so the seed carries the
 		// whole layer set per level — not just the single parent.uId layer. Seeding only the linked layer drops
@@ -563,7 +566,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// can be enumerated, else just the linked layer. Layer UIds are tracked across the walk so a chain that
 	// revisits the same template (e.g. a parent link into a replaced sibling) never seeds a duplicate body.
 	private List<JObject> LoadParentLevelLayers(
-		BundleRunContext ctx,
+		PageSourcesRunContext ctx,
 		string parentUId,
 		JObject parentLayer,
 		HashSet<string> seededTemplateNames,
@@ -622,7 +625,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return entry;
 	}
 
-	private string InferEntity(BundleRunContext ctx, JArray schemas, JArray seed) {
+	private string InferEntity(PageSourcesRunContext ctx, JArray schemas, JArray seed) {
 		// Prefer the page's own layer chain (most specific), then the parent-template seed.
 		foreach (JToken entry in schemas.Concat(seed)) {
 			string body = entry["body"]?.ToString();
@@ -637,7 +640,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return null;
 	}
 
-	private JObject BuildResources(BundleRunContext ctx, string topLayerUId, string schemaName) {
+	private JObject BuildResources(PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
 		var resources = new JObject();
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
@@ -704,7 +707,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// Collects distinct detail-schema names referenced across every layer body (page chain + parent seed).
 	// The names come from server-supplied bodies, so collection is capped by ATTEMPTS — not by later successes —
 	// to keep a malformed or hostile response from driving unbounded probing.
-	private List<string> CollectDetailNames(BundleRunContext ctx, JArray schemas, JArray seed) {
+	private List<string> CollectDetailNames(PageSourcesRunContext ctx, JArray schemas, JArray seed) {
 		var detailNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		int collectionCap = MaxDetails * 2;
@@ -729,7 +732,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return detailNames;
 	}
 
-	private JObject BuildDetailSchemas(BundleRunContext ctx, IReadOnlyList<string> detailNames) {
+	private JObject BuildDetailSchemas(PageSourcesRunContext ctx, IReadOnlyList<string> detailNames) {
 		var detailSchemas = new JObject();
 		foreach (string detailName in detailNames) {
 			if (detailSchemas.Count >= MaxDetails) {
@@ -770,8 +773,8 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// schema name carries a UId/app infix (entity ASPContractData -> section ASPContractDatac145c7efSection) or that
 	// was renamed; the conventions still cover stands where the metadata lookup is unavailable or the module row is
 	// missing. A metadata failure degrades to the conventions and is surfaced as a response warning, never fatal —
-	// the section is an enricher, not the bundle's payload.
-	private IReadOnlyList<string> ResolveSectionCandidates(BundleRunContext ctx, string schemaName, string entity) {
+	// the section is an enricher, not the sources' payload.
+	private IReadOnlyList<string> ResolveSectionCandidates(PageSourcesRunContext ctx, string schemaName, string entity) {
 		var candidates = new List<string>();
 		if (!string.IsNullOrWhiteSpace(entity)) {
 			ClassicSectionLookup lookup = _sectionResolver.ResolveSectionSchemaNames(entity);
@@ -787,7 +790,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 	}
 
-	private JArray BuildSection(BundleRunContext ctx, IReadOnlyList<string> candidates) {
+	private JArray BuildSection(PageSourcesRunContext ctx, IReadOnlyList<string> candidates) {
 		var section = new JArray();
 		foreach (string candidate in candidates) {
 			try {
@@ -851,7 +854,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return null;
 	}
 
-	private JObject BuildChildPageSchemas(BundleRunContext ctx, JObject detailSchemas) {
+	private JObject BuildChildPageSchemas(PageSourcesRunContext ctx, JObject detailSchemas) {
 		var childPageSchemas = new JObject();
 		// Collect the distinct edit-page names first so the whole set is resolved in one batched enumeration.
 		var editPageNames = new List<string>();
@@ -897,7 +900,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// Assembles the CORE nested manifest (schemas + seed + entity) for a child edit page. Bounded to one
 	// level of children — the engine recursively maps the nested manifest and depth-caps its own display.
 	// An edit-page name that resolves to no schema is a heuristic miss and is omitted silently (null, null).
-	private (JObject manifest, string error) AssembleChildManifest(BundleRunContext ctx, string editPageName) {
+	private (JObject manifest, string error) AssembleChildManifest(PageSourcesRunContext ctx, string editPageName) {
 		// Existence gate on the (batch-primed, cached) enumeration so a heuristic edit-page miss stays a cheap
 		// no-op instead of a designer round-trip. Only after it resolves do we pay the hierarchy resolution.
 		(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, editPageName);
@@ -939,7 +942,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// overwrite. It is confined to the workspace anchor OR the OS temp directory — the two locations the
 	// migration skill legitimately targets (in-workspace, or an OS-temp scratch dir) — and anything escaping
 	// both is rejected before any write, returning an error rather than a path.
-	private (string path, string error) ResolveOutputPath(GetClassicMigrationBundleOptions options) {
+	private (string path, string error) ResolveOutputPath(GetClassicPageSourcesOptions options) {
 		// H1: reading the process-global cwd must serialize against the MCP workspace tools that PIN cwd.
 		// In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
 		// is uncontended.
@@ -987,13 +990,13 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			&& !Path.IsPathRooted(relative);
 	}
 
-	private static GetClassicMigrationBundleResponse Fail(string error) =>
+	private static GetClassicPageSourcesResponse Fail(string error) =>
 		new() { Success = false, Error = error };
 
 	// Best-effort regex evaluation over server-supplied bodies. The compiled patterns carry a 1s match timeout;
-	// a timeout on one pathological body must DEGRADE (skip that body, keep the rest of the bundle) exactly like
+	// a timeout on one pathological body must DEGRADE (skip that body, keep the rest of the collected sources) exactly like
 	// every other enricher, never abort the whole assembly. Every Match/Matches call funnels through these two
-	// guards so no regex pass can turn a would-be-successful bundle into a hard failure.
+	// guards so no regex pass can turn a would-be-successful collection into a hard failure.
 	// internal, not private: the timeout branch is only reachable with an injected pattern/timeout, so the guards
 	// take the warnings sink directly (all they need) and clio.tests exercises them head-on.
 	internal Match SafeMatch(List<string> warnings, Regex regex, string body, string what) {
@@ -1023,7 +1026,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// "the page has nothing there". Deduped — one pathological page can trip the same guard on many bodies.
 	private void ReportRegexTimeout(List<string> warnings, string what) {
 		string warning =
-			$"Pattern matching timed out while {what}; that schema body was skipped, so the bundle may be " +
+			$"Pattern matching timed out while {what}; that schema body was skipped, so the collected sources may be " +
 			"incomplete. A lower count here does NOT mean the page has nothing to migrate.";
 		_logger.WriteWarning(warning);
 		if (!warnings.Contains(warning, StringComparer.Ordinal)) {

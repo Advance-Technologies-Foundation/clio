@@ -270,7 +270,7 @@ internal sealed class CommandHelpCatalog {
 			"create-lookup",
 			"dataservice",
 			"delete-schema",
-			"get-classic-migration-bundle",
+			"get-classic-page-sources",
 			"list-entity-client-schemas",
 			"download-configuration",
 			"externalLink",

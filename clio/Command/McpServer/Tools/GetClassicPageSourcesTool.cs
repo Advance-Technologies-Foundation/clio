@@ -8,13 +8,15 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public sealed class GetClassicMigrationBundleTool(
-	GetClassicMigrationBundleCommand command,
+public sealed class GetClassicPageSourcesTool(
+	GetClassicPageSourcesCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
-	: BaseTool<GetClassicMigrationBundleOptions>(command, logger, commandResolver) {
+	: BaseTool<GetClassicPageSourcesOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "get-classic-migration-bundle";
+	// Canonical MCP tool name. The prior name (get-classic-migration-bundle) resolves via the
+	// McpToolCompatibilityCatalog DeprecatedAlias entry, so shipped agents keep working (ENG-94218).
+	internal const string ToolName = "get-classic-page-sources";
 
 	// ReadOnly=false: the tool's whole purpose is a local file write (the manifest). Destructive stays false
 	// because every write is confined: the DEFAULT path is anchored under the workspace with a format-validated
@@ -23,22 +25,22 @@ public sealed class GetClassicMigrationBundleTool(
 	// rejected before any write, so this MCP-callable tool cannot be steered into overwriting an arbitrary file.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
-		"Assemble a Classic->Freedom migration bundle for a classic page schema and WRITE it to disk as a manifest " +
+		"Collect the Classic page sources for a classic page schema and WRITE them to disk as a manifest " +
 		"the migration engine (migrate.mjs) folds: the whole replacing-schema layer chain (base->top) + the " +
 		"parent-template seed + resolution inputs (entityColumns/columnTitles/resources). The response returns the " +
 		"ABSOLUTE manifest file path and a small summary — the layer bodies are written to the file, NOT returned, " +
 		"so they never enter the caller's context. ALWAYS read `warnings` before planning from the manifest: it is " +
-		"present only when the bundle is incomplete (e.g. no section resolved, so the plan's List-page side would be " +
-		"empty) — that is NOT the same as 'nothing to migrate'. " +
+		"present only when the collected sources are incomplete (e.g. no section resolved, so the plan's List-page " +
+		"side would be empty) — that is NOT the same as 'nothing to migrate'. " +
 		"Prefer `environment-name`; keep direct connection args for fallback only.")]
-	public GetClassicMigrationBundleResponse GetBundle(
+	public GetClassicPageSourcesResponse GetPageSources(
 		[Description("Parameters: schema-name (required, the classic page); entity (optional); output-file (optional); environment-name preferred.")]
 		[Required]
-		GetClassicMigrationBundleArgs args) {
+		GetClassicPageSourcesArgs args) {
 		if (args is null) {
-			return new GetClassicMigrationBundleResponse { Success = false, Error = "args is required" };
+			return new GetClassicPageSourcesResponse { Success = false, Error = "args is required" };
 		}
-		GetClassicMigrationBundleOptions options = new() {
+		GetClassicPageSourcesOptions options = new() {
 			SchemaName = args.SchemaName,
 			Entity = args.Entity,
 			OutputFile = args.OutputFile,
@@ -49,14 +51,14 @@ public sealed class GetClassicMigrationBundleTool(
 		};
 		// This tool is environment-sensitive (environment-name/uri/login/password), so it must run under the
 		// PER-TENANT execution lock. ExecuteResolved keys the lock on the resolved tenant and marks the session
-		// container in-use for the whole multi-round-trip bundle assembly (ENG-93208), instead of the
+		// container in-use for the whole multi-round-trip page-sources collection (ENG-93208), instead of the
 		// environment-less ExecuteWithCleanLog overload which keys on the shared fallback — that would serialize
 		// independent tenants and leave the resolved IApplicationClient/HttpClient evictable mid-call.
 		// ExecuteResolved also centralizes the resolution-failure redaction that used to be hand-rolled here.
-		return ExecuteResolved<GetClassicMigrationBundleCommand, GetClassicMigrationBundleResponse>(
+		return ExecuteResolved<GetClassicPageSourcesCommand, GetClassicPageSourcesResponse>(
 			options,
 			resolvedCommand => {
-				resolvedCommand.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+				resolvedCommand.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 				if (!string.IsNullOrEmpty(response?.Error)) {
 					// The command's inner error can carry an HTTP/DataService message with the environment
 					// URI/host; redact before it lands in the MCP transcript (parity with ExecuteResolved's
@@ -72,20 +74,20 @@ public sealed class GetClassicMigrationBundleTool(
 				}
 				return response;
 			},
-			error => new GetClassicMigrationBundleResponse { Success = false, Error = error });
+			error => new GetClassicPageSourcesResponse { Success = false, Error = error });
 	}
 }
 
 /// <summary>
-/// Arguments of the <c>get-classic-migration-bundle</c> MCP tool. Derives from
+/// Arguments of the <c>get-classic-page-sources</c> MCP tool. Derives from
 /// <see cref="ConnectionArgsBase"/> for the shared connection surface (environment-name / uri / login /
 /// password) but deliberately NOT from <see cref="SchemaGetBaseArgs"/>: that base describes
 /// <c>output-file</c> as an optional schema-body sink, while here it is the manifest destination and the
 /// manifest is always written, so <c>output-file</c> is declared locally with its own semantics.
 /// </summary>
-public sealed record GetClassicMigrationBundleArgs(
+public sealed record GetClassicPageSourcesArgs(
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Classic client-unit (page) schema name to assemble the bundle for, e.g. 'ContactPageV2'")]
+	[property: Description("Classic client-unit (page) schema name to collect the page sources for, e.g. 'ContactPageV2'")]
 	[property: Required]
 	string SchemaName,
 	[property: JsonPropertyName("entity")]

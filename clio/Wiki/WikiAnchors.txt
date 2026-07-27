@@ -81,7 +81,7 @@ set-user-theme:set-user-theme,apply-user-theme
 upload-image:upload-image
 set-background-image:set-background-image
 get-build-info:get-build-info,bi,buildinfo
-get-classic-migration-bundle:get-classic-migration-bundle,classic-migration-bundle
+get-classic-page-sources:get-classic-page-sources,classic-page-sources,get-classic-migration-bundle,classic-migration-bundle
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties

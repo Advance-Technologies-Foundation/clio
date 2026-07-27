@@ -15,11 +15,11 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
-internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClassicMigrationBundleOptions> {
+internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPageSourcesOptions> {
 
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
 
-	private GetClassicMigrationBundleCommand _command;
+	private GetClassicPageSourcesCommand _command;
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IRemoteEntitySchemaColumnManager _columnManager;
@@ -44,7 +44,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_localizableByUid.Clear();
 		_writtenPath = null;
 		_writtenContent = null;
-		_command = Container.GetRequiredService<GetClassicMigrationBundleCommand>();
+		_command = Container.GetRequiredService<GetClassicPageSourcesCommand>();
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -80,8 +80,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle writes a manifest with base->top schemas, the parent seed, resources, and entity columns; the response carries only a summary.")]
-	public void TryAssembleBundle_ShouldWriteManifest_WithLayersSeedResourcesAndColumns() {
+	[Description("TryAssemblePageSources writes a manifest with base->top schemas, the parent seed, resources, and entity columns; the response carries only a summary.")]
+	public void TryAssemblePageSources_ShouldWriteManifest_WithLayersSeedResourcesAndColumns() {
 		// Arrange — a two-layer page with a parent template and merged resources, no details/section
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddLayer("UsrTestPage", "uid-base", "BaseApp", 100);
@@ -90,10 +90,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddSchema("uid-parent", "define(\"BaseModulePageV2\", [], function() { return {}; });", EmptyGuid, "CrtBase");
 		AddLocalizable("uid-top", "HeaderCaption", "Header");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert — summary
 		ok.Should().BeTrue(because: "a resolvable multi-layer page assembles successfully");
@@ -123,16 +123,16 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle anchors the default manifest path (absolute) and reports it in the response, instead of a cwd-relative string an MCP caller cannot resolve.")]
-	public void TryAssembleBundle_ShouldUseAnchoredAbsoluteDefaultPath_WhenOutputFileOmitted() {
+	[Description("TryAssemblePageSources anchors the default manifest path (absolute) and reports it in the response, instead of a cwd-relative string an MCP caller cannot resolve.")]
+	public void TryAssemblePageSources_ShouldUseAnchoredAbsoluteDefaultPath_WhenOutputFileOmitted() {
 		// Arrange
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert — no workspace marker above the mock cwd, so the anchor is the current directory itself
 		string expected = Path.Combine(
@@ -145,8 +145,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle anchors the default manifest path at the enclosing workspace root when the cwd is inside a workspace.")]
-	public void TryAssembleBundle_ShouldAnchorDefaultPath_AtWorkspaceRoot() {
+	[Description("TryAssemblePageSources anchors the default manifest path at the enclosing workspace root when the cwd is inside a workspace.")]
+	public void TryAssemblePageSources_ShouldAnchorDefaultPath_AtWorkspaceRoot() {
 		// Arrange — a workspace marker above the current directory
 		string root = _ioFileSystem.Directory.GetCurrentDirectory();
 		string workspace = _ioFileSystem.Path.Combine(root, "ws");
@@ -159,10 +159,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		string expected = Path.Combine(workspace, ".clio-migration", "UsrTestPage", "manifest.json");
@@ -171,19 +171,19 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle absolutizes an explicit relative output-file so the response reports where the file actually lands.")]
-	public void TryAssembleBundle_ShouldAbsolutizeExplicitOutputFile() {
+	[Description("TryAssemblePageSources absolutizes an explicit relative output-file so the response reports where the file actually lands.")]
+	public void TryAssemblePageSources_ShouldAbsolutizeExplicitOutputFile() {
 		// Arrange
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage", OutputFile = "./bundle.json" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage", OutputFile = "./sources.json" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		response.ManifestPath.Should().Be(_ioFileSystem.Path.GetFullPath("./bundle.json"),
+		response.ManifestPath.Should().Be(_ioFileSystem.Path.GetFullPath("./sources.json"),
 			because: "an explicit relative path is resolved to the absolute location it is written to");
 		Path.IsPathRooted(response.ManifestPath).Should().BeTrue(
 			because: "the reported path must be absolute regardless of how the caller expressed it");
@@ -198,7 +198,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		string candidate = Path.GetFullPath(Path.Combine(workspace, "sub", "manifest.json"));
 
 		// Act
-		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeTrue(because: "a file under the workspace anchor is an allowed destination");
@@ -213,7 +213,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		string candidate = Path.GetFullPath(Path.Combine(tempRoot, "run", "manifest.json"));
 
 		// Act
-		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeTrue(because: "the OS temp scratch dir is the second allowed destination (skill temp policy)");
@@ -228,7 +228,7 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		string candidate = Path.GetFullPath(Path.Combine(workspace, "..", "..", "escape", "hosts"));
 
 		// Act
-		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeFalse(because: "a `..` escape out of both allowed zones must be rejected before any write");
@@ -243,15 +243,15 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		string candidate = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "gcmb-elsewhere", "manifest.json"));
 
 		// Act
-		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeFalse(because: "a path outside both the workspace anchor and the temp root is out of bounds");
 	}
 
 	[Test]
-	[Description("TryAssembleBundle writes an explicit output-file that lands inside the OS temp scratch dir — the location the migration skill targets.")]
-	public void TryAssembleBundle_ShouldAccept_ExplicitOutputFile_UnderOsTemp() {
+	[Description("TryAssemblePageSources writes an explicit output-file that lands inside the OS temp scratch dir — the location the migration skill targets.")]
+	public void TryAssemblePageSources_ShouldAccept_ExplicitOutputFile_UnderOsTemp() {
 		// Arrange — anchor the cwd under temp, and point output-file at a sibling scratch dir under temp
 		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
 		string workspace = _ioFileSystem.Path.Combine(tempRoot, "gcmb-ws");
@@ -261,10 +261,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage", OutputFile = scratch };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage", OutputFile = scratch };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "an output-file inside the OS temp scratch dir is an allowed destination");
@@ -274,8 +274,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle rejects an explicit output-file that escapes both the workspace and the OS temp dir, failing before any write instead of overwriting an arbitrary file.")]
-	public void TryAssembleBundle_ShouldReject_ExplicitOutputFile_OutsideAllowedZones() {
+	[Description("TryAssemblePageSources rejects an explicit output-file that escapes both the workspace and the OS temp dir, failing before any write instead of overwriting an arbitrary file.")]
+	public void TryAssemblePageSources_ShouldReject_ExplicitOutputFile_OutsideAllowedZones() {
 		// Arrange — cwd under temp so the anchor is known; output-file traverses out of temp to a sibling
 		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
 		string workspace = _ioFileSystem.Path.Combine(tempRoot, "gcmb-ws");
@@ -285,10 +285,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage", OutputFile = escape };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage", OutputFile = escape };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeFalse(because: "an output-file escaping both allowed zones must not be written");
@@ -298,16 +298,16 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle rejects a schema name that is not a valid identifier before any network call, keeping the default path confined to the anchor.")]
-	public void TryAssembleBundle_ShouldRejectInvalidSchemaName_BeforeAnyRequest() {
+	[Description("TryAssemblePageSources rejects a schema name that is not a valid identifier before any network call, keeping the default path confined to the anchor.")]
+	public void TryAssemblePageSources_ShouldRejectInvalidSchemaName_BeforeAnyRequest() {
 		// Arrange — a traversal-shaped name that must never become a path segment
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "..\\..\\evil" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "..\\..\\evil" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeFalse(because: "an invalid schema name cannot be bundled");
+		ok.Should().BeFalse(because: "an invalid schema name cannot have its sources collected");
 		response.Error.Should().Be(PageSchemaMetadataHelper.SchemaNameFormatError,
 			because: "the canonical format error tells the caller what a valid name looks like");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
@@ -315,31 +315,31 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle returns a not-found error and writes nothing when the schema has no layers.")]
-	public void TryAssembleBundle_ShouldReturnNotFound_WhenSchemaHasNoLayers() {
+	[Description("TryAssemblePageSources returns a not-found error and writes nothing when the schema has no layers.")]
+	public void TryAssemblePageSources_ShouldReturnNotFound_WhenSchemaHasNoLayers() {
 		// Arrange — no layers registered for the requested name
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "MissingPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "MissingPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeFalse(because: "an unresolvable schema cannot be bundled");
+		ok.Should().BeFalse(because: "an unresolvable schema cannot have its sources collected");
 		response.Error.Should().Contain("not found", because: "the caller needs a clear not-found message");
 		_writtenContent.Should().BeNull(because: "no manifest is written when the schema is missing");
 	}
 
 	[Test]
-	[Description("TryAssembleBundle aborts with a layer-specific error (and writes nothing) when a mid-chain layer body fails to load.")]
-	public void TryAssembleBundle_ShouldFail_WhenChainLayerLoadFails() {
+	[Description("TryAssemblePageSources aborts with a layer-specific error (and writes nothing) when a mid-chain layer body fails to load.")]
+	public void TryAssemblePageSources_ShouldFail_WhenChainLayerLoadFails() {
 		// Arrange — two enumerated layers, but the top layer has no loadable schema
 		AddLayer("UsrTestPage", "uid-base", "BaseApp", 100);
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-base", "define(\"UsrTestPage\", [], function() { return {}; });", EmptyGuid, "BaseApp");
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeFalse(because: "a manifest with a hole in the layer chain would misfold in the engine");
@@ -349,32 +349,32 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle converts a malformed (non-JSON) server response into a failed response instead of an unhandled exception.")]
-	public void TryAssembleBundle_ShouldFail_WhenServerReturnsMalformedResponse() {
+	[Description("TryAssemblePageSources converts a malformed (non-JSON) server response into a failed response instead of an unhandled exception.")]
+	public void TryAssemblePageSources_ShouldFail_WhenServerReturnsMalformedResponse() {
 		// Arrange — the server answers every request with an HTML error page
 		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs("<html>login required</html>");
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeFalse(because: "a malformed transport response cannot produce a bundle");
+		ok.Should().BeFalse(because: "a malformed transport response cannot produce a manifest");
 		response.Error.Should().NotBeNullOrWhiteSpace(because: "the parse failure must surface as a readable error");
 		_writtenContent.Should().BeNull(because: "nothing is written when assembly fails");
 	}
 
 	[Test]
-	[Description("TryAssembleBundle honors an explicit --entity option over body inference and feeds it to the column manager.")]
-	public void TryAssembleBundle_ShouldHonorExplicitEntity_OverBodyInference() {
+	[Description("TryAssemblePageSources honors an explicit --entity option over body inference and feeds it to the column manager.")]
+	public void TryAssemblePageSources_ShouldHonorExplicitEntity_OverBodyInference() {
 		// Arrange — the body names a DIFFERENT entity than the explicit option
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrOther\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage", Entity = "UsrOverride" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage", Entity = "UsrOverride" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.Entity.Should().Be("UsrOverride", because: "an explicit --entity wins over regex inference");
@@ -383,18 +383,18 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle succeeds without an entity: entity, columns, and section are omitted, and the column manager is not called.")]
-	public void TryAssembleBundle_ShouldOmitEntityBlocks_WhenNoEntityResolvable() {
+	[Description("TryAssemblePageSources succeeds without an entity: entity, columns, and section are omitted, and the column manager is not called.")]
+	public void TryAssemblePageSources_ShouldOmitEntityBlocks_WhenNoEntityResolvable() {
 		// Arrange — a body with no entitySchemaName and no explicit --entity
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "a page without a resolvable entity still bundles its layer chain");
+		ok.Should().BeTrue(because: "a page without a resolvable entity still collects its layer chain");
 		JObject manifest = JObject.Parse(_writtenContent);
 		manifest["entity"].Should().BeNull(because: "an unknown entity is omitted, never fabricated");
 		manifest["entityColumns"].Should().BeNull(because: "no entity means no columns block");
@@ -403,17 +403,17 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle keeps the bundle successful (with empty columns) when the column manager throws, and logs the degradation.")]
-	public void TryAssembleBundle_ShouldDegradeGracefully_WhenColumnManagerThrows() {
+	[Description("TryAssemblePageSources keeps the collection successful (with empty columns) when the column manager throws, and logs the degradation.")]
+	public void TryAssemblePageSources_ShouldDegradeGracefully_WhenColumnManagerThrows() {
 		// Arrange
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(_ => throw new InvalidOperationException("designer unavailable"));
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "entity columns are a best-effort enricher, not a bundling precondition");
@@ -423,8 +423,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle gathers detailSchemas, the section chain, and the child edit page as a nested manifest when they resolve.")]
-	public void TryAssembleBundle_ShouldGatherEnrichers_WhenResolvable() {
+	[Description("TryAssemblePageSources gathers detailSchemas, the section chain, and the child edit page as a nested manifest when they resolve.")]
+	public void TryAssemblePageSources_ShouldGatherEnrichers_WhenResolvable() {
 		// Arrange — page references a detail; detail names a child entity + edit page; section + child page resolve
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -439,10 +439,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200);
 		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.DetailCount.Should().Be(1, because: "the referenced detail schema resolves");
@@ -460,8 +460,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle resolves every enricher name (details + section candidates) through ONE batched SelectQuery instead of one round-trip per name.")]
-	public void TryAssembleBundle_ShouldBatchEnricherEnumeration_InSingleSelectQuery() {
+	[Description("TryAssemblePageSources resolves every enricher name (details + section candidates) through ONE batched SelectQuery instead of one round-trip per name.")]
+	public void TryAssemblePageSources_ShouldBatchEnricherEnumeration_InSingleSelectQuery() {
 		// Arrange — same enricher topology as the gather test
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -470,10 +470,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
 		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return {}; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out _);
+		_command.TryAssemblePageSources(options, out _);
 
 		// Assert — one request carries the detail name AND both section candidates together
 		_applicationClient.Received(1).ExecutePostRequest(
@@ -484,8 +484,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle loads a schema body only once per run: a child page sharing the main page's parent template reuses the cached layer.")]
-	public void TryAssembleBundle_ShouldMemoizeSchemaLoads_AcrossMainAndChildSeeds() {
+	[Description("TryAssemblePageSources loads a schema body only once per run: a child page sharing the main page's parent template reuses the cached layer.")]
+	public void TryAssemblePageSources_ShouldMemoizeSchemaLoads_AcrossMainAndChildSeeds() {
 		// Arrange — page and its detail's child edit page inherit the SAME template layer uid-tpl
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -500,10 +500,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("BaseTpl", "uid-tpl", "Core", 100);
 		AddSchema("uid-tpl", "define(\"BaseTpl\", [], function() { return {}; });", EmptyGuid, "Core", name: "BaseTpl");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert — both seeds carry the template, but its body traveled the wire once
 		response.ChildPageCount.Should().Be(1, because: "the child page assembles from the same run");
@@ -513,18 +513,18 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle omits an enricher it cannot resolve rather than fabricating it.")]
-	public void TryAssembleBundle_ShouldOmitUnresolvedDetail_WhenDetailSchemaMissing() {
+	[Description("TryAssemblePageSources omits an enricher it cannot resolve rather than fabricating it.")]
+	public void TryAssemblePageSources_ShouldOmitUnresolvedDetail_WhenDetailSchemaMissing() {
 		// Arrange — page references a detail that has no layers registered
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
 			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrGhostDetail\" } } }; });",
 			EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.DetailCount.Should().Be(0, because: "an unresolved detail is omitted, not fabricated");
@@ -533,8 +533,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle falls back to the <Entity>Section naming convention when no <Entity>SectionV2 schema exists.")]
-	public void TryAssembleBundle_ShouldGatherSection_ViaNonV2NamingFallback() {
+	[Description("TryAssemblePageSources falls back to the <Entity>Section naming convention when no <Entity>SectionV2 schema exists.")]
+	public void TryAssemblePageSources_ShouldGatherSection_ViaNonV2NamingFallback() {
 		// Arrange — only the non-V2 section name resolves
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -542,18 +542,18 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrCaseSection", "uid-section", "UsrApp", 200);
 		AddSchema("uid-section", "define(\"UsrCaseSection\", [], function() { return {}; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1, because: "the non-V2 naming fallback resolves the section");
 	}
 
 	[Test]
-	[Description("TryAssembleBundle resolves a section named after the page prefix (UsrApplicant1Page -> UsrApplicant1Section) when no <Entity>Section[V2] schema exists, so a section cloned/renamed off the page is not silently dropped.")]
-	public void TryAssembleBundle_ShouldGatherSection_ViaPagePrefixNaming_WhenEntitySectionDoesNotExist() {
+	[Description("TryAssemblePageSources resolves a section named after the page prefix (UsrApplicant1Page -> UsrApplicant1Section) when no <Entity>Section[V2] schema exists, so a section cloned/renamed off the page is not silently dropped.")]
+	public void TryAssemblePageSources_ShouldGatherSection_ViaPagePrefixNaming_WhenEntitySectionDoesNotExist() {
 		// Arrange — the page prefix (UsrApplicant1) differs from the bare entity (UsrApplicant); only the
 		// page-prefixed section schema exists, so the <Entity>Section[V2] candidates cannot resolve it.
 		AddLayer("UsrApplicant1Page", "uid-page", "UsrApp", 200);
@@ -562,10 +562,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrApplicant1Section", "uid-section", "UsrApp", 200);
 		AddSchema("uid-section", "define(\"UsrApplicant1Section\", [], function() { return {}; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrApplicant1Page" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrApplicant1Page" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1,
@@ -577,8 +577,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle prefers the page-prefixed section (UsrApplicant1Section) over the bare-entity section (UsrApplicantSection) when both exist, so a cloned page maps to its own section rather than the base one.")]
-	public void TryAssembleBundle_ShouldPreferPagePrefixSection_OverEntitySection_WhenBothExist() {
+	[Description("TryAssemblePageSources prefers the page-prefixed section (UsrApplicant1Section) over the bare-entity section (UsrApplicantSection) when both exist, so a cloned page maps to its own section rather than the base one.")]
+	public void TryAssemblePageSources_ShouldPreferPagePrefixSection_OverEntitySection_WhenBothExist() {
 		// Arrange — both the page-prefixed section and the bare-entity section exist; the page-prefixed one must win.
 		AddLayer("UsrApplicant1Page", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -588,10 +588,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrApplicantSection", "uid-entity-section", "EntityPkg", 200);
 		AddSchema("uid-entity-section", "define(\"UsrApplicantSection\", [], function() { return {}; });", EmptyGuid, "EntityPkg");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrApplicant1Page" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrApplicant1Page" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1, because: "the first section candidate that resolves wins, and only one chain is emitted");
@@ -601,8 +601,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle resolves a section whose schema name carries a UId/app infix (ASPContractDatac145c7efSection) from SysModule metadata, which no name derivation off the entity or page can reach.")]
-	public void TryAssembleBundle_ShouldGatherSection_ViaMetadata_WhenNameCarriesUIdInfix() {
+	[Description("TryAssemblePageSources resolves a section whose schema name carries a UId/app infix (ASPContractDatac145c7efSection) from SysModule metadata, which no name derivation off the entity or page can reach.")]
+	public void TryAssemblePageSources_ShouldGatherSection_ViaMetadata_WhenNameCarriesUIdInfix() {
 		// Arrange — the real section name (…c145c7efSection) is not derivable from the entity (ASPContractData)
 		// nor from the page prefix (ASPContractData1); only the SysModule binding reaches it.
 		AddLayer("ASPContractData1Page", "uid-page", "UsrApp", 200);
@@ -615,10 +615,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_sectionResolver.ResolveSectionSchemaNames("ASPContractData")
 			.Returns(new ClassicSectionLookup(new[] { "ASPContractDatac145c7efSection" }, null));
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "ASPContractData1Page" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "ASPContractData1Page" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1,
@@ -631,8 +631,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle prefers the metadata-bound section over a name-derived one when both resolve, so a renamed section wins over a same-named leftover.")]
-	public void TryAssembleBundle_ShouldPreferMetadataSection_OverNameDerivedSection_WhenBothExist() {
+	[Description("TryAssemblePageSources prefers the metadata-bound section over a name-derived one when both resolve, so a renamed section wins over a same-named leftover.")]
+	public void TryAssemblePageSources_ShouldPreferMetadataSection_OverNameDerivedSection_WhenBothExist() {
 		// Arrange — both the metadata-bound section and the <Entity>Section convention resolve; metadata must win.
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -644,10 +644,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_sectionResolver.ResolveSectionSchemaNames("UsrCase")
 			.Returns(new ClassicSectionLookup(new[] { "UsrCaseRenamedSection" }, null));
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1, because: "the first candidate that resolves wins and only one chain is emitted");
@@ -657,8 +657,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle degrades to the name conventions and warns in the response when the SysModule metadata lookup fails, instead of losing the section silently.")]
-	public void TryAssembleBundle_ShouldFallBackToNaming_AndWarn_WhenMetadataLookupFails() {
+	[Description("TryAssemblePageSources degrades to the name conventions and warns in the response when the SysModule metadata lookup fails, instead of losing the section silently.")]
+	public void TryAssemblePageSources_ShouldFallBackToNaming_AndWarn_WhenMetadataLookupFails() {
 		// Arrange — the metadata lookup errors out, but the <Entity>Section convention still resolves.
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -668,10 +668,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_sectionResolver.ResolveSectionSchemaNames("UsrCase")
 			.Returns(new ClassicSectionLookup(Array.Empty<string>(), "DataService call failed"));
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1, because: "the name convention still resolves the section after the metadata failure");
@@ -681,20 +681,20 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle warns in the response when no section resolves at all, so sectionLayerCount:0 is not mistaken for 'this entity has no section'.")]
-	public void TryAssembleBundle_ShouldWarn_WhenNoSectionResolves() {
+	[Description("TryAssemblePageSources warns in the response when no section resolves at all, so sectionLayerCount:0 is not mistaken for 'this entity has no section'.")]
+	public void TryAssemblePageSources_ShouldWarn_WhenNoSectionResolves() {
 		// Arrange — neither metadata nor any naming convention resolves a section.
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
 			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "a missing section is an enricher gap, not a bundle failure");
+		ok.Should().BeTrue(because: "a missing section is an enricher gap, not a collection failure");
 		response.SectionLayerCount.Should().Be(0, because: "no section candidate resolved");
 		response.Warnings.Should().ContainSingle(because: "the empty section must be surfaced, not left silent")
 			.Which.Should().Contain("UsrCase",
@@ -743,8 +743,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle seeds EVERY layer of a multi-package parent template (base->top), not just the single parent.uId layer, so base containers in sibling layers are not dropped.")]
-	public void TryAssembleBundle_ShouldSeedAllParentTemplateLayers_WhenParentIsMultiLayer() {
+	[Description("TryAssemblePageSources seeds EVERY layer of a multi-package parent template (base->top), not just the single parent.uId layer, so base containers in sibling layers are not dropped.")]
+	public void TryAssemblePageSources_ShouldSeedAllParentTemplateLayers_WhenParentIsMultiLayer() {
 		// Arrange — a single-layer page whose parent template "BaseTpl" is replaced across TWO packages;
 		// the page's parent.uId links only the top template layer.
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
@@ -756,10 +756,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			EmptyGuid, "Core", name: "BaseTpl");
 		AddSchema("uid-tpl-top", "define(\"BaseTpl\", [], function() { return {}; });", EmptyGuid, "CrtUI", name: "BaseTpl");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SeedCount.Should().Be(2,
@@ -776,8 +776,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle never seeds the same layer body twice when the parent walk revisits a template it already enumerated (parent link into a replaced sibling).")]
-	public void TryAssembleBundle_ShouldNotDuplicateSeedLayer_WhenParentWalkRevisitsTemplate() {
+	[Description("TryAssemblePageSources never seeds the same layer body twice when the parent walk revisits a template it already enumerated (parent link into a replaced sibling).")]
+	public void TryAssemblePageSources_ShouldNotDuplicateSeedLayer_WhenParentWalkRevisitsTemplate() {
 		// Arrange — the top template layer's own parent link points at its replaced base sibling
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
@@ -789,10 +789,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		// The linked top layer's parent is the SAME template's base layer (replacing-schema link shape).
 		AddSchema("uid-tpl-top", "define(\"BaseTpl\", [], function() { return {}; });", "uid-tpl-base", "CrtUI", name: "BaseTpl");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert — the base layer appears once, not once per walk visit
 		response.SeedCount.Should().Be(2,
@@ -800,18 +800,18 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle omits the seed entry's pkg when the parent layer carries no package name, instead of fabricating one from the schema name.")]
-	public void TryAssembleBundle_ShouldOmitSeedPkg_WhenParentPackageUnknown() {
+	[Description("TryAssemblePageSources omits the seed entry's pkg when the parent layer carries no package name, instead of fabricating one from the schema name.")]
+	public void TryAssemblePageSources_ShouldOmitSeedPkg_WhenParentPackageUnknown() {
 		// Arrange — a parent layer whose GetSchema response has no package block (and no name -> single-layer fallback)
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
 			"uid-parent", "UsrApp");
 		AddSchema("uid-parent", "define(\"BaseTpl\", [], function() { return {}; });", EmptyGuid, package: null);
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.SeedCount.Should().Be(1, because: "the parent body itself is still seeded");
@@ -823,18 +823,18 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle infers the page's own entitySchemaName and ignores a longer identifier like masterEntitySchemaName.")]
-	public void TryAssembleBundle_ShouldInferPageEntity_WhenBodyContainsMasterEntitySchemaNameSubstring() {
+	[Description("TryAssemblePageSources infers the page's own entitySchemaName and ignores a longer identifier like masterEntitySchemaName.")]
+	public void TryAssemblePageSources_ShouldInferPageEntity_WhenBodyContainsMasterEntitySchemaNameSubstring() {
 		// Arrange — a masterEntitySchemaName appears BEFORE the page's own entitySchemaName in the body
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
 			"define(\"UsrCasePage\", [], function() { return { masterEntitySchemaName: \"UsrWrong\", entitySchemaName: \"UsrCase\" }; });",
 			EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.Entity.Should().Be("UsrCase",
@@ -842,8 +842,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle does not misclassify an entity reference whose name merely ends in 'Detail' (entitySchemaName: \"XDetail\") as a detail schema.")]
-	public void TryAssembleBundle_ShouldNotTreatDetailNamedEntityReference_AsDetailSchema() {
+	[Description("TryAssemblePageSources does not misclassify an entity reference whose name merely ends in 'Detail' (entitySchemaName: \"XDetail\") as a detail schema.")]
+	public void TryAssemblePageSources_ShouldNotTreatDetailNamedEntityReference_AsDetailSchema() {
 		// Arrange — the only 'Detail' substring sits inside entitySchemaName, not a schemaName reference;
 		// a same-named client-unit schema exists, so a false positive WOULD resolve and pollute detailSchemas.
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
@@ -853,10 +853,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddLayer("UsrCaseDetail", "uid-lookalike", "UsrApp", 200);
 		AddSchema("uid-lookalike", "define(\"UsrCaseDetail\", [], function() { return {}; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.DetailCount.Should().Be(0,
@@ -864,20 +864,20 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle surfaces a DataService errorInfo-only failure (no success:false) as the bundle error instead of a misleading not-found.")]
-	public void TryAssembleBundle_ShouldSurfaceDataServiceFailure_WhenSelectQueryReturnsErrorInfoOnly() {
+	[Description("TryAssemblePageSources surfaces a DataService errorInfo-only failure (no success:false) as the collection error instead of a misleading not-found.")]
+	public void TryAssemblePageSources_ShouldSurfaceDataServiceFailure_WhenSelectQueryReturnsErrorInfoOnly() {
 		// Arrange - the layer-enumeration SelectQuery answers with an errorInfo object and NO success:false
-		// (the restricted-SysSchema shape). The shared detector must classify it as a failure so the bundle
+		// (the restricted-SysSchema shape). The shared detector must classify it as a failure so the collection
 		// reports the real reason, not "not found" from a silently empty row set.
 		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(
 			"""{ "errorInfo": { "errorCode": "AccessDenied", "message": "Access to SysSchema is denied" } }""");
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeFalse(because: "a DataService failure envelope cannot produce a bundle");
+		ok.Should().BeFalse(because: "a DataService failure envelope cannot produce a manifest");
 		response.Error.Should().Contain("Access to SysSchema is denied",
 			because: "the real DataService reason must surface, not a masked empty-result not-found");
 		response.Error.Should().NotContain("not found",
@@ -886,8 +886,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle caps detailSchemas at MaxDetails (50) and warns when the page body resolves more than fifty distinct details.")]
-	public void TryAssembleBundle_ShouldCapDetailSchemasAtMaxDetails_WhenMoreThanFiftyDetailsResolve() {
+	[Description("TryAssemblePageSources caps detailSchemas at MaxDetails (50) and warns when the page body resolves more than fifty distinct details.")]
+	public void TryAssemblePageSources_ShouldCapDetailSchemasAtMaxDetails_WhenMoreThanFiftyDetailsResolve() {
 		// Arrange — 55 distinct, individually resolvable detail references on one page (55 < collectionCap 100)
 		const int detailReferenceCount = 55;
 		var detailRefs = new List<string>();
@@ -903,10 +903,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			string.Join(", ", detailRefs) + " } }; });",
 			EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.DetailCount.Should().Be(50,
@@ -918,8 +918,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle stops collecting detail-schema references at collectionCap (100) and warns when a body names more references than the cap.")]
-	public void TryAssembleBundle_ShouldStopDetailNameCollection_WhenMoreThanCollectionCapReferences() {
+	[Description("TryAssemblePageSources stops collecting detail-schema references at collectionCap (100) and warns when a body names more references than the cap.")]
+	public void TryAssemblePageSources_ShouldStopDetailNameCollection_WhenMoreThanCollectionCapReferences() {
 		// Arrange — 105 distinct references, over collectionCap (MaxDetails * 2 = 100); none need to resolve
 		const int detailReferenceCount = 105;
 		var detailRefs = new List<string>();
@@ -932,21 +932,21 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			string.Join(", ", detailRefs) + " } }; });",
 			EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "an over-cap reference list truncates collection, it does not fail the bundle");
+		ok.Should().BeTrue(because: "an over-cap reference list truncates collection, it does not fail the collection");
 		response.DetailCount.Should().Be(0,
 			because: "none of the referenced details were registered, so none resolve into the manifest");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("More than 100 distinct detail-schema references")));
 	}
 
 	[Test]
-	[Description("TryAssembleBundle bounds childPageSchemas at fifty because child pages come only from the (MaxDetails-capped) detail set, and the detail cap warning is emitted.")]
-	public void TryAssembleBundle_ShouldCapChildPages_WhenManyDetailsEachReferenceAnEditPage() {
+	[Description("TryAssemblePageSources bounds childPageSchemas at fifty because child pages come only from the (MaxDetails-capped) detail set, and the detail cap warning is emitted.")]
+	public void TryAssemblePageSources_ShouldCapChildPages_WhenManyDetailsEachReferenceAnEditPage() {
 		// Arrange — 55 distinct details, each naming its own resolvable child edit page
 		const int detailReferenceCount = 55;
 		var detailRefs = new List<string>();
@@ -967,10 +967,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			string.Join(", ", detailRefs) + " } }; });",
 			EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		_command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		response.ChildPageCount.Should().Be(50,
@@ -982,8 +982,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle warns that the parent-template walk stopped at the depth cap when the chain is deeper than MaxParentDepth (20) with a parent still to follow.")]
-	public void TryAssembleBundle_ShouldWarnDepthCap_WhenParentWalkExceedsMaxParentDepth() {
+	[Description("TryAssemblePageSources warns that the parent-template walk stopped at the depth cap when the chain is deeper than MaxParentDepth (20) with a parent still to follow.")]
+	public void TryAssemblePageSources_ShouldWarnDepthCap_WhenParentWalkExceedsMaxParentDepth() {
 		// Arrange — a page whose parent chain is 21 distinct levels deep (uid-p1 -> ... -> uid-p21)
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
@@ -992,21 +992,21 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			AddSchema("uid-p" + i, "define(\"Tpl\", [], function() { return {}; });", "uid-p" + (i + 1), "Core");
 		}
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "a truncated seed still produces a usable bundle, it does not fail assembly");
+		ok.Should().BeTrue(because: "a truncated seed still produces a usable manifest, it does not fail assembly");
 		response.SeedCount.Should().Be(20,
 			because: "exactly MaxParentDepth (20) parent levels are walked before the cap stops the walk");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
 	}
 
 	[Test]
-	[Description("TryAssembleBundle warns that the parent-template walk stopped on a cycle when the parent chain revisits a UId (page -> A -> B -> A).")]
-	public void TryAssembleBundle_ShouldWarnCycle_WhenParentWalkRevisitsUid() {
+	[Description("TryAssemblePageSources warns that the parent-template walk stopped on a cycle when the parent chain revisits a UId (page -> A -> B -> A).")]
+	public void TryAssemblePageSources_ShouldWarnCycle_WhenParentWalkRevisitsUid() {
 		// Arrange — a parent chain that loops back on itself: uid-a -> uid-b -> uid-a
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
@@ -1014,21 +1014,21 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddSchema("uid-a", "define(\"Tpl\", [], function() { return {}; });", "uid-b", "Core");
 		AddSchema("uid-b", "define(\"Tpl\", [], function() { return {}; });", "uid-a", "Core");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "a cycle truncates the seed but still yields a usable bundle");
+		ok.Should().BeTrue(because: "a cycle truncates the seed but still yields a usable manifest");
 		response.SeedCount.Should().Be(2,
 			because: "only the two distinct parent layers are seeded before the cycle stops the walk");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("cycle")));
 	}
 
 	[Test]
-	[Description("TryAssembleBundle resolves schemas[] (page layers) and seed[] (parent templates) from a single GetParentSchemas hierarchy call, split by name and ordered base->top, instead of the per-layer fan-out.")]
-	public void TryAssembleBundle_ShouldResolveChainAndSeed_ViaGetParentSchemas() {
+	[Description("TryAssemblePageSources resolves schemas[] (page layers) and seed[] (parent templates) from a single GetParentSchemas hierarchy call, split by name and ordered base->top, instead of the per-layer fan-out.")]
+	public void TryAssemblePageSources_ShouldResolveChainAndSeed_ViaGetParentSchemas() {
 		// Arrange — only the name->UId metadata row is registered on the fake DataService; the layer bodies come
 		// from GetParentSchemas (leaf-first: most-derived page layer, base page layer, parent template). The base
 		// page layer's UId equals the metadata UId so no root re-anchor re-fetch is needed.
@@ -1044,10 +1044,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			Hier("BaseTpl", "Core", "uid-tpl", "define(\"BaseTpl\", [], function() { return { baseContainer: true }; });")
 		});
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "the hierarchy resolves the page chain and seed");
@@ -1070,8 +1070,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle re-anchors on the root schema UId and re-fetches the full hierarchy when the name->UId metadata resolves to a mid-chain layer, using the full re-fetched chain rather than the partial initial fetch.")]
-	public void TryAssembleBundle_ShouldReanchorOnRootAndRefetch_WhenMetadataResolvesToMidChainLayer() {
+	[Description("TryAssemblePageSources re-anchors on the root schema UId and re-fetches the full hierarchy when the name->UId metadata resolves to a mid-chain layer, using the full re-fetched chain rather than the partial initial fetch.")]
+	public void TryAssemblePageSources_ShouldReanchorOnRootAndRefetch_WhenMetadataResolvesToMidChainLayer() {
 		// Arrange — the name->UId metadata resolves to a MID-CHAIN layer (uid-mid), not the most-base same-named
 		// layer. The initial GetParentSchemas(uid-mid) is a partial leaf-first list whose last UsrPage entry
 		// carries a DIFFERENT (root) UId, so FindRootSchemaUId returns uid-root != uid-mid and the else branch
@@ -1089,10 +1089,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			Hier("BaseTpl", "Core", "uid-tpl", "define(\"BaseTpl\", [], function() { return { baseContainer: true }; });")
 		}); // full leaf-first chain re-fetched from the root anchor
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "the re-anchored full hierarchy resolves the page chain and seed");
@@ -1108,8 +1108,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle keeps the initial hierarchy fetch when the root re-anchor re-fetch returns empty, so re-anchoring never collapses an already-resolved chain (the full.Count > 0 ? full : initial guard).")]
-	public void TryAssembleBundle_ShouldKeepInitialHierarchy_WhenRootReanchorRefetchIsEmpty() {
+	[Description("TryAssemblePageSources keeps the initial hierarchy fetch when the root re-anchor re-fetch returns empty, so re-anchoring never collapses an already-resolved chain (the full.Count > 0 ? full : initial guard).")]
+	public void TryAssemblePageSources_ShouldKeepInitialHierarchy_WhenRootReanchorRefetchIsEmpty() {
 		// Arrange — metadata resolves to uid-mid; the initial fetch's last same-named entry is uid-root
 		// (!= uid-mid), so the else re-anchor is entered, but GetParentSchemas(uid-root) returns EMPTY, so the
 		// guard must retain 'initial' rather than dropping the already-resolved chain.
@@ -1121,10 +1121,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		});
 		_hierarchyClient.GetParentSchemas("uid-root", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema>());
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "an empty re-fetch must fall back to the initial hierarchy, not fail assembly");
@@ -1134,8 +1134,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle falls back to the legacy per-layer enumeration (and logs it) when the GetParentSchemas hierarchy call fails, still producing a manifest.")]
-	public void TryAssembleBundle_ShouldFallBackToLegacy_WhenGetParentSchemasThrows() {
+	[Description("TryAssemblePageSources falls back to the legacy per-layer enumeration (and logs it) when the GetParentSchemas hierarchy call fails, still producing a manifest.")]
+	public void TryAssemblePageSources_ShouldFallBackToLegacy_WhenGetParentSchemasThrows() {
 		// Arrange — a full legacy fake (layers + bodies + parent template), but the hierarchy call throws.
 		AddLayer("UsrPage2", "uid-p", "UsrApp", 200);
 		AddSchema("uid-p", "define(\"UsrPage2\", [], function() { return { entitySchemaName: \"UsrX\" }; });", "uid-par", "UsrApp");
@@ -1144,21 +1144,21 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		_hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>())
 			.Returns<IReadOnlyList<PageDesignerHierarchySchema>>(_ => throw new InvalidOperationException("designer down"));
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrPage2" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage2" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "the legacy per-layer path assembles the bundle when the hierarchy call fails");
+		ok.Should().BeTrue(because: "the legacy per-layer path assembles the collection when the hierarchy call fails");
 		response.LayerCount.Should().Be(1, because: "the legacy enumeration loaded the page's single layer");
 		response.SeedCount.Should().Be(1, because: "the legacy parent walk seeded the base template");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("falling back")));
 	}
 
 	[Test]
-	[Description("TryAssembleBundle resolves a child edit-page manifest through ONE GetParentSchemas hierarchy call (chain + seed) rather than the per-layer LoadLayerChain + BuildSeed fan-out it used before.")]
-	public void TryAssembleBundle_ShouldResolveChildManifest_ViaGetParentSchemas() {
+	[Description("TryAssemblePageSources resolves a child edit-page manifest through ONE GetParentSchemas hierarchy call (chain + seed) rather than the per-layer LoadLayerChain + BuildSeed fan-out it used before.")]
+	public void TryAssemblePageSources_ShouldResolveChildManifest_ViaGetParentSchemas() {
 		// Arrange — a page whose detail names an edit page (the child). The child page's LAYER BODIES are
 		// registered ONLY on the hierarchy call, not on the fake DataService (no AddSchema for uid-child*), so
 		// the child resolves iff the hierarchy path is taken: the legacy fan-out would fail to load uid-child's
@@ -1181,10 +1181,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 			Hier("BaseTpl", "Core", "uid-ctpl", "define(\"BaseTpl\", [], function() { return { baseContainer: true }; });")
 		});
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "the page assembles and the child edit page nests from the hierarchy call");
@@ -1206,8 +1206,8 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
-	[Description("TryAssembleBundle still nests a child edit-page manifest via the legacy per-layer fan-out when the child's GetParentSchemas hierarchy call yields nothing, so the optimization never regresses child resolution.")]
-	public void TryAssembleBundle_ShouldResolveChildManifest_ViaLegacyFanout_WhenChildHierarchyEmpty() {
+	[Description("TryAssemblePageSources still nests a child edit-page manifest via the legacy per-layer fan-out when the child's GetParentSchemas hierarchy call yields nothing, so the optimization never regresses child resolution.")]
+	public void TryAssemblePageSources_ShouldResolveChildManifest_ViaLegacyFanout_WhenChildHierarchyEmpty() {
 		// Arrange — child page fully registered on the fake DataService (layer + body), and the hierarchy call
 		// returns empty for every schema (the Setup default), so the child must resolve through the legacy path.
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
@@ -1222,10 +1222,10 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
 			EmptyGuid, "UsrApp");
 		StubEntityColumns();
-		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrCasePage" };
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
 		// Act
-		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
 		ok.Should().BeTrue(because: "the legacy per-layer fan-out still assembles the child manifest");

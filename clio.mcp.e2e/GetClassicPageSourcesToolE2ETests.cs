@@ -12,7 +12,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the get-classic-migration-bundle MCP tool. The tool is long-tail, so it is invoked
+/// End-to-end tests for the get-classic-page-sources MCP tool. The tool is long-tail, so it is invoked
 /// through clio-run (it is intentionally not advertised in tools/list). These tests validate the CLIO side on
 /// a real stand: the tool assembles the layer chain and writes an engine-consumable manifest to disk.
 ///
@@ -26,25 +26,25 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [Category("McpE2E.Sandbox")]
 [AllureNUnit]
-[AllureFeature("get-classic-migration-bundle")]
+[AllureFeature("get-classic-page-sources")]
 [NonParallelizable]
-public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBase {
-	private const string ToolName = GetClassicMigrationBundleTool.ToolName;
+public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
+	private const string ToolName = GetClassicPageSourcesTool.ToolName;
 
 	// A base-product classic page present on every stand and replaced across many packages (multi-layer).
 	private const string MultiLayerPage = "ContactPageV2";
 
 	[Test]
-	[Description("Assembles a real multi-layer classic page's bundle via clio-run and writes an engine-consumable manifest to disk.")]
+	[Description("Assembles a real multi-layer classic page's sources via clio-run and writes an engine-consumable manifest to disk.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-classic-migration-bundle assembles and writes an engine-consumable manifest")]
-	[AllureDescription("Uses the real clio MCP server to invoke the long-tail get-classic-migration-bundle tool through clio-run for ContactPageV2, then verifies the manifest was written to disk with a base->top schemas chain in the shape the migration engine folds.")]
-	public async Task GetBundle_Should_Assemble_And_Write_EngineConsumable_Manifest() {
+	[AllureName("get-classic-page-sources assembles and writes an engine-consumable manifest")]
+	[AllureDescription("Uses the real clio MCP server to invoke the long-tail get-classic-page-sources tool through clio-run for ContactPageV2, then verifies the manifest was written to disk with a base->top schemas chain in the shape the migration engine folds.")]
+	public async Task GetPageSources_Should_Assemble_And_Write_EngineConsumable_Manifest() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string outputDirectory = CreateFixtureDirectory("classic-migration-bundle");
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources");
 		string outputFile = Path.Combine(outputDirectory, "manifest.json");
 
 		// Act
@@ -58,14 +58,14 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		GetClassicMigrationBundleResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicMigrationBundleResponse>(callResult);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
 
 		// Assert — the tool reported success and a manifest path
 		callResult.IsError.Should().NotBeTrue(
 			because: "the routed MCP call must return a structured payload");
 		response.Success.Should().BeTrue(
-			because: $"the bundle must assemble for the multi-layer page '{MultiLayerPage}'. Error: {response.Error}");
+			because: $"the page sources must assemble for the multi-layer page '{MultiLayerPage}'. Error: {response.Error}");
 		response.ManifestPath.Should().Be(outputFile,
 			because: "an explicit absolute output-file must be echoed as the manifest location");
 
@@ -86,14 +86,14 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 	[Test]
 	[Description("Resolves the Classic section through live SysModule metadata and reports no warnings, so the manifest's List-page side is populated.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-classic-migration-bundle resolves the section from SysModule metadata")]
-	[AllureDescription("Assembles the ContactPageV2 bundle on a real stand and verifies the section chain was gathered through the SysModule binding (not only the naming convention) and that the response carries no warnings — a broken metadata query would degrade to the conventions and surface a warning instead.")]
-	public async Task GetBundle_Should_Resolve_Section_Through_SysModule_Metadata() {
+	[AllureName("get-classic-page-sources resolves the section from SysModule metadata")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the section chain was gathered through the SysModule binding (not only the naming convention) and that the response carries no warnings — a broken metadata query would degrade to the conventions and surface a warning instead.")]
+	public async Task GetPageSources_Should_Resolve_Section_Through_SysModule_Metadata() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string outputDirectory = CreateFixtureDirectory("classic-migration-bundle-section");
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-section");
 		string outputFile = Path.Combine(outputDirectory, "manifest.json");
 
 		// Act
@@ -107,16 +107,16 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		GetClassicMigrationBundleResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicMigrationBundleResponse>(callResult);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
 
 		// Assert — the section resolved, so the caller gets no incompleteness warning
 		response.Success.Should().BeTrue(
-			because: $"the bundle must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
 		response.SectionLayerCount.Should().BeGreaterThan(0,
 			because: "the Contact entity has a Classic section bound through SysModule, so the section chain must be gathered");
 		response.Warnings.Should().BeNull(
-			because: "a complete bundle carries no warnings; a failed SysModule lookup would degrade to the naming " +
+			because: "complete page sources carry no warnings; a failed SysModule lookup would degrade to the naming " +
 				"conventions and report the reason here");
 
 		// Assert — the manifest carries the section bodies the engine folds into the Freedom List page
@@ -128,11 +128,11 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
-	[Description("Reports a readable failure when get-classic-migration-bundle is asked for a schema that does not exist.")]
+	[Description("Reports a readable failure when get-classic-page-sources is asked for a schema that does not exist.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-classic-migration-bundle reports a missing-schema failure")]
+	[AllureName("get-classic-page-sources reports a missing-schema failure")]
 	[AllureDescription("Invokes the long-tail tool through clio-run for a schema name that does not exist and verifies the failure stays human-readable (not a transport crash).")]
-	public async Task GetBundle_Should_Report_Failure_For_Missing_Schema() {
+	public async Task GetPageSources_Should_Report_Failure_For_Missing_Schema() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -149,8 +149,8 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		GetClassicMigrationBundleResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicMigrationBundleResponse>(callResult);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -165,9 +165,9 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 	[Test]
 	[Description("Rejects an output-file that escapes the workspace and OS temp directory, over the real MCP path, without writing the file.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-classic-migration-bundle rejects an out-of-bounds output-file")]
+	[AllureName("get-classic-page-sources rejects an out-of-bounds output-file")]
 	[AllureDescription("Invokes the long-tail tool through clio-run with an output-file that traverses out of the OS temp directory and verifies the command fails before writing, so an agent-supplied path cannot overwrite an arbitrary file.")]
-	public async Task GetBundle_Should_Reject_OutputFile_Outside_AllowedZones() {
+	public async Task GetPageSources_Should_Reject_OutputFile_Outside_AllowedZones() {
 		// Arrange — a path that resolves well outside both the workspace and the OS temp dir
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -187,8 +187,8 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		GetClassicMigrationBundleResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicMigrationBundleResponse>(callResult);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -219,7 +219,7 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 		}
 
 		Assert.Ignore(
-			$"get-classic-migration-bundle MCP E2E requires a reachable environment. Configured sandbox environment " +
+			$"get-classic-page-sources MCP E2E requires a reachable environment. Configured sandbox environment " +
 			$"'{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 		return string.Empty;
 	}

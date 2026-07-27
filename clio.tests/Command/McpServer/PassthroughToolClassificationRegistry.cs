@@ -279,7 +279,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
-			["get-classic-migration-bundle"] = PassthroughClassification.NotApplicable,
+			["get-classic-page-sources"] = PassthroughClassification.NotApplicable,
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,

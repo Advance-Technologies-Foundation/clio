@@ -14,7 +14,7 @@ namespace Clio.Tests.Command;
 /// (1) <see cref="SchemaDesignerHelper.ApplySchemaMetadata"/> — the shared caption/description write chokepoint
 /// used by create-sql-schema and create-source-code-schema, verifying the ENG-91044 script/culture guard;
 /// (2) <see cref="SchemaDesignerHelper.EnumerateSchemaLayers"/> / <see cref="SchemaDesignerHelper.ResolveSchemaUId"/>
-/// — deterministic base-&gt;top layer ordering by package hierarchy level (ENG-90577 classic-migration-bundle),
+/// — deterministic base-&gt;top layer ordering by package hierarchy level (ENG-90577 get-classic-page-sources),
 /// so a multi-layer classic schema name resolves to the top layer instead of a DB-order-dependent one;
 /// (3) <see cref="SchemaDesignerHelper.LoadSchema"/> — the hardened designer-failure read path that carries the
 /// service's own <c>errorInfo.message</c> into the returned error (and stays safe against a JSON <c>errorInfo:null</c>).

@@ -87,6 +87,15 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 			Kind: McpToolCompatibilityKind.DeprecatedAlias,
 			DeprecatedSince: null,
 			Replacement: null,
+			Owner: McpToolSurfaceOwner.Clio),
+		// ENG-94218: get-classic-migration-bundle renamed to get-classic-page-sources ("bundle"/"migration"
+		// both misread — the tool collects raw page sources for folding, it does not produce a merged artifact).
+		new McpToolCompatibilityEntry(
+			CanonicalName: "get-classic-page-sources",
+			Aliases: new[] { "get-classic-migration-bundle" },
+			Kind: McpToolCompatibilityKind.DeprecatedAlias,
+			DeprecatedSince: null,
+			Replacement: null,
 			Owner: McpToolSurfaceOwner.Clio)
 	};
 
