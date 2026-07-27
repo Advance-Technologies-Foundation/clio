@@ -137,6 +137,28 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes the element-level useBackgroundMode flag reported for every element, and leaves it null when an older server omits it.")]
+	public void Describe_ShouldReadElementBackgroundMode_WhenServerReportsIt() {
+		// Arrange — one element reporting the flag, one (older-server shape) omitting it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\",\"useBackgroundMode\":true},"
+			+ "{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000002\",\"name\":\"EndEvent1\",\"type\":\"ProcessSchemaTerminateEvent\",\"buildType\":\"endevent\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Elements[0].UseBackgroundMode.Should().BeTrue(
+			because: "the element-level background-mode flag must be deserialized, not dropped by the clio DTO");
+		result.Value.Elements[1].UseBackgroundMode.Should().BeNull(
+			because: "an omitted flag stays null so it serializes away (WhenWritingNull) for an older server");
+	}
+
+	[Test]
 	[Description("Deserializes a signal start's record trigger — entity, on, and the tracked-change columns array — from the server response into the DescribedSignal DTO, so describe read-back surfaces changedColumns instead of dropping them.")]
 	public void Describe_ShouldReadSignalTrackedColumns_WhenServerReportsThem() {
 		// Arrange — a signalStart on Order, on:modified, restricted to the Amount + StatusId columns

@@ -205,6 +205,15 @@ public sealed class DescribedElement {
 	[JsonPropertyName("position")]
 	public string Position { get; set; }
 
+	/// <summary>
+	/// Whether the element runs in background mode — a platform property of EVERY process element, so it is reported
+	/// for all of them and round-trips into a <c>create</c>/<c>modify</c> <c>useBackgroundMode</c>. Omitted (null) when
+	/// the server (an older <c>clioprocessbuilder</c>) does not report it. Effective only while the global
+	/// <c>UseBackgroundProcessMode</c> application setting is enabled (it is by default).
+	/// </summary>
+	[JsonPropertyName("useBackgroundMode")]
+	public bool? UseBackgroundMode { get; set; }
+
 	/// <summary>The element's value-bearing parameters (mapping / constant / formula).</summary>
 	[JsonPropertyName("parameters")]
 	public List<DescribedParameter> Parameters { get; set; }

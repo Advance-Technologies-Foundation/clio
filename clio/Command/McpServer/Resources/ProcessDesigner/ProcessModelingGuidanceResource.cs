@@ -51,6 +51,13 @@ public sealed class ProcessModelingGuidanceResource {
 			  cannot be set yet, so the step does nothing useful until a human configures it in the designer. Say so
 			  when you use it; do not present the result as a working data operation.
 			- Sequence flows; process-level parameters (with an optional constant default value); element-parameter mappings.
+			- `useBackgroundMode` on ANY element (it is a platform property of every process element, not signal-specific):
+			  `true` runs it asynchronously via the background scheduler, `false` inline. OMIT it to keep the element
+			  kind's own default, which mirrors the visual designer's palette — a `signalStart` defaults to background
+			  mode, so a signal-started process runs asynchronously and its effects appear a moment after the record is
+			  saved. The platform ANDs the flag with the global `UseBackgroundProcessMode` setting (on by default), so
+			  with that setting off background mode is inactive regardless. `describe-business-process` reports the
+			  effective value per element, so it round-trips.
 			- A data source `filter` on a `signalStart` to restrict WHICH records fire the trigger (see the
 			  "Data source filters" section below).
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,

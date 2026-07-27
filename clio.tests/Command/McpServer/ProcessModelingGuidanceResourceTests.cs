@@ -179,6 +179,22 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The guidance documents useBackgroundMode as an element-level flag available on any element kind (not signal-specific), states that omitting it keeps the kind's default, and discloses the global UseBackgroundProcessMode gate.")]
+	public void GetGuide_ShouldDocumentElementLevelBackgroundMode_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("useBackgroundMode",
+			because: "the agent must know the flag exists to control asynchronous execution");
+		text.Should().Contain("every process element",
+			because: "the flag is element-level; the guide must not present it as signal-specific");
+		text.Should().Contain("UseBackgroundProcessMode",
+			because: "the agent must know the element flag is ANDed with the global application setting");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The guidance teaches that unbound element inputs are omitted from describe output and that addMapping overwrites in place with no clear/unbind operation.")]
 	public void GetGuide_ShouldTeachUnboundInputAndOverwriteRules_WhenRead() {
 		// Act
