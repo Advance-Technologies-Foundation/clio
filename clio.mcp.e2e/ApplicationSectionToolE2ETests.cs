@@ -769,6 +769,94 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "a long-running application tool must stream at least one progress notification so the client resets its inactivity timeout instead of timing out");
 	}
 
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Fires several create-app-section calls CONCURRENTLY against ONE application through a single clio MCP server and verifies none returns the spurious detail-less 'InsertQuery failed' (error-class=contention) that parallel creation produced before ENG-93089. The in-process serialization guard plus verify+retry recovery must let every section be created. Cleans up all created sections. Long-running (sections are serialized ~90-100s each), destructive, and seeded-env gated — not in CI.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Concurrent create-app-section calls against one app do not produce a spurious contention failure")]
+	[AllureDescription("Uses the real clio MCP server to fire multiple create-app-section calls at once against the same installed application and verifies that the per-application in-process serialization guard and the contention verify+retry recovery (ENG-93089) prevent the opaque 'InsertQuery failed' rejection, so every section is created exactly once.")]
+	public async Task ApplicationSectionCreate_ConcurrentCallsAgainstOneApp_Should_Not_Produce_Contention_Failure() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive concurrent create-app-section test.");
+		}
+
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		const int concurrentCount = 3;
+		string runId = Guid.NewGuid().ToString("N")[..8];
+		string[] captions = Enumerable.Range(1, concurrentCount)
+			.Select(index => $"E2E Conc {runId} {index}")
+			.ToArray();
+		// Sections are serialized (~90-100s each), so allow a generous ceiling for the whole batch.
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(15));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
+		List<string> createdSectionCodes = new();
+		try {
+			// Act — fire every create-app-section call concurrently against the SAME application, on one
+			// long-lived MCP server, exactly reproducing the parallel batch that produced the contention.
+			Task<CallToolResult>[] calls = captions
+				.Select(caption => session.CallToolAsync(
+					SectionCreateToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["application-code"] = ApplicationCode,
+							["caption"] = caption
+						}
+					},
+					cancellationTokenSource.Token))
+				.ToArray();
+			CallToolResult[] results = await Task.WhenAll(calls);
+
+			// Assert
+			for (int i = 0; i < results.Length; i++) {
+				CallToolResult callResult = results[i];
+				callResult.IsError.Should().NotBeTrue(
+					because: $"concurrent create-app-section '{captions[i]}' must not surface as an MCP-level error. Actual: {DescribeCallResult(callResult)}");
+				ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+				response.ErrorClass.Should().NotBe("contention",
+					because: $"the in-process serialization guard plus verify+retry must prevent a spurious contention failure for '{captions[i]}' (ENG-93089)");
+				(response.Error ?? string.Empty).Should().NotContain("InsertQuery failed",
+					because: $"concurrent creation against one app must not abort with the opaque 'InsertQuery failed' for '{captions[i]}'");
+				response.Success.Should().BeTrue(
+					because: $"every serialized concurrent create-app-section must ultimately succeed. Error: {response.Error}");
+				if (!string.IsNullOrWhiteSpace(response.Section?.Code)) {
+					createdSectionCodes.Add(response.Section!.Code);
+				}
+			}
+
+			createdSectionCodes.Should().HaveCount(concurrentCount,
+				because: "each concurrently-requested section must be created exactly once, with no duplicate and no contention loss");
+		} finally {
+			foreach (string code in createdSectionCodes) {
+				try {
+					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+					await session.CallToolAsync(
+						SectionDeleteToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["application-code"] = ApplicationCode,
+								["section-code"] = code
+							}
+						},
+						cleanupCts.Token);
+				} catch (Exception ex) {
+					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{code}' failed: {ex.Message}");
+				}
+			}
+		}
+	}
+
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&

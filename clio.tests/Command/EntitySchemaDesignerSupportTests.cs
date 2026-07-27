@@ -1,6 +1,7 @@
 using System;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
+using Terrasoft.Core.Entities;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -221,5 +222,254 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "Color derives from text server-side but must not be text-like here, or multiline/accent/format-validated/masked would wrongly apply");
 		colorIsBinaryLike.Should().BeFalse(because: "Color is not a binary-like type");
 		colorIsDateTimeLike.Should().BeFalse(because: "Color is not a date/time type");
+	}
+
+	[Description("Parses a Sequence mask 'LN-{0}' into the static prefix so a created record honors the full mask (LN-00001).")]
+	[Test]
+	public void CreateDefaultValueDto_Should_Extract_Sequence_Prefix_From_Mask() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "LN-{0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		EntitySchemaColumnDefValueDto dto = EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		dto.ValueSourceType.Should().Be(EntitySchemaColumnDefSource.Sequence,
+			because: "the resolved DTO must keep the Sequence source so the platform applies autonumbering");
+		dto.SequencePrefix.Should().Be("LN-",
+			because: "the static text before '{0}' in the mask must become the sequence prefix instead of being dropped");
+		dto.SequenceNumberOfChars.Should().Be(5,
+			because: "the requested sequence width must be preserved alongside the extracted prefix");
+	}
+
+	[Description("A Sequence mask that is only the placeholder '{0}' yields no prefix, matching a bare sequence number.")]
+	[Test]
+	public void CreateDefaultValueDto_Should_Yield_No_Prefix_When_Mask_Is_Only_Placeholder() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "{0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		EntitySchemaColumnDefValueDto dto = EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		dto.SequencePrefix.Should().BeNullOrEmpty(
+			because: "a mask with no static text before '{0}' must produce a prefix-free sequence default");
+		dto.SequenceNumberOfChars.Should().Be(5,
+			because: "the sequence width must still be applied when no prefix is present");
+	}
+
+	[Description("An explicit sequence-prefix (no mask) still works, preserving backward-compatible configuration.")]
+	[Test]
+	public void CreateDefaultValueDto_Should_Honor_Explicit_Sequence_Prefix() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			SequencePrefix = "LN-",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		EntitySchemaColumnDefValueDto dto = EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		dto.SequencePrefix.Should().Be("LN-",
+			because: "an explicit sequence-prefix remains the supported way to configure the static prefix");
+	}
+
+	[TestCase("LN-{0}-END", TestName = "Suffix after placeholder")]
+	[TestCase("LN-{0}{0}", TestName = "Repeated placeholder")]
+	[Description("A Sequence mask with a suffix or repeated placeholder is rejected instead of silently dropping the unsupported part.")]
+	public void CreateDefaultValueDto_Should_Reject_Unsupported_Sequence_Mask(string mask) {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = mask,
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		Action act = () => EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "only a static prefix before a single trailing '{0}' is supported; other masks must fail loudly, not silently")
+			.WithMessage("*not supported*");
+	}
+
+	[Description("A Sequence mask that omits the '{0}' placeholder is rejected so the caller cannot mistake a literal string for a mask.")]
+	[Test]
+	public void CreateDefaultValueDto_Should_Reject_Sequence_Mask_Without_Placeholder() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "LN-",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		Action act = () => EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "a Sequence value that is not a mask must be rejected rather than treated as a full prefix and silently misapplied")
+			.WithMessage("*{0}*");
+	}
+
+	[Description("Setting both a Sequence mask value and an explicit sequence-prefix is rejected to avoid an ambiguous prefix.")]
+	[Test]
+	public void CreateDefaultValueDto_Should_Reject_Sequence_Value_And_Prefix_Together() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "LN-{0}",
+			SequencePrefix = "XX-",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		Action act = () => EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "a mask and an explicit prefix are two ways to set the same thing; combining them is ambiguous and must be rejected")
+			.WithMessage("*cannot combine*");
+	}
+
+	[Description("The two-pass request path (normalize then build DTO) preserves a mask's trailing space verbatim instead of trimming it, so 'INV {0}' numbers records as 'INV 00001'.")]
+	[Test]
+	public void ResolveThenCreateDefaultValueDto_Should_Preserve_Sequence_Mask_Edge_Whitespace() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "INV {0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		EntitySchemaDefaultValueConfig? normalized = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			config, null, null, "Column 'UsrName'");
+		EntitySchemaColumnDefValueDto dto = EntitySchemaDesignerSupport.CreateDefaultValueDto(
+			normalized!, "Column 'UsrName'");
+
+		// Assert
+		dto.SequencePrefix.Should().Be("INV ",
+			because: "the request path normalizes then builds the DTO, and the mask must be parsed once so the trailing space survives rather than being silently trimmed (ENG-93375)");
+		dto.SequenceNumberOfChars.Should().Be(5,
+			because: "the sequence width must round-trip through the two-pass request path");
+	}
+
+	[Description("Reading back a Sequence default preserves the persisted prefix's trailing space verbatim so the structured config round-trips 'INV ' instead of dropping it to 'INV'.")]
+	[Test]
+	public void CreateDefaultValueConfig_Should_Preserve_Sequence_Prefix_Edge_Whitespace() {
+		// Arrange
+		EntitySchemaColumnDefValueDto defValue = new() {
+			ValueSourceType = EntitySchemaColumnDefSource.Sequence,
+			SequencePrefix = "INV ",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		EntitySchemaDefaultValueConfig? config = EntitySchemaDesignerSupport.CreateDefaultValueConfig(defValue);
+
+		// Assert
+		config.Should().NotBeNull(
+			because: "a Sequence default must project into a structured default-value config on readback");
+		config!.SequencePrefix.Should().Be("INV ",
+			because: "the persisted prefix's trailing space is significant and must survive readback so a reused config recreates INV 00001, not INV00001 (ENG-93375)");
+		config.SequenceNumberOfChars.Should().Be(5,
+			because: "the sequence width must round-trip through readback alongside the prefix");
+	}
+
+	[Description("A mask-created Sequence prefix survives the full round-trip: build DTO, read it back into a config, then re-apply that config through CreateDefaultValueDto — the trailing space must stay verbatim instead of being trimmed on re-apply (ENG-93375).")]
+	[Test]
+	public void Sequence_Prefix_Edge_Whitespace_Should_Survive_Readback_And_Reapply() {
+		// Arrange — a mask that persists edge whitespace, as AC2 requires.
+		EntitySchemaDefaultValueConfig maskConfig = new() {
+			Source = "Sequence",
+			Value = "INV {0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act — request path builds the DTO, readback projects it into a structured config,
+		// then that readback config is fed back through the explicit-prefix build path.
+		EntitySchemaDefaultValueConfig? normalized = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			maskConfig, null, null, "Column 'UsrName'");
+		EntitySchemaColumnDefValueDto firstDto = EntitySchemaDesignerSupport.CreateDefaultValueDto(
+			normalized!, "Column 'UsrName'");
+		EntitySchemaDefaultValueConfig? readback = EntitySchemaDesignerSupport.CreateDefaultValueConfig(firstDto);
+		EntitySchemaColumnDefValueDto reappliedDto = EntitySchemaDesignerSupport.CreateDefaultValueDto(
+			readback!, "Column 'UsrName'");
+
+		// Assert
+		firstDto.SequencePrefix.Should().Be("INV ",
+			because: "the mask path must preserve the trailing space on the initial build (ENG-93375)");
+		readback!.SequencePrefix.Should().Be("INV ",
+			because: "readback must project the persisted prefix verbatim so reuse is lossless");
+		reappliedDto.SequencePrefix.Should().Be("INV ",
+			because: "re-applying the readback config through the explicit-prefix path must keep the trailing space instead of trimming it to 'INV', which would silently recreate INV00001 (ENG-93375)");
+	}
+
+	[Description("Setting value-source on a Sequence default is rejected, since a sequence has no external selector to resolve.")]
+	[Test]
+	public void CreateDefaultValueDto_Should_Reject_Sequence_With_ValueSource() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			ValueSource = "SomeSetting",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		Action act = () => EntitySchemaDesignerSupport.CreateDefaultValueDto(config, "Column 'UsrName'");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "value-source belongs to Settings/SystemValue defaults; a Sequence has no external selector and must reject it rather than ignore it")
+			.WithMessage("*value-source*");
+	}
+
+	[Description("A non-text-like column rejects a Sequence default regardless of the mask, since autonumbering applies only to text columns.")]
+	[Test]
+	public void ValidateDefaultValueConfig_Should_Reject_Sequence_On_NonText_Column() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "LN-{0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		Action act = () => EntitySchemaDesignerSupport.ValidateDefaultValueConfig(config, 4, "Column 'UsrAmount'");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "the Sequence source is valid only for text columns, so a mask on a numeric column must still be rejected")
+			.WithMessage("*Sequence only for text columns*");
+	}
+
+	[Description("A valid Sequence mask on a text column passes validation, so the round-trip configuration is accepted end-to-end.")]
+	[Test]
+	public void ValidateDefaultValueConfig_Should_Accept_Sequence_Mask_On_Text_Column() {
+		// Arrange
+		EntitySchemaDefaultValueConfig config = new() {
+			Source = "Sequence",
+			Value = "LN-{0}",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		Action act = () => EntitySchemaDesignerSupport.ValidateDefaultValueConfig(config, 1, "Column 'UsrName'");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a static-prefix mask on a text column is a supported Sequence configuration");
 	}
 }

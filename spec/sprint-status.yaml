@@ -726,6 +726,85 @@ stories:
       - story-mcp-e2e-noenvironment-parallelization-3
     blocks: []
 
+  # --- create-app-section-parallel-guard stories (ENG-93089), added 2026-07-10 ---
+  # ADR chose A+B+C. Stories 1 and 2 are the behavioral core; 3, 4, 5 depend on them.
+  # Recommended order: 1 -> 2 -> (3 ∥ 4) -> 5. Dependency graph is acyclic.
+  # Story 1 (guard A) and story 2 (contention+retry B) both edit CreateSection — story 2
+  # depends on story 1 so the guard wrap lands first and edits serialize on the same file.
+  # Story 5 (clio.mcp.e2e) is NOT in CI — manual/release run only.
+  - id: story-create-app-section-parallel-guard-1
+    title: "In-process serialization guard (Option A)"
+    feature: "create-app-section-parallel-guard"
+    size: M
+    status: review
+    file: spec/stories/story-create-app-section-parallel-guard-1.md
+    prd: spec/prd/prd-create-app-section-parallel-guard.md
+    adr: spec/adr/adr-create-app-section-parallel-guard.md
+    fr: [FR-01, FR-10, NFR-02, NFR-04]
+    ac: [AC-01, AC-05]
+    depends_on: []
+    blocks:
+      - story-create-app-section-parallel-guard-2
+      - story-create-app-section-parallel-guard-3
+      - story-create-app-section-parallel-guard-4
+      - story-create-app-section-parallel-guard-5
+
+  - id: story-create-app-section-parallel-guard-2
+    title: "Contention classification + retry-with-verify (Option B)"
+    feature: "create-app-section-parallel-guard"
+    size: L
+    status: review
+    file: spec/stories/story-create-app-section-parallel-guard-2.md
+    prd: spec/prd/prd-create-app-section-parallel-guard.md
+    adr: spec/adr/adr-create-app-section-parallel-guard.md
+    fr: [FR-02, FR-03, FR-04, FR-05, NFR-04]
+    ac: [AC-02, AC-03, AC-04, AC-ERR]
+    depends_on: [story-create-app-section-parallel-guard-1]
+    blocks:
+      - story-create-app-section-parallel-guard-3
+      - story-create-app-section-parallel-guard-4
+      - story-create-app-section-parallel-guard-5
+
+  - id: story-create-app-section-parallel-guard-3
+    title: "MCP tool [Description] + guidance resources (Option C — agent-facing)"
+    feature: "create-app-section-parallel-guard"
+    size: M
+    status: review
+    file: spec/stories/story-create-app-section-parallel-guard-3.md
+    prd: spec/prd/prd-create-app-section-parallel-guard.md
+    adr: spec/adr/adr-create-app-section-parallel-guard.md
+    fr: [FR-06, FR-07]
+    ac: [AC-06]
+    depends_on: [story-create-app-section-parallel-guard-2]
+    blocks: []
+
+  - id: story-create-app-section-parallel-guard-4
+    title: "CLI / GitHub docs (Option C — human-facing)"
+    feature: "create-app-section-parallel-guard"
+    size: S
+    status: review
+    file: spec/stories/story-create-app-section-parallel-guard-4.md
+    prd: spec/prd/prd-create-app-section-parallel-guard.md
+    adr: spec/adr/adr-create-app-section-parallel-guard.md
+    fr: [FR-08]
+    ac: [AC-06]
+    depends_on: [story-create-app-section-parallel-guard-2]
+    blocks: []
+
+  - id: story-create-app-section-parallel-guard-5
+    title: "clio.mcp.e2e concurrent-create scenario (Option C — coverage)"
+    feature: "create-app-section-parallel-guard"
+    size: M
+    status: review
+    note: "clio.mcp.e2e is NOT in CI — manual/release run against a live stand; guarded by AllowDestructiveMcpTests + seeded EnvironmentName."
+    file: spec/stories/story-create-app-section-parallel-guard-5.md
+    prd: spec/prd/prd-create-app-section-parallel-guard.md
+    adr: spec/adr/adr-create-app-section-parallel-guard.md
+    fr: [FR-09]
+    ac: [AC-01, AC-05]
+    depends_on:
+      - story-create-app-section-parallel-guard-1
+      - story-create-app-section-parallel-guard-2
   # --- mcp-http-credential-passthrough stories (ENG-93208), added 2026-07-09 ---
   # Stateless multi-tenant edge: per-request X-Integration-Credentials passthrough for clio mcp-http.
   # Sliced 1:1 from the ADR's 15-step implementation plan.
@@ -2218,4 +2297,59 @@ stories:
     test_plan: spec/esq-primitive-comparisons/esq-primitive-comparisons-test-plan.md
     depends_on:
       - story-clio-guidance-development-1
+    blocks: []
+
+  # --- sync-schemas-verify-resume stories (ENG-93374, refines PR #910) — added 2026-07-20 ---
+  # Internal fix to ExecuteCreateSchema in SchemaSyncTool.cs: verify requested columns against
+  # the existing schema before forcing resume success. 3 files touched, no new CLI surface.
+  # Order: 1 -> 2 -> 3 (linear; no story depends on a later one). Ships inside PR #910.
+  - id: story-sync-schemas-verify-resume-1
+    title: "Verify requested columns before resuming a same-package create-lookup"
+    feature: "sync-schemas-verify-resume"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-sync-schemas-verify-resume-1.md
+    prd: spec/prd/prd-sync-schemas-verify-resume.md
+    adr: spec/adr/adr-sync-schemas-verify-resume.md
+    jira: ENG-93374
+    fr: [FR-01, FR-02, FR-04, FR-07, FR-08]
+    ac: [AC-01, AC-02, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-sync-schemas-verify-resume-2
+      - story-sync-schemas-verify-resume-3
+
+  - id: story-sync-schemas-verify-resume-2
+    title: "Honest failure on durable collision, resumed-existing degrade, status/message consistency"
+    feature: "sync-schemas-verify-resume"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-sync-schemas-verify-resume-2.md
+    prd: spec/prd/prd-sync-schemas-verify-resume.md
+    adr: spec/adr/adr-sync-schemas-verify-resume.md
+    jira: ENG-93374
+    fr: [FR-03, FR-05, FR-06]
+    ac: [AC-03, AC-04, AC-06]
+    depends_on:
+      - story-sync-schemas-verify-resume-1
+    blocks:
+      - story-sync-schemas-verify-resume-3
+
+  - id: story-sync-schemas-verify-resume-3
+    title: "Different-package regression test pinning the collision guard"
+    feature: "sync-schemas-verify-resume"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    file: spec/stories/story-sync-schemas-verify-resume-3.md
+    prd: spec/prd/prd-sync-schemas-verify-resume.md
+    adr: spec/adr/adr-sync-schemas-verify-resume.md
+    jira: ENG-93374
+    fr: [FR-09]
+    ac: [AC-05]
+    depends_on:
+      - story-sync-schemas-verify-resume-1
+      - story-sync-schemas-verify-resume-2
     blocks: []

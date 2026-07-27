@@ -21,8 +21,12 @@ public static class RestartPrompt {
 		$"""
 		 Restart the Creatio application pool for environment `{environmentName}` using the
 		 `restart-by-environment-name` tool. A restart is typically needed after deploying
-		 packages, compiling configuration, or changing system settings. The application
-		 will be temporarily unavailable during restart (usually 10–30 seconds).
+		 packages, compiling C# configuration, or changing system settings — on .NET Framework
+		 hosts specifically, newly compiled C# does not load until the app restarts. By default
+		 the tool waits (waitReady=true) until the application answers its health-check before
+		 returning, so no separate readiness poll is needed; typical warm-up is 1–10 minutes. If the
+		 call returns an in-progress note (the warm-up outran the MCP response deadline), poll
+		 `restart-status` with the same environment name instead of retrying the restart.
 		 """;
 
 	/// <summary>
@@ -38,7 +42,8 @@ public static class RestartPrompt {
 		 Restart the Creatio application pool at `{url}` using direct credentials via
 		 the `restart-by-credentials` tool. Use this variant only when the environment
 		 is not registered in clio. Prefer `restart-by-environment-name` when possible.
-		 The application will be temporarily unavailable during restart (usually 10–30 seconds).
+		 By default the tool waits (waitReady=true) until the application answers its
+		 health-check before returning; typical warm-up is 1–10 minutes.
 		 """;
 
 	/// <summary>

@@ -61,7 +61,9 @@ public static class EntitySchemaPrompt {
 		 `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Keep legacy `default-value-source` and
 		 `default-value` only for shorthand `Const` and `None`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` columns, and use
-		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 `default-value-config` source `Sequence` only for text columns. For `Sequence`, set the static
+		 prefix via `sequence-prefix` (e.g. `LN-`) or a `value` mask ending with `{0}` (e.g. `LN-{0}` produces
+		 LN-00001), not both; static text after `{0}` is rejected. For `Settings`, `value-source`
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save.
@@ -153,7 +155,9 @@ public static class EntitySchemaPrompt {
 		 `SysImage` automatically, so do not pass `reference-schema-name` for it. Prefer `default-value-config`
 		 sources `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations, and use
-		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 `default-value-config` source `Sequence` only for text columns. For `Sequence`, set the static
+		 prefix via `sequence-prefix` (e.g. `LN-`) or a `value` mask ending with `{0}` (e.g. `LN-{0}` produces
+		 LN-00001), not both; static text after `{0}` is rejected. For `Settings`, `value-source`
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save. Each operation may set `usage-type` = `General` (default), `Advanced`,
@@ -268,7 +272,9 @@ public static class EntitySchemaPrompt {
 		 options do not apply. For image/photo fields bound to `crt.ImageInput`, use `ImageLookup` ("Image link"), not the binary
 		 `Image` type; `ImageLookup` references `SysImage` automatically, so do not pass `reference-schema-name`. Do not
 		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
-		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 `default-value-config` source `Sequence` only for text columns. For `Sequence`, set the static
+		 prefix via `sequence-prefix` (e.g. `LN-`) or a `value` mask ending with `{0}` (e.g. `LN-{0}` produces
+		 LN-00001), not both; static text after `{0}` is rejected. For `Settings`, `value-source`
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save.

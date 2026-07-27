@@ -113,6 +113,22 @@
 		</Otherwise>
 	</Choose>
 
+	<!--
+	 Warning NU1903 : Microsoft.PowerShell.SDK (via Microsoft.Windows.Compatibility)
+	 pulls in a vulnerable transitive 'System.Security.Cryptography.Xml' on both
+	 target frameworks (10.0.9 on net8.0, 10.0.6 on net10.0).
+
+	 Workaround: pin it to the patched version managed centrally via MsPackageVersion
+	 in Directory.Packages.props (currently 10.0.10, which fixes
+	 CVE-2026-50648 / 50525 / 47302 / 47304). Kept unconditional so both TFMs restore
+	 the patched build.
+
+	 Offending package Powershell.SDK
+	-->
+	<ItemGroup>
+		<PackageReference Include="System.Security.Cryptography.Xml" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"

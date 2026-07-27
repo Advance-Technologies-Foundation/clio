@@ -42,7 +42,7 @@ public sealed class AgentExecutionGuidanceResource {
 
 			       Execution order
 			       1. Verify MCP reachability through the consumer-repo MCP client wrapper.
-			       2. Call `tools/list` and verify required tools exist for the planned steps.
+			       2. Call `tools/list` and verify required tools exist for the planned steps. Long-tail (non-resident) tools such as the DataForge family are intentionally absent from `tools/list`; confirm them through `get-tool-contract` (`resident: false`) instead and invoke them via `clio-run` / `clio-run-destructive` — do not treat their absence as missing.
 			       3. Resolve executable contract metadata through `get-tool-contract` for each tool the plan invokes.
 			       4. Resolve the execution branch (new-app vs existing-app) through the current clio contract and the relevant guidance resources.
 			       5. Execute the approved schema mutation step using the current clio-owned preferred or fallback tool path.
@@ -67,6 +67,8 @@ public sealed class AgentExecutionGuidanceResource {
 			       - Use `update-entity-schema` semantics inside `sync-schemas` to extend an existing main entity. Use `create-entity-schema` only for additional business objects with distinct meaning.
 			       - Create lookup entities before entities that reference them.
 			       - Prefer batched lookup seeding inside `sync-schemas`. Use `create-data-binding-db` only when the run explicitly needs a separate binding artifact, custom filter, or cross-package reference.
+			       - `sync-schemas` retries transient network failures (DNS/reset/timeout/gateway) per operation on its own — do NOT wrap the whole call in your own retry for a transient flap. When it returns `success: false` with a `resume-plan`, resubmit ONLY `resume-plan.operations` (the failed op plus the not-run ops, already in re-submittable shape) as a new `sync-schemas` call. Never hand-compose a catch-up batch and never resend the operations already marked `completed`.
+			       - If a resumed create returns `collision-info` for the target package after a network retry, the create almost certainly WAS applied before the flap — drop that operation from the resubmission and continue with the remaining resume-plan operations rather than deleting and recreating.
 
 			       Default value rules
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit schema default or UI default in addition to the seed row.
@@ -90,8 +92,9 @@ public sealed class AgentExecutionGuidanceResource {
 
 			       Retry and failure policy
 			       - Retry transient MCP transport failures up to 3 attempts with a short delay before fail-fast classification.
+			       - `sync-schemas` already performs this per-operation transient retry internally and returns a `resume-plan` on a mid-batch abort; consume the resume-plan instead of re-running the whole batch (see Schema sync recovery patterns).
 			       - For transient site reachability errors (DNS resolution failures, connect timeouts, temporary host-unreachable), retry the same registration/healthcheck path up to 3 additional attempts with 15-second delays before fail-fast classification.
-			       - If required tools are missing in `tools/list`, stop with a blocker.
+			       - If required tools are missing in `tools/list`, stop with a blocker — but first check whether the tool is long-tail (non-resident): DataForge and other `resident: false` tools are expected to be absent from `tools/list` and are reached via `clio-run` / `clio-run-destructive`, so their absence is not a blocker.
 			       - If `get-tool-contract` cannot provide executable metadata, stop with a blocker.
 			       - If any normalized tool result is unsuccessful, stop with a blocker and persist the raw evidence.
 			       - Use standalone `dataforge-status`, `dataforge-context`, `dataforge-initialize`, and `dataforge-update` only in explicit inspection or remediation branches. Do not use them as automatic retries for the standard create flow.
