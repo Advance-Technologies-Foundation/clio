@@ -40,7 +40,9 @@ OPTIONS
 
     --output-file                      Optional absolute path. When set, the schema
                                        body is written to this file and the body field
-                                       is omitted from the response JSON
+                                       is omitted from the response JSON. Must resolve
+                                       inside the workspace or the OS temp directory
+                                       (a path outside both is rejected before any write)
 
     --uri                    -u       Application uri
 

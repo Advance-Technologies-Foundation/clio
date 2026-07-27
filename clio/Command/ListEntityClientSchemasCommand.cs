@@ -5,8 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
 using CommandLine;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using static Clio.Command.ClassicEntitySchemaQuery;
 
 /// <summary>Options for the <c>list-entity-client-schemas</c> command.</summary>
 [Verb("list-entity-client-schemas", Aliases = ["migration-unit-resolve"],
@@ -97,7 +97,6 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private const string KindClassic = "classic";
 	private const string KindFreedom = "freedom";
 	private const string KindUnknown = "unknown";
-	private const int EntityRowCount = 50;
 	private const int SectionRowCount = 100;
 	private const int EditPageRowCount = 100;
 
@@ -153,12 +152,12 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 				return false;
 			}
 			var warnings = new List<string>();
-			JArray entityRows = Select(BuildSelectEntity(options.EntityName));
-			if (entityRows.Count == EntityRowCount) {
+			JArray entityRows = Select(ClassicEntitySchemaQuery.BuildSelectEntity(options.EntityName));
+			if (entityRows.Count == ClassicEntitySchemaQuery.EntityRowCount) {
 				warnings.Add(
-					$"Entity schema lookup reached the rowCount cap ({EntityRowCount}); verify the entity result before using it.");
+					$"Entity schema lookup reached the rowCount cap ({ClassicEntitySchemaQuery.EntityRowCount}); verify the entity result before using it.");
 			}
-			(string entityUId, string entityError) = ResolveEntityUId(options.EntityName, entityRows);
+			(string entityUId, string entityError) = ClassicEntitySchemaQuery.ResolveEntityUId(options.EntityName, entityRows);
 			if (entityUId == null) {
 				response = new ListEntityClientSchemasResponse {
 					Success = false, Error = entityError };
@@ -253,22 +252,6 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		return KindUnknown;
 	}
 
-	private static (string uId, string error) ResolveEntityUId(string entityName, JArray rows) {
-		if (rows.Count == 0) {
-			return (null, $"Entity '{entityName}' not found (ManagerName='EntitySchemaManager')");
-		}
-		JToken baseRow = rows.FirstOrDefault(r => r["ExtendParent"]?.Value<bool?>() == false);
-		if (baseRow is null) {
-			return (null,
-				$"Entity '{entityName}' metadata did not include a base row (ExtendParent=false); " +
-				"cannot safely resolve the migration unit.");
-		}
-		string uId = baseRow["UId"]?.ToString();
-		return string.IsNullOrWhiteSpace(uId)
-			? (null, $"Entity '{entityName}' base schema metadata is missing UId")
-			: (uId, null);
-	}
-
 	private IReadOnlyDictionary<string, (string name, string template)> ResolveSchemaMetaBatch(IEnumerable<string> uIds) {
 		string[] distinctUIds = uIds
 			.Where(uId => !string.IsNullOrWhiteSpace(uId) && uId != EmptyGuid)
@@ -288,11 +271,8 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		return result;
 	}
 
-	private JArray Select(JObject query) {
-		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-		string json = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-		return DataServiceSelectResponse.ReadRows(json);
-	}
+	private JArray Select(JObject query) =>
+		ClassicEntitySchemaQuery.Select(_applicationClient, _serviceUrlBuilder, query);
 
 	/// <inheritdoc />
 	public override int Execute(ListEntityClientSchemasOptions options) {
@@ -302,31 +282,6 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	}
 
 	// ---- ESQ builders ----
-	private static JObject Column(string path) =>
-		new() { ["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = path } };
-
-	private static JObject Eq(string columnPath, string value, int dataValueType) => new() {
-		["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true,
-		["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = columnPath },
-		["rightExpression"] = new JObject {
-			["expressionType"] = 2,
-			["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value }
-		}
-	};
-
-	private static JObject Group(params (string key, JObject filter)[] items) {
-		var jitems = new JObject();
-		foreach (var (key, filter) in items) jitems[key] = filter;
-		return new JObject {
-			["filterType"] = 6, ["logicalOperation"] = 0, ["isEnabled"] = true, ["items"] = jitems
-		};
-	}
-
-	private static JObject Query(string root, JObject columns, JObject filters, int rowCount) => new() {
-		["rootSchemaName"] = root, ["operationType"] = 0,
-		["columns"] = new JObject { ["items"] = columns }, ["filters"] = filters, ["rowCount"] = rowCount
-	};
-
 	private static IEnumerable<string> CollectSchemaUIds(JArray moduleRows, JArray editRows) {
 		foreach (JToken row in moduleRows) {
 			yield return row["SectionSchemaUId"]?.ToString();
@@ -338,28 +293,12 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		}
 	}
 
-	private static JObject BuildSelectEntity(string entityName) => Query("SysSchema",
-		new JObject { ["UId"] = Column("UId"), ["ExtendParent"] = Column("ExtendParent") },
-		Group(("byName", Eq("Name", entityName, 1)), ("byManager", Eq("ManagerName", "EntitySchemaManager", 1))), EntityRowCount);
-
-	private static JObject BuildSelectSchemasByUId(IEnumerable<string> uIds) {
-		var expressions = new JArray();
-		foreach (string uId in uIds) {
-			expressions.Add(new JObject {
-				["expressionType"] = 2,
-				["parameter"] = new JObject { ["dataValueType"] = 0, ["value"] = uId }
-			});
-		}
-		return Query("SysSchema",
-			new JObject { ["UId"] = Column("UId"), ["Name"] = Column("Name"), ["ParentName"] = Column("Parent.Name") },
-			Group(("byUId", new JObject {
-				["filterType"] = 4,
-				["comparisonType"] = 3,
-				["isEnabled"] = true,
-				["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" },
-				["rightExpressions"] = expressions
-			})), expressions.Count);
-	}
+	// Column-set-specific selects (kept local); the DSL + entity resolution are single-sourced in
+	// ClassicEntitySchemaQuery (imported statically) so this command and ClassicSectionSchemaResolver
+	// cannot drift on the base-row rule or a filter's dataValueType.
+	private static JObject BuildSelectSchemasByUId(IReadOnlyCollection<string> uIds) => Query("SysSchema",
+		new JObject { ["UId"] = Column("UId"), ["Name"] = Column("Name"), ["ParentName"] = Column("Parent.Name") },
+		Group(("byUId", InFilter("UId", uIds, 0))), uIds.Count);
 
 	private static JObject BuildSelectSections(string entityUId) => Query("SysModule",
 		new JObject {

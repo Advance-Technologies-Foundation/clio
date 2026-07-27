@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json.Linq;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 /// <summary>Options for the <c>get-client-unit-schema</c> command.</summary>
 [Verb("get-client-unit-schema", Aliases = ["client-unit-schema-get"],
@@ -82,16 +83,19 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IFileSystem _fileSystem;
+	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
 	public GetClientUnitSchemaCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IFileSystem fileSystem,
+		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_fileSystem = fileSystem;
+		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
 
@@ -102,6 +106,19 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	/// </summary>
 	public virtual bool TryGetSchema(GetClientUnitSchemaOptions options, out GetClientUnitSchemaResponse response) {
 		try {
+			// Confine an explicit output-file BEFORE any network call: this tool is MCP-callable and
+			// non-destructive, so the output path can be agent-supplied and the host does not prompt on the
+			// write. Writing it verbatim would let a `..` traversal or absolute system path overwrite an
+			// arbitrary file. Shared guard with get-classic-page-sources (OutputPathConfinement).
+			string outputPath = null;
+			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
+				string pathError;
+				(outputPath, pathError) = OutputPathConfinement.Resolve(_ioFileSystem, options.OutputFile);
+				if (pathError != null) {
+					response = new GetClientUnitSchemaResponse { Success = false, Error = pathError };
+					return false;
+				}
+			}
 			string schemaUId;
 			if (!string.IsNullOrWhiteSpace(options.SchemaUId)) {
 				schemaUId = options.SchemaUId;
@@ -152,7 +169,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 						body,
 						localizableStrings
 					};
-					_fileSystem.WriteAllTextToFile(options.OutputFile,
+					_fileSystem.WriteAllTextToFile(outputPath,
 						System.Text.Json.JsonSerializer.Serialize(fileContent,
 							new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
 				} else {
@@ -160,7 +177,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 					response.LocalizableStrings = localizableStrings;
 				}
 			} else if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
-				_fileSystem.WriteAllTextToFile(options.OutputFile, body);
+				_fileSystem.WriteAllTextToFile(outputPath, body);
 			} else {
 				response.Body = body;
 			}

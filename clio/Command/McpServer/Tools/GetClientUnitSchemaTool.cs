@@ -17,7 +17,10 @@ public sealed class GetClientUnitSchemaTool(
 	internal const string ToolName = "get-client-unit-schema";
 
 	// ReadOnly=false: the tool writes the schema body (or the full-hierarchy contract file) to disk when
-	// output-file is set. Destructive stays false in line with the schema-read family.
+	// output-file is set. Destructive stays false because the write is confined: an explicit output-file is
+	// accepted only when it resolves inside the workspace anchor or the OS temp directory
+	// (OutputPathConfinement, shared with get-classic-page-sources), rejected before any write otherwise, so
+	// this MCP-callable tool cannot be steered into overwriting an arbitrary file.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment. " +
@@ -26,6 +29,8 @@ public sealed class GetClientUnitSchemaTool(
 		"Pass full-hierarchy=true to ALSO return the localizable strings merged across the whole inheritance/package " +
 		"chain (with parentSchemaUId provenance); the body still reflects this schema's own top layer (the view is " +
 		"not folded). " +
+		"An explicit output-file must resolve inside the workspace or the OS temp directory (a path outside both is " +
+		"rejected). " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public GetClientUnitSchemaResponse GetSchema(
 		[Description("Parameters: schema-name (required unless schema-uid is provided); output-file (optional); environment-name preferred; uri/login/password emergency fallback only.")]

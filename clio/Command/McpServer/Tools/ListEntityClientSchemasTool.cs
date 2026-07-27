@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -50,6 +51,14 @@ public sealed class ListEntityClientSchemasTool(
 					// The command's inner error can carry an HTTP/DataService message with the environment
 					// URI/host; redact before it lands in the MCP transcript.
 					response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
+				}
+				if (response?.Warnings is { Count: > 0 }) {
+					// Warnings are a second error channel: today they carry only static rowCount-cap strings, but
+					// nothing stops a future change from interpolating failure text (as the sibling
+					// get-classic-page-sources warning does), which would carry the same host/URI detail the Error
+					// path redacts. Redact here at the MCP boundary — parity with GetClassicPageSourcesTool — so the
+					// leak cannot be reintroduced silently, and the CLI keeps the full message.
+					response.Warnings = response.Warnings.Select(SensitiveErrorTextRedactor.Redact).ToList();
 				}
 				return response;
 			},

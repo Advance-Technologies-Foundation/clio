@@ -108,6 +108,39 @@ public class ListEntityClientSchemasToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Resolve redacts a sensitive URI/host carried in the response warnings, not just the error, so a warning cannot leak backend detail into the MCP transcript — parity with GetClassicPageSourcesTool.")]
+	public void Resolve_Should_Redact_Sensitive_Text_In_Warnings() {
+		// Arrange — a successful resolve whose warning carries a raw DataService failure host
+		FakeListEntityClientSchemasCommand defaultCommand = new();
+		FakeListEntityClientSchemasCommand resolvedCommand = new() {
+			ResponseToReturn = new ListEntityClientSchemasResponse {
+				Success = true,
+				Warnings = [
+					"Section lookup failed (POST https://secret-host.example.com/0/DataService failed); results may be partial."
+				]
+			}
+		};
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListEntityClientSchemasCommand>(Arg.Any<ListEntityClientSchemasOptions>())
+			.Returns(resolvedCommand);
+		ListEntityClientSchemasTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		ListEntityClientSchemasResponse response = tool.Resolve(new ListEntityClientSchemasArgs("Contract") {
+			EnvironmentName = "dev" });
+
+		// Assert
+		response.Warnings.Should().ContainSingle(because: "the single warning is carried through to the caller")
+			.Which.Should().NotContain("secret-host.example.com",
+				because: "warnings are a second error channel and must be redacted like Error is");
+		response.Warnings[0].Should().Contain("[redacted-uri]",
+			because: "the sensitive URI is replaced with the same stable placeholder used on the error path");
+		response.Warnings[0].Should().Contain("results may be partial",
+			because: "redaction scrubs the host, not the actionable part of the warning");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("ClassifyKind recognizes known Freedom templates, known Classic templates, and leaves unknown templates undecided.")]
 	[TestCase("PageWithTabsFreedomTemplate", "freedom")]
 	[TestCase("PageWithAreaFreedomTemplate", "freedom")]

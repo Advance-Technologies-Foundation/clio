@@ -145,7 +145,8 @@ public class GetClientUnitSchemaToolTests {
 
 		public FakeGetClientUnitSchemaCommand()
 			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<IFileSystem>(), ConsoleLogger.Instance) {
+				Substitute.For<IFileSystem>(), new System.IO.Abstractions.TestingHelpers.MockFileSystem(),
+				ConsoleLogger.Instance) {
 		}
 
 		public override bool TryGetSchema(GetClientUnitSchemaOptions options, out GetClientUnitSchemaResponse response) {

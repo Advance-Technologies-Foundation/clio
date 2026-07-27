@@ -54,10 +54,15 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IFileSystem _fileSystem;
+	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
 	private GetClientUnitSchemaCommand _command;
 	private string _writtenPath;
 	private string _writtenContent;
+
+	// An output-file under the OS temp root — one of the two locations OutputPathConfinement allows.
+	private string AllowedOutput(string fileName) =>
+		_ioFileSystem.Path.Combine(_ioFileSystem.Path.GetTempPath(), "gcus-out", fileName);
 
 	public override void Setup() {
 		base.Setup();
@@ -83,10 +88,12 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_fileSystem = Substitute.For<IFileSystem>();
+		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_fileSystem);
+		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
 	}
 
@@ -136,7 +143,8 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		// Arrange
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
-		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper", OutputFile = "/out/UsrHelper.js" };
+		string outputFile = AllowedOutput("UsrHelper.js");
+		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper", OutputFile = outputFile };
 
 		// Act
 		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
@@ -145,8 +153,31 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		result.Should().BeTrue(because: "an existing schema is fetched and written");
 		response.Body.Should().BeNull(because: "with an output file the body goes to disk, not the response");
 		response.BodyLength.Should().Be("define('UsrHelper', []);".Length, because: "the length is still reported");
-		_writtenPath.Should().Be("/out/UsrHelper.js", because: "the body is written to the requested path");
+		_writtenPath.Should().Be(_ioFileSystem.Path.GetFullPath(outputFile),
+			because: "the body is written to the confined, resolved output path");
 		_writtenContent.Should().Be("define('UsrHelper', []);", because: "the raw body is written verbatim");
+	}
+
+	[Test]
+	[Description("TryGetSchema rejects an output-file that escapes the workspace and OS temp dir, failing before any write instead of overwriting an arbitrary file.")]
+	public void TryGetSchema_Rejects_OutputFile_Outside_AllowedZones() {
+		// Arrange — cwd under temp so the anchor is known; output-file traverses out of temp to a sibling
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "gcus-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		string escape = _ioFileSystem.Path.Combine(tempRoot, "..", "gcus-escape", "UsrHelper.js");
+		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper", OutputFile = escape };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "an output-file escaping both allowed zones must not be written");
+		response.Error.Should().Contain("output-file",
+			because: "the failure names the offending option so the caller can correct it");
+		_writtenPath.Should().BeNull(because: "no file may be written when the path is rejected");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
 	[Test]
@@ -175,8 +206,9 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		// Arrange
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaFullHierarchyJson);
+		string outputFile = AllowedOutput("UsrHelper.fh.json");
 		var options = new GetClientUnitSchemaOptions {
-			SchemaName = "UsrHelper", FullHierarchy = true, OutputFile = "/out/UsrHelper.fh.json"
+			SchemaName = "UsrHelper", FullHierarchy = true, OutputFile = outputFile
 		};
 
 		// Act
@@ -186,7 +218,8 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		result.Should().BeTrue(because: "the schema resolves and the contract is written");
 		response.LocalizableStrings.Should().BeNull(
 			because: "with an output file the strings go to disk, not the response");
-		_writtenPath.Should().Be("/out/UsrHelper.fh.json", because: "the contract is written to the requested path");
+		_writtenPath.Should().Be(_ioFileSystem.Path.GetFullPath(outputFile),
+			because: "the contract is written to the confined, resolved output path");
 		JObject written = JObject.Parse(_writtenContent);
 		written["schemaName"]!.ToString().Should().Be("UsrHelper", because: "the contract documents the schema name");
 		written["fullHierarchy"]!.Value<bool>().Should().BeTrue(because: "the contract records the full-hierarchy mode");

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -198,7 +198,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		string candidate = Path.GetFullPath(Path.Combine(workspace, "sub", "manifest.json"));
 
 		// Act
-		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = OutputPathConfinement.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeTrue(because: "a file under the workspace anchor is an allowed destination");
@@ -213,7 +213,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		string candidate = Path.GetFullPath(Path.Combine(tempRoot, "run", "manifest.json"));
 
 		// Act
-		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = OutputPathConfinement.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeTrue(because: "the OS temp scratch dir is the second allowed destination (skill temp policy)");
@@ -228,7 +228,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		string candidate = Path.GetFullPath(Path.Combine(workspace, "..", "..", "escape", "hosts"));
 
 		// Act
-		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = OutputPathConfinement.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeFalse(because: "a `..` escape out of both allowed zones must be rejected before any write");
@@ -243,7 +243,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		string candidate = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "gcmb-elsewhere", "manifest.json"));
 
 		// Act
-		bool confined = GetClassicPageSourcesCommand.IsPathConfined(candidate, workspace, tempRoot);
+		bool confined = OutputPathConfinement.IsPathConfined(candidate, workspace, tempRoot);
 
 		// Assert
 		confined.Should().BeFalse(because: "a path outside both the workspace anchor and the temp root is out of bounds");
@@ -740,6 +740,30 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		first.Should().BeEmpty(because: "a timed-out enumeration degrades to no matches");
 		warnings.Should().ContainSingle(
 			because: "repeated timeouts on the same operation must collapse into one caller-visible warning");
+	}
+
+	[Test]
+	[Description("A real regex timeout during TryAssemblePageSources surfaces in the response's Warnings, proving the degradation is wired end-to-end through the public path, not only in SafeMatch called directly.")]
+	public void TryAssemblePageSources_ShouldWarn_WhenEntityInferenceRegexTimesOut() {
+		// Arrange — point entity inference at a 1-tick catastrophic-backtracking pattern, and give the page a
+		// pathological body so the timeout fires inside the real InferEntity -> SafeMatch call. No explicit entity,
+		// so inference actually runs over the body.
+		_command.EntityInferenceRegex = new System.Text.RegularExpressions.Regex("(a+)+$",
+			System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromTicks(1));
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", new string('a', 40) + "b", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a regex timeout degrades, never fails the whole assembly");
+		response.Warnings.Should().NotBeNull(
+			because: "the timeout must surface to an MCP caller who never sees the logger");
+		response.Warnings.Should().Contain(w => w.Contains("inferring the bound entity"),
+			because: "the surfaced warning names the operation that degraded, through the real TryAssemblePageSources path");
 	}
 
 	[Test]

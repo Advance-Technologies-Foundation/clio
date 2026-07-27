@@ -26,7 +26,10 @@ inheritance/package hierarchy, each with its `parentSchemaUId` provenance.
 When `--output-file` is set, the schema body is written to the specified file and the body
 field is omitted from the response JSON printed to stdout. This keeps the terminal output
 small and makes it easy to edit the body locally before piping it back through
-`update-client-unit-schema`.
+`update-client-unit-schema`. Because the command is MCP-callable, the output path can be
+supplied by an agent rather than typed at a shell, so it is confined to the workspace anchor
+or the OS temp directory — a path escaping both (a `..` traversal or an absolute system path)
+is rejected before any write.
 
 ## Synopsis
 

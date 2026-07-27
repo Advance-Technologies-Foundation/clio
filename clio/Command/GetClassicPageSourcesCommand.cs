@@ -124,6 +124,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		RegexOptions.Compiled,
 		TimeSpan.FromSeconds(1));
 
+	// Test seam (instance-scoped, never mutated in production): the entity-inference regex InferEntity runs.
+	// Defaults to the compiled EntityNameRegex; a command-level test can point it at a tiny-timeout pattern to
+	// exercise the regex-timeout degradation through the real TryAssembleBundle path (not just SafeMatch alone).
+	internal Regex EntityInferenceRegex { get; set; } = EntityNameRegex;
+
 	// Detail schema references in a classic page body: `schemaName: "SomeDetailV2"` (detail-named schemas only).
 	// The lookbehind keeps longer identifiers (e.g. `entitySchemaName: "XDetail"`) from matching as details.
 	private static readonly Regex DetailSchemaNameRegex = new(
@@ -632,7 +637,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			Match match = SafeMatch(ctx.Warnings, EntityNameRegex, body, "inferring the bound entity");
+			Match match = SafeMatch(ctx.Warnings, EntityInferenceRegex, body, "inferring the bound entity");
 			if (match.Success) {
 				return match.Groups[1].Value;
 			}
@@ -956,7 +961,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
 				string full = _ioFileSystem.Path.GetFullPath(options.OutputFile);
 				string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
-				if (!IsPathConfined(full, anchor, tempRoot)) {
+				if (!OutputPathConfinement.IsPathConfined(full, anchor, tempRoot)) {
 					return (null,
 						$"output-file '{options.OutputFile}' resolves outside the allowed locations; it must be " +
 						"inside the workspace or the OS temp directory. Omit output-file to write the default " +
@@ -966,28 +971,6 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			return (Path.Combine(anchor, ClioMigrationDirectoryName, options.SchemaName, ManifestFileName), null);
 		}
-	}
-
-	// True when <paramref name="fullCandidate"/> (an already-resolved absolute path) lies within the workspace
-	// anchor OR the OS temp root. Both bounds are the two locations the migration flow writes to; everything
-	// else — parent-traversal escapes, absolute system paths, other volumes — is out of bounds.
-	internal static bool IsPathConfined(string fullCandidate, string workspaceAnchor, string tempRoot) =>
-		IsWithinDirectory(workspaceAnchor, fullCandidate) || IsWithinDirectory(tempRoot, fullCandidate);
-
-	// True when <paramref name="target"/> is <paramref name="baseDirectory"/> itself or a descendant of it.
-	// Uses GetRelativePath so the comparison honors the platform's own case rules: a relative result that stays
-	// put (".") or descends is inside; one that starts with ".." (escape) or is rooted (different volume) is not.
-	private static bool IsWithinDirectory(string baseDirectory, string target) {
-		if (string.IsNullOrEmpty(baseDirectory)) {
-			return false;
-		}
-		string relative = Path.GetRelativePath(baseDirectory, target);
-		if (relative == "..") {
-			return false;
-		}
-		return !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-			&& !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal)
-			&& !Path.IsPathRooted(relative);
 	}
 
 	private static GetClassicPageSourcesResponse Fail(string error) =>

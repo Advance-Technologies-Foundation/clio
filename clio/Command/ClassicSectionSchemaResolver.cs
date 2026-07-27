@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
@@ -46,7 +45,6 @@ public interface IClassicSectionSchemaResolver {
 public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver {
 
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
-	private const int EntityRowCount = 50;
 	private const int SectionRowCount = 100;
 
 	private readonly IApplicationClient _applicationClient;
@@ -64,11 +62,13 @@ public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver
 			return new ClassicSectionLookup(Array.Empty<string>(), "entity name is required");
 		}
 		try {
-			(string entityUId, string entityError) = ResolveEntityUId(entityName);
+			(string entityUId, string entityError) =
+				ClassicEntitySchemaQuery.ResolveEntityUId(_applicationClient, _serviceUrlBuilder, entityName);
 			if (entityUId == null) {
 				return new ClassicSectionLookup(Array.Empty<string>(), entityError);
 			}
-			JArray moduleRows = Select(BuildSelectSections(entityUId));
+			JArray moduleRows = ClassicEntitySchemaQuery.Select(
+				_applicationClient, _serviceUrlBuilder, BuildSelectSections(entityUId));
 			string[] sectionUIds = moduleRows
 				.Select(row => row["SectionSchemaUId"]?.ToString())
 				.Where(uId => !string.IsNullOrWhiteSpace(uId) && uId != EmptyGuid)
@@ -77,7 +77,8 @@ public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver
 			if (sectionUIds.Length == 0) {
 				return new ClassicSectionLookup(Array.Empty<string>(), null);
 			}
-			JArray schemaRows = Select(BuildSelectSchemaNamesByUId(sectionUIds));
+			JArray schemaRows = ClassicEntitySchemaQuery.Select(
+				_applicationClient, _serviceUrlBuilder, BuildSelectSchemaNamesByUId(sectionUIds));
 			// Preserve the SysModule row order: the first module bound to the entity is the one a migration plan
 			// treats as "the" section, and a UId the SysSchema lookup did not return is simply dropped.
 			var nameByUId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -100,82 +101,17 @@ public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver
 		}
 	}
 
-	private (string uId, string error) ResolveEntityUId(string entityName) {
-		JArray rows = Select(BuildSelectEntity(entityName));
-		if (rows.Count == 0) {
-			return (null, $"Entity '{entityName}' not found (ManagerName='EntitySchemaManager')");
-		}
-		JToken baseRow = rows.FirstOrDefault(row => row["ExtendParent"]?.Value<bool?>() == false);
-		if (baseRow is null) {
-			return (null,
-				$"Entity '{entityName}' metadata did not include a base row (ExtendParent=false); " +
-				"cannot safely resolve the section binding.");
-		}
-		string uId = baseRow["UId"]?.ToString();
-		return string.IsNullOrWhiteSpace(uId)
-			? (null, $"Entity '{entityName}' base schema metadata is missing UId")
-			: (uId, null);
-	}
+	// Column-set-specific selects (kept local); the DSL + entity resolution are single-sourced in
+	// ClassicEntitySchemaQuery so this resolver and ListEntityClientSchemasCommand cannot drift.
+	private static JObject BuildSelectSections(string entityUId) => ClassicEntitySchemaQuery.Query("SysModule",
+		new JObject { ["SectionSchemaUId"] = ClassicEntitySchemaQuery.Column("SectionSchemaUId") },
+		ClassicEntitySchemaQuery.Group(
+			("byEntity", ClassicEntitySchemaQuery.Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))),
+		SectionRowCount);
 
-	private JArray Select(JObject query) {
-		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-		string json = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-		return DataServiceSelectResponse.ReadRows(json);
-	}
-
-	// ---- ESQ builders ----
-	private static JObject Column(string path) =>
-		new() { ["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = path } };
-
-	private static JObject Eq(string columnPath, string value, int dataValueType) => new() {
-		["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true,
-		["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = columnPath },
-		["rightExpression"] = new JObject {
-			["expressionType"] = 2,
-			["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value }
-		}
-	};
-
-	private static JObject Group(params (string key, JObject filter)[] items) {
-		var jitems = new JObject();
-		foreach ((string key, JObject filter) in items) {
-			jitems[key] = filter;
-		}
-		return new JObject {
-			["filterType"] = 6, ["logicalOperation"] = 0, ["isEnabled"] = true, ["items"] = jitems
-		};
-	}
-
-	private static JObject Query(string root, JObject columns, JObject filters, int rowCount) => new() {
-		["rootSchemaName"] = root, ["operationType"] = 0,
-		["columns"] = new JObject { ["items"] = columns }, ["filters"] = filters, ["rowCount"] = rowCount
-	};
-
-	private static JObject BuildSelectEntity(string entityName) => Query("SysSchema",
-		new JObject { ["UId"] = Column("UId"), ["ExtendParent"] = Column("ExtendParent") },
-		Group(("byName", Eq("Name", entityName, 1)), ("byManager", Eq("ManagerName", "EntitySchemaManager", 1))),
-		EntityRowCount);
-
-	private static JObject BuildSelectSections(string entityUId) => Query("SysModule",
-		new JObject { ["SectionSchemaUId"] = Column("SectionSchemaUId") },
-		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), SectionRowCount);
-
-	private static JObject BuildSelectSchemaNamesByUId(IEnumerable<string> uIds) {
-		var expressions = new JArray();
-		foreach (string uId in uIds) {
-			expressions.Add(new JObject {
-				["expressionType"] = 2,
-				["parameter"] = new JObject { ["dataValueType"] = 0, ["value"] = uId }
-			});
-		}
-		return Query("SysSchema",
-			new JObject { ["UId"] = Column("UId"), ["Name"] = Column("Name") },
-			Group(("byUId", new JObject {
-				["filterType"] = 4,
-				["comparisonType"] = 3,
-				["isEnabled"] = true,
-				["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" },
-				["rightExpressions"] = expressions
-			})), expressions.Count);
-	}
+	private static JObject BuildSelectSchemaNamesByUId(IReadOnlyCollection<string> uIds) =>
+		ClassicEntitySchemaQuery.Query("SysSchema",
+			new JObject { ["UId"] = ClassicEntitySchemaQuery.Column("UId"), ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
+			ClassicEntitySchemaQuery.Group(("byUId", ClassicEntitySchemaQuery.InFilter("UId", uIds, 0))),
+			uIds.Count);
 }
