@@ -390,12 +390,14 @@ public sealed class CreateBusinessProcessToolE2ETests {
 
 		// Readback: describe and confirm the tracked column round-tripped. Build resolves the column NAME to its column
 		// UId; describe decodes that UId back to the name — a drop on either side (package or clio DTO) is caught here,
-		// not merely that a signalStart exists.
-		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
-		describeJson.Should().Contain("changedColumns",
-			because: "describe-business-process surfaces the signal's tracked-change columns");
-		describeJson.Should().Contain("Name",
-			because: "the tracked column Name round-trips: build resolves it to its column UId and describe decodes the UId back to the name");
+		// not merely that a signalStart exists. Asserted on the typed graph (not a substring of the serialized
+		// envelope), so a wrong or extra column cannot slip through on an incidental token match.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedSignal signal = graph.Elements.Single(element => element.Name == "SignalStart1").Signal;
+		signal.Should().NotBeNull(because: "describe reports the signal start's record trigger");
+		signal.On.Should().Be("modified", because: "the trigger type round-trips");
+		signal.ChangedColumns.Should().BeEquivalentTo(new[] { "Name" },
+			because: "exactly the requested tracked column round-trips: build resolves it to its column UId and describe decodes that UId back to the name");
 	}
 
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
@@ -474,12 +476,14 @@ public sealed class CreateBusinessProcessToolE2ETests {
 
 		// Readback: the delete trigger must survive save->reload and decode back to the canonical token. A change type
 		// dropped or coerced to the 'modified' default on either side is caught here.
-		// (Quotes are "-escaped in the serialized MCP envelope, so assert on bare tokens like the sibling tests.)
-		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
-		describeJson.Should().Contain("deleted",
-			because: "the record-deleted trigger round-trips: it persists on save and describe decodes it back to the 'deleted' token");
-		describeJson.Should().NotContain("modified",
-			because: "the delete trigger must survive as-is, not be coerced to the default 'modified' change type");
+		// Asserted on the typed graph so the trigger token is checked exactly, not matched incidentally anywhere in the
+		// serialized envelope.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedSignal signal = graph.Elements.Single(element => element.Name == "SignalStart1").Signal;
+		signal.Should().NotBeNull(because: "describe reports the signal start's record trigger");
+		signal.On.Should().Be("deleted",
+			because: "the record-deleted trigger round-trips: it persists on save, is decoded back to the 'deleted' token, and is not coerced to the default 'modified'");
+		signal.ChangedColumns.Should().BeNull(because: "a delete trigger carries no tracked columns");
 	}
 
 	[Test]
