@@ -349,6 +349,38 @@ do not resend the operations already marked `completed`. When a create succeeded
 seeding failed, the resume operation for that step is a standalone `seed-data` operation (not another
 create), so resuming never recreates the already-created schema.
 
+#### Deferred inline seed (successful batch)
+
+A **fully successful** batch also carries a `resume-plan` in one case: an inline `seed-rows` step was
+deliberately skipped because its create converged to `already-satisfied` (the verbatim-replay signal —
+inline rows without a `Name`/`Id` are not replay-safe, so re-running them would double-insert). That
+plan has **no** `failed-operation`; `not-run-operation-indexes` names the operations whose inline seed
+was deferred, and `operations` carries the equivalent standalone `seed-data` ops (which reconcile rows
+by key):
+
+```json
+{
+  "success": true,
+  "results": [
+    {"type": "create-lookup", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "outcome": "already-satisfied", "operation-index": 0},
+    {"type": "seed-data", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "outcome": "already-satisfied", "operation-index": 0, "messages": ["... inline seed-rows were SKIPPED ..."]}
+  ],
+  "resume-plan": {
+    "instruction": "Batch completed, but the inline seed-rows of the operations listed in resume-plan.not-run-operation-indexes were SKIPPED ...",
+    "not-run-operation-indexes": [0],
+    "operations": [
+      {"type": "seed-data", "schema-name": "UsrTodoStatus", "seed-rows": [/* ... */]}
+    ]
+  }
+}
+```
+
+Resubmit those operations **only if the rows are not yet on the server**. This matters because
+`already-satisfied` cannot distinguish "the schema and its rows already existed" from "an earlier retry
+attempt of *this* call created the schema but lost its response" — in the second case the rows were
+never seeded, so the plan is the recovery affordance. Never resubmit the create ops: they are already
+satisfied.
+
 A failed operation carries `success: false` and a user-friendly `error`. A durable collision
 additionally carries `outcome: "collision"` and `collision-info` (owning package). The safe recovery
 after an ambiguous failure is to fix the real cause (if any) and **re-submit the identical batch** when

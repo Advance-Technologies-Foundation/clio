@@ -347,8 +347,157 @@ public sealed class SchemaSyncToolTests {
 		GetMessageValues(response.Results[1]).Should().Contain(
 			message => message.Contains("SKIPPED", StringComparison.Ordinal) && message.Contains("standalone seed-data", StringComparison.Ordinal),
 			because: "the skip must be observable and steer a genuine seed-an-existing-schema intent to a standalone seed-data op");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a skipped inline seed must still hand the caller a recovery affordance — an already-satisfied "
+				+ "create may also come from a landed-but-lost-response attempt of THIS call, where the rows were never seeded");
+		response.ResumePlan!.FailedOperation.Should().BeNull(
+			because: "nothing failed: the plan is a deferred-seed affordance, not an abort report");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A fully-successful batch whose inline seed was skipped (already-satisfied create) emits a resume-plan carrying the equivalent STANDALONE seed-data operation (ENG-93807 review, AC-2/AC-3): the already-satisfied outcome cannot distinguish 'rows already there' from 'attempt 1 of this call committed and lost its response', so a success-keyed consumer must still get a keyed, replay-safe way to apply the rows instead of silently losing them.")]
+	public async Task SchemaSync_InlineSeed_Skipped_Should_Emit_DeferredSeed_ResumePlan() {
+		// Arrange - same shape as the skip test, but asserting the recovery affordance: the create converges to
+		// already-satisfied, the inline seed is skipped, and the response must carry a resume-plan whose single
+		// operation is a standalone seed-data op (which reconciles rows by key) for the same schema and rows.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.AlreadySatisfied));
+		SchemaSyncSeedRow seedRow = new(new Dictionary<string, System.Text.Json.JsonElement> {
+			["Caption"] = ToJsonElement("New")
+		});
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [seedRow])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the batch itself completed — the deferred seed is an affordance, not a failure");
+		response.ResumePlan.Should().NotBeNull(
+			because: "the skipped inline seed must be recoverable, so a resume-plan is emitted even on full success");
+		response.ResumePlan!.FailedOperation.Should().BeNull(
+			because: "no operation failed, so the plan carries no failed-operation");
+		response.ResumePlan.Operations.Should().HaveCount(1,
+			because: "only the one skipped inline seed is deferred");
+		response.ResumePlan.Operations[0].Type.Should().Be("seed-data",
+			because: "the deferred operation must be a STANDALONE seed-data op, which reconciles rows by key, not a re-submitted create");
+		response.ResumePlan.Operations[0].SchemaName.Should().Be("UsrTodoStatus",
+			because: "the deferred seed must target the schema whose inline seed was skipped");
+		response.ResumePlan.Operations[0].SeedRows.Should().BeEquivalentTo([seedRow],
+			because: "the deferred seed must carry the original rows so it is ready to resubmit verbatim");
+		response.ResumePlan.NotRunOperationIndexes.Should().Equal([0],
+			because: "the plan must name which operation's inline seed was deferred");
+		response.ResumePlan.Instruction.Should().Contain("SKIPPED",
+			because: "the instruction must explain that the seed was deliberately skipped, not lost");
+		fakeSeedCommand.CapturedOptions.Should().BeNull(
+			because: "emitting the affordance must not itself run the replay-unsafe inline seed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("Inline seed-rows DO run when the create converged to reconciled (ENG-93807 review, test completeness): only already-satisfied is the verbatim-replay signal — a reconcile applied a genuine delta on this call, so its rows have never been seeded and the inline seed must execute (and emit no deferred-seed resume-plan).")]
+	public async Task SchemaSync_InlineSeed_Should_Run_WhenCreateReconciled() {
+		// Arrange - the create classifies Reconcile (the schema existed but was missing a column, which this call
+		// adds). This is a FIRST application, not a replay, so the inline seed must run exactly as on a fresh create.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Reconcile,
+			columnsToAdd: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))]);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Caption"] = ToJsonElement("New")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a reconciled create followed by its inline seed is a fully successful operation");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "the create applied the missing-column delta on this call");
+		fakeSeedCommand.CapturedOptions.Should().NotBeNull(
+			because: "a reconcile is a first application, not a verbatim replay, so its inline seed must actually run");
+		fakeSeedCommand.CapturedOptions!.SchemaName.Should().Be("UsrTodoStatus",
+			because: "the inline seed must target the reconciled schema");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "the executed inline seed is reported as its own seed-data result");
+		response.Results[1].Success.Should().BeTrue(
+			because: "the seeding succeeded");
 		response.ResumePlan.Should().BeNull(
-			because: "nothing failed, so the batch emits no resume plan");
+			because: "nothing failed and no seed was deferred, so the batch emits no resume plan");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A durable collision observed on the FIRST classify fails fast (ENG-93807 review, test completeness): a collision is not a transient fault, so the retry loop must not spin — Classify is called exactly once, no create is attempted, and attempts stays null.")]
+	public async Task ExecuteCreateSchema_FirstReadCollision_Should_FailFast_WithoutRetrySpin() {
+		// Arrange - the very first classify observes a same-name schema in a different package.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPackage",
+			error: "Error: schema 'UsrGenre' already exists in package 'OtherPackage'.");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence,
+			retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a durable cross-package collision is a real failure, not a convergent success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the structured collision shape must be surfaced from the first-read path too");
+		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPackage",
+			because: "the caller needs to know which package owns the colliding schema");
+		convergence.Received(1).Classify(Arg.Any<SchemaConvergenceTarget>());
+		response.Results[0].Attempts.Should().BeNull(
+			because: "a collision fails fast on the first attempt, so no retry count is reported");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "no create may be attempted once a durable collision is classified");
 	}
 
 	[Test]

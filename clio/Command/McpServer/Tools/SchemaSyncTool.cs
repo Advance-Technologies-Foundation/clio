@@ -94,6 +94,7 @@ public sealed class SchemaSyncTool(
 		"(up to 3 attempts with short backoff) before the operation is failed. " +
 		"On a mid-batch abort the response carries a 'resume-plan' with per-operation status (completed/failed/not-run) and a ready-to-resubmit 'operations' array; " +
 		"resubmitting resume-plan.operations is the efficient recovery path (it excludes completed ops and converts a post-create seed failure to a standalone seed-data op, since seed-data is NOT replay-safe). " +
+		"A fully-successful batch also carries a 'resume-plan' (with no 'failed-operation') when a create converged to already-satisfied and its INLINE seed-rows were therefore skipped to stay replay-safe: resubmit those standalone seed-data operations only if the rows are not yet on the server. " +
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
@@ -159,9 +160,7 @@ public sealed class SchemaSyncTool(
 			}
 		}
 		int total = operations.Count;
-		var results = new List<SchemaSyncOperationResult>();
-		int abortedAtIndex = -1;
-		SchemaSyncOperation? failedResumeOperation = null;
+		var state = new BatchExecutionState();
 		// FR-05: serialize on the per-tenant lock keyed by the environment the batch's schema commands
 		// resolve under, so different tenants run concurrently instead of behind one global lock.
 		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
@@ -175,51 +174,8 @@ public sealed class SchemaSyncTool(
 			try {
 				for (int index = 0; index < total; index++) {
 					cancellationToken.ThrowIfCancellationRequested();
-					SchemaSyncOperation op = operations[index];
-					logger.ClearMessages();
-					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
-						results.Add(Classify(seedValidationFailure!, index));
-						abortedAtIndex = index;
-						// A validation failure applied nothing on the server, so the whole operation is
-						// resubmittable as-is.
-						failedResumeOperation = op;
+					if (!ExecuteBatchOperation(operations[index], index, total, args, tenantKey, retryBudget, reportStage, state)) {
 						break;
-					}
-					reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
-					SchemaSyncOperationResult result = Classify(ExecuteOperation(op, args, index, tenantKey, retryBudget), index);
-					results.Add(result);
-					if (!result.Success) {
-						abortedAtIndex = index;
-						failedResumeOperation = op;
-						break;
-					}
-					if (op.SeedRows?.Any() == true && !IsSeedDataOperation(op)) {
-						if (string.Equals(result.Outcome, AlreadySatisfiedOutcome, StringComparison.Ordinal)) {
-							// AC-2 replay-safety: an `already-satisfied` create is the verbatim-replay signal — the
-							// schema already fully existed, so nothing was applied on this call. Inline seed-rows are
-							// NOT replay-safe for rows without a stable key: EnsureRowId mints a fresh Guid for every
-							// row that has neither a Name nor an explicit Id, so RowExistsInTable is always false and a
-							// verbatim replay of a `create + inline seed-rows` batch would double-insert (there is no
-							// resume-plan on a full-success replay to steer away from it). Skip the inline seed on this
-							// signal and surface an explicit note so a genuine "seed an existing schema" intent is
-							// routed to a standalone seed-data op (which reconciles by key). `reconciled` is
-							// deliberately NOT skipped: a delta was genuinely applied this call (first application), so
-							// the inline seed must run; the next verbatim replay then classifies as `already-satisfied`
-							// and is skipped here.
-							results.Add(Classify(BuildSkippedInlineSeedResult(op), index));
-						} else {
-							reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
-							logger.ClearMessages();
-							SchemaSyncOperationResult seedResult = Classify(ExecuteSeedData(op, args, tenantKey, retryBudget), index);
-							results.Add(seedResult);
-							if (!seedResult.Success) {
-								abortedAtIndex = index;
-								// The create step already applied server-side, so resuming must NOT recreate the
-								// schema — resubmit only the seeding as a first-class seed-data operation.
-								failedResumeOperation = BuildSeedResumeOperation(op);
-								break;
-							}
-						}
 					}
 				}
 			} finally {
@@ -229,11 +185,79 @@ public sealed class SchemaSyncTool(
 			}
 		}
 		return new SchemaSyncResponse {
-			Success = results.Count > 0 && results.All(r => r.Success),
-			Results = results,
-			ResumePlan = BuildResumePlan(operations, results, abortedAtIndex, failedResumeOperation),
+			Success = state.Results.Count > 0 && state.Results.All(r => r.Success),
+			Results = state.Results,
+			ResumePlan = BuildResumePlan(operations, state),
 			DataForge = dataForge
 		};
+	}
+
+	/// <summary>
+	/// Runs one batch operation (validation → schema step → inline seed step), recording its results and any
+	/// abort/deferred-seed bookkeeping on <paramref name="state"/>. Returns <see langword="false"/> when the
+	/// batch must stop (stop-on-first-failure), <see langword="true"/> to continue with the next operation.
+	/// </summary>
+	private bool ExecuteBatchOperation(
+		SchemaSyncOperation op, int index, int total, SchemaSyncArgs args, string tenantKey,
+		RetryBudget retryBudget, Action<string> reportStage, BatchExecutionState state) {
+		logger.ClearMessages();
+		if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
+			state.Results.Add(Classify(seedValidationFailure!, index));
+			// A validation failure applied nothing on the server, so the whole operation is
+			// resubmittable as-is.
+			state.Abort(index, op);
+			return false;
+		}
+		reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
+		SchemaSyncOperationResult result = Classify(ExecuteOperation(op, args, index, tenantKey, retryBudget), index);
+		state.Results.Add(result);
+		if (!result.Success) {
+			state.Abort(index, op);
+			return false;
+		}
+		if (op.SeedRows?.Any() != true || IsSeedDataOperation(op)) {
+			return true;
+		}
+		return ExecuteInlineSeedStep(op, index, total, args, tenantKey, retryBudget, reportStage, state, result);
+	}
+
+	/// <summary>
+	/// Runs (or deliberately skips) the inline seed step attached to a succeeded create operation. Returns
+	/// <see langword="false"/> when the seed failed and the batch must abort.
+	/// </summary>
+	private bool ExecuteInlineSeedStep(
+		SchemaSyncOperation op, int index, int total, SchemaSyncArgs args, string tenantKey,
+		RetryBudget retryBudget, Action<string> reportStage, BatchExecutionState state,
+		SchemaSyncOperationResult createResult) {
+		if (string.Equals(createResult.Outcome, AlreadySatisfiedOutcome, StringComparison.Ordinal)) {
+			// AC-2 replay-safety: an `already-satisfied` create is the verbatim-replay signal — the schema
+			// already fully existed, so nothing was applied on this call. Inline seed-rows are NOT replay-safe
+			// for rows without a stable key: EnsureRowId mints a fresh Guid for every row that has neither a
+			// Name nor an explicit Id, so RowExistsInTable is always false and a verbatim replay of a
+			// `create + inline seed-rows` batch would double-insert. Skip the inline seed on this signal and
+			// surface both an explicit note AND a resume-plan entry carrying the equivalent standalone
+			// seed-data op: the outcome may also come from a landed-but-lost-response create earlier in THIS
+			// call (attempt 1 committed, attempt 2 re-classified to `already-satisfied`), where the rows were
+			// genuinely never seeded — a success-keyed consumer must still get a recovery affordance instead
+			// of silently losing the writes. Resubmitting that standalone op reconciles rows by key.
+			// `reconciled` is deliberately NOT skipped: a delta was genuinely applied this call (first
+			// application), so the inline seed must run; the next verbatim replay then classifies as
+			// `already-satisfied` and is skipped here.
+			state.Results.Add(Classify(BuildSkippedInlineSeedResult(op), index));
+			state.DeferredSeedOperations.Add((index, BuildSeedResumeOperation(op)));
+			return true;
+		}
+		reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
+		logger.ClearMessages();
+		SchemaSyncOperationResult seedResult = Classify(ExecuteSeedData(op, args, tenantKey, retryBudget), index);
+		state.Results.Add(seedResult);
+		if (seedResult.Success) {
+			return true;
+		}
+		// The create step already applied server-side, so resuming must NOT recreate the schema — resubmit
+		// only the seeding as a first-class seed-data operation.
+		state.Abort(index, BuildSeedResumeOperation(op));
+		return false;
 	}
 
 	private static IReadOnlyList<string> CollectCandidateTerms(IReadOnlyList<SchemaSyncOperation> operations) {
@@ -403,31 +427,46 @@ public sealed class SchemaSyncTool(
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 			// Deterministic option-building failures (localization/guardrail validation) are not network
 			// faults and are never retried — surface them exactly as before.
-			return new SchemaSyncOperationResult {
-				Type = operationName,
-				SchemaName = op.SchemaName,
-				Success = false,
-				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
-			};
+			return BuildDeterministicFailureResult(operationName, op.SchemaName, ex, tenantKey);
 		}
 	}
+
+	/// <summary>
+	/// Builds the failure result for a deterministic (non-transient, never-retried) exception on an operation
+	/// path. Single home for the security-sensitive surfacing contract shared by every such catch block: the
+	/// message goes through <see cref="SensitiveErrorTextRedactor"/> and the preserved log messages are flushed
+	/// through <see cref="McpPassthroughRedaction"/>, so the two cannot drift apart per call site.
+	/// </summary>
+	private SchemaSyncOperationResult BuildDeterministicFailureResult(
+		string operationName, string schemaName, Exception ex, string tenantKey) =>
+		new() {
+			Type = operationName,
+			SchemaName = schemaName,
+			Success = false,
+			Error = SensitiveErrorTextRedactor.Redact(ex.Message),
+			Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
+		};
 
 	// Builds the structured collision result shared by the pre-emptive collision gate and the retry
 	// re-classify path: success:false, outcome:collision, the user-friendly error, and collision-info naming
 	// the owning package (when the classifier resolved one). Keeps both paths on one contract shape.
 	private SchemaSyncOperationResult BuildCollisionResult(
 		string operationName, string schemaName, SchemaConvergencePlan plan, string tenantKey) {
+		// Defense in depth: the classifier composes plan.Error from schema/package identifiers only, so there is
+		// nothing sensitive to strip today — but every other error surfaced from this tool goes through the
+		// redactor, and keeping this path on the same contract means a future classifier message that starts
+		// interpolating a URI/path/connection detail cannot leak by omission.
+		string? error = plan.Error is null ? null : SensitiveErrorTextRedactor.Redact(plan.Error);
 		return new SchemaSyncOperationResult {
 			Type = operationName,
 			SchemaName = schemaName,
 			Success = false,
 			Outcome = CollisionOutcome,
-			Error = plan.Error,
+			Error = error,
 			Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 			CollisionInfo = plan.CollisionPackageName is null
 				? null
-				: new SchemaSyncCollisionInfo(plan.CollisionPackageName, plan.Error ?? string.Empty)
+				: new SchemaSyncCollisionInfo(plan.CollisionPackageName, error ?? string.Empty)
 		};
 	}
 
@@ -533,13 +572,7 @@ public sealed class SchemaSyncTool(
 			return FinalizeResult(UpdateEntityOperationName, op.SchemaName, execution, tenantKey,
 				outcome: execution.ExitCode == 0 && execution.CaughtException is null ? updateOutcome : null);
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
-			return new SchemaSyncOperationResult {
-				Type = UpdateEntityOperationName,
-				SchemaName = op.SchemaName,
-				Success = false,
-				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
-			};
+			return BuildDeterministicFailureResult(UpdateEntityOperationName, op.SchemaName, ex, tenantKey);
 		}
 	}
 
@@ -563,54 +596,57 @@ public sealed class SchemaSyncTool(
 		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns) {
 		List<UpdateEntitySchemaOperationArgs> delta = [];
 		foreach (UpdateEntitySchemaOperationArgs operation in requestedOperations) {
-			string? columnName = operation.ResolveColumnName();
-			if (string.IsNullOrWhiteSpace(columnName)) {
-				// Forward unchanged so the downstream serializer surfaces the missing-column-name error as before.
-				delta.Add(operation);
-				continue;
+			UpdateEntitySchemaOperationArgs? reconciled = ReconcileUpdateOperation(operation, existingColumns);
+			if (reconciled is not null) {
+				delta.Add(reconciled);
 			}
-			bool isAdd = IsAddAction(operation.Action);
-			bool isModify = IsModifyAction(operation.Action);
-			bool isRemove = IsRemoveAction(operation.Action);
-			if (!isAdd && !isModify && !isRemove) {
-				// Unsupported action verb (e.g. 'rename', a typo, or a missing action) — never converge or
-				// rewrite it. Forward it unchanged so UpdateEntitySchemaCommand's own validator rejects it with
-				// "Action must be one of: add, modify, remove.", instead of silently dropping it (present, same
-				// type) or coercing it to a modify (present, different type) and bypassing that validation.
-				delta.Add(operation);
-				continue;
-			}
-			bool present = existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
-			if (isRemove) {
-				if (present) {
-					delta.Add(operation);
-				}
-				// Absent → "ensure absent" is already satisfied; issue nothing.
-				continue;
-			}
-			if (!present) {
-				// Absent column: materialize it (add) or forward the requested modify unchanged.
-				delta.Add(operation);
-				continue;
-			}
-			if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn.Type)) {
-				// Present but different type: an explicit modify is forwarded as-is; an add (explicit or the
-				// implicit add-batch coerced from a `columns` payload) is converged to a modify so a re-add does
-				// not fail as a duplicate. An incompatible modify is surfaced by the backend command as a
-				// modify-conflict error (success:false), NOT a whole-schema collision.
-				delta.Add(isModify ? operation : operation with { Action = ModifyAction });
-				continue;
-			}
-			if (isModify) {
-				// Present, matching type: the add/columns shape reconciles by TYPE only, so a caller changing a
-				// non-type attribute (required/reference/flags/caption) must use an explicit modify — forward it
-				// unconditionally (a re-run to the same value is a backend no-op, never a failure).
-				delta.Add(operation);
-			}
-			// Present add entry with a matching type → the type-only add-shape contract is satisfied,
-			// so drop it (idempotent replay). Non-type changes require an explicit modify op.
 		}
 		return delta;
+	}
+
+	/// <summary>
+	/// Reconciles a single requested column operation against the current server column state, returning the
+	/// operation to issue (possibly rewritten) or <see langword="null"/> when it is already satisfied and must
+	/// be dropped. Extracted from <see cref="ReconcileUpdateOperations"/> so the per-column decision tree reads
+	/// as one unit; the semantics are unchanged.
+	/// </summary>
+	private static UpdateEntitySchemaOperationArgs? ReconcileUpdateOperation(
+		UpdateEntitySchemaOperationArgs operation,
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns) {
+		string? columnName = operation.ResolveColumnName();
+		if (string.IsNullOrWhiteSpace(columnName)) {
+			// Forward unchanged so the downstream serializer surfaces the missing-column-name error as before.
+			return operation;
+		}
+		bool isModify = IsModifyAction(operation.Action);
+		if (!IsAddAction(operation.Action) && !isModify && !IsRemoveAction(operation.Action)) {
+			// Unsupported action verb (e.g. 'rename', a typo, or a missing action) — never converge or
+			// rewrite it. Forward it unchanged so UpdateEntitySchemaCommand's own validator rejects it with
+			// "Action must be one of: add, modify, remove.", instead of silently dropping it (present, same
+			// type) or coercing it to a modify (present, different type) and bypassing that validation.
+			return operation;
+		}
+		bool present = existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
+		if (IsRemoveAction(operation.Action)) {
+			// Present → issue the remove; absent → "ensure absent" is already satisfied, issue nothing.
+			return present ? operation : null;
+		}
+		if (!present) {
+			// Absent column: materialize it (add) or forward the requested modify unchanged.
+			return operation;
+		}
+		if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn.Type)) {
+			// Present but different type: an explicit modify is forwarded as-is; an add (explicit or the
+			// implicit add-batch coerced from a `columns` payload) is converged to a modify so a re-add does
+			// not fail as a duplicate. An incompatible modify is surfaced by the backend command as a
+			// modify-conflict error (success:false), NOT a whole-schema collision.
+			return isModify ? operation : operation with { Action = ModifyAction };
+		}
+		// Present, matching type: the add/columns shape reconciles by TYPE only, so a caller changing a
+		// non-type attribute (required/reference/flags/caption) must use an explicit modify — forward that
+		// unconditionally (a re-run to the same value is a backend no-op, never a failure). A present add entry
+		// with a matching type has its type-only contract satisfied, so it is dropped (idempotent replay).
+		return isModify ? operation : null;
 	}
 
 	private static bool IsAddAction(string? action) =>
@@ -708,13 +744,7 @@ public sealed class SchemaSyncTool(
 				retryBudget, retryable: false);
 			return FinalizeResult(SeedDataOperationName, op.SchemaName, execution, tenantKey);
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
-			return new SchemaSyncOperationResult {
-				Type = SeedDataOperationName,
-				SchemaName = op.SchemaName,
-				Success = false,
-				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
-			};
+			return BuildDeterministicFailureResult(SeedDataOperationName, op.SchemaName, ex, tenantKey);
 		}
 	}
 
@@ -822,7 +852,8 @@ public sealed class SchemaSyncTool(
 			Messages = [new InfoMessage(
 				"sync-schemas: schema already existed (already-satisfied); inline seed-rows were SKIPPED to stay "
 				+ "replay-safe (no-Name/no-Id rows are not idempotent). To seed an existing schema, submit a "
-				+ "standalone seed-data operation, which reconciles rows by key.")]
+				+ "standalone seed-data operation, which reconciles rows by key — the response's resume-plan "
+				+ "already carries it, ready to resubmit if the rows are not yet on the server.")]
 		};
 
 	// Synthesizes the seed-only resume operation for the case where a create succeeded but its inline
@@ -831,34 +862,85 @@ public sealed class SchemaSyncTool(
 		new(SeedDataOperationName, op.SchemaName, SeedRows: op.SeedRows);
 
 	// Assembles the resume plan for a mid-batch abort: the failed operation followed by every operation
-	// that never ran, all echoed in re-submittable input shape. Returns null on a fully-successful batch.
+	// that never ran, all echoed in re-submittable input shape. A fully-successful batch still gets a plan
+	// when it deliberately skipped an inline seed (see BuildDeferredSeedResumePlan); otherwise null.
 	private static SchemaSyncResumePlan? BuildResumePlan(
-		IReadOnlyList<SchemaSyncOperation> operations,
-		IReadOnlyList<SchemaSyncOperationResult> results,
-		int abortedAtIndex,
-		SchemaSyncOperation? failedResumeOperation) {
-		if (abortedAtIndex < 0 || failedResumeOperation is null) {
-			return null;
+		IReadOnlyList<SchemaSyncOperation> operations, BatchExecutionState state) {
+		if (state.AbortedAtIndex < 0 || state.FailedResumeOperation is null) {
+			return BuildDeferredSeedResumePlan(state);
 		}
-		SchemaSyncOperationResult? failedResult = results.LastOrDefault(r => !r.Success);
+		SchemaSyncOperationResult? failedResult = state.Results.LastOrDefault(r => !r.Success);
 		var notRunIndexes = new List<int>();
-		var resumeOperations = new List<SchemaSyncOperation> { failedResumeOperation };
-		for (int index = abortedAtIndex + 1; index < operations.Count; index++) {
+		var resumeOperations = new List<SchemaSyncOperation> { state.FailedResumeOperation };
+		for (int index = state.AbortedAtIndex + 1; index < operations.Count; index++) {
 			notRunIndexes.Add(index);
 			resumeOperations.Add(operations[index]);
 		}
+		// Earlier operations in this batch may have skipped their inline seed (already-satisfied create) —
+		// carry those standalone seed-data ops along so an abort does not drop the deferred seeding.
+		resumeOperations.AddRange(state.DeferredSeedOperations.Select(deferred => deferred.Operation));
 		return new SchemaSyncResumePlan {
 			Instruction = "Batch aborted before completing. Resubmit ONLY the operations in resume-plan.operations "
-				+ "(the failed operation followed by the not-run operations) as a new sync-schemas call; "
-				+ "do NOT resubmit the operations already marked completed.",
+				+ "(the failed operation, the not-run operations, and any deferred seed-data operations) as a new "
+				+ "sync-schemas call; do NOT resubmit the operations already marked completed.",
 			FailedOperation = new SchemaSyncResumeFailure(
-				abortedAtIndex,
-				failedResult?.Type ?? failedResumeOperation.Type,
-				failedResumeOperation.SchemaName,
+				state.AbortedAtIndex,
+				failedResult?.Type ?? state.FailedResumeOperation.Type,
+				state.FailedResumeOperation.SchemaName,
 				failedResult?.Error),
 			NotRunOperationIndexes = notRunIndexes,
 			Operations = resumeOperations
 		};
+	}
+
+	/// <summary>
+	/// Builds the success-path resume plan for inline seed steps that were deliberately skipped because their
+	/// create converged to <c>already-satisfied</c>. Nothing failed, so <c>failed-operation</c> stays null —
+	/// the plan is a pure recovery affordance: the `already-satisfied` outcome cannot distinguish "the schema
+	/// and its rows already existed" from "attempt 1 of THIS call created it but lost its response", and in the
+	/// latter case the rows were never seeded. Offering the equivalent standalone seed-data op (which
+	/// reconciles by key) keeps a success-keyed consumer from silently losing those writes, without changing
+	/// the replay-safe skip semantics. Returns null when no seed step was skipped.
+	/// </summary>
+	private static SchemaSyncResumePlan? BuildDeferredSeedResumePlan(BatchExecutionState state) {
+		if (state.DeferredSeedOperations.Count == 0) {
+			return null;
+		}
+		return new SchemaSyncResumePlan {
+			Instruction = "Batch completed, but the inline seed-rows of the operations listed in "
+				+ "resume-plan.not-run-operation-indexes were SKIPPED to stay replay-safe (their create converged to "
+				+ "'already-satisfied'). If those rows are not yet present on the server — e.g. the create landed on an "
+				+ "earlier retry attempt of this same call and lost its response — resubmit resume-plan.operations "
+				+ "(standalone seed-data operations, which reconcile rows by key) as a new sync-schemas call. "
+				+ "Do NOT resubmit the create operations; they are already satisfied.",
+			NotRunOperationIndexes = [.. state.DeferredSeedOperations.Select(deferred => deferred.Index)],
+			Operations = [.. state.DeferredSeedOperations.Select(deferred => deferred.Operation)]
+		};
+	}
+
+	/// <summary>
+	/// Mutable bookkeeping for a single <c>sync-schemas</c> batch run: the per-operation results, the
+	/// stop-on-first-failure abort point with its re-submittable operation, and the inline seed steps that were
+	/// deliberately skipped and therefore surfaced as deferred seed-data operations in the resume plan.
+	/// Not thread-safe by design — one instance per call, used only while the call holds the per-tenant lock.
+	/// </summary>
+	private sealed class BatchExecutionState {
+
+		public List<SchemaSyncOperationResult> Results { get; } = [];
+
+		public int AbortedAtIndex { get; private set; } = -1;
+
+		public SchemaSyncOperation? FailedResumeOperation { get; private set; }
+
+		public List<(int Index, SchemaSyncOperation Operation)> DeferredSeedOperations { get; } = [];
+
+		/// <summary>
+		/// Records the stop-on-first-failure abort point and the operation shape to resubmit for it.
+		/// </summary>
+		public void Abort(int index, SchemaSyncOperation resumeOperation) {
+			AbortedAtIndex = index;
+			FailedResumeOperation = resumeOperation;
+		}
 	}
 
 	private static string GetReportedOperationType(SchemaSyncOperation op) {
@@ -1050,8 +1132,11 @@ public sealed class SchemaSyncResponse {
 	public IReadOnlyList<SchemaSyncOperationResult> Results { get; init; } = [];
 
 	/// <summary>
-	/// Recovery affordance emitted only when the batch aborted before completing. Enumerates the failed
-	/// and not-run operations and provides a ready-to-resubmit <c>operations</c> array (ENG-93374).
+	/// Recovery affordance emitted when the batch aborted before completing (enumerating the failed and
+	/// not-run operations) and also on a fully-successful batch that deliberately skipped an inline seed step
+	/// because its create converged to <c>already-satisfied</c> — in that case <c>failed-operation</c> is null
+	/// and <c>operations</c> carries the equivalent standalone seed-data ops. Either way it provides a
+	/// ready-to-resubmit <c>operations</c> array (ENG-93374/ENG-93807).
 	/// </summary>
 	[JsonPropertyName("resume-plan")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

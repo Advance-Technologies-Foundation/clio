@@ -1299,6 +1299,9 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract must reject seed rows before creating a virtual schema that has no table");
 		syncContract.Description.Should().Contain("get-guidance with name virtual-entities",
 			because: "the batched contract should route virtual schema work to its canonical guide");
+		syncContract.Description.Should().Contain("INLINE seed-rows were therefore skipped",
+			because: "the contract must document that a fully successful batch can still carry a resume-plan for a deferred inline seed, "
+				+ "or a success-keyed caller silently loses those rows when the create converged to already-satisfied (ENG-93807)");
 		ToolContractDefinition propertiesContract = result.Tools.Single(contract =>
 			contract.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName);
 		propertiesContract.OutputContract.Fields.Should().Contain(field =>

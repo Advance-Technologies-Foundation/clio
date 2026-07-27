@@ -161,7 +161,11 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		string? targetPackage = target.PackageName?.Trim();
 		return results.FirstOrDefault(result =>
 				string.Equals(result.PackageName, targetPackage, StringComparison.OrdinalIgnoreCase))
-			?? results.FirstOrDefault();
+			// FindSchemas has no ORDER BY, so with the schema present in SEVERAL non-target packages the
+			// fallback row (and therefore the package named in the collision error) would be arbitrary and could
+			// differ between two identical calls. Classification is unaffected — any non-target row is the same
+			// cross-package collision — but the reported package must be stable, so order by package name.
+			?? results.OrderBy(result => result.PackageName, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
 	}
 
 	private static bool HasIncompatibleParent(string? requestedParent, string? existingParent) {
