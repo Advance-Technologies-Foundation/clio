@@ -3077,6 +3077,24 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Proves the documented workaround for the cross-call case: a standalone tooltip merge that REPEATS \"type\":\"crt.ImageInput\" resolves the exemption via its own type sibling and accepts the literal (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipMergeWithRepeatedType_ReturnsValid() {
+		// Arrange — the guidance tells agents to repeat "type" on a standalone tooltip merge (the node was
+		// inserted by a prior separate call, so no sibling insert exists here). This must validate.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"merge","name":"UsrPhoto","values":{"type":"crt.ImageInput","tooltip":"Upload a photo of the task owner"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the repeated type sibling resolves the exemption exactly like an insert body does");
+		result.Errors.Should().BeEmpty(because: "the documented type-repeat workaround must accept the literal tooltip");
+	}
+
+	[Test]
 	[Description("Regression lock for the entry-root scoping of the merge type resolution: a nested nameless child object inside a crt.ImageInput insert entry must NOT inherit the entry's resolved type. Its own literal tooltip is still flagged — the exemption is bounded to the entry-root node (ENG-92940).")]
 	public void ValidateLocalizableTextLiterals_ImageInputNestedChildTooltipLiteral_FlagsChild() {
 		// Arrange — the crt.ImageInput entry root is exempt for tooltip, but a nested nameless child object
