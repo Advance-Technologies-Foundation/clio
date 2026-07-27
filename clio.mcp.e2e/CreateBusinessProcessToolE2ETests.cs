@@ -448,6 +448,59 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		}
 		""";
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart with a DELETE trigger (on:deleted) and describe-business-process reads the trigger back as 'deleted' (round-trip of the third record-event type).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a delete-trigger signal start and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartDeleteTrigger_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSignalDelE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDeleteTriggerDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart with a record-deleted trigger must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: the delete trigger must survive save->reload and decode back to the canonical token. A change type
+		// dropped or coerced to the 'modified' default on either side is caught here.
+		// (Quotes are "-escaped in the serialized MCP envelope, so assert on bare tokens like the sibling tests.)
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("deleted",
+			because: "the record-deleted trigger round-trips: it persists on save and describe decodes it back to the 'deleted' token");
+		describeJson.Should().NotContain("modified",
+			because: "the delete trigger must survive as-is, not be coerced to the default 'modified' change type");
+	}
+
+	// A signal-start firing on record DELETION — the one record-event type the other e2e descriptors never exercise
+	// (they use added / modified / save). No changedColumns: tracked columns are rejected for a delete trigger.
+	private static string BuildDeleteTriggerDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Signal Delete E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart",
+		      "signal": { "entity": "Contact", "on": "deleted" } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	// A signal-start restricted to a tracked-change column (on:modified, changedColumns:[Name]). Contact.Name is a base
 	// column on every stand, so build resolves the name->UId and describe decodes the UId->name — proving the tracked
 	// column round-trips through BOTH the package and the clio DTO, not merely that a signalStart exists.
