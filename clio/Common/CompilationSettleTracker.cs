@@ -112,6 +112,13 @@ public class CompilationSettleTracker : ICompilationSettleTracker {
 		if ((now - _lastActivityAt).TotalSeconds < windowSeconds) {
 			return false;
 		}
+		// A confirmed (non-warning) error already ends the session - a real compile error stops
+		// the pipeline before it would reach ODataEntities anyway, so waiting for a marker that
+		// will never come would just delay a failure the caller could already act on. Marker
+		// gating below applies only to declaring SUCCESS, never to reporting a known failure.
+		if (_hasErrors) {
+			return true;
+		}
 		// Activity started (e.g. a package-only compile) but the full-compile marker never
 		// showed up: assume a full compile may still be running rather than declaring an
 		// unconfirmed partial finish after just one quiet gap (observed live in a CI/TeamCity

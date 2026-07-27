@@ -169,6 +169,25 @@ public class CompilationSettleTrackerTests {
 	}
 
 	[Test]
+	[Description("Verifies the tracker DOES settle once the quiet window elapses after a confirmed (non-warning) error, even though the marker was never seen - a real compile error stops the pipeline before it would reach ODataEntities, so waiting for a marker that will never arrive would only delay a failure that is already known")]
+	public void IsSettled_ReturnsTrue_AfterQuietWindowElapses_WhenARealErrorWasObserved_EvenWithoutTheMarker() {
+		// Arrange
+		CompilationSettleTracker sut = new();
+		DateTime baselineTime = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+		sut.SeedFromBaseline(null, baselineTime);
+		DateTime errorAt = baselineTime.AddSeconds(1);
+		sut.Observe(NewRecord(errorAt, projectName: "SomePackage.csproj", errorsWarnings: "[{\"ErrorText\":\"boom\",\"IsWarning\":false}]"), errorAt);
+		DateTime afterQuietWindow = errorAt.AddSeconds(46);
+
+		// Act
+		bool settled = sut.IsSettled(afterQuietWindow);
+
+		// Assert
+		settled.Should().BeTrue(
+			because: "a confirmed error already ends the session regardless of marker state - marker gating applies only to declaring success, never to reporting a known failure");
+	}
+
+	[Test]
 	[Description("Verifies SawFinalMarker becomes true only after the ODataEntities project record is observed")]
 	public void Snapshot_SawFinalMarker_IsTrue_AfterObservingODataEntitiesRecord() {
 		// Arrange
