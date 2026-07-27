@@ -301,6 +301,58 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("Inline seed-rows are SKIPPED when the create converged to already-satisfied (ENG-93807 review, AC-2): a verbatim replay of a create+inline-seed batch whose schema already fully existed must not re-run the seed, because no-Name/no-Id rows mint a fresh Id and would double-insert. The skip is surfaced as an explicit, replay-safe result note, not a silent drop.")]
+	public async Task SchemaSync_InlineSeed_ShouldSkip_WhenCreateAlreadySatisfied() {
+		// Arrange - the create classifies AlreadySatisfied (the schema already exists, e.g. on a verbatim replay
+		// of a previously-successful create+seed batch). The inline seed row carries no Name/Id, so re-running it
+		// would double-insert. The guard must skip the seed and never resolve/execute the seeding command.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.AlreadySatisfied));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Caption"] = ToJsonElement("New")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "skipping a replay-unsafe inline seed on an already-satisfied create is a success, not a failure");
+		fakeSeedCommand.CapturedOptions.Should().BeNull(
+			because: "the inline seed must NOT execute when the create converged to already-satisfied, or a verbatim replay would double-insert the no-Name rows");
+		response.Results.Should().HaveCount(2,
+			because: "the create result and an explicit seed-skipped result are both surfaced");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "the create observed an existing schema, so it converges to already-satisfied");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "the skipped inline seed is reported under the canonical seed-data type");
+		response.Results[1].Success.Should().BeTrue(
+			because: "the seed was intentionally skipped for replay-safety, not failed");
+		GetMessageValues(response.Results[1]).Should().Contain(
+			message => message.Contains("SKIPPED", StringComparison.Ordinal) && message.Contains("standalone seed-data", StringComparison.Ordinal),
+			because: "the skip must be observable and steer a genuine seed-an-existing-schema intent to a standalone seed-data op");
+		response.ResumePlan.Should().BeNull(
+			because: "nothing failed, so the batch emits no resume plan");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops processing on first operation failure")]
 	public async Task SchemaSync_Should_Stop_On_First_Failure() {
 		// Arrange
@@ -1674,6 +1726,50 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Property("Module", "McpServer")]
+	[Description("update-entity converges IN-CALL on a retry re-read (ENG-93807 review, AC-2): attempt 1 sees an absent column and issues an add that transiently flaps AFTER applying server-side; the retry RE-READS the columns, observes the now-present same-type column, recomputes an empty delta and converges to already-satisfied — one update invocation, no duplicate add, attempts==2.")]
+	public async Task ExecuteUpdateEntity_ShouldConvergeInCallToAlreadySatisfied_WhenTransientFlapAfterAddApplied() {
+		// Arrange - mirror of ExecuteCreateSchema_ShouldConvergeInCallToAlreadySatisfied for the update path.
+		// ReadColumns returns "absent" on the first read and "present same-type" on the retry re-read; the update
+		// command flaps transient on the first (and only) execution so the retry re-reads and finds nothing to do.
+		var logger = new TestLogger();
+		var scriptedUpdate = new ScriptedUpdateEntitySchemaCommand(logger,
+			Transient("One or more errors occurred. (No such host is known.)"));
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.ReadColumns(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(
+				new Dictionary<string, EntitySchemaPropertyColumnInfo>(StringComparer.OrdinalIgnoreCase),
+				ExistingColumns(("UsrPages", "Integer")));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(scriptedUpdate);
+		SchemaSyncTool tool = new(commandResolver, logger, convergence, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrBooks",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a lost-response add whose mutation applied must converge in-call on the retry re-read, not fail as a duplicate add");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "the retry re-reads the columns, finds the add already applied, recomputes an empty delta and converges to already-satisfied");
+		response.Results[0].Status.Should().Be("completed",
+			because: "the in-call convergence is a genuine success");
+		scriptedUpdate.Invocations.Should().Be(1,
+			because: "the add is executed once on the transient flap; the retry re-reads to an empty delta and must NOT re-issue the add");
+		convergence.Received(2).ReadColumns("dev", "UsrBooks");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the operation was retried once before it converged in-call on the re-read");
+		response.ResumePlan.Should().BeNull(
+			because: "the op succeeded in-call, so no resume plan is emitted and no batch resubmit is required");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
 	[Description("A collision observed only on the retry re-classify (attempt-1 transient flap, then a concurrent different-package create) fails fast with the structured collision shape — success:false, outcome:collision, collision-info — and never re-attempts the create (ENG-93807 convergent-retry contract consistency).")]
 	public async Task ExecuteCreateSchema_ShouldReturnStructuredCollision_WhenCollisionSurfacesOnRetryReclassify() {
 		// Arrange - attempt 1 classifies Create and the create flaps transient WITHOUT landing; before the
@@ -2077,7 +2173,8 @@ public sealed class SchemaSyncToolTests {
 			because: "op0 spends the only budget-funded backoff; op1 gets none because the budget is shared across the batch");
 		response.Success.Should().BeFalse(
 			because: "op1 aborts the batch once the shared retry budget is exhausted");
-		response.Results.Should().HaveCount(2);
+		response.Results.Should().HaveCount(2,
+			because: "both create-lookup ops produce a result row even though op1 aborts the batch");
 		response.Results[0].Success.Should().BeTrue(
 			because: "op0 recovered after its single funded retry");
 		response.Results[1].Success.Should().BeFalse(
@@ -2163,17 +2260,22 @@ public sealed class SchemaSyncToolTests {
 		// Assert
 		response.Results.Should().HaveCount(2,
 			because: "a create-succeeded / inline-seed-failed op emits a completed create row and a failed seed row");
-		response.Results[0].Type.Should().Be("create-lookup");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "the first row is the completed create it followed");
 		response.Results[0].Status.Should().Be("completed",
 			because: "the create applied server-side before the seeding failed");
-		response.Results[0].OperationIndex.Should().Be(0);
-		response.Results[0].Success.Should().BeTrue();
-		response.Results[1].Type.Should().Be("seed-data");
+		response.Results[0].OperationIndex.Should().Be(0,
+			because: "the create is the first (index 0) batch operation");
+		response.Results[0].Success.Should().BeTrue(
+			because: "the create step succeeded before the seeding failed");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "the second row is the inline seed reported under the canonical seed-data type");
 		response.Results[1].Status.Should().Be("failed",
 			because: "the inline seeding failed");
 		response.Results[1].OperationIndex.Should().Be(0,
 			because: "the failed seed row shares the operation-index of the create it followed");
-		response.Results[1].Success.Should().BeFalse();
+		response.Results[1].Success.Should().BeFalse(
+			because: "the inline seeding failed");
 	}
 
 	[Test]
@@ -2213,15 +2315,20 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "op0's inline seed failed, so the batch is not fully successful");
 		response.Results.Should().HaveCount(2,
 			because: "op0 emits the completed create and the failed seed; op1 never runs");
-		response.Results[0].Status.Should().Be("completed");
-		response.Results[1].Type.Should().Be("seed-data");
-		response.Results[1].Status.Should().Be("failed");
+		response.Results[0].Status.Should().Be("completed",
+			because: "op0's create applied server-side before its seeding failed");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "op0's failed inline seed is reported under the canonical seed-data type");
+		response.Results[1].Status.Should().Be("failed",
+			because: "op0's inline seeding failed");
 		scriptedUpdate.Invocations.Should().Be(0,
 			because: "the batch aborts on op0's seed failure before op1 runs");
-		response.ResumePlan.Should().NotBeNull();
+		response.ResumePlan.Should().NotBeNull(
+			because: "a mid-batch abort must emit a resume plan for the failed and not-run operations");
 		response.ResumePlan!.NotRunOperationIndexes.Should().Equal([1],
 			because: "op1 (index 1) never ran and must be listed starting at abortedAtIndex+1");
 		response.ResumePlan.Operations.Should().HaveCount(2,

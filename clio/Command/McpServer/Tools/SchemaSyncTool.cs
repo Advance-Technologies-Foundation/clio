@@ -194,16 +194,31 @@ public sealed class SchemaSyncTool(
 						break;
 					}
 					if (op.SeedRows?.Any() == true && !IsSeedDataOperation(op)) {
-						reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
-						logger.ClearMessages();
-						SchemaSyncOperationResult seedResult = Classify(ExecuteSeedData(op, args, tenantKey, retryBudget), index);
-						results.Add(seedResult);
-						if (!seedResult.Success) {
-							abortedAtIndex = index;
-							// The create step already applied server-side, so resuming must NOT recreate the
-							// schema — resubmit only the seeding as a first-class seed-data operation.
-							failedResumeOperation = BuildSeedResumeOperation(op);
-							break;
+						if (string.Equals(result.Outcome, AlreadySatisfiedOutcome, StringComparison.Ordinal)) {
+							// AC-2 replay-safety: an `already-satisfied` create is the verbatim-replay signal — the
+							// schema already fully existed, so nothing was applied on this call. Inline seed-rows are
+							// NOT replay-safe for rows without a stable key: EnsureRowId mints a fresh Guid for every
+							// row that has neither a Name nor an explicit Id, so RowExistsInTable is always false and a
+							// verbatim replay of a `create + inline seed-rows` batch would double-insert (there is no
+							// resume-plan on a full-success replay to steer away from it). Skip the inline seed on this
+							// signal and surface an explicit note so a genuine "seed an existing schema" intent is
+							// routed to a standalone seed-data op (which reconciles by key). `reconciled` is
+							// deliberately NOT skipped: a delta was genuinely applied this call (first application), so
+							// the inline seed must run; the next verbatim replay then classifies as `already-satisfied`
+							// and is skipped here.
+							results.Add(Classify(BuildSkippedInlineSeedResult(op), index));
+						} else {
+							reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
+							logger.ClearMessages();
+							SchemaSyncOperationResult seedResult = Classify(ExecuteSeedData(op, args, tenantKey, retryBudget), index);
+							results.Add(seedResult);
+							if (!seedResult.Success) {
+								abortedAtIndex = index;
+								// The create step already applied server-side, so resuming must NOT recreate the
+								// schema — resubmit only the seeding as a first-class seed-data operation.
+								failedResumeOperation = BuildSeedResumeOperation(op);
+								break;
+							}
 						}
 					}
 				}
@@ -791,6 +806,24 @@ public sealed class SchemaSyncTool(
 			?.Value
 			?.ToString()
 			?.Trim();
+
+	// Builds the observable result row for an inline seed skipped because its create converged to
+	// `already-satisfied` (the verbatim-replay signal). Success (nothing failed), but carries an explicit note
+	// so a genuine "seed a pre-existing schema" intent is routed to a standalone seed-data op rather than being
+	// silently dropped. See the skip rationale at the seed step in ExecuteBatch.
+	private static SchemaSyncOperationResult BuildSkippedInlineSeedResult(SchemaSyncOperation op) =>
+		new() {
+			Type = SeedDataOperationName,
+			SchemaName = op.SchemaName,
+			Success = true,
+			// Status is defaulted to "completed" by Classify (Success:true); left unset here to avoid a
+			// duplicated string literal.
+			Outcome = AlreadySatisfiedOutcome,
+			Messages = [new InfoMessage(
+				"sync-schemas: schema already existed (already-satisfied); inline seed-rows were SKIPPED to stay "
+				+ "replay-safe (no-Name/no-Id rows are not idempotent). To seed an existing schema, submit a "
+				+ "standalone seed-data operation, which reconciles rows by key.")]
+		};
 
 	// Synthesizes the seed-only resume operation for the case where a create succeeded but its inline
 	// seeding failed — resubmitting the original create op would collide with the schema just created.
