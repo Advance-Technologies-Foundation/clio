@@ -82,9 +82,13 @@ The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `la
 resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`, `section`, and
 `childPageSchemas`.
 
-`warnings` is present only when the bundle is incomplete in a way the caller must weigh — for example when
-no section could be resolved (`sectionLayerCount: 0`), which empties the List-page side of a migration plan
-and is not the same as "this entity has no section". It is omitted from a complete bundle.
+`warnings` is present only when the bundle is incomplete in a way the caller must weigh, and is omitted from a
+complete bundle. It is raised when no section could be resolved (`sectionLayerCount: 0`) — which empties the
+List-page side of a migration plan and is not the same as "this entity has no section" — when the section
+metadata lookup failed and the run fell back to naming conventions, and when pattern matching over a schema
+body timed out and that body was skipped, so `detailCount` / `sectionLayerCount` may read lower than the page
+actually has. Over MCP the warning text is redacted the same way `error` is, so a backend host or URI carried
+in an underlying failure never reaches the caller's context.
 
 ## Notes
 

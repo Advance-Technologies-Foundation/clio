@@ -92,6 +92,40 @@ public class GetClassicMigrationBundleToolTests {
 			because: "the sensitive URI is replaced with the stable redaction placeholder");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("GetBundle redacts a sensitive URI/host carried in the response warnings, not just in the error, so the section-metadata warning cannot leak backend detail into the MCP transcript.")]
+	public void GetBundle_Should_Redact_Sensitive_Text_In_Warnings() {
+		// Arrange — a successful bundle whose warning interpolates the raw DataService failure text
+		FakeGetClassicMigrationBundleCommand defaultCommand = new();
+		FakeGetClassicMigrationBundleCommand resolvedCommand = new() {
+			ResponseToReturn = new GetClassicMigrationBundleResponse {
+				Success = true,
+				Warnings = [
+					"Section metadata lookup failed (POST https://secret-host.example.com/0/DataService failed); " +
+					"fell back to name conventions."
+				]
+			}
+		};
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetClassicMigrationBundleCommand>(Arg.Any<GetClassicMigrationBundleOptions>())
+			.Returns(resolvedCommand);
+		GetClassicMigrationBundleTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		GetClassicMigrationBundleResponse response = tool.GetBundle(
+			new GetClassicMigrationBundleArgs("ContactPageV2") { EnvironmentName = "dev" });
+
+		// Assert
+		response.Warnings.Should().ContainSingle(because: "the single warning is carried through to the caller")
+			.Which.Should().NotContain("secret-host.example.com",
+				because: "warnings are a second error channel and must be redacted like Error is");
+		response.Warnings[0].Should().Contain("[redacted-uri]",
+			because: "the sensitive URI is replaced with the same stable placeholder used on the error path");
+		response.Warnings[0].Should().Contain("fell back to name conventions",
+			because: "redaction must scrub the host, not destroy the actionable part of the warning");
+	}
+
 	private sealed class FakeGetClassicMigrationBundleCommand : GetClassicMigrationBundleCommand {
 		public GetClassicMigrationBundleOptions CapturedOptions { get; private set; }
 		public GetClassicMigrationBundleResponse ResponseToReturn { get; init; }

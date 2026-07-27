@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -173,6 +173,11 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 
 		public Dictionary<string, IReadOnlyList<SchemaLayer>> LayersByName { get; } =
 			new(StringComparer.OrdinalIgnoreCase);
+
+		// Non-fatal gaps gathered anywhere in the assembly (including nested child manifests) and surfaced on
+		// GetClassicMigrationBundleResponse.Warnings. Lives here, not on the command, for the same reason as the
+		// caches: the MCP path reuses command instances per environment.
+		public List<string> Warnings { get; } = [];
 	}
 
 	/// <summary>
@@ -210,7 +215,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			// 4. Resolve the entity (explicit option, else inferred from the bodies).
 			string entity = !string.IsNullOrWhiteSpace(options.Entity)
 				? options.Entity
-				: InferEntity(schemas, seed);
+				: InferEntity(ctx, schemas, seed);
 
 			// 5. Merged localizable strings -> resources (best-effort; the merge folds localization, not the view).
 			JObject resources = BuildResources(ctx, topLayerUId, options.SchemaName);
@@ -220,9 +225,8 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 
 			// 6b. Enrichers (best-effort, heuristic; omit unresolved, never fabricate). All enricher names are
 			//     primed through ONE batched SelectQuery so the fan-out does not pay a round-trip per name.
-			var warnings = new List<string>();
-			List<string> detailNames = CollectDetailNames(schemas, seed);
-			IReadOnlyList<string> sectionCandidates = ResolveSectionCandidates(options.SchemaName, entity, warnings);
+			List<string> detailNames = CollectDetailNames(ctx, schemas, seed);
+			IReadOnlyList<string> sectionCandidates = ResolveSectionCandidates(ctx, options.SchemaName, entity);
 			var enricherNames = new List<string>(detailNames);
 			enricherNames.AddRange(sectionCandidates);
 			PrimeLayerBatch(ctx, enricherNames);
@@ -234,7 +238,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 				// omitted section silently empties the plan's List-page analysis (custom quick filters,
 				// getSectionActions, hardcoded list columns). Say so in the response — a logger warning would not
 				// reach an MCP caller, whose log buffer is cleared before the result is returned.
-				warnings.Add(
+				ctx.Warnings.Add(
 					"No Classic section resolved for " +
 					(string.IsNullOrWhiteSpace(entity) ? $"page '{options.SchemaName}'" : $"entity '{entity}'") +
 					$" (tried: {string.Join(", ", sectionCandidates)}). The manifest carries no section, so the " +
@@ -289,7 +293,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 				DetailCount = detailSchemas.Count,
 				SectionLayerCount = section.Count,
 				ChildPageCount = childPageSchemas.Count,
-				Warnings = warnings.Count > 0 ? warnings : null
+				Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings : null
 			};
 			return true;
 		}
@@ -614,14 +618,14 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		return entry;
 	}
 
-	private string InferEntity(JArray schemas, JArray seed) {
+	private string InferEntity(BundleRunContext ctx, JArray schemas, JArray seed) {
 		// Prefer the page's own layer chain (most specific), then the parent-template seed.
 		foreach (JToken entry in schemas.Concat(seed)) {
 			string body = entry["body"]?.ToString();
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			Match match = SafeMatch(EntityNameRegex, body, "inferring the bound entity");
+			Match match = SafeMatch(ctx.Warnings, EntityNameRegex, body, "inferring the bound entity");
 			if (match.Success) {
 				return match.Groups[1].Value;
 			}
@@ -696,7 +700,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// Collects distinct detail-schema names referenced across every layer body (page chain + parent seed).
 	// The names come from server-supplied bodies, so collection is capped by ATTEMPTS — not by later successes —
 	// to keep a malformed or hostile response from driving unbounded probing.
-	private List<string> CollectDetailNames(JArray schemas, JArray seed) {
+	private List<string> CollectDetailNames(BundleRunContext ctx, JArray schemas, JArray seed) {
 		var detailNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		int collectionCap = MaxDetails * 2;
@@ -705,7 +709,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			foreach (Match match in SafeMatches(DetailSchemaNameRegex, body, "collecting detail-schema references")) {
+			foreach (Match match in SafeMatches(ctx.Warnings, DetailSchemaNameRegex, body, "collecting detail-schema references")) {
 				string detailName = match.Groups[1].Value;
 				if (!seen.Add(detailName)) {
 					continue;
@@ -763,13 +767,13 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// was renamed; the conventions still cover stands where the metadata lookup is unavailable or the module row is
 	// missing. A metadata failure degrades to the conventions and is surfaced as a response warning, never fatal —
 	// the section is an enricher, not the bundle's payload.
-	private IReadOnlyList<string> ResolveSectionCandidates(string schemaName, string entity, List<string> warnings) {
+	private IReadOnlyList<string> ResolveSectionCandidates(BundleRunContext ctx, string schemaName, string entity) {
 		var candidates = new List<string>();
 		if (!string.IsNullOrWhiteSpace(entity)) {
 			ClassicSectionLookup lookup = _sectionResolver.ResolveSectionSchemaNames(entity);
 			if (lookup.Error != null) {
 				_logger.WriteWarning($"Could not resolve the section from SysModule metadata: {lookup.Error}");
-				warnings.Add(
+				ctx.Warnings.Add(
 					$"Section metadata lookup failed ({lookup.Error}); fell back to name conventions, which cannot " +
 					"reach a renamed section or one whose schema name carries a UId infix.");
 			}
@@ -853,7 +857,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			if (string.IsNullOrEmpty(detailBody)) {
 				continue;
 			}
-			Match editPageMatch = SafeMatch(EditPageRegex, detailBody, "resolving the detail's edit page");
+			Match editPageMatch = SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
 			if (!editPageMatch.Success) {
 				continue; // no edit page named on the detail -> nothing to nest; the engine flags it
 			}
@@ -908,7 +912,7 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 		if (chainError != null) {
 			return (null, chainError);
 		}
-		string entity = InferEntity(schemas, seed);
+		string entity = InferEntity(ctx, schemas, seed);
 		var manifest = new JObject { ["schemas"] = schemas };
 		if (!string.IsNullOrWhiteSpace(entity)) {
 			manifest["entity"] = entity;
@@ -949,25 +953,40 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// a timeout on one pathological body must DEGRADE (skip that body, keep the rest of the bundle) exactly like
 	// every other enricher, never abort the whole assembly. Every Match/Matches call funnels through these two
 	// guards so no regex pass can turn a would-be-successful bundle into a hard failure.
-	private Match SafeMatch(Regex regex, string body, string what) {
+	// internal, not private: the timeout branch is only reachable with an injected pattern/timeout, so the guards
+	// take the warnings sink directly (all they need) and clio.tests exercises them head-on.
+	internal Match SafeMatch(List<string> warnings, Regex regex, string body, string what) {
 		try {
 			return regex.Match(body);
 		}
-		catch (RegexMatchTimeoutException ex) {
-			_logger.WriteWarning($"Regex match timed out while {what}; skipping this body: {ex.Message}");
+		catch (RegexMatchTimeoutException) {
+			ReportRegexTimeout(warnings, what);
 			return Match.Empty;
 		}
 	}
 
-	private IReadOnlyList<Match> SafeMatches(Regex regex, string body, string what) {
+	internal IReadOnlyList<Match> SafeMatches(List<string> warnings, Regex regex, string body, string what) {
 		try {
 			// Materialize inside the try: Regex.Matches is lazily evaluated, so a timeout would otherwise surface
 			// at the caller's enumeration site — outside this guard — rather than being caught here.
 			return regex.Matches(body).ToList();
 		}
-		catch (RegexMatchTimeoutException ex) {
-			_logger.WriteWarning($"Regex match timed out while {what}; skipping this body: {ex.Message}");
+		catch (RegexMatchTimeoutException) {
+			ReportRegexTimeout(warnings, what);
 			return [];
+		}
+	}
+
+	// A skipped body lowers detailCount/sectionLayerCount/entity resolution with nothing else to show for it, so
+	// the caller must be told: an MCP caller never sees the logger, and "extraction degraded" must not read as
+	// "the page has nothing there". Deduped — one pathological page can trip the same guard on many bodies.
+	private void ReportRegexTimeout(List<string> warnings, string what) {
+		string warning =
+			$"Pattern matching timed out while {what}; that schema body was skipped, so the bundle may be " +
+			"incomplete. A lower count here does NOT mean the page has nothing to migrate.";
+		_logger.WriteWarning(warning);
+		if (!warnings.Contains(warning, StringComparer.Ordinal)) {
+			warnings.Add(warning);
 		}
 	}
 }

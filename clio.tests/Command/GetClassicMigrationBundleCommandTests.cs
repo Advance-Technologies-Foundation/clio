@@ -594,6 +594,47 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
+	[Description("SafeMatch appends a caller-visible warning on a regex timeout, so a skipped body is not reported as an empty page.")]
+	public void SafeMatch_ShouldAppendWarning_WhenRegexTimesOut() {
+		// Arrange — catastrophic backtracking against a 1-tick budget makes the timeout deterministic.
+		var warnings = new List<string>();
+		System.Text.RegularExpressions.Regex slow = new("(a+)+$",
+			System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromTicks(1));
+
+		// Act
+		System.Text.RegularExpressions.Match match =
+			_command.SafeMatch(warnings, slow, new string('a', 40) + "b", "collecting detail-schema references");
+
+		// Assert
+		match.Success.Should().BeFalse(because: "a timed-out match degrades to no match rather than throwing");
+		warnings.Should().ContainSingle(because: "the caller must learn the body was skipped")
+			.Which.Should().Contain("collecting detail-schema references",
+				because: "the warning names the operation that degraded");
+		warnings[0].Should().Contain("may be incomplete",
+			because: "a lower count must not be read as 'the page has nothing to migrate'");
+	}
+
+	[Test]
+	[Description("SafeMatches appends the same warning on a regex timeout and dedupes it, so one pathological page does not flood the response with identical entries.")]
+	public void SafeMatches_ShouldAppendWarningOnce_WhenSeveralBodiesTimeOut() {
+		// Arrange
+		var warnings = new List<string>();
+		System.Text.RegularExpressions.Regex slow = new("(a+)+$",
+			System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromTicks(1));
+		string pathological = new string('a', 40) + "b";
+
+		// Act — the same guard trips on two separate bodies
+		IReadOnlyList<System.Text.RegularExpressions.Match> first =
+			_command.SafeMatches(warnings, slow, pathological, "collecting detail-schema references");
+		_command.SafeMatches(warnings, slow, pathological, "collecting detail-schema references");
+
+		// Assert
+		first.Should().BeEmpty(because: "a timed-out enumeration degrades to no matches");
+		warnings.Should().ContainSingle(
+			because: "repeated timeouts on the same operation must collapse into one caller-visible warning");
+	}
+
+	[Test]
 	[Description("TryAssembleBundle seeds EVERY layer of a multi-package parent template (base->top), not just the single parent.uId layer, so base containers in sibling layers are not dropped.")]
 	public void TryAssembleBundle_ShouldSeedAllParentTemplateLayers_WhenParentIsMultiLayer() {
 		// Arrange — a single-layer page whose parent template "BaseTpl" is replaced across TWO packages;

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -62,6 +63,13 @@ public sealed class GetClassicMigrationBundleTool(
 					// URI/host; redact before it lands in the MCP transcript (parity with ExecuteResolved's
 					// resolution-failure redaction).
 					response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
+				}
+				if (response?.Warnings is { Count: > 0 }) {
+					// Warnings are a second error channel: the section-metadata warning interpolates the
+					// DataService/transport failure text verbatim, so it can carry the same host/URI detail the
+					// Error path redacts. Redact here — at the MCP boundary — rather than in the command, so the
+					// CLI (where the full message is useful and goes nowhere but the operator's terminal) keeps it.
+					response.Warnings = response.Warnings.Select(SensitiveErrorTextRedactor.Redact).ToList();
 				}
 				return response;
 			},
