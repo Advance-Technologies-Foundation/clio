@@ -472,4 +472,45 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		act.Should().NotThrow(
 			because: "a static-prefix mask on a text column is a supported Sequence configuration");
 	}
+
+	[TestCase(null, null)]
+	[TestCase("", "Text")]
+	[TestCase("   ", "Text")]
+	[TestCase("Text", null)]
+	[TestCase("Text", "")]
+	[TestCase("Integer", "   ")]
+	[Description("AreColumnTypesEquivalent treats a null/blank token on EITHER side as equivalent: no type is asserted, so no type-driven modify is forced (ENG-93807 review — the blank-side short-circuit is intentional and must not regress).")]
+	public void AreColumnTypesEquivalent_Should_Treat_Blank_Or_Null_As_Equivalent(string? requestedType, string? existingType) {
+		// Act
+		bool equivalent = EntitySchemaDesignerSupport.AreColumnTypesEquivalent(requestedType, existingType);
+
+		// Assert
+		equivalent.Should().BeTrue(
+			because: "a blank on either side asserts no type, so the columns are treated as equivalent and no mutation is forced");
+	}
+
+	[TestCase("Text", "Text", true)]
+	[TestCase("TEXT", "text", true)]
+	[TestCase(" Integer ", "integer", true)]
+	[Description("AreColumnTypesEquivalent falls back to a trimmed, case-insensitive string compare when a token cannot be resolved to an ordinal, so unknown/forward-compatible types that MATCH are equivalent (no spurious modify on replay).")]
+	public void AreColumnTypesEquivalent_Should_StringFallback_Equal_When_Unresolved_Tokens_Match(string requestedType, string existingType, bool expected) {
+		// Act
+		bool equivalent = EntitySchemaDesignerSupport.AreColumnTypesEquivalent(requestedType, existingType);
+
+		// Assert
+		equivalent.Should().Be(expected,
+			because: "unresolved tokens that are equal after trim/case-normalization must compare equal via the string fallback");
+	}
+
+	[TestCase("Text", "Integer")]
+	[TestCase("UsrCustomTypeA", "UsrCustomTypeB")]
+	[Description("AreColumnTypesEquivalent returns false for two genuinely different types (resolved or via the string fallback), so a real type divergence is NOT masked as satisfied (ENG-93807 review — guards the blank short-circuit does not over-reach).")]
+	public void AreColumnTypesEquivalent_Should_Return_False_When_Types_Differ(string requestedType, string existingType) {
+		// Act
+		bool equivalent = EntitySchemaDesignerSupport.AreColumnTypesEquivalent(requestedType, existingType);
+
+		// Assert
+		equivalent.Should().BeFalse(
+			because: "two non-blank, non-equivalent types must be reported as different so a real modify is not dropped");
+	}
 }
