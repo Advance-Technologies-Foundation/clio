@@ -179,16 +179,20 @@ internal class BusinessRuleExpressionMetadataDto {
 	public string? SysValueName { get; set; }
 
 	[JsonPropertyOrder(8)]
+	[JsonPropertyName("sysSettingName")]
+	public string? SysSettingName { get; set; }
+
+	[JsonPropertyOrder(9)]
 	[JsonPropertyName("parameterMappings")]
 	public List<BusinessRuleFormulaParameterMappingDto>? ParameterMappings { get; set; }
 
-	[JsonPropertyOrder(9)]
+	[JsonPropertyOrder(10)]
 	[JsonPropertyName("expressionSchema")]
 	public BusinessRuleExpressionSchemaDto? ExpressionSchema { get; set; }
 }
 
 internal sealed class BusinessRuleFilterLookupExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
-	[JsonPropertyOrder(10)]
+	[JsonPropertyOrder(11)]
 	[JsonPropertyName("filterExpression")]
 	public string? FilterExpression { get; set; }
 }

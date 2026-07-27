@@ -135,8 +135,8 @@ To force-refresh the local cache without waiting for the 5min TTL, use the
 - `--version 8.2.1` → refresh that GA file
 - `--all` → refresh every per-version file currently in the cache directory
 
-Exit code is 0 only when every requested refresh got a 2xx from the CDN, across all three
-flavors (web, mobile, requests).
+Exit code is 0 only when every requested refresh got a 2xx from the CDN, across all four
+flavors (web, mobile, requests, mobile-requests).
 
 ### Long-form documentation (`references.docs[]`)
 
@@ -172,15 +172,19 @@ through a sibling pipeline implemented in
 
 The raw doc paths come from a writable GitLab repository, so
 `Tools/ComponentRegistryDocsPath.cs` validates every value against
-`^docs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.md$` and a `Path.GetFullPath`
-containment check before any HTTP or filesystem touch. Both checks run in
-the docs client AND in the docs cache store as defence in depth — never
-add a new call site that bypasses them.
+`^(?:docs|mobile-docs|request-docs|mobile-request-docs)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.md$`
+and a `Path.GetFullPath` containment check before any HTTP or filesystem touch. The four
+prefixes are the doc namespaces the producer publishes (web components `docs/`, mobile
+components `mobile-docs/`, web requests `request-docs/`, mobile requests
+`mobile-request-docs/`). Both checks run in the docs client AND in the docs cache store as
+defence in depth — never add a new call site that bypasses them.
 
 Detail responses receive a `documentation` field that is the concatenation
 of every successfully-fetched file in registry order, separated by
-`\n\n---\n\n`. List responses and mobile responses never carry the field
-(mobile has no CDN tier; list mode does not load docs).
+`\n\n---\n\n`. List responses never carry the field (list mode does not load docs);
+detail responses carry it on both web and mobile flavors. Mobile docs use their own
+namespaces — `mobile-docs/` for components and `mobile-request-docs/` for requests —
+accepted by the same docs-path validator (see above).
 
 ### Detail-response shape (`inputs`/`outputs` vs legacy `properties`)
 
@@ -270,6 +274,7 @@ same async pipeline, same `CreateDetailResponse`, same response shape
 | Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException`) |
 | Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
 | Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
+| Mobile requests (`get-request-info schema-type=mobile`) | `{base}/{version}/MobileRequestRegistry.json` | `~/.clio/cache/component-registry/mobile-requests/` | `CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the mobile-requests env var) |
 
 The mobile fallback is a deliberate, narrowly-scoped concession: the academy
 mirror does not yet serve `MobileComponentRegistry.json` (the producer-side
@@ -310,6 +315,19 @@ the envelope differs from components, so parsing lives in its own
 "typeDefinitions" } }`; there is no legacy top-level-array generation and the
 `requests` array is mandatory).
 
+The catalog has a mobile twin, exactly mirroring how the web component registry relates to
+`MobileComponentRegistry.json`: `RegistryFlavor.MobileRequests` +
+`IMobileRequestRegistryClient`/`MobileRequestRegistryClient` +
+`IMobileRequestInfoCatalog`/`MobileRequestInfoCatalog` serve
+`{base}/{version}/MobileRequestRegistry.json` (cache subdir `mobile-requests/`, override
+`CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE`). `RequestInfoTool.BuildResponseAsync` branches on
+`schema-type` (`IsMobile`) to pick `mobileCatalog` vs `catalog` up front; everything after —
+version resolution, envelope parse, docs lazy-load, resolver markers — is identical on both
+flavors (the same symmetry `get-component-info` relies on). The mobile registry is scoped to
+the `crt.*Request` types available on Freedom UI mobile and its parameters can differ from
+desktop. `component-registry-refresh` refreshes this flavor alongside web/mobile/requests, and
+its docs live under `mobile-request-docs/` (see the docs-path validator above).
+
 Consumer rules that differ from the component catalog — do not "unify" them away:
 
 - **`baseParameters` are NOT merged into `parameters`.** The component catalog
@@ -324,11 +342,11 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
 - **The detail response always seeds the type-definition closure with
   `RequestBindingConfig`** — the wiring contract of every request — so a
   parameterless request still returns a self-contained wiring schema.
-- **Request docs live under the `request-docs/` namespace**
-  (`request-docs/<basename>.request.md`, flat URL next to the registry). The shared
-  `Tools/ComponentRegistryDocsPath.cs` validator accepts exactly the `docs/` and
-  `request-docs/` prefixes; the docs pipeline (`ComponentRegistryDocsClient` +
-  `ComponentDocumentationLoader`) is reused verbatim.
+- **Request docs live under the `request-docs/` namespace** (web) or the
+  `mobile-request-docs/` namespace (mobile) — (`<namespace>/<basename>.request.md`, flat URL
+  next to the registry). The shared `Tools/ComponentRegistryDocsPath.cs` validator accepts the
+  `docs/`, `mobile-docs/`, `request-docs/`, and `mobile-request-docs/` prefixes; the docs
+  pipeline (`ComponentRegistryDocsClient` + `ComponentDocumentationLoader`) is reused verbatim.
 - **The surface ships enabled on every install.** `RequestInfoTool` (`get-request-info`) is a
   resident core tool in `McpCoreToolProfile.CoreToolTypes`; the `ListPrintablesTool` probe is
   non-resident and dispatched through `clio-run`; the `WhenToUseRequestsGuidanceResource` guide is a

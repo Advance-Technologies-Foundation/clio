@@ -792,6 +792,44 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 				because: "the underlying conversion failure must be preserved for diagnostics");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Round-trips a persisted SysSetting condition operand back into a friendly SysSetting expression carrying the setting code.")]
+	public void Read_Should_RoundTrip_SysSetting_Operand() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["UseNewShell"] = new("UseNewShell", "Boolean", null)
+			};
+		BusinessRule input = new(
+			"Hide when new shell enabled",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("SysSetting", sysSettingName: "UseNewShell"),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, input, sysSettingMap);
+		JsonArray rules = [JsonSerializer.SerializeToNode(metadata, BusinessRuleConstants.JsonOptions)];
+
+		// Act
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
+
+		// Assert
+		BusinessRuleExpression left = models[0].Condition.Conditions[0].LeftExpression;
+		left.Type.Should().Be(BusinessRuleConstants.SysSettingExpressionType,
+			because: "a persisted SysSetting operand must read back as a SysSetting expression");
+		left.SysSettingName.Should().Be("UseNewShell",
+			because: "the setting code must survive the metadata round-trip so update preserves it");
+	}
+
 	private static JsonArray ParseRules(string json) => (JsonArray)JsonNode.Parse(json)!;
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
