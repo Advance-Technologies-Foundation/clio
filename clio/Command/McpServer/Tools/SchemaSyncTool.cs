@@ -49,9 +49,10 @@ public sealed class SchemaSyncTool(
 	internal const int MaxAttempts = 3;
 
 	/// <summary>
-	/// Sentinel exit code an attempt returns when its classify read observes a durable collision (on the
-	/// first read or any retry re-classify). It is distinct from any command exit code so the post-loop
-	/// code can rebuild the structured collision result from the (captured) plan via a single helper. A
+	/// Sentinel exit code an attempt returns when its read observes a durable collision (on the first read or
+	/// any retry re-classify) — either a schema-level collision from the classifier, or an <c>update-entity</c>
+	/// per-column type collision. It is distinct from any command exit code so the post-loop code can rebuild
+	/// the structured collision result from the captured plan/collisions via a single helper. A
 	/// collision is not a transient fault (the sentinel carries no error message, so the classifier reports
 	/// it non-transient), so RunAttempts fails fast on it instead of spinning the retry loop.
 	/// </summary>
@@ -171,10 +172,11 @@ public sealed class SchemaSyncTool(
 			// Batch-level cap on total retry backoff so a large flapping batch cannot accumulate
 			// synchronous in-lock sleep toward the MCP client per-call ceiling (see DefaultMaxCumulativeRetryDelay).
 			var retryBudget = new RetryBudget(_maxCumulativeRetryDelay);
+			BatchContext batchContext = new(args, tenantKey, retryBudget, reportStage, total, state);
 			try {
 				for (int index = 0; index < total; index++) {
 					cancellationToken.ThrowIfCancellationRequested();
-					if (!ExecuteBatchOperation(operations[index], index, total, args, tenantKey, retryBudget, reportStage, state)) {
+					if (!ExecuteBatchOperation(operations[index], index, batchContext)) {
 						break;
 					}
 				}
@@ -197,38 +199,49 @@ public sealed class SchemaSyncTool(
 	/// abort/deferred-seed bookkeeping on <paramref name="state"/>. Returns <see langword="false"/> when the
 	/// batch must stop (stop-on-first-failure), <see langword="true"/> to continue with the next operation.
 	/// </summary>
-	private bool ExecuteBatchOperation(
-		SchemaSyncOperation op, int index, int total, SchemaSyncArgs args, string tenantKey,
-		RetryBudget retryBudget, Action<string> reportStage, BatchExecutionState state) {
+	private bool ExecuteBatchOperation(SchemaSyncOperation op, int index, BatchContext ctx) {
 		logger.ClearMessages();
 		if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
-			state.Results.Add(Classify(seedValidationFailure!, index));
+			ctx.State.Results.Add(Classify(seedValidationFailure, index));
 			// A validation failure applied nothing on the server, so the whole operation is
 			// resubmittable as-is.
-			state.Abort(index, op);
+			ctx.State.Abort(index, op);
 			return false;
 		}
-		reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
-		SchemaSyncOperationResult result = Classify(ExecuteOperation(op, args, index, tenantKey, retryBudget), index);
-		state.Results.Add(result);
+		ctx.ReportStage($"{index + 1}/{ctx.Total}: {GetReportedOperationType(op)} {op.SchemaName}");
+		SchemaSyncOperationResult result =
+			Classify(ExecuteOperation(op, ctx.Args, index, ctx.TenantKey, ctx.RetryBudget), index);
+		ctx.State.Results.Add(result);
 		if (!result.Success) {
-			state.Abort(index, op);
+			ctx.State.Abort(index, op);
 			return false;
 		}
 		if (op.SeedRows?.Any() != true || IsSeedDataOperation(op)) {
 			return true;
 		}
-		return ExecuteInlineSeedStep(op, index, total, args, tenantKey, retryBudget, reportStage, state, result);
+		return ExecuteInlineSeedStep(op, index, ctx, result);
 	}
+
+	/// <summary>
+	/// Invariant context for one <c>sync-schemas</c> batch: everything the per-operation steps need besides the
+	/// operation and its index. Bundled into one record so the step methods stay within the parameter budget
+	/// (Sonar S107) and a new batch-wide concern is threaded by adding a field here rather than a parameter to
+	/// every step.
+	/// </summary>
+	private sealed record BatchContext(
+		SchemaSyncArgs Args,
+		string TenantKey,
+		RetryBudget RetryBudget,
+		Action<string> ReportStage,
+		int Total,
+		BatchExecutionState State);
 
 	/// <summary>
 	/// Runs (or deliberately skips) the inline seed step attached to a succeeded create operation. Returns
 	/// <see langword="false"/> when the seed failed and the batch must abort.
 	/// </summary>
 	private bool ExecuteInlineSeedStep(
-		SchemaSyncOperation op, int index, int total, SchemaSyncArgs args, string tenantKey,
-		RetryBudget retryBudget, Action<string> reportStage, BatchExecutionState state,
-		SchemaSyncOperationResult createResult) {
+		SchemaSyncOperation op, int index, BatchContext ctx, SchemaSyncOperationResult createResult) {
 		if (string.Equals(createResult.Outcome, AlreadySatisfiedOutcome, StringComparison.Ordinal)) {
 			// AC-2 replay-safety: an `already-satisfied` create is the verbatim-replay signal — the schema
 			// already fully existed, so nothing was applied on this call. Inline seed-rows are NOT replay-safe
@@ -243,20 +256,21 @@ public sealed class SchemaSyncTool(
 			// `reconciled` is deliberately NOT skipped: a delta was genuinely applied this call (first
 			// application), so the inline seed must run; the next verbatim replay then classifies as
 			// `already-satisfied` and is skipped here.
-			state.Results.Add(Classify(BuildSkippedInlineSeedResult(op), index));
-			state.DeferredSeedOperations.Add((index, BuildSeedResumeOperation(op)));
+			ctx.State.Results.Add(Classify(BuildSkippedInlineSeedResult(op), index));
+			ctx.State.DeferredSeedOperations.Add((index, BuildSeedResumeOperation(op)));
 			return true;
 		}
-		reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
+		ctx.ReportStage($"{index + 1}/{ctx.Total}: seed-data {op.SchemaName}");
 		logger.ClearMessages();
-		SchemaSyncOperationResult seedResult = Classify(ExecuteSeedData(op, args, tenantKey, retryBudget), index);
-		state.Results.Add(seedResult);
+		SchemaSyncOperationResult seedResult =
+			Classify(ExecuteSeedData(op, ctx.Args, ctx.TenantKey, ctx.RetryBudget), index);
+		ctx.State.Results.Add(seedResult);
 		if (seedResult.Success) {
 			return true;
 		}
 		// The create step already applied server-side, so resuming must NOT recreate the schema — resubmit
 		// only the seeding as a first-class seed-data operation.
-		state.Abort(index, BuildSeedResumeOperation(op));
+		ctx.State.Abort(index, BuildSeedResumeOperation(op));
 		return false;
 	}
 
@@ -549,10 +563,22 @@ public sealed class SchemaSyncTool(
 			// already-satisfied add. Columns not named in the request are never touched (no delete-unlisted full
 			// reconcile — AC-07/OQ-02). Emit only the resulting delta.
 			string? updateOutcome = null;
+			List<ColumnTypeCollision> collisions = [];
 			OperationExecution execution = RunAttempts(() => {
 				IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns =
 					convergenceService.ReadColumns(args.EnvironmentName, op.SchemaName);
-				IReadOnlyList<UpdateEntitySchemaOperationArgs> delta = ReconcileUpdateOperations(requestedOperations, existingColumns);
+				collisions.Clear();
+				IReadOnlyList<UpdateEntitySchemaOperationArgs> delta =
+					ReconcileUpdateOperations(requestedOperations, existingColumns, collisions);
+				if (collisions.Count > 0) {
+					// A durable per-column collision: an add names a present column of a different type
+					// (ENG-93807 review). Like the schema-level collision, this is not a transient fault, so
+					// return the message-less sentinel to fail fast without burning the retry budget; the
+					// structured result is rebuilt after the loop from the captured collisions. The list is
+					// cleared per attempt so a retry re-read that no longer collides is not judged by a stale
+					// classification.
+					return CollisionExitCode;
+				}
 				if (delta.Count == 0) {
 					// Every requested operation is already satisfied (columns present and identical, or a remove of
 					// an already-absent column). On replay this is a success, not a failure, and issues no
@@ -569,6 +595,9 @@ public sealed class SchemaSyncTool(
 				};
 				return commandResolver.Resolve<UpdateEntitySchemaCommand>(options).Execute(options);
 			}, retryBudget);
+			if (execution.ExitCode == CollisionExitCode && execution.CaughtException is null) {
+				return BuildColumnCollisionResult(op.SchemaName, collisions, tenantKey);
+			}
 			return FinalizeResult(UpdateEntityOperationName, op.SchemaName, execution, tenantKey,
 				outcome: execution.ExitCode == 0 && execution.CaughtException is null ? updateOutcome : null);
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
@@ -577,12 +606,50 @@ public sealed class SchemaSyncTool(
 	}
 
 	/// <summary>
+	/// A requested <c>add</c> that names an already-present column whose type differs from the request. The
+	/// add is not rewritten into a type-changing modify; it is surfaced so the caller sees that the "add a new
+	/// column" intent did not match reality (ENG-93807 review).
+	/// </summary>
+	private sealed record ColumnTypeCollision(string ColumnName, string? ExistingType, string? RequestedType);
+
+	/// <summary>
+	/// Builds the structured result for one or more per-column type collisions: <c>success:false</c>,
+	/// <c>outcome:collision</c>, and an error naming every colliding column with its existing and requested
+	/// type plus the explicit-<c>modify</c> remedy. No <c>collision-info</c> is emitted — that block names the
+	/// owning package of a colliding SCHEMA and does not apply to a column collision.
+	/// </summary>
+	private SchemaSyncOperationResult BuildColumnCollisionResult(
+		string schemaName, IReadOnlyList<ColumnTypeCollision> collisions, string tenantKey) {
+		string details = string.Join("; ", collisions.Select(collision =>
+			$"'{collision.ColumnName}' exists as '{collision.ExistingType}' but was requested as '{collision.RequestedType}'"));
+		string error = SensitiveErrorTextRedactor.Redact(
+			$"Column collision on schema '{schemaName}': {details}. "
+			+ "An 'add' never changes an existing column's type — send an explicit 'modify' action to converge "
+			+ "the type, or use a different column name.");
+		return new SchemaSyncOperationResult {
+			Type = UpdateEntityOperationName,
+			SchemaName = schemaName,
+			Success = false,
+			Outcome = CollisionOutcome,
+			Error = error,
+			Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
+		};
+	}
+
+	/// <summary>
 	/// Computes the per-column delta for an <c>update-entity</c> operation against the current server column
 	/// state (<paramref name="existingColumns"/>). A <c>remove</c> is issued only when the target column is
 	/// present (an already-absent remove is a satisfied "ensure absent" no-op); an <c>add</c>/<c>modify</c> of
 	/// an absent column is kept so the column is materialized or forwarded; an <c>add</c> of a present column
-	/// is dropped when its type already matches (idempotent replay) and converged to a <c>modify</c> when the
-	/// type differs. The add/columns shape reconciles by TYPE only: a present column with a matching type is
+	/// is dropped when its type already matches (idempotent replay) and reported as a COLUMN COLLISION (via
+	/// <paramref name="collisions"/>) when the type differs — an add is never rewritten into a type-changing
+	/// <c>modify</c>, so a different pre-existing column that happens to own the name is surfaced instead of
+	/// being silently mutated (ENG-93807 review). Changing a present column's type therefore requires an
+	/// explicit <c>modify</c> action, including in the <c>columns</c> add-batch round-trip (FR-04). Note the
+	/// deliberate asymmetry with the <c>create-entity</c> reconcile path, where
+	/// <see cref="SchemaConvergencePlan.ColumnsToModify"/> still converges a type divergence: that path is
+	/// scoped to the whole-schema ensure contract and is unchanged here. The add/columns shape reconciles by
+	/// TYPE only: a present column with a matching type is
 	/// treated as satisfied, so any non-type attribute change (required, reference-schema, flags, caption)
 	/// must be sent as an explicit <c>modify</c> op, which is forwarded unconditionally (the column read does
 	/// not expose every attribute — e.g. indexed/cloneable/caption localizations — so a modify cannot be
@@ -593,10 +660,11 @@ public sealed class SchemaSyncTool(
 	/// </summary>
 	private static IReadOnlyList<UpdateEntitySchemaOperationArgs> ReconcileUpdateOperations(
 		IReadOnlyList<UpdateEntitySchemaOperationArgs> requestedOperations,
-		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns) {
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns,
+		List<ColumnTypeCollision> collisions) {
 		List<UpdateEntitySchemaOperationArgs> delta = [];
 		foreach (UpdateEntitySchemaOperationArgs operation in requestedOperations) {
-			UpdateEntitySchemaOperationArgs? reconciled = ReconcileUpdateOperation(operation, existingColumns);
+			UpdateEntitySchemaOperationArgs? reconciled = ReconcileUpdateOperation(operation, existingColumns, collisions);
 			if (reconciled is not null) {
 				delta.Add(reconciled);
 			}
@@ -606,13 +674,16 @@ public sealed class SchemaSyncTool(
 
 	/// <summary>
 	/// Reconciles a single requested column operation against the current server column state, returning the
-	/// operation to issue (possibly rewritten) or <see langword="null"/> when it is already satisfied and must
-	/// be dropped. Extracted from <see cref="ReconcileUpdateOperations"/> so the per-column decision tree reads
-	/// as one unit; the semantics are unchanged.
+	/// operation to issue or <see langword="null"/> when it is already satisfied (and must be dropped) or when
+	/// it collided — a collision is appended to <paramref name="collisions"/> and aborts the whole operation
+	/// after every requested column has been classified, so one response names every colliding column rather
+	/// than only the first. Extracted from <see cref="ReconcileUpdateOperations"/> so the per-column decision
+	/// tree reads as one unit.
 	/// </summary>
 	private static UpdateEntitySchemaOperationArgs? ReconcileUpdateOperation(
 		UpdateEntitySchemaOperationArgs operation,
-		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns) {
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns,
+		List<ColumnTypeCollision> collisions) {
 		string? columnName = operation.ResolveColumnName();
 		if (string.IsNullOrWhiteSpace(columnName)) {
 			// Forward unchanged so the downstream serializer surfaces the missing-column-name error as before.
@@ -636,11 +707,20 @@ public sealed class SchemaSyncTool(
 			return operation;
 		}
 		if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn.Type)) {
-			// Present but different type: an explicit modify is forwarded as-is; an add (explicit or the
-			// implicit add-batch coerced from a `columns` payload) is converged to a modify so a re-add does
-			// not fail as a duplicate. An incompatible modify is surfaced by the backend command as a
-			// modify-conflict error (success:false), NOT a whole-schema collision.
-			return isModify ? operation : operation with { Action = ModifyAction };
+			// Present but different type: an explicit modify is forwarded as-is (the caller asked to converge
+			// the type). An add — explicit, or the implicit add-batch coerced from a `columns` payload — is a
+			// COLUMN COLLISION and is reported as such, never auto-rewritten to a type-changing modify: a
+			// genuine replay of the caller's own add carries the SAME type and is dropped below as satisfied,
+			// so this branch fires only when a DIFFERENT, pre-existing column already owns the name. Silently
+			// mutating that column's type would reinterpret "add a new column" as "change the existing one" —
+			// the per-column analogue of the masked schema collision this feature exists to close. An
+			// incompatible modify is still surfaced by the backend command as a modify-conflict error
+			// (success:false), NOT a collision.
+			if (!isModify) {
+				collisions.Add(new ColumnTypeCollision(columnName, existingColumn.Type, operation.ResolveType()));
+				return null;
+			}
+			return operation;
 		}
 		// Present, matching type: the add/columns shape reconciles by TYPE only, so a caller changing a
 		// non-type attribute (required/reference/flags/caption) must use an explicit modify — forward that

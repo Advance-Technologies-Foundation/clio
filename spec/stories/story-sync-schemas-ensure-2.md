@@ -18,7 +18,8 @@ developer / AI agent replaying a `sync-schemas` batch after an ambiguous network
 ## I want
 
 `update-entity` to reconcile the requested column set against current server state per-column —
-add-if-absent / modify-if-different / remove→ensure-absent — touching only the delta
+add-if-absent / modify-if-different (explicit `modify` only; an `add` onto a present
+different-type column is a collision) / remove→ensure-absent — touching only the delta
 
 ## So that
 

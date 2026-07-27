@@ -253,7 +253,7 @@ Each per-operation result carries an additive `outcome` field (omitted for `seed
 | `created` | The schema (or column set) did not exist and was created. |
 | `reconciled` | The schema already existed; only the missing/different columns were applied. |
 | `already-satisfied` | The requested shape was already present; no mutation was issued. |
-| `collision` | A durable collision — the op failed (`success: false`). |
+| `collision` | A durable collision — a same-name schema in another package, an incompatible parent/kind, or an `update-entity` `add` naming a present column of a different type. The op failed (`success: false`). |
 
 `reconciled` and `already-satisfied` are **successes**, not failures.
 
@@ -269,8 +269,31 @@ object naming the owning package. A collision is raised when:
 - a same-package schema exists but its parent/kind is **incompatible** with the request (e.g. a
   `BaseEntity`-derived entity vs. the requested `BaseLookup`).
 
-A per-column type/shape mismatch on a same-package reconcile is a **modify-conflict**, NOT a
-collision: it fails with `success: false` + `error` and no `collision-info`.
+`update-entity` also raises a **column collision** when an `add` names a column that is already
+present with a **different** type. The add is never rewritten into a type-changing `modify`: a
+genuine replay of your own add carries the same type and is a no-op, so a type divergence means a
+*different*, pre-existing column already owns that name. This applies to an explicit
+`action: "add"` and to every item of a `columns` add-batch alike. The operation fails with
+`success: false` and `outcome: "collision"`, its `error` names **every** colliding column with its
+existing and requested type, and no mutation is issued (columns that would have been added in the
+same batch are not applied either). There is no `collision-info` — that block names a colliding
+*schema's* package and does not apply here.
+
+To change a present column's type, send an explicit `modify`:
+
+```json
+{"action": "modify", "column-name": "UsrCode", "type": "Text"}
+```
+
+This means a `get-app-info` → edit → `columns` round-trip can add columns and leave matching ones
+untouched, but **cannot** change a type — switch that item to an explicit `modify`.
+
+A per-column type/shape mismatch that the backend rejects on an explicit `modify` is a
+**modify-conflict**, NOT a collision: it fails with `success: false` + `error`, and carries neither
+`collision-info` nor the `collision` outcome.
+
+> Note: the `create-entity` reconcile path still converges a type divergence through its
+> `ColumnsToModify` delta — the collision rule above is scoped to `update-entity` adds.
 
 ## Seed Data Replay Contract
 

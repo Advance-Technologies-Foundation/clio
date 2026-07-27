@@ -48,7 +48,8 @@ per-tenant `McpToolExecutionLock`. Concretely:
   `EntitySchemaSearchResult.ParentSchemaName`) → explicit machine-readable durable-collision failure
   (FR-03, AC-04, OQ-05). The pre-emptive read *replaces* the reactive `TryGetCollisionInfo` probe.
 - **ensure-update-entity**: read column detail once, then per-column reconcile —
-  add-if-absent / modify-if-different / remove→ensure-absent — emitting only the delta. Columns not
+  add-if-absent / modify-if-different (explicit `modify` only; an `add` onto a present different-type
+  column collides) / remove→ensure-absent — emitting only the delta. Columns not
   named in the request are left untouched (additive per-column ensure; no full reconcile, A-04).
 - **seed-data**: unchanged in committed scope. The seed path (`DataBindingDbCommand` →
   `CreateBinding`→`ProcessRows`) dedups by `Name`, so seed-data is *already* convergent only for rows
@@ -268,7 +269,8 @@ public sealed record SchemaConvergencePlan(
    `TryGetCollisionInfo`** (it removes the method's last caller, so leaving it would trip CLIO
    dead-code/analyzer warnings — U6 must NOT re-delete it). (FR-01/02/03/10, AC-01/02/04, OQ-05)
 2. **U2 — ensure-update-entity per-column reconcile.** Wire column read into `ExecuteUpdateEntity`:
-   add-if-absent / modify-if-different / remove→ensure-absent; emit only the delta; leave unlisted
+   add-if-absent / modify-if-different (explicit `modify` only — an `add` onto a present different-type
+   column is a collision) / remove→ensure-absent; emit only the delta; leave unlisted
    columns untouched. (FR-04/05, AC-05/06/07)
 3. **U3 — seed-data contract decision (OQ-01).** No code change to the seed path; document the
    `Name`-keyed dedup contract in tool contract + docs + guidance; add a regression test that a

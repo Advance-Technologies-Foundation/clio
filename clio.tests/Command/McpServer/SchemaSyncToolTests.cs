@@ -2038,10 +2038,11 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Property("Module", "McpServer")]
-	[Description("An update-entity operation with an unsupported action verb on a present DIFFERENT-type column is FORWARDED verbatim, never rewritten to modify (ENG-93807 review): only an add is coerced to modify on a type divergence, so an invalid action cannot masquerade as a modify and bypass validation.")]
+	[Description("An update-entity operation with an unsupported action verb on a present DIFFERENT-type column is FORWARDED verbatim, never rewritten to modify (ENG-93807 review): an invalid action cannot masquerade as a modify and bypass validation, and it is not treated as a column collision either (that rule is scoped to adds).")]
 	public async Task ExecuteUpdateEntity_ShouldNotRewriteUnsupportedActionToModify_WhenColumnPresentDifferentType() {
 		// Arrange - the schema already has UsrCol as Text; the caller sends an invalid 'rename' action with a
-		// divergent type. Pre-fix, a present different-type column had ANY action rewritten to 'modify'.
+		// divergent type. Pre-fix, a present different-type column had ANY action rewritten to 'modify'; today an
+		// add there is a collision, but an unsupported verb must still reach the command's own validator.
 		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
@@ -2064,7 +2065,107 @@ public sealed class SchemaSyncToolTests {
 			because: "an unsupported action on a type-divergent column must be forwarded, not silently coerced to modify");
 		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
 			operation => operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
-			because: "only an add is coerced to modify on a type divergence — an invalid action must never be rewritten");
+			because: "an unsupported action is never rewritten on a type divergence — an add now collides there, and only an explicit modify converges the type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit add naming a present column of a DIFFERENT type is reported as a column collision, never silently rewritten to a type-changing modify (ENG-93807 review, FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldReportCollision_WhenAddNamesPresentDifferentTypeColumn() {
+		// Arrange - the schema already has UsrCode as Integer; the caller asks to ADD UsrCode as Text. Pre-fix
+		// this silently mutated the existing column's type; it must now surface the name collision instead.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("add", "UsrCode", Type: "Text")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "an add that collides with a different pre-existing column must not report success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the per-column name collision is surfaced with the collision outcome");
+		response.Results[0].Error.Should().Contain("UsrCode",
+			because: "the error must name the colliding column");
+		response.Results[0].Error.Should().Contain("modify",
+			because: "the error must point at the explicit-modify remedy");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "a collision is detected before any mutation — no update command may run");
+		response.Results[0].Attempts.Should().BeNull(
+			because: "a collision is durable, not transient, so it must not burn the retry budget");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A columns add-batch (implicit adds, ENG-90313 round-trip) also collides on a present different-type column, and one response names EVERY colliding column (ENG-93807 review, FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldReportEveryCollision_WhenColumnsBatchDivergesOnType() {
+		// Arrange - two present columns diverge by type and one is absent; the batch carries no action verbs,
+		// so every item is an implicit add. All collisions must be reported together, not just the first.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"), ("UsrTitle", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrCode", "Text", Localizations("Code")),
+					new CreateEntitySchemaColumnArgs("UsrTitle", "Integer", Localizations("Title")),
+					new CreateEntitySchemaColumnArgs("UsrAbsent", "Text", Localizations("Absent"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the implicit add-batch is held to the same no-silent-type-mutation rule as an explicit add");
+		response.Results[0].Error.Should().Contain("UsrCode",
+			because: "the first colliding column must be named");
+		response.Results[0].Error.Should().Contain("UsrTitle",
+			because: "every colliding column must be named, not only the first");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "the whole operation aborts before any mutation — the absent column is not added either");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit modify of a present different-type column still converges the type — the collision rule is scoped to adds (ENG-93807 review, FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldStillConvergeType_WhenExplicitModifyOnPresentDifferentTypeColumn() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("modify", "UsrCode", Type: "Text")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an explicit modify is the sanctioned way to change a present column's type");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "the type divergence is converged through the modify write path");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal)
+				&& operation.Contains("\"column-name\":\"UsrCode\"", StringComparison.Ordinal),
+			because: "the explicit modify must reach the update command unchanged");
 	}
 
 	[Test]
@@ -2916,7 +3017,7 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Converges a requested column that is present but of a different type into a modify for exactly that column (FR-04, AC-FR04).")]
+	[Description("Converges a requested column that is present but of a different type into a modify for exactly that column (FR-04, AC-FR04). The request uses an explicit modify: post-ENG-93807-review only a modify converges a type divergence, an add there collides.")]
 	public async Task ExecuteUpdateEntity_ShouldModifyColumn_WhenRequestedColumnPresentButDifferent() {
 		// Arrange
 		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
@@ -2928,7 +3029,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
-				Columns: [new CreateEntitySchemaColumnArgs("UsrScore", "Integer", Localizations("Score"))])]);
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer")])]);
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(args);
@@ -3062,7 +3163,7 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Emits exactly the computed delta (one add, one modify) and drops the identical column when column states are mixed (FR-04, AC-FR04).")]
+	[Description("Emits exactly the computed delta (one add, one modify) and drops the identical column when column states are mixed (FR-04, AC-FR04). The type-divergent column is sent as an EXPLICIT modify — post-ENG-93807-review an add of a present different-type column is a collision, not an implicit modify.")]
 	public async Task ExecuteUpdateEntity_ShouldEmitExactlyComputedDelta_WhenColumnStatesMixed() {
 		// Arrange
 		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
@@ -3074,10 +3175,10 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
-				Columns: [
-					new CreateEntitySchemaColumnArgs("UsrAbsent", "Text", Localizations("Absent")),
-					new CreateEntitySchemaColumnArgs("UsrDiff", "Integer", Localizations("Diff")),
-					new CreateEntitySchemaColumnArgs("UsrSame", "Text", Localizations("Same"))
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrAbsent", Type: "Text"),
+					new UpdateEntitySchemaOperationArgs("modify", "UsrDiff", Type: "Integer"),
+					new UpdateEntitySchemaOperationArgs("add", "UsrSame", Type: "Text")
 				])]);
 
 		// Act
@@ -3103,7 +3204,7 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Surfaces a per-column type incompatibility as a modify-conflict (success:false, Error, outcome not collision) and preserves stop-on-first-failure (FR-04, AC-ERR).")]
+	[Description("Surfaces a per-column type incompatibility on an EXPLICIT modify as a modify-conflict (success:false, Error, outcome not collision) and preserves stop-on-first-failure (FR-04, AC-ERR). A backend-rejected modify stays a modify-conflict — only an add of a present different-type column is a collision.")]
 	public async Task ExecuteUpdateEntity_ShouldFailWithModifyConflictNotCollision_WhenColumnTypeIncompatible() {
 		// Arrange
 		TestLogger logger = new();
@@ -3119,7 +3220,7 @@ public sealed class SchemaSyncToolTests {
 			"dev", "UsrPkg",
 			[
 				new SchemaSyncOperation("update-entity", "UsrTodoList",
-					Columns: [new CreateEntitySchemaColumnArgs("UsrScore", "Integer", Localizations("Score"))]),
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer")]),
 				new SchemaSyncOperation("update-entity", "UsrOther",
 					Columns: [new CreateEntitySchemaColumnArgs("UsrLate", "Text", Localizations("Late"))])
 			]);
