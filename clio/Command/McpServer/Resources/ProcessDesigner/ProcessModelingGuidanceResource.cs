@@ -51,7 +51,9 @@ public sealed class ProcessModelingGuidanceResource {
 			  cannot be set yet, so the step does nothing useful until a human configures it in the designer. Say so
 			  when you use it; do not present the result as a working data operation.
 			- Sequence flows; process-level parameters (with an optional constant default value); element-parameter mappings.
-			- `useBackgroundMode` on ANY element (it is a platform property of every process element, not signal-specific):
+			- `useBackgroundMode` on ANY element (it is a platform property of every process element, not signal-specific);
+			  change it later on an EXISTING element with the `setElement` op
+			  (`{ "op": "setElement", "elementName": "task1", "elementUpdate": { "useBackgroundMode": false } }`):
 			  `true` runs it asynchronously via the background scheduler, `false` inline. OMIT it to keep the element
 			  kind's own default, which mirrors the visual designer's palette — a `signalStart` defaults to background
 			  mode, so a signal-started process runs asynchronously and its effects appear a moment after the record is
@@ -198,9 +200,10 @@ public sealed class ProcessModelingGuidanceResource {
 			   — an output you can map FROM has `isResult:true` or `direction:"Out"`; the signal trigger) /
 			   `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
-			   addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter / setSignal — same
-			   parameter/mapping/filter/signal shapes as a build; setSignal reconfigures an existing signalStart's
-			   record trigger + tracked columns in place).
+			   addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter / setSignal /
+			   setElement — same parameter/mapping/filter/signal shapes as a build; setSignal reconfigures an existing
+			   signalStart's record trigger + tracked columns in place, setElement changes element-level fields
+			   (useBackgroundMode) in place on any element kind).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.

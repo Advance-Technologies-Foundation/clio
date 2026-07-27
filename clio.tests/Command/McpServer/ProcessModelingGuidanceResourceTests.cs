@@ -191,6 +191,8 @@ public sealed class ProcessModelingGuidanceResourceTests {
 			because: "the flag is element-level; the guide must not present it as signal-specific");
 		text.Should().Contain("UseBackgroundProcessMode",
 			because: "the agent must know the element flag is ANDed with the global application setting");
+		text.Should().Contain("setElement",
+			because: "the agent must know the flag is changeable on an EXISTING element, as the visual designer allows");
 	}
 
 	[Test]

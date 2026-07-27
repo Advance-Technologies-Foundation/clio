@@ -344,6 +344,62 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		]
 		""";
 
+	[Test]
+	[Description("Over the real MCP path, modify-business-process setElement switches an existing element's useBackgroundMode IN PLACE (off on a signalStart whose kind default is on, then back on), and describe reports the change — the element-level equivalent of toggling the checkbox on an existing element in the visual designer.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setElement toggles useBackgroundMode on an existing element")]
+	public async Task ModifyBusinessProcess_Should_ToggleElementBackgroundMode() {
+		// Arrange — a signal-start process; the signalStart kind defaults to background mode.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetElementE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSignalStartDescriptor(processName)
+		});
+
+		// Act 1 — switch background mode OFF on the existing element.
+		CallToolResult offResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetElementBackgroundModeOperations(enabled: false)
+		});
+
+		// Assert 1
+		offResult.IsError.Should().NotBeTrue(
+			because: "setElement on an existing element must apply without a transport error");
+		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}))
+			.Elements.Single(element => element.Name == "SignalStart1").UseBackgroundMode.Should().BeFalse(
+				because: "setElement turned background mode off on the existing signal start and the change persisted");
+
+		// Act 2 — switch it back ON, proving the field is fully changeable, not one-way.
+		CallToolResult onResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetElementBackgroundModeOperations(enabled: true)
+		});
+
+		// Assert 2
+		onResult.IsError.Should().NotBeTrue(because: "the reverse setElement must apply too");
+		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}))
+			.Elements.Single(element => element.Name == "SignalStart1").UseBackgroundMode.Should().BeTrue(
+				because: "background mode is switchable both ways on an existing element");
+	}
+
+	// setElement toggling the element-level useBackgroundMode on the existing signal start.
+	private static string BuildSetElementBackgroundModeOperations(bool enabled) =>
+		$$"""
+		[
+		  { "op": "setElement", "elementName": "SignalStart1",
+		    "elementUpdate": { "useBackgroundMode": {{(enabled ? "true" : "false")}} } }
+		]
+		""";
+
 	// setSignal with NO changedColumns clears column tracking, so the signal fires on any change again.
 	private static string BuildClearSignalColumnsOperations() =>
 		"""
