@@ -190,6 +190,114 @@ internal class GetClassicMigrationBundleCommandTests : BaseCommandTests<GetClass
 	}
 
 	[Test]
+	[Description("IsPathConfined accepts a path inside the workspace anchor.")]
+	public void IsPathConfined_ShouldAccept_PathInsideWorkspaceAnchor() {
+		// Arrange — a real absolute base so the check is deterministic and cross-platform
+		string workspace = Path.Combine(Path.GetTempPath(), "gcmb-ws");
+		string tempRoot = Path.Combine(Path.GetTempPath(), "gcmb-other-temp");
+		string candidate = Path.GetFullPath(Path.Combine(workspace, "sub", "manifest.json"));
+
+		// Act
+		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+
+		// Assert
+		confined.Should().BeTrue(because: "a file under the workspace anchor is an allowed destination");
+	}
+
+	[Test]
+	[Description("IsPathConfined accepts a path inside the OS temp root even when it is outside the workspace anchor.")]
+	public void IsPathConfined_ShouldAccept_PathInsideTempRoot() {
+		// Arrange
+		string workspace = Path.Combine(Path.GetTempPath(), "gcmb-ws");
+		string tempRoot = Path.Combine(Path.GetTempPath(), "gcmb-scratch-root");
+		string candidate = Path.GetFullPath(Path.Combine(tempRoot, "run", "manifest.json"));
+
+		// Act
+		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+
+		// Assert
+		confined.Should().BeTrue(because: "the OS temp scratch dir is the second allowed destination (skill temp policy)");
+	}
+
+	[Test]
+	[Description("IsPathConfined rejects a parent-traversal path that escapes both the workspace anchor and the temp root.")]
+	public void IsPathConfined_ShouldReject_ParentTraversalEscape() {
+		// Arrange
+		string workspace = Path.Combine(Path.GetTempPath(), "gcmb-ws");
+		string tempRoot = Path.Combine(Path.GetTempPath(), "gcmb-temp");
+		string candidate = Path.GetFullPath(Path.Combine(workspace, "..", "..", "escape", "hosts"));
+
+		// Act
+		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+
+		// Assert
+		confined.Should().BeFalse(because: "a `..` escape out of both allowed zones must be rejected before any write");
+	}
+
+	[Test]
+	[Description("IsPathConfined rejects an absolute path that lies under neither allowed zone.")]
+	public void IsPathConfined_ShouldReject_UnrelatedAbsolutePath() {
+		// Arrange — three siblings under temp: none contains another
+		string workspace = Path.Combine(Path.GetTempPath(), "gcmb-ws");
+		string tempRoot = Path.Combine(Path.GetTempPath(), "gcmb-temp");
+		string candidate = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "gcmb-elsewhere", "manifest.json"));
+
+		// Act
+		bool confined = GetClassicMigrationBundleCommand.IsPathConfined(candidate, workspace, tempRoot);
+
+		// Assert
+		confined.Should().BeFalse(because: "a path outside both the workspace anchor and the temp root is out of bounds");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle writes an explicit output-file that lands inside the OS temp scratch dir — the location the migration skill targets.")]
+	public void TryAssembleBundle_ShouldAccept_ExplicitOutputFile_UnderOsTemp() {
+		// Arrange — anchor the cwd under temp, and point output-file at a sibling scratch dir under temp
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "gcmb-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		string scratch = _ioFileSystem.Path.Combine(tempRoot, "gcmb-scratch", "manifest.json");
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage", OutputFile = scratch };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "an output-file inside the OS temp scratch dir is an allowed destination");
+		response.ManifestPath.Should().Be(_ioFileSystem.Path.GetFullPath(scratch),
+			because: "the confined explicit path is honored as the manifest location");
+		_writtenPath.Should().Be(_ioFileSystem.Path.GetFullPath(scratch), because: "the manifest is written to that path");
+	}
+
+	[Test]
+	[Description("TryAssembleBundle rejects an explicit output-file that escapes both the workspace and the OS temp dir, failing before any write instead of overwriting an arbitrary file.")]
+	public void TryAssembleBundle_ShouldReject_ExplicitOutputFile_OutsideAllowedZones() {
+		// Arrange — cwd under temp so the anchor is known; output-file traverses out of temp to a sibling
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "gcmb-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		string escape = _ioFileSystem.Path.Combine(tempRoot, "..", "gcmb-escape", "manifest.json");
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicMigrationBundleOptions options = new() { SchemaName = "UsrTestPage", OutputFile = escape };
+
+		// Act
+		bool ok = _command.TryAssembleBundle(options, out GetClassicMigrationBundleResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "an output-file escaping both allowed zones must not be written");
+		response.Error.Should().Contain("output-file",
+			because: "the failure must name the offending option so the caller can correct it");
+		_writtenPath.Should().BeNull(because: "no file may be written when the path is rejected");
+	}
+
+	[Test]
 	[Description("TryAssembleBundle rejects a schema name that is not a valid identifier before any network call, keeping the default path confined to the anchor.")]
 	public void TryAssembleBundle_ShouldRejectInvalidSchemaName_BeforeAnyRequest() {
 		// Arrange — a traversal-shaped name that must never become a path segment

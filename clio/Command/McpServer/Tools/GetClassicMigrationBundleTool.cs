@@ -16,12 +16,11 @@ public sealed class GetClassicMigrationBundleTool(
 
 	internal const string ToolName = "get-classic-migration-bundle";
 
-	// ReadOnly=false: the tool's whole purpose is a local file write (the manifest). Destructive stays
-	// false in line with the schema-read family (get-client-unit-schema, sql-schema-get), which likewise
-	// accept an arbitrary output-file and write it verbatim while staying non-destructive. Only the DEFAULT
-	// (no output-file) path is confined to the resolved anchor with a format-validated schema-name; an
-	// explicit output-file is written as given — the same trade as the sibling schema-get tools, NOT
-	// get-page/PageFileWriter (which always re-nests every write under an anchor).
+	// ReadOnly=false: the tool's whole purpose is a local file write (the manifest). Destructive stays false
+	// because every write is confined: the DEFAULT path is anchored under the workspace with a format-validated
+	// schema-name, and an explicit output-file is accepted ONLY when it resolves inside the workspace anchor or
+	// the OS temp directory (ResolveOutputPath/IsPathConfined) — a `..` traversal or absolute system path is
+	// rejected before any write, so this MCP-callable tool cannot be steered into overwriting an arbitrary file.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Assemble a Classic->Freedom migration bundle for a classic page schema and WRITE it to disk as a manifest " +
@@ -95,7 +94,9 @@ public sealed record GetClassicMigrationBundleArgs(
 ) : ConnectionArgsBase {
 
 	[JsonPropertyName("output-file")]
-	[Description("Manifest output path (absolute path recommended). Default: <workspace-root>/.clio-migration/" +
-		"<schema>/manifest.json. The manifest is always written; the response reports the absolute path.")]
+	[Description("Manifest output path (absolute path recommended). Must resolve inside the workspace or the OS " +
+		"temp directory — a path outside both (e.g. a `..` traversal or a system path) is rejected. Default: " +
+		"<workspace-root>/.clio-migration/<schema>/manifest.json. The manifest is always written; the response " +
+		"reports the absolute path.")]
 	public string OutputFile { get; init; }
 }

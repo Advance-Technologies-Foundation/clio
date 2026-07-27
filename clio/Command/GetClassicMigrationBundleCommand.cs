@@ -274,7 +274,11 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 			}
 
 			// 8. Write the manifest to disk. The bodies live here, not in the response.
-			string manifestPath = ResolveOutputPath(options);
+			(string manifestPath, string pathError) = ResolveOutputPath(options);
+			if (pathError != null) {
+				response = Fail(pathError);
+				return false;
+			}
 			string directory = Path.GetDirectoryName(manifestPath);
 			if (!string.IsNullOrWhiteSpace(directory)) {
 				_fileSystem.CreateDirectoryIfNotExists(directory);
@@ -928,22 +932,59 @@ public class GetClassicMigrationBundleCommand : Command<GetClassicMigrationBundl
 	// The default is anchored the way get-page anchors .clio-pages: workspace root when one encloses the
 	// current directory, the current directory otherwise, and the managed clio home instead of the bare
 	// home directory (PRD OQ-04 / PageOutputDirectoryResolver).
-	private string ResolveOutputPath(GetClassicMigrationBundleOptions options) {
+	//
+	// An explicit output-file is NOT written verbatim: this tool is MCP-callable and its output path can be
+	// agent-supplied (not typed by a human at a shell), and the tool is non-destructive so the MCP host does
+	// not prompt on the write. A bare GetFullPath would resolve `..\..\system\file` into an arbitrary
+	// overwrite. It is confined to the workspace anchor OR the OS temp directory — the two locations the
+	// migration skill legitimately targets (in-workspace, or an OS-temp scratch dir) — and anything escaping
+	// both is rejected before any write, returning an error rather than a path.
+	private (string path, string error) ResolveOutputPath(GetClassicMigrationBundleOptions options) {
 		// H1: reading the process-global cwd must serialize against the MCP workspace tools that PIN cwd.
 		// In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
 		// is uncontended.
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
-			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
-				return _ioFileSystem.Path.GetFullPath(options.OutputFile);
-			}
 			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
 				_ioFileSystem,
 				_ioFileSystem.Directory.GetCurrentDirectory(),
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 				ClioRuntimePaths.Home,
 				null);
-			return Path.Combine(anchor, ClioMigrationDirectoryName, options.SchemaName, ManifestFileName);
+			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
+				string full = _ioFileSystem.Path.GetFullPath(options.OutputFile);
+				string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+				if (!IsPathConfined(full, anchor, tempRoot)) {
+					return (null,
+						$"output-file '{options.OutputFile}' resolves outside the allowed locations; it must be " +
+						"inside the workspace or the OS temp directory. Omit output-file to write the default " +
+						"manifest under the workspace.");
+				}
+				return (full, null);
+			}
+			return (Path.Combine(anchor, ClioMigrationDirectoryName, options.SchemaName, ManifestFileName), null);
 		}
+	}
+
+	// True when <paramref name="fullCandidate"/> (an already-resolved absolute path) lies within the workspace
+	// anchor OR the OS temp root. Both bounds are the two locations the migration flow writes to; everything
+	// else — parent-traversal escapes, absolute system paths, other volumes — is out of bounds.
+	internal static bool IsPathConfined(string fullCandidate, string workspaceAnchor, string tempRoot) =>
+		IsWithinDirectory(workspaceAnchor, fullCandidate) || IsWithinDirectory(tempRoot, fullCandidate);
+
+	// True when <paramref name="target"/> is <paramref name="baseDirectory"/> itself or a descendant of it.
+	// Uses GetRelativePath so the comparison honors the platform's own case rules: a relative result that stays
+	// put (".") or descends is inside; one that starts with ".." (escape) or is rooted (different volume) is not.
+	private static bool IsWithinDirectory(string baseDirectory, string target) {
+		if (string.IsNullOrEmpty(baseDirectory)) {
+			return false;
+		}
+		string relative = Path.GetRelativePath(baseDirectory, target);
+		if (relative == "..") {
+			return false;
+		}
+		return !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+			&& !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal)
+			&& !Path.IsPathRooted(relative);
 	}
 
 	private static GetClassicMigrationBundleResponse Fail(string error) =>

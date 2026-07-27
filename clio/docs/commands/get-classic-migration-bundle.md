@@ -52,7 +52,9 @@ clio get-classic-migration-bundle [options]
 --entity                           Entity schema name (optional; inferred from the page
                                    body when omitted). Drives entityColumns/columnTitles
 
---output-file                      Manifest output path. Default:
+--output-file                      Manifest output path. Must resolve inside the
+                                   workspace or the OS temp directory; a path outside
+                                   both is rejected. Default:
                                    <workspace-root>/.clio-migration/<schema>/manifest.json
 
 --uri                    -u       Application uri
@@ -101,6 +103,10 @@ in an underlying failure never reaches the caller's context.
   can be renamed or carry a UId/app infix (entity `ASPContractData` -> section `ASPContractDatac145c7efSection`),
   which no name derivation can reach. A failed metadata lookup degrades to the conventions and is reported in
   `warnings`.
+- `--output-file` is confined to the workspace anchor or the OS temp directory. The command is MCP-callable, so
+  the output path can be supplied by an agent rather than typed at a shell; writing an unconstrained path
+  verbatim would let a `..` traversal or an absolute system path overwrite an arbitrary file. A path escaping
+  both allowed locations fails before any write. The default path is always inside the workspace anchor.
 
 ## Reporting Bugs
 

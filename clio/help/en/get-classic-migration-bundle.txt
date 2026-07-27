@@ -34,8 +34,9 @@ OPTIONS
     --entity                           Entity schema name (optional; inferred from the page
                                        body when omitted). Drives entityColumns/columnTitles
 
-    --output-file                      Manifest output path. Default:
-                                       <workspace-root>/.clio-migration/<schema>/manifest.json
+    --output-file                      Manifest output path. Must resolve inside the workspace
+                                       or the OS temp directory (a path outside both is rejected).
+                                       Default: <workspace-root>/.clio-migration/<schema>/manifest.json
 
     --uri                    -u       Application uri
 

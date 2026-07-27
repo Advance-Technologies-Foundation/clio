@@ -162,6 +162,44 @@ public sealed class GetClassicMigrationBundleToolE2ETests : McpContractFixtureBa
 			because: "the failure should explain that no schema layer resolved");
 	}
 
+	[Test]
+	[Description("Rejects an output-file that escapes the workspace and OS temp directory, over the real MCP path, without writing the file.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-migration-bundle rejects an out-of-bounds output-file")]
+	[AllureDescription("Invokes the long-tail tool through clio-run with an output-file that traverses out of the OS temp directory and verifies the command fails before writing, so an agent-supplied path cannot overwrite an arbitrary file.")]
+	public async Task GetBundle_Should_Reject_OutputFile_Outside_AllowedZones() {
+		// Arrange — a path that resolves well outside both the workspace and the OS temp dir
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string escapingPath = Path.Combine(
+			Path.GetTempPath(), "..", "..", "..", "clio-e2e-escape", $"manifest-{Guid.NewGuid():N}.json");
+		string resolvedEscape = Path.GetFullPath(escapingPath);
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = escapingPath
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicMigrationBundleResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicMigrationBundleResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a rejected output path is a command-level failure, not an MCP transport failure");
+		response.Success.Should().BeFalse(because: "an output-file outside the allowed zones must not be written");
+		response.Error.Should().Contain("output-file",
+			because: "the failure must name the offending option");
+		File.Exists(resolvedEscape).Should().BeFalse(
+			because: "no file may be written to the out-of-bounds path");
+	}
+
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
