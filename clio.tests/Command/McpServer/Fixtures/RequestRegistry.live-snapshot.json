@@ -21,6 +21,26 @@
 			}
 		},
 		{
+			"requestType": "crt.CopilotActionRequest",
+			"parameters": {
+				"prompt": {
+					"type": "string",
+					"required": true,
+					"description": "Prompt text sent to Creatio.ai as the user's message; static text or an `$Attribute` view-model binding."
+				},
+				"useCurrentSession": {
+					"type": "boolean",
+					"description": "When `true`, the prompt continues the page context's own AI session (created on first use and reused on subsequent calls). When `false` (or omitted), the prompt goes to the last open chat if the AI panel is open, or a new chat is opened with the prompt."
+				}
+			},
+			"description": "Sends a prompt to Creatio.ai: opens the AI chat panel and posts the prompt into a chat session. Bound to buttons (the \"Creatio.ai action\" of the Designer's event panel).",
+			"references": {
+				"docs": [
+					"request-docs/copilot-action.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.PrintablesRequest",
 			"parameters": {
 				"convertInPDF": {
@@ -63,14 +83,6 @@
 		{
 			"requestType": "crt.RunBusinessProcessRequest",
 			"parameters": {
-				"activeRow": {
-					"type": "string",
-					"description": "Mobile-only: current row context on a mobile list."
-				},
-				"activeRowAttributeName": {
-					"type": "string",
-					"description": "Mobile-only: name of the view-model attribute holding the current row on a mobile list."
-				},
 				"dataSourceName": {
 					"type": "string",
 					"description": "Data source of the list whose selected records the process runs for (`ForTheSelectedRecords` run type)."
@@ -149,6 +161,62 @@
 			"references": {
 				"docs": [
 					"request-docs/run-business-process.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.UploadFileRequest",
+			"parameters": {
+				"allowedFileTypes": {
+					"type": "string",
+					"description": "Comma-separated, case-insensitive allow-list of file types; each item is `.ext`, `ext`, `mime/type`, or `mime/*`. Empty or absent allows every type except those in the `FileExtensionsDenyList` system setting, which always applies."
+				},
+				"fileEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema that stores the uploaded file (default `SysFile`); runtime-required and derived by the platform from the `crt.FileList` named by `viewElementName`. Hand-author only in an advanced scenario with no file list; an authored value overrides the derived one."
+				},
+				"fileGroup": {
+					"type": "string",
+					"description": "Id of the file group the upload is filed under; derived by the platform from the target `crt.FileList` (the OOTB Attachments group is `efbf3a0d-d780-465a-8e4b-8c0765197cfb`). Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"files": {
+					"type": "File[]",
+					"description": "Files to upload, authored only as the `@event.files` event binding on a `crt.FileList`'s `fileDropped` or `uploadClicked` output. When absent the platform opens the file picker before uploading; never set it on a button's `clicked` binding."
+				},
+				"itemsAttributeName": {
+					"type": "string",
+					"description": "View-model attribute backing the target `crt.FileList`'s items collection; derived by the platform from that list. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"maximumAllowedFileSize": {
+					"type": "number",
+					"description": "Maximum size of one uploaded file, in megabytes; the effective limit is the minimum of this value and the `MaxFileSize` system setting, and when unset `MaxFileSize` alone applies. The designer enforces a minimum of 1."
+				},
+				"recordColumnName": {
+					"type": "string",
+					"description": "Column on the file entity that links each file to its parent record (default `RecordId`); runtime-required and derived by the platform from the target `crt.FileList`. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"recordEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema of the parent record the files attach to; derived by the platform from the target `crt.FileList` or the page's primary data source. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"recordId": {
+					"type": "string | LookupValue",
+					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList` (a `LookupValue` is unwrapped to its `value`). Uploading to a non-`SysFile` storage on an unsaved record is rejected with a notification. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"tag": {
+					"type": "string",
+					"description": "Optional tag stamped on the uploaded file records; derived by the platform from the target `crt.FileList` when configured there. Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"viewElementName": {
+					"type": "string",
+					"required": true,
+					"description": "Name of the `crt.FileList` view element on the same page that this upload targets, and the only parameter a standard page authors by hand. At page load the platform reads that file list to derive the storage parameters below; when it is absent or matches no `crt.FileList` on the page, page defaults derived from the primary data source apply (`SysFile` storage, `RecordId` link column, the primary record's Id)."
+				}
+			},
+			"description": "Uploads one or more files and attaches them to a record, targeting the `crt.FileList` named by `viewElementName`. Bound to a button or menu item `clicked`, or to a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName`.",
+			"references": {
+				"docs": [
+					"request-docs/upload-file.request.md"
 				]
 			}
 		}
