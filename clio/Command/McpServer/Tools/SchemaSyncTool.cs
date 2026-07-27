@@ -657,14 +657,29 @@ public sealed class SchemaSyncTool(
 	/// resolved by <see cref="EntitySchemaDesignerSupport.AreColumnTypesEquivalent"/> (ordinal-normalized), so
 	/// a divergent read-back vocabulary does not force a spurious mutation on replay. Columns not named in
 	/// <paramref name="requestedOperations"/> are never touched — there is no delete-unlisted reconcile (AC-07).
+	/// Operations are reconciled in order against a column view that ADVANCES with each classified operation,
+	/// not against the pre-batch snapshot, so an ordered <c>remove X</c> + <c>add X</c> pair recreates the
+	/// column (the re-add sees it absent) instead of having the re-add dropped as already-satisfied — and a
+	/// remove-then-re-add at a different type is a legitimate recreate, not a collision.
 	/// </summary>
 	private static IReadOnlyList<UpdateEntitySchemaOperationArgs> ReconcileUpdateOperations(
 		IReadOnlyList<UpdateEntitySchemaOperationArgs> requestedOperations,
 		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns,
 		List<ColumnTypeCollision> collisions) {
+		// Project the server read into a mutable per-column view and advance it as each operation is
+		// classified, so an operation is reconciled against the state its predecessors in the SAME batch
+		// leave behind rather than against the pre-batch snapshot. Without this, an ordered
+		// `remove X` + `add X` pair (the sanctioned way to change a column's shape in one call) classifies
+		// the re-add against the still-present snapshot column and DROPS it as already-satisfied, so the
+		// column is removed and never restored. It also makes `remove X` + `add X` with a different type a
+		// legitimate recreate instead of a collision.
+		Dictionary<string, string?> columnTypes = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, EntitySchemaPropertyColumnInfo> column in existingColumns) {
+			columnTypes[column.Key] = column.Value.Type;
+		}
 		List<UpdateEntitySchemaOperationArgs> delta = [];
 		foreach (UpdateEntitySchemaOperationArgs operation in requestedOperations) {
-			UpdateEntitySchemaOperationArgs? reconciled = ReconcileUpdateOperation(operation, existingColumns, collisions);
+			UpdateEntitySchemaOperationArgs? reconciled = ReconcileUpdateOperation(operation, columnTypes, collisions);
 			if (reconciled is not null) {
 				delta.Add(reconciled);
 			}
@@ -682,7 +697,7 @@ public sealed class SchemaSyncTool(
 	/// </summary>
 	private static UpdateEntitySchemaOperationArgs? ReconcileUpdateOperation(
 		UpdateEntitySchemaOperationArgs operation,
-		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns,
+		Dictionary<string, string?> columnTypes,
 		List<ColumnTypeCollision> collisions) {
 		string? columnName = operation.ResolveColumnName();
 		if (string.IsNullOrWhiteSpace(columnName)) {
@@ -694,19 +709,26 @@ public sealed class SchemaSyncTool(
 			// Unsupported action verb (e.g. 'rename', a typo, or a missing action) — never converge or
 			// rewrite it. Forward it unchanged so UpdateEntitySchemaCommand's own validator rejects it with
 			// "Action must be one of: add, modify, remove.", instead of silently dropping it (present, same
-			// type) or coercing it to a modify (present, different type) and bypassing that validation.
+			// type) or coercing it to a modify (present, different type) and bypassing that validation. The
+			// tracked column state is left untouched: what such an operation does is for the validator to
+			// decide, so no successor may be reconciled against a guess about its effect.
 			return operation;
 		}
-		bool present = existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
+		bool present = columnTypes.TryGetValue(columnName, out string? existingType);
 		if (IsRemoveAction(operation.Action)) {
 			// Present → issue the remove; absent → "ensure absent" is already satisfied, issue nothing.
-			return present ? operation : null;
+			if (!present) {
+				return null;
+			}
+			columnTypes.Remove(columnName);
+			return operation;
 		}
 		if (!present) {
 			// Absent column: materialize it (add) or forward the requested modify unchanged.
+			columnTypes[columnName] = operation.ResolveType();
 			return operation;
 		}
-		if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn.Type)) {
+		if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingType)) {
 			// Present but different type: an explicit modify is forwarded as-is (the caller asked to converge
 			// the type). An add — explicit, or the implicit add-batch coerced from a `columns` payload — is a
 			// COLUMN COLLISION and is reported as such, never auto-rewritten to a type-changing modify: a
@@ -717,9 +739,10 @@ public sealed class SchemaSyncTool(
 			// incompatible modify is still surfaced by the backend command as a modify-conflict error
 			// (success:false), NOT a collision.
 			if (!isModify) {
-				collisions.Add(new ColumnTypeCollision(columnName, existingColumn.Type, operation.ResolveType()));
+				collisions.Add(new ColumnTypeCollision(columnName, existingType, operation.ResolveType()));
 				return null;
 			}
+			columnTypes[columnName] = operation.ResolveType();
 			return operation;
 		}
 		// Present, matching type: the add/columns shape reconciles by TYPE only, so a caller changing a

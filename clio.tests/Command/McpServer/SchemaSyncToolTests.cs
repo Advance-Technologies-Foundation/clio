@@ -2070,6 +2070,74 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An ordered remove + re-add of the SAME column in one update-entity issues BOTH operations: the re-add is reconciled against the post-remove state, not the pre-batch snapshot (ENG-93807 review).")]
+	public async Task ExecuteUpdateEntity_ShouldIssueBothOperations_WhenColumnRemovedAndReaddedInSameBatch() {
+		// Arrange - UsrExternalId exists as Guid and is removed then re-added at the same type. Against the
+		// pre-batch snapshot the re-add looked already-satisfied and was dropped, so the column was removed
+		// and never restored.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrExternalId", "Guid"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("remove", "UsrExternalId"),
+					new UpdateEntitySchemaOperationArgs("add", "UsrExternalId", Type: "Guid")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an ordered remove + re-add is a supported way to recreate a column in one call");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "both the remove and the re-add must be issued — dropping the re-add would delete the column");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"action\":\"remove\"", StringComparison.Ordinal),
+			because: "the remove must reach the update command");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "the re-add must be reconciled against the post-remove state, where the column is absent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A remove followed by a re-add at a DIFFERENT type is a legitimate recreate, not a column collision — the collision gate reads the advancing state, not the pre-batch snapshot (ENG-93807 review).")]
+	public async Task ExecuteUpdateEntity_ShouldNotCollide_WhenColumnRemovedThenReaddedAtDifferentType() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("remove", "UsrCode"),
+					new UpdateEntitySchemaOperationArgs("add", "UsrCode", Type: "Text")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Outcome.Should().NotBe("collision",
+			because: "the caller explicitly removed the column first, so the re-add cannot collide with it");
+		response.Results[0].Success.Should().BeTrue(
+			because: "remove-then-re-add is the sanctioned way to recreate a column at a different type");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "both the remove and the differently-typed re-add must be issued");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("An explicit add naming a present column of a DIFFERENT type is reported as a column collision, never silently rewritten to a type-changing modify (ENG-93807 review, FR-04).")]
 	public async Task ExecuteUpdateEntity_ShouldReportCollision_WhenAddNamesPresentDifferentTypeColumn() {
 		// Arrange - the schema already has UsrCode as Integer; the caller asks to ADD UsrCode as Text. Pre-fix

@@ -323,6 +323,18 @@ public async Task ExecuteCreateSchema_ShouldFailWithCollisionAndNotCallCreate_Wh
 - **Assert**: `success: true`, `outcome == "reconciled"`, and the explicit `modify` reaches the
   update command unchanged (because an explicit modify remains the sanctioned way to change a type).
 
+#### TC-U-20d: `ExecuteUpdateEntity_ShouldIssueBothOperations_WhenColumnRemovedAndReaddedInSameBatch`
+- **Maps**: FR-04 (ordered intra-batch reconcile)
+- **Arrange**: present `Guid` column; one `update-entity` with `remove X` then `add X` at the same type.
+- **Assert**: both operations are emitted (because each operation is reconciled against the state its
+  predecessors leave behind — against the pre-batch snapshot the re-add is dropped as already-satisfied
+  and the column is removed and never restored).
+
+#### TC-U-20e: `ExecuteUpdateEntity_ShouldNotCollide_WhenColumnRemovedThenReaddedAtDifferentType`
+- **Maps**: FR-04 (the collision gate reads the advancing state)
+- **Assert**: `outcome != "collision"`, `success: true`, both operations emitted (because the caller
+  removed the column first, so the re-add cannot collide with it — this is the sanctioned recreate).
+
 #### TC-U-21: `ExecuteUpdateEntity_ShouldFailWithModifyConflictNotCollision_WhenColumnTypeIncompatible`
 - **Maps**: FR-04, AC-ERR (modify-conflict vs collision distinction)
 - **Arrange**: an **explicit `modify`** the backend rejects as incompatible.

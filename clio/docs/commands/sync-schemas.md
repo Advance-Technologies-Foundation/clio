@@ -279,7 +279,12 @@ existing and requested type, and no mutation is issued (columns that would have 
 same batch are not applied either). There is no `collision-info` — that block names a colliding
 *schema's* package and does not apply here.
 
-To change a present column's type, send an explicit `modify`:
+Operations inside one `update-entity` are reconciled **in order**, each against the state its
+predecessors leave behind. So an ordered `remove` + `add` of the same column recreates it (the
+re-add correctly sees the column as absent), and a remove-then-re-add at a *different* type is a
+legitimate recreate rather than a collision.
+
+To change a present column's type in place, send an explicit `modify`:
 
 ```json
 {"action": "modify", "column-name": "UsrCode", "type": "Text"}
