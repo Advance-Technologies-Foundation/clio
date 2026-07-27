@@ -297,14 +297,38 @@ public async Task ExecuteCreateSchema_ShouldFailWithCollisionAndNotCallCreate_Wh
 
 #### TC-U-20: `ExecuteUpdateEntity_ShouldEmitExactlyComputedDelta_WhenColumnStatesMixed`
 - **Maps**: FR-04, AC-FR04
-- **Arrange**: one absent (→add), one different (→modify), one identical (→no-op).
+- **Arrange**: `update-operations` with one absent `add` (→add), one present different-type
+  **explicit `modify`** (→modify), one present same-type `add` (→no-op). The type-divergent column
+  must be requested as an explicit `modify`: an `add` there is a collision (TC-U-20a).
 - **Assert**: exactly two mutations emitted (add + modify), the identical column produces none
   (because the emitted set equals exactly the computed delta).
 
+#### TC-U-20a: `ExecuteUpdateEntity_ShouldReportCollision_WhenAddNamesPresentDifferentTypeColumn`
+- **Maps**: FR-04 (no silent type mutation on an add)
+- **Arrange**: schema has `UsrCode` as `Integer`; the request `add`s `UsrCode` as `Text`.
+- **Assert**: `success: false`, `outcome == "collision"`, `Error` names the column and the
+  explicit-`modify` remedy, no update command runs, and `attempts` is null (because a collision is
+  durable, not transient, so it must not burn the retry budget).
+
+#### TC-U-20b: `ExecuteUpdateEntity_ShouldReportEveryCollision_WhenColumnsBatchDivergesOnType`
+- **Maps**: FR-04 (the implicit `columns` add-batch is held to the same rule)
+- **Arrange**: two present columns diverge by type plus one absent column, sent as a `columns`
+  batch with no action verbs (every item is an implicit add).
+- **Assert**: `outcome == "collision"`, the `Error` names **both** colliding columns (not just the
+  first), and nothing is mutated — the absent column is not added either (because the whole
+  operation aborts before any write).
+
+#### TC-U-20c: `ExecuteUpdateEntity_ShouldStillConvergeType_WhenExplicitModifyOnPresentDifferentTypeColumn`
+- **Maps**: FR-04 (the collision rule is scoped to adds)
+- **Assert**: `success: true`, `outcome == "reconciled"`, and the explicit `modify` reaches the
+  update command unchanged (because an explicit modify remains the sanctioned way to change a type).
+
 #### TC-U-21: `ExecuteUpdateEntity_ShouldFailWithModifyConflictNotCollision_WhenColumnTypeIncompatible`
 - **Maps**: FR-04, AC-ERR (modify-conflict vs collision distinction)
-- **Assert**: `success: false`, `Error:` present, `outcome != "collision"` (because a per-column
-  incompatibility is a modify-conflict, not a whole-schema collision — that gate is package-match only).
+- **Arrange**: an **explicit `modify`** the backend rejects as incompatible.
+- **Assert**: `success: false`, `Error:` present, `outcome != "collision"` (because a backend-rejected
+  per-column incompatibility is a modify-conflict, not a collision — the collision outcome is reserved
+  for the package-match gate and for an `add` onto a present different-type column, TC-U-20a).
 
 ### Group D — seed-data contract — Story 3 / U3
 
