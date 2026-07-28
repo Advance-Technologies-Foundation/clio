@@ -132,29 +132,52 @@ internal static class PrintableSupport {
 
 	/// <summary>
 	/// Parses the design service upload response (<c>{ "success": bool, "errorInfo": { "message" } }</c>).
-	/// A non-JSON or empty body on a chunked upload is treated as success.
+	/// Fails <b>closed</b>: only an explicit <c>"success": true</c> counts as a stored template. An
+	/// empty body, a plain-text body, or JSON without a boolean <c>success</c> (a reverse-proxy page,
+	/// an expired-session HTML login page — all of which can arrive with HTTP 200) is reported as a
+	/// failure. Reporting success here is not a cosmetic mistake: the caller then patches
+	/// <c>FileName</c>, and a non-empty <c>FileName</c> is exactly how <c>get-printable</c> tells a
+	/// caller a template is attached, so the verification path would corroborate the wrong answer.
 	/// </summary>
 	internal static PrintableTemplateUploadResponse ParseUploadResponse(string json, string reportId, string fileName) {
 		if (string.IsNullOrWhiteSpace(json)) {
-			return new PrintableTemplateUploadResponse(true, null, reportId, fileName);
+			return PrintableTemplateUploadResponse.Failure(UnconfirmedUploadError("the service returned an empty body"));
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
-			bool failed = root.TryGetProperty("success", out JsonElement s) && s.ValueKind == JsonValueKind.False;
-			if (failed) {
-				string message = "Template upload failed.";
-				if (root.TryGetProperty("errorInfo", out JsonElement err) && err.ValueKind == JsonValueKind.Object
-					&& err.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String) {
-					message = m.GetString() ?? message;
+			if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("success", out JsonElement s)) {
+				if (s.ValueKind == JsonValueKind.True) {
+					return new PrintableTemplateUploadResponse(true, null, reportId, fileName);
 				}
-				return PrintableTemplateUploadResponse.Failure(message);
+				if (s.ValueKind == JsonValueKind.False) {
+					string message = "Template upload failed.";
+					if (root.TryGetProperty("errorInfo", out JsonElement err) && err.ValueKind == JsonValueKind.Object
+						&& err.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String) {
+						message = m.GetString() ?? message;
+					}
+					return PrintableTemplateUploadResponse.Failure(message);
+				}
 			}
-			return new PrintableTemplateUploadResponse(true, null, reportId, fileName);
+			return PrintableTemplateUploadResponse.Failure(UnconfirmedUploadError($"unexpected response: {Preview(json)}"));
 		} catch (JsonException) {
-			// A non-JSON body on a successful chunked upload still means the template was stored.
-			return new PrintableTemplateUploadResponse(true, null, reportId, fileName);
+			return PrintableTemplateUploadResponse.Failure(UnconfirmedUploadError($"non-JSON response: {Preview(json)}"));
 		}
+	}
+
+	/// <summary>
+	/// Builds the failure message used when the upload response carries no explicit
+	/// <c>"success": true</c>, so the caller knows the template may or may not have landed.
+	/// </summary>
+	private static string UnconfirmedUploadError(string detail) =>
+		SensitiveErrorTextRedactor.Redact(
+			$"Template upload was not confirmed by the design service ({detail}). " +
+			"The template may not have been stored; verify with get-printable before retrying.");
+
+	/// <summary>Truncates a response body so a long or binary payload never floods the tool result.</summary>
+	private static string Preview(string json) {
+		string trimmed = json.Trim();
+		return trimmed.Length > 200 ? trimmed[..200] + "..." : trimmed;
 	}
 
 }

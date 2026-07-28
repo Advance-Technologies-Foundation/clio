@@ -42,21 +42,32 @@ public sealed class PrintableTemplateUploadMappingTests {
 		string query = PrintableSupport.BuildUploadQuery(ReportId, fileId, 4096, "Invoice.docx");
 
 		Dictionary<string, string> parameters = ParseQuery(query);
-		parameters["columnName"].Should().Be(PrintableSupport.TemplateColumnName);
-		parameters["fileId"].Should().Be(fileId.ToString());
-		parameters["mimeType"].Should().Be(PrintableSupport.WordMimeType);
-		parameters["parentColumnName"].Should().Be("Id");
-		parameters["reportId"].Should().Be(ReportId);
+		parameters["columnName"].Should().Be(PrintableSupport.TemplateColumnName,
+			because: "the template bytes land in the File stream column");
+		parameters["fileId"].Should().Be(fileId.ToString(),
+			because: "the chunked upload is keyed by the fresh file id the caller generated");
+		parameters["mimeType"].Should().Be(PrintableSupport.WordMimeType,
+			because: "the service validates the .docx MIME type");
+		parameters["parentColumnName"].Should().Be("Id",
+			because: "the template row is linked through its Id column");
+		parameters["reportId"].Should().Be(ReportId,
+			because: "the service needs the printable the template belongs to");
 		// Pins current behavior: parentColumnValue carries the upload's own fileId, not the report id.
 		// Not independently verified against Creatio's MSWordReportDesigner client — if that contract
 		// says otherwise, fix the implementation and this assertion together.
-		parameters["parentColumnValue"].Should().Be(fileId.ToString());
-		parameters["totalFileLength"].Should().Be("4096");
-		parameters["entitySchemaName"].Should().Be(PrintableSupport.TemplateUploadEntitySchema);
-		parameters["fileName"].Should().Be("Invoice.docx");
-		parameters["maxFileSizeSysSettingsName"].Should().Be(PrintableSupport.MaxFileSizeSettingName);
+		parameters["parentColumnValue"].Should().Be(fileId.ToString(),
+			because: "this pins the current, not-yet-verified mapping so a silent drift is caught");
+		parameters["totalFileLength"].Should().Be("4096",
+			because: "the service reassembles the chunks against the declared total size");
+		parameters["entitySchemaName"].Should().Be(PrintableSupport.TemplateUploadEntitySchema,
+			because: "the upload writes through the report-template store schema");
+		parameters["fileName"].Should().Be("Invoice.docx",
+			because: "the stored template keeps the original file name");
+		parameters["maxFileSizeSysSettingsName"].Should().Be(PrintableSupport.MaxFileSizeSettingName,
+			because: "the service enforces the size limit from this SysSetting");
 		JsonSerializer.Deserialize<Dictionary<string, string>>(parameters["additionalParams"])
-			.Should().Contain(new KeyValuePair<string, string>("ReportId", ReportId));
+			.Should().Contain(new KeyValuePair<string, string>("ReportId", ReportId),
+				because: "additionalParams is what actually carries the report link to the service");
 	}
 
 	[Test]
@@ -66,7 +77,8 @@ public sealed class PrintableTemplateUploadMappingTests {
 
 		query.Should().NotContain("Рахунок для клієнта.docx",
 			because: "the raw name must be percent-encoded, not embedded verbatim");
-		ParseQuery(query)["fileName"].Should().Be("Рахунок для клієнта.docx");
+		ParseQuery(query)["fileName"].Should().Be("Рахунок для клієнта.docx",
+			because: "the encoding must round-trip the exact name the service will store");
 	}
 
 	[Test]
@@ -74,7 +86,8 @@ public sealed class PrintableTemplateUploadMappingTests {
 	public void BuildUploadQuery_ShouldReportZeroLengthExplicitly() {
 		string query = PrintableSupport.BuildUploadQuery(ReportId, Guid.NewGuid(), 0, "Empty.docx");
 
-		ParseQuery(query)["totalFileLength"].Should().Be("0");
+		ParseQuery(query)["totalFileLength"].Should().Be("0",
+			because: "omitting the size would let the service fall back to an unbounded read");
 	}
 
 	[Test]
@@ -84,8 +97,9 @@ public sealed class PrintableTemplateUploadMappingTests {
 
 		PrintableTemplateUploadResponse response = PrintableSupport.ParseUploadResponse(json, ReportId, "Invoice.docx");
 
-		response.Success.Should().BeFalse();
-		response.Error.Should().Be("Report template exceeds the allowed size.");
+		response.Success.Should().BeFalse(because: "the service reported an explicit failure");
+		response.Error.Should().Be("Report template exceeds the allowed size.",
+			because: "the caller needs the service's own reason, not a generic one");
 	}
 
 	[Test]
@@ -94,20 +108,38 @@ public sealed class PrintableTemplateUploadMappingTests {
 		PrintableTemplateUploadResponse response =
 			PrintableSupport.ParseUploadResponse("""{"success":false}""", ReportId, "Invoice.docx");
 
-		response.Success.Should().BeFalse();
-		response.Error.Should().Be("Template upload failed.");
+		response.Success.Should().BeFalse(because: "an explicit success:false is a failure regardless of errorInfo");
+		response.Error.Should().Be("Template upload failed.",
+			because: "a missing errorInfo must still produce a reason instead of an empty error");
 	}
 
-	[TestCase("", TestName = "ParseUploadResponse treats an empty body as a stored template")]
-	[TestCase("OK", TestName = "ParseUploadResponse treats a non-JSON body as a stored template")]
-	[TestCase("""{"success":true}""", TestName = "ParseUploadResponse treats an explicit success as a stored template")]
-	[Description("The chunked upload answers with an empty, plain-text or JSON success body; all three mean the template was stored.")]
-	public void ParseUploadResponse_ShouldReportSuccess(string json) {
+	[Test]
+	[Description("An explicit success is the only body that reports the template as stored.")]
+	public void ParseUploadResponse_ShouldReportSuccess_OnExplicitSuccess() {
+		PrintableTemplateUploadResponse response =
+			PrintableSupport.ParseUploadResponse("""{"success":true}""", ReportId, "Invoice.docx");
+
+		response.Success.Should().BeTrue(because: "the service explicitly confirmed the upload");
+		response.Error.Should().BeNull(because: "a confirmed upload carries no error");
+		response.Id.Should().Be(ReportId, because: "the response echoes the report the template belongs to");
+		response.FileName.Should().Be("Invoice.docx", because: "the response echoes the uploaded file name");
+	}
+
+	[TestCase("", TestName = "ParseUploadResponse fails closed on an empty body")]
+	[TestCase("   ", TestName = "ParseUploadResponse fails closed on a whitespace-only body")]
+	[TestCase("OK", TestName = "ParseUploadResponse fails closed on a plain-text body")]
+	[TestCase("<html><body>Sign in</body></html>", TestName = "ParseUploadResponse fails closed on an HTML login page")]
+	[TestCase("""{"rowsAffected":1}""", TestName = "ParseUploadResponse fails closed on JSON without a success flag")]
+	[TestCase("""{"success":"true"}""", TestName = "ParseUploadResponse fails closed on a non-boolean success flag")]
+	[Description("Anything short of an explicit success must fail closed: a 200 with an empty, plain-text, HTML or unrecognized JSON body means the template may never have landed, and a false success would also patch FileName so get-printable corroborates the wrong answer.")]
+	public void ParseUploadResponse_ShouldFailClosed_WhenSuccessIsNotConfirmed(string json) {
 		PrintableTemplateUploadResponse response = PrintableSupport.ParseUploadResponse(json, ReportId, "Invoice.docx");
 
-		response.Success.Should().BeTrue();
-		response.Error.Should().BeNull();
-		response.Id.Should().Be(ReportId);
-		response.FileName.Should().Be("Invoice.docx");
+		response.Success.Should().BeFalse(
+			because: "the design service never confirmed the upload, so the tool must not claim it landed");
+		response.Error.Should().Contain("not confirmed",
+			because: "the caller needs to know the outcome is unknown rather than failed outright");
+		response.Error.Should().Contain("get-printable",
+			because: "the message must point at the tool that verifies whether the template actually attached");
 	}
 }

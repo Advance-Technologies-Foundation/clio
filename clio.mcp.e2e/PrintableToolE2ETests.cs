@@ -71,9 +71,11 @@ public sealed class PrintableToolE2ETests {
 			arrange.CancellationTokenSource.Token);
 		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain(invalidEnvironmentName);
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unknown environment is a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(because: "the environment cannot be resolved, so the read cannot succeed");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the error must name the environment the caller passed");
 	}
 
 	[Test]
@@ -96,9 +98,11 @@ public sealed class PrintableToolE2ETests {
 			arrange.CancellationTokenSource.Token);
 		ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain(invalidEnvironmentName);
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unknown environment is a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(because: "the environment cannot be resolved, so nothing was created");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the error must name the environment the caller passed");
 	}
 
 	[Test]
@@ -120,9 +124,11 @@ public sealed class PrintableToolE2ETests {
 			arrange.CancellationTokenSource.Token);
 		ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("entity-schema-id");
+		callResult.IsError.Should().NotBeTrue(
+			because: "argument validation is reported as a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(because: "a non-GUID entity-schema-id must be rejected up front");
+		response.Error.Should().Contain("entity-schema-id",
+			because: "the error must name the argument that failed validation");
 	}
 
 	[TestCase(PrintableUpdateTool.ToolName,
@@ -145,9 +151,12 @@ public sealed class PrintableToolE2ETests {
 			arrange.CancellationTokenSource.Token);
 		ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("must be a record GUID");
+		callResult.IsError.Should().NotBeTrue(
+			because: "argument validation is reported as a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(
+			because: $"{toolName} must never accept a keyless id such as \"all\"");
+		response.Error.Should().Contain("must be a record GUID",
+			because: "the error must state that a single record key is required");
 	}
 
 	[Test]
@@ -168,9 +177,11 @@ public sealed class PrintableToolE2ETests {
 			arrange.CancellationTokenSource.Token);
 		ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("without confirmation");
+		callResult.IsError.Should().NotBeTrue(
+			because: "the confirmation gate is reported as a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(because: "a destructive delete must not run without confirm=true");
+		response.Error.Should().Contain("without confirmation",
+			because: "the error must tell the caller to re-call with confirm=true");
 	}
 
 	[Test]
@@ -194,9 +205,11 @@ public sealed class PrintableToolE2ETests {
 		PrintableTemplateUploadResponse response =
 			EntitySchemaStructuredResultParser.Extract<PrintableTemplateUploadResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain(".docx");
+		callResult.IsError.Should().NotBeTrue(
+			because: "argument validation is reported as a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(because: "only a .docx template can be uploaded");
+		response.Error.Should().Contain(".docx",
+			because: "the error must name the extension the tool requires");
 	}
 
 	[Test]
@@ -219,8 +232,11 @@ public sealed class PrintableToolE2ETests {
 		PrintableTemplateUploadResponse response =
 			EntitySchemaStructuredResultParser.Extract<PrintableTemplateUploadResponse>(callResult);
 
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("without confirmation");
+		callResult.IsError.Should().NotBeTrue(
+			because: "the confirmation gate is reported as a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(
+			because: "overwriting an existing template must not run without confirm=true");
+		response.Error.Should().Contain("without confirmation",
+			because: "the error must tell the caller to re-call with confirm=true");
 	}
 }
