@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Clio.Command;
@@ -113,6 +114,24 @@ public sealed class ApplicationCreateServiceTests {
 			because: "successful CreateApp calls should reuse the structured application-info result shape");
 		_applicationInfoService.Received(1)
 			.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp");
+	}
+
+	[Test]
+	[Description("Emits fine-grained stage markers in execution order on the successful create path when a reportStage callback is supplied.")]
+	public void CreateApplication_Should_Report_Stage_Markers_In_Order_When_Callback_Provided() {
+		// Arrange
+		List<string> markers = [];
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", _fullRequest, markers.Add);
+
+		// Assert
+		markers.Should().ContainInOrder(
+			["creating application package", "loading application metadata"],
+			because: "the happy path must emit the create-package marker before the load-metadata marker");
 	}
 
 	[Test]
@@ -537,6 +556,7 @@ public sealed class ApplicationCreateServiceTests {
 	[Description("Polls get-app-info by application code when the CreateApp request times out and returns the first successful structured result.")]
 	public void CreateApplication_Should_Poll_ApplicationInfo_When_CreateApp_Times_Out() {
 		// Arrange
+		List<string> markers = [];
 		ApplicationInfoResult expectedResult = new("pkg-uid", "PrimaryPkg", [], SchemaNamePrefix: "Usr");
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
@@ -550,12 +570,14 @@ public sealed class ApplicationCreateServiceTests {
 				_ => expectedResult);
 
 		// Act
-		ApplicationInfoResult result = _sut.CreateApplication("sandbox", _fullRequest);
+		ApplicationInfoResult result = _sut.CreateApplication("sandbox", _fullRequest, markers.Add);
 
 		// Assert
 		result.Should().Be(expectedResult,
 			because: "timeout recovery should return the created application once get-app-info can resolve it");
 		_applicationInfoService.Received(3).GetApplicationInfo("sandbox", null, "UsrCodexApp");
+		markers.Should().Contain("waiting for application to be ready",
+			because: "the timeout->polling branch must emit the waiting stage marker so the client sees the recovery phase");
 	}
 
 	[Test]

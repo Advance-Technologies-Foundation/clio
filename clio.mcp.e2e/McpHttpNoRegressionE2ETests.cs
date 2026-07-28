@@ -49,6 +49,7 @@ public sealed class McpHttpNoRegressionE2ETests {
 	}
 
 	[Test]
+	[Category("McpE2E.Manual")]
 	[Description("clio mcp-http bound to loopback with NO platform API key serves a pre-registered environment via -e-style resolution exactly as the pre-passthrough build, ignoring any credential header (Story 15d / AC-05).")]
 	public async Task HttpWithRegisteredEnvironment_ShouldServeEnvironment_WhenNoPlatformApiKeyConfigured() {
 		// Arrange
@@ -144,6 +145,7 @@ public sealed class McpHttpNoRegressionE2ETests {
 	}
 
 	[Test]
+	[Category("McpE2E.Manual")]
 	[Description("Every one of the 15 touched tools still executes against a registered environment over mcp-http (no platform API key, environment-name supplied) without hitting the credential-passthrough mixed-input rejection, proving environment-name selection is unregressed for a registered-env caller (Story 15 AC-03; PRD AC-09/SM-03).")]
 	public async Task HttpWithRegisteredEnvironment_ShouldExecuteTouchedTool_WhenEnvironmentNameSupplied(
 		[ValueSource(nameof(TouchedToolNames))] string toolName) {

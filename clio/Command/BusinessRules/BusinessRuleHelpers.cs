@@ -19,7 +19,6 @@ internal static class BusinessRuleHelpers {
 		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
 		TimeSpan.FromMilliseconds(100));
 
-
 	internal static IReadOnlyDictionary<string, EntitySchemaColumnDto> BuildColumnMap(EntityDesignSchemaDto entitySchema) {
 		ArgumentNullException.ThrowIfNull(entitySchema);
 

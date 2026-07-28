@@ -77,20 +77,6 @@ internal static class PrintableSupport {
 		return MsWordTypeId;
 	}
 
-	/// <summary>
-	/// Builds the OData <c>$filter</c> for listing MS Word printables, always scoped to the MS Word
-	/// type and optionally narrowed to a single entity (by SysEntitySchema Id or Name).
-	/// </summary>
-	internal static string BuildMsWordFilter(string? entitySchemaId, string? entitySchemaName) {
-		var conditions = new List<string> { $"Type/Name eq '{EscapeLiteral(MsWordTypeName)}'" };
-		if (!string.IsNullOrWhiteSpace(entitySchemaId)) {
-			conditions.Add($"SysEntitySchemaId eq {entitySchemaId.Trim()}");
-		} else if (!string.IsNullOrWhiteSpace(entitySchemaName)) {
-			conditions.Add($"SysEntitySchema/Name eq '{EscapeLiteral(entitySchemaName.Trim())}'");
-		}
-		return string.Join(" and ", conditions);
-	}
-
 	/// <summary>Escapes a string literal for an OData single-quoted value.</summary>
 	internal static string EscapeLiteral(string value) => value.Replace("'", "''");
 

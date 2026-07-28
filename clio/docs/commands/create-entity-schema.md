@@ -55,7 +55,9 @@ Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
 name/type/title/reference-schema-name/required/default-value-source/default-value/default-value-config.
 Repeat the option for multiple columns.
 Supported types include Guid, Text/ShortText/MediumText/LongText/MaxSizeText, Integer, Float,
-Boolean, Date/DateTime/Time, Lookup, Binary, Image, ImageLookup, File, SecureText, and Email.
+Boolean, Date/DateTime/Time, Lookup, Binary, Image, ImageLookup, File, SecureText, Email, and Color.
+`Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
+(multiline / accent-insensitive / format-validated / masked) do not apply to it.
 For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use the
 `ImageLookup` ("Image link") type (alias: `ImageLink`) — the binary `Image` type does not work
 with `crt.ImageInput`. `ImageLookup` references the `SysImage` schema automatically; do not set

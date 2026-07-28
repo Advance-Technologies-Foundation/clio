@@ -9,17 +9,17 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the MS Word printable MCP tools (list / get / create / update / delete /
+/// End-to-end tests for the MS Word printable MCP tools (get / create / update / delete /
 /// upload-report-template). Advertisement and argument-binding/guard behavior is verified through
 /// the real MCP server without requiring a reachable Creatio environment.
+/// Listing is NOT part of this surface — <c>list-printables</c> ships from ENG-93187 and has its
+/// own coverage.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
 public sealed class PrintableToolE2ETests {
 
-	[TestCase(PrintableListTool.ToolName, false,
-		TestName = "list-printables MCP tool is discoverable and non-destructive on the lazy surface")]
 	[TestCase(PrintableGetTool.ToolName, false,
 		TestName = "get-printable MCP tool is discoverable and non-destructive on the lazy surface")]
 	[TestCase(PrintableCreateTool.ToolName, false,
@@ -52,19 +52,19 @@ public sealed class PrintableToolE2ETests {
 	}
 
 	[Test]
-	[Description("Binds list-printables arguments and reports a structured failure for an unknown environment.")]
-	[AllureTag(PrintableListTool.ToolName)]
-	[AllureName("list-printables MCP tool binds arguments")]
-	public async Task ListPrintables_Should_Bind_Arguments_And_Report_Invalid_Environment() {
+	[Description("Binds get-printable arguments and reports a structured failure for an unknown environment.")]
+	[AllureTag(PrintableGetTool.ToolName)]
+	[AllureName("get-printable MCP tool binds arguments")]
+	public async Task GetPrintable_Should_Bind_Arguments_And_Report_Invalid_Environment() {
 		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-printable-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
-			PrintableListTool.ToolName,
+			PrintableGetTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = invalidEnvironmentName,
-					["top"] = 1
+					["id"] = Guid.NewGuid().ToString()
 				}
 			},
 			arrange.CancellationTokenSource.Token);

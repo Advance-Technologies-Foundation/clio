@@ -11,6 +11,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ClioRing;
+using ClioRing.Ipc;
 using ClioRing.Services;
 using ClioRing.ViewModels;
 using ClioRing.Views;
@@ -79,6 +80,65 @@ internal static class Program {
 
 		// 1) DEFAULT — compact, ring only, calm.
 		count += CaptureState(outDir, "default", _ => { });
+
+		// 1b) DEVELOPMENT RUNTIME — prominent main-surface warning with release/development switch.
+		count += Capture(outDir, "development-runtime", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: true,
+				"clio 8.1.0.83",
+				@"C:\Projects\clio\clio\bin\Debug\net10.0\clio.dll");
+		});
+
+		// 1c) RELEASE RUNTIME — calm, compact identity with the same selector discoverable.
+		count += Capture(outDir, "release-runtime", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"clio 8.1.0.84",
+				"clio");
+		});
+
+		// 1d) INVALID DEVELOPMENT TARGET — safe Release fallback with an actionable main-surface warning.
+		count += Capture(outDir, "invalid-development-runtime", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"Installed dotnet tool",
+				ClioIpcSettings.Default.Command,
+				"Development was selected, but its saved clio target is invalid. Open Settings to configure it.",
+				developmentSelected: true);
+		});
+
+		// 1e) CLIO UPDATE AVAILABLE - durable main-surface attention with an explicit update gesture.
+		count += Capture(outDir, "clio-update-available", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"clio 8.1.0.84",
+				ClioIpcSettings.Default.Command);
+			Vm(window).DesignShowClioUpdate("8.1.0.84", "8.1.0.85");
+		});
+
+		// 1f) CLIO UPDATE BLOCKED - real-world Claude-owned MCP process shape, design-only and non-destructive.
+		count += Capture(outDir, "clio-update-blocked", 1.0, window => {
+			RingViewModel vm = Vm(window);
+			vm.ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"clio 8.1.0.84",
+				ClioIpcSettings.Default.Command);
+			vm.DesignShowClioUpdate("8.1.0.84", "8.1.0.85");
+			vm.DesignShowClioUpdateBlockers(
+				@"C:\Users\k.krylov\.dotnet\tools\clio.exe",
+				new[] {
+					new ClioUpdateProcessViewModel(
+						20736,
+						"clio mcp-server",
+						@"C:\Users\k.krylov\.dotnet\tools\clio.exe",
+						"Started by Claude Code - claude.exe (PID 115220)"),
+					new ClioUpdateProcessViewModel(
+						64120,
+						"clio mcp-server",
+						@"C:\Users\k.krylov\.dotnet\tools\clio.exe",
+						"Started by Codex - codex.exe (PID 55104)")
+				});
+		});
 
 		// 2) FOCUSED — keyboard focus on an action node (strong accent ring).
 		count += CaptureState(outDir, "focused", (window) => {

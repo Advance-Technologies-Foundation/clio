@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using ClioRing.Diagnostics;
 using ClioRing.Ipc;
 using ClioRing.Models;
@@ -17,13 +19,23 @@ public static class Startup {
 	public static ServiceProvider BuildServiceProvider() {
 		var services = new ServiceCollection();
 
-		services.AddSingleton<IClioAdapter, ClioAdapter>();
 		services.AddSingleton<IActionCatalogLoader, ActionCatalogLoader>();
 		services.AddSingleton<IEnvStateStore, EnvStateStore>();
 		services.AddSingleton<IWindowPlacementStore, WindowPlacementStore>();
 		services.AddSingleton<IActionCatalogWatcher, ActionCatalogWatcher>();
 		services.AddSingleton<IEnvironmentSettingsWatcher, EnvironmentSettingsWatcher>();
 		services.AddSingleton<IClioSettingsStore, ClioSettingsStore>();
+		services.AddSingleton<IClioProcessGate, ClioProcessGate>();
+		services.AddSingleton<HttpClient>();
+		services.AddSingleton<IClioToolProcessRunner, ClioToolProcessRunner>();
+		services.AddSingleton<IClioToolProcessInspector, ClioToolProcessInspector>();
+		services.AddSingleton<IClioToolInstallation, ClioToolInstallation>();
+		services.AddSingleton<IClioUpdateStateStore, ClioUpdateStateStore>();
+		services.AddSingleton(TimeProvider.System);
+		services.AddSingleton<IClioToolUpdateService, ClioToolUpdateService>();
+		ResolvedClioRuntime clioRuntime = ResolveClioRuntime();
+		services.AddSingleton(clioRuntime);
+		services.AddSingleton<IClioAdapter, ClioAdapter>();
 
 		// Per-run deployment/uninstall RECEIPT (story 10, ADR D6): NDJSON of the same authoritative
 		// ClioStageEvent stream the pipeline UI renders, written to the active logs folder. Wired as a
@@ -34,7 +46,10 @@ public static class Startup {
 		// EXPERIMENTAL clio MCP-over-stdio client. Always registered but lazy: the child is not spawned
 		// until first use, and only the experiment-gated catalog view triggers that use. Off by default,
 		// so a normal launch never contacts clio over IPC.
-		services.AddSingleton<IClioIpcClient>(_ => new ClioIpcClient(ResolveClioIpcSettings(), StartupLog.Log));
+		services.AddSingleton<IClioIpcClient>(sp => new ClioIpcClient(clioRuntime.LaunchSettings,
+			StartupLog.Log, clioRuntime.Mode == ClioRuntimeMode.Release
+				? sp.GetRequiredService<IClioProcessGate>()
+				: new ClioProcessGate()));
 
 		services.AddTransient<RingViewModel>();
 		services.AddTransient<ClioIpcViewModel>();
@@ -63,13 +78,19 @@ public static class Startup {
 		AppSettingsReader.TryRead()?.Experiments?.ClioIpc == true;
 
 	/// <summary>
-	/// Resolves the clio MCP child launch configuration from <c>app-settings.json</c>. Precedence: a valid
-	/// <c>DevClioPath</c> dev-build override wins; then an explicit <c>ClioIpc</c> section; otherwise the
-	/// machine <see cref="ClioIpcSettings.Default"/>.
+	/// Resolves the clio MCP child launch configuration from <c>app-settings.json</c>. Release mode uses the
+	/// installed clio dotnet tool. Development mode uses a valid <c>DevClioPath</c>, then an explicit
+	/// <c>ClioIpc</c> target. Legacy settings infer Development when either target is present.
 	/// </summary>
 	public static ClioIpcSettings ResolveClioIpcSettings() {
+		return ResolveClioRuntime().LaunchSettings;
+	}
+
+	/// <summary>Resolves the immutable runtime decision used by both process launch and the main UI.</summary>
+	/// <returns>The active runtime mode and its exact launch settings.</returns>
+	public static ResolvedClioRuntime ResolveClioRuntime() {
 		AppSettings? settings = AppSettingsReader.TryRead();
-		return ResolveClioIpcSettings(settings?.DevClioPath, settings?.ClioIpc);
+		return ResolveClioRuntime(settings?.ClioRuntimeMode, settings?.DevClioPath, settings?.ClioIpc);
 	}
 
 	/// <summary>
@@ -81,17 +102,49 @@ public static class Startup {
 	/// <param name="ipc">The optional explicit <c>ClioIpc</c> section.</param>
 	/// <returns>The resolved launch configuration.</returns>
 	public static ClioIpcSettings ResolveClioIpcSettings(string? devClioPath, ClioIpcSettingsDto? ipc) {
-		if (DevClioLaunch.Validate(devClioPath).IsValid && !string.IsNullOrWhiteSpace(devClioPath)) {
-			return DevClioLaunch.Build(devClioPath);
+		return ResolveClioIpcSettings(runtimeMode: null, devClioPath, ipc);
+	}
+
+	/// <summary>Pure runtime-mode resolution used by startup and tests.</summary>
+	/// <param name="runtimeMode">Explicit <c>release</c>/<c>development</c> choice, or null for migration inference.</param>
+	/// <param name="devClioPath">The optional development clio build path.</param>
+	/// <param name="ipc">The optional explicit development child-process configuration.</param>
+	/// <returns>The selected child-process launch settings.</returns>
+	public static ClioIpcSettings ResolveClioIpcSettings(string? runtimeMode, string? devClioPath,
+		ClioIpcSettingsDto? ipc) {
+		return ResolveClioRuntime(runtimeMode, devClioPath, ipc).LaunchSettings;
+	}
+
+	/// <summary>Pure runtime decision used by startup and tests.</summary>
+	/// <param name="runtimeMode">Explicit release/development choice, or null for migration inference.</param>
+	/// <param name="devClioPath">Optional validated development clio path.</param>
+	/// <param name="ipc">Optional explicit development IPC target.</param>
+	/// <returns>The selected mode and exact launch settings.</returns>
+	public static ResolvedClioRuntime ResolveClioRuntime(string? runtimeMode, string? devClioPath,
+		ClioIpcSettingsDto? ipc) {
+		bool hasValidPath = DevClioLaunch.Validate(devClioPath).IsValid
+			&& !string.IsNullOrWhiteSpace(devClioPath);
+		bool hasExplicitIpc = ClioRuntimeConfiguration.IsValidExplicitIpc(ipc?.Command, ipc?.Args);
+		bool useDevelopment = string.Equals(runtimeMode, "development", System.StringComparison.OrdinalIgnoreCase)
+			|| (string.IsNullOrWhiteSpace(runtimeMode) && (hasValidPath || hasExplicitIpc));
+		if (!useDevelopment || string.Equals(runtimeMode, "release", System.StringComparison.OrdinalIgnoreCase)) {
+			return new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default);
 		}
 
-		if (ipc is null || string.IsNullOrWhiteSpace(ipc.Command) || ipc.Args is not { Length: > 0 }) {
-			return ClioIpcSettings.Default;
+		if (hasValidPath) {
+			return new ResolvedClioRuntime(ClioRuntimeMode.Development, DevClioLaunch.Build(devClioPath!));
 		}
-		return new ClioIpcSettings {
-			Command = ipc.Command,
-			Args = new List<string>(ipc.Args),
+
+		if (!hasExplicitIpc) {
+			return new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default,
+				ClioRuntimeMode.Development,
+				"Development was selected, but its saved clio target is invalid. Open Settings to configure it.");
+		}
+		var settings = new ClioIpcSettings {
+			Command = ipc!.Command!,
+			Args = new List<string>(ipc.Args!),
 			WorkingDirectory = string.IsNullOrWhiteSpace(ipc.WorkingDirectory) ? null : ipc.WorkingDirectory
 		};
+		return new ResolvedClioRuntime(ClioRuntimeMode.Development, settings);
 	}
 }

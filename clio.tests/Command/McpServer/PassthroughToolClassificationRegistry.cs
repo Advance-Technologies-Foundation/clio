@@ -169,15 +169,15 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). 158 tools:
-	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
-	/// 20 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit,
-	/// matched to CURRENT tool names — several PRD names are stale, see the inline notes below), and 123
-	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). Buckets: <see cref="PassthroughClassification.Routed"/>,
+	/// <see cref="PassthroughClassification.Guarded"/>, <see cref="PassthroughClassification.NotEnvironmentSensitive"/>
+	/// (PRD's literal out-of-scope audit, matched to CURRENT tool names — several PRD names are stale, see the
+	/// inline notes below), and <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change
+	/// required). Per-bucket counts live on the section-header comments below, next to the rows they count —
+	/// prose totals here rotted twice (150→160 tools between 2026-07-11 and 2026-07-16) and were dropped.
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
 		new Dictionary<string, PassthroughClassification>(System.StringComparer.Ordinal) {
-			// --- Routed (12): audited class c1 (7) + c2 (1) + matrix (4), fixed in Stories 3-14 ---
 			["list-apps"] = PassthroughClassification.Routed,
 			["get-app-info"] = PassthroughClassification.Routed,
 			["create-app"] = PassthroughClassification.Routed,
@@ -189,6 +189,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = PassthroughClassification.Routed,
 			["sync-pages"] = PassthroughClassification.Routed,
 			["get-component-info"] = PassthroughClassification.Routed,
+			["get-request-info"] = PassthroughClassification.Routed,
 			["build-theme"] = PassthroughClassification.Routed,
 
 			// --- Guarded (3): audited class c3, fail-fast under passthrough (Story 1) ---
@@ -220,7 +221,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (123): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (136): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -262,6 +263,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["dataforge-status"] = PassthroughClassification.NotApplicable,
 			["dataforge-update"] = PassthroughClassification.NotApplicable,
 			["delete-app"] = PassthroughClassification.NotApplicable,
+			["delete-entity-business-rules"] = PassthroughClassification.NotApplicable,
+			["delete-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-printable"] = PassthroughClassification.NotApplicable,
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
@@ -281,6 +284,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,
+			["set-entity-schema-properties"] = PassthroughClassification.NotApplicable,
 			["get-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["get-identity-assertion"] = PassthroughClassification.NotApplicable,
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
@@ -288,12 +292,14 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-printable"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
+			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
 			["install-application"] = PassthroughClassification.NotApplicable,
+			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,
@@ -316,6 +322,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["pkg-to-db"] = PassthroughClassification.NotApplicable,
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,
+			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
+			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["remove-package-dependency"] = PassthroughClassification.NotApplicable,
@@ -326,14 +334,20 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
+			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
+			["set-record-rights"] = PassthroughClassification.NotApplicable,
+			["set-user-theme"] = PassthroughClassification.NotApplicable,
+			["upload-image"] = PassthroughClassification.NotApplicable,
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-creatio"] = PassthroughClassification.NotApplicable,
 			["sync-schemas"] = PassthroughClassification.NotApplicable,
 			["unlock-for-hotfix"] = PassthroughClassification.NotApplicable,
 			["update-client-unit-schema"] = PassthroughClassification.NotApplicable,
+			["update-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["update-entity-schema"] = PassthroughClassification.NotApplicable,
+			["update-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["update-printable"] = PassthroughClassification.NotApplicable,
 			["update-schema"] = PassthroughClassification.NotApplicable,
 			["update-sql-schema"] = PassthroughClassification.NotApplicable,
@@ -384,6 +398,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = [Entry("version-probe")], // "write" intentionally absent — see type remarks
 			["sync-pages"] = [Entry("version-probe")],
 			["get-component-info"] = [Entry("outer")],
+			["get-request-info"] = [Entry("outer")],
 			["build-theme"] = [Entry("version")],
 
 			["link-from-repository-by-environment"] = [GuardedEntry("by-environment")],
@@ -557,6 +572,13 @@ internal static class PassthroughToolClassificationRegistry {
 			nameof(ComponentInfoToolTests.ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment)),
 		new("get-component-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(McpHttpNoRegressionE2ETests),
 			nameof(McpHttpNoRegressionE2ETests.Stdio_ShouldExposeTouchedTool_WhenPassthroughUnused)),
+
+		new("get-request-info", "outer", PassthroughScenario.HeaderOnly, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldNeverCallCommandResolver_WhenHeaderOnly)),
+		new("get-request-info", "outer", PassthroughScenario.MixedInput, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
+		new("get-request-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenEnvironmentNameProvided)),
 
 		// --- build-theme (version) ---
 		new("build-theme", "version", PassthroughScenario.HeaderOnly, typeof(BuildThemeToolTests),

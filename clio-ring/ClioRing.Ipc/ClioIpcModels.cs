@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 
 namespace ClioRing.Ipc;
 
@@ -18,16 +21,35 @@ public sealed record ClioIpcSettings {
 	public string? WorkingDirectory { get; init; }
 
 	/// <summary>
-	/// A conventional default for this machine: the framework-dependent clio dll driven by <c>dotnet</c>.
-	/// Used only when <c>app-settings.json</c> supplies no <c>ClioIpc</c> section. The Debug build is
-	/// preferred here because on this machine it is newer (8.1.0.77) and matches the documented
-	/// <c>get-tool-contract</c> compact-index contract, whereas the Release dll (8.1.0.64) predates it.
-	/// Override freely in app-settings.
+	/// The released clio dotnet tool installed in the current user's standard global-tool directory.
+	/// Using the absolute shim path prevents an unrelated executable earlier on <c>PATH</c> from being launched.
 	/// </summary>
 	public static ClioIpcSettings Default { get; } = new() {
-		Command = "dotnet",
-		Args = new[] { @"C:\Projects\clio\clio\bin\Debug\net10.0\clio.dll", "mcp-server" }
+		Command = ResolveReleaseToolPath(Environment.GetEnvironmentVariable("DOTNET_CLI_HOME"),
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),
+		Args = new[] { "mcp-server" }
 	};
+
+	/// <summary>
+	/// Resolves a trusted clio dotnet-tool shim from DOTNET_CLI_HOME or the normal user profile.
+	/// Custom tool paths remain explicit Development targets rather than being trusted implicitly from PATH.
+	/// </summary>
+	/// <param name="dotnetCliHome">Optional DOTNET_CLI_HOME value.</param>
+	/// <param name="userProfile">Current user profile directory.</param>
+	/// <returns>An absolute trusted shim path, or the standard user shim path before installation.</returns>
+	public static string ResolveReleaseToolPath(string? dotnetCliHome, string userProfile) {
+		string shimName = OperatingSystem.IsWindows() ? "clio.exe" : "clio";
+		IEnumerable<string> globalHomes = new[] { dotnetCliHome, userProfile }
+			.Where(home => !string.IsNullOrWhiteSpace(home))
+			.Select(home => Path.Combine(home!, ".dotnet", "tools"));
+		foreach (string directory in globalHomes.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			string candidate = Path.GetFullPath(Path.Combine(directory, shimName));
+			if (File.Exists(candidate) && Directory.Exists(Path.Combine(directory, ".store", "clio"))) {
+				return candidate;
+			}
+		}
+		return Path.GetFullPath(Path.Combine(userProfile, ".dotnet", "tools", shimName));
+	}
 }
 
 /// <summary>

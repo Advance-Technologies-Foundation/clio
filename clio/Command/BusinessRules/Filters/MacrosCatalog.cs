@@ -78,4 +78,18 @@ internal static class MacrosCatalog {
 		requiresArgument = false;
 		return false;
 	}
+
+	internal static bool TryResolveName(int macrosTypeValue, out string name, out bool requiresArgument) {
+		foreach (MacrosInfo info in ByName.Values) {
+			if ((int)info.Type == macrosTypeValue) {
+				name = info.Type.ToString();
+				requiresArgument = info.RequiresArgument;
+				return true;
+			}
+		}
+
+		name = string.Empty;
+		requiresArgument = false;
+		return false;
+	}
 }

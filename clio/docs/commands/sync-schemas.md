@@ -6,6 +6,14 @@ compared to calling each operation individually.
 
 > **MCP-only tool** — available through the clio MCP server, not as a standalone CLI command.
 
+## Progress
+
+`sync-schemas` is long-running and streams `notifications/progress` while it works: a per-operation
+stage marker (`"<i>/<n>: <op> <schema>"`) is pushed before each operation (and before its seed step),
+plus a fixed-cadence keep-alive beat (default 15 s, overridable via
+`CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS`). A progress notification is **not** a timeout — await
+completion and do not retry or fall back on a perceived client timeout.
+
 ## When to Use
 
 Use `sync-schemas` instead of sequential calls to `create-lookup`, `create-data-binding-db`,

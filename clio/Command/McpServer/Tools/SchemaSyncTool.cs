@@ -5,9 +5,11 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.DataForge;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -37,15 +39,43 @@ public sealed class SchemaSyncTool(
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
+		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones. " +
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
-		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch.")]
+		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch. " +
+		"Long-running: streams notifications/progress (a per-operation stage marker before each op) while " +
+		"working — await completion and do not retry on a perceived timeout.")]
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
-		[Required] SchemaSyncArgs args) {
+		[Required] SchemaSyncArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
+		// Heartbeat-only overload (no RunWithProgressAndDeadlineAsync): sync-schemas returns per-operation
+		// results and has no single "in-progress, poll" envelope. It executes stop-on-first-failure under
+		// McpToolExecutionLock and each operation is individually bounded, so the deadline/background-
+		// continuation contract used by create-app-section does not map cleanly here.
+		return await McpProgressHeartbeat.RunWithProgressAsync(
+			server,
+			requestContext?.Params?.ProgressToken,
+			ToolName,
+			reportStage => ExecuteBatch(args, reportStage, cancellationToken),
+			cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Runs the batch synchronously, pushing a stage marker through <paramref name="reportStage"/> before
+	/// each operation (and its seed step) so a long publish sequence shows per-operation progress.
+	/// </summary>
+	internal SchemaSyncResponse ExecuteBatch(SchemaSyncArgs args, Action<string> reportStage,
+		CancellationToken cancellationToken = default) {
+		// Materialize the operations once so the enrichment collectors and the execution loop share a single
+		// enumeration pass (args.Operations may be a lazy IEnumerable).
+		IReadOnlyList<SchemaSyncOperation> operations =
+			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
 		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
 		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
 		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
@@ -56,8 +86,8 @@ public sealed class SchemaSyncTool(
 			try {
 				dataForge = enrichmentService.Enrich(
 					args.EnvironmentName,
-					CollectCandidateTerms(args),
-					CollectLookupHints(args));
+					CollectCandidateTerms(operations),
+					CollectLookupHints(operations));
 			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
 				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here
@@ -76,6 +106,7 @@ public sealed class SchemaSyncTool(
 					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 			}
 		}
+		int total = operations.Count;
 		var results = new List<SchemaSyncOperationResult>();
 		// FR-05: serialize on the per-tenant lock keyed by the environment the batch's schema commands
 		// resolve under, so different tenants run concurrently instead of behind one global lock.
@@ -85,18 +116,22 @@ public sealed class SchemaSyncTool(
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
-				foreach ((SchemaSyncOperation op, int index) in args.Operations.Select((operation, operationIndex) => (operation, operationIndex))) {
+				for (int index = 0; index < total; index++) {
+					cancellationToken.ThrowIfCancellationRequested();
+					SchemaSyncOperation op = operations[index];
 					logger.ClearMessages();
 					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
 						results.Add(seedValidationFailure);
 						break;
 					}
+					reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
 					SchemaSyncOperationResult result = ExecuteOperation(op, args, index, tenantKey);
 					results.Add(result);
 					if (!result.Success) {
 						break;
 					}
 					if (op.SeedRows?.Any() == true) {
+						reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
 						logger.ClearMessages();
 						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args, tenantKey);
 						results.Add(seedResult);
@@ -118,11 +153,11 @@ public sealed class SchemaSyncTool(
 		};
 	}
 
-	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncArgs args) {
-		return args.Operations
+	private static IReadOnlyList<string> CollectCandidateTerms(IReadOnlyList<SchemaSyncOperation> operations) {
+		return operations
 			.Where(op => !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
-			.Concat(args.Operations
+			.Concat(operations
 				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
 				.Where(title => !string.IsNullOrWhiteSpace(title))
 				.Select(title => title.Trim()))
@@ -130,12 +165,12 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncArgs args) {
-		return args.Operations
+	private static IReadOnlyList<string> CollectLookupHints(IReadOnlyList<SchemaSyncOperation> operations) {
+		return operations
 			.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal)
 				&& !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
-			.Concat(args.Operations
+			.Concat(operations
 				.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal))
 				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
 				.Where(title => !string.IsNullOrWhiteSpace(title))

@@ -234,3 +234,4 @@ These files are used on local dev environment only
 .mcp.json
 .serena
 .clio-pages/
+graphify-out

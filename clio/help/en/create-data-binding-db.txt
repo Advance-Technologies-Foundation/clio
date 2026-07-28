@@ -21,6 +21,10 @@ BEHAVIOR:
   SaveSchema metadata is projected to the primary key plus the columns referenced by
   currently bound or requested rows, so unrelated runtime-only columns do not block
   Account-like schemas. Explicitly requested unsupported runtime columns still fail.
+  A requested row that already exists in the table is adopted into the binding instead of
+  re-inserted - matched by Name when the schema has a Name column, otherwise by its Id. This
+  lets you bind an existing keyed row (e.g. a SysSchemaAdminUnitRight grant) by passing its Id
+  without creating a duplicate.
   After remote mutation, read back from Creatio instead of treating the request payload
   or install log as proof.
   To sync the result to a local workspace, use restore-workspace separately.

@@ -8,47 +8,11 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-/// <summary>
-/// MCP tool that lists MS Word printables (reports), optionally scoped to one entity.
-/// </summary>
-[McpServerToolType]
-public sealed class PrintableListTool(IToolCommandResolver commandResolver) {
-
-	internal const string ToolName = "list-printables";
-
-	/// <summary>Lists MS Word printables configured in the environment.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description(
-		"List MS Word printables (reports) from SysModuleReport. " +
-		"Optionally narrow to a single entity by entity-schema-id (GUID) or entity-schema-name. " +
-		"Returns Id, Caption, FileName, ShowInSection, ShowInCard, ConvertInPDF and the bound entity.")]
-	public ODataReadResponse List(
-		[Description("Parameters: environment-name (required); entity-schema-name, entity-schema-id, top (optional).")]
-		[Required]
-		PrintableListArgs args) {
-		try {
-			if (!string.IsNullOrWhiteSpace(args.EntitySchemaId) && !ODataKeyFormatter.IsGuid(args.EntitySchemaId.Trim())) {
-				return ODataReadResponse.Failure("entity-schema-id must be a GUID when provided.");
-			}
-
-			var (client, urlBuilder) = ODataKeyedWrite.ResolveClients(commandResolver, args.EnvironmentName);
-
-			string filter = PrintableSupport.BuildMsWordFilter(args.EntitySchemaId, args.EntitySchemaName);
-			int top = args.Top is > 0 and <= 100 ? args.Top.Value : 25;
-			var parts = new List<string> {
-				$"$filter={Uri.EscapeDataString(filter)}",
-				$"$select={Uri.EscapeDataString("Id,Caption,FileName,ShowInSection,ShowInCard,ConvertInPDF,SysEntitySchemaId")}",
-				$"$expand={Uri.EscapeDataString("Type($select=Name),SysEntitySchema($select=Name)")}",
-				$"$top={top}"
-			};
-			string path = $"odata/{PrintableSupport.EntityName}?{string.Join("&", parts)}";
-			string responseJson = client.ExecuteGetRequest(urlBuilder.Build(path), 30_000);
-			return PrintableSupport.ParseRead(responseJson);
-		} catch (Exception ex) {
-			return ODataReadResponse.Failure(ex.Message);
-		}
-	}
-}
+// NOTE: there is deliberately no `list-printables` tool here. That probe already ships from
+// ENG-93187 (`ListPrintablesTool` + `ListPrintablesCommand`) as the environment value-source for
+// `crt.PrintablesRequest.templateId`, and it is the richer implementation (per-tenant execution
+// lock, redacted transport errors, typed `ListPrintablesResponse`). Listing stays there; this file
+// owns only the single-record CRUD surface that reads/writes SysModuleReport by GUID.
 
 /// <summary>
 /// MCP tool that returns a single MS Word printable with its bound entity, section and type.

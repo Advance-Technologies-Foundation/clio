@@ -146,3 +146,38 @@ and wraps its backend service call with `McpProgressHeartbeat`.
 - Heartbeat send path mirrors `StartTool.OnStatusChanged` (`server.SendNotificationAsync("notifications/progress", …)`),
   with failures swallowed like `McpLogNotifier` so keep-alive never breaks tool execution.
 - Tests live in `clio.tests/Command/McpServer/`; E2E extends `clio.mcp.e2e/Support/Mcp/McpServerSession.cs`.
+
+---
+
+## Addendum: ENG-93087 — tool-level stage markers
+
+ENG-91274 (above) shipped a **content-free keep-alive beat**. ENG-93087 extends the same
+`McpProgressHeartbeat` primitive with **semantic stage markers** and applies progress to
+`sync-schemas` (which previously had none).
+
+- **Why not the `BaseTool` `StatusChanged` path (the original scope's wording).** `StatusChanged`
+  is a bespoke event on only `StartCommand`/`StopCommand`; none of `create-app`,
+  `create-app-section`, or `sync-schemas` runs through a `BaseTool` or a command that raises it
+  (the first two go through services, the third is a batch loop over commands). So the markers are
+  emitted **at the tool level** through the same `notifications/progress` send path, not via
+  `configureCommand`.
+- **How.** `RunWithProgressAsync` / `RunWithProgressAndDeadlineAsync` gained reporter-aware overloads
+  whose `work` receives an `Action<string> reportStage`. A single `ProgressChannel` serializes both
+  the timer beats and caller-pushed stage markers through one monotonically-increasing `Progress`
+  counter (no regression, no interleaved partial write). No-op when the client sent no progress token.
+- **What each tool reports.** `sync-schemas` pushes a per-operation marker (`"<i>/<n>: <op> <schema>"`)
+  before each operation and its seed step (purely tool-level, no command change). `create-app` and
+  `create-app-section` push coarse markers ("enriching…", "creating application", "creating section")
+  around their service calls. Finer sub-stage markers are also delivered: a `reportStage` callback is
+  threaded into `IApplicationCreateService.CreateApplication` and
+  `IApplicationSectionCreateService.CreateSection`, which invoke it at internal stage boundaries
+  (e.g. "enriching application model", "creating application package", "loading application metadata",
+  "loading created section").
+- **Why `reportStage` and not `IStageEventSource`.** The `reportStage` callback is a deliberate choice
+  over the `IStageEventSource`/`ClioStageEvent`/`StageEventProgressForwarder` pattern used by
+  deploy/uninstall: these are injected singleton services (not per-call-resolved commands), and
+  `IStageEventSource` provides no timer keep-alive, response-deadline, or background-continuation
+  semantics that create-app-section needs.
+- **Tests.** `McpProgressHeartbeatTests` covers the reporter overloads, `ProgressChannel` monotonic
+  sequencing, and the reporter no-op path; `SchemaSyncToolE2ETests` asserts a per-operation stage
+  marker reaches the client via the `IProgress` overload.

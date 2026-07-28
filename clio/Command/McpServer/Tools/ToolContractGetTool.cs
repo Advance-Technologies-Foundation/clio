@@ -484,6 +484,13 @@ internal static class ToolContractCatalog {
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
+	private const string RuleNamesFieldName = "rule-names";
+	private const string ExampleRuleName = "BusinessRule_1c48625";
+	private const string ExampleSecondRuleName = "BusinessRule_7a91b02";
+	private const string ExampleConditionUId = "b8f788e2-3530-41cc-8a0c-6a256f179fa2";
+	private const string ExampleLeftExpressionUId = "e277d35c-4c0f-4bd4-9e9e-58b0d5a1c101";
+	private const string ExampleRightExpressionUId = "81b8b8ea-6ad4-4f0e-9d6b-2f70b9a2c202";
+	private const string ExampleActionUId = "c334b501-8a53-46fa-9b7e-7d41c3d4c303";
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
@@ -549,11 +556,18 @@ internal static class ToolContractCatalog {
 			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
+			[RequestInfoTool.ToolName] = BuildRequestInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
 			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
+			[ReadEntityBusinessRuleTool.ToolName] = BuildEntityBusinessRuleRead(),
+			[ReadPageBusinessRuleTool.ToolName] = BuildPageBusinessRuleRead(),
+			[UpdateEntityBusinessRuleTool.ToolName] = BuildEntityBusinessRuleUpdate(),
+			[UpdatePageBusinessRuleTool.ToolName] = BuildPageBusinessRuleUpdate(),
+			[DeleteEntityBusinessRuleTool.ToolName] = BuildEntityBusinessRuleDelete(),
+			[DeletePageBusinessRuleTool.ToolName] = BuildPageBusinessRuleDelete(),
 			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix(),
 			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio(),
 			[CreateUiProjectTool.CreateUiProjectToolName] = BuildNewUiProject(),
@@ -584,6 +598,12 @@ internal static class ToolContractCatalog {
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 		CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
+		ReadEntityBusinessRuleTool.ToolName,
+		ReadPageBusinessRuleTool.ToolName,
+		UpdateEntityBusinessRuleTool.ToolName,
+		UpdatePageBusinessRuleTool.ToolName,
+		DeleteEntityBusinessRuleTool.ToolName,
+		DeletePageBusinessRuleTool.ToolName,
 		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -613,6 +633,7 @@ internal static class ToolContractCatalog {
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
+		RequestInfoTool.ToolName,
 		PageUpdateTool.ToolName,
 		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
@@ -688,9 +709,13 @@ internal static class ToolContractCatalog {
 				results.Add(registryContract);
 				continue;
 			}
-			// Last resort: reflection over the options type. Only reached when the registry has no entry
-			// (e.g. registry unavailable), and may be lossy for some tools.
-			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
+			// Last resort: reflection over the options type. The toggle-blind reflection catalog is
+			// consulted ONLY when no invoker registry is available (degraded path): with a live registry
+			// every feature-enabled tool already resolved above, so the only names reflection would add
+			// are feature-gated-OFF tools — and a disabled tool must stay invisible on every MCP surface,
+			// the named-contract lookup included.
+			if (toolInvokerRegistry is null
+				&& McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
 				results.Add(schemaContract);
 				continue;
 			}
@@ -699,14 +724,24 @@ internal static class ToolContractCatalog {
 				Error: new ToolContractError(
 					"tool-not-found",
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
-					BuildSuggestions(normalizedName)));
+					BuildSuggestions(normalizedName, toolInvokerRegistry)));
 		}
 		return new ToolContractGetResponse(true, results);
 	}
 
-	private static IReadOnlyList<string> BuildSuggestions(string requestedName) {
+	/// <summary>
+	/// Builds the "did you mean" shortlist for an unknown tool name. With a live invoker registry the
+	/// candidate pool is the curated contracts plus the registry's feature-enabled tool names; the
+	/// toggle-blind reflection catalog pads the pool only on the degraded no-registry path, so a
+	/// feature-gated-OFF tool is never suggested while it is hidden.
+	/// </summary>
+	private static IReadOnlyList<string> BuildSuggestions(
+		string requestedName,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
+			?? McpToolSchemaCatalog.RegisteredToolNames;
 		return Contracts.Keys
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Concat(derivedNames)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
@@ -737,16 +772,20 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Produces the deterministic, deduplicated (case-insensitive) union of every invokable MCP tool name:
-	/// curated canonical tools, registry-invokable hidden tools, and reflection-discovered tools. Ordered
-	/// ordinally by name so the index prefix stays stable for prompt caching. <c>get-tool-contract</c>
-	/// itself is excluded so the discovery tool does not index itself (matching the curated-only behavior).
+	/// curated canonical tools plus the invoker registry's feature-enabled tool set. The toggle-blind
+	/// reflection catalog contributes names only on the degraded no-registry path — with a live registry
+	/// every feature-enabled tool is already present, so the reflection union would add exactly the
+	/// feature-gated-OFF tools, and a disabled tool must stay invisible on every MCP surface (the
+	/// discovery index included). Ordered ordinally by name so the index prefix stays stable for prompt
+	/// caching. <c>get-tool-contract</c> itself is excluded so the discovery tool does not index itself
+	/// (matching the curated-only behavior).
 	/// </summary>
-	/// <param name="toolInvokerRegistry">Optional registry contributing the hidden long-tail tool names.</param>
+	/// <param name="toolInvokerRegistry">Optional registry contributing the feature-enabled long-tail tool names.</param>
 	private static IEnumerable<string> BuildIndexToolNames(IMcpToolInvokerRegistry? toolInvokerRegistry) {
-		IEnumerable<string> registryNames = toolInvokerRegistry?.ToolNames ?? [];
+		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
+			?? McpToolSchemaCatalog.RegisteredToolNames;
 		return CanonicalToolNames
-			.Concat(registryNames)
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Concat(derivedNames)
 			.Where(name => !string.IsNullOrWhiteSpace(name)
 				&& !string.Equals(name, ToolContractGetTool.ToolName, StringComparison.OrdinalIgnoreCase))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -2177,28 +2216,11 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RulesFieldName, ArrayType, "Array of one or more entity business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RulesFieldName, ArrayType, "Array of one or more entity business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example LockEquipmentAfterSubmission; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
-					new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
-						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
-					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rules[*].actions[*].items[*]",
-						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
-					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rules[*].actions[*].items[*].value.value",
-						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, ISO 8601 time strings with timezone suffix for Time targets, and GUID string constants for Lookup targets."),
-					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rules[*].actions[*].items[*].value.expression",
-						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
-					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rules[*].actions[*]",
-						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rules[*].actions[*].target",
-						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
-					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rules[*].actions[*]",
-						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rules[*].actions[*].filter",
-						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For a FIXED clock time or calendar part (NOT a relative period) use datePart on a Date/DateTime/Time column (mutually exclusive with valueMacros): Day/Week/Month/Year/Weekday/Hour take an integer value, HourMinute (alias Time) takes an 'HH:mm[:ss]' string — e.g. a fixed time of day → { columnPath: '<DateColumn>', datePart: 'HourMinute', comparisonType: 'EQUAL', value: '<HH:mm:ss>' }; a fixed calendar year → { columnPath: '<DateColumn>', datePart: 'Year', comparisonType: 'EQUAL', value: <YYYY> }. Exact time-of-day IS expressible via datePart — do not report it as unsupported. For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
-					new ToolContractValidator("lookup-record", "missing-lookup-record", "rules[*].actions[*].items[*].value.value",
-						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rules; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
+					.. EntityBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(),
 			CommonErrorContract,
@@ -2231,6 +2253,10 @@ internal static class ToolContractCatalog {
 				SysValueBusinessRuleExample("Create a readonly rule when due date is on or before the current date (SysValue)",
 					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Lock owner when due on or before today",
 					"DueDate", "less-than-or-equal", "CurrentDate",
+					MakeReadOnlyActionTypeName, [ExampleOwnerAttributeName]),
+				SysSettingBusinessRuleExample("Create a readonly rule when a Boolean system setting is enabled (SysSetting)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Lock owner when equipment is locked after submission",
+					"LockEquipmentAfterSubmission", ExampleEqualConditionComparison, true,
 					MakeReadOnlyActionTypeName, [ExampleOwnerAttributeName]),
 				RoleGateBusinessRuleExample("Require a field only for users in a role (CurrentUserRoles CONTAIN role)",
 					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Require status for administrators",
@@ -2451,18 +2477,11 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
-					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
-						Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
-					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
-						Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
-					new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
-						Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
-					new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
-						Context: "Use any named element from recursive get-page bundle.viewConfig.")
+					.. PageBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(),
 			CommonErrorContract,
@@ -2526,6 +2545,10 @@ internal static class ToolContractCatalog {
 					PageSchemaNameFieldName, ExampleOrderPageSchemaName, "Hide reminder when due on or before today",
 					"PDS_UsrDueDate", "less-than-or-equal", "CurrentDate",
 					"hide-element", ["ReminderLabel"]),
+				SysSettingBusinessRuleExample("Hide a control when a Boolean system setting is enabled (SysSetting)",
+					PageSchemaNameFieldName, ExampleOrderPageSchemaName, "Hide shipping address when equipment delivery is disabled",
+					"DisableEquipmentDelivery", ExampleEqualConditionComparison, true,
+					"hide-element", ["ShippingAddress"]),
 				RoleGateBusinessRuleExample("Show a control only for users in a role (CurrentUserRoles CONTAIN role)",
 					PageSchemaNameFieldName, "Cases_FormPage", "Show Resolved for administrators",
 					"CurrentUserRoles", "contain", ExampleLookupValueId,
@@ -2573,6 +2596,474 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+
+	private static ToolContractValidator[] EntityBusinessRuleActionValidators() =>
+		[
+			new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
+				Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
+			new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rules[*].actions[*].items[*]",
+				Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
+			new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rules[*].actions[*].items[*].value.value",
+				Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, ISO 8601 time strings with timezone suffix for Time targets, and GUID string constants for Lookup targets."),
+			new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rules[*].actions[*].items[*].value.expression",
+				Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
+			new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rules[*].actions[*]",
+				Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
+			new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rules[*].actions[*].target",
+				Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
+			new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rules[*].actions[*]",
+				Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
+			new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rules[*].actions[*].filter",
+				Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For a FIXED clock time or calendar part (NOT a relative period) use datePart on a Date/DateTime/Time column (mutually exclusive with valueMacros): Day/Week/Month/Year/Weekday/Hour take an integer value, HourMinute (alias Time) takes an 'HH:mm[:ss]' string — e.g. a fixed time of day → { columnPath: '<DateColumn>', datePart: 'HourMinute', comparisonType: 'EQUAL', value: '<HH:mm:ss>' }; a fixed calendar year → { columnPath: '<DateColumn>', datePart: 'Year', comparisonType: 'EQUAL', value: <YYYY> }. Exact time-of-day IS expressible via datePart — do not report it as unsupported. For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
+			new ToolContractValidator("lookup-record", "missing-lookup-record", "rules[*].actions[*].items[*].value.value",
+				Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rules; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
+		];
+
+	private static ToolContractValidator[] PageBusinessRuleActionValidators() =>
+		[
+			new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
+				Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
+			new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
+				Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
+			new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
+				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
+			new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
+				Context: "Use any named element from recursive get-page bundle.viewConfig.")
+		];
+
+	private static ToolContractValidator[] BusinessRuleUpdateValidators(string readToolName) =>
+		[
+			new ToolContractValidator("required-field", "missing-rule-name", "rules[*].name",
+				Context: $"Every rule REQUIRES name — the internal rule name returned by {readToolName} (not the caption). It is the case-insensitive match key.", Required: true),
+			new ToolContractValidator("guid", "invalid-block-uid",
+				Fields: [
+					"rules[*].condition.conditions[*].uId",
+					"rules[*].condition.conditions[*].leftExpression.uId",
+					"rules[*].condition.conditions[*].rightExpression.uId",
+					"rules[*].actions[*].uId",
+					"rules[*].actions[*].items[*].uId"
+				],
+				Context: $"Block uIds are optional GUIDs. Pass the values returned by {readToolName} to preserve unchanged-block identity so the platform stores a short diff; omitted blocks get fresh ids."),
+			new ToolContractValidator("name-match", "unknown-rule-name", "rules[*].name",
+				Context: "The name must match an existing rule (case-insensitive). An unknown name fails only that rule in the per-rule results; the remaining rules still save. Update is not an upsert.")
+		];
+
+	private static ToolOutputContract BusinessRulesReadOutput(string rulesNotes = "") {
+		return new ToolOutputContract(
+			"business-rules-read-result",
+			null,
+			[
+				"error != null"
+			],
+			[
+				Field(CountFieldName, NumberType, "Number of rules returned."),
+				Field(RulesFieldName, ArrayType, "Persisted rules in persisted order, each in the create/update contract shape: caption, condition, actions, name (the update/delete match key), enabled, and block uIds. A rule the contract cannot represent fails the whole read with an error naming the rule." + rulesNotes),
+				Field(ErrorFieldName, StringType, "Request-level error that prevented the read. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope rather than this shape.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildEntityBusinessRuleRead() {
+		return new ToolContractDefinition(
+			ReadEntityBusinessRuleTool.ToolName,
+			"Reads ALL entity-level Freedom UI business rules persisted for an entity schema (full package hierarchy, so inherited rules are included). Call this BEFORE update-entity-business-rules or delete-entity-business-rules to obtain exact rule names and block uIds.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, PackageNameDescription),
+					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name.")
+				]),
+			BusinessRulesReadOutput(
+				" Autogenerated apply-filter child rules are folded into the parent action's clearValue/populateValue flags and are never listed as separate rules. apply-static-filter rules read back with the same friendly rule.actions[*].filter shape used to create them (the persisted ESQ envelope is decompiled). Formula set-values return the persisted expression text best-effort."),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read all business rules persisted for an entity schema", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[EntitySchemaNameFieldName] = ExampleTaskSchemaName
+				})
+			],
+			Flow(
+				[
+					ReadEntityBusinessRuleTool.ToolName,
+					ToolContractGetTool.ToolName,
+					UpdateEntityBusinessRuleTool.ToolName
+				],
+				"Read the persisted rules to obtain exact rule names and block uIds, then read the update contract before modifying. Route to delete-entity-business-rules instead of the update tool when rules must be removed."),
+			[],
+			[],
+			null,
+			[
+				"Call read-entity-business-rules before updating or deleting entity rules to obtain exact rule names and block uIds."
+			]);
+	}
+
+	private static ToolContractDefinition BuildPageBusinessRuleRead() {
+		return new ToolContractDefinition(
+			ReadPageBusinessRuleTool.ToolName,
+			"Reads ALL page-level Freedom UI business rules persisted for a page schema (full package hierarchy, so inherited rules are included). Call this BEFORE update-page-business-rules or delete-page-business-rules to obtain exact rule names and block uIds.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, PackageNameDescription),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name.")
+				]),
+			BusinessRulesReadOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read all business rules persisted for a page schema", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[PageSchemaNameFieldName] = ExampleOrderPageSchemaName
+				})
+			],
+			Flow(
+				[
+					ReadPageBusinessRuleTool.ToolName,
+					ToolContractGetTool.ToolName,
+					UpdatePageBusinessRuleTool.ToolName
+				],
+				"Read the persisted rules to obtain exact rule names and block uIds, then read the update contract before modifying. Route to delete-page-business-rules instead of the update tool when rules must be removed."),
+			[],
+			[],
+			null,
+			[
+				"Call read-page-business-rules before updating or deleting page rules to obtain exact rule names and block uIds."
+			]);
+	}
+
+	private static ToolContractDefinition BuildEntityBusinessRuleUpdate() {
+		return new ToolContractDefinition(
+			UpdateEntityBusinessRuleTool.ToolName,
+			"Updates entity-level Freedom UI business rules matched by 'name' in ONE batch (single SaveSchema and one configuration rebuild). Full replacement, no partial patch. Rule items use the same contract as create-entity-business-rules plus name/enabled/block uIds; read the rules first with read-entity-business-rules.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RulesFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name where the layered rule diff is stored."),
+					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
+					Field(RulesFieldName, ArrayType, "Full replacement definitions for existing rules. Each item uses the same contract as create-entity-business-rules plus: name (REQUIRED — case-insensitive match key from read), enabled (optional; omitted preserves the existing value), and optional block uIds on conditions/expressions/actions/set-value items — pass the values from read to preserve unchanged-block identity so the platform stores a short diff; omitted blocks get fresh ids. An unknown name fails only that rule; the rest of the batch still saves.")
+				],
+				Validators: [
+					.. BusinessRuleUpdateValidators(ReadEntityBusinessRuleTool.ToolName),
+					.. BusinessRuleConditionValidators(),
+					.. EntityBusinessRuleActionValidators()
+				]),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Change a rule's constant value, passing the name and block uIds returned by read", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[EntitySchemaNameFieldName] = ExampleTaskSchemaName,
+					[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+						["name"] = ExampleRuleName,
+						["caption"] = "Lock name for the new owner",
+						[ConditionFieldName] = new Dictionary<string, object?> {
+							[LogicalOperationFieldName] = "AND",
+							[ConditionsFieldName] = new object[] {
+								new Dictionary<string, object?> {
+									["uId"] = ExampleConditionUId,
+									["leftExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleLeftExpressionUId,
+										["type"] = "AttributeValue",
+										["path"] = ExampleOwnerAttributeName
+									},
+									["comparisonType"] = ExampleEqualConditionComparison,
+									["rightExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleRightExpressionUId,
+										["type"] = "Const",
+										[ValueFieldName] = ExampleLookupValueId
+									}
+								}
+							}
+						},
+						[ActionsFieldName] = new object[] {
+							new Dictionary<string, object?> {
+								["uId"] = ExampleActionUId,
+								["type"] = MakeReadOnlyActionTypeName,
+								["items"] = new object[] { "Name" }
+							}
+						}
+					} }
+				}),
+				Example("Disable a rule without changing its behavior (same definition, enabled false)", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[EntitySchemaNameFieldName] = ExampleTaskSchemaName,
+					[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+						["name"] = ExampleRuleName,
+						["enabled"] = false,
+						["caption"] = "Lock planned date when name is filled",
+						[ConditionFieldName] = new Dictionary<string, object?> {
+							[LogicalOperationFieldName] = "AND",
+							[ConditionsFieldName] = new object[] {
+								new Dictionary<string, object?> {
+									["uId"] = ExampleConditionUId,
+									["leftExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleLeftExpressionUId,
+										["type"] = "AttributeValue",
+										["path"] = "Name"
+									},
+									["comparisonType"] = "is-filled-in"
+								}
+							}
+						},
+						[ActionsFieldName] = new object[] {
+							new Dictionary<string, object?> {
+								["uId"] = ExampleActionUId,
+								["type"] = MakeReadOnlyActionTypeName,
+								["items"] = new object[] { "PlannedDate" }
+							}
+						}
+					} }
+				}),
+				Example("Replace a set-values rule's assignments (full replacement of the matched rule)", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[EntitySchemaNameFieldName] = ExampleTaskSchemaName,
+					[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+						["name"] = ExampleSecondRuleName,
+						["caption"] = "Populate defaults when name is filled",
+						[ConditionFieldName] = new Dictionary<string, object?> {
+							[LogicalOperationFieldName] = "AND",
+							[ConditionsFieldName] = new object[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "Name"
+									},
+									["comparisonType"] = "is-filled-in"
+								}
+							}
+						},
+						[ActionsFieldName] = new object[] {
+							new Dictionary<string, object?> {
+								["uId"] = ExampleActionUId,
+								["type"] = "set-values",
+								["items"] = new object[] {
+									BusinessRuleSetValueItem("UsrScore", 100)
+								}
+							}
+						}
+					} }
+				})
+			],
+			Flow(
+				[
+					ReadEntityBusinessRuleTool.ToolName,
+					ToolContractGetTool.ToolName,
+					UpdateEntityBusinessRuleTool.ToolName
+				],
+				"Read the persisted rules first to obtain exact names and block uIds, read this contract, then send full replacement definitions. Successful updates write add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+			[],
+			[],
+			null,
+			[
+				"Call read-entity-business-rules first and copy each rule's name (and the block uIds of unchanged blocks) into the replacement definition.",
+				"Call get-guidance with name business-rules and get-tool-contract for update-entity-business-rules before building the payload.",
+				"Send the FULL replacement definition for every rule — update replaces the matched rule, it does not patch fields."
+			]);
+	}
+
+	private static ToolContractDefinition BuildPageBusinessRuleUpdate() {
+		return new ToolContractDefinition(
+			UpdatePageBusinessRuleTool.ToolName,
+			"Updates page-level Freedom UI business rules matched by 'name' in ONE batch (single SaveSchema and one configuration rebuild). Full replacement, no partial patch. Rule items use the same contract as create-page-business-rules plus name/enabled/block uIds; read the rules first with read-page-business-rules.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name where the layered rule diff is stored."),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(RulesFieldName, ArrayType, "Full replacement definitions for existing rules. Each item uses the same contract as create-page-business-rules plus: name (REQUIRED — case-insensitive match key from read), enabled (optional; omitted preserves the existing value), and optional block uIds on conditions/expressions/actions — pass the values from read to preserve unchanged-block identity so the platform stores a short diff; omitted blocks get fresh ids. An unknown name fails only that rule; the rest of the batch still saves.")
+				],
+				Validators: [
+					.. BusinessRuleUpdateValidators(ReadPageBusinessRuleTool.ToolName),
+					.. BusinessRuleConditionValidators(),
+					.. PageBusinessRuleActionValidators()
+				]),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Change a rule's constant threshold, passing the name and block uIds returned by read", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
+					[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+						["name"] = ExampleRuleName,
+						["caption"] = "Make amount read-only over threshold",
+						[ConditionFieldName] = new Dictionary<string, object?> {
+							[LogicalOperationFieldName] = "AND",
+							[ConditionsFieldName] = new object[] {
+								new Dictionary<string, object?> {
+									["uId"] = ExampleConditionUId,
+									["leftExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleLeftExpressionUId,
+										["type"] = "AttributeValue",
+										["path"] = "PDS_UsrAmount"
+									},
+									["comparisonType"] = "greater-than",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleRightExpressionUId,
+										["type"] = "Const",
+										[ValueFieldName] = 200000
+									}
+								}
+							}
+						},
+						[ActionsFieldName] = new object[] {
+							new Dictionary<string, object?> {
+								["uId"] = ExampleActionUId,
+								["type"] = MakeReadOnlyActionTypeName,
+								["items"] = new object[] { "AmountInput" }
+							}
+						}
+					} }
+				}),
+				Example("Disable a rule without changing its behavior (same definition, enabled false)", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
+					[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+						["name"] = ExampleRuleName,
+						["enabled"] = false,
+						["caption"] = "Hide warning when flag is false",
+						[ConditionFieldName] = new Dictionary<string, object?> {
+							[LogicalOperationFieldName] = "AND",
+							[ConditionsFieldName] = new object[] {
+								new Dictionary<string, object?> {
+									["uId"] = ExampleConditionUId,
+									["leftExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleLeftExpressionUId,
+										["type"] = "AttributeValue",
+										["path"] = "PDS_UsrFlag"
+									},
+									["comparisonType"] = ExampleEqualConditionComparison,
+									["rightExpression"] = new Dictionary<string, object?> {
+										["uId"] = ExampleRightExpressionUId,
+										["type"] = "Const",
+										[ValueFieldName] = false
+									}
+								}
+							}
+						},
+						[ActionsFieldName] = new object[] {
+							new Dictionary<string, object?> {
+								["uId"] = ExampleActionUId,
+								["type"] = "hide-element",
+								["items"] = new object[] { "HighAmountWarningLabel" }
+							}
+						}
+					} }
+				})
+			],
+			Flow(
+				[
+					ReadPageBusinessRuleTool.ToolName,
+					ToolContractGetTool.ToolName,
+					UpdatePageBusinessRuleTool.ToolName
+				],
+				"Read the persisted rules first to obtain exact names and block uIds, read this contract, then send full replacement definitions. Successful updates write add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+			[],
+			[],
+			null,
+			[
+				"Call read-page-business-rules first and copy each rule's name (and the block uIds of unchanged blocks) into the replacement definition.",
+				"Call get-guidance with name business-rules and get-tool-contract for update-page-business-rules before building the payload.",
+				"Send the FULL replacement definition for every rule — update replaces the matched rule, it does not patch fields."
+			]);
+	}
+
+	private static ToolContractDefinition BuildEntityBusinessRuleDelete() {
+		return new ToolContractDefinition(
+			DeleteEntityBusinessRuleTool.ToolName,
+			"Deletes entity-level Freedom UI business rules by internal rule name in ONE batch (one configuration rebuild). Rule names come from read-entity-business-rules; autogenerated apply-filter child rules of a deleted rule cascade automatically.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleNamesFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, PackageNameDescription),
+					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
+					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-entity-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
+				]),
+			BusinessRuleBatchOutput(
+				"Per-name outcomes in input order; each item has name, success, and error."),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Delete two entity rules by internal rule name", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[EntitySchemaNameFieldName] = ExampleTaskSchemaName,
+					[RuleNamesFieldName] = new object[] { ExampleRuleName, ExampleSecondRuleName }
+				})
+			],
+			Flow(
+				[
+					ReadEntityBusinessRuleTool.ToolName,
+					DeleteEntityBusinessRuleTool.ToolName
+				],
+				"Read the persisted rules first to resolve the exact internal rule names, then delete them in one batch."),
+			[],
+			[],
+			null,
+			[
+				"Resolve internal rule names with read-entity-business-rules first — rule-names entries are internal names, not captions."
+			]);
+	}
+
+	private static ToolContractDefinition BuildPageBusinessRuleDelete() {
+		return new ToolContractDefinition(
+			DeletePageBusinessRuleTool.ToolName,
+			"Deletes page-level Freedom UI business rules by internal rule name in ONE batch (one configuration rebuild). Rule names come from read-page-business-rules.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleNamesFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, PackageNameDescription),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-page-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
+				]),
+			BusinessRuleBatchOutput(
+				"Per-name outcomes in input order; each item has name, success, and error."),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Delete a page rule by internal rule name", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
+					[RuleNamesFieldName] = new object[] { ExampleRuleName }
+				})
+			],
+			Flow(
+				[
+					ReadPageBusinessRuleTool.ToolName,
+					DeletePageBusinessRuleTool.ToolName
+				],
+				"Read the persisted rules first to resolve the exact internal rule names, then delete them in one batch."),
+			[],
+			[],
+			null,
+			[
+				"Resolve internal rule names with read-page-business-rules first — rule-names entries are internal names, not captions."
+			]);
+	}
+
 	private static ToolContractValidator[] BusinessRuleConditionValidators() =>
 		[
 			new ToolContractValidator("enum", "unsupported-operator", "rules[*].condition.logicalOperation",
@@ -2591,8 +3082,10 @@ internal static class ToolContractCatalog {
 				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id."),
 			new ToolContractValidator("sys-value", "unsupported-system-variable", "rules[*].condition.conditions[*].leftExpression|rightExpression.sysValueName",
 				Context: $"A SysValue may be on EITHER side of a condition. sysValueName must be one of: {BusinessRuleConstants.SupportedSystemVariablesDescription}. Types: CurrentDate=Date, CurrentTime=Time, CurrentDateTime=DateTime, CurrentUser/CurrentUserContact/CurrentUserAccount=Lookup, CurrentUserRoles=ObjectList (a collection of SysAdminUnit roles). Both operands must resolve to the same data value type and, for lookups, the same reference schema (CurrentUserContact=Contact, CurrentUserAccount=Account, CurrentUser/CurrentUserRoles=SysAdminUnit). Role-based visibility: CurrentUserRoles on the left, comparisonType contain/not-contain, and a Const SysAdminUnit role id on the right."),
+			new ToolContractValidator("sys-setting", "unsupported-system-setting", "rules[*].condition.conditions[*].leftExpression|rightExpression.sysSettingName",
+				Context: "A SysSetting may be on EITHER side of a condition. sysSettingName must be the code of a system setting that exists on the target environment; its data value type is resolved there (all text subtypes as Text; Boolean/Integer/Float/Money/Date/Time/DateTime as-is; Lookup carries its reference schema). Binary and SecureText settings are not supported as a condition operand. Both operands must resolve to the same data value type and, for lookups, the same reference schema."),
 			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rules[*].condition.conditions[*]",
-				Context: "Either side may be AttributeValue, Const, or SysValue, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
+				Context: "Either side may be AttributeValue, Const, SysValue, or SysSetting, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(
@@ -2872,6 +3365,50 @@ internal static class ToolContractCatalog {
 		});
 	}
 
+	private static ToolContractExample SysSettingBusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string sysSettingName,
+		string comparisonType,
+		object constValue,
+		string actionType,
+		object[] actionItems) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.SysSettingExpressionType,
+				["sysSettingName"] = sysSettingName
+			},
+			["comparisonType"] = comparisonType,
+			["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.ConstExpressionType,
+				[ValueFieldName] = constValue
+			}
+		};
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[schemaFieldName] = schemaName,
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
+						condition
+					}
+				},
+				[ActionsFieldName] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			} }
+		});
+	}
+
 	private static ToolContractExample RoleGateBusinessRuleExample(
 		string summary,
 		string schemaFieldName,
@@ -2919,7 +3456,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -3250,7 +3787,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateEntity() {
 		return new ToolContractDefinition(
 			CreateEntitySchemaTool.CreateEntitySchemaToolName,
-			"Creates an entity schema directly in the target package.",
+			"Creates an entity schema directly in the target package. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, TitleLocalizationsFieldName],
 				EnvironmentPackageSchemaFields(
@@ -3798,6 +4335,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
 				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': the version is unknown — tell the user and request explicit confirmation before proceeding instead of assuming the 'latest' superset. Omitted otherwise."),
 				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -3837,6 +4375,94 @@ internal static class ToolContractCatalog {
 					"The 'documentation' field of a composite detail response contains the complete, authoritative assembly recipe. "
 					+ "Do NOT synthesize the structure from memory or other sources — those are incomplete and will produce a broken result. "
 					+ "Follow the documentation field verbatim.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildRequestInfo() {
+		return new ToolContractDefinition(
+			RequestInfoTool.ToolName,
+			"Returns the Freedom UI request catalog (crt.*Request types wired through request bindings such as a button's clicked) or the full parameter contract for one request type.",
+			new ToolInputSchemaContract(
+				[],
+				[
+					Field("request-type", StringType, "Freedom UI request type, e.g. 'crt.PrintablesRequest'. Omit or use 'list' to return the catalog (list mode); a known type returns that request's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'print'."),
+					Field("schema-type", StringType, "Request registry to query: 'web' (default) or 'mobile'. The mobile registry is separate and scoped to the requests available on Freedom UI mobile (parameters can differ from desktop). Use 'mobile' when wiring a request on a mobile page."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
+					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive",
+						InvalidWorkflowShapeCode,
+						Fields: [EnvironmentNameFieldName, "version"],
+						Context: "'environment-name' and 'version' are mutually exclusive — pass one or neither.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("mode", StringType, "detail or list."),
+				Field(CountFieldName, NumberType, "Number of matching requests."),
+				Field("items", ArrayType, "Flat list-mode request summaries, each with requestType and an optional description."),
+				Field("requestType", StringType, "Request type echoed back in detail mode."),
+				Field("parameters", ObjectType, "The ONLY keys a page schema may pass via the binding's params block. An EMPTY map means the request accepts NO parameters — do not invent any. A parameter may carry a valueSource annotation ({kind:'environment', tool:'<probe>'}): fill that value ONLY from the named probe tool's result (e.g. templateId -> list-printables, processName -> get-process-signature)."),
+				Field("baseParameters", ObjectType, "Fields every request inherits from BaseRequest ($context, scopes, type) — platform-injected at dispatch time; NEVER pass them via params."),
+				Field("documentation", StringType, "Per-request authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one."),
+				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
+				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
+				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("schemaTypeWarning", StringType, "Present only when 'schema-type' was an unrecognized value (not omitted / 'web' / 'mobile'): the call fell back to the WEB catalog and this names the offending value so a typo (e.g. 'moblie') surfaces instead of silently serving web metadata. Omitted for a valid selection."),
+				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': tell the user the version is unknown and request explicit confirmation before proceeding. Omitted otherwise."),
+				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, "request-type", "requestType", RejectedStatus, "Use 'request-type' instead of 'requestType'."),
+				Alias(ParameterScope, "request-type", "request_type", RejectedStatus, "Use 'request-type' instead of 'request_type'."),
+				Alias(ParameterScope, "request-type", "request-name", RejectedStatus, "Use 'request-type' instead of 'request-name'."),
+				Alias(ParameterScope, "request-type", "requestName", RejectedStatus, "Use 'request-type' instead of 'requestName'."),
+				Alias(ParameterScope, "request-type", "request_name", RejectedStatus, "Use 'request-type' instead of 'request_name'."),
+				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
+				Alias(ParameterScope, "schema-type", "schema_type", RejectedStatus, "Use 'schema-type' instead of 'schema_type'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environment_name", RejectedStatus, "Use 'environment-name' instead of 'environment_name'.")
+			],
+			[],
+			[
+				Example("Inspect one request contract", new Dictionary<string, object?> {
+					["request-type"] = "crt.PrintablesRequest"
+				}),
+				Example("List the full request catalog", new Dictionary<string, object?>()),
+				Example("Search the catalog by keyword", new Dictionary<string, object?> {
+					["search"] = "print"
+				}),
+				Example("List the mobile request catalog", new Dictionary<string, object?> {
+					["schema-type"] = "mobile"
+				})
+			],
+			Flow([RequestInfoTool.ToolName],
+				"Use BEFORE wiring a button/menu action to a platform request: list the catalog to pick the request, "
+				+ "then fetch its detail and author the binding's params ONLY from 'parameters'. "
+				+ "Read get-guidance name=when-to-use-requests for the decision rules; a parameter carrying a "
+				+ "valueSource annotation is resolved through the named probe tool, never invented."),
+			[],
+			[],
+			[
+				new ToolAntiPattern(
+					"Authoring request names or params from memory",
+					"Request names and parameter keys are case-sensitive contracts; the runtime silently ignores unknown params. "
+					+ "Always pick the request from the catalog and copy parameter keys from the detail response."),
+				new ToolAntiPattern(
+					"Inventing environment-dependent values (templateId, processName)",
+					"A parameter with a valueSource annotation is filled ONLY from the named probe tool's result "
+					+ "(list-printables, get-process-signature). A made-up value passes save and fails silently at runtime.")
 			]);
 	}
 
@@ -4805,7 +5431,8 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private static ToolOutputContract BusinessRuleBatchOutput() {
+	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
 		return new ToolOutputContract(
 			"business-rule-batch-result",
 			null,
@@ -4814,9 +5441,9 @@ internal static class ToolContractCatalog {
 				"error != null"
 			],
 			[
-				Field("created", NumberType, "Number of rules created."),
-				Field("failed", NumberType, "Number of rules that failed."),
-				Field("results", ArrayType, "Per-rule outcomes in input order; each item has name, success, ruleName, and error."),
+				Field("succeeded", NumberType, "Number of items that succeeded."),
+				Field("failed", NumberType, "Number of items that failed."),
+				Field("results", ArrayType, resultsDescription),
 				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}

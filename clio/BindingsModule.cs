@@ -254,6 +254,15 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
+		// Dedicated client for the SysImage upload + verification read (upload-image). Same handler
+		// shape as the auth client (manual Cookie header, raw 3xx on expired session), but with a
+		// 100-second budget: a cold IIS site routinely exceeds the auth client's 30 seconds.
+		services.AddHttpClient(Clio.Common.SysImageUploader.HttpClientName)
+			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(100))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		// Named HttpClient for background telemetry uploads — same registration-time-only
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
@@ -327,6 +336,8 @@ public class BindingsModule {
 			services.AddTransient<IFileSystem, FileSystem>();
 		}
 
+		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
@@ -376,13 +387,12 @@ public class BindingsModule {
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
-		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
-		services.AddTransient<CreatePageBusinessRuleCommand>();
+		services.AddTransient<ISysSettingConditionOperandResolver, SysSettingConditionOperandResolver>();
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
@@ -448,12 +458,37 @@ public class BindingsModule {
 				RegistryFlavor.Mobile.CacheSubdirectoryName),
 			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
 			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
+		// Requests flavor (Freedom UI request catalog, get-request-info): same transport
+		// chain, its own CDN file / cache subdirectory / local-override env var. The
+		// envelope differs from components, so parsing goes through RequestInfoCatalog.
+		services.AddSingleton<IRequestRegistryClient>(sp => new RequestRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.Requests.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RequestRegistryClient>>()));
+		// Mobile requests flavor (get-request-info schema-type=mobile): same transport chain as the
+		// web requests flavor, its own CDN file (MobileRequestRegistry.json) / cache subdirectory /
+		// local-override env var. Envelope is identical to the web request catalog, so parsing reuses
+		// RequestInfoCatalog through the mobile catalog below.
+		services.AddSingleton<IMobileRequestRegistryClient>(sp => new MobileRequestRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.MobileRequests.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileRequestRegistryClient>>()));
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
 		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
+		services.AddSingleton<IRequestInfoCatalog, RequestInfoCatalog>();
+		services.AddSingleton<IMobileRequestInfoCatalog, MobileRequestInfoCatalog>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -478,6 +513,12 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
+		services.AddTransient<ReadEntityBusinessRuleTool>();
+		services.AddTransient<ReadPageBusinessRuleTool>();
+		services.AddTransient<UpdateEntityBusinessRuleTool>();
+		services.AddTransient<UpdatePageBusinessRuleTool>();
+		services.AddTransient<DeleteEntityBusinessRuleTool>();
+		services.AddTransient<DeletePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
@@ -515,6 +556,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<GetProcessSignatureTool>();
+		services.AddTransient<ListPrintablesTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -527,6 +569,7 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -534,8 +577,13 @@ public class BindingsModule {
 		services.AddTransient<CreateThemeTool>();
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
+		services.AddTransient<SetUserThemeTool>();
+		services.AddTransient<UploadImageTool>();
+		services.AddTransient<SetBackgroundImageTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
+		services.AddTransient<GetRecordRightsTool>();
+		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
@@ -589,7 +637,6 @@ public class BindingsModule {
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
-		services.AddTransient<PrintableListTool>();
 		services.AddTransient<PrintableGetTool>();
 		services.AddTransient<PrintableCreateTool>();
 		services.AddTransient<PrintableUpdateTool>();
@@ -648,6 +695,7 @@ public class BindingsModule {
 		services.AddTransient<LoadPackagesToFileSystemCommand>();
 		services.AddTransient<LoadPackagesToDbCommand>();
 		services.AddTransient<UploadLicensesCommand>();
+		services.AddTransient<DistributeLicenseCommand>();
 		services.AddTransient<HealthCheckCommand>();
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
@@ -685,9 +733,15 @@ public class BindingsModule {
 		services.AddTransient<RedisCommand>();
 		services.AddTransient<ClearThemesCacheCommand>();
 		services.AddTransient<ListThemesCommand>();
+		services.AddTransient<IThemeCatalog, ListThemesCommand>();
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
+		services.AddTransient<SetUserThemeCommand>();
+		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<UploadImageCommand>();
+		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
@@ -735,6 +789,7 @@ public class BindingsModule {
 		services.AddTransient<ConsoleProgressbar>();
 		services.AddTransient<ApplicationLogProvider>();
 		services.AddTransient<LastCompilationLogCommand>();
+		services.AddTransient<WatchCompilationCommand>();
 		services.AddTransient<LinkWorkspaceWithTideRepositoryCommand>();
 		services.AddTransient<CheckWebFarmNodeConfigurationsCommand>();
 		services.AddTransient<GetAppHashCommand>();
@@ -805,6 +860,7 @@ public class BindingsModule {
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
@@ -816,6 +872,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();

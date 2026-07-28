@@ -45,24 +45,6 @@ public abstract record PrintableWritableArgs : PrintableBaseArgs {
 	public string? MacrosSettings { get; init; }
 }
 
-/// <summary>Arguments for <see cref="PrintableListTool"/>.</summary>
-public sealed record PrintableListArgs : PrintableBaseArgs {
-	/// <summary>Optional filter: SysEntitySchema name the report is bound to (e.g. Contact, Account).</summary>
-	[JsonPropertyName("entity-schema-name")]
-	[Description("Optional. Narrow the list to printables bound to this entity by SysEntitySchema name (e.g. Contact, Account). Ignored when entity-schema-id is supplied.")]
-	public string? EntitySchemaName { get; init; }
-
-	/// <summary>Optional filter: SysEntitySchema GUID the report is bound to.</summary>
-	[JsonPropertyName("entity-schema-id")]
-	[Description("Optional. Narrow the list to printables bound to this entity by SysEntitySchema GUID. Takes precedence over entity-schema-name.")]
-	public string? EntitySchemaId { get; init; }
-
-	/// <summary>Maximum number of records to return (1-100, default 25).</summary>
-	[JsonPropertyName("top")]
-	[Description("Maximum number of printables to return. Range: 1-100. Default: 25.")]
-	public int? Top { get; init; }
-}
-
 /// <summary>Arguments for <see cref="PrintableGetTool"/>.</summary>
 public sealed record PrintableGetArgs : PrintableBaseArgs {
 	/// <summary>GUID of the printable (SysModuleReport) record.</summary>

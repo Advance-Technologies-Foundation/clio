@@ -23,12 +23,20 @@ public interface IApplicationCreateService
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="request">Application creation request payload.</param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary.
+	/// The happy path emits "creating application package" then "loading application metadata"; a
+	/// "waiting for application to be ready" marker is emitted only when the create request times out
+	/// and polling begins. Additive and side-effect-free; when <see langword="null"/> no markers are
+	/// emitted, so CLI callers are unaffected.
+	/// </param>
 	/// <returns>The created application's structured metadata.</returns>
-	ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request);
+	ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request,
+		Action<string>? reportStage = null);
 
 	/// <summary>
 	/// Creates a new Creatio application against an already-resolved environment.
-	/// Behaves identically to <see cref="CreateApplication(string, ApplicationCreateRequest)"/> except it
+	/// Behaves identically to <see cref="CreateApplication(string, ApplicationCreateRequest, Action{string})"/> except it
 	/// never consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the
 	/// settings directly (e.g. an MCP passthrough tenant resolved from request headers) — and every
 	/// nested call it makes (the caption-culture resolution and the application-info polling/readback)
@@ -37,9 +45,15 @@ public interface IApplicationCreateService
 	/// </summary>
 	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
 	/// <param name="request">Application creation request payload.</param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary; see
+	/// the name-based overload for the emitted markers. Additive and side-effect-free; when
+	/// <see langword="null"/> no markers are emitted.
+	/// </param>
 	/// <returns>The created application's structured metadata.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
-	ApplicationInfoResult CreateApplication(EnvironmentSettings environmentSettings, ApplicationCreateRequest request);
+	ApplicationInfoResult CreateApplication(EnvironmentSettings environmentSettings, ApplicationCreateRequest request,
+		Action<string>? reportStage = null);
 }
 
 /// <summary>
@@ -78,7 +92,8 @@ public sealed class ApplicationCreateService(
 	};
 
 	/// <inheritdoc />
-	public ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request)
+	public ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request,
+		Action<string>? reportStage = null)
 	{
 		if (string.IsNullOrWhiteSpace(environmentName))
 		{
@@ -104,11 +119,13 @@ public sealed class ApplicationCreateService(
 			environmentSettings,
 			request,
 			() => captionCultureResolver.Resolve(new EnvironmentOptions { Environment = environmentName }, null),
-			(appId, appCode) => applicationInfoService.GetApplicationInfo(environmentName, appId, appCode));
+			(appId, appCode) => applicationInfoService.GetApplicationInfo(environmentName, appId, appCode),
+			reportStage);
 	}
 
 	/// <inheritdoc />
-	public ApplicationInfoResult CreateApplication(EnvironmentSettings environmentSettings, ApplicationCreateRequest request)
+	public ApplicationInfoResult CreateApplication(EnvironmentSettings environmentSettings, ApplicationCreateRequest request,
+		Action<string>? reportStage = null)
 	{
 		ArgumentNullException.ThrowIfNull(environmentSettings);
 		ArgumentNullException.ThrowIfNull(request);
@@ -121,14 +138,16 @@ public sealed class ApplicationCreateService(
 			environmentSettings,
 			request,
 			() => captionCultureResolver.Resolve(environmentSettings, null),
-			(appId, appCode) => applicationInfoService.GetApplicationInfo(environmentSettings, appId, appCode));
+			(appId, appCode) => applicationInfoService.GetApplicationInfo(environmentSettings, appId, appCode),
+			reportStage);
 	}
 
 	private ApplicationInfoResult CreateApplicationCore(
 		EnvironmentSettings environmentSettings,
 		ApplicationCreateRequest request,
 		Func<string> resolveProfileCulture,
-		Func<string?, string, ApplicationInfoResult> loadApplicationInfo)
+		Func<string?, string, ApplicationInfoResult> loadApplicationInfo,
+		Action<string>? reportStage = null)
 	{
 		// ENG-91044: the application name/description are localized server-side under the connected
 		// user's profile culture (create-app is scalar-only with no caption-culture knob), so reject
@@ -148,12 +167,14 @@ public sealed class ApplicationCreateService(
 		string responseBody;
 		try
 		{
+			reportStage?.Invoke("creating application package");
 			responseBody = client.ExecutePostRequest(requestUrl, requestBody);
 		}
 		catch (Exception exception) when (IsTimeout(exception))
 		{
 			logger.EndSpinner(false);
 			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
+			reportStage?.Invoke("waiting for application to be ready");
 			return PollApplicationInfo(loadApplicationInfo, resolvedRequest.Code, exception, schemaNamePrefix);
 		}
 		catch
@@ -176,6 +197,7 @@ public sealed class ApplicationCreateService(
 		}
 
 		logger.EndSpinner(true);
+		reportStage?.Invoke("loading application metadata");
 		return LoadCreatedApplication(loadApplicationInfo, resolvedRequest.Code, response.Value, schemaNamePrefix);
 	}
 

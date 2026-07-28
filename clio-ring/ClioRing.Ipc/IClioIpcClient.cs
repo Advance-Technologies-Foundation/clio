@@ -34,6 +34,9 @@ public interface IClioIpcClient : IAsyncDisposable {
 	/// <summary>Raised when the child process exits unexpectedly (marks the client disconnected).</summary>
 	event EventHandler? Disconnected;
 
+	/// <summary>Raised whenever the negotiated handshake becomes available or is cleared.</summary>
+	event EventHandler? ConnectionChanged;
+
 	/// <summary>
 	/// Ensures the child is spawned and the <c>initialize</c> handshake has completed, returning the
 	/// negotiated <see cref="ClioServerHandshake"/>. Idempotent: a second call while already connected
@@ -95,6 +98,18 @@ public interface IClioIpcClient : IAsyncDisposable {
 	/// after the child dies (or on demand). Returns the new handshake.
 	/// </summary>
 	Task<ClioServerHandshake> RestartAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gracefully stops the transport-owned child without disposing this client. The next tool call starts a
+	/// fresh child, which allows Ring to release the installed clio files before a user-approved tool update.
+	/// </summary>
+	Task StopAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Stops the owned child and rejects reconnects until the returned lease is disposed. Used to keep
+	/// Ring's MCP client suspended for the complete Release-tool replacement window.
+	/// </summary>
+	Task<IAsyncDisposable> PauseForUpdateAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Sends a bare MCP <c>ping</c> round-trip on the warm channel (no server-side work). This is the

@@ -1,7 +1,9 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ClioRing.Models;
 
 namespace ClioRing.Services;
 
@@ -9,12 +11,16 @@ namespace ClioRing.Services;
 /// Default <see cref="IClioSettingsStore"/> backed by <c>app-settings.json</c> beside the executable.
 /// Reads/writes through <see cref="JsonNode"/> (no reflection-based serialization) so it stays AOT-safe
 /// and preserves any settings the strongly-typed model does not know about. A read-modify-write updates
-/// only the <c>DevClioPath</c> field; every other key is left byte-for-byte in place.
+/// only the requested field while preserving every other JSON value.
 /// </summary>
 public sealed class ClioSettingsStore : IClioSettingsStore {
 	private const string DevClioPathKey = "DevClioPath";
+	private const string RuntimeModeKey = "ClioRuntimeMode";
+	private const string ReleaseMode = "release";
+	private const string DevelopmentMode = "development";
 
 	private readonly string _settingsPath;
+	private readonly object _writeSync = new();
 
 	/// <summary>Creates a store over the default <c>app-settings.json</c> beside the executable.</summary>
 	public ClioSettingsStore() : this(AppSettingsReader.SettingsPath) { }
@@ -31,23 +37,56 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 	/// <inheritdoc />
 	public string? ReadDevClioPath() {
 		JsonObject? root = TryReadRoot();
-		string? value = root?[DevClioPathKey]?.GetValue<string>();
+		string? value = ReadString(root?[DevClioPathKey]);
 		return string.IsNullOrWhiteSpace(value) ? null : value;
 	}
 
 	/// <inheritdoc />
 	public void SaveDevClioPath(string? path) {
-		JsonObject root = TryReadRoot() ?? new JsonObject();
-		if (string.IsNullOrWhiteSpace(path)) {
-			root.Remove(DevClioPathKey);
+		UpdateRoot(root => {
+			if (string.IsNullOrWhiteSpace(path)) {
+				root.Remove(DevClioPathKey);
+			}
+			else {
+				root[DevClioPathKey] = path.Trim();
+			}
+		});
+	}
+
+	/// <inheritdoc />
+	public string? ReadRuntimeMode() {
+		JsonObject? root = TryReadRoot();
+		string? value = ReadString(root?[RuntimeModeKey]);
+		return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+	}
+
+	/// <inheritdoc />
+	public void SaveRuntimeMode(string mode) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(mode);
+		string normalized = mode.Trim().ToLowerInvariant();
+		if (normalized is not ReleaseMode and not DevelopmentMode) {
+			throw new ArgumentOutOfRangeException(nameof(mode), mode,
+				"Clio runtime mode must be release or development.");
 		}
-		else {
-			root[DevClioPathKey] = path.Trim();
+		UpdateRoot(root => root[RuntimeModeKey] = normalized);
+	}
+
+	/// <inheritdoc />
+	public bool HasDevelopmentTarget() {
+		JsonObject? root = TryReadRoot();
+		string? devPath = ReadString(root?[DevClioPathKey]);
+		if (!string.IsNullOrWhiteSpace(devPath) && DevClioLaunch.Validate(devPath).IsValid) {
+			return true;
 		}
 
-		string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-		File.WriteAllText(_settingsPath, json);
+		JsonObject? ipc = root?["ClioIpc"] as JsonObject;
+		string? command = ReadString(ipc?["Command"]);
+		JsonArray? args = ipc?["Args"] as JsonArray;
+		return ClioRuntimeConfiguration.IsValidExplicitIpc(command, args?.Select(ReadString));
 	}
+
+	private static string? ReadString(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue(out string? result) ? result : null;
 
 	private JsonObject? TryReadRoot() {
 		try {
@@ -57,8 +96,52 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 			return JsonNode.Parse(File.ReadAllText(_settingsPath)) as JsonObject;
 		}
 		catch (Exception) {
-			// A missing/unreadable/invalid file behaves like "no override"; a subsequent save rewrites it.
+			// Reads fail closed. Mutation uses ReadRootForWrite and refuses to overwrite invalid content.
 			return null;
+		}
+	}
+
+	private JsonObject ReadRootForWrite() {
+		if (!File.Exists(_settingsPath)) {
+			return new JsonObject();
+		}
+		try {
+			return JsonNode.Parse(File.ReadAllText(_settingsPath)) as JsonObject
+				?? throw new InvalidDataException("Ring settings must contain a JSON object.");
+		}
+		catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or InvalidDataException) {
+			throw new InvalidDataException("Ring settings could not be read and were not changed.", ex);
+		}
+	}
+
+	private void UpdateRoot(Action<JsonObject> update) {
+		lock (_writeSync) {
+			JsonObject root = ReadRootForWrite();
+			update(root);
+			WriteRootAtomically(root);
+		}
+	}
+
+	private void WriteRootAtomically(JsonObject root) {
+		string? directory = Path.GetDirectoryName(_settingsPath);
+		if (!string.IsNullOrEmpty(directory)) {
+			Directory.CreateDirectory(directory);
+		}
+		string tempPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+		try {
+			string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+			using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+				using var writer = new StreamWriter(stream);
+				writer.Write(json);
+				writer.Flush();
+				stream.Flush(flushToDisk: true);
+			}
+			File.Move(tempPath, _settingsPath, overwrite: true);
+		}
+		finally {
+			if (File.Exists(tempPath)) {
+				File.Delete(tempPath);
+			}
 		}
 	}
 }

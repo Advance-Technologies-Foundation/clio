@@ -228,6 +228,68 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Runs sync-schemas on a real sandbox environment with an IProgress sink and verifies it streams per-operation stage markers (e.g. '1/2: create-entity ...'), so MCP clients see semantic progress instead of one silent await (ENG-93087).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas streams per-operation stage markers")]
+	[AllureDescription("Runs sync-schemas with two operations through the real clio MCP server with an IProgress sink and asserts the client observed a per-operation stage marker naming the operation index and type — proving the tool-level progress path is wired end to end (ENG-93087).")]
+	public async Task SchemaSyncTool_Should_Stream_Per_Operation_Progress_Markers() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		MessageCollectingProgress progress = new();
+
+		// Act — a two-operation batch; each operation must push a stage marker before it runs.
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["title-localizations"] = BuildLocalizations("Schema Sync Entity"),
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = "UsrTitle",
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Title")
+								}
+							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = context.LookupSchemaName!,
+							["title-localizations"] = BuildLocalizations("Schema Sync Lookup")
+						}
+					}
+				}
+			},
+			progress,
+			context.CancellationTokenSource.Token);
+
+		// Diagnostic: surface the exact progress stream the client received (markers + heartbeats).
+		foreach (string progressMessage in progress.Messages) {
+			TestContext.Out.WriteLine($"[progress] {progressMessage}");
+		}
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "sync-schemas should return a structured payload on the reachable sandbox environment");
+		progress.Messages.Should().Contain(
+			message => message.Contains("1/", StringComparison.Ordinal) && message.Contains("create-entity", StringComparison.Ordinal),
+			because: "sync-schemas must stream a per-operation stage marker naming the operation index and type so the client can show which operation is running");
+		progress.Messages.Should().Contain(
+			message => message.Contains("2/", StringComparison.Ordinal) && message.Contains("create-lookup", StringComparison.Ordinal),
+			because: "sync-schemas must also stream a marker for the second operation naming its index and type");
+		List<string> orderedMessages = progress.Messages.ToList();
+		int firstOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("1/", StringComparison.Ordinal));
+		int secondOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("2/", StringComparison.Ordinal));
+		firstOperationMarkerIndex.Should().BeLessThan(secondOperationMarkerIndex,
+			because: "the first operation's stage marker must reach the client before the second operation's, matching batch execution order");
+	}
+
+	[Test]
 	[Description("Creates a virtual entity through sync-schemas and verifies readback plus absence of a PostgreSQL table.")]
 	[AllureTag(ToolName)]
 	[AllureTag(ReadSchemaToolName)]

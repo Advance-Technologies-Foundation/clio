@@ -3,6 +3,7 @@
   "WorkspaceFolder": "C:\\Projects\\Workspaces",
   "Hotkey": "Ctrl+Alt+C",
   "Channel": "dev",
+  "ClioRuntimeMode": "release",
   "Experiments": {
     "ClioIpc": false
   },

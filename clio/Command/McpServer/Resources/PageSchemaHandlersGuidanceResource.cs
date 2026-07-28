@@ -13,6 +13,9 @@ public sealed class PageSchemaHandlersGuidanceResource {
 	private const string ResourcePath = "mcp/guides/page-schema-handlers";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
+	/// <summary>
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
+	/// </summary>
 	internal static readonly TextResourceContents Guide = new() {
 		Uri = ResourceUri,
 		MimeType = "text/plain",
@@ -425,6 +428,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Prefer the exact built-in request name from this catalog when the requirement matches it directly.
 
 		       Standard handler parameter catalog
+		       - AUTHORITATIVE contracts live in the request catalog: call `get-request-info <type>` first —
+		         when a request is cataloged there (e.g. crt.PrintablesRequest, crt.RunBusinessProcessRequest,
+		         crt.ClosePageRequest, crt.CancelRecordChangesRequest), its `parameters` (required flags, valid
+		         values, valueSource probe annotations) and `documentation` override the rows below. This table
+		         stays as the fallback index for requests not yet cataloged. See `when-to-use-requests` for the
+		         selection and probe discipline.
 		       - Read this catalog as the MCP-safe payload contract extracted from `creatio-ui` source.
 		       - `config` means fields you author in direct request wiring or `sdk.HandlerChainService.instance.process(...)`.
 		       - `runtime` means fields the platform injects before your handler receives the request.
@@ -439,7 +448,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.SaveRecordRequest` | config | `preventCardClose?`, `preventCardStateChange?`, `showSuccessMessage?`, `messageTextAfterCompletion?`, `reloadSavedRecord?`, `showErrorMessage?` | save current page/task |
 		         | `crt.DeleteRecordRequest` | config | `recordId`, `itemsAttributeName` | delete one record; source handler converts it into `crt.DeleteRecordsRequest` |
 		         | `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |
-		         | `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |
+		         | `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the request catalog: get-request-info `crt.RunBusinessProcessRequest` (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-request-info `crt.RunBusinessProcessRequest` before authoring this button |
 		         | `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |
 		         | `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |
 		         | `crt.CopyInputToClipboardRequest` | config | `attribute` required, `successMessageArea?` | copy the value of a page attribute |

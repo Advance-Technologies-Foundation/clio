@@ -5,25 +5,72 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Resources;
 
 /// <summary>
-/// Provides canonical AI-facing guidance for authoring ESQ-style filters through clio MCP.
+/// Routes AI callers to the canonical frontend, backend, or runtime parsing ESQ filter guidance.
 /// </summary>
 [McpServerResourceType]
 public sealed class EsqFiltersGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/esq-filters";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
+	private const string FrontendResourcePath = ResourcePath + "/frontend";
+	private const string FrontendResourceUri = DocsScheme + "://" + FrontendResourcePath;
 
 	/// <summary>
-	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
+	/// Canonical ESQ filter family router accessible by name through <c>get-guidance</c>.
 	/// </summary>
 	internal static readonly TextResourceContents Guide = new() {
 		Uri = ResourceUri,
 		MimeType = "text/plain",
 		Text = """
-		       # clio MCP ESQ filters guide
+		       # clio MCP ESQ filters guidance family
+
+		       ## Purpose
+		       This article is the stable entry point for ESQ filter work. It routes to exactly one
+		       construction guide for the caller's API surface and to the parsing guide only when code
+		       receives a runtime C# filter tree. Detailed filter rules live in the child guides, not here.
+
+		       ## GATE: choose the owner before writing code
+		       - JavaScript, Freedom UI, page JSON, or a DataService SelectQuery payload:
+		         read `esq-filters-frontend`.
+		       - Native Creatio backend C# using `EntitySchemaQuery`:
+		         read `esq-filters-backend`.
+		       - Runtime C# code that receives and interprets `EntitySchemaQuery.Filters`:
+		         read `esq-filter-parsing`.
+		       - Comparing a filter created through DataService with a native backend filter:
+		         read the matching construction guide and `esq-filter-parsing`; compare the runtime
+		         tree, not the two authoring syntaxes.
+
+		       ## Shared boundary
+		       - `esq` owns the surrounding SelectQuery envelope, selected columns, expressions,
+		         aggregation, and the master enum tables.
+		       - `esq-filters-frontend` owns serialized JavaScript/DataService filter construction.
+		       - `esq-filters-backend` owns native C# `EntitySchemaQuery` filter construction.
+		       - `esq-filter-parsing` owns runtime C# traversal and interpretation.
+		       - Do not copy detailed filter rules between these articles. Cross-link to the owner.
+
+		       ## Current backend validation status
+		       The backend construction and parsing guides currently publish the lab-verified group
+		       envelope, nesting, disabled nodes, group negation, primitive Integer/MediumText Compare,
+		       MediumText null checks, Integer membership cardinalities, inclusive Between ranges, typed
+		       Boolean/Guid comparisons, lookup equality/membership, temporal literals/macros/date parts,
+		       Exists/NotExists/aggregate subqueries over backward paths, and saved Segment membership.
+		       New filter families remain pending until the same native-vs-DataService runtime-shape test
+		       proves and promotes them.
+		       """
+	};
+
+	/// <summary>
+	/// Canonical frontend and DataService JSON filter guidance.
+	/// </summary>
+	internal static readonly TextResourceContents FrontendGuide = new() {
+		Uri = FrontendResourceUri,
+		MimeType = "text/plain",
+		Text = """
+		       # clio MCP frontend ESQ filter construction guide
 
 		       ## Scope
-		       - Use this guide whenever you author or edit an ESQ filter tree: indicator/chart/list widget filters, page quick-filters, lookup narrowing, or DataService SelectQuery filters.
+		       - Use this guide whenever you author or edit a serialized JavaScript/DataService ESQ filter tree: indicator/chart/list widget filters, page quick-filters, lookup narrowing, or DataService SelectQuery filters.
+		       - For native Creatio backend C# construction, use `esq-filters-backend`. For runtime C# parsing of `EntitySchemaQuery.Filters`, use `esq-filter-parsing`.
 		       - This guide covers the filter contract exhaustively: every filter type, every comparison operator, the value shape required for every column data type, the complete date/time macro catalog, forward and backward references, and nested logical groups.
 		       - Read `esq` first for the surrounding query envelope (root schema, columns, aggregation, expression building blocks, and the master enum tables). This guide focuses only on the `filters` tree and the leaf filters inside it.
 		       - Shape in one line: filters are JSON with NUMERIC enum values (`filterType`/`comparisonType`/`dataValueType` are integers, never strings) and values wrapped in a `parameter` envelope — the exact shape stored in Creatio page bodies and DataService SelectQuery bodies.
@@ -71,8 +118,8 @@ public sealed class EsqFiltersGuidanceResource {
 		       - Null test with only `leftExpression` (no right side). Is null: `comparisonType: 1`, `isNull: true`. Is not null: `comparisonType: 2`, `isNull: false`.
 
 		       ### Between (filterType 3)
-		       - `comparisonType: 0`. Bounds are two separate expressions: `rightGreaterExpression` = lower bound, `rightLessExpression` = upper bound.
-		       - Example (age 5..25): `{ "filterType": 3, "comparisonType": 0, "isEnabled": true, "leftExpression": { "expressionType": 0, "columnPath": "Age" }, "rightGreaterExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 5 } }, "rightLessExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 25 } } }`.
+		       - `comparisonType: 0`. The platform's field names are counterintuitive: `rightLessExpression` = first/lower bound and `rightGreaterExpression` = second/upper bound. This ordering is required by DataService and was verified against native C# runtime shape; do not reinterpret the names as comparison directions.
+		       - Example (age 5..25): `{ "filterType": 3, "comparisonType": 0, "isEnabled": true, "leftExpression": { "expressionType": 0, "columnPath": "Age" }, "rightLessExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 5 } }, "rightGreaterExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 25 } } }`.
 		       - Alternative many surfaces prefer: model the range as two CompareFilters (Greater_or_equal lower bound + Less_or_equal upper bound) joined by an AND group. Use the first-class Between only when the surface expects it.
 
 		       ### In (filterType 4) — multi-value membership
@@ -139,11 +186,12 @@ public sealed class EsqFiltersGuidanceResource {
 		       - Date (8) / DateTime (7) / Time (9): a JSON-encoded date string with its own encoding and macro rules — see Dates: macros & date-parts below.
 
 		       ## Lookups
-		       - A lookup equality is serialized as an IN filter (filterType 4), even for a single value (the current-user macros below are the one exception — they use a CompareFilter):
+		       - The Freedom UI designer serializes lookup equality as an IN filter (filterType 4), even for a single value (the current-user macros below are the one exception — they use a CompareFilter):
 		         - `filterType: 4`, `comparisonType: 3` (Equal), `dataValueType: 10`, `referenceSchemaName: "<LookupTargetSchema>"`.
 		         - `leftExpression`: `{ "expressionType": 0, "columnPath": "<LookupColumn>" }`.
 		         - `rightExpressions`: an ARRAY. Each entry is `{ "expressionType": 2, "parameter": { "dataValueType": 10, "value": { "Id": "<guid>", "value": "<guid>", "displayValue": "<text>", "Name": "<text>" } } }`.
-		       - The parameter `value` is an OBJECT carrying both the record Id (`Id`/`value`) and its `displayValue`. Do not pass a bare GUID for a lookup. Resolve the GUID first (do not fabricate it) — for example via an ESQ select against the lookup schema, or the platform lookup-resolution path.
+		       - For Freedom UI designer round-trip, the parameter `value` is an OBJECT carrying both the record Id (`Id`/`value`) and its `displayValue`. Resolve the GUID first (do not fabricate it) — for example via an ESQ select against the lookup schema, or the platform lookup-resolution path.
+		       - Low-level DataService also accepted a raw GUID parameter tagged with Lookup `dataValueType: 10` in verified ATF requests: Compare for one value and In for multiple values. This shorthand is a DataService transport capability, not proof that every Freedom UI client helper accepts or round-trips it. Use the object form when authoring designer-owned JSON.
 		       - Multi-value lookup ("USA or UK"): keep it ONE lookup IN filter with several objects in `rightExpressions`; do not expand into duplicated scalar filters.
 		       - Current-user / current-user-contact lookups are the exception: they use a CompareFilter (filterType 1) whose `rightExpression` is a macro — `{ "expressionType": 1, "functionType": 1, "macrosType": 1 }` for current user (SysAdminUnit) or `macrosType: 2` for current user's Contact.
 		       - Display-name fallback: if a stable GUID is unavailable, filter on the lookup display path as TEXT instead, e.g. `CreatedBy.Name = "Supervisor"` or `Country.Name = "United States"` (filterType 1, dataValueType 1). Do not mix this text path with GUID value-objects in the same filter.
@@ -194,6 +242,13 @@ public sealed class EsqFiltersGuidanceResource {
 	/// Returns the canonical guidance article for ESQ-style filter authoring.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "esq-filters-guidance")]
-	[Description("Returns canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.")]
+	[Description("Routes ESQ filter work to the canonical frontend construction, backend construction, or runtime parsing guidance without duplicating their detailed rules.")]
 	public ResourceContents GetGuide() => Guide;
+
+	/// <summary>
+	/// Returns canonical frontend and DataService JSON filter construction guidance.
+	/// </summary>
+	[McpServerResource(UriTemplate = FrontendResourceUri, Name = "esq-filters-frontend-guidance")]
+	[Description("Returns canonical guidance for serialized JavaScript, Freedom UI, page JSON, and DataService ESQ filter construction.")]
+	public ResourceContents GetFrontendGuide() => FrontendGuide;
 }

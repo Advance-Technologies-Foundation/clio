@@ -45,6 +45,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
+	private const string SetSchemaToolName = SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName;
 
 	// Option A (ENG-92458): one shared workspace+package+push for the whole fixture instead of one per
 	// test. Lazily initialized by the first ArrangeSandboxPackageAsync call (kept lazy rather than in
@@ -119,6 +120,131 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		AssertIncludesInfoMessage(removeResult,
 			"successful remove mutation should emit progress output");
 		AssertSchemaPropertiesAfterRemove(schemaProperties, schemaPropertiesAfterRemove, arrangeContext);
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Creates a Color column via the real MCP server and verifies it reads back as the named Color type, not raw 18.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Entity schema MCP tools create a Color column and read it back as the named Color type")]
+	[AllureDescription("Creates a sandbox schema, adds a Color (dataValueType 18) column through modify-entity-schema-column, and verifies get-entity-schema-column-properties reports the type as the named Color token.")]
+	public async Task EntitySchemaTools_Should_Create_Color_Column_And_Read_It_Back_As_Named_Type() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string colorColumnName = "UsrHighlight";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addColorResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				colorColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Color",
+				titleLocalizations: BuildLocalizations("Highlight color")));
+		EntitySchemaColumnPropertiesInfo colorColumnProperties =
+			await ActGetColumnPropertiesAsync(arrangeContext, colorColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before adding a Color column");
+		AssertCommandSucceeded(addColorResult, "modify-entity-schema-column should accept the named Color type token");
+		colorColumnProperties.Type.Should().Be("Color",
+			because: "a dataValueType-18 column must read back as the named Color token, not the raw number 18");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Sets the primary-display column through set-entity-schema-properties and verifies the readback reports the chosen column.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SetSchemaToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Set entity schema properties sets the primary-display column and reads it back")]
+	[AllureDescription("Creates a sandbox schema, adds a second text column, sets it as the primary-display column through set-entity-schema-properties, and verifies get-entity-schema-properties reports it as primary-display-column-name.")]
+	public async Task SetEntitySchemaProperties_Should_Set_Primary_Display_Column_And_Read_It_Back() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string displayColumnName = "UsrDisplayLabel";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addColumnResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				displayColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Text",
+				titleLocalizations: BuildLocalizations("Display label")));
+		CommandExecutionEnvelope setResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				primaryDisplayColumn: displayColumnName));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before setting the primary-display column");
+		AssertCommandSucceeded(addColumnResult, "the display-target text column should be added successfully");
+		AssertCommandSucceeded(setResult, "set-entity-schema-properties should persist the primary-display column");
+		schemaProperties.PrimaryDisplayColumnName.Should().Be(displayColumnName,
+			because: "get-entity-schema-properties must report the column set via set-entity-schema-properties");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Overrides the caption of an inherited column and rejects a non-caption change to the same inherited column.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column overrides an inherited caption and rejects non-caption inherited changes")]
+	[AllureDescription("Creates a sandbox schema (child of BaseEntity), overrides the caption of an inherited column (which the tool verifies persisted on readback), then confirms a non-caption change to the same inherited column is rejected.")]
+	public async Task ModifyEntitySchemaColumn_Should_Override_Inherited_Caption_And_Reject_NonCaption_Change() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		// CreatedOn is inherited from BaseEntity; adjust to another inherited column if a stand filters it.
+		const string inheritedColumnName = "CreatedOn";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope captionOverrideResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"modify",
+				inheritedColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				titleLocalizations: BuildLocalizations("Registered on")));
+		CommandExecutionEnvelope nonCaptionChangeResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"modify",
+				inheritedColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				indexed: true));
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before overriding an inherited caption");
+		// A zero exit here also proves the override persisted: the tool verifies the reloaded inherited caption.
+		AssertCommandSucceeded(captionOverrideResult,
+			"a caption-only override of an inherited column should succeed and be verified on readback");
+		nonCaptionChangeResult.ExitCode.Should().Be(1,
+			because: "a non-caption change (indexed) to an inherited column must be rejected");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -734,6 +860,30 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		// Assert
 		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
 			"unknown environment names should fail before remote lookup creation starts");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Reports a readable failure when set-entity-schema-properties is invoked with an unknown environment name.")]
+	[AllureTag(SetSchemaToolName)]
+	[AllureName("Set entity schema properties reports invalid environment failures")]
+	[AllureDescription("Uses the real MCP server to call set-entity-schema-properties with a guaranteed-missing environment name and verifies the failure is surfaced to the caller before any remote write.")]
+	public async Task SetEntitySchemaProperties_Should_Report_Invalid_Environment() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await CallSetEntitySchemaPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"UsrPkg",
+			"UsrBadSchema",
+			arrangeContext.CancellationTokenSource.Token,
+			primaryDisplayColumn: "Name");
+
+		// Assert
+		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
+			"unknown environment names should fail before the primary-display column is set");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -1492,6 +1642,32 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 					["column-name"] = columnName
 				}
 			},
+			cancellationToken);
+	}
+
+	private static async Task<CallToolResult> CallSetEntitySchemaPropertiesAsync(
+		McpServerSession session,
+		string environmentName,
+		string packageName,
+		string schemaName,
+		CancellationToken cancellationToken,
+		string? primaryDisplayColumn = null) {
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
+			because: "the set-entity-schema-properties MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
+
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName,
+			["package-name"] = packageName,
+			["schema-name"] = schemaName
+		};
+		if (!string.IsNullOrWhiteSpace(primaryDisplayColumn)) {
+			args["primary-display-column"] = primaryDisplayColumn;
+		}
+
+		return await session.CallToolAsync(
+			SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
+			new Dictionary<string, object?> { ["args"] = args },
 			cancellationToken);
 	}
 

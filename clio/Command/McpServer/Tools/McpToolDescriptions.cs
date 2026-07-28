@@ -41,6 +41,7 @@ internal static class McpToolDescriptions {
 		"JSON object string of localizable string key/value pairs the platform does NOT auto-provide " +
 		"(custom titles, button captions, validator messages, explicit caption overrides). Omit keys that " +
 		"match an existing DS-bound attribute (auto-provided). Inline placeholder/label/caption/title/tooltip " +
-		"literals in the body are REJECTED — bind via $Resources.Strings.<Key> and register the key here. " +
+		"literals in the body are REJECTED — bind via $Resources.Strings.<Key> and register the key here " +
+		"(an unregistered inserted widget/metric title is REJECTED too). " +
 		"See get-guidance `page-schema-resources` for the full rule.";
 }

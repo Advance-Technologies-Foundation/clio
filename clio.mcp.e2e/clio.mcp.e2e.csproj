@@ -27,6 +27,9 @@
 		<PackageReference Include="ModelContextProtocol" />
 		<PackageReference Include="Allure.NUnit" />
 		<PackageReference Include="FluentAssertions" />
+		<!-- Pin the patched build directly so the transitive System.Security.Cryptography.Xml
+		     (pulled via PowerShell.SDK) is lifted above the NU1903 advisory. -->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
 	</ItemGroup>
 
 	<ItemGroup>

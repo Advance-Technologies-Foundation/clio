@@ -212,7 +212,17 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Reads the status of named license operations for the current user via the native LicenseService.
 		/// </summary>
-		LicenseGetLicOperationStatuses = 59
+		LicenseGetLicOperationStatuses = 59,
+
+		/// <summary>
+		///     Reads the record-level access rights rows for a single record via the native RightsService.
+		/// </summary>
+		RightsGetRecordRights = 60,
+
+		/// <summary>
+		///     Applies a merged record-level access rights set for a single record via the native RightsService.
+		/// </summary>
+		RightsApplyChanges = 61
 
 	}
 
@@ -285,6 +295,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.DeleteTheme, "ServiceModel/ThemeService.svc/DeleteTheme"},
 		{KnownRoute.RightsGetCanExecuteOperation, "/rest/RightsService/GetCanExecuteOperation"},
 		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
+		{KnownRoute.RightsGetRecordRights, "/rest/RightsService/GetRecordRights"},
+		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

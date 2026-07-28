@@ -3,9 +3,11 @@ using System.IO;
 using System.Linq;
 using ClioRing;
 using ClioRing.Ipc;
+using ClioRing.Models;
 using ClioRing.Services;
 using ClioRing.ViewModels;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace ClioRing.Tests;
@@ -92,6 +94,47 @@ public sealed class ClioSettingsViewModelTests {
 		persisted.Should().BeNull("because a blank override removes the persisted value");
 		sut.IsDevOverrideActive.Should().BeFalse("because no override is active after clearing");
 		resolved.Should().BeSameAs(ClioIpcSettings.Default, "because empty override resolves to the default clio");
+		Path.IsPathFullyQualified(resolved.Command).Should().BeTrue(
+			"because Release uses the absolute global-tool shim instead of trusting PATH ordering");
+		resolved.Args.Should().ContainSingle().Which.Should().Be("mcp-server",
+			"because Ring starts the installed tool as an MCP server");
+	}
+
+	[Test]
+	[Description("An explicit Release selection uses the installed clio command while preserving a valid development target for later use.")]
+	public void ResolveClioIpcSettings_ShouldUseInstalledTool_WhenReleaseSelected() {
+		// Arrange
+		var explicitIpc = new ClioIpcSettingsDto {
+			Command = "dotnet", Args = [_devClioDll, "mcp-server"]
+		};
+
+		// Act
+		ClioIpcSettings resolved = Startup.ResolveClioIpcSettings("release", _devClioDll, explicitIpc);
+
+		// Assert
+		resolved.Should().BeSameAs(ClioIpcSettings.Default,
+			"because Release ignores the saved development targets without deleting them");
+		resolved.Command.Should().Be(ClioIpcSettings.Default.Command,
+			"because Release uses the standard global-tool shim");
+	}
+
+	[Test]
+	[Description("Legacy settings with an explicit clio IPC target remain on Development when no runtime mode has been persisted.")]
+	public void ResolveClioIpcSettings_ShouldPreserveDevelopmentTarget_WhenLegacyModeIsMissing() {
+		// Arrange
+		var explicitIpc = new ClioIpcSettingsDto {
+			Command = "dotnet", Args = [_devClioDll, "mcp-server"]
+		};
+
+		// Act
+		ClioIpcSettings resolved = Startup.ResolveClioIpcSettings(runtimeMode: null, devClioPath: null,
+			explicitIpc);
+
+		// Assert
+		resolved.Command.Should().Be("dotnet",
+			"because migration must not silently retarget an existing development setup");
+		resolved.Args.Should().Contain(_devClioDll,
+			"because the saved explicit development target remains selected");
 	}
 
 	[Test]
@@ -186,7 +229,8 @@ public sealed class ClioSettingsViewModelTests {
 		// Assert
 		sut.ConnectedClioIdentity.Should().Contain("clio 8.1.0.77",
 			"because the identity uses the handshake name + version, not a hardcoded label");
-		sut.ConnectedClioIdentity.Should().Contain("dev build", "because the dev override is the active source");
+		sut.ConnectedClioIdentity.Should().Contain("development build",
+			"because the development override is the active source");
 		sut.ConnectedClioIdentity.Should().Contain(_devClioDll, "because the resolved path is shown");
 	}
 
@@ -203,13 +247,13 @@ public sealed class ClioSettingsViewModelTests {
 		sut.SetConnectedIdentity(handshake, @"C:\Tools\clio\clio.dll", isDevOverride: false);
 
 		// Assert
-		sut.ConnectedClioIdentity.Should().Contain("normal build", "because no dev override is active");
+		sut.ConnectedClioIdentity.Should().Contain("release build", "because no development override is active");
 		sut.ConnectedClioIdentity.Should().Contain("8.1.0.77", "because the handshake version is surfaced");
 	}
 
 	[Test]
-	[Description("Before a handshake exists the identity says it is not connected yet, without protocol jargon.")]
-	public void SetConnectedIdentity_ShouldSayNotConnected_WhenHandshakeAbsent() {
+	[Description("Before a handshake exists the identity states the configured build instead of claiming Ring is disconnected.")]
+	public void SetConnectedIdentity_ShouldStateConfiguredBuild_WhenHandshakeAbsent() {
 		// Arrange
 		var sut = new ClioSettingsViewModel(_store);
 
@@ -217,8 +261,240 @@ public sealed class ClioSettingsViewModelTests {
 		sut.SetConnectedIdentity(handshake: null, @"C:\Tools\clio\clio.dll", isDevOverride: false);
 
 		// Assert
-		sut.ConnectedClioIdentity.Should().Contain("not connected",
-			"because there is no negotiated handshake to report yet");
+		sut.ConnectedClioIdentity.Should().Contain("release build",
+			"because the configured runtime is truthful before the lazy handshake occurs");
+		sut.ConnectedClioIdentity.Should().NotContain("not connected",
+			"because Ring already knows which configured runtime it is using");
+		sut.ConnectedClioIdentity.Should().NotContain("—",
+			"because runtime identity uses ordinary hyphens instead of em dashes");
 		sut.ConnectedClioIdentity.Should().NotContain("MCP", "because the identity must stay jargon-free");
+	}
+
+	[Test]
+	[Description("The main runtime warning recognizes an explicit Debug DLL target and selecting Release persists the mode without deleting that target.")]
+	public void RuntimeSwitch_ShouldPersistReleaseAndPreserveTarget_WhenDevelopmentRuntimeIsRunning() {
+		// Arrange
+		File.WriteAllText(_settingsPath, $$"""
+			{
+			  "WorkspaceFolder": "{{_tempDir.Replace("\\", "\\\\")}}",
+			  "ClioIpc": {
+			    "Command": "dotnet",
+			    "Args": ["{{_devClioDll.Replace("\\", "\\\\")}}", "mcp-server"]
+			  }
+			}
+			""");
+		IClioIpcClient client = Substitute.For<IClioIpcClient>();
+		client.TargetPath.Returns(_devClioDll);
+		client.Handshake.Returns((ClioServerHandshake?)null);
+		ResolvedClioRuntime runtime = Startup.ResolveClioRuntime(runtimeMode: null, devClioPath: null,
+			new ClioIpcSettingsDto { Command = "dotnet", Args = [_devClioDll, "mcp-server"] });
+		var sut = new ClioSettingsViewModel(_store, client, runtime);
+
+		// Act
+		sut.IsDevelopmentSelected = false;
+
+		// Assert
+		sut.IsDevelopmentRuntimeRunning.Should().BeTrue(
+			"because an explicit Debug DLL is a development runtime even without DevClioPath");
+		sut.RuntimeSummary.Should().Be("Ring is using a development clio build",
+			"because lazy handshake state must not be presented as disconnected");
+		_store.ReadRuntimeMode().Should().Be("release",
+			"because the main toggle persists the next-launch runtime mode");
+		_store.HasDevelopmentTarget().Should().BeTrue(
+			"because selecting Release preserves the explicit development target");
+		sut.RuntimeSelectionRestartRequired.Should().BeTrue(
+			"because the running development child remains active until Ring restarts");
+		sut.RefreshConnectionIdentity();
+		sut.IsDevelopmentSelected.Should().BeFalse(
+			"because refresh must retain the persisted pending Release selection");
+	}
+
+	[Test]
+	[Description("An explicit development configuration that happens to use the command name clio is still identified from the resolved startup mode, not from path heuristics.")]
+	public void RuntimeIdentity_ShouldRemainDevelopment_WhenExplicitDevelopmentCommandIsClio() {
+		// Arrange
+		IClioIpcClient client = Substitute.For<IClioIpcClient>();
+		client.TargetPath.Returns("clio");
+		var launch = new ClioIpcSettings { Command = "clio", Args = new[] { "mcp-server" } };
+		var runtime = new ResolvedClioRuntime(ClioRuntimeMode.Development, launch);
+
+		// Act
+		var sut = new ClioSettingsViewModel(_store, client, runtime);
+
+		// Assert
+		sut.IsDevelopmentRuntimeRunning.Should().BeTrue(
+			"because the immutable startup decision is authoritative even when target names overlap");
+		sut.RuntimeSummary.Should().Contain("development clio build",
+			"because the main interface must warn about the actual selected mode");
+	}
+
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	[Description("An explicit IPC target with a null or blank argument is rejected instead of reaching child-process construction.")]
+	public void ResolveClioRuntime_ShouldFallBackToRelease_WhenExplicitArgumentIsInvalid(string? invalidArgument) {
+		// Arrange
+		var ipc = new ClioIpcSettingsDto { Command = "dotnet", Args = [invalidArgument!, "mcp-server"] };
+
+		// Act
+		ResolvedClioRuntime resolved = Startup.ResolveClioRuntime(runtimeMode: "development", devClioPath: null, ipc);
+
+		// Assert
+		resolved.Mode.Should().Be(ClioRuntimeMode.Release,
+			"because every explicit child-process argument must be usable");
+		resolved.LaunchSettings.Should().BeSameAs(ClioIpcSettings.Default,
+			"because invalid development configuration fails closed to the trusted release target");
+		resolved.ConfigurationWarning.Should().Contain("Open Settings",
+			"because an explicit Development request must not fail over silently");
+	}
+
+	[Test]
+	[Description("A valid clio dotnet-tool shim under DOTNET_CLI_HOME is supported without trusting arbitrary PATH entries.")]
+	public void ResolveReleaseToolPath_ShouldUseDotnetCliHome_WhenConfigured() {
+		// Arrange
+		string dotnetCliHome = Path.Combine(_tempDir, "dotnet-cli-home");
+		string toolPath = Path.Combine(dotnetCliHome, ".dotnet", "tools");
+		string storePath = Path.Combine(toolPath, ".store", "clio");
+		Directory.CreateDirectory(storePath);
+		string shimPath = Path.Combine(toolPath, OperatingSystem.IsWindows() ? "clio.exe" : "clio");
+		File.WriteAllText(shimPath, string.Empty);
+
+		// Act
+		string resolved = ClioIpcSettings.ResolveReleaseToolPath(dotnetCliHome,
+			userProfile: Path.Combine(_tempDir, "empty-profile"));
+
+		// Assert
+		resolved.Should().Be(Path.GetFullPath(shimPath),
+			"because DOTNET_CLI_HOME is an explicit dotnet-owned global-tool root");
+	}
+
+	[Test]
+	[Description("An explicit Development selection without a valid target safely runs Release and draws attention to the configuration problem.")]
+	public void RuntimeIdentity_ShouldWarn_WhenRequestedDevelopmentTargetIsInvalid() {
+		// Arrange
+		ResolvedClioRuntime runtime = Startup.ResolveClioRuntime("development", devClioPath: null, ipc: null);
+
+		// Act
+		var sut = new ClioSettingsViewModel(_store, runtime: runtime);
+
+		// Assert
+		sut.IsReleaseRuntimeRunning.Should().BeTrue("because invalid development configuration fails closed");
+		sut.HasRuntimeConfigurationWarning.Should().BeTrue(
+			"because fallback must be conspicuous on the main interface");
+		sut.IsDevelopmentSelected.Should().BeTrue(
+			"because the UI must preserve the requested next-launch mode instead of pretending Release was selected");
+		sut.CanChangeRuntimeSelection.Should().BeTrue(
+			"because the user must be able to switch the invalid request back to Release");
+		sut.RuntimeConfigurationWarning.Should().Contain("Open Settings",
+			"because the warning gives the user a concrete recovery action");
+
+		// Act - recover by selecting Release, then simulate a later connection refresh.
+		sut.IsDevelopmentSelected = false;
+		sut.RefreshConnectionIdentity();
+
+		// Assert
+		sut.IsDevelopmentSelected.Should().BeFalse(
+			"because refresh must not restore the invalid startup request after Release is persisted");
+		sut.HasRuntimeConfigurationWarning.Should().BeFalse(
+			"because the invalid Development warning is resolved by selecting Release");
+	}
+
+	[Test]
+	[Description("Saving a valid development target clears the invalid-request warning while keeping Development selected.")]
+	public void RuntimeIdentity_ShouldClearWarning_WhenValidDevelopmentTargetIsSaved() {
+		// Arrange
+		ResolvedClioRuntime runtime = Startup.ResolveClioRuntime("development", devClioPath: null, ipc: null);
+		var sut = new ClioSettingsViewModel(_store, runtime: runtime) { DevClioPathInput = _devClioDll };
+
+		// Act
+		sut.SaveDevClioOverrideCommand.Execute(null);
+
+		// Assert
+		sut.HasRuntimeConfigurationWarning.Should().BeFalse(
+			"because the requested Development mode now has a valid saved target");
+		sut.IsDevelopmentSelected.Should().BeTrue(
+			"because configuring the missing target fulfills rather than clears the Development request");
+	}
+
+	[Test]
+	[Description("Release identity remains release when a development path is preserved for later switching.")]
+	public void ConnectedIdentity_ShouldRemainRelease_WhenDevelopmentPathIsPreserved() {
+		// Arrange
+		_store.SaveDevClioPath(_devClioDll);
+		IClioIpcClient client = Substitute.For<IClioIpcClient>();
+		client.TargetPath.Returns(ClioIpcSettings.Default.Command);
+		var runtime = new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default);
+
+		// Act
+		var sut = new ClioSettingsViewModel(_store, client, runtime);
+
+		// Assert
+		sut.ConnectedClioIdentity.Should().Contain("release build",
+			"because a saved development target is not the source used by the current process");
+		sut.ConnectedClioIdentity.Should().NotContain("development build",
+			"because only the immutable active mode determines connected identity");
+	}
+
+	[Test]
+	[Description("Selecting Development while Release is active persists the next mode and exposes the restart-required state.")]
+	public void RuntimeSwitch_ShouldRequireRestart_WhenDevelopmentSelectedFromRelease() {
+		// Arrange
+		_store.SaveDevClioPath(_devClioDll);
+		var runtime = new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default);
+		var sut = new ClioSettingsViewModel(_store, runtime: runtime);
+
+		// Act
+		sut.IsDevelopmentSelected = true;
+
+		// Assert
+		sut.IsReleaseRuntimeRunning.Should().BeTrue("because the current child cannot change during this session");
+		sut.RuntimeSelectionRestartRequired.Should().BeTrue(
+			"because the newly persisted Development choice applies at next launch");
+		_store.ReadRuntimeMode().Should().Be("development", "because the toggle controls the next startup mode");
+		sut.RefreshConnectionIdentity();
+		sut.IsDevelopmentSelected.Should().BeTrue(
+			"because refresh must retain the persisted pending Development selection");
+	}
+
+	[Test]
+	[Description("A malformed settings file is never overwritten when a runtime selection save is attempted.")]
+	public void RuntimeSwitch_ShouldPreserveMalformedSettings_WhenPersistenceFails() {
+		// Arrange
+		const string malformed = "{ this is not valid json";
+		File.WriteAllText(_settingsPath, malformed);
+		var runtime = new ResolvedClioRuntime(ClioRuntimeMode.Development,
+			new ClioIpcSettings { Command = _devClioExe, Args = new[] { "mcp-server" } });
+		var sut = new ClioSettingsViewModel(_store, runtime: runtime);
+
+		// Act
+		sut.IsDevelopmentSelected = false;
+
+		// Assert
+		File.ReadAllText(_settingsPath).Should().Be(malformed,
+			"because unreadable settings must be left byte-for-byte unchanged");
+		sut.IsDevelopmentSelected.Should().BeTrue("because the selection is reverted when persistence fails");
+		sut.ValidationMessage.Should().Contain("left unchanged",
+			"because the save failure must be visible without exposing technical details");
+	}
+
+	[Test]
+	[Description("The main runtime identity refreshes when the lazy clio handshake becomes available.")]
+	public void RuntimeIdentity_ShouldRefresh_WhenConnectionChanges() {
+		// Arrange
+		IClioIpcClient client = Substitute.For<IClioIpcClient>();
+		client.TargetPath.Returns(ClioIpcSettings.Default.Command);
+		client.Handshake.Returns((ClioServerHandshake?)null);
+		var runtime = new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default);
+		var sut = new ClioSettingsViewModel(_store, client, runtime);
+		client.Handshake.Returns(new ClioServerHandshake {
+			ServerName = "clio", ServerVersion = "8.1.0.84", Capabilities = Array.Empty<string>()
+		});
+
+		// Act
+		client.ConnectionChanged += Raise.Event<EventHandler>(client, EventArgs.Empty);
+
+		// Assert
+		sut.RuntimeSummary.Should().Be("clio 8.1.0.84",
+			"because negotiated identity replaces the pre-handshake configured summary");
 	}
 }

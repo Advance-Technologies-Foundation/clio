@@ -21,6 +21,11 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 	private static readonly string ConfigurationWebServiceTestsUri = BuildGuideUri("configuration-webservice-tests");
 	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
+	private static readonly string VirtualEntitiesUri = BuildGuideUri("virtual-entities");
+	private static readonly string EsqFiltersUri = BuildGuideUri("esq-filters");
+	private static readonly string EsqFiltersFrontendUri = BuildGuideUri("esq-filters/frontend");
+	private static readonly string EsqFiltersBackendUri = BuildGuideUri("esq-filters/backend");
+	private static readonly string EsqFilterParsingUri = BuildGuideUri("esq-filter-parsing");
 	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
 	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
@@ -62,6 +67,11 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 				ConfigurationWebServiceTestsUri,
 				DataBindingsUri,
 				ExistingAppMaintenanceUri,
+				VirtualEntitiesUri,
+				EsqFiltersUri,
+				EsqFiltersFrontendUri,
+				EsqFiltersBackendUri,
+				EsqFilterParsingUri,
 				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
 				PageSchemaCreatioDevkitCommonUri,
@@ -85,7 +95,187 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 
 		resources.Select(resource => resource.Uri).Should().Contain(
 			expectedStaticUris.Concat(expectedGeneratedUris),
-			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules server-to-server-oauth and reference resources");
+			because: "the MCP server should advertise creation existing-app ESQ filter configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules server-to-server-oauth and reference resources");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the ESQ filter family and its responsibility-specific resources")]
+	[Description("Verifies the router, frontend construction, backend construction, and runtime parsing ESQ filter resources can all be read directly.")]
+	public async Task McpServer_ShouldReturnEsqFilterResources_WhenUrisAreRead() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult routerResult = await context.Session.ReadResourceAsync(
+			EsqFiltersUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult frontendResult = await context.Session.ReadResourceAsync(
+			EsqFiltersFrontendUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult backendResult = await context.Session.ReadResourceAsync(
+			EsqFiltersBackendUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult parsingResult = await context.Session.ReadResourceAsync(
+			EsqFilterParsingUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents router = routerResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the family router should resolve to one plain-text article").Subject;
+		router.Text.Should().Contain("GATE: choose the owner",
+			because: "the root resource should route rather than duplicate detailed rules");
+		router.Text.Should().Contain("inclusive Between ranges",
+			because: "the published router must not describe promoted Between guidance as pending");
+		router.Text.Should().Contain("lookup equality/membership",
+			because: "the published router should advertise promoted lookup coverage");
+		router.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "the published router should advertise promoted temporal coverage");
+		router.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "the published router should advertise promoted subquery coverage");
+		router.Text.Should().Contain("saved Segment membership",
+			because: "the published router should advertise promoted Segment coverage");
+		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the frontend construction resource should resolve to one plain-text article").Subject;
+		frontend.Text.Should().Contain("Group envelope (filterType 6)",
+			because: "the existing serialized group contract should remain in the frontend owner");
+		frontend.Text.Should().Contain("`rightLessExpression` = first/lower bound",
+			because: "the published frontend resource must expose the verified Between ordering");
+		frontend.Text.Should().Contain("Low-level DataService also accepted a raw GUID parameter",
+			because: "the published frontend guide should distinguish low-level and designer lookup values");
+		TextResourceContents backend = backendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the backend construction resource should resolve to one plain-text article").Subject;
+		backend.Text.Should().Contain("LogicalOperationStrict.Or",
+			because: "the backend owner should contain the lab-verified nested OR construction");
+		backend.Text.Should().Contain("FilterComparisonType.NotEndWith",
+			because: "the directly readable backend guide should expose the complete verified scalar Compare recipes");
+		backend.Text.Should().Contain("negatedOr.IsNot = true",
+			because: "the directly readable backend guide should expose verified group-IsNot construction");
+		backend.Text.Should().Contain("DataService removes disabled children",
+			because: "the published backend resource should state the disabled-filter transport boundary");
+		backend.Text.Should().Contain("CreateIsNotNullFilter(\"UsrName\")",
+			because: "the published backend guide should expose the dedicated native null-filter APIs");
+		backend.Text.Should().Contain("not a general null rule for Integer, Guid, lookup, or date columns",
+			because: "the published guide must preserve the verified MediumText-only boundary");
+		backend.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "the published backend guide should expose native In construction");
+		backend.Text.Should().Contain("physical SQL compilation emits invalid `column = ` text",
+			because: "the published guide should warn against executing empty membership");
+		backend.Text.Should().Contain("FilterComparisonType.Between",
+			because: "the published backend guide should expose native Between construction");
+		backend.Text.Should().Contain("rightLessExpression` carries the first/lower value",
+			because: "the published backend guide must not reverse DataService Between bounds");
+		backend.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "the published backend guide must distinguish lookup and plain Guid parameters");
+		backend.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "the published backend guide should expose explicit date-only comparison");
+		backend.Text.Should().Contain("EntitySchemaQueryMacrosType.PreviousNDays, 7",
+			because: "the published backend guide should expose parameterized temporal macros");
+		backend.Text.Should().Contain(
+			"FilterComparisonType.Equal, \"UsrLocalTime\", EntitySchemaQueryMacrosType.HourMinute",
+			because: "the published backend guide should expose a compiling column-path overload for date-part construction");
+		backend.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "the published backend guide should expose verified native Exists construction");
+		backend.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "the published backend guide should place child aggregate predicates in the returned subquery");
+		backend.Text.Should().Contain("new SegmentFilterOptions",
+			because: "the published backend guide should expose native saved-Segment construction");
+		backend.Text.Should().Contain("RemovedOn IsNull",
+			because: "the published backend guide should preserve default active-membership semantics");
+		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
+		parsing.Text.Should().Contain("Parse a tree, not a flat list",
+			because: "the parsing owner should require recursive group traversal");
+		parsing.Text.Should().Contain("maximum depth and total-node limits",
+			because: "the directly readable parsing guide should bound remotely supplied filter complexity");
+		parsing.Text.Should().Contain("AND(C, A, B)",
+			because: "the directly readable parser guide should preserve the verified ATF structural ordering boundary");
+		parsing.Text.Should().Contain("LeftExpression.Path",
+			because: "the published parser guide must validate the complete ESQ column path");
+		parsing.Text.Should().Contain("Exclude disabled items from evaluation",
+			because: "the published parser guide should expose verified disabled-node evaluation");
+		parsing.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "the published parser guide should negate the combined group result");
+		parsing.Text.Should().Contain("ReadNullComparison",
+			because: "the published parser guide should expose the verified left-only null shape");
+		parsing.Text.Should().Contain("empty-string rule to other schema data-value types",
+			because: "the published parser must not apply text semantics to unverified data types");
+		parsing.Text.Should().Contain("ReadIntegerMembership",
+			because: "the published parser should expose the verified membership reader");
+		parsing.Text.Should().Contain("MaxMembershipValues",
+			because: "the published parser must bound remotely supplied membership parameters");
+		parsing.Text.Should().Contain("always false; it must never fall through",
+			because: "the published parser must fail safe for empty membership");
+		parsing.Text.Should().Contain("ReadIntegerBetween",
+			because: "the published parser should expose the verified two-boundary reader");
+		parsing.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "the published parser should validate typed primitive parameters");
+		parsing.Text.Should().Contain("its CLR value is Guid",
+			because: "the published parser must not infer lookup semantics from CLR type alone");
+		parsing.Text.Should().Contain("ReadTrimmedDate",
+			because: "the published parser should expose explicit trim-to-date validation");
+		parsing.Text.Should().Contain("Function.GetArguments()",
+			because: "the published parser should recursively validate temporal function arguments");
+		parsing.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "the published parser should cache relative temporal boundaries once per query");
+		parsing.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "the published parser should validate right-side existence subqueries");
+		parsing.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "the published parser should locate aggregate function columns explicitly");
+		parsing.Text.Should().Contain("Count(Id) without Distinct",
+			because: "the published parser should validate the proven aggregation operand and evaluation mode");
+		parsing.Text.Should().Contain("materialize an unbounded child source",
+			because: "the published parser should reject unbounded child preloading as an N+1 workaround");
+		parsing.Text.Should().Contain("ReadSegmentMembership",
+			because: "the published parser should validate the expanded Segment runtime tree");
+		parsing.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "the published parser should require complete shape validation before external work");
+		parsing.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "the published parser should require request-scoped Segment authorization");
+		parsing.Text.Should().Contain("Never reuse a cross-caller",
+			because: "the published parser should scope authorization caching to one request identity");
+		parsing.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "the published parser should fail safe on dynamic membership-table identifiers");
+		parsing.Text.Should().Contain("never reached PostgreSQL",
+			because: "the published resource must not misattribute virtual-provider case behavior to the database");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns virtual entity lifecycle guidance")]
+	[Description("Verifies the directly readable virtual-entities resource requires schema creation for reads and Creatio 10.0 plus its feature flag for writes.")]
+	public async Task McpServer_ShouldReturnVirtualEntitiesGuidance_WhenResourceUriIsRead() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(
+			VirtualEntitiesUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the virtual entity guide should resolve to one plain-text article").Subject;
+		article.Uri.Should().Be(VirtualEntitiesUri,
+			because: "the returned article should preserve the stable virtual-entities URI");
+		article.Text.Should().Contain("virtual entity schema MUST already exist",
+			because: "the published resource should enforce object creation before executor implementation");
+		article.Text.Should().Contain("<EntitySchemaName>QueryExecutor",
+			because: "the published resource should explain the exact named DI binding");
+		article.Text.Should().Contain("virtual writes require Creatio 10.0 or later",
+			because: "the published resource must not advertise Entity-level virtual CRUD for 8.3.4");
+		article.Text.Should().Contain("Creatio 8.3.4 or earlier",
+			because: "the directly readable article should state the last unsupported release line explicitly");
+		article.Text.Should().Contain("EnableVirtualEntitySupport",
+			because: "the published resource should require the disabled-by-default feature on supported versions");
+		article.Text.Should().Contain("record/tenant scope",
+			because: "the published provider guidance must require equivalent record authorization");
+		article.Text.Should().Contain("maximum page size",
+			because: "the published provider guidance must reject unbounded full-provider reads");
+		article.Text.Should().Contain("Do not substitute `clear-redis-db`",
+			because: "the published feature workflow must not recommend flushing unrelated Redis data");
+		article.Text.Should().Contain("clio set-feature EnableVirtualEntitySupport 1 -e <environment>",
+			because: "the published resource should expose the executable CLI fallback for feature state");
 	}
 
 	[Test]

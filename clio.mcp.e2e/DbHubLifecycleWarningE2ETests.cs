@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [Category("McpE2E.Sandbox")]
 [Category("LocalOnly")]
+[Category("McpE2E.Manual")]
 [Explicit("Developer-local validation only: installs a disposable Creatio instance from a local archive and must never run in TeamCity.")]
 [AllureFeature("dbHub lifecycle")]
 [NonParallelizable]

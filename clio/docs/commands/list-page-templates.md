@@ -28,6 +28,11 @@ Freedom UI dashboard page. It appears with `title` `Dashboard` (its
 `groupName` is `DashboardPage`) and is a valid `--template` value for
 `create-page`.
 
+The web catalog also always includes `CentralAreaDesktopTemplate`, the
+parent for a desktop page (a desktop-selector workspace). It appears with
+`title` `Desktop` and `groupName` `Desktop` and is a valid `--template`
+value for `create-page`.
+
 ## Synopsis
 
 ```bash

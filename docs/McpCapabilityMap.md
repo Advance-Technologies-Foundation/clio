@@ -237,6 +237,7 @@ Structured domain responses:
 - `show-passing-infrastructure`
 - `get-entity-schema-properties`
 - `get-entity-schema-column-properties`
+- `set-entity-schema-properties`
 
 Generic command envelopes:
 
@@ -366,13 +367,15 @@ What an external AI can practically do here:
 The AI sees this as a higher abstraction layer than package-level commands.
 
 **Long-running / progress contract.** `create-app`, `create-app-section`,
-`update-app-section`, `delete-app-section`, `list-app-sections`, and `get-app-info`
-call the Creatio backend synchronously and can take minutes on a cold or busy
-environment. They emit `notifications/progress` on a fixed cadence (default 15 s,
-overridable via the `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable) so MCP
-clients reset their inactivity timeout. A progress notification means the server is
-still working — the AI must await completion and must not retry or fall back to raw SQL
-or manual UI on a perceived client timeout.
+`update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`, and
+`sync-schemas` call the Creatio backend synchronously and can take minutes on a cold or busy
+environment. They emit `notifications/progress` so MCP clients reset their inactivity timeout:
+a fixed-cadence keep-alive beat (default 15 s, overridable via the
+`CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable), and — for `sync-schemas` — a
+per-operation stage marker (`"<i>/<n>: <op> <schema>"`) pushed before each operation in the
+batch so the client can show which operation is running. A progress notification means the
+server is still working — the AI must await completion and must not retry or fall back to raw
+SQL or manual UI on a perceived client timeout.
 
 ### 3. Entity, Lookup, And Schema Design
 
@@ -383,6 +386,7 @@ This is the second major design-oriented surface after page tools.
 - `update-entity-schema`
 - `modify-entity-schema-column`
 - `get-entity-schema-properties`
+- `set-entity-schema-properties`
 - `get-entity-schema-column-properties`
 - `sync-schemas`
 
@@ -392,6 +396,9 @@ What an external AI can practically do here:
 - create explicit lookup schemas
 - read structured schema metadata before mutating
 - mutate one column or a whole schema batch
+- create `Color` columns (dataValueType 18; read back as the named `Color` type)
+- override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
+- set a schema's primary-display column (own or inherited) via `set-entity-schema-properties`
 - execute composite schema changes in one call
 
 Why `sync-schemas` matters:
@@ -642,7 +649,7 @@ environment.
 - `list-user-tasks` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — returns the environment's user-task palette (built-in + custom; name + UId) for `userTaskName` selection when building a process.
 - `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
 - `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters,signal?}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted.
-- `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: the `run-process-button` guidance.
+- `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: authoring crt.RunBusinessProcessRequest via the request catalog (get-request-info).
 
 What an external AI can practically do here:
 
@@ -657,7 +664,7 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
   Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
@@ -675,16 +682,51 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+- `set-user-theme`
+  Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
 
 What an external AI can practically do here:
 
 - build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
 
-Companion surfaces (see the `theming` guidance):
+Companion surfaces:
 
 - `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+- `get-guidance name=branding` — the rest of the branding surface: product logos and the shell background image.
+
+### 13. Branding
+
+These tools brand a Creatio app: the product logos and the shell background image.
+Both act on a registered environment (`environment-name`) and require the `CanCustomizeBranding`
+license (precheck with `check-theming-access`). All tools take a single `args` object with
+kebab-case fields.
+
+- `upload-image`
+  Upload a local image file to the environment and return the created `image-id`. Additive only
+  (`Destructive=false`) — each call stores a new image. Requires forms-auth credentials
+  (login/password) on the environment.
+- `set-background-image`
+  Set an image as the environment's shell background for all users — pass exactly one of `file`
+  (a local image, uploaded and applied in one call) or `image-id` (an image already uploaded with
+  `upload-image`). A confirmed write (`Destructive=true`: it replaces the currently configured
+  background, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued
+  through `clio-run-destructive`). Idempotent — re-applying the same image converges to the same
+  state.
+
+What an external AI can practically do here:
+
+- apply a shell background in one call: `set-background-image` with the local file (or with the
+  `image-id` of an already-uploaded image)
+- write the four product logo slots as Binary sys settings (`update-sys-setting` +
+  `value-file-path`) — the slot list and rules live in the `branding` guidance
+
+Companion surfaces:
+
+- `get-guidance name=branding` — the logo slots, the background flow, and the license gate.
+- `get-guidance name=theming` — colours, fonts, and custom themes.
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

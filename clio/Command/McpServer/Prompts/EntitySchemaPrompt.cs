@@ -46,7 +46,8 @@ public static class EntitySchemaPrompt {
 		 OPTIONAL for a column add; when omitted, `en-US` is auto-derived from a scalar title/caption or the
 		 column name. Provide `title-localizations` for a proper caption; the `en-US` value must be English.
 		 Supported column types include
-		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for
+		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, `Email`, and `Color` (a hex color string such as
+		 `#RRGGBB`; not a text column, so text-only options do not apply). `Blob` can be used as an alias for
 		 `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password` can be used as aliases for `SecureText`,
 		 and `EmailAddress` can be used as an alias for `Email`. For an image/photo field shown with the
 		 `crt.ImageInput` component, use `ImageLookup` ("Image link"), NOT the binary `Image` type. `ImageLookup` references the `SysImage` schema automatically,
@@ -138,6 +139,9 @@ public static class EntitySchemaPrompt {
 		 `is-required` for `required`.
 		 Do not send legacy scalar `description`, and do not translate the payload into frontend
 		 `entity.update.operationsJson`.
+		 A `modify` operation on an INHERITED column may override ONLY its caption/description
+		 (`title-localizations` / `description-localizations`); changing its name, type, or flags is rejected and
+		 stops the batch on that operation.
 		 `title-localizations` is OPTIONAL for an `add` operation; when omitted, `en-US` is auto-derived from a
 		 scalar title/caption or the column name. Provide `title-localizations` for a proper caption; the `en-US`
 		 value must be ENGLISH text — author each localization in its own language (non-English text under
@@ -250,7 +254,9 @@ public static class EntitySchemaPrompt {
 		 text — author each localization in its own language; non-English text under `en-US` such as Cyrillic is
 		 rejected, use a key like `uk-UA`); for `Lookup`, also supply `reference-schema-name`. For
 		 `modify`, include only the fields that should change, using `title-localizations` and
-		 `description-localizations` instead of legacy scalar `title` or `description`. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
+		 `description-localizations` instead of legacy scalar `title` or `description`. For an INHERITED column,
+		 `modify` may override ONLY its caption/description; its name, type, and flags are read-only and it cannot
+		 be removed. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`. For default values,
 		 prefer `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or
@@ -258,7 +264,8 @@ public static class EntitySchemaPrompt {
 		 `None`. Supported types include `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`.
 		 `Blob` can be used as an alias for `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password`
 		 can be used as aliases for `SecureText`, and `EmailAddress` can be used as an alias for `Email`.
-		 For image/photo fields bound to `crt.ImageInput`, use `ImageLookup` ("Image link"), not the binary
+		 `Color` (a hex color string such as `#RRGGBB`) is also supported; it is not a text column, so text-only
+		 options do not apply. For image/photo fields bound to `crt.ImageInput`, use `ImageLookup` ("Image link"), not the binary
 		 `Image` type; `ImageLookup` references `SysImage` automatically, so do not pass `reference-schema-name`. Do not
 		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
 		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
@@ -269,5 +276,35 @@ public static class EntitySchemaPrompt {
 		 it applies to any column type. On `modify` the stored value is left unchanged when `usage-type` is omitted.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
+		 """;
+
+	/// <summary>
+	/// Builds a prompt that directs the agent to set schema-level properties (primary-display column) through MCP.
+	/// </summary>
+	[McpServerPrompt(Name = SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName),
+		Description("Prompt to set schema-level properties (e.g. the primary-display column) on a remote entity schema")]
+	public static string SetEntitySchemaProperties(
+		[Required]
+		[Description("Target package name")]
+		string packageName,
+		[Required]
+		[Description("Entity schema name")]
+		string schemaName,
+		[Required]
+		[Description("Creatio environment name")]
+		string environmentName,
+		[Description("Column name (own or inherited) to set as the primary-display column")]
+		string primaryDisplayColumn = null) =>
+		$"""
+		 Use clio mcp server `{SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName}` to set schema-level
+		 properties on entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
+		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Supply
+		 `primary-display-column` with the column (own or inherited) to show as the record's display value in
+		 lookups and links — this is the only supported way to change the display column of an EXISTING schema.
+		 Requested primary-display column: `{primaryDisplayColumn ?? "<not provided>"}`.
+		 At least one settable property must be supplied. The change is saved and published like other
+		 entity-schema tools, then verified on readback. Confirm the result with
+		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` (`primary-display-column-name`).
+		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 """;
 }

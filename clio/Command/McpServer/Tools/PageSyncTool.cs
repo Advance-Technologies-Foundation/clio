@@ -784,6 +784,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
 		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
+		SchemaValidationResult widgetCaptionResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources));
 		SchemaValidationResult localizableTextResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateLocalizableTextLiterals(body));
 		SchemaValidationResult handlerResult = RunContentValidation(
@@ -832,6 +834,11 @@ public sealed class PageSyncTool(
 			converterFunctionShapeResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
+		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (the pre-flight has no schema
+		// context); surface it as a warning. The authoritative hard gate runs at save time via TryUpdatePage.
+		if (!widgetCaptionResult.IsValid) {
+			warnings.AddRange(widgetCaptionResult.Errors);
+		}
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,

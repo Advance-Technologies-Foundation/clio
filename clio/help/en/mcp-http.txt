@@ -17,6 +17,8 @@ PREREQUISITES
     ASP.NET Core shared runtime (Microsoft.AspNetCore.App) in addition to the
     base .NET runtime. The .NET SDK bundles it; runtime-only installs that ship
     only Microsoft.NETCore.App are not supported.
+    Deploy on a patched ASP.NET Core shared runtime: .NET 8 >= 8.0.21 or
+    .NET 10 >= 10.0.10 (current servicing).
 
 SECURITY
     The HTTP transport validates the Host header (restricted to the bound host)

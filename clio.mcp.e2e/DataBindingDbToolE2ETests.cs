@@ -27,6 +27,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
 	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
 	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
+	private const string ODataCreateToolName = ODataCreateTool.ToolName;
 
 	[Test]
 	[Description("Exposes all three DB-first data-binding MCP tools via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
@@ -292,6 +293,65 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			"create-data-binding-db should succeed for Account when the requested row only references supported columns");
 		AssertIncludesInfoMessage(result,
 			"successful Account DB-first binding creation should emit a completion message");
+	}
+
+	[Test]
+	[Description("Upserts a row whose Id exists in the table but is not yet bound to the target binding, and verifies the row is UPDATED (exit 0) instead of failing with the insert-required-field error, proving the live-but-unbound adoption path over the real MCP wire.")]
+	[AllureTag(UpsertRowDbToolName)]
+	[AllureName("upsert-data-binding-row-db adopts and updates a live-but-unbound row")]
+	[AllureDescription("Seeds a Lookup row in one binding, establishes a second empty binding, then upserts that row's Id into the second binding. Verifies the upsert exits 0 by updating the existing row rather than attempting an insert that would fail because required columns are absent.")]
+	public async Task UpsertDataBindingRowDb_Should_Update_Live_Row_When_Unbound_In_Target_Binding() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string targetBindingName = $"UsrAdoptTarget{arrangeContext.PackageName}";
+		string rowName = $"E2E Adopt {arrangeContext.PackageName}";
+		// Caller-supplied Id so the seeded row is known up front (odata-create echoes it back).
+		string createdRowId = System.Guid.NewGuid().ToString();
+
+		// Act - seed the Lookup row UNBOUND via odata-create: it inserts the row into the table WITHOUT
+		// binding it, so the row is genuinely live-but-unbound in the target binding. Seeding via
+		// create-data-binding-db would BIND the record, and the platform forbids binding the same record in a
+		// second binding of the same schema+package - which is not the scenario this test exercises.
+		CommandExecutionActResult seedResult = await ActCommandAsync(
+			arrangeContext,
+			ODataCreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["entity"] = "Lookup",
+				["rows"] = new[] {
+					new Dictionary<string, object?> { ["Id"] = createdRowId, ["Name"] = rowName }
+				}
+			});
+		AssertToolCallSucceeded(seedResult);
+
+		// Act - establish a SEPARATE empty binding so the seeded row exists in the table but is NOT bound here
+		CommandExecutionActResult targetBindingResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Lookup",
+				["binding-name"] = targetBindingName
+			});
+		AssertToolCallSucceeded(targetBindingResult);
+		AssertCommandExitCode(targetBindingResult, 0, "establishing the empty target binding should succeed");
+
+		// Act - upsert the seeded row's Id into the empty target binding
+		CommandExecutionActResult upsertResult = await ActCommandAsync(
+			arrangeContext,
+			UpsertRowDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = targetBindingName,
+				["values"] = $"{{\"Id\":\"{createdRowId}\",\"Name\":\"{rowName} Updated\"}}"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(upsertResult);
+		AssertCommandExitCode(upsertResult, 0,
+			"upsert must UPDATE a row that exists in the table but is unbound in the target binding, not attempt an insert that fails on required columns");
 	}
 
 	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {

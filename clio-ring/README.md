@@ -48,9 +48,35 @@ clio ring
 
 The bootstrap installs versioned releases under `%LOCALAPPDATA%\Creatio\clio-ring` and verifies every ZIP against the SHA-256 in the GitHub release manifest.
 
-## Application settings and development clio
+## Application settings and clio runtime
 
 `ClioRing.Desktop/app-settings.json` references the colocated `app-settings.schema.json`, so JSON-aware editors provide validation and hover descriptions. The `Channel` value is only the label shown in Ring's build badge; values such as `release`, `dev`, or `preview` do **not** select which clio executable Ring starts.
+
+Ring has a separate `ClioRuntimeMode` setting:
+
+- `release` starts a verified dotnet-tool shim from the standard user directory or `DOTNET_CLI_HOME`; custom paths remain explicit Development targets.
+- `development` starts the saved local development target.
+
+The main Ring surface always shows the active mode. Development mode uses a prominent warning with a
+Release/Development switch. The switch updates `app-settings.json`, preserves the development target,
+and takes effect after Ring restarts.
+The same selected runtime drives deployment workflows, environment discovery, and ordinary radial actions.
+
+### Release clio updates
+
+Ring checks NuGet at startup and every eight hours for the latest listed stable `clio` package. A newer
+version adds a durable notice to the main surface and changes the tray icon, tooltip, and first menu action.
+The check timestamp and one-notification-per-version acknowledgement are persisted without process data, so
+restarting Ring does not repeatedly query or notify. Ring never installs an update automatically, and
+Development mode remains untouched.
+
+Choosing **Update** gracefully stops only Ring's own Release MCP child, then runs the trusted dotnet host
+with the exact version shown in the notice and an isolated NuGet configuration containing only NuGet.org.
+If Windows Restart Manager confirms that another application still has the Release shim open, Ring
+shows each trusted `clio.exe` process with its PID, executable path, secret-free command classification, and
+immediate parent application. **Cancel** leaves every process running. **Kill clio processes and retry** is
+a separate explicit action that revalidates each PID, start time, and executable path before terminating
+only those clio processes. Claude, Codex, and other parent applications are never terminated.
 
 To expose the experimental MCP-over-stdio UI and point it at a development build, use:
 
@@ -59,6 +85,7 @@ To expose the experimental MCP-over-stdio UI and point it at a development build
   "$schema": "./app-settings.schema.json",
   "WorkspaceFolder": "C:\\Projects\\Workspaces",
   "Channel": "release",
+  "ClioRuntimeMode": "development",
   "Experiments": {
     "ClioIpc": true
   },
@@ -66,11 +93,14 @@ To expose the experimental MCP-over-stdio UI and point it at a development build
 }
 ```
 
-Clio launch selection uses this precedence on the next Ring launch:
+In Development mode, target selection uses this precedence on the next Ring launch:
 
 1. A valid `DevClioPath` (`clio.dll` or `clio.exe`).
 2. An explicit `ClioIpc` block with `Command`, `Args`, and optional `WorkingDirectory`.
-3. Ring's machine default.
+
+With legacy settings that do not contain `ClioRuntimeMode`, Ring keeps using Development when either
+target exists. Clean settings select Release. This migration prevents an existing development setup from
+changing silently while making Release the default for ordinary installations.
 
 `DevClioPath` and `ClioIpc.Command` are code-execution trust boundaries: Ring starts the selected program with your user privileges. Use only trusted local builds and commands, prefer absolute paths, and do not point them at downloaded binaries or locations writable by other users.
 

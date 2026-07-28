@@ -19,4 +19,14 @@ public interface IClioSettingsStore {
 	/// </summary>
 	/// <param name="path">The dev-clio build path, or null/blank to clear the override.</param>
 	void SaveDevClioPath(string? path);
+
+	/// <summary>Reads the selected clio runtime mode, or null for legacy settings.</summary>
+	string? ReadRuntimeMode();
+
+	/// <summary>Persists the selected clio runtime mode without changing either saved runtime target.</summary>
+	/// <param name="mode">The normalized <c>release</c> or <c>development</c> mode.</param>
+	void SaveRuntimeMode(string mode);
+
+	/// <summary>Gets whether a valid development runtime target is saved.</summary>
+	bool HasDevelopmentTarget();
 }
