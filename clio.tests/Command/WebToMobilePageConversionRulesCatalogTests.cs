@@ -71,6 +71,26 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("The bundled rules mandate a transparent background for converter-inserted mobile tabs (ENG-94188).")]
+	public void LoadBundled_ComponentDefaults_ForceTransparentTabColor() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		ComponentDefaultsRule tab = rules.ComponentDefaults.Single(d => d.MobileType == "crt.TabContainer");
+		tab.Values.Should().ContainKey("color");
+		tab.Values["color"].GetString().Should().Be("transparent");
+	}
+
+	[Test]
+	[Description("A rules file without the componentDefaults group parses to an empty list (backward compatible).")]
+	public void ParseStream_WithoutComponentDefaults_ParsesToEmptyList() {
+		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.ComponentDefaults.Should().NotBeNull().And.BeEmpty();
+	}
+
+	[Test]
 	[Description("ParseStream supports many-to-many component equivalence rules (lists on both sides).")]
 	public void ParseStream_SupportsManyToManyComponentRule() {
 		const string json = """

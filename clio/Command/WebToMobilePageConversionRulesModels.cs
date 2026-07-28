@@ -34,6 +34,14 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("requests")]
 	public IReadOnlyList<RequestMappingRule> Requests { get; init; } = [];
 
+	/// <summary>
+	/// Group: per-mobile-type property defaults FORCED onto every element the converter INSERTS
+	/// (applied last, overriding same-named properties carried from the web node). Template-provided
+	/// elements (merge-by-name twins) are not touched — they already carry the mobile template's values.
+	/// </summary>
+	[JsonPropertyName("componentDefaults")]
+	public IReadOnlyList<ComponentDefaultsRule> ComponentDefaults { get; init; } = [];
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -131,6 +139,25 @@ public sealed class ComponentMappingRule {
 	public IReadOnlyList<string> CarryProperties { get; init; } = [];
 
 	/// <summary>Business meaning of the element (e.g. "Primary list component"), not conversion mechanics.</summary>
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>
+/// Property defaults the mobile platform mandates for a component type, applied to every element the
+/// converter INSERTS with that mobile type (e.g. a converter-created tab must render with a transparent
+/// background). Values OVERRIDE same-named properties carried from the web node — a carried web value
+/// (e.g. a web designer background color) is exactly what the default exists to neutralize.
+/// </summary>
+public sealed class ComponentDefaultsRule {
+	/// <summary>Mobile component type the defaults apply to (e.g. "crt.TabContainer").</summary>
+	[JsonPropertyName("mobileType")]
+	public string MobileType { get; init; }
+
+	/// <summary>Property name → value forced onto the inserted element's mobile values.</summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }

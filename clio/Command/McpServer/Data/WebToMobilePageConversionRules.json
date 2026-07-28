@@ -97,6 +97,13 @@
       "note": "Many->one: mobile FolderTreeActions is produced from web crt.FolderTree (primary); web crt.FolderTreeActions is consumed. Values are reconciled against the mobile component's registry contract."
     }
   ],
+  "componentDefaults": [
+    {
+      "mobileType": "crt.TabContainer",
+      "values": { "color": "transparent" },
+      "note": "A converter-created mobile tab renders with a transparent background (the mobile shell provides the surface); overrides any background color carried from the web tab."
+    }
+  ],
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
