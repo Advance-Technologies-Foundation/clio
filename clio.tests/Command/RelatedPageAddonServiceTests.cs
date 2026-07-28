@@ -181,6 +181,62 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
+	[Description("Targets the MobileRelatedPage add-on (not the web RelatedPage add-on) when the request's SchemaType is Mobile, so the mobile conversion flow can register a converted page as the object's default mobile edit page.")]
+	public void Create_ShouldTargetMobileRelatedPageAddon_WhenSchemaTypeIsMobile() {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act — a single role-less default page, scoped to the mobile add-on.
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemMobileFormPage", IsDefault: true)
+		}, null, RelatedPageSchemaType.Mobile));
+
+		// Assert
+		result.AddonName.Should().Be("MobileRelatedPage",
+			because: "a mobile-scoped request writes the MobileRelatedPage add-on, not the web RelatedPage add-on");
+		// The mobile add-on attaches to the same object via the EntitySchemaManager; only the add-on name differs.
+		_addonSchemaDesignerClient.Received(1).GetSchema(Arg.Is<AddonGetRequestDto>(request =>
+			request.AddonName == "MobileRelatedPage"
+			&& request.TargetSchemaManagerName == "EntitySchemaManager"
+			&& request.TargetSchemaUId == Guid.Parse(EntityUId)));
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Description("Defaults to the web RelatedPage add-on when the request does not specify a SchemaType, preserving the existing web behavior for all current callers.")]
+	public void Create_ShouldTargetWebRelatedPageAddon_WhenSchemaTypeOmitted() {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act — the 4-arg request (no SchemaType) must behave exactly as before.
+		RelatedPageAddonResult result = _service.Create(Request(
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
+
+		// Assert
+		result.AddonName.Should().Be("RelatedPage",
+			because: "SchemaType defaults to Web, so an unspecified request writes the web RelatedPage add-on");
+		_addonSchemaDesignerClient.Received(1).GetSchema(Arg.Is<AddonGetRequestDto>(request =>
+			request.AddonName == "RelatedPage"));
+	}
+
+	[Test]
+	[Description("Reads the MobileRelatedPage add-on when the read request's SchemaType is Mobile.")]
+	public void Get_ShouldReadMobileRelatedPageAddon_WhenSchemaTypeIsMobile() {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(
+			new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem", RelatedPageSchemaType.Mobile));
+
+		// Assert
+		result.AddonName.Should().Be("MobileRelatedPage",
+			because: "a mobile-scoped read targets the MobileRelatedPage add-on");
+		_addonSchemaDesignerClient.Received(1).GetSchema(Arg.Is<AddonGetRequestDto>(request =>
+			request.AddonName == "MobileRelatedPage"));
+	}
+
+	[Test]
 	[Description("Writes the default and add page entries (with the correct IsDefault and Actions.Add flags) into the saved metadata.")]
 	public void Create_ShouldWriteDefaultAndAddPageFlagsIntoMetadata_WhenBothProvided() {
 		// Arrange

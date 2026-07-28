@@ -30,6 +30,11 @@ OPTIONS
     --package-name NAME
         Required. Package that owns the add-on configuration, e.g. 'Custom'.
 
+    --schema-type WEB|MOBILE
+        Which add-on to read: 'web' (RelatedPage, default) or 'mobile' (MobileRelatedPage - the record
+        page used by the Creatio Mobile app). Use the same --schema-type on the paired
+        create-related-page-addon when writing the set back.
+
 EXAMPLES
     # Read the current related-page configuration of an object.
     clio get-related-page-addon -e dev --entity-schema-name UsrDeliveryItem --package-name Custom

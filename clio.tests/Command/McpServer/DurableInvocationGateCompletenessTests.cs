@@ -53,8 +53,16 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"finish-hotfix",
 		"generate-source-code",
 		"get-browser-session",
+		"get-classic-page-sources",
+		"get-client-unit-schema",
 		"get-identity-assertion",
 		"get-page",
+		// get-schema / get-sql-schema reclassified ReadOnly=true -> false: with output-file set they write the
+		// schema body to disk, so they are write-capable. They stay Destructive=false (the write is confined to a
+		// trusted anchor or the OS temp dir via OutputPathConfinement), so the gate still runs them silently.
+		// Consciously added to the reviewed baseline for that reclassification (PR #937 / RC-28).
+		"get-schema",
+		"get-sql-schema",
 		"install-gate",
 		"install-toolkit",
 		"new-integration-test-project",

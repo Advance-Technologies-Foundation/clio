@@ -513,6 +513,59 @@ public sealed class SimpleToFullBusinessRuleConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps data-source-scoped page condition attributes to scoped metadata and triggers.")]
+	public void ToPageMetadata_Should_Emit_Scope_For_Datasource_Scoped_Condition_Attributes() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS.ModifiedOn"] = new("ModifiedOn", "DateTime", null, "PDS"),
+				["PDS.CreatedOn"] = new("CreatedOn", "DateTime", null, "PDS")
+			};
+		BusinessRule rule = new(
+			"Show name when modified after created",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS.ModifiedOn", null),
+						"greater-than",
+						new BusinessRuleExpression("AttributeValue", "PDS.CreatedOn", null))
+				]),
+			[
+				new ShowElementBusinessRuleAction(["Name"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "page business rules persist grouped case conditions").Subject.Conditions[0];
+		condition.LeftExpression.Path.Should().Be("ModifiedOn",
+			because: "a data-source-scoped condition operand persists the bare entity column as its path");
+		condition.LeftExpression.ScopeId.Should().Be("PDS",
+			because: "the data source name is carried on scopeId when the column is not surfaced on the page");
+		condition.RightExpression!.ScopeId.Should().Be("PDS",
+			because: "the right-side data-source-scoped operand is also scoped to its data source");
+
+		metadata.Triggers
+			.Where(trigger => trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType)
+			.Should().BeEquivalentTo(
+				new[] {
+					new { Name = "ModifiedOn", ScopeId = (string?)"PDS" },
+					new { Name = "CreatedOn", ScopeId = (string?)"PDS" }
+				},
+				because: "each data-source-scoped condition column contributes a change trigger scoped to its data source");
+		metadata.Triggers
+			.Where(trigger => trigger.Type == BusinessRuleConstants.DataLoadedTriggerType)
+			.Should().BeEquivalentTo(
+				new[] { new { Name = "PDS", ScopeId = (string?)string.Empty } },
+				because: "a data-source-scoped rule loads via a DataLoaded trigger named after the data source and no page-level DataLoaded trigger");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps page field-state actions to Creatio page business-rule action metadata type names.")]
 	public void ToPageMetadata_Should_Map_Page_Field_State_Action_Metadata() {
 		// Arrange

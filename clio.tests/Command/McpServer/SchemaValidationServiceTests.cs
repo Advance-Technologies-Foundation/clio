@@ -7511,6 +7511,237 @@ public sealed class SchemaValidationServiceTests
 
 	#endregion
 
+	#region ValidateMobileDataSourceAttributeTypes
+
+	[Test]
+	[Description("A data-source attribute with a related/lookup path (contains '.') but no 'type' is flagged.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenRelatedPathHasNoType_ReturnsError() {
+		string body = """
+		              {
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle" } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("QualifiedContactJobTitle") && e.Contains("no \"type\""));
+	}
+
+	[Test]
+	[Description("A related/lookup-path attribute that declares a 'type' passes.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenRelatedPathHasType_ReturnsValid() {
+		string body = """
+		              {
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle", "type": "ForwardReference" } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("An own column (dot-free path) needs no 'type' and is not flagged.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenOwnColumnHasNoType_ReturnsValid() {
+		string body = """
+		              {
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "LeadName": { "path": "LeadName" } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeTrue(because: "a dot-free path is an own column and needs no related-column type");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A viewModel attribute (modelConfig.path, no direct path) is not mistaken for a data-source attribute.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenViewModelAttribute_NotFlagged() {
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  { "operation": "merge", "path": ["attributes"], "values": {
+		                    "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.QualifiedContactJobTitle" } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeTrue(because: "viewModel attributes bind via modelConfig.path, not a direct data-source path");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A list / viewElement-scoped data source is scanned too, not just the page data source.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenListScopedDataSource_IsAlsoFlagged() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "ProductsList", "values": {
+		                    "type": "crt.List",
+		                    "modelConfig": { "dataSources": { "ProductsDS": { "config": { "attributes": {
+		                      "OrderOwner": { "path": "Order.Owner" } } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("OrderOwner"));
+	}
+
+	[Test]
+	[Description("The check is wired into ValidateMobilePage: a typeless related-path attribute lands in the blocking errors list.")]
+	public void ValidateMobilePage_WhenRelatedPathHasNoType_AddsBlockingError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "OrderOwner": { "path": "Order.Owner" } } } } } } }
+		                ]
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		errors.Should().Contain(e => e.Contains("OrderOwner") && e.Contains("no \"type\""));
+	}
+
+	#endregion
+
+	#region ValidateMobileInsertedFieldLabels
+
+	[Test]
+	[Description("A field component inserted without a 'label' is flagged (mobile renders the caption only via label).")]
+	public void ValidateMobileInsertedFieldLabels_WhenInsertedFieldHasNoLabel_ReturnsError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("LeadName") && e.Contains("label"));
+	}
+
+	[Test]
+	[Description("A field inserted with a non-empty 'label' passes.")]
+	public void ValidateMobileInsertedFieldLabels_WhenInsertedFieldHasLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName", "label": "$Resources.Strings.LeadName" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A 'merge' (partial update) of a field without a label is allowed — only inserts must carry a label.")]
+	public void ValidateMobileInsertedFieldLabels_WhenMergeFieldHasNoLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "merge", "name": "LeadName",
+		                    "values": { "type": "crt.Input", "visible": false } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "merges are partial updates and may legitimately omit label");
+	}
+
+	[Test]
+	[Description("A non-field component inserted without a label is not flagged.")]
+	public void ValidateMobileInsertedFieldLabels_WhenNonFieldInsertHasNoLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "Tabs", "parentName": "MainContainer",
+		                    "values": { "type": "crt.TabContainer" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "only standard field components require a label");
+	}
+
+	[Test]
+	[Description("A field that explicitly hides its label (labelPosition: hidden) is allowed without a label.")]
+	public void ValidateMobileInsertedFieldLabels_WhenLabelHidden_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName", "labelPosition": "hidden" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "labelPosition 'hidden' intentionally suppresses the label");
+	}
+
+	[Test]
+	[Description("Wiring: a labelless inserted field lands in ValidateMobilePage's blocking errors list.")]
+	public void ValidateMobilePage_WhenInsertedFieldHasNoLabel_AddsBlockingError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName" } }
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		errors.Should().Contain(e => e.Contains("LeadName") && e.Contains("label"));
+	}
+
+	#endregion
+
 	#region ValidateChartWidgetConfig
 
 	// Minimal merged typeDefinitions mirroring the real registry shapes the walk traverses:
