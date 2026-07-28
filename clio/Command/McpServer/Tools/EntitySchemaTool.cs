@@ -748,14 +748,19 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
-						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						  Integer, Float, Boolean, DateTime, Lookup,
 						  Binary, Image, ImageLookup, File, SecureText, Email, Color.
+						  Case-insensitive.
+						  Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as
+						  DateTime and reads it back as DateTime, so date-only or time-only intent is NOT preserved.
 						  Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
 						  text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						  Blob is also accepted as an alias for Binary.
 						  ImageLink is also accepted as an alias for ImageLookup.
 						  Encrypted and Password are accepted as aliases for SecureText.
 						  EmailAddress is accepted as an alias for Email.
+						  Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
+						  and Decimal for Decimal2 (same as Float).
 						  For image/photo fields rendered by the crt.ImageInput Freedom UI component,
 						  use ImageLookup ("Image link") — NOT the binary Image type, which crt.ImageInput
 						  cannot read or write. ImageLookup references the SysImage schema automatically.
@@ -889,12 +894,17 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("type")]
 	[property: Description("""
 						   Column type. Supported values:
-						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						   Guid, Integer, Float, Boolean, DateTime, Lookup,
 						   Text, ShortText, MediumText, LongText, MaxSizeText,
 						   Binary, Image, ImageLookup, File, Blob, SecureText,
 						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
 						   Currency0, Currency1, Currency2, Currency3, Color.
+						   Case-insensitive.
+						   Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as
+						   DateTime and reads it back as DateTime, so date-only or time-only intent is NOT preserved.
+						   Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
+						   and Decimal for Decimal2 (same as Float).
 						   Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
 						   text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						   Encrypted and Password are accepted as aliases for SecureText.

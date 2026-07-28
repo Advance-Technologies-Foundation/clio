@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NUnit.Framework;
@@ -26,6 +29,53 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "resolved binary-like type names should map to the expected runtime data value type");
 	}
 	
+	[Test]
+	[Description("Every column type clio can write is read back as a name that resolves to the same runtime type, so a readback value can always be sent straight back through the write vocabulary.")]
+	public void GetFriendlyTypeName_Should_RoundTrip_EverySupportedWriteType() {
+		// Arrange — the write vocabulary is the authority: any ordinal reachable by a write must be nameable
+		// on readback, otherwise read-modify-write breaks for that type (issue #949).
+		IReadOnlyCollection<int> writableDataValueTypes =
+			[.. EntitySchemaDesignerSupport.SupportedDataValueTypes.Values.Distinct()];
+
+		// Act & Assert
+		writableDataValueTypes.Should().NotBeEmpty(
+			because: "the registry must actually yield types, otherwise this guard passes vacuously");
+		foreach (int dataValueType in writableDataValueTypes) {
+			string friendlyName = EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType);
+			friendlyName.Should().NotBe(dataValueType.ToString(CultureInfo.InvariantCulture),
+				because: $"runtime type {dataValueType} is writable, so readback must report a semantic name " +
+					"rather than falling through to the raw ordinal");
+			EntitySchemaDesignerSupport.TryResolveDataValueType(friendlyName, out int resolved).Should().BeTrue(
+				because: $"the readback name '{friendlyName}' must be accepted by the write vocabulary");
+			resolved.Should().Be(dataValueType,
+				because: $"the readback name '{friendlyName}' must resolve back to the same runtime type");
+		}
+	}
+
+	[TestCase(6, "Currency2")]
+	[TestCase(48, "Currency0")]
+	[TestCase(49, "Currency1")]
+	[TestCase(50, "Currency3")]
+	[TestCase(47, "Decimal0")]
+	[TestCase(31, "Decimal1")]
+	[TestCase(33, "Decimal3")]
+	[TestCase(34, "Decimal4")]
+	[TestCase(40, "Decimal8")]
+	[TestCase(42, "PhoneNumber")]
+	[TestCase(43, "RichText")]
+	[TestCase(44, "WebLink")]
+	[Description("Names the decimal, currency, and text-subtype runtime types on readback instead of leaking the raw ordinal (a Currency2 column used to read back as the string \"6\").")]
+	public void GetFriendlyTypeName_Should_Name_PreviouslyUnmappedTypes(int dataValueType, string expectedName) {
+		// Arrange
+
+		// Act
+		string friendlyName = EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType);
+
+		// Assert
+		friendlyName.Should().Be(expectedName,
+			because: "readback must report the semantic type name from the documented write vocabulary");
+	}
+
 	[TestCase("Money", 6)]
 	[TestCase("money", 6)]
 	[TestCase("Currency2", 6)]

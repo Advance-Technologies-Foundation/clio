@@ -434,18 +434,36 @@ internal static class EntitySchemaDesignerSupport
 			18 => "Color",
 			24 => "SecureText",
 			25 => "File",
+			42 => "PhoneNumber",
+			43 => "RichText",
+			44 => "WebLink",
 			45 => "Email",
 			27 => "ShortText",
 			28 => "MediumText",
 			30 => "LongText",
 			29 => "MaxSizeText",
+			// Decimal and currency scales were absent, so every one of them fell through to the numeric
+			// fallback below: a Currency2 column read back as the raw string "6" and could not be
+			// round-tripped through the documented write vocabulary (issue #949).
+			31 => "Decimal1",
 			32 => "Float",
+			33 => "Decimal3",
+			34 => "Decimal4",
+			40 => "Decimal8",
+			47 => "Decimal0",
+			6 => "Currency2",
+			48 => "Currency0",
+			49 => "Currency1",
+			50 => "Currency3",
 			0 => "Guid",
 			1 => "Text",
 			4 => "Integer",
 			7 => "DateTime",
 			10 => "Lookup",
 			12 => "Boolean",
+			// A genuinely unknown ordinal still degrades to its number rather than throwing: readback must
+			// keep working against a platform that introduces a type clio does not model yet. Every ordinal
+			// clio can WRITE is covered above, and a guard test keeps that true.
 			_ => dataValueType.Value.ToString()
 		};
 	}
