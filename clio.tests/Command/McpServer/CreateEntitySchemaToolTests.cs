@@ -416,6 +416,68 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
+	[Description("Serializes the canonical 'column-name' spelling into the command layer's 'name' field, so a caller following the get-tool-contract column identity field is not silently reduced to name:null (issue #947).")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Serialize_Canonical_ColumnName_Alias() {
+		// Arrange — only `column-name` is supplied, exactly as the advertised contract describes it.
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs(null!, "MediumText", Localizations("Customer name")) {
+				ColumnNameAlias = "UsrName"
+			}
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("UsrName",
+			because: "the contract advertises 'column-name' as the column identity field, so it must reach the " +
+				"command layer's 'name' instead of being dropped");
+	}
+
+	[Test]
+	[Description("Prefers the canonical 'name' over the 'column-name' alias when a caller sends both, so the resolution order is deterministic.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Prefer_Name_Over_ColumnNameAlias_WhenBothSupplied() {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("UsrCanonical", "Text", Localizations("Canonical")) {
+				ColumnNameAlias = "UsrAlias"
+			}
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("UsrCanonical",
+			because: "ResolveName prefers the canonical field and falls back to the alias only when it is absent");
+	}
+
+	[Test]
+	[Description("Reports a missing column code as a missing column code — naming both accepted spellings — instead of failing later on an unrelated localization or type message (issue #947).")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Fail_With_ColumnCode_Message_WhenNeitherSpellingSupplied() {
+		// Arrange — neither `name` nor `column-name`, and no title either: the localization contract would
+		// otherwise be the first to fail and would blame the caption.
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs(null!, "Text", null)
+		};
+
+		// Act
+		Action act = () => CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*column-name*",
+				because: "the error must name the canonical field the caller is expected to send")
+			.And.Message.Should().Contain("'name'",
+				because: "both accepted spellings must be named so the caller can pick either");
+	}
+
+	[Test]
 	[Description("Maps create-lookup MCP arguments into create-entity-schema command options and forces BaseLookup as the parent schema.")]
 	[Category("Unit")]
 	public async Task CreateLookup_Should_Resolve_Command_For_Requested_Environment() {

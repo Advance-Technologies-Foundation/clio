@@ -1158,8 +1158,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				arrangeContext.SchemaName,
 				arrangeContext.CancellationTokenSource.Token,
 				columns: [
+					// `column-name` (the canonical column identity field, alias `name`) on a create-entity-schema
+					// column: the create path dropped it and serialized name:null before issue #947.
 					new Dictionary<string, object?> {
-						["name"] = arrangeContext.InitialColumnName,
+						["column-name"] = arrangeContext.InitialColumnName,
 						["type"] = "Text",
 						["title-localizations"] = BuildLocalizations("Vehicle name")
 					}

@@ -114,15 +114,28 @@ public sealed class CreateEntitySchemaTool(
 	}
 
 	private static string SerializeColumn(CreateEntitySchemaColumnArgs column, string context) {
+		// Resolved and validated BEFORE the localization contract, which takes the column code as its en-US
+		// fallback: with no code, that contract fails first and reports a missing en-US caption instead of the
+		// real problem. `name` is not schema-required precisely because `column-name` is an equally valid
+		// spelling, so the "exactly one of the two" rule is enforced here (issue #947).
+		string? resolvedName = column.ResolveName()?.Trim();
+		if (string.IsNullOrWhiteSpace(resolvedName)) {
+			throw new ArgumentException(
+				$"{context} is missing the column code. Send it as 'column-name' (or its alias 'name').",
+				nameof(column));
+		}
 		IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 			column.TitleLocalizations,
 			column.LegacyTitle,
 			column.LegacyCaption,
-			column.ResolveName(),
+			resolvedName,
 			context);
 		string? resolvedReferenceSchemaName = column.ResolveReferenceSchemaName();
+		// ResolveName(), not Name: the contract advertises `column-name` as the column identity field with
+		// `name` as its alias, so a contract-following caller sends `column-name` — reading the raw Name here
+		// serialized it as "name": null and the underlying creator rejected the whole batch (issue #947).
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
-			["name"] = column.Name?.Trim(),
+			["name"] = resolvedName,
 			["type"] = column.ResolveType()?.Trim(),
 			["title-localizations"] = titleLocalizations,
 			["reference-schema-name"] = string.IsNullOrWhiteSpace(resolvedReferenceSchemaName)
@@ -724,11 +737,11 @@ public sealed record UpdateEntitySchemaArgs(
 /// </summary>
 public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Column code. Must use the active SchemaNamePrefix as prefix " +
+	[property: Description("Column code. Alias of the canonical 'column-name' — send either one, but at least " +
+		"one is required. Must use the active SchemaNamePrefix as prefix " +
 		"(e.g. 'UsrStatus' when prefix is 'Usr', 'MyStatus' when prefix is 'My'). " +
 		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix (e.g. 'Status'). " +
 		"Use the same prefix value from `schema-name-prefix`.")]
-	[property: Required]
 	string Name,
 
 	[property: JsonPropertyName("type")]

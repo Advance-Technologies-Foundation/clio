@@ -401,6 +401,16 @@ internal static class ToolContractCatalog {
 	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
+
+	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
+	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
+	// to learn the field names from the contract and reasonably reused the `column-name` spelling documented
+	// for sync-schemas — which the create path then dropped (issue #947).
+	private const string CreateColumnsDescription =
+		"Optional initial columns. Each item: `column-name` (alias `name`), `type` (alias `data-value-type`), " +
+		"optional `title-localizations` (auto-derived from the column name when omitted), " +
+		"`reference-schema-name` (alias `reference-schema`, required for type Lookup), and `required` " +
+		"(alias `is-required`). Type names are case-insensitive.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string PassthroughEnvironmentNameSuffix =
@@ -3460,7 +3470,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -3761,7 +3771,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					"Lookup schema name.",
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field(ColumnsFieldName, ArrayType, "Optional custom columns.")),
+					Field(ColumnsFieldName, ArrayType, CreateColumnsDescription)),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
 				]),
@@ -3793,7 +3803,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field("columns", ArrayType, "Optional initial columns."),
+					Field("columns", ArrayType, CreateColumnsDescription),
 					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
 					Field("extend-parent", BooleanType, "Optional replacement-schema flag."),
 					Field(IsVirtualFieldName, BooleanType, "Creates a virtual entity schema without a physical database table when true.")),

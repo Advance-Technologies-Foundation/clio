@@ -1081,11 +1081,15 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 							["schema-name"] = context.EntitySchemaName!,
 							["title-localizations"] = BuildLocalizations("Round Trip Entity"),
 							["columns"] = new object?[] {
+								// `column-name` — the CANONICAL column identity field the contract advertises —
+								// on a create-entity column. It used to be dropped here, serialized as
+								// name:null, which stopped the whole ordered batch (issue #947).
 								new Dictionary<string, object?> {
-									["name"] = keepColumnName,
+									["column-name"] = keepColumnName,
 									["type"] = "Text",
 									["title-localizations"] = BuildLocalizations("Keep")
 								},
+								// The `name` alias on a sibling column, so both spellings stay covered.
 								new Dictionary<string, object?> {
 									["name"] = dropColumnName,
 									["type"] = "Text",

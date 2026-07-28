@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -180,6 +181,42 @@ public sealed class SchemaSyncToolTests {
 			because: "create-entity should use the specified parent schema");
 		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
 			because: "create-entity should preserve the explicit virtual-schema request");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the canonical 'column-name' spelling from a create-entity operation through to the command layer, instead of stopping the ordered batch on a name:null column (issue #947).")]
+	public async Task SchemaSync_CreateEntity_Should_Carry_Canonical_ColumnName_Alias() {
+		// Arrange — the column supplies ONLY `column-name`, exactly as the sync-schemas contract describes the
+		// column identity field.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-entity", "UsrOrder",
+				TitleLocalizations: Localizations("Order"),
+				ParentSchemaName: "BaseEntity",
+				Columns: [
+					new CreateEntitySchemaColumnArgs(null!, "MediumText", Localizations("Customer name")) {
+						ColumnNameAlias = "UsrName"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a contract-following column must not fail the batch");
+		string serializedColumn = fakeCreateCommand.CapturedOptions!.Columns!.Single();
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("UsrName",
+			because: "the ordered batch previously stopped here because the alias was serialized as name:null");
+		document.RootElement.GetProperty("type").GetString().Should().Be("MediumText",
+			because: "the type token is passed through verbatim — resolution is case-insensitive downstream");
 	}
 
 	[Test]
