@@ -117,7 +117,7 @@ public sealed class CreateEntitySchemaTool(
 		// Resolved and validated BEFORE the localization contract, which takes the column code as its en-US
 		// fallback: with no code, that contract fails first and reports a missing en-US caption instead of the
 		// real problem. `name` is not schema-required precisely because `column-name` is an equally valid
-		// spelling, so the "exactly one of the two" rule is enforced here (issue #947).
+		// spelling, so the "at least one of the two" rule is enforced here (issue #947).
 		string? resolvedName = column.ResolveName()?.Trim();
 		if (string.IsNullOrWhiteSpace(resolvedName)) {
 			throw new ArgumentException(
@@ -127,7 +127,8 @@ public sealed class CreateEntitySchemaTool(
 		// Type is checked here for the same reason as the code above: it is optional in the EMITTED SCHEMA so
 		// the `data-value-type` alias stays usable, which means the "one of the two is required" rule has to
 		// live in code or a typeless column would reach the creator and fail with a vaguer message.
-		if (string.IsNullOrWhiteSpace(column.ResolveType())) {
+		string? resolvedType = column.ResolveType()?.Trim();
+		if (string.IsNullOrWhiteSpace(resolvedType)) {
 			throw new ArgumentException(
 				$"{context} is missing the column type. Send it as 'type' (or its alias 'data-value-type').",
 				nameof(column));
@@ -144,7 +145,7 @@ public sealed class CreateEntitySchemaTool(
 		// serialized it as "name": null and the underlying creator rejected the whole batch (issue #947).
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
 			["name"] = resolvedName,
-			["type"] = column.ResolveType()?.Trim(),
+			["type"] = resolvedType,
 			["title-localizations"] = titleLocalizations,
 			["reference-schema-name"] = string.IsNullOrWhiteSpace(resolvedReferenceSchemaName)
 				? null
@@ -572,7 +573,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		+ "description-localizations) on a replacing/child schema; its name, type, and flags stay read-only. "
 		+ "Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
-		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
+		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required; column-name accepts the alias 'name'); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
 			string? resolvedColumnName = args.ResolveColumnName();
 			if (string.IsNullOrWhiteSpace(resolvedColumnName)) {
