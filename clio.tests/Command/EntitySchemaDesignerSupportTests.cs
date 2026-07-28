@@ -26,6 +26,40 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "resolved binary-like type names should map to the expected runtime data value type");
 	}
 	
+	[TestCase("Money", 6)]
+	[TestCase("money", 6)]
+	[TestCase("Currency2", 6)]
+	[TestCase("currency2", 6)]
+	[Description("Resolves the Creatio display name Money as an alias of Currency2, so a caller using the name Creatio itself shows (and clio's own sys-setting surface uses) is not hard-rejected.")]
+	public void TryResolveDataValueType_Should_Resolve_Money_As_Currency2(string typeName, int expectedValue) {
+		// Arrange
+
+		// Act
+		bool resolved = EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType);
+
+		// Assert
+		resolved.Should().BeTrue(
+			because: "Money is the Creatio display name for a two-decimal currency column and must resolve");
+		dataValueType.Should().Be(expectedValue,
+			because: "Money and Currency2 are the same runtime data value type 6, so the alias is an identity");
+	}
+
+	[TestCase("Decimal", 32)]
+	[TestCase("decimal", 32)]
+	[TestCase("Float", 32)]
+	[Description("Resolves Decimal as an alias of Decimal2, matching the Decimal = Float mapping the sys-setting contract already documents.")]
+	public void TryResolveDataValueType_Should_Resolve_Decimal_As_Decimal2(string typeName, int expectedValue) {
+		// Arrange
+
+		// Act
+		bool resolved = EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType);
+
+		// Assert
+		resolved.Should().BeTrue(because: "Decimal is a documented alias and must resolve");
+		dataValueType.Should().Be(expectedValue,
+			because: "Decimal and Float both map to Decimal2 (runtime data value type 32)");
+	}
+
 	[TestCase("SecureText", 24)]
 	[TestCase("secureText", 24)]
 	[TestCase("Encrypted", 24)]

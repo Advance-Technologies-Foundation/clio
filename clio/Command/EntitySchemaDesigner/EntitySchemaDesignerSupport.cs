@@ -83,6 +83,15 @@ internal static class EntitySchemaDesignerSupport
 			["imagelink"] = ImageLookupTypeName,
 			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
+			["decimal"] = "decimal2",
+			// Creatio displays dataValueType 6 as "Money" and clio's own sys-setting surface uses that exact
+			// name, so an agent naturally sends "Money" for a money column and used to get a hard rejection
+			// listing currency0..currency3 without saying which one it meant (issue #955). currency2 IS
+			// dataValueType 6, so this alias is an identity, not an approximation.
+			["money"] = "currency2",
+			// NOTE: lossy on purpose-of-record — Creatio stores these as DateTime, so date-only/time-only intent
+			// does not survive and the readback tools report DateTime. Kept for compatibility; the contract now
+			// states the collapse explicitly rather than advertising Date/Time as distinct types (issue #949).
 			["date"] = DateTimeTypeName,
 			["time"] = DateTimeTypeName,
 			["encrypted"] = SecureTextTypeName,

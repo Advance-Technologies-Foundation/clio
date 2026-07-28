@@ -204,6 +204,42 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Adds a money column using the Creatio display name 'Money' — the alias of the command value Currency2 — and verifies it materializes, so a caller does not have to provoke a failed write to discover the vocabulary (issue #955).")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column accepts the Money alias for a Currency2 column")]
+	[AllureDescription("Creates a sandbox schema, adds a column with type 'Money' (the name Creatio displays and clio's own sys-setting surface uses) and verifies through get-entity-schema-properties that the column was created, proving Money resolves to the Currency2 command value rather than being rejected.")]
+	public async Task ModifyEntitySchemaColumn_Should_Accept_Money_Alias_For_Currency2_Column() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		string moneyColumnName = $"{arrangeContext.AddedColumnName}Amount";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addMoneyResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				moneyColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Money",
+				titleLocalizations: BuildLocalizations("Amount")));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before adding the money column");
+		AssertCommandSucceeded(addMoneyResult,
+			"'Money' is the Creatio display name for a two-decimal currency column and must be accepted as an " +
+				"alias of Currency2 instead of being rejected as an unsupported type");
+		schemaProperties.Columns.Should().Contain(column => column.Name == moneyColumnName,
+			because: "the money column must actually materialize on the remote schema, not merely pass validation");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Overrides the caption of an inherited column and rejects a non-caption change to the same inherited column.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]

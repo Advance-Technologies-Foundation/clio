@@ -402,6 +402,24 @@ internal static class ToolContractCatalog {
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 
+	// The accepted column-type vocabulary, enumerated in the contract itself. It used to say only "Optional
+	// column data type", so the only way to discover a valid value was to send an invalid one and read the
+	// runtime rejection — and the Creatio display name a caller would naturally reach for (Money) was not
+	// connected to the command value (issue #955). The alias notes matter because clio's OWN sys-setting
+	// contract uses the Creatio internal names Money/Date/Time, so the two surfaces read inconsistently
+	// without them.
+	private const string ColumnTypeVocabularyDescription =
+		"Optional column data type. Accepted values: Guid, Text, ShortText, MediumText, LongText, MaxSizeText, " +
+		"Text50, Text250, Text500, TextUnlimited, RichText, PhoneNumber, WebLink, Email, SecureText, " +
+		"Integer, Float, Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, " +
+		"Currency0, Currency1, Currency2, Currency3, Boolean, DateTime, Lookup, " +
+		"Binary, Image, ImageLookup, File, Color. Case-insensitive. " +
+		"A normal two-decimal Creatio money column (displayed as 'Money') is Currency2 — Money is accepted as " +
+		"an alias for it. Date and Time are accepted but are aliases of DateTime: Creatio stores the column as " +
+		"DateTime, and the readback tools report it as DateTime, so date-only intent is not preserved. " +
+		"Other aliases: Blob = Binary, ImageLink = ImageLookup, Encrypted/Password = SecureText, " +
+		"EmailAddress = Email, Decimal/Float = Decimal2.";
+
 	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
 	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
 	// to learn the field names from the contract and reasonably reused the `column-name` spelling documented
@@ -4229,12 +4247,26 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(ActionFieldName, StringType, "Column action: add, modify, or remove."),
-					Field(ColumnNameFieldName, StringType, "Column name."),
-					Field("type", StringType, "Optional column data type."),
+					Field(ColumnNameFieldName, StringType, "Column name (alias `name`)."),
+					Field("new-name", StringType, "New column name; supply it to rename the column on a modify."),
+					Field("type", StringType, ColumnTypeVocabularyDescription),
 					Field(TitleLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(DescriptionLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(ReferenceSchemaNameFieldName, StringType, "Optional lookup target."),
 					Field("required", BooleanType, "Optional required flag."),
+					Field("indexed", BooleanType, "Optional indexed flag."),
+					Field("cloneable", BooleanType, "Optional cloneable flag."),
+					Field("track-changes", BooleanType, "Optional track-changes flag."),
+					Field("multiline-text", BooleanType, "Optional multi-line text flag. Text columns only — not Color."),
+					Field("localizable-text", BooleanType, "Optional localizable text flag. Text columns only."),
+					Field("accent-insensitive", BooleanType, "Optional accent-insensitive flag. Text columns only — not Color."),
+					Field("masked", BooleanType, "Optional masked flag. Text and SecureText columns only — not Color."),
+					Field("format-validated", BooleanType, "Optional format-validated flag. Text columns only — not Color."),
+					Field("use-seconds", BooleanType, "Optional use-seconds flag. Date/time columns only."),
+					Field("simple-lookup", BooleanType, "Optional simple-lookup flag. Lookup columns only."),
+					Field("cascade", BooleanType, "Optional cascade-connection flag. Lookup columns only."),
+					Field("do-not-control-integrity", BooleanType, "Optional do-not-control-integrity flag. Lookup columns only."),
+					Field("caption-culture", StringType, "Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US; supplying it skips the profile-culture lookup."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
 					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."),

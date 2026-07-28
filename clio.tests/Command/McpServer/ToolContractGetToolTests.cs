@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -2422,5 +2424,59 @@ public sealed class ToolContractGetToolTests {
 		contract.AntiPatterns!.Should().Contain(pattern =>
 				pattern.Pattern.Contains("memory", StringComparison.OrdinalIgnoreCase),
 			because: "authoring request names or params from memory is the core anti-pattern the catalog exists to prevent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated modify-entity-schema-column contract declares every canonical parameter the tool actually accepts, so a caller can construct a valid mutation from the contract alone instead of discovering parameters by trial and error (issue #955).")]
+	public void ToolContractGet_Should_DeclareEveryCanonicalParameter_ForModifyEntitySchemaColumn() {
+		// Arrange — canonical parameters are derived from the args record itself rather than a hand-kept list,
+		// so adding a parameter without contracting it fails here. Alias-only properties are identified by their
+		// CLR naming convention (`*Alias` / `Legacy*`) and are advertised through the contract's aliases block,
+		// not as fields.
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		IReadOnlyList<string> canonicalParameters = typeof(ModifyEntitySchemaColumnArgs)
+			.GetProperties()
+			.Where(property => !property.Name.EndsWith("Alias", StringComparison.Ordinal)
+				&& !property.Name.StartsWith("Legacy", StringComparison.Ordinal))
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name)
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Select(name => name!)
+			.ToList();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs(["modify-entity-schema-column"]));
+
+		// Assert
+		canonicalParameters.Should().NotBeEmpty(
+			because: "the reflection must actually find the parameters, otherwise this guard passes vacuously");
+		IEnumerable<string> declaredFields = result.Tools!.Single().InputSchema.Properties.Select(field => field.Name);
+		declaredFields.Should().Contain(canonicalParameters,
+			because: "an agent must be able to construct a valid schema mutation from the authoritative contract " +
+				"alone — an undeclared parameter is invisible and effectively unusable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The modify-entity-schema-column contract enumerates the accepted column types and maps the Creatio display name Money onto the command value Currency2, so the vocabulary is discoverable without provoking a failed write (issue #955).")]
+	public void ToolContractGet_Should_EnumerateColumnTypes_ForModifyEntitySchemaColumn() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs(["modify-entity-schema-column"]));
+
+		// Assert
+		ToolContractField typeField = result.Tools!.Single().InputSchema.Properties
+			.Single(field => field.Name == "type");
+		typeField.Description.Should().Contain("Currency2",
+			because: "the accepted values must be enumerated in the contract, not only in the runtime rejection");
+		typeField.Description.Should().Contain("Money",
+			because: "the Creatio display name a caller reaches for must be connected to the command value");
+		typeField.Description.Should().Contain("DateTime",
+			because: "Date/Time collapse to DateTime, and the contract must say so rather than advertising them " +
+				"as distinct types that round-trip");
 	}
 }

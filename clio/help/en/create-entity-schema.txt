@@ -35,6 +35,8 @@ DESCRIPTION
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
+      (Money is accepted as an alias for Currency2 — the normal two-decimal Creatio money column;
+      Decimal is accepted as an alias for Decimal2, same as Float)
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
