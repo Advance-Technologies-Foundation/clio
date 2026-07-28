@@ -557,8 +557,8 @@ public sealed class GuidanceGetToolTests {
 			because: "AC6: if the user declines, the agent must not apply CSS and should offer a native alternative (ENG-92541)");
 		result.Article.Text.Should().Contain("NEVER apply custom CSS silently",
 			because: "even when told to 'just apply', the agent must emit the upgrade-risk warning and never apply custom CSS silently (ENG-92541)");
-		result.Article.Text.Should().Contain("extraStyles",
-			because: "AC1/AC8: extraStyles hooks (font-family/color) are custom CSS too — the real failing sessions applied CSS via extraStyles, so the rule must name it explicitly and not treat it as native (ENG-92541)");
+		result.Article.Text.Should().Contain("is NOT native just because it is a component input",
+			because: "AC1/AC8: the load-bearing negation must be pinned — asserting only the word 'extraStyles' would let a future edit invert the meaning while keeping the token; extraStyles is custom CSS, not native (ENG-92541, RB-A6)");
 	}
 
 	[Test]

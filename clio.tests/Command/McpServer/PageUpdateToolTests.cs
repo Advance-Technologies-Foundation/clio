@@ -170,4 +170,24 @@ public sealed class PageUpdateToolTests {
 		ReceivedChartValidationVersion().Should().Be("8.3.4",
 			because: "the write path and the version probe must resolve the SAME registered environment identically to the pre-change baseline");
 	}
+
+	[Test]
+	[Description("The update-page tool [Description] surfaces the single-sourced custom-CSS policy and routes it to the page-modification-components sub-guide (ENG-92541 RC-3/RB-A5/RB-A7).")]
+	public void UpdatePage_Description_Should_Carry_CustomCssPolicy_RoutedToComponentsSubGuide() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute descriptionAttribute =
+			typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+				.Cast<System.ComponentModel.DescriptionAttribute>()
+				.Single();
+
+		// Act
+		string description = descriptionAttribute.Description;
+
+		// Assert
+		description.Should().Contain(SchemaValidationService.CustomCssPolicySummary,
+			because: "the tool description must carry the ENG-92541 custom-CSS policy verbatim from the single-sourced const so the two tool descriptions cannot drift (RB-A5) and the rule is actually wired into the surface the agent reads (RB-A7)");
+		description.Should().Contain("page-modification-components",
+			because: "the CSS trigger must route to the sub-guide that carries the STOP block — the entry page-modification guide's GATE table has no general visual-styling row, so pointing there would leave the policy unreachable on the style-an-existing-component path (RC-3)");
+	}
 }

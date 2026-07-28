@@ -1253,4 +1253,24 @@ public sealed class PageSyncToolTests {
 		response.Pages[0].Error.Should().Contain("environment name or an explicit URI is required",
 			because: "the resolver's existing EnvironmentResolutionException throw is the mechanism that still enforces requiredness on stdio/registered-environment paths — AC-05 must not regress this");
 	}
+
+	[Test]
+	[Description("The sync-pages tool [Description] surfaces the single-sourced custom-CSS policy and routes it to the page-modification-components sub-guide (ENG-92541 RC-3/RB-A5/RB-A7).")]
+	public void SyncPages_Description_Should_Carry_CustomCssPolicy_RoutedToComponentsSubGuide() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute descriptionAttribute =
+			typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+				.Cast<System.ComponentModel.DescriptionAttribute>()
+				.Single();
+
+		// Act
+		string description = descriptionAttribute.Description;
+
+		// Assert
+		description.Should().Contain(SchemaValidationService.CustomCssPolicySummary,
+			because: "sync-pages must carry the SAME single-sourced custom-CSS policy as update-page so the two hand-written copies cannot drift (ENG-92541, RB-A5)");
+		description.Should().Contain("page-modification-components",
+			because: "the CSS trigger must route to the sub-guide that carries the STOP block rather than the entry guide whose GATE table has no general visual-styling row (ENG-92541, RC-3)");
+	}
 }

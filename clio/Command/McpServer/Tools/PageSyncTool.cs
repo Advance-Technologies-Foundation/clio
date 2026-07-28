@@ -47,7 +47,7 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls. " +
-	             "Custom CSS is a last resort: meet a visual-styling requirement with a component's NATIVE inputs first (get-component-info). A custom `styles` object, a `classes`/CSS class, or an `extraStyles` hook is custom CSS that can break on a platform upgrade — apply it only after telling the user no native option exists, warning about the upgrade-compatibility risk, and getting explicit confirmation; see get-guidance name `page-modification`.")]
+	             SchemaValidationService.CustomCssPolicySummary)]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required unless an authorized HTTP credential-passthrough header supplies the target tenant); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
