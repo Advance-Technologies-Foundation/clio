@@ -80,6 +80,8 @@ public interface ICreateTestProjectInfrastructure {
 
 	bool ExistsFile(string path);
 
+	bool ExistsDirectory(string path);
+
 	void WriteAllText(string path, string contents);
 
 	string ReadAllText(string path);
@@ -117,6 +119,10 @@ public class CreateTestProjectInfrastructure : ICreateTestProjectInfrastructure 
 
 	public bool ExistsFile(string path) {
 		return _fileSystem.ExistsFile(path);
+	}
+
+	public bool ExistsDirectory(string path) {
+		return _fileSystem.ExistsDirectory(path);
 	}
 
 	public void WriteAllText(string path, string contents) {

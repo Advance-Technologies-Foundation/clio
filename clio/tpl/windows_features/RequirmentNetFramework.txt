@@ -1,4 +1,4 @@
-﻿Static Content
+Static Content
 Default Document
 HTTP Errors
 HTTP Redirection

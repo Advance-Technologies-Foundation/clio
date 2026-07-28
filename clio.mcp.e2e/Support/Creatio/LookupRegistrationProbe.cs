@@ -9,7 +9,8 @@ namespace Clio.Mcp.E2E.Support.Creatio;
 internal static class LookupRegistrationProbe {
 	internal static LookupRegistrationSnapshot Read(string environmentName, string packageName, string lookupSchemaName) {
 		EnvironmentSettings environmentSettings = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
-		IApplicationClient applicationClient = new ApplicationClientFactory().CreateEnvironmentClient(environmentSettings);
+		IApplicationClient applicationClient =
+			new ApplicationClientFactory(new NoReauthExecutor()).CreateEnvironmentClient(environmentSettings);
 		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
 		string? entitySchemaUId = ResolveEntitySchemaUId(applicationClient, serviceUrlBuilder, lookupSchemaName);
 		LookupRegistrationSelectResponse lookupRows =

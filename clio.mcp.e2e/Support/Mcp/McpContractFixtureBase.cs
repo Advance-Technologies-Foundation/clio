@@ -17,20 +17,86 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 public abstract class McpContractFixtureBase {
 
 	private McpServerSession? _session;
+	private readonly List<string> _fixtureDirectories = [];
 
 	[OneTimeSetUp]
 	public async Task StartSharedMcpServerAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		ConfigureMcpServerSettings(settings);
 		using CancellationTokenSource startupCts = new(TimeSpan.FromMinutes(5));
 		_session = await McpServerSession.StartAsync(settings, startupCts.Token);
 	}
 
 	[OneTimeTearDown]
 	public async Task StopSharedMcpServerAsync() {
-		if (_session is not null) {
-			await _session.DisposeAsync();
+		try {
+			if (_session is not null) {
+				await _session.DisposeAsync();
+			}
+		} finally {
+			CleanupFixtureDirectories();
 		}
+	}
+
+	/// <summary>
+	/// Allows a derived fixture to customize the child MCP server settings before the
+	/// shared process starts. Use this for fixture-scoped environment overrides such as
+	/// <c>CLIO_HOME</c>, <c>HOME</c>, <c>USERPROFILE</c>, or feature-specific test inputs.
+	/// </summary>
+	/// <param name="settings">The settings that will be used to start the shared MCP server process.</param>
+	/// <remarks>
+	/// Implementations must mutate only <see cref="McpE2ESettings.ProcessEnvironmentVariables"/>
+	/// or other child-process settings. Do not call <see cref="Environment.SetEnvironmentVariable(string, string?)"/>.
+	/// </remarks>
+	private protected virtual void ConfigureMcpServerSettings(McpE2ESettings settings) {
+	}
+
+	/// <summary>
+	/// Creates a temporary directory owned by this fixture and removes it during one-time teardown.
+	/// </summary>
+	/// <param name="purpose">A short filesystem-safe suffix that identifies why the directory exists.</param>
+	/// <returns>The full path to the created directory.</returns>
+	private protected string CreateFixtureDirectory(string purpose) {
+		string safePurpose = string.IsNullOrWhiteSpace(purpose)
+			? "fixture"
+			: string.Concat(purpose.Select(character => char.IsLetterOrDigit(character) ? character : '-'));
+		string directoryPath = Path.Combine(
+			Path.GetTempPath(),
+			$"clio-mcp-e2e-{safePurpose}-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(directoryPath);
+		_fixtureDirectories.Add(directoryPath);
+		return directoryPath;
+	}
+
+	/// <summary>
+	/// Creates an isolated clio home, writes <c>appsettings.json</c>, and tracks it for cleanup.
+	/// </summary>
+	/// <param name="appSettingsJson">The appsettings JSON content for the isolated home.</param>
+	/// <param name="purpose">A short filesystem-safe suffix that identifies why the home exists.</param>
+	/// <returns>The full path to the isolated clio home.</returns>
+	private protected string CreateIsolatedClioHome(string appSettingsJson, string purpose = "clio-home") {
+		string clioHome = CreateFixtureDirectory(purpose);
+		File.WriteAllText(Path.Combine(clioHome, "appsettings.json"), appSettingsJson);
+		return clioHome;
+	}
+
+	private void CleanupFixtureDirectories() {
+		foreach (string directoryPath in _fixtureDirectories) {
+			if (!Directory.Exists(directoryPath)) {
+				continue;
+			}
+
+			// Best-effort: a child clio process can still hold a handle on the isolated
+			// home's appsettings.json when teardown runs, so a leaked temp dir is harmless
+			// and must not fail an otherwise-green fixture.
+			try {
+				Directory.Delete(directoryPath, recursive: true);
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
+			}
+		}
+		_fixtureDirectories.Clear();
 	}
 
 	/// <summary>

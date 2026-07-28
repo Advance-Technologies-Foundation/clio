@@ -14,8 +14,14 @@ public class McpServerCommandOptions : BaseCommandOptions
 
 
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
-	ITelemetryFlushScheduler flushScheduler) : Command<McpServerCommandOptions>{
+	ITelemetryFlushScheduler flushScheduler,
+	ISessionContainerCache sessionContainerCache,
+	ITenantExecutionLockProvider tenantExecutionLockProvider) : Command<McpServerCommandOptions>{
 	public override int Execute(McpServerCommandOptions options) {
+		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
+		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
+		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
+		McpToolExecutionLock.Configure(tenantExecutionLockProvider, sessionContainerCache);
 		McpLogNotifier.Initialize(server);
 		// The using-scoped source is disposed at the END of Execute — strictly after the finally
 		// block has detached the handlers and drained. Do not narrow this scope or dispose earlier:

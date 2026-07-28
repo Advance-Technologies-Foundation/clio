@@ -29,8 +29,16 @@ OPTIONS
     -f, --Filter           Filter packages by name (case-insensitive partial match)
                             Shows only packages containing the specified text
 
-    -j, --Json             Return results in JSON format
-                            Default: false (returns formatted table)
+    -j, --json             Return results in JSON format.
+                            Default: false (returns formatted table).
+                            With --json the output is the unified command envelope
+                            {schemaVersion, ok, command, data, error}.
+
+    --legacy-form          Compatibility escape hatch (use only together with --json):
+                            emit the historical {value, success, errorInfo} shape
+                            instead of the unified envelope. Prefer migrating consumers
+                            to the default envelope; this flag exists for a transition
+                            period only.
 
     Standard environment options are also available:
     -u, --uri              Application URI
@@ -63,8 +71,23 @@ OUTPUT FORMAT
         PackageName1        1.0.0          Company
         PackageName2        2.1.3          Developer
 
-    JSON format (-j flag):
-        Returns an array of package objects with detailed information
+    JSON format (--json flag) — unified envelope (default):
+        {
+          "schemaVersion": "1.0",
+          "ok": true,
+          "command": "list-packages",
+          "data": [ { "descriptor": { "name": "...", "packageVersion": "...", ... } } ],
+          "error": null
+        }
+        On failure: ok=false, data=null, error={ "code": "<stable-code>", "message": "..." }.
+
+    JSON format (--json --legacy-form) — legacy shape (deprecated):
+        { "value": [ ...packages... ], "success": true, "errorInfo": null }
+
+    MIGRATION NOTE
+        The default JSON shape changed from {value,success,errorInfo} to the unified
+        envelope {schemaVersion,ok,command,data,error}. Consumers not yet migrated can
+        pass --legacy-form to keep the old shape during the transition.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

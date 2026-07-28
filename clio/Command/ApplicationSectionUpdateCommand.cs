@@ -46,6 +46,21 @@ public interface IApplicationSectionUpdateService {
 	/// <param name="request">Section update request payload.</param>
 	/// <returns>Structured application and section metadata before and after the update.</returns>
 	ApplicationSectionUpdateResult UpdateSection(string environmentName, ApplicationSectionUpdateRequest request);
+
+	/// <summary>
+	/// Updates metadata of an existing installed application section against an already-resolved
+	/// environment. Behaves identically to <see cref="UpdateSection(string, ApplicationSectionUpdateRequest)"/>
+	/// except it never consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller
+	/// supplies the settings directly (e.g. an MCP passthrough tenant resolved from request headers) —
+	/// and every nested call it makes (the profile-culture resolution and the application-info read)
+	/// uses the settings-based overloads of <see cref="Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver"/>
+	/// and <see cref="IApplicationInfoService"/>, never the name-based ones (ENG-93347, ADR OQ-01 c1 rule).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="request">Section update request payload.</param>
+	/// <returns>Structured application and section metadata before and after the update.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	ApplicationSectionUpdateResult UpdateSection(EnvironmentSettings environmentSettings, ApplicationSectionUpdateRequest request);
 }
 
 /// <summary>
@@ -81,19 +96,47 @@ public sealed class ApplicationSectionUpdateService(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
+		// The name-based path keeps its pre-change nested calls byte-for-byte (name-based culture
+		// resolution and name-based application-info read) so stdio / registered-environment behavior
+		// is untouched (ENG-93347 AC-06).
+		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
+		return UpdateSectionCore(
+			environmentSettings,
+			request,
+			() => captionCultureResolver.Resolve(cultureOptions, null),
+			() => applicationInfoService.GetApplicationInfo(environmentName, null, request.ApplicationCode));
+	}
+
+	/// <inheritdoc />
+	public ApplicationSectionUpdateResult UpdateSection(EnvironmentSettings environmentSettings, ApplicationSectionUpdateRequest request) {
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		ArgumentNullException.ThrowIfNull(request);
+		ValidateRequest(request);
+
+		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
+		// ISettingsRepository — both nested calls (the profile-culture resolution and the
+		// application-info read) go through the Story-2 settings-based overloads.
+		return UpdateSectionCore(
+			environmentSettings,
+			request,
+			() => captionCultureResolver.Resolve(environmentSettings, null),
+			() => applicationInfoService.GetApplicationInfo(environmentSettings, null, request.ApplicationCode));
+	}
+
+	private ApplicationSectionUpdateResult UpdateSectionCore(
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionUpdateRequest request,
+		Func<string> resolveProfileCaptionCulture,
+		Func<ApplicationInfoResult> loadApplicationInfo) {
 		// ENG-91044: the section caption/description are localized server-side under the connected
 		// user's profile culture (update-app-section has no caption-culture knob), so reject text whose
 		// script does not match the profile culture (e.g. Cyrillic under an en-US profile).
-		string profileCultureForCaption = captionCultureResolver.Resolve(
-			new EnvironmentOptions { Environment = environmentName }, null);
+		string profileCultureForCaption = resolveProfileCaptionCulture();
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ApplicationInfoResult applicationInfo = applicationInfoService.GetApplicationInfo(
-			environmentName,
-			null,
-			request.ApplicationCode);
+		ApplicationInfoResult applicationInfo = loadApplicationInfo();
 		string applicationId = applicationInfo.ApplicationId
 			?? throw new InvalidOperationException("Application id was not returned by get-app-info.");
 		ApplicationSectionRecord previousSection = GetSectionRecord(

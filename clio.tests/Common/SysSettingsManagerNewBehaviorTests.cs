@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -440,7 +441,7 @@ public class SysSettingsManagerNewBehaviorTests {
 				{ "TextValue", "ENCRYPTED_BASE64_CIPHERTEXT_PAYLOAD" }
 			});
 		ISysSettingsManager managerForTryList = BuildSut(providerMock);
-		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>());
+		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
 
 		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -456,7 +457,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		Guid settingId = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrEmptySecret", "SecureText", valueRow: null);
 		ISysSettingsManager managerForTryList = BuildSut(providerMock);
-		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>());
+		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
 
 		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -467,11 +468,12 @@ public class SysSettingsManagerNewBehaviorTests {
 
 	#endregion
 
-	#region TryListSysSettings — Binary filter
+	#region TryListSysSettings — Binary discovery
 
 	[Test]
-	[Description("TryListSysSettings filters Binary-type settings out of the response because read/write for Binary is not exposed through the MCP tool set.")]
-	public void TryListSysSettings_Filters_Binary_Settings() {
+	[Description("TryListSysSettings includes Binary-type settings for discovery, showing their value as <binary> because the blob cannot be read back.")]
+	public void TryListSysSettings_Includes_Binary_With_Placeholder() {
+		// Arrange
 		DataProviderMock providerMock = new();
 		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
 			new() {
@@ -487,16 +489,21 @@ public class SysSettingsManagerNewBehaviorTests {
 		});
 		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
 		ISysSettingsManager managerForTryList = BuildSut(providerMock);
-		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>());
+		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
 
+		// Act
 		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
 
+		// Assert
 		result.Success.Should().BeTrue(
-			because: "list-sys-settings completes normally; Binary is excluded silently, not as an error");
-		result.Settings.Should().HaveCount(1,
-			because: "of the two seeded settings, only the non-Binary one should be returned");
-		result.Settings[0].Code.Should().Be("UsrPlainText",
-			because: "Binary entries are dropped from the result while non-Binary entries pass through unchanged");
+			because: "list-sys-settings completes normally and now surfaces Binary settings for discovery");
+		result.Settings.Should().HaveCount(2,
+			because: "both the Text and the Binary setting must be discoverable through the catalog");
+		SysSettingItem binary = result.Settings.Single(s => s.Code == "UsrBlob");
+		binary.ValueTypeName.Should().Be("Binary",
+			because: "the Binary setting's type is surfaced so a caller can recognize it as a blob/logo setting");
+		binary.Value.Should().Be("<binary>",
+			because: "the blob value cannot be read back, so the value column shows a placeholder rather than an empty or misleading string");
 	}
 
 	#endregion
@@ -761,6 +768,135 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "Float settings reuse the decimal serialization branch alongside Currency/Decimal/Money");
 		capturedBody.Should().Contain("\"UsrFloatCode\":3.14",
 			because: "decimal payloads are emitted as JSON numbers, not strings");
+	}
+
+	[Test]
+	[Description("Binary settings (e.g. LogoImage) send the Base64 payload verbatim as a JSON string through PostSysSettingsValues.")]
+	public void UpdateSysSetting_BinaryType_SendsBase64StringValue() {
+		// Arrange
+		string base64 = Convert.ToBase64String([0x89, 0x50, 0x4E, 0x47]); // "iVBORw==" — PNG signature bytes
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "LogoImage", "Binary");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		string capturedBody = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"LogoImage":true},"success":false}""");
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		bool updated = sut.UpdateSysSetting("LogoImage", base64, "Binary");
+
+		// Assert
+		updated.Should().BeTrue(
+			because: "the platform's PostSysSettingsValues endpoint accepts a Binary value as a Base64 string");
+		capturedBody.Should().Contain($"\"LogoImage\":\"{base64}\"",
+			because: "the Base64 blob must be emitted verbatim as a JSON string inside sysSettingsValues");
+	}
+
+	[Test]
+	[Description("Binary updates reject a malformed (non-Base64) payload before contacting the platform.")]
+	public void UpdateSysSetting_BinaryType_RejectsInvalidBase64() {
+		// Arrange
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "LogoImage", "Binary");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		bool updated = sut.UpdateSysSetting("LogoImage", "not valid base64!!!", "Binary");
+
+		// Assert
+		updated.Should().BeFalse(
+			because: "a Binary value that is not valid Base64 must fail fast rather than post a bad payload");
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Binary updates reject an oversized inline Base64 value before contacting the platform, so the size cap cannot be bypassed via the inline value path.")]
+	public void UpdateSysSetting_BinaryType_RejectsOversizedValue() {
+		// Arrange
+		byte[] tooBig = new byte[(int)SysSettingsManager.MaxBinaryValueBytes + 1];
+		string base64 = Convert.ToBase64String(tooBig);
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "LogoImage", "Binary");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		bool updated = sut.UpdateSysSetting("LogoImage", base64, "Binary");
+
+		// Assert
+		updated.Should().BeFalse(
+			because: "a Binary payload over the decoded-byte cap must be rejected regardless of input form");
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	#endregion
+
+	#region GetFileSecurityPolicy — fail-closed mode resolution
+
+	// Platform-fixed FileSecurityMode lookup ids.
+	private const string FileSecurityDisabledId = "9801C625-FAFB-4ED3-9383-C3C942A5C1E3";
+	private const string FileSecurityAllowListId = "C6CA9A2F-3A4A-4D51-B67B-DE36852CB916";
+	private const string FileSecurityDenyListId = "60849C6E-24B4-45DF-9AAD-2F69D419823C";
+
+	private static DataProviderMock SetupFileSecurityModeMock(string valueTypeName, string rawValue) {
+		Guid settingId = Guid.NewGuid();
+		bool isLookup = valueTypeName == "Lookup";
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", settingId }, { "Code", "FileSecurityMode" }, { "Name", "FileSecurityMode" },
+				{ "ValueTypeName", valueTypeName }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false }
+			}
+		});
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", Guid.NewGuid() }, { "SysSettings", settingId }, { "SysAdminUnit", AllUsersAdminUnitId },
+				{ "IsDef", true }, { "TextValue", isLookup ? string.Empty : rawValue },
+				{ "IntegerValue", 0 }, { "FloatValue", 0m }, { "BooleanValue", false },
+				{ "DateTimeValue", new DateTime(1900, 1, 1) },
+				{ "GuidValue", isLookup ? Guid.Parse(rawValue) : Guid.Empty }
+			}
+		});
+		return providerMock;
+	}
+
+	[TestCase(FileSecurityDisabledId, FileSecurityMode.Disabled)]
+	[TestCase(FileSecurityAllowListId, FileSecurityMode.AllowList)]
+	[TestCase(FileSecurityDenyListId, FileSecurityMode.DenyList)]
+	[Description("GetFileSecurityPolicy maps each of the three known FileSecurityMode lookup ids to its mode.")]
+	public void GetFileSecurityPolicy_Resolves_Known_Mode_Ids(string modeGuid, FileSecurityMode expected) {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(SetupFileSecurityModeMock("Lookup", modeGuid));
+
+		// Act & Assert
+		sut.GetFileSecurityPolicy().Mode.Should().Be(expected,
+			because: "each documented FileSecurityMode id must resolve to its corresponding mode");
+	}
+
+	[Test]
+	[Description("GetFileSecurityPolicy fails closed to Unknown when the FileSecurityMode value is missing, rather than defaulting to Disabled.")]
+	public void GetFileSecurityPolicy_Missing_Mode_Is_Unknown() {
+		// Arrange
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>>());
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		// Act & Assert
+		sut.GetFileSecurityPolicy().Mode.Should().Be(FileSecurityMode.Unknown,
+			because: "a missing mode must fail closed (Unknown), never be treated as Disabled");
+	}
+
+	[TestCase("not-a-guid", "Text")]
+	[TestCase("11111111-1111-1111-1111-111111111111", "Lookup")]
+	[Description("GetFileSecurityPolicy fails closed to Unknown for a malformed value or an unrecognized mode id.")]
+	public void GetFileSecurityPolicy_Malformed_Or_Unknown_Mode_Is_Unknown(string rawValue, string valueTypeName) {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(SetupFileSecurityModeMock(valueTypeName, rawValue));
+
+		// Act & Assert
+		sut.GetFileSecurityPolicy().Mode.Should().Be(FileSecurityMode.Unknown,
+			because: "a malformed or unrecognized FileSecurityMode must fail closed to Unknown");
 	}
 
 	#endregion

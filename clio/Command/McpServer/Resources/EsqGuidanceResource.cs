@@ -25,7 +25,7 @@ public sealed class EsqGuidanceResource {
 		       Scope
 		       - Use this guide whenever you build or read an EntitySchemaQuery (ESQ): a DataService SelectQuery body, a widget data-provider query, a page list/grid data source, or any place that carries an ESQ `columns`/`filters`/`aggregation` payload.
 		       - This guide covers the query container exhaustively: the SelectQuery request envelope, the columns/select shape, the expression building blocks, the forward/backward reference column-path grammar, aggregations, and the master enum tables that the whole ESQ contract depends on.
-		       - The filter tree (`filters`) is large enough to warrant its own article — read `esq-filters` for every filter type, operator, value shape, and the date-macro catalog. This guide gives only the filter envelope and links across.
+		       - The serialized filter tree (`filters`) is large enough to warrant its own article — enter through `esq-filters`, then read `esq-filters-frontend` for every JSON filter type, operator, value shape, and date macro. This guide gives only the filter envelope and links across.
 
 		       Query shape essentials
 		       - ESQ is authored as JSON with NUMERIC enum values (`expressionType`, `functionType`, `aggregationType`, `comparisonType`, `dataValueType`, ...), explicit `expression` objects, and values wrapped in a `parameter` envelope. This is the exact shape the DataService SelectQuery endpoint accepts, that Freedom UI widgets store, and that lives inside page bodies.
@@ -55,7 +55,7 @@ public sealed class EsqGuidanceResource {
 		         - `rowCount` (int): max rows; -1 = no limit (the default). Set a small positive value when validating a filter.
 		         - `rowsOffset` (int): paging offset; pair with `isPageable: true`.
 		         - `isPageable` (bool), `isDistinct` (bool), `useLocalization` (bool), `ignoreDisplayValues` (bool): common toggles.
-		         - `filters` (object): the root filter group; see the filter envelope below and `esq-filters`.
+		         - `filters` (object): the root filter group; see the filter envelope below and `esq-filters-frontend`.
 		         - Hierarchy/cache fields (`isHierarchical`, `hierarchicalMaxDepth`, `serverESQCacheParameters`, ...) exist but are rarely needed for widget/filter work.
 		       - To COUNT (the common validation move), select a single aggregation column instead of row data — see Aggregations.
 
@@ -69,11 +69,11 @@ public sealed class EsqGuidanceResource {
 		       - Every left/right side and every column is a BaseExpression. The `expressionType` selects the shape:
 		         - 0 SchemaColumn: `{ "expressionType": 0, "columnPath": "<Path>" }` — references a column by path.
 		         - 1 Function: a computed value. Set `functionType` and the function-specific fields:
-		           - functionType 1 Macros: `{ "expressionType": 1, "functionType": 1, "macrosType": <n>, "functionArgument"?: <expr> }` (relative dates / current user — full catalog in `esq-filters`).
+		           - functionType 1 Macros: `{ "expressionType": 1, "functionType": 1, "macrosType": <n>, "functionArgument"?: <expr> }` (relative dates / current user — full catalog in `esq-filters-frontend`).
 		           - functionType 2 Aggregation: see Aggregations below.
 		           - functionType 3 DatePart: `{ "expressionType": 1, "functionType": 3, "datePartType": <n>, "functionArgument": { "expressionType": 0, "columnPath": "<DateColumn>" } }` (1 Day, 2 Week, 3 Month, 4 Year, 5 Weekday, 6 Hour, 7 HourMinute).
 		           - functionType 4 Length, 5 Window, 6 DateAdd, 7 DateDiff: advanced. DateDiff carries `dateDiffInterval` (0 Year, 1 Month, 2 Day, 3 Hour, 4 Minute, 5 Millisecond) and `functionArguments` (array of two operands).
-		         - 2 Parameter: a literal value: `{ "expressionType": 2, "parameter": { "dataValueType": <n>, "value": <v> } }`. The `parameter.value` shape depends on the data type (see `esq-filters` value shapes). For Blob/multi-value, use `parameter.arrayValue` (string array).
+		         - 2 Parameter: a literal value: `{ "expressionType": 2, "parameter": { "dataValueType": <n>, "value": <v> } }`. The `parameter.value` shape depends on the data type (see `esq-filters-frontend` value shapes). For Blob/multi-value, use `parameter.arrayValue` (string array).
 		         - 3 SubQuery: a correlated sub-query over a backward-reference path: `{ "expressionType": 3, "columnPath": "[Child:Parent].Column", "subFilters": <group>, "subOrderColumn"?, "subOrderDirection"? }`. With an aggregation it also carries `functionType: 2` + `aggregationType`.
 		         - 4 ArithmeticOperation: `{ "expressionType": 4, "arithmeticOperation": <n>, "leftArithmeticOperand": <expr>, "rightArithmeticOperand": <expr> }` (0 Addition, 1 Subtraction, 2 Multiplication, 3 Division).
 
@@ -84,7 +84,7 @@ public sealed class EsqGuidanceResource {
 		       - A lookup segment is the lookup column name on its own (`Account`) — it already resolves to the related record. The only `Id` in a path is the primary-key `Id` leaf.
 		       - Backward reference (one-to-many / reverse join): bracket syntax `[JoinedTable:JoinedTableRelationColumn].JoinedTableColumn`, where `JoinedTableRelationColumn` is the lookup column ON THE CHILD table that points back to the root. `[Contact:Account].Id` from root Account = "join the Contact table on its Account column back to this Account, then take the child Id". Backward references require aggregation or an Exists filter (a one-to-many join cannot yield a single scalar without one).
 		       - Chained / mixed: brackets and dots can be chained — `[Touch:Contact].[TouchAction:Touch].Id` (double backward) or `Contact.[Case:Assignee].Id` (forward to Contact, then backward to Cases whose Assignee is that Contact). There is no fixed depth limit.
-		       - When the reference is used inside a sub-query/Exists `subFilters` group, paths there are relative to the joined child schema and do NOT repeat the bracket. See the Exists section of `esq-filters`.
+		       - When the reference is used inside a sub-query/Exists `subFilters` group, paths there are relative to the joined child schema and do NOT repeat the bracket. See the Exists section of `esq-filters-frontend`.
 
 		       Aggregations
 		       - An aggregation is a Function expression with `functionType: 2`:
@@ -105,7 +105,7 @@ public sealed class EsqGuidanceResource {
 
 		       The filter envelope (cross-reference)
 		       - `filters` on the SelectQuery is a filter GROUP: `{ "items": { ... }, "logicalOperation": 0, "isEnabled": true, "filterType": 6, "rootSchemaName": "<RootSchema>" }`.
-		       - The full leaf-filter contract — compare/in/between/isnull/exists, operators, value shapes, lookup objects, date macros, and backward-reference Exists — is in `esq-filters`. Do not duplicate that logic; read it.
+		       - The full serialized leaf-filter contract — compare/in/between/isnull/exists, operators, value shapes, lookup objects, date macros, and backward-reference Exists — is in `esq-filters-frontend`. Do not duplicate that logic; read it.
 
 		       Master enum reference
 		       - filterType: 0 None, 1 CompareFilter, 2 IsNullFilter, 3 Between, 4 InFilter, 5 Exists, 6 FilterGroup, 7 Segment.
@@ -120,7 +120,7 @@ public sealed class EsqGuidanceResource {
 		       - logicalOperation (on a filter group): 0 And, 1 Or.
 		       - orderDirection: 0 None, 1 Ascending, 2 Descending.
 		       - dataValueType (most-used): 0 Guid, 1 Text, 4 Integer, 5 Float, 6 Money, 7 DateTime, 8 Date, 9 Time, 10 Lookup, 11 Enum, 12 Boolean. (Others: 13 Blob, 14 Image, 18 Color, 23 HashText, 24 SecureText, 25 File, 27 ShortText, 28 MediumText, 29 MaxSizeText, 30 LongText, 31-34 Float1-4, 40 Float8, 42 PhoneText, 43 RichText, 44 WebText, 45 EmailText, 47 Float0, 48 Money0, 49 Money1, 50 Money3. Note there is no 2/3/37 in this enum.)
-		       - macrosType (date/relative + lookup macros): full catalog in `esq-filters`.
+		       - macrosType (date/relative + lookup macros): full catalog in `esq-filters-frontend`.
 
 		       Worked example: count Contacts created this year, owned by the current user
 		       ```json
@@ -176,7 +176,7 @@ public sealed class EsqGuidanceResource {
 		       - Running a query is also the fastest way to check a filter: a successful call confirms the schema name, every column path, and the whole filter tree parse and resolve. To check a filter before saving it anywhere, (1) take the filter group you plan to use, (2) wrap it in a SelectQuery with a single COUNT(Id) aggregation and the same `rootSchemaName`, (3) execute it, (4) compare the count to expectations, (5) only then commit it to its destination. This catches wrong paths, wrong lookup objects, and wrong macros before they reach a page.
 
 		       Related guidance
-		       - Read `esq-filters` for the complete filter tree: every filter type and operator, value shapes per data type, lookup objects, the date-macro catalog, and backward-reference Exists filters.
+		       - Enter through `esq-filters`; for this serialized SelectQuery surface, read `esq-filters-frontend` for the complete filter tree: every filter type and operator, value shapes per data type, lookup objects, the date-macro catalog, and backward-reference Exists filters.
 		       """
 	};
 

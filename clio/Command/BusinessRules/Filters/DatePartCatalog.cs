@@ -48,4 +48,19 @@ internal static class DatePartCatalog {
 		valueKind = DatePartValueKind.Integer;
 		return false;
 	}
+
+	internal static bool TryResolveName(int datePartTypeValue, out string name, out DatePartValueKind valueKind) {
+		foreach (KeyValuePair<string, DatePartInfo> entry in ByName) {
+			if ((int)entry.Value.Type == datePartTypeValue
+				&& string.Equals(entry.Key, entry.Value.Type.ToString(), StringComparison.OrdinalIgnoreCase)) {
+				name = entry.Key;
+				valueKind = entry.Value.ValueKind;
+				return true;
+			}
+		}
+
+		name = string.Empty;
+		valueKind = DatePartValueKind.Integer;
+		return false;
+	}
 }

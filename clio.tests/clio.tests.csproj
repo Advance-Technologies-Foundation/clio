@@ -10,6 +10,10 @@
   </PropertyGroup>
   <ItemGroup Label="References">
     <ProjectReference Include="..\clio\clio.csproj" />
+    <!-- Referenced so the MCP e2e fixture-policy guard (McpFixturePolicyTests) can reflect
+         over clio.mcp.e2e types while running in the standard pre-merge Unit lane. The e2e
+         tests themselves are not executed here (dotnet test only runs clio.tests.dll). -->
+    <ProjectReference Include="..\clio.mcp.e2e\clio.mcp.e2e.csproj" />
     <PackageReference Include="ATF.Repository.Mock" />
     <PackageReference Include="coverlet.collector" >
       <PrivateAssets>all</PrivateAssets>
@@ -19,9 +23,16 @@
     <PackageReference Include="FluentAssertions"  />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="nunit" />
+    <PackageReference Include="NUnit.Analyzers" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
+    <!-- Pin the patched build directly so the transitive System.Security.Cryptography.Xml
+         (pulled via PowerShell.SDK) is lifted above the NU1903 advisory. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
+         TestServer request/response, not just config-object assertions). -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->
@@ -96,6 +107,14 @@
     </None>
 
     <None Include="Command\McpServer\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
+    <None Include="Theming\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
+    <None Include="..\clio\tpl\themes\10.0\theme.css.tpl" Link="Theming\Fixtures\theme.css.tpl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
 

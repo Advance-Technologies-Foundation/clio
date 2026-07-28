@@ -1,0 +1,66 @@
+COMMAND TYPE
+    Theming commands
+
+NAME
+    build-theme - build the artifacts of a Creatio theme from brand colours and fonts
+
+DESCRIPTION
+    build-theme generates a Creatio theme's artifacts from a small set of brand
+    inputs and the matching version template.
+
+    From a required --primary colour and --css-class-name it derives the full
+    palette (primary, secondary, accent, success, error), finalizes the colour
+    tokens, and applies the requested fonts. With --output it writes the theme
+    files into the directory; otherwise it prints theme.css to stdout.
+
+    The target version comes from --version, or from --environment-name (whose
+    Creatio version it reads); the two are mutually exclusive, and the newest
+    supported version is used when neither is given.
+
+SYNOPSIS
+    clio build-theme --primary <colour> [options]
+
+OPTIONS
+    --primary                       Brand primary colour: #rrggbb, #rgb, rgb(), hsl(), or a named colour (required)
+
+    --css-class-name                CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted. At least one of --caption or --css-class-name is required.
+
+    --secondary                     Secondary colour; derived from the primary when omitted
+
+    --accent                        Accent colour; chosen from the primary when omitted
+
+    --success                       Success colour; the platform default when omitted
+
+    --error                         Error colour; the platform default when omitted
+
+    --heading-font                  Heading font family; Montserrat (no @import) when omitted
+
+    --body-font                     Body font family; Montserrat (no @import) when omitted
+
+    --font-weights                  Font weights to load, comma-separated (e.g. 400,500,600); ignored without a custom heading/body font; defaults to 400,500,600
+
+    --id                            Theme id for theme.json (directory output); an auto-generated UUID when omitted
+
+    --caption                       Theme caption for theme.json (directory output); derived from --css-class-name when omitted
+
+    --version                       Creatio version the theme targets (e.g. 10.0); the newest supported version when omitted
+
+    --environment-name              Registered environment whose Creatio version the theme targets; mutually exclusive with --version
+
+    --output                        Output directory; writes theme.css + theme.json. Prints theme.css to stdout when omitted
+
+EXAMPLE
+    clio build-theme --primary "#004fd6" --css-class-name MyTheme
+        print a theme to stdout
+
+    clio build-theme --primary "#004fd6" --css-class-name MyTheme --output Files/themes/MyTheme
+        write theme.css + theme.json into a workspace package themes folder
+
+    clio build-theme --primary "#004fd6" --css-class-name MyTheme --environment-name dev
+        pick the bundled template by a registered environment's Creatio version
+
+NOTES
+    - build-theme never mutates an environment. A too-old --version (older than the lowest supported version) and an unregistered --environment-name are reported as errors.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

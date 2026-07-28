@@ -27,7 +27,7 @@ clio call-service -e dev
 
 ```bash
 -m, --method <VALUE>
-Result file
+HTTP method
 -f, --input <VALUE>
 Request file
 -b, --body <VALUE>
@@ -55,7 +55,7 @@ User login (administrator permission required)
 Use NetCore application
 -e, --Environment <VALUE>
 Environment name
--m, --Maintainer <VALUE>
+--maintainer <VALUE>
 Maintainer name
 -c, --dev <VALUE>
 Developer mode state for environment

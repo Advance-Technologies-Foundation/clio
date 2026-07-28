@@ -18,8 +18,6 @@ public sealed class CompileCreatioTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 {
-	private static readonly object CommandExecutionLock = new();
-
 	/// <summary>
 	/// Stable MCP tool name for compilation operations.
 	/// </summary>
@@ -70,22 +68,46 @@ public sealed class CompileCreatioTool(
 	private CommandExecutionResult Execute<TOptions>(Command<TOptions> command, TOptions options)
 	{
 		int exitCode = -1;
-		lock (CommandExecutionLock)
+		// FR-05: per-tenant lock keyed by the environment this compilation resolves under (replaces the
+		// former tool-local static lock that serialized compile-creatio across ALL tenants).
+		string tenantKey = options is EnvironmentOptions environmentOptions
+			? commandResolver.GetTenantKey(environmentOptions)
+			: McpToolExecutionLock.SharedFallbackKey;
+		lock (McpToolExecutionLock.GetLock(tenantKey))
 		{
+			McpToolExecutionLock.MarkInUse(tenantKey);
+			// CompileCreatioTool builds its result from logger.LogMessages, which ConsoleLogger only
+			// populates while PreserveMessages is true. Set/restore it locally (like BaseTool,
+			// SchemaSyncTool, EntitySchemaTool, AddItemModelTool) so compilation output is captured
+			// regardless of transport: the stdio path sets the flag process-wide, the HTTP transport
+			// does not, so relying on the global flag returns empty output over HTTP.
+			bool previousPreserveMessages = logger.PreserveMessages;
+			logger.PreserveMessages = true;
 			try
 			{
 				exitCode = command.Execute(options);
 				Thread.Sleep(500);
-				CommandExecutionResult result = new(exitCode, [.. logger.LogMessages.ToList()]);
+				// FR-11 (review): redact the self-captured snapshot on a passthrough request before it
+				// crosses the MCP boundary — the main path does this via RunCommandUnderHeldLock, this
+				// self-managed-capture tool must do it too. No-op off passthrough.
+				CommandExecutionResult result = new(exitCode,
+					[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]);
 				logger.ClearMessages();
 				return result;
 			}
 			catch (Exception exception)
 			{
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(exception.Message)];
+				List<LogMessage> logMessages = [
+					.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
+					new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return result;
+			}
+			finally
+			{
+				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 	}
@@ -96,7 +118,7 @@ public sealed class CompileCreatioTool(
 /// </summary>
 public sealed record CompileCreatioArgs(
 	[property: JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

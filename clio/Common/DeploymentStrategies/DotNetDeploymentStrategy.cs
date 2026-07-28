@@ -113,19 +113,19 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	}
 
 	/// <summary>
-	/// Gets the URL where the dotnet-hosted application will be accessible.
+	/// Gets the HTTP URL where the dotnet-hosted application will be accessible.
 	/// </summary>
 	public string GetApplicationUrl(PfInstallerOptions options)
 	{
 		if (options == null)
 			throw new ArgumentNullException(nameof(options));
 
-		var protocol = options.UseHttps ? "https" : "http";
+		const string protocol = "http";
 		var host = "localhost";
 		var port = options.SitePort;
 
-		// Don't include default ports in URL
-		if ((protocol == "http" && port == 80) || (protocol == "https" && port == 443))
+		// Don't include the default HTTP port in URL.
+		if (port == 80)
 		{
 			return $"{protocol}://{host}";
 		}

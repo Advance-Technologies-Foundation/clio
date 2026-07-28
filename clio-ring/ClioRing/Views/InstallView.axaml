@@ -1,0 +1,117 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ClioRing.ViewModels"
+             xmlns:ipc="using:ClioRing.Ipc"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="920" d:DesignHeight="720"
+             x:Class="ClioRing.Views.InstallView"
+             x:DataType="vm:InstallFormViewModel"
+             x:CompileBindings="True"
+             FontFamily="Inter, Segoe UI, sans-serif"
+             Foreground="#E6EDF3">
+
+    <Grid Margin="16" ColumnDefinitions="400,*" Background="#0E1117">
+
+        <!-- ===== Left: the guided Install form (no dry-run control anywhere) ===== -->
+        <ScrollViewer Grid.Column="0" Margin="0,0,12,0">
+            <StackPanel Spacing="12">
+
+                <!-- Header -->
+                <Border CornerRadius="10" Padding="14" Background="#161C26" BorderBrush="#26FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Deploy Creatio" FontSize="16" FontWeight="SemiBold" Foreground="#E6EDF3"/>
+                        <TextBlock Foreground="#8B949E" FontSize="12">
+                            <Run Text="Status:"/><Run Text=" "/><Run Text="{Binding ConnectionState}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Source: Local vs Rancher -->
+                <Border CornerRadius="10" Padding="12" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Database &amp; Redis source" Foreground="#E6EDF3" FontWeight="SemiBold"/>
+                        <ToggleSwitch IsChecked="{Binding Local}" OnContent="Local" OffContent="Rancher"/>
+                        <TextBlock Text="{Binding SourceLabel}" Foreground="#58A6FF" FontSize="12" TextWrapping="Wrap"/>
+
+						<StackPanel Spacing="6" IsVisible="{Binding IsLocal}">
+							<ToggleSwitch IsChecked="{Binding UseHttps}" OnContent="HTTPS preferred" OffContent="HTTP"/>
+							<TextBlock Text="HTTPS uses a matching IIS certificate and falls back to HTTP if none is installed."
+							           Foreground="#8B949E" FontSize="11" TextWrapping="Wrap"/>
+							<TextBlock Text="Database" Foreground="#C9D1D9" FontSize="12"/>
+                            <ComboBox ItemsSource="{Binding LocalDatabases}" SelectedItem="{Binding SelectedDatabase}" HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="ipc:InfraDb">
+                                        <TextBlock FontFamily="Cascadia Code,Consolas,monospace">
+                                            <Run Text="{Binding DbServerName}"/><Run Text="  ·  "/><Run Text="{Binding Engine}"/><Run Text="  ·  "/><Run Text="{Binding Host}"/>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Text="Redis" Foreground="#C9D1D9" FontSize="12" Margin="0,4,0,0"/>
+                            <ComboBox ItemsSource="{Binding LocalRedisServers}" SelectedItem="{Binding SelectedRedis}" HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="ipc:InfraRedis">
+                                        <TextBlock FontFamily="Cascadia Code,Consolas,monospace">
+                                            <Run Text="{Binding RedisServerName}"/><Run Text="  ·  "/><Run Text="{Binding Host}"/>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Text="Rancher uses the default Kubernetes database and Redis — nothing to choose."
+                                   Foreground="#6E7681" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding !IsLocal}"/>
+                        <TextBlock Text="{Binding InfraStatus}" Foreground="#8B949E" FontSize="11" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Build / ZIP -->
+                <Border CornerRadius="10" Padding="12" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Creatio build" Foreground="#E6EDF3" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding Builds}" SelectedItem="{Binding SelectedBuild}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="ipc:CreatioBuild">
+                                    <TextBlock Text="{Binding FileName}" FontFamily="Cascadia Code,Consolas,monospace"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="{Binding BuildsStatus}" Foreground="#8B949E" FontSize="11" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Name + port -->
+                <Border CornerRadius="10" Padding="12" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+                    <Grid ColumnDefinitions="*,140" RowDefinitions="Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Instance name" Foreground="#E6EDF3" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Port" Foreground="#E6EDF3" FontWeight="SemiBold"/>
+                        <TextBox Grid.Row="1" Grid.Column="0" Margin="0,6,10,0" Text="{Binding InstanceName}" PlaceholderText="e.g. creatio-demo"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Text="{Binding Port}" PlaceholderText="40000-42000"/>
+                    </Grid>
+                </Border>
+
+                <!-- Validation summary -->
+                <SelectableTextBlock Text="{Binding ValidationSummary}" Foreground="#F5B5B2" FontSize="12" TextWrapping="Wrap"
+                                     IsVisible="{Binding HasValidationSummary}"/>
+
+                <!-- Preview-gate notice (live install not started in this build) -->
+                <Border CornerRadius="10" Padding="12" Background="#1A1410" BorderBrush="#F5A524" BorderThickness="1"
+                        IsVisible="{Binding HasPreviewNotice}">
+                    <SelectableTextBlock Text="{Binding PreviewNotice}" Foreground="#F5D9A8" FontSize="12" TextWrapping="Wrap"/>
+                </Border>
+
+                <!-- The single Install action: this click IS the intent (no dry-run, no extra confirm) -->
+                <Button Content="Install" Classes="accent" HorizontalAlignment="Stretch"
+                        Command="{Binding InstallCommand}" IsEnabled="{Binding !IsBusy}"/>
+
+                <SelectableTextBlock Text="{Binding Output}" Foreground="#8B949E" FontSize="11"
+                                     FontFamily="Cascadia Code,Consolas,monospace" TextWrapping="Wrap"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ===== Right: the live pipeline (Check requirements first, then the install stages) ===== -->
+        <Border Grid.Column="1" CornerRadius="10" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+            <ContentControl Content="{Binding Pipeline}"/>
+        </Border>
+    </Grid>
+</UserControl>

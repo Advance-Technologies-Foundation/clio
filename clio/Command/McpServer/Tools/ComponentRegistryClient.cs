@@ -98,6 +98,39 @@ public sealed record RegistryFlavor(
 		CdnRegistryFileName: "MobileComponentRegistry.json",
 		LocalFileEnvironmentVariable: "CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE",
 		CacheSubdirectoryName: "mobile");
+
+	/// <summary>
+	/// Requests flavor: the Freedom UI request catalog (<c>crt.*Request</c> types wired
+	/// through <c>RequestBindingConfig</c> outputs) —
+	/// <c>academy/api/mcp/{version}/RequestRegistry.json</c>. The envelope differs from
+	/// the component registries (<c>requests[]</c> + <c>references.baseParameters</c>),
+	/// so only the byte-transport chain is shared; parsing lives in
+	/// <c>RequestInfoCatalog</c>, not <c>ComponentInfoCatalog</c>. OOTB button-action
+	/// requests initiative (ENG-93187).
+	/// </summary>
+	public static readonly RegistryFlavor Requests = new(
+		DisplayName: "requests",
+		CdnRegistryFileName: "RequestRegistry.json",
+		LocalFileEnvironmentVariable: "CLIO_REQUEST_REGISTRY_LOCAL_FILE",
+		CacheSubdirectoryName: "requests");
+
+	/// <summary>
+	/// Mobile requests flavor: same wrapped-envelope contract as <see cref="Requests"/>, separate
+	/// file — <c>academy/api/mcp/{version}/MobileRequestRegistry.json</c>. Mirrors how
+	/// <see cref="Mobile"/> relates to the web component registry: the mobile request catalog is a
+	/// distinct registry, scoped to only the <c>crt.*Request</c> types actually available on Freedom
+	/// UI mobile. Cache lives in a dedicated <c>mobile-requests/</c> subfolder so web and mobile
+	/// request payloads cannot collide on the same <c>latest.json</c> key, and the operator override
+	/// reads <c>CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE</c>. The producer-side CDN asset ships after
+	/// this clio plumbing (mobile OOTB requests initiative); until then the mobile flavor degrades to
+	/// the same graceful <see cref="ComponentRegistryUnavailableException"/> as any unpublished
+	/// version, and offline iteration goes through the local-override env var.
+	/// </summary>
+	public static readonly RegistryFlavor MobileRequests = new(
+		DisplayName: "mobile-requests",
+		CdnRegistryFileName: "MobileRequestRegistry.json",
+		LocalFileEnvironmentVariable: "CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE",
+		CacheSubdirectoryName: "mobile-requests");
 }
 
 /// <summary>
@@ -521,6 +554,60 @@ public sealed class MobileComponentRegistryClient : ComponentRegistryClient, IMo
 		IFileSystem fileSystem,
 		ILogger<MobileComponentRegistryClient> logger)
 		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile) {
+	}
+}
+
+/// <summary>
+/// Marker interface that selects the requests-flavored registry client at DI time.
+/// Adds no new methods over <see cref="IComponentRegistryClient"/> — the byte-transport
+/// contract is identical, the implementation is the same <see cref="ComponentRegistryClient"/>
+/// type, only the constructor-time <see cref="RegistryFlavor"/> differs. The payload it
+/// serves (<c>RequestRegistry.json</c>) has its own envelope, parsed by
+/// <c>RequestInfoCatalog</c> rather than <c>ComponentInfoCatalog</c>.
+/// </summary>
+public interface IRequestRegistryClient : IComponentRegistryClient {
+}
+
+/// <summary>
+/// Concrete subtype used to register the requests flavor through standard DI. The
+/// implementation is inherited verbatim from <see cref="ComponentRegistryClient"/>;
+/// only the flavor selection happens here.
+/// </summary>
+public sealed class RequestRegistryClient : ComponentRegistryClient, IRequestRegistryClient {
+	public RequestRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<RequestRegistryClient> logger)
+		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Requests) {
+	}
+}
+
+/// <summary>
+/// Marker interface that selects the mobile-requests-flavored registry client at DI time.
+/// Adds no new methods over <see cref="IComponentRegistryClient"/> — the byte-transport
+/// contract is identical, the implementation is the same <see cref="ComponentRegistryClient"/>
+/// type, only the constructor-time <see cref="RegistryFlavor"/> differs. It serves
+/// <c>MobileRequestRegistry.json</c>, which shares the request envelope parsed by
+/// <c>RequestInfoCatalog</c>; the mobile catalog is scoped to the requests actually available
+/// on Freedom UI mobile. Mirrors how <see cref="IMobileComponentRegistryClient"/> relates to
+/// <see cref="IComponentRegistryClient"/> for components.
+/// </summary>
+public interface IMobileRequestRegistryClient : IComponentRegistryClient {
+}
+
+/// <summary>
+/// Concrete subtype used to register the mobile-requests flavor through standard DI. The
+/// implementation is inherited verbatim from <see cref="ComponentRegistryClient"/>;
+/// only the flavor selection (<see cref="RegistryFlavor.MobileRequests"/>) happens here.
+/// </summary>
+public sealed class MobileRequestRegistryClient : ComponentRegistryClient, IMobileRequestRegistryClient {
+	public MobileRequestRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<MobileRequestRegistryClient> logger)
+		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.MobileRequests) {
 	}
 }
 

@@ -17,6 +17,56 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
+	[Description("Returns the virtual entity create defaults and readback fields for both standalone and batched schema tools.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises virtual entity schema support")]
+	public async Task ToolContractGet_Should_Advertise_Virtual_Entity_Contracts() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreateEntitySchemaTool.CreateEntitySchemaToolName,
+					SchemaSyncTool.ToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the MCP server should return all virtual entity related contracts in one request");
+		response.Tools.Should().NotBeNull(
+			because: "a successful contract lookup must include the requested tool definitions");
+		IReadOnlyList<ToolContractDefinition> contracts = response.Tools!;
+		ToolContractDefinition createContract = contracts.Single(tool =>
+			tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		createContract.InputSchema.Properties.Should().Contain(field => field.Name == "is-virtual",
+			because: "the standalone creation contract must expose the virtual-schema argument");
+		createContract.Defaults.Should().Contain(value => value.Name == "is-virtual" && value.Value == "false",
+			because: "standalone entity creation must document persistent schemas as the default");
+		createContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the live standalone contract should route virtual schema work to its canonical guide");
+		ToolContractDefinition syncContract = contracts.Single(tool => tool.Name == SchemaSyncTool.ToolName);
+		syncContract.Defaults.Should().Contain(value =>
+				value.Name == "operations[*].is-virtual" && value.Value == "false",
+			because: "batched create-entity operations must advertise the same persistent default");
+		syncContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the live batched contract should route virtual schema work to its canonical guide");
+		contracts.Single(tool => tool.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName)
+			.OutputContract.Fields.Should().Contain(field => field.Name == "virtual",
+				because: "schema properties must advertise virtual status for readback verification");
+		contracts.Single(tool => tool.Name == ApplicationGetInfoTool.ApplicationGetInfoToolName)
+			.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
+				because: "application context must document the virtual flag on each entity");
+	}
+
+	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract tool is advertised by the MCP server")]
 	public async Task ToolContractGet_Should_Be_Listed_By_Mcp_Server() {
@@ -156,7 +206,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		ToolContractGetResponse defaultResponse = await CallAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?>());
+			new Dictionary<string, object?> { ["detail"] = "full" });
 		ToolContractGetResponse explicitResponse = await CallAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
@@ -175,7 +225,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		defaultResponse.Success.Should().BeTrue(
-			because: "the default bootstrap lookup should succeed before the caller decides whether it needs explicit Data Forge maintenance contracts");
+			because: "the detail=full bootstrap lookup should succeed before the caller decides whether it needs explicit Data Forge maintenance contracts");
 		defaultResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeContextToolName,
 			because: "the default bootstrap set should include read-only Data Forge discovery/context contracts");
 		defaultResponse.Tools!.Select(tool => tool.Name).Should().NotContain(DataForgeTool.DataForgeInitializeToolName,
@@ -191,6 +241,73 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		explicitResponse.Tools.Should().OnlyContain(tool =>
 				tool.Description.Contains("Creatio platform version 10.0.0 or later"),
 			because: "Data Forge contracts should advertise the platform version requirement through the real MCP server");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract returns a compact tool index by default and expands full contracts on detail=full")]
+	public async Task ToolContractGet_Should_Return_Compact_Index_By_Default_And_Full_On_Detail() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse indexResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+		ToolContractGetResponse fullResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["detail"] = "full" });
+
+		// Assert
+		indexResponse.Success.Should().BeTrue(
+			because: "the no-args default is the cheap compact-discovery entry point");
+		indexResponse.Tools.Should().BeNull(
+			because: "the compact index must not pay for the heavy full contracts by default");
+		indexResponse.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index so an agent can see what tools exist");
+		indexResponse.Index!.Select(entry => entry.Name).Should().Contain(GuidanceGetTool.ToolName,
+			because: "the compact index must cover the canonical tool surface");
+		indexResponse.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
+			because: "every index entry must carry a one-line purpose so the agent can choose a tool without the full schema");
+		fullResponse.Success.Should().BeTrue(
+			because: "detail=full should still return the legacy full contract set");
+		fullResponse.Index.Should().BeNull(
+			because: "detail=full preserves the legacy behavior and must not emit the compact index");
+		fullResponse.Tools.Should().NotBeNullOrEmpty(
+			because: "detail=full must expand the full contracts of all canonical tools");
+	}
+
+	// ENG-92761 (F2): against the REAL running MCP server, the compact index must carry the resident
+	// flag so an agent can tell a native tools/list tool (list-apps) apart from a hidden long-tail tool
+	// (sync-schemas) reachable only through clio-run.
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract compact index carries the resident flag for a core tool and a hidden long-tail tool")]
+	public async Task ToolContractGet_Should_PopulateResidentFlag_InCompactIndex() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse indexResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+
+		// Assert
+		indexResponse.Success.Should().BeTrue(
+			because: "the no-args default is the cheap compact-discovery entry point");
+		indexResponse.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry listApps = indexResponse.Index!.Single(
+			entry => entry.Name == ApplicationGetListTool.ApplicationGetListToolName);
+		listApps.Resident.Should().BeTrue(
+			because: "list-apps is a core tool present in tools/list against the real running MCP server");
+		ToolContractIndexEntry syncSchemas = indexResponse.Index!.Single(
+			entry => entry.Name == SchemaSyncTool.ToolName);
+		syncSchemas.Resident.Should().BeFalse(
+			because: "sync-schemas is a hidden long-tail tool reachable only via clio-run against the real running MCP server");
 	}
 
 	[Test]
@@ -808,10 +925,10 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP invocation error when get-tool-contract is called without the required args wrapper.")]
+	[Description("Returns the compact discovery index when get-tool-contract is called without any args — the no-args call is the documented lazy-surface discovery entrypoint, not a binding failure.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("get-tool-contract rejects calls without the args wrapper")]
-	public async Task ToolContractGet_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+	[AllureName("get-tool-contract returns the compact index when called without args")]
+	public async Task ToolContractGet_Should_Return_Compact_Index_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -822,8 +939,17 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 
 		// Assert
-		AssertInvocationFailure(callResult,
-			because: "MCP argument binding should reject transport envelopes that omit the required args wrapper");
+		// On the lazy tool surface a no-args get-tool-contract call is the documented compact-index
+		// discovery call (every args field is optional), so omitting the args wrapper must SUCCEED with
+		// the index payload — the historical binding-failure expectation is stale.
+		callResult.IsError.Should().NotBeTrue(
+			because: "a no-args get-tool-contract call is the documented compact-index discovery call and must not fail at the binding layer");
+		ToolContractGetResponse response =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+		response.Success.Should().BeTrue(
+			because: "the no-args discovery call should report structured success");
+		response.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args discovery call should return the non-empty compact index of all clio MCP tools");
 	}
 
 	[Test]

@@ -18,11 +18,21 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "odata-read";
 
+	/// <summary>Smallest accepted value for the <c>top</c> argument.</summary>
+	internal const int MinTop = 1;
+
+	/// <summary>Largest accepted value for the <c>top</c> argument.</summary>
+	internal const int MaxTop = 100;
+
+	/// <summary>Number of records returned when <c>top</c> is omitted.</summary>
+	internal const int DefaultTop = 25;
+
 	/// <summary>Reads Creatio records using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports filters, select, expand, order by and top. " +
+		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
 		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top (optional).")]
@@ -34,6 +44,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			}
 			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
 				return ODataReadResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
+			}
+			if (args.Top is { } requestedTop && (requestedTop < MinTop || requestedTop > MaxTop)) {
+				// An out-of-range top must NOT silently fall through to the default (which would
+				// return a page when the caller asked for 0, or be misread as "all" on negatives).
+				return ODataReadResponse.Failure(
+					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.");
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
@@ -47,7 +63,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			return ParseODataResponse(responseJson);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure(ex.Message);
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -133,7 +149,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			parts.Add($"$orderby={Uri.EscapeDataString(args.OrderBy!.Trim())}");
 		}
 
-		int top = args.Top is > 0 and <= 100 ? args.Top.Value : 25;
+		// Read() rejects out-of-range top before reaching here, so top is either unset (default)
+		// or already validated to be within [MinTop, MaxTop].
+		int top = args.Top ?? DefaultTop;
 		parts.Add($"$top={top}");
 
 		return $"?{string.Join("&", parts)}";
@@ -163,7 +181,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			if (preview.Length > 500) {
 				preview = preview[..500] + "...";
 			}
-			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {preview}");
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
 		}
 	}
 
@@ -203,7 +221,7 @@ public sealed record ODataReadArgs {
 
 	/// <summary>Maximum number of records to return (1-100, default 25).</summary>
 	[JsonPropertyName("top")]
-	[Description("Maximum number of records to return. Range: 1-100. Default: 25.")]
+	[Description("Maximum number of records to return. Range: 1-100. Default: 25. An out-of-range value (including 0 or negative) is rejected with a validation error, not silently changed.")]
 	public int? Top { get; init; }
 
 	/// <summary>Structured filter (alternative or addition to raw filter).</summary>
@@ -218,7 +236,7 @@ public sealed record ODataReadArgs {
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public required string EnvironmentName { get; init; }
 }

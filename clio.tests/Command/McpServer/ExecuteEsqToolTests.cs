@@ -31,6 +31,39 @@ public sealed class ExecuteEsqToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts the target host/URI out of a raw IApplicationClient exception before it reaches the typed ExecuteEsqResponse failure envelope, since that POCO error path bypasses the throw-path and IsError redaction gates.")]
+	public void Execute_Should_Redact_Host_And_Uri_In_Failure_Envelope_When_Client_Throws_Connection_Failure() {
+		// Arrange
+		const string sensitiveHost = "http://secret-host:88/0/DataService/json/SyncReply/SelectQuery";
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns(sensitiveHost);
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException($"Failed to connect to {sensitiveHost}"));
+		ExecuteEsqTool tool = new(commandResolver);
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\",\"operationType\":0,\"allColumns\":false,\"rowCount\":1}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a connection failure must produce a structured failure envelope, not an exception");
+		response.Error.Should().NotContain(sensitiveHost,
+			because: "the raw target host/URI from the IApplicationClient failure must never reach the transcript");
+		response.Error.Should().NotContain("secret-host",
+			because: "no fragment of the redacted host should survive in the surfaced error");
+		response.Error.Should().Contain("[redacted-uri]",
+			because: "the redactor replaces the URI with a stable placeholder rather than dropping the whole message");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Advertises a stable read-only MCP tool name for execute-esq.")]
 	public void Execute_Should_Advertise_Stable_Tool_Name() {
 		// Act
@@ -550,6 +583,84 @@ public sealed class ExecuteEsqToolTests {
 			because: "a malformed SelectQuery response cannot be reported as success");
 		response.Error.Should().Contain("Failed to parse SelectQuery response",
 			because: "the failure should explain that the server response could not be parsed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails when a requested column alias is absent from the returned rows instead of silently dropping the unknown column.")]
+	public void Execute_Should_Fail_When_Requested_Column_Is_Dropped_From_Rows() {
+		// Arrange — the server returns success:true rows that omit the requested NoSuchColumnZZZ alias
+		(ExecuteEsqTool tool, _, _) = BuildTool(
+			"{\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"John\"}],\"success\":true}");
+		JsonElement query = Json(
+			"{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{" +
+			"\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}," +
+			"\"Name\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Name\"}}," +
+			"\"NoSuchColumnZZZ\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"NoSuchColumnZZZ\"}}}}}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a requested column that the SelectQuery silently dropped must be surfaced as a failure, not hidden");
+		response.Error.Should().Contain("NoSuchColumnZZZ",
+			because: "the failure should name the unresolved column so the caller can fix the columnPath");
+		response.Error.Should().Contain("Contact",
+			because: "the failure should name the schema the column was requested on");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns success unchanged when every requested column alias is present in the returned rows.")]
+	public void Execute_Should_Return_Success_When_All_Requested_Columns_Present() {
+		// Arrange
+		(ExecuteEsqTool tool, _, _) = BuildTool(
+			"{\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"John\"}],\"success\":true}");
+		JsonElement query = Json(
+			"{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{" +
+			"\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}," +
+			"\"Name\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Name\"}}}}}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "when every requested alias is present in the rows the query resolved correctly");
+		response.Count.Should().Be(1,
+			because: "the single returned row should still be reported");
+		response.Error.Should().BeNull(
+			because: "a fully-resolved query must not surface an error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not flag a dropped column when the result set is empty, since absence cannot be distinguished from a legitimately empty result.")]
+	public void Execute_Should_Not_Flag_Unknown_Column_When_Rows_Are_Empty() {
+		// Arrange — no rows to inspect, so a missing alias cannot be detected and must not false-positive
+		(ExecuteEsqTool tool, _, _) = BuildTool("{\"rows\":[],\"success\":true}");
+		JsonElement query = Json(
+			"{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{" +
+			"\"NoSuchColumnZZZ\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"NoSuchColumnZZZ\"}}}}}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an empty result set cannot prove a column was dropped, so the call must not be failed on a false positive");
+		response.Count.Should().Be(0,
+			because: "the empty rows array should be reported as zero rows");
 	}
 
 	[Test]

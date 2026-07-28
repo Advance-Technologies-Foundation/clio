@@ -9,24 +9,31 @@ internal static class PageEditToolHelpers {
 		IToolCommandResolver commandResolver,
 		string schemaName, string editedBody,
 		string? environmentName, string? uri, string? login, string? password, string? resources) {
+		var updateOptions = new PageUpdateOptions {
+			SchemaName = schemaName,
+			Body = editedBody,
+			Environment = environmentName,
+			Uri = uri,
+			Login = login,
+			Password = password,
+			Resources = resources
+		};
+		// FR-05: serialize on the per-tenant lock keyed by the exact identity the command resolves under.
+		string tenantKey = commandResolver.GetTenantKey(updateOptions);
 		PageUpdateResponse saveResponse;
-		lock (McpToolExecutionLock.SyncRoot) {
-			var updateOptions = new PageUpdateOptions {
-				SchemaName = schemaName,
-				Body = editedBody,
-				Environment = environmentName,
-				Uri = uri,
-				Login = login,
-				Password = password,
-				Resources = resources
-			};
-			PageUpdateCommand updateCommand;
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			try {
-				updateCommand = commandResolver.Resolve<PageUpdateCommand>(updateOptions);
-			} catch (Exception ex) {
-				return (null, ex.Message);
+				PageUpdateCommand updateCommand;
+				try {
+					updateCommand = commandResolver.Resolve<PageUpdateCommand>(updateOptions);
+				} catch (Exception ex) {
+					return (null, ex.Message);
+				}
+				updateCommand.TryUpdatePage(updateOptions, out saveResponse);
+			} finally {
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
-			updateCommand.TryUpdatePage(updateOptions, out saveResponse);
 		}
 		return (saveResponse, null);
 	}
@@ -34,19 +41,19 @@ internal static class PageEditToolHelpers {
 
 public abstract record PageEditToolArgs {
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	public string? EnvironmentName { get; init; }
 
 	[JsonPropertyName("uri")]
-	[Description("Direct Creatio URL. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Uri)]
 	public string? Uri { get; init; }
 
 	[JsonPropertyName("login")]
-	[Description("Direct Creatio login paired with uri. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Login)]
 	public string? Login { get; init; }
 
 	[JsonPropertyName("password")]
-	[Description("Direct Creatio password paired with uri. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Password)]
 	public string? Password { get; init; }
 
 	[JsonPropertyName("resources")]

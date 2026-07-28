@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<!-- This is a dev-only offscreen render tool; never AOT-published. -->
+		<PublishAot>false</PublishAot>
+		<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia" />
+		<PackageReference Include="Avalonia.Themes.Fluent" />
+		<PackageReference Include="Avalonia.Fonts.Inter" />
+		<PackageReference Include="Avalonia.Skia" />
+		<PackageReference Include="Avalonia.Headless" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\ClioRing\ClioRing.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Reuse the shipped sample catalog so the ring matches the real app. -->
+		<None Include="..\..\ClioRing.Desktop\actions.json" Link="actions.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+</Project>

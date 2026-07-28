@@ -1,0 +1,74 @@
+COMMAND TYPE
+    Integrations and tools
+
+NAME
+    install-dbhub - Install, adopt, or repair a local dbHub HTTP MCP server
+
+SYNOPSIS
+    install-dbhub [--config-path <path>] [--host 127.0.0.1] [--port <port>]
+                  [--sync-local-environments <true|false>]
+
+DESCRIPTION
+    Installs the release-pinned @bytebase/dbhub npm package and creates or
+    repairs a current-user Windows Scheduled Task. The task invokes Node.js
+    directly, starts dbHub at logon, and binds the unauthenticated HTTP server
+    to 127.0.0.1.
+
+    Existing valid TOML is adopted and preserved only when every source uses
+    clio-managed sources use an explicit readonly execute_sql tool,
+    and the credential file is not broadly readable. When --config-path is
+    omitted, clio uses the persisted path, then ~/dbhub.toml when it exists,
+    then a clio-owned config under the appsettings directory.
+
+OPTIONS
+    --config-path <path>                 Explicit dbHub TOML path.
+
+    --host <host>                        HTTP bind host. Only 127.0.0.1 is
+                                         accepted. Default: 127.0.0.1.
+
+    --port <port>                        HTTP port. Default: 7999.
+
+    --sync-local-environments <boolean>  Synchronize eligible local Creatio
+                                         sources after successful deploy and
+                                         uninstall operations. Default: true.
+
+REQUIREMENTS
+    - Windows
+    - Node.js 22.5 or later and npm on PATH
+    - An unused loopback port, or a healthy dbHub server on that port
+
+EXAMPLES
+    install-dbhub
+    install-dbhub --config-path C:\Users\me\dbhub.toml --port 7999
+    install-dbhub --sync-local-environments false
+
+BEHAVIOR
+    - Installs exactly the dbHub version pinned by this clio release.
+    - Validates existing TOML before changing installation state.
+    - Adds an in-memory SQLite clio_control source only when the TOML has no
+      sources, because dbHub 0.23.0 requires one to start and hot-reload.
+    - Creates or repairs a hidden least-privilege current-user logon task.
+    - Verifies /healthz and the MCP initialize handshake.
+    - Persists dbHub settings only after verification succeeds.
+    - Refuses non-loopback binding and wildcard-bound existing servers.
+    - Refuses writable/default SQL tools in clio-managed blocks. User-maintained
+      sources, custom tools, and permissions outside clio markers are preserved
+      and remain the user's responsibility.
+
+SECURITY
+    Running this command explicitly opts in to a local unauthenticated data
+    service. Loopback blocks remote access but not other users or processes on
+    the same machine. Read-only SQL prevents writes, not sensitive-data reads.
+    Use only on a trusted single-user workstation and never forward the port.
+
+EXIT CODES
+    0   dbHub was installed, adopted, or repaired and verified
+    1   Validation, prerequisite, installation, task, or health check failed
+
+SEE ALSO
+    sync-dbhub    - Reconcile clio-owned dbHub sources
+    deploy-creatio - Deploy a local Creatio environment
+    uninstall-creatio - Uninstall a local Creatio environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

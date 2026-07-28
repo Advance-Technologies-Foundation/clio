@@ -1,0 +1,4 @@
+idle_after_60s_workingset_MB=0
+idle_after_60s_peak_workingset_MB=0
+idle_after_60s_private_MB=0
+machine=K-KRYLOV-NB runtime=net10.0 rid=win-x64 build=Release-NativeAOT-selfcontained

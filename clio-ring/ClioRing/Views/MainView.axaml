@@ -1,0 +1,183 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:ClioRing.ViewModels"
+             xmlns:converters="clr-namespace:ClioRing.Converters"
+             xmlns:icons="clr-namespace:ClioRing.Resources"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="ClioRing.Views.MainView"
+             x:DataType="vm:MainViewModel" x:CompileBindings="True">
+  <Design.DataContext>
+    <!-- This only sets the DataContext for the previewer in an IDE,
+         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+    <vm:MainViewModel />
+  </Design.DataContext>
+
+  <Grid>
+    <!-- Error Message Banner -->
+    <Border IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+            Background="#FFE6E6"
+            BorderBrush="#FF0000"
+            BorderThickness="1"
+            Padding="10"
+            Margin="10"
+            VerticalAlignment="Top"
+            ZIndex="100">
+      <TextBlock Text="{Binding ErrorMessage}"
+                 Foreground="#CC0000"
+                 TextWrapping="Wrap"/>
+    </Border>
+
+    <!-- Loading Indicator -->
+    <TextBlock Text="Loading workspaces..."
+               IsVisible="{Binding IsLoading}"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"
+               FontSize="20"/>
+
+    <!-- Workspaces Grid -->
+    <ScrollViewer IsVisible="{Binding !IsLoading}">
+      <ItemsControl ItemsSource="{Binding Workspaces}" Margin="20">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:WorkspaceViewModel">
+            <Border BorderBrush="#CCCCCC"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="15"
+                    Margin="10"
+                    Width="250"
+                    Height="250"
+                    Background="White">
+              <Grid RowDefinitions="Auto,*,Auto">
+                <!-- Icon -->
+                <Image Grid.Row="1"
+                       Margin="0,12,0,12"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Stretch="Uniform"
+
+                       IsVisible="{Binding IconPath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                  <Image.Source>
+                    <Binding Path="IconPath">
+                      <Binding.Converter>
+                        <converters:BitmapValueConverter/>
+                      </Binding.Converter>
+                    </Binding>
+                  </Image.Source>
+                </Image>
+
+                <!-- Workspace Name + Branch -->
+                <StackPanel Grid.Row="0" Spacing="2">
+                  <TextBlock Text="{Binding Name}"
+                             FontSize="18"
+                             FontWeight="SemiBold"
+                             TextAlignment="Left"
+                             Foreground="Black"
+                             TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding BranchDisplay}"
+                             FontSize="12"
+                             Foreground="#555555"
+                             IsVisible="{Binding IsGitRepository}"/>
+                </StackPanel>
+
+                <!-- Buttons pinned to bottom -->
+                <WrapPanel Grid.Row="2" Orientation="Horizontal">
+
+                  <Button Command="{Binding OpenNetCoreCommand}"
+                          IsVisible="{Binding HasNetCoreScript}"
+                          Background="#0000FF"
+                          Foreground="White"
+                          HorizontalAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          Width="36"
+                          Height="28"
+                          ToolTip.Tip=".NET Core">
+                    <PathIcon Data="{x:Static icons:IconGeometries.NetCore}"
+                              Width="14"
+                              Height="14"/>
+                    <Button.Styles>
+                      <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="#1976D2"/>
+                        <Setter Property="Foreground" Value="White"/>
+                      </Style>
+                    </Button.Styles>
+                  </Button>
+
+                  <Button Command="{Binding OpenNetFrameworkCommand}"
+                          IsVisible="{Binding HasNetFrameworkScript}"
+                          HorizontalAlignment="Center"
+                          Background="#DC143C"
+                          Foreground="White"
+                          HorizontalContentAlignment="Center"
+                          Width="36"
+                          Height="28"
+                          ToolTip.Tip=".NET Framework"
+
+                  >
+                    <PathIcon Data="{x:Static icons:IconGeometries.NetFramework}"
+                              Width="14"
+                              Height="14"/>
+                    <Button.Styles>
+                      <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="#FF1744"/>
+                        <Setter Property="Foreground" Value="White"/>
+                      </Style>
+                    </Button.Styles>
+                  </Button>
+
+                  <Button Command="{Binding GitPullCommand}"
+                          IsVisible="{Binding IsGitRepository}"
+                          Background="#2E7D32"
+                          Foreground="White"
+                          HorizontalAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          Width="36"
+                          Height="28"
+                          ToolTip.Tip="Git Pull">
+                    <PathIcon Data="{x:Static icons:IconGeometries.GitPull}"
+                              Width="14"
+                              Height="14"/>
+                    <Button.Styles>
+                      <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="#388E3C"/>
+                        <Setter Property="Foreground" Value="White"/>
+                      </Style>
+                    </Button.Styles>
+                  </Button>
+
+                  <Button Command="{Binding OpenInVsCodeCommand}"
+                          Background="#007ACC"
+                          Foreground="White"
+                          HorizontalAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          Width="36"
+                          Height="28"
+                          ToolTip.Tip="Open in VS Code">
+                    <PathIcon Data="{x:Static icons:IconGeometries.VsCode}"
+                              Width="14"
+                              Height="14"/>
+                    <Button.Styles>
+                      <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="#0288D1"/>
+                        <Setter Property="Foreground" Value="White"/>
+                      </Style>
+                    </Button.Styles>
+                  </Button>
+
+
+                </WrapPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

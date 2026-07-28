@@ -24,7 +24,8 @@ public sealed class McpToolArgsWireContractTests {
 		[nameof(DeployCreatioArgs.ZipFile)] = "zipFile",
 		[nameof(DeployCreatioArgs.SitePort)] = "sitePort",
 		[nameof(DeployCreatioArgs.DbServerName)] = "dbServerName",
-		[nameof(DeployCreatioArgs.RedisServerName)] = "redisServerName"
+		[nameof(DeployCreatioArgs.RedisServerName)] = "redisServerName",
+		[nameof(DeployCreatioArgs.UseHttps)] = "useHttps"
 	};
 
 	private static readonly Dictionary<string, string> RestoreDbByEnvironmentWireNames = new() {

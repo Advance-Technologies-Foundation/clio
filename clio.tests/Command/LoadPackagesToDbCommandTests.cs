@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 [Category("Unit")]
 [Property("Module", "Command")]
 public class LoadPackagesToDbCommandTests {

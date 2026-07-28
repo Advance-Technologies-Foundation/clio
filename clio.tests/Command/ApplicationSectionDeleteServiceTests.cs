@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Common;
@@ -18,6 +19,7 @@ public sealed class ApplicationSectionDeleteServiceTests {
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ILogger _logger = null!;
+	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionDeleteService _sut = null!;
 
 	private const string SectionId = "61f65fdb-3b63-4fcf-9110-9863457b3a0b";
@@ -31,19 +33,22 @@ public sealed class ApplicationSectionDeleteServiceTests {
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
 		_logger = Substitute.For<ILogger>();
-		EnvironmentSettings environmentSettings = new() {
+		_environmentSettings = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
 			Password = "Supervisor",
 			IsNetCore = true
 		};
-		_settingsRepository.FindEnvironment("sandbox").Returns(environmentSettings);
-		_applicationClientFactory.CreateEnvironmentClient(environmentSettings).Returns(_applicationClient);
+		_settingsRepository.FindEnvironment("sandbox").Returns(_environmentSettings);
+		_applicationClientFactory.CreateEnvironmentClient(_environmentSettings).Returns(_applicationClient);
 		_serviceUrlBuilder
 			.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<ServiceUrlBuilder.KnownRoute>(0)}");
 		_applicationInfoService
 			.FindApplicationId("sandbox", "UsrCustomerRequests")
+			.Returns(new InstalledAppSummary("app-id", "UsrCustomerRequests", "Customer Requests", "1.0.0"));
+		_applicationInfoService
+			.FindApplicationId(_environmentSettings, "UsrCustomerRequests")
 			.Returns(new InstalledAppSummary("app-id", "UsrCustomerRequests", "Customer Requests", "1.0.0"));
 		_sut = new ApplicationSectionDeleteService(
 			_settingsRepository,
@@ -111,6 +116,49 @@ public sealed class ApplicationSectionDeleteServiceTests {
 		sysModuleIndex.Should().BeGreaterThanOrEqualTo(0, because: "SysModule delete must be issued");
 		appSectionIndex.Should().BeLessThan(sysModuleIndex,
 			because: "ApplicationSection must be deleted before SysModule to respect FK constraints");
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 8): rejects a null EnvironmentSettings with ArgumentNullException before any client factory or remote call is attempted.")]
+	public void DeleteSection_ShouldThrowArgumentNullException_WhenEnvironmentSettingsAreNull() {
+		// Arrange
+		EnvironmentSettings environmentSettings = null!;
+		ApplicationSectionDeleteRequest request = new("UsrCustomerRequests", "Contact");
+
+		// Act
+		Action action = () => _sut.DeleteSection(environmentSettings, request);
+
+		// Assert
+		action.Should().Throw<ArgumentNullException>(
+			because: "the settings-based overload must fail fast on a null tenant before any factory invocation");
+		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default!);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 8, AC-03/AC-04): deletes the section against the supplied settings without ever consulting ISettingsRepository, and routes the nested FindApplicationId call through the settings-based overload, never the name-based one.")]
+	public void DeleteSection_ShouldUseSettingsBasedNestedCall_WhenEnvironmentSettingsSupplied() {
+		// Arrange
+		List<string> capturedBodies = [];
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(capturedBodies.Add))
+			.Returns(callInfo => BuildMockResponse(callInfo.ArgAt<string>(1)));
+
+		// Act
+		ApplicationSectionDeleteResult result = _sut.DeleteSection(
+			_environmentSettings,
+			new ApplicationSectionDeleteRequest("UsrCustomerRequests", "Contact"));
+
+		// Assert
+		result.ApplicationId.Should().Be("app-id",
+			because: "the settings-based overload must complete the delete end-to-end against the supplied settings");
+		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
+		_settingsRepository.DidNotReceiveWithAnyArgs().GetEnvironment(default(string));
+		_applicationInfoService.Received(1).FindApplicationId(_environmentSettings, "UsrCustomerRequests");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().FindApplicationId(default(string)!, default!);
+		capturedBodies.Should().Contain(
+			body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", System.StringComparison.Ordinal)
+				&& body.Contains("DeleteQuery", System.StringComparison.Ordinal),
+			because: "the settings-based overload must still issue the ApplicationSection delete against the supplied tenant");
 	}
 
 	private static string BuildMockResponse(string requestBody) {

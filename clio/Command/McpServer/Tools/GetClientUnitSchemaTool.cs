@@ -33,13 +33,13 @@ public sealed class GetClientUnitSchemaTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			GetClientUnitSchemaCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetClientUnitSchemaCommand>(options);
 			}
 			catch (Exception ex) {
-				return new GetClientUnitSchemaResponse { Success = false, Error = ex.Message };
+				return new GetClientUnitSchemaResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSchema(options, out GetClientUnitSchemaResponse response);
 			return response;

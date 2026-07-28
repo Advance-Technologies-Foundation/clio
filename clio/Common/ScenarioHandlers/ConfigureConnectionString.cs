@@ -113,11 +113,7 @@ namespace Clio.Common.ScenarioHandlers {
 
                 StringBuilder sb = new();
                 sb.AppendLine("Successfully configured connection strings")
-                    .AppendLine("Set db to:")
-                    .Append("\t").AppendLine(db)
-                    .AppendLine("Set redis to:")
-                    .Append("\t").Append(redis)
-                    .AppendLine();
+                    .AppendLine("Database and Redis connection values were written without logging credentials.");
 
                 return sb.ToString();
             } catch (Exception ex) {

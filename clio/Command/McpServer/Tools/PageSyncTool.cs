@@ -27,8 +27,7 @@ public sealed class PageSyncTool(
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
-	IPlatformVersionResolverFactory? resolverFactory = null,
-	ISettingsRepository? settingsRepository = null) {
+	IPlatformVersionResolverFactory? resolverFactory = null) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -50,7 +49,7 @@ public sealed class PageSyncTool(
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls. " +
 	             "Custom CSS is a last resort: meet a visual-styling requirement with a component's NATIVE inputs first (get-component-info). A custom `styles` object, a `classes`/CSS class, or an `extraStyles` hook is custom CSS that can break on a platform upgrade — apply it only after telling the user no native option exists, warning about the upgrade-compatibility risk, and getting explicit confirmation; see get-guidance name `page-modification`.")]
 	public async Task<PageSyncResponse> SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
+		[Description("Parameters: environment-name (required unless an authorized HTTP credential-passthrough header supplies the target tenant); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -86,16 +85,28 @@ public sealed class PageSyncTool(
 	/// <summary>
 	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
 	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
-	/// Fail-soft: a blank environment, absent resolver dependencies (e.g. a unit test that did not supply
-	/// them), or any probe failure yields <see langword="null"/>, which <see cref="ChartWidgetValidation"/>
-	/// maps to the safe <c>latest</c> superset — version resolution must never block a save.
+	/// The guard below only checks for an ABSENT resolver dependency (e.g. a unit test that did not supply
+	/// one) — NOT a blank environment name. A blank name is a legitimate, expected shape under authorized
+	/// HTTP credential passthrough (the header carries the tenant, not an <c>environment-name</c> argument),
+	/// so the probe below must still run and be resolved through the injected
+	/// <see cref="IToolCommandResolver"/>: this is what lets the probe reach the header-selected tenant
+	/// instead of silently degrading to <c>latest</c> without
+	/// ever consulting the credential context (the regression this method previously had). Routing the
+	/// settings lookup through <see cref="IToolCommandResolver.Resolve{TCommand}"/> also means a mixed-input
+	/// call (header AND an explicit, different <c>environment-name</c>) is rejected by the resolver's
+	/// passthrough guard BEFORE any named-tenant settings lookup — the same rejection-first ordering already
+	/// enforced for the actual page save later in the batch.
+	/// Fail-soft: any probe failure (including the resolver's own rejection, e.g. an unresolvable
+	/// environment or a mixed-input rejection) yields <see langword="null"/>, which
+	/// <see cref="ChartWidgetValidation"/> maps to the safe <c>latest</c> superset — version resolution
+	/// must never block a save.
 	/// </summary>
-	private async Task<string?> ResolvePlatformVersionAsync(string environmentName, CancellationToken cancellationToken) {
-		if (resolverFactory is null || settingsRepository is null || string.IsNullOrWhiteSpace(environmentName)) {
+	private async Task<string?> ResolvePlatformVersionAsync(string? environmentName, CancellationToken cancellationToken) {
+		if (resolverFactory is null) {
 			return null;
 		}
 		try {
-			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions { Environment = environmentName });
+			EnvironmentSettings settings = commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions { Environment = environmentName });
 			if (settings is null) {
 				return null;
 			}
@@ -105,8 +116,9 @@ public sealed class PageSyncTool(
 		} catch (OperationCanceledException) {
 			throw;
 		} catch (Exception) {
-			// Fail-soft: a bad/unreachable environment must not break a save. The catalog stays on 'latest'
-			// (ChartWidgetValidation maps null -> latest), matching get-component-info's soft degrade.
+			// Fail-soft: a bad/unreachable environment, or the resolver's own passthrough/mixed-input
+			// rejection, must not break a save. The catalog stays on 'latest' (ChartWidgetValidation maps
+			// null -> latest), matching get-component-info's soft degrade.
 			return null;
 		}
 	}
@@ -237,27 +249,35 @@ public sealed class PageSyncTool(
 		// failure replaces only the pending placeholders, leaving already-
 		// materialised pre-pass failures untouched.
 		bool verify = args.Verify ?? false;
-		lock (McpToolExecutionLock.SyncRoot) {
-			if (!TryResolveEnvironmentCommands(args, verify, out PageUpdateCommand updateCommand,
-					out PageGetCommand getCommand, out string envError)) {
-				FillPendingWithError(results, pendingIndices, pages, envError);
-				return results;
-			}
-			var ctx = new PageSyncBatchContext(
-				updateCommand,
-				getCommand,
-				args.Validate ?? true,
-				verify,
-				args.OutputDirectory,
-				prePass,
-				samplingResults) { EnvironmentName = args.EnvironmentName };
+		// FR-05: serialize on the per-tenant lock keyed by the same environment identity the batch's
+		// commands resolve under (see TryResolveEnvironmentCommands), so different tenants run concurrently.
+		string tenantKey = commandResolver.GetTenantKey(new PageUpdateOptions { Environment = args.EnvironmentName });
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			try {
-				foreach (int idx in pendingIndices) {
-					results[idx] = ProcessPendingPage(pages[idx], idx, ctx);
+				if (!TryResolveEnvironmentCommands(args, verify, out PageUpdateCommand updateCommand,
+						out PageGetCommand getCommand, out string envError)) {
+					FillPendingWithError(results, pendingIndices, pages, envError);
+					return results;
 				}
-				Thread.Sleep(500);
-			} catch (Exception ex) {
-				FillPendingWithError(results, pendingIndices, pages, ex.Message);
+				var ctx = new PageSyncBatchContext(
+					updateCommand,
+					getCommand,
+					args.Validate ?? true,
+					verify,
+					args.OutputDirectory,
+					prePass,
+					samplingResults) { EnvironmentName = args.EnvironmentName };
+				try {
+					foreach (int idx in pendingIndices) {
+						results[idx] = ProcessPendingPage(pages[idx], idx, ctx);
+					}
+					Thread.Sleep(500);
+				} catch (Exception ex) {
+					FillPendingWithError(results, pendingIndices, pages, SensitiveErrorTextRedactor.Redact(ex.Message));
+				}
+			} finally {
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		return results;
@@ -281,7 +301,7 @@ public sealed class PageSyncTool(
 			}
 			return true;
 		} catch (Exception ex) {
-			error = ex.Message;
+			error = SensitiveErrorTextRedactor.Redact(ex.Message);
 			return false;
 		}
 	}
@@ -595,7 +615,7 @@ public sealed class PageSyncTool(
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
 				Success = false,
-				Error = ex.Message
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
 	}
@@ -678,12 +698,19 @@ public sealed class PageSyncTool(
 		if (body is null) {
 			return null;
 		}
-		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
-			fileSystem,
-			fileSystem.Directory.GetCurrentDirectory(),
-			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			ClioRuntimePaths.Home,
-			outputDirectory);
+		// H1: reading the process-global cwd to anchor output must serialize against the workspace tools
+		// that PIN cwd, else a concurrent tenant's cwd pin could place this page under the wrong root.
+		// This runs while ExecuteSyncBatch holds the per-tenant lock, so the ordering is per-tenant →
+		// CwdLock (never the reverse) — no deadlock.
+		string anchor;
+		lock (McpToolExecutionLock.CwdLock) {
+			anchor = PageOutputDirectoryResolver.ResolveAnchor(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				outputDirectory);
+		}
 		string schemaDir = fileSystem.Path.Combine(anchor, ".clio-pages", schemaName);
 		fileSystem.Directory.CreateDirectory(schemaDir);
 		string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
@@ -758,6 +785,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
 		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
+		SchemaValidationResult widgetCaptionResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources));
 		SchemaValidationResult localizableTextResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateLocalizableTextLiterals(body));
 		SchemaValidationResult handlerResult = RunContentValidation(
@@ -806,6 +835,11 @@ public sealed class PageSyncTool(
 			converterFunctionShapeResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
+		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (the pre-flight has no schema
+		// context); surface it as a warning. The authoritative hard gate runs at save time via TryUpdatePage.
+		if (!widgetCaptionResult.IsValid) {
+			warnings.AddRange(widgetCaptionResult.Errors);
+		}
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
@@ -935,10 +969,13 @@ public sealed class PageSyncTool(
 /// Top-level arguments for the <c>sync-pages</c> MCP tool.
 /// </summary>
 public sealed record PageSyncArgs(
+	// FR-05a: conditionally required — forbidden under authorized HTTP credential passthrough (the header
+	// carries the tenant), required/resolvable otherwise via ToolCommandResolver.ResolveSettingsAndKey's
+	// existing EnvironmentResolutionException throw. [Required] is intentionally NOT applied here so a
+	// header-only passthrough call is not rejected at pre-tool MCP schema binding (mirrors PageUpdateArgs).
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
-	[property: Required]
-	string EnvironmentName,
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	string? EnvironmentName,
 
 	[property: JsonPropertyName("pages")]
 	[property: Description("Pages to update")]
@@ -977,7 +1014,7 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
+	[property: Description(McpToolDescriptions.PageResources)]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]

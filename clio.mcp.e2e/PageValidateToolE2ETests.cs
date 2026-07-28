@@ -385,6 +385,78 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns a WARNING (not a hard content failure) when an inserted crt.IndicatorWidget title binds a #ResourceString key that is not passed in resources and is not Usr-derivable — validate-page has no schema context to confirm a prior registration, so it advises rather than blocks (ENG-93098). The authoritative hard reject runs on the save path.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about inserted metric widget title with unregistered resource key")]
+	[AllureDescription("Sends a page body whose inserted crt.IndicatorWidget sets config.title to #ResourceString(IndicatorWidget_CriticalRequests_title)# with no resources payload, and verifies validate-page surfaces an advisory WARNING naming the widget and the unresolved key while keeping valid=true.")]
+	public async Task PageValidateTool_Should_Warn_On_Metric_Widget_Title_Without_Resource() {
+		// Arrange
+		string bodyWithUnregisteredMetricTitle = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+				"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
+				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithUnregisteredMetricTitle);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the body-only widget-caption check is advisory on validate-page (no schema context to confirm a prior registration), so it warns rather than failing content validation");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a widget-caption warning must not demote content-ok — the authoritative hard reject is on the save path");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must still flag the unregistered widget title as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("IndicatorWidget_CriticalRequests") && e.Contains("IndicatorWidget_CriticalRequests_title") && e.Contains("render raw"),
+			because: "the advisory must name the widget, the unresolved key, and the raw-render failure");
+	}
+
+	[Test]
+	[Description("Returns valid: true when the same inserted crt.IndicatorWidget title key IS supplied through the resources parameter — proves the resources payload flows end-to-end and satisfies the widget-title resolvability check.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts inserted metric widget title when the resource key is registered")]
+	[AllureDescription("Sends the same crt.IndicatorWidget insert but with resources supplying IndicatorWidget_CriticalRequests_title, and verifies validate-page accepts the payload.")]
+	public async Task PageValidateTool_Should_Accept_Metric_Widget_Title_With_Resource() {
+		// Arrange
+		string bodyWithMetricTitle = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+				"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
+				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithMetricTitle,
+			"{\"IndicatorWidget_CriticalRequests_title\": \"Critical Requests\"}");
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "registering the title key through the resources parameter makes the binding resolve, which is the fixed happy path for ENG-93098");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "every content-level validator should accept the metric title once its resource is registered");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported once the widget title key is registered");
+	}
+
+	[Test]
 	[Description("validate-page rejects a body whose JavaScript syntax is invalid (the production incident shape `await X = Y`) — proves the new Acornima syntax pre-flight gate fires through the real MCP transport, not just the regex brace-counter that previously passed this body as syntax-OK.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects body with await-as-assignment-target syntax error")]
@@ -454,13 +526,18 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
-		string body) {
+		string body,
+		string? resources = null) {
+		var args = new Dictionary<string, object?> {
+			["body"] = body
+		};
+		if (resources != null) {
+			args["resources"] = resources;
+		}
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["body"] = body
-				}
+				["args"] = args
 			},
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(

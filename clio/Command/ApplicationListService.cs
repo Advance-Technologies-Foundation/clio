@@ -24,6 +24,22 @@ public interface IApplicationListService
 		string environmentName,
 		string? appId,
 		string? appCode);
+
+	/// <summary>
+	/// Loads installed applications against an already-resolved environment.
+	/// Behaves identically to <see cref="GetApplications(string, string?, string?)"/> except it never
+	/// consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings
+	/// directly (e.g. an MCP passthrough tenant resolved from request headers).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="appId">Optional installed application identifier.</param>
+	/// <param name="appCode">Optional installed application code.</param>
+	/// <returns>Installed application list items.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	IReadOnlyList<InstalledApplicationListItem> GetApplications(
+		EnvironmentSettings environmentSettings,
+		string? appId,
+		string? appCode);
 }
 
 /// <summary>
@@ -57,6 +73,24 @@ public sealed class ApplicationListService(
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
+		return GetApplicationsCore(environmentSettings, appId, appCode);
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyList<InstalledApplicationListItem> GetApplications(
+		EnvironmentSettings environmentSettings,
+		string? appId,
+		string? appCode)
+	{
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		return GetApplicationsCore(environmentSettings, appId, appCode);
+	}
+
+	private IReadOnlyList<InstalledApplicationListItem> GetApplicationsCore(
+		EnvironmentSettings environmentSettings,
+		string? appId,
+		string? appCode)
+	{
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		string responseJson = client.ExecutePostRequest(

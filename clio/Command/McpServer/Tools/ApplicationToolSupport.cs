@@ -33,7 +33,8 @@ internal static class ApplicationToolResultMapper {
 							column.DataValueType,
 							column.ReferenceSchema,
 							column.Required))
-						.ToList()))
+						.ToList(),
+					entity.IsVirtual))
 				.ToList(),
 			result.Pages?
 				.Select(page => new PageListItem {
@@ -79,7 +80,8 @@ internal static class ApplicationToolResultMapper {
 							column.DataValueType,
 							column.ReferenceSchema,
 							column.Required))
-						.ToList()),
+						.ToList(),
+					result.Entity.IsVirtual),
 			result.Pages
 				.Select(page => new PageListItem {
 					SchemaName = page.SchemaName,
@@ -255,7 +257,7 @@ internal static class ApplicationToolHelper {
 		ApplicationSectionCreateException exception) {
 		return new ApplicationSectionContextResponse(
 			false,
-			Error: exception.Message,
+			Error: SensitiveErrorTextRedactor.Redact(exception.Message),
 			ErrorClass: exception.FailureClass.ToWireValue(),
 			SectionCreated: exception.SectionCreated switch {
 				true => "true",

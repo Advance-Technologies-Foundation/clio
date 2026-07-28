@@ -13,6 +13,9 @@ public sealed class PageSchemaHandlersGuidanceResource {
 	private const string ResourcePath = "mcp/guides/page-schema-handlers";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
+	/// <summary>
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
+	/// </summary>
 	internal static readonly TextResourceContents Guide = new() {
 		Uri = ResourceUri,
 		MimeType = "text/plain",
@@ -40,6 +43,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 
 		       Decision tree
 		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rules` or `create-entity-business-rules`. Call `get-guidance` with name `business-rules` first.
+		       - If the requirement is show/hide (or editable/required) based on whether another field is FILLED or EMPTY ("hidden until a value is entered"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rules` with show-element/hide-element on `is-filled-in` / `is-not-filled-in`. Do NOT toggle a bound `visible` attribute from a handler. Call `get-guidance` with name `business-rules` first.
 		       - If the requirement is conditional visibility, editability, or required state based on the current user's ROLE, the current user's identity, or the current DATE/TIME (e.g. "Resolved visible only for administrators", "Assignee group visible only for the Supervisor contact", "show this label only on 2026-06-09"), this is a BUSINESS RULE, not a handler. Put the system variable in the condition: CurrentUserRoles CONTAIN / NOT_CONTAIN a role id; CurrentUser / CurrentUserContact / CurrentUserAccount equal a target id; or a CurrentDate / CurrentDateTime comparison. Use `create-page-business-rules` or `create-entity-business-rules` and call `get-guidance` with name `business-rules` first. Do NOT write a `crt.HandleViewModelInitRequest` handler, and do NOT treat the role/user/date check as "data access".
 		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rules` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
@@ -424,6 +428,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Prefer the exact built-in request name from this catalog when the requirement matches it directly.
 
 		       Standard handler parameter catalog
+		       - AUTHORITATIVE contracts live in the request catalog: call `get-request-info <type>` first —
+		         when a request is cataloged there (e.g. crt.PrintablesRequest, crt.RunBusinessProcessRequest,
+		         crt.ClosePageRequest, crt.CancelRecordChangesRequest), its `parameters` (required flags, valid
+		         values, valueSource probe annotations) and `documentation` override the rows below. This table
+		         stays as the fallback index for requests not yet cataloged. See `when-to-use-requests` for the
+		         selection and probe discipline.
 		       - Read this catalog as the MCP-safe payload contract extracted from `creatio-ui` source.
 		       - `config` means fields you author in direct request wiring or `sdk.HandlerChainService.instance.process(...)`.
 		       - `runtime` means fields the platform injects before your handler receives the request.
@@ -438,7 +448,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.SaveRecordRequest` | config | `preventCardClose?`, `preventCardStateChange?`, `showSuccessMessage?`, `messageTextAfterCompletion?`, `reloadSavedRecord?`, `showErrorMessage?` | save current page/task |
 		         | `crt.DeleteRecordRequest` | config | `recordId`, `itemsAttributeName` | delete one record; source handler converts it into `crt.DeleteRecordsRequest` |
 		         | `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |
-		         | `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |
+		         | `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the request catalog: get-request-info `crt.RunBusinessProcessRequest` (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-request-info `crt.RunBusinessProcessRequest` before authoring this button |
 		         | `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |
 		         | `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |
 		         | `crt.CopyInputToClipboardRequest` | config | `attribute` required, `successMessageArea?` | copy the value of a page attribute |
@@ -469,24 +479,27 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.CloseSidebarRequest` | config | `containerName?` | direct request |
 		         | `crt.GetSidebarStateRequest` | config | `sidebarCode` | direct request |
 		       - Dialog and special cases:
+		       - To show ANY user-facing message from a handler - a short confirmation, info, success, or error popup such as "Approved." or "Saved." - dispatch `crt.ShowDialogRequest` (shape below). "just show a short confirmation message" is a `crt.ShowDialogRequest`, NOT a browser dialog. This needs `@creatio-devkit/common` in `SCHEMA_DEPS` and the `sdk` alias in `SCHEMA_ARGS`. NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`: they are raw browser primitives, not the Freedom UI dialog, and are not acceptable in deployed page-body handlers.
 		         | User-visible name | Source reality | Params | Notes |
 		         | --- | --- | --- | --- |
-		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
-		       - Minimal `dialogConfig` shape:
+		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
+		       - Minimal `dialogConfig` shape - `message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig` (it is a `MessageDialogConfig`; the platform renders `dialogConfig.data.message` / `dialogConfig.data.actions`). Placing them on `dialogConfig` directly opens an empty dialog with only the default OK button:
 		         await sdk.HandlerChainService.instance.process({
 		           type: "crt.ShowDialogRequest",
 		           dialogConfig: {
-		             title: "<OptionalTitle>",
-		             message: "<MessageText>",
-		             actions: [
-		               {
-		                 key: "ok",
-		                 config: {
-		                   color: "primary",
-		                   caption: "OK"
+		             data: {
+		               title: "<OptionalTitle>",
+		               message: "<MessageText>",
+		               actions: [
+		                 {
+		                   key: "ok",
+		                   config: {
+		                     color: "primary",
+		                     caption: "OK"
+		                   }
 		                 }
-		               }
-		             ]
+		               ]
+		             }
 		           },
 		           $context: request.$context,
 		           scopes: [...request.scopes]
@@ -507,6 +520,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.
 		       - Do NOT invent placeholder SDK services such as `<Service>.subscribe(...)`; when SDK-based subscriptions are required, use a concrete service such as `sdk.MessageChannelService` and keep `SCHEMA_DEPS` / `SCHEMA_ARGS` aligned.
 		       - Do NOT write `type: "crt.ShowDialog"` in imperative request code; use `type: "crt.ShowDialogRequest"`.
+		       - Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler; dispatch `crt.ShowDialogRequest` instead (message/actions under `dialogConfig.data`).
 		       - Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
 		       - Do NOT omit `$context` or `scopes` when forwarding a request from one handler into another page-scoped handler chain.
 		       - Do NOT mutate unrelated request fields; only use documented control flags such as `preventAttributeChangeRequest` when that request type explicitly supports them.

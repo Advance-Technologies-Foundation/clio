@@ -34,6 +34,20 @@ public interface IApplicationSectionGetListService {
 	/// <param name="request">Section list request payload.</param>
 	/// <returns>Structured result with section metadata list.</returns>
 	ApplicationSectionGetListResult GetSections(string environmentName, ApplicationSectionGetListRequest request);
+
+	/// <summary>
+	/// Returns all sections of the specified installed application against an already-resolved
+	/// environment. Behaves identically to <see cref="GetSections(string, ApplicationSectionGetListRequest)"/>
+	/// except it never consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller
+	/// supplies the settings directly (e.g. an MCP passthrough tenant resolved from request headers) —
+	/// and the nested application lookup uses the settings-based overload of
+	/// <see cref="IApplicationInfoService"/>, never the name-based one (ENG-93347, ADR OQ-01 c1 rule).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="request">Section list request payload.</param>
+	/// <returns>Structured result with section metadata list.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	ApplicationSectionGetListResult GetSections(EnvironmentSettings environmentSettings, ApplicationSectionGetListRequest request);
 }
 
 /// <summary>
@@ -71,9 +85,38 @@ public sealed class ApplicationSectionGetListService(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
+		// The name-based path keeps its pre-change nested call byte-for-byte (name-based application
+		// lookup) so stdio / registered-environment behavior is untouched (ENG-93347 AC-05).
+		return GetSectionsCore(
+			environmentSettings,
+			request,
+			() => applicationInfoService.FindApplicationId(environmentName, request.ApplicationCode));
+	}
+
+	/// <inheritdoc />
+	public ApplicationSectionGetListResult GetSections(EnvironmentSettings environmentSettings, ApplicationSectionGetListRequest request) {
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		ArgumentNullException.ThrowIfNull(request);
+		if (string.IsNullOrWhiteSpace(request.ApplicationCode)) {
+			throw new ArgumentException("application-code is required.");
+		}
+
+		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
+		// ISettingsRepository — the nested application lookup goes through the Story-2
+		// settings-based overload.
+		return GetSectionsCore(
+			environmentSettings,
+			request,
+			() => applicationInfoService.FindApplicationId(environmentSettings, request.ApplicationCode));
+	}
+
+	private ApplicationSectionGetListResult GetSectionsCore(
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionGetListRequest request,
+		Func<InstalledAppSummary> findApplication) {
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		logger.WriteInfo($"Resolving application '{request.ApplicationCode}'...");
-		InstalledAppSummary appSummary = applicationInfoService.FindApplicationId(environmentName, request.ApplicationCode);
+		InstalledAppSummary appSummary = findApplication();
 		logger.WriteInfo($"Loading sections...");
 		IReadOnlyList<ApplicationSectionRecord> sections = GetAllSectionRecords(client, environmentSettings, appSummary.Id);
 		return new ApplicationSectionGetListResult(

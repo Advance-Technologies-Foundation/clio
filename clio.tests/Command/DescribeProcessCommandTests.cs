@@ -146,6 +146,48 @@ public sealed class DescribeProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes each element parameter's direction and isResult into the graph JSON (regression: the clio DescribedParameter DTO previously dropped these server fields on re-serialization, so callers could not tell an element's outputs — mappable as a source — from its plain inputs).")]
+	public void Execute_ShouldWriteParameterDirectionAndIsResult_WhenPresent() {
+		// Arrange — a user-task element exposing an output (IsResult true while Direction is Variable) and a plain input
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrTaskProcess",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "Task1", Uid = "e1", Type = "ProcessSchemaUserTask", BuildType = "usertask",
+						Parameters = [
+							new DescribedParameter {
+								Name = "PResult", UId = "p1", Type = "Guid",
+								Direction = "Variable", IsResult = true, Source = "None"
+							},
+							new DescribedParameter {
+								Name = "PInput", UId = "p2", Type = "ShortText",
+								Direction = "In", IsResult = false, Source = "None"
+							}
+						]
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="UsrTaskProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		written.Should().Contain("\"direction\": \"Variable\"",
+			because: "a parameter's direction must survive the clio DTO re-serialization so callers can classify it");
+		written.Should().Contain("\"isResult\": true",
+			because: "an element output (IsResult true) marks a parameter usable as a mapping source even when its direction is Variable, and must not be dropped by the clio DTO");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Requires exactly one identity: with more than one provided it errors before contacting the server.")]
 	public void Execute_ShouldErrorWithoutReading_WhenMultipleIdentitiesProvided() {
 		// Arrange

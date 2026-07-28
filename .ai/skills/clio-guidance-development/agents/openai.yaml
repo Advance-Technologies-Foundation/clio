@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clio Guidance Development"
+  short_description: "Develop evidence-backed clio MCP guidance."
+  default_prompt: "Use $clio-guidance-development to research, validate, and publish reliable clio MCP guidance."

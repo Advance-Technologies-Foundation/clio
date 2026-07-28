@@ -476,7 +476,7 @@ internal static class ClioCliCommandRunner {
 		await probe.WaitUntilServingAsync(probeUrl, cancellationToken);
 	}
 
-	private static bool TryReadSuccessFlag(string output, out bool success) {
+	internal static bool TryReadSuccessFlag(string output, out bool success) {
 		success = false;
 		if (string.IsNullOrWhiteSpace(output)) {
 			return false;
@@ -484,7 +484,8 @@ internal static class ClioCliCommandRunner {
 
 		try {
 			using JsonDocument document = JsonDocument.Parse(output);
-			if (!document.RootElement.TryGetProperty("success", out JsonElement successElement) ||
+			if ((!document.RootElement.TryGetProperty("success", out JsonElement successElement) &&
+				 !document.RootElement.TryGetProperty("ok", out successElement)) ||
 				(successElement.ValueKind != JsonValueKind.True && successElement.ValueKind != JsonValueKind.False)) {
 				return false;
 			}

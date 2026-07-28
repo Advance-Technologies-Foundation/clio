@@ -1,0 +1,21 @@
+NAME
+    new-integration-test-project (alias: integration-test) - Create a portable Creatio integration-test project
+
+SYNOPSIS
+    clio new-integration-test-project --package <NAME> [--target-framework <TFM>]
+
+OPTIONS
+    --package <NAME>
+        Required workspace package name.
+
+    --target-framework <TFM>
+        Generated project target framework. Default: net10.0.
+
+EXAMPLES
+    clio new-integration-test-project --package UsrFinancialApplicatio
+    clio integration-test --package UsrFinancialApplicatio --target-framework net8.0
+
+NOTES
+    The generated project reads CREATIO_URL, CREATIO_IS_NETCORE, and either
+    CREATIO_ACCESS_TOKEN or CREATIO_USERNAME plus CREATIO_PASSWORD from NUnit parameters
+    or environment variables. It does not require a registered clio environment.

@@ -13,6 +13,7 @@ internal enum HelpGroupId {
 	Development,
 	DeploymentAndInfrastructure,
 	LocalInstanceManagement,
+	Theming,
 	IntegrationsAndTools,
 	General
 }
@@ -47,6 +48,7 @@ internal sealed class CommandHelpCatalog {
 		new(HelpGroupId.Development, "Development"),
 		new(HelpGroupId.DeploymentAndInfrastructure, "Deployment & Infrastructure"),
 		new(HelpGroupId.LocalInstanceManagement, "Local Instance Management"),
+		new(HelpGroupId.Theming, "Theming"),
 		new(HelpGroupId.IntegrationsAndTools, "Integrations & Tools"),
 		new(HelpGroupId.General, "General")
 	];
@@ -95,6 +97,7 @@ internal sealed class CommandHelpCatalog {
 			[GetEntitySchemaProperties] = "Get properties from a remote Creatio entity schema",
 			["info"] = "Show clio, cliogate, and .NET runtime versions",
 			[LockPackage] = "Lock a package in Creatio",
+			["mcp-http"] = "Start the MCP server over HTTP",
 			["mcp-server"] = "Start the MCP server over stdio",
 			["mock-data"] = "Generate mock data for unit tests",
 			["modify-user-task-parameters"] = "Add or remove parameters in a user task schema",
@@ -229,7 +232,18 @@ internal sealed class CommandHelpCatalog {
 			"turn-farm-mode",
 			"turn-fsm",
 			"uninstall-creatio",
-			"upload-license"
+			"upload-license",
+			"watch-compilation"
+		];
+
+	private static readonly HashSet<string> ThemingCommands =
+		[
+			"build-theme",
+			"clear-themes-cache",
+			"create-theme",
+			"delete-theme",
+			"list-themes",
+			"update-theme"
 		];
 
 	private static readonly HashSet<string> IntegrationCommands =
@@ -239,6 +253,7 @@ internal sealed class CommandHelpCatalog {
 			"install-gate",
 			"install-toolkit",
 			"link-package-store",
+			"mcp-http",
 			"mcp-server",
 			"update-toolkit"
 		];
@@ -282,6 +297,7 @@ internal sealed class CommandHelpCatalog {
 	private static readonly HashSet<string> GeneralCommands =
 		[
 			"assert",
+			"config",
 			"healthcheck",
 			"register",
 			"unregister"
@@ -459,6 +475,9 @@ internal sealed class CommandHelpCatalog {
 		}
 		if (LocalInstanceCommands.Contains(canonicalName)) {
 			return HelpGroupId.LocalInstanceManagement;
+		}
+		if (ThemingCommands.Contains(canonicalName)) {
+			return HelpGroupId.Theming;
 		}
 		if (IntegrationCommands.Contains(canonicalName)) {
 			return HelpGroupId.IntegrationsAndTools;

@@ -1,0 +1,66 @@
+COMMAND TYPE
+    Record rights
+
+NAME
+    set-record-rights - Grant or revoke a record-level access right on a single Creatio record
+
+SYNOPSIS
+    set-record-rights --entity <EntitySchemaName> --record-id <guid>
+        --grantee <guid> --operation <read|edit|delete>
+        [--level <granted|delegated>] [--revoke] [--confirm] [OPTIONS]
+
+DESCRIPTION
+    Grants or revokes a single record-level access right. It does NOT read the current
+    rights: it sends exactly one row change to the RightsService (an insert for a grant, a
+    delete for a revoke). The service acts only on the row it is sent, so every other grant
+    on the record is left untouched.
+
+    DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply
+    unless --confirm is passed; in an interactive run it asks for a y/n confirmation.
+
+    Address the target the same way as get-record-rights: --entity + --record-id (both
+    required). A client-unit schema/dashboard is addressed as
+    --entity SysSchemaAdminUnit --record-id <schema UId>.
+
+OPTIONS
+    --entity
+        Entity schema name of the target record (for example Contact). Required. Use with
+        --record-id. For a client-unit schema/dashboard, pass SysSchemaAdminUnit.
+
+    --record-id
+        Primary column value (record id) of the target record. Required. Use with --entity.
+        For a client-unit schema/dashboard, the schema UId.
+
+    --grantee
+        Grantee SysAdminUnit GUID. A value that is not a GUID is rejected.
+
+    --operation
+        Operation to grant or revoke: read, edit, or delete.
+
+    --level
+        Right level for a grant: granted (default) or delegated. Ignored for --revoke.
+
+    --revoke
+        Revoke (remove) the right instead of granting it.
+
+    --confirm
+        Confirm the destructive apply without a prompt. Required in non-interactive runs.
+
+    -e, --environment
+        Name of the registered environment to change.
+
+EXIT CODES
+    0   The change was applied, or was cancelled at the prompt. Re-granting the same right is
+        idempotent on the server; revoking a right that does not exist is a safe no-op.
+    1   The grantee was not a GUID, the operation/level was invalid, confirmation was missing
+        in a non-interactive run, or the apply failed. A user-friendly "Error: ..." message is printed.
+
+EXAMPLES
+    Grant read to a grantee on a Contact record:
+        clio set-record-rights --entity Contact --record-id 7f3b869f-... --grantee 8ab1343f-cb58-49c7-95a2-058b5f60acd3 --operation read --confirm -e production
+
+    Grant edit with delegation to a client-unit schema/dashboard (addressed as SysSchemaAdminUnit):
+        clio set-record-rights --entity SysSchemaAdminUnit --record-id 7bdd745c-1111-2222-3333-444444444444 --grantee 7f3b869f-34f3-4f20-ab4d-7480a5fdf647 --operation edit --level delegated --confirm -e production
+
+    Revoke delete from a grantee:
+        clio set-record-rights --entity Contact --record-id 7f3b869f-... --grantee 8ab1343f-cb58-49c7-95a2-058b5f60acd3 --operation delete --revoke --confirm -e production

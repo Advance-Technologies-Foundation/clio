@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.McpServer.Progress;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -9,6 +10,7 @@ using ConsoleTables;
 using FluentAssertions;
 using FluentValidation.Results;
 using k8s;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
@@ -59,6 +61,8 @@ public sealed class InstallerCommandToolTests
 			because: "the tool description should direct agents to run passing-infrastructure discovery before deployment");
 		text.Should().Contain("find-empty-iis-port",
 			because: "the tool description should tell agents how to choose a safe local IIS sitePort");
+		text.Should().Contain("existing forced-password-change state",
+			because: "the tool description should disclose that deployment preserves the database's existing state");
 	}
 
 	[Test]
@@ -72,16 +76,18 @@ public sealed class InstallerCommandToolTests
 		IDbOperationLogSessionFactory dbOperationLogSessionFactory =
 			new DbOperationLogSessionFactory(logger, dbOperationLogContextAccessor);
 		FakeInstallerCommand command = new(logger, exitCode: 7, dbOperationLogSessionFactory);
-		InstallerCommandTool tool = new(command, logger, dbOperationLogContextAccessor);
+		InstallerCommandTool tool = new(command, logger,
+			Substitute.For<IStageEventProgressForwarder>(), server: null!, dbOperationLogContextAccessor);
 		DeployCreatioArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
 			SitePort: 8080,
 			DbServerName: "sql-main",
-			RedisServerName: "redis-main");
+			RedisServerName: "redis-main",
+			UseHttps: true);
 
 		// Act
-		CommandExecutionResult result = tool.DeployCreatio(args);
+		CommandExecutionResult result = tool.DeployCreatio((ProgressToken?)null, args);
 
 		// Assert
 		result.ExitCode.Should().Be(7,
@@ -100,10 +106,12 @@ public sealed class InstallerCommandToolTests
 			because: "local DB server selection should be forwarded when provided");
 		command.ReceivedOptions.RedisServerName.Should().Be("redis-main",
 			because: "local Redis server selection should be forwarded when provided");
+		command.ReceivedOptions.UseHttps.Should().BeTrue(
+			because: "the MCP HTTPS preference should map into the installer options");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "the reduced MCP contract should keep automatic Redis DB detection");
-		command.ReceivedOptions.DisableResetPassword.Should().BeTrue(
-			because: "the MCP wrapper should preserve the CLI default and disable forced password reset unless explicitly changed in code");
+		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
+			because: "Ring deployments should not clear the database's existing forced-password-change state");
 		command.ReceivedOptions.DB.Should().BeNull(
 			because: "the reduced MCP contract should let the installer detect the database type from the build");
 		command.ReceivedOptions.DropIfExists.Should().BeTrue(
@@ -128,13 +136,14 @@ public sealed class InstallerCommandToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps db-server-name optional and limits the deploy-creatio MCP argument type to the five approved fields.")]
+	[Description("Keeps local server names optional and limits the deploy-creatio MCP argument type to the six approved fields.")]
 	public void DeployCreatio_Should_Keep_DbServerName_Optional_And_Expose_Only_Approved_Fields()
 	{
 		// Arrange
 		TestLogger logger = new();
 		FakeInstallerCommand command = new(logger, exitCode: 0);
-		InstallerCommandTool tool = new(command, logger);
+		InstallerCommandTool tool = new(command, logger,
+			Substitute.For<IStageEventProgressForwarder>(), server: null!);
 		DeployCreatioArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
@@ -143,7 +152,7 @@ public sealed class InstallerCommandToolTests
 			RedisServerName: null);
 
 		// Act
-		tool.DeployCreatio(args);
+		tool.DeployCreatio((ProgressToken?)null, args);
 
 		// Assert
 		command.ReceivedOptions.Should().NotBeNull(
@@ -153,8 +162,10 @@ public sealed class InstallerCommandToolTests
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
 		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
-			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName"],
-			because: "the MCP deploy-creatio argument type should expose only the five approved arguments");
+			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName", "UseHttps"],
+			because: "the MCP deploy-creatio argument type should expose only the six approved arguments");
+		command.ReceivedOptions.UseHttps.Should().BeFalse(
+			because: "HTTPS remains opt-in when the MCP argument is omitted");
 	}
 
 	[Test]
@@ -176,6 +187,10 @@ public sealed class InstallerCommandToolTests
 			because: "the prompt should direct the agent to discover a safe local IIS port when sitePort selection matters");
 		prompt.Should().Contain("deploy-creatio",
 			because: "the prompt should conclude with the actual deployment call");
+		prompt.Should().Contain("existing forced-password-change state",
+			because: "the prompt should disclose that deployment preserves the database's existing state");
+		prompt.Should().Contain("opportunistic",
+			because: "the prompt should disclose the HTTPS-to-HTTP fallback behavior");
 	}
 
 	private static McpServerToolAttribute GetDeployCreatioAttribute()
@@ -204,7 +219,7 @@ public sealed class InstallerCommandToolTests
 			TestLogger logger,
 			int exitCode,
 			IDbOperationLogSessionFactory dbOperationLogSessionFactory = null)
-			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>())
+			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>(), Substitute.For<IDeployCreatioDefaultsResolver>())
 		{
 			_logger = logger;
 			_exitCode = exitCode;

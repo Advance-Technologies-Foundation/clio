@@ -412,7 +412,7 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		capturedInstallerOptions.Should().NotBeNull(
 			because: "successful restore-db execution should reuse the shared password-reset helper");
 		capturedInstallerOptions!.DisableResetPassword.Should().BeTrue(
-			because: "restore-db should keep the same default disable-reset-password behavior as deploy-creatio");
+			because: "restore-db should retain its intentional legacy disable-reset-password default");
 		capturedDbType.Should().Be(InstallerHelper.DatabaseType.MsSql,
 			because: "the shared helper should receive the resolved MSSQL database type");
 	}

@@ -14,7 +14,6 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -26,67 +25,6 @@ public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
-	[AllureFeature(SectionCreateToolName)]
-	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that create-app-section appears in the advertised tool manifest.")]
-	public async Task ApplicationSectionCreate_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be advertised so MCP callers can discover the existing-app section creation tool");
-	}
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, invokes create-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(SectionCreateToolName)]
-	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call create-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationSectionCreate_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-section-create-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionCreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["application-code"] = "UsrMissingApp",
-					["caption"] = "Orders"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured create-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
-		response.Success.Should().BeFalse(
-			because: "create-app-section should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
@@ -375,9 +313,9 @@ public sealed class ApplicationSectionToolE2ETests {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be advertised before the end-to-end validation calls can run");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(SectionCreateToolName,
+			because: "create-app-section must be discoverable via the get-tool-contract compact index before the end-to-end validation calls can run");
 
 		// Act
 		CallToolResult missingSelectorCallResult = await session.CallToolAsync(
@@ -525,6 +463,89 @@ public sealed class ApplicationSectionToolE2ETests {
 				because: "the readback must expose the auto-created entity schema name");
 
 			createdSectionCode = response.Section.Code;
+		} finally {
+			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
+				try {
+					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+					await session.CallToolAsync(
+						SectionDeleteToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["application-code"] = ApplicationCode,
+								["section-code"] = createdSectionCode
+							}
+						},
+						cleanupCts.Token);
+				} catch (Exception ex) {
+					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
+				}
+			}
+		}
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Creates a section through the progress-capable overload and verifies the client observes the per-phase stage markers 'loading application info', 'creating section', and 'loading created section' (ENG-93087).")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create streams per-phase progress markers")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section with an IProgress sink and asserts the client observed the service-level stage markers 'loading application info', 'creating section', and 'loading created section', proving the per-phase progress path is wired end to end (ENG-93087).")]
+	public async Task ApplicationSectionCreate_Should_Stream_PerPhase_Progress_Markers() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section progress-marker test.");
+		}
+
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		string caption = $"E2E Progress {Guid.NewGuid():N}"[..24];
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
+		MessageCollectingProgress progress = new();
+		string? createdSectionCode = null;
+		try {
+			// Act — invoke create-app-section through the progress-capable overload so the client observes
+			// the service-level stage markers the tool streams as notifications/progress.
+			CallToolResult callResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["caption"] = caption
+					}
+				},
+				progress,
+				cancellationTokenSource.Token);
+
+			// Diagnostic: surface the exact progress stream the client received so a failure shows the markers.
+			foreach (string progressMessage in progress.Messages) {
+				TestContext.Out.WriteLine($"[progress] {progressMessage}");
+			}
+
+			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+			createdSectionCode = response.Section?.Code;
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: $"a valid create-app-section request should return a structured payload. Actual: {DescribeCallResult(callResult)}");
+			progress.Messages.Should().Contain(
+				message => message.Contains("loading application info", StringComparison.Ordinal),
+				because: "create-app-section must stream the 'loading application info' stage marker so the client can show the app-resolution phase (ENG-93087)");
+			progress.Messages.Should().Contain(
+				message => message.Contains("creating section", StringComparison.Ordinal),
+				because: "create-app-section must stream the 'creating section' stage marker so the client can show the section-creation phase (ENG-93087)");
+			progress.Messages.Should().Contain(
+				message => message.Contains("loading created section", StringComparison.Ordinal),
+				because: "create-app-section must stream the 'loading created section' stage marker so the client can show the readback phase (ENG-93087)");
 		} finally {
 			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
 				try {
@@ -726,7 +747,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		CollectingProgress progress = new();
+		MessageCollectingProgress progress = new();
 
 		// Act — list-app-sections is read-only and always performs a backend round-trip, so the
 		// heartbeat fires while it works even when the application does not exist.
@@ -746,18 +767,6 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: $"a structured list-app-sections result should not surface as an MCP-level error. Actual: {DescribeCallResult(callResult)}");
 		progress.Count.Should().BeGreaterThanOrEqualTo(1,
 			because: "a long-running application tool must stream at least one progress notification so the client resets its inactivity timeout instead of timing out");
-	}
-
-	/// <summary>
-	/// Thread-safe <see cref="IProgress{T}"/> sink that records progress notifications synchronously
-	/// as the SDK delivers them, so the count is deterministic by the time the tool call returns.
-	/// </summary>
-	private sealed class CollectingProgress : IProgress<ProgressNotificationValue> {
-		private int _count;
-
-		public int Count => Volatile.Read(ref _count);
-
-		public void Report(ProgressNotificationValue value) => Interlocked.Increment(ref _count);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

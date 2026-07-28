@@ -16,6 +16,7 @@ using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
@@ -84,6 +85,7 @@ internal class Program {
 		typeof(PushWorkspaceCommandOptions),
 		typeof(LoadPackagesToFileSystemOptions),
 		typeof(UploadLicensesOptions),
+		typeof(DistributeLicenseOptions),
 		typeof(LoadPackagesToDbOptions),
 		typeof(HealthCheckOptions),
 		typeof(ComponentRegistryRefreshOptions),
@@ -137,6 +139,8 @@ internal class Program {
 		typeof(PageGetOptions),
 		typeof(PageUpdateOptions),
 		typeof(PageCreateOptions),
+		typeof(CreateRelatedPageAddonOptions),
+		typeof(GetRelatedPageAddonOptions),
 		typeof(SourceCodeSchemaCreateOptions),
 		typeof(SourceCodeSchemaUpdateOptions),
 		typeof(GetSourceCodeSchemaOptions),
@@ -162,6 +166,9 @@ internal class Program {
 		typeof(CreateServerToServerOAuthAppOptions),
 		typeof(VerifyOAuthAppOptions),
 		typeof(PfInstallerOptions),
+		typeof(PinCertificateOptions),
+		typeof(InstallDbHubOptions),
+		typeof(SyncDbHubOptions),
 		typeof(CreateInfrastructureOptions),
 		typeof(DeployInfrastructureOptions),
 		typeof(DeleteInfrastructureOptions),
@@ -169,6 +176,7 @@ internal class Program {
 		typeof(CheckWindowsFeaturesOptions),
 		typeof(ManageWindowsFeaturesOptions),
 		typeof(CreateTestProjectOptions),
+		typeof(CreateIntegrationTestProjectOptions),
 		typeof(ListenOptions),
 		typeof(ShowPackageFileContentOptions),
 		typeof(SwitchNugetToDllOptions),
@@ -195,6 +203,7 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(SetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
 		typeof(CreateUserTaskOptions),
@@ -207,9 +216,23 @@ internal class Program {
 		typeof(StopOptions),
 		typeof(HostsOptions),
 		typeof(ClearRedisOptions),
+		typeof(BuildThemeOptions),
+		typeof(Command.RecordRights.GetRecordRightsOptions),
+		typeof(Command.RecordRights.SetRecordRightsOptions),
+		typeof(ClearThemesCacheOptions),
+		typeof(ListThemesOptions),
+		typeof(CreateThemeOptions),
+		typeof(UpdateThemeOptions),
+		typeof(DeleteThemeOptions),
+		typeof(SetUserThemeOptions),
+		typeof(UploadImageOptions),
+		typeof(SetBackgroundImageOptions),
 		typeof(LastCompilationLogOptions),
+		typeof(WatchCompilationOptions),
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
+		typeof(ConfigOptions),
+		typeof(RingCommandOptions),
 		typeof(UnregisterOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
@@ -221,6 +244,7 @@ internal class Program {
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
+		typeof(McpHttpServerCommandOptions),
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
@@ -229,6 +253,7 @@ internal class Program {
 		typeof(GetIdentityPublicJwkOptions),
 		typeof(RegenerateIdentitySigningKeyOptions),
 		typeof(CheckAuthCodeFlowOptions),
+		typeof(RegisterSsoProviderOptions),
 
 
 	];
@@ -256,6 +281,7 @@ internal class Program {
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
 	private static string[] NormalizeCommandLineArgs(string[] args) {
+		string[] result = args;
 		if (args.Length >= 3 &&
 			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
 			string[] normalizedArgs = (string[])args.Clone();
@@ -265,10 +291,80 @@ internal class Program {
 				}
 			}
 
-			return normalizedArgs;
+			result = normalizedArgs;
 		}
 
-		return args;
+		result = NormalizeGetSysSettingArgs(result);
+		return NormalizeJsonFlagArgs(result);
+	}
+
+	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
+	// is gated solely by the --get flag. Without normalization `clio get-syssetting <code>` falls
+	// through to the write path and overwrites the setting with an empty string (silent data loss).
+	// Inject --get when the command is invoked through the get-syssetting alias so the "get" name
+	// actually reads, matching its help ("Get or set a system setting value").
+	internal static string[] NormalizeGetSysSettingArgs(string[] args) {
+		if (args is null || args.Length == 0
+			|| !string.Equals(args[0], "get-syssetting", StringComparison.OrdinalIgnoreCase)) {
+			return args;
+		}
+		bool alreadyHasGetFlag = args.Any(token =>
+			string.Equals(token, "--get", StringComparison.OrdinalIgnoreCase));
+		if (alreadyHasGetFlag) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 1);
+		output.AddRange(args);
+		output.Add("--get");
+		return output.ToArray();
+	}
+
+	// The --json option is declared as bool? (its established public form is `--json true|false`).
+	// To ALSO accept a bare `--json` additively — without breaking the value form or letting a bare
+	// `--json` swallow a positional argument — inject an explicit `true` after any --json/-j/--Json
+	// token that is not already followed by true|false. This keeps `--json true|false` byte-identical
+	// (strict back-compat) while making bare `--json` work everywhere.
+	internal static string[] NormalizeJsonFlagArgs(string[] args) {
+		if (args is null || args.Length == 0) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 2);
+		for (int index = 0; index < args.Length; index++) {
+			string token = args[index];
+			output.Add(token);
+			if (!IsJsonFlagToken(token)) {
+				continue;
+			}
+			bool nextIsBoolLiteral = index + 1 < args.Length
+				&& (string.Equals(args[index + 1], "true", StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(args[index + 1], "false", StringComparison.OrdinalIgnoreCase));
+			if (!nextIsBoolLiteral) {
+				output.Add("true");
+			}
+		}
+		return output.ToArray();
+	}
+
+	private static bool IsJsonFlagToken(string token) =>
+		string.Equals(token, "--json", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(token, "-j", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(token, "--Json", StringComparison.OrdinalIgnoreCase);
+
+	// JSON output is ON only when a --json/-j/--Json flag resolves to the value 'true' (bare flags are
+	// normalized to true by NormalizeJsonFlagArgs; an explicit `--json false` stays off). Used to route
+	// decorated diagnostics to stderr so stdout is exactly one JSON object.
+	internal static bool IsJsonOutputRequested(string[] args) {
+		string[] normalized = NormalizeJsonFlagArgs(args);
+		if (normalized is null) {
+			return false;
+		}
+		for (int index = 0; index + 1 < normalized.Length; index++) {
+			if (IsJsonFlagToken(normalized[index])
+				&& string.Equals(normalized[index + 1], "true", StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
@@ -319,6 +415,17 @@ internal class Program {
 			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
 			StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
 			ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
+			BuildThemeOptions opts => Resolve<BuildThemeCommand>(opts).Execute(opts),
+			Command.RecordRights.GetRecordRightsOptions opts => Resolve<Command.RecordRights.GetRecordRightsCommand>(opts).Execute(opts),
+			Command.RecordRights.SetRecordRightsOptions opts => Resolve<Command.RecordRights.SetRecordRightsCommand>(opts).Execute(opts),
+			ClearThemesCacheOptions opts => Resolve<ClearThemesCacheCommand>(opts).Execute(opts),
+			ListThemesOptions opts => Resolve<ListThemesCommand>(opts).Execute(opts),
+			CreateThemeOptions opts => Resolve<CreateThemeCommand>(opts).Execute(opts),
+			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
+			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
+			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
+			UploadImageOptions opts => Resolve<UploadImageCommand>(opts).Execute(opts),
+			SetBackgroundImageOptions opts => Resolve<SetBackgroundImageCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -346,6 +453,8 @@ internal class Program {
 			NewPkgOptions opts => Resolve<NewPkgCommand>().Execute(opts),
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
+			ConfigOptions opts => Resolve<ConfigCommand>().Execute(opts),
+			RingCommandOptions opts => Resolve<RingCommand>().Execute(opts),
 			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
 			PullPkgOptions opts => DownloadZipPackages(opts),
 			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
@@ -382,6 +491,7 @@ internal class Program {
 			LoadPackagesToFileSystemOptions opts => Resolve<LoadPackagesToFileSystemCommand>(opts).Execute(opts),
 			LoadPackagesToDbOptions opts => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
 			UploadLicensesOptions opts => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+			DistributeLicenseOptions opts => Resolve<DistributeLicenseCommand>(opts).Execute(opts),
 			HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
 			ComponentRegistryRefreshOptions opts => Resolve<ComponentRegistryRefreshCommand>().Execute(opts),
 			ComponentInfoCommandOptions opts => Resolve<ComponentInfoCommand>().Execute(opts),
@@ -426,6 +536,9 @@ internal class Program {
 			CreateServerToServerOAuthAppOptions opts => Resolve<CreateServerToServerOAuthAppCommand>(opts).Execute(opts),
 			VerifyOAuthAppOptions opts => Resolve<VerifyOAuthAppCommand>(opts).Execute(opts),
 			PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
+			PinCertificateOptions opts => Resolve<PinCertificateCommand>().Execute(opts),
+			InstallDbHubOptions opts => Resolve<InstallDbHubCommand>(opts).Execute(opts),
+			SyncDbHubOptions opts => Resolve<SyncDbHubCommand>(opts).Execute(opts),
 			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
 			DeployInfrastructureOptions opts => Resolve<DeployInfrastructureCommand>().Execute(opts),
 			DeleteInfrastructureOptions opts => Resolve<DeleteInfrastructureCommand>().Execute(opts),
@@ -433,6 +546,7 @@ internal class Program {
 			CheckWindowsFeaturesOptions opts => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
 			ManageWindowsFeaturesOptions opts => Resolve<ManageWindowsFeaturesCommand>().Execute(opts),
 			CreateTestProjectOptions opts => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
+			CreateIntegrationTestProjectOptions opts => Resolve<CreateIntegrationTestProjectCommand>(opts).Execute(opts),
 			DeactivatePkgOptions opts => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 			ListenOptions opts => Resolve<ListenCommand>(opts).Execute(opts),
 			ShowPackageFileContentOptions opts => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
@@ -462,6 +576,7 @@ internal class Program {
 			ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+			SetEntitySchemaPropertiesOptions opts => Resolve<SetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
@@ -469,6 +584,7 @@ internal class Program {
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
+			WatchCompilationOptions opts => Resolve<WatchCompilationCommand>(opts).Execute(opts),
 			CustomizeDataProtectionCommandOptions opts => Resolve<CustomizeDataProtectionCommand>(opts).Execute(opts),
 			LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts).Execute(opts),
 			CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts).Execute(opts),
@@ -482,7 +598,10 @@ internal class Program {
 			AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 			LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
 			McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+			McpHttpServerCommandOptions opts => McpHttpServerCommand.Run(opts),
 			PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
+			CreateRelatedPageAddonOptions opts => Resolve<CreateRelatedPageAddonCommand>(opts).Execute(opts),
+			GetRelatedPageAddonOptions opts => Resolve<GetRelatedPageAddonCommand>(opts).Execute(opts),
 			SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
 			GetSourceCodeSchemaOptions opts => Resolve<GetSourceCodeSchemaCommand>(opts).Execute(opts),
@@ -505,6 +624,7 @@ internal class Program {
 			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
 			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
+			RegisterSsoProviderOptions opts => Resolve<RegisterSsoProviderCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};
@@ -695,6 +815,13 @@ internal class Program {
 }
 
 	public static bool IsDebugMode { get; set; }
+
+	/// <summary>
+	/// True when a command was invoked with <c>--json</c> (or the <c>-j</c> alias). In this mode the
+	/// <see cref="ConsoleLogger"/> routes decorated diagnostic lines ([INF]/[WAR]/[DBG]) to stderr so
+	/// stdout carries exactly one JSON object — the unified command envelope. Set once during startup.
+	/// </summary>
+	public static bool IsJsonOutputMode { get; set; }
 
 	public static bool IsEnvironmentReported { get; set; }
 
@@ -967,7 +1094,8 @@ internal class Program {
 		Dictionary<string, HashSet<string>> searchTermsByCanonicalName = new(StringComparer.OrdinalIgnoreCase);
 		foreach (Type optionType in CommandOption) {
 			VerbAttribute verbAttribute = optionType.GetCustomAttribute<VerbAttribute>();
-			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)) {
+			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)
+				|| optionType.IsDefined(typeof(FeatureToggleAttribute), inherit: false)) {
 				continue;
 			}
 			if (!searchTermsByCanonicalName.TryGetValue(verbAttribute.Name, out HashSet<string> searchTerms)) {
@@ -1118,6 +1246,10 @@ internal class Program {
 			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
+			// Detect json output early (before the background updater logs) so decorated diagnostics are
+			// routed to stderr and stdout stays a single JSON envelope. Honors --json true|false and a
+			// bare --json (normalized to true); an explicit --json false stays off.
+			IsJsonOutputMode = IsJsonOutputRequested(args);
 			OriginalArgs = args;
 			
 			// Set IsCfgOpenCommand based on input arguments
@@ -1331,7 +1463,8 @@ internal class Program {
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
+			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
 		return args.Any(arg =>

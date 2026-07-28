@@ -36,6 +36,14 @@ internal static class TestConfiguration {
 			because: "seeded Redis keys must use a predictable prefix for cleanup and diagnostics");
 	}
 
+	public static void RequirePostgreSqlSandbox(McpE2ESettings settings) {
+		if (!string.Equals(settings.Sandbox.DatabaseProvider, "postgresql", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(settings.Sandbox.DatabaseProvider, "postgres", StringComparison.OrdinalIgnoreCase)) {
+			Assert.Ignore(
+				"Set McpE2E__Sandbox__DatabaseProvider=postgresql to run PostgreSQL physical-table assertions.");
+		}
+	}
+
 	public static string ResolveFreshClioProcessPath() {
 		string? runtimeRepositoryRoot = ResolveRepositoryRootFromTestOutput();
 		if (!string.IsNullOrWhiteSpace(runtimeRepositoryRoot)) {

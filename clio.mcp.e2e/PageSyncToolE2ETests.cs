@@ -14,7 +14,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
@@ -48,21 +47,21 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
-	[Description("Advertises sync-pages MCP tool in the server tool list so callers can discover and invoke it.")]
+	[Description("Exposes sync-pages via the get-tool-contract compact index so callers can discover and invoke it on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that sync-pages appears in the MCP server tool manifest.")]
+	[AllureName("sync-pages tool is discoverable on the lazy surface")]
+	[AllureDescription("Verifies that sync-pages is discoverable via the get-tool-contract compact index of the MCP server.")]
 	public async Task PageSyncTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(t => t.Name);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "sync-pages must be advertised so MCP clients can discover the composite tool");
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP clients can discover the composite tool");
 	}
 
 	[Test]
@@ -99,8 +98,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 
 		(callResult.IsError == true || structuredFailure).Should().BeTrue(
 			because: "sync-pages should fail when the requested environment does not exist");
+		// sync-pages is a hidden long-tail tool routed through the clio-run executor, so an
+		// invocation-layer failure may also surface as the wrapped "Error: tool '<name>' failed:" text.
 		serializedCallResult.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking)",
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking|tool '{Regex.Escape(ToolName)}' failed)",
 			because: "the failure should explain that the requested environment is missing");
 	}
 

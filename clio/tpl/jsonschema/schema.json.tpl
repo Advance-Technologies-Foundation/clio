@@ -5,6 +5,12 @@
 			"type": "string",
 			"description": "Default IIS folder where Creatio instances will run from"
 		},
+		"iis-certificate-thumbprint": {
+			"type": "string",
+			"pattern": "^[A-F0-9]{40}$",
+			"description": "Optional normalized LocalMachine/My certificate thumbprint preferred when multiple usable IIS HTTPS certificates match the machine FQDN",
+			"examples": ["DFC3141FAA198BA485538E2406CF52D90E812709"]
+		},
 		"workspaces-root": {
 			"type": "string",
 			"description": "Default absolute base directory for create-workspace --empty when --directory is omitted"
@@ -63,6 +69,10 @@
 			"$ref": "#/definitions/telemetrysettings",
 			"description": "Product telemetry upload configuration for the MCP server"
 		},
+		"dbhub": {
+			"$ref": "#/definitions/dbhubsettings",
+			"description": "Local dbHub HTTP MCP server integration"
+		},
 		"Environments": {
 			"type": "object",
 			"patternProperties": {
@@ -95,6 +105,18 @@
 		"Environments"
 	],
 	"definitions": {
+		"dbhubsettings": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"config-path": { "type": "string", "minLength": 1 },
+				"host": { "type": "string", "enum": ["127.0.0.1"], "default": "127.0.0.1" },
+				"port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 7999 },
+				"sync-local-environments": { "type": "boolean", "default": true }
+			},
+			"required": ["enabled", "config-path", "host", "port", "sync-local-environments"]
+		},
 		"environment": {
 			"type": "object",
 			"properties": {

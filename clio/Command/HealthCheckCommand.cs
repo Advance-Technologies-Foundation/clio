@@ -1,8 +1,12 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using Clio.Common;
+using Clio.Common.Responses;
 using CommandLine;
+using Newtonsoft.Json;
 
 namespace Clio.Command
 {
@@ -26,14 +30,48 @@ namespace Clio.Command
 			get => WebApp;
 			set { if (!string.IsNullOrEmpty(value)) WebApp = value; }
 		}
+
+		[Option("json", Required = false, HelpText = "Returns response in json format")]
+		public bool? Json { get; set; }
 	}
+
+	#region Class: HealthCheckResult
+
+	/// <summary>Result of a single healthcheck probe, carried in the unified <c>--json</c> envelope.</summary>
+	public sealed record HealthCheckEntry(
+		[property: JsonProperty("name")] string Name,
+		[property: JsonProperty("uri")] string Uri,
+		[property: JsonProperty("ok")] bool Ok,
+		[property: JsonProperty("error")] string Error);
+
+	/// <summary>Aggregate healthcheck payload carried in the unified <c>--json</c> envelope's <c>data</c>.</summary>
+	public sealed record HealthCheckResult(
+		[property: JsonProperty("healthy")] bool Healthy,
+		[property: JsonProperty("checks")] IReadOnlyList<HealthCheckEntry> Checks);
+
+	#endregion
 
 	public class HealthCheckCommand : RemoteCommand<HealthCheckOptions>
 	{
 
-		public HealthCheckCommand(IApplicationClient applicationClient, EnvironmentSettings settings): base(applicationClient, settings)
+		#region Constants: Private
+
+		/// <summary>Canonical kebab-case command name, emitted in the unified <c>--json</c> envelope.</summary>
+		private const string HealthCheckCommandName = "healthcheck";
+
+		#endregion
+
+		#region Fields: Private
+
+		private readonly IJsonResponseFormater _jsonResponseFormater;
+
+		#endregion
+
+		public HealthCheckCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+				IJsonResponseFormater jsonResponseFormater) : base(applicationClient, settings)
 		{
 			EnvironmentSettings = settings;
+			_jsonResponseFormater = jsonResponseFormater;
 		}
 
 		private static bool IsEnabled(string value) =>
@@ -44,35 +82,39 @@ namespace Clio.Command
 			return $"{baseUri}{path}";
 		}
 
-		private int ExecuteGetRequest(string checkName, string requestUri) {
+		// Runs a single probe and returns its structured result. Human-readable progress/outcome lines are
+		// written only in non-JSON mode, so in --json mode stdout carries exactly one JSON object.
+		private HealthCheckEntry Probe(string checkName, string requestUri, bool jsonMode) {
 			try
 			{
-				Logger.WriteInfo($"Checking {checkName} {requestUri} ...");
+				if (!jsonMode) Logger.WriteInfo($"Checking {checkName} {requestUri} ...");
 				ApplicationClient.ExecuteGetRequest(requestUri, RequestTimeout, MaxAttempts, DelaySec);
-				Logger.WriteInfo($"\t{checkName} - OK");
+				if (!jsonMode) Logger.WriteInfo($"\t{checkName} - OK");
+				return new HealthCheckEntry(checkName, requestUri, true, null);
 			}
 			catch (WebException ex)
 			{
-				Logger.WriteError($"\tError: {ex.Message}");
-				return 1;
+				if (!jsonMode) Logger.WriteError($"\tError: {ex.Message}");
+				return new HealthCheckEntry(checkName, requestUri, false, ex.Message);
 			}
 			catch (InvalidCastException)
 			{
 				// creatio.client <= 1.0.33 casts WebRequest.Create() to HttpWebRequest, which fails
 				// on macOS/Linux when the runtime returns FileWebRequest for some localhost URLs.
-				return ProbeWithHttpClient(checkName, requestUri);
+				return ProbeWithHttpClient(checkName, requestUri, jsonMode);
 			}
 			catch(Exception ex)
 			{
-				Logger.WriteError($"\tUnknown Error: {ex.Message}");
-				return 1;
+				if (!jsonMode) Logger.WriteError($"\tUnknown Error: {ex.Message}");
+				return new HealthCheckEntry(checkName, requestUri, false, ex.Message);
 			}
-			return 0;
 		}
 
-		private int ProbeWithHttpClient(string checkName, string requestUri) {
-			Logger.WriteWarning(
-				$"\t{checkName} - creatio.client returned a non-HTTP request type; retrying via HttpClient.");
+		private HealthCheckEntry ProbeWithHttpClient(string checkName, string requestUri, bool jsonMode) {
+			if (!jsonMode) {
+				Logger.WriteWarning(
+					$"\t{checkName} - creatio.client returned a non-HTTP request type; retrying via HttpClient.");
+			}
 			try {
 				using HttpClientHandler handler = new() {
 					ServerCertificateCustomValidationCallback = (_, _, _, _) => true
@@ -84,15 +126,16 @@ namespace Clio.Command
 				};
 				using HttpResponseMessage response = client.GetAsync(requestUri).GetAwaiter().GetResult();
 				if (!response.IsSuccessStatusCode) {
-					Logger.WriteError($"\tError: {(int)response.StatusCode} {response.ReasonPhrase}");
-					return 1;
+					string message = $"{(int)response.StatusCode} {response.ReasonPhrase}";
+					if (!jsonMode) Logger.WriteError($"\tError: {message}");
+					return new HealthCheckEntry(checkName, requestUri, false, message);
 				}
-				Logger.WriteInfo($"\t{checkName} - OK");
-				return 0;
+				if (!jsonMode) Logger.WriteInfo($"\t{checkName} - OK");
+				return new HealthCheckEntry(checkName, requestUri, true, null);
 			}
 			catch (Exception ex) {
-				Logger.WriteError($"\tError: {ex.Message}");
-				return 1;
+				if (!jsonMode) Logger.WriteError($"\tError: {ex.Message}");
+				return new HealthCheckEntry(checkName, requestUri, false, ex.Message);
 			}
 		}
 
@@ -104,24 +147,48 @@ namespace Clio.Command
 			RequestTimeout = options.TimeOut;
 			MaxAttempts = options.MaxAttempts;
 			DelaySec = options.RetryDelay;
+			bool jsonMode = options.Json == true;
 			bool checkWebApp = IsEnabled(options.WebApp);
 			bool checkWebHost = IsEnabled(options.WebHost);
+
+			var checks = new List<(string Name, string Path)>();
 			if (!checkWebApp && !checkWebHost)
 			{
-				return EnvironmentSettings.IsNetCore
-					? ExecuteGetRequest("WebAppLoader", BuildUri("/api/HealthCheck/Ping"))
-					: ExecuteGetRequest("WebHost", BuildUri("/0/api/HealthCheck/Ping"));
+				checks.Add(EnvironmentSettings.IsNetCore
+					? ("WebAppLoader", "/api/HealthCheck/Ping")
+					: ("WebHost", "/0/api/HealthCheck/Ping"));
 			}
-			int result = 0;
-			if (checkWebApp)
+			else
 			{
-				result += ExecuteGetRequest("WebAppLoader", BuildUri("/api/HealthCheck/Ping"));
+				if (checkWebApp) checks.Add(("WebAppLoader", "/api/HealthCheck/Ping"));
+				if (checkWebHost) checks.Add(("WebHost", "/0/api/HealthCheck/Ping"));
 			}
-			if (checkWebHost)
-			{
-				result += ExecuteGetRequest("WebHost", BuildUri("/0/api/HealthCheck/Ping"));
+
+			var entries = new List<HealthCheckEntry>(checks.Count);
+			foreach ((string name, string path) in checks) {
+				entries.Add(Probe(name, BuildUri(path), jsonMode));
 			}
-			return result;
+			bool healthy = entries.All(entry => entry.Ok);
+
+			if (jsonMode) {
+				string json;
+				if (healthy) {
+					json = _jsonResponseFormater.FormatEnvelope(HealthCheckCommandName,
+						new HealthCheckResult(true, entries));
+				} else {
+					// Contract: on failure data is null and error carries the detail (mutual exclusivity).
+					// Summarize the failed probes into the human-readable error message.
+					string failed = string.Join("; ",
+						entries.Where(entry => !entry.Ok).Select(entry => $"{entry.Name}: {entry.Error}"));
+					json = _jsonResponseFormater.FormatEnvelope(HealthCheckCommandName,
+						CommandErrorCodes.HealthCheckFailed, $"One or more health checks failed. {failed}");
+				}
+				Logger.WriteLine(json);
+				return healthy ? 0 : CommandErrorCodes.ToExitCode(CommandErrorCodes.HealthCheckFailed);
+			}
+
+			// Non-JSON: preserve the historical exit-code contract (sum of failed checks).
+			return entries.Count(entry => !entry.Ok);
 		}
 	}
 }

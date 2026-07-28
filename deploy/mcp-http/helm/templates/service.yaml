@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clio-mcp-server.fullname" . }}
+  labels:
+    app.kubernetes.io/name: clio-mcp-server
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: mcp
+      protocol: TCP
+      name: mcp
+  selector:
+    app.kubernetes.io/name: clio-mcp-server
+    app.kubernetes.io/instance: {{ .Release.Name }}

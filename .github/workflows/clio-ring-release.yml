@@ -1,0 +1,116 @@
+name: clio-ring release
+
+on:
+  push:
+    tags:
+      - "ring/v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Preview version, for example 0.1.0-preview.1"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: clio-ring-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RID: win-x64
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $env:INPUT_VERSION
+          } else {
+            $env:REF_NAME -replace '^ring/v', ''
+          }
+          if ($version -notmatch '^0\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Ring must remain an independently versioned 0.x preview. Received: $version"
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Test Ring
+        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
+
+      - name: Publish NativeAOT
+        shell: pwsh
+        run: |
+          dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
+            -c Release -r $env:RID --self-contained true -p:PublishAot=true `
+            -p:ClioRingVersion=${{ steps.version.outputs.value }} `
+            -o artifacts/publish
+
+      - name: Package and create manifest
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.value }}'
+          $asset = "clio-ring-$version-$env:RID.zip"
+          Compress-Archive -Path artifacts/publish/* -DestinationPath "artifacts/$asset"
+          $hash = (Get-FileHash "artifacts/$asset" -Algorithm SHA256).Hash
+          Set-Content "artifacts/$asset.sha256" "$hash  $asset" -Encoding ascii
+          $tag = "ring/v$version"
+          $encodedTag = [uri]::EscapeDataString($tag)
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            version = $version
+            channel = 'internal-preview'
+            rid = $env:RID
+            assetUrl = "https://github.com/${{ github.repository }}/releases/download/$encodedTag/$asset"
+            sha256 = $hash
+            entryPoint = 'clio-ring.exe'
+          }
+          $manifest | ConvertTo-Json | Set-Content artifacts/clio-ring-manifest.json -Encoding utf8
+
+      - name: Publish versioned release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "ring/v${{ steps.version.outputs.value }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Immutable clio-ring release '$tag' already exists. Choose a new version."
+          }
+          gh release create $tag artifacts/*.zip artifacts/*.sha256 artifacts/clio-ring-manifest.json `
+            --title "clio-ring ${{ steps.version.outputs.value }}" `
+            --notes "Internal preview. No telemetry. This POC may be removed."
+
+      - name: Refresh stable bootstrap release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ring-latest *> $null
+          if ($LASTEXITCODE -eq 0) {
+            New-Item -ItemType Directory -Path artifacts/existing -Force | Out-Null
+            gh release download ring-latest --pattern clio-ring-manifest.json --dir artifacts/existing --clobber
+            $current = Get-Content artifacts/existing/clio-ring-manifest.json -Raw | ConvertFrom-Json
+            $candidateVersion = [System.Management.Automation.SemanticVersion]'${{ steps.version.outputs.value }}'
+            $currentVersion = [System.Management.Automation.SemanticVersion]$current.version
+            if ($candidateVersion -lt $currentVersion) {
+              throw "Refusing to move ring-latest backward from $currentVersion to $candidateVersion."
+            }
+            gh release upload ring-latest artifacts/clio-ring-manifest.json --clobber
+          } else {
+            gh release create ring-latest artifacts/clio-ring-manifest.json `
+              --title "clio-ring latest internal preview" `
+              --notes "Bootstrap pointer for the latest internal preview."
+          }

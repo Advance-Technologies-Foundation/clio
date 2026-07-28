@@ -62,6 +62,10 @@ public sealed class ApplicationInfoServiceTests {
 			because: "application entities should be sorted by caption");
 		result.Entities[0].Columns.Should().ContainSingle(
 			because: "inherited runtime columns should be excluded from the final payload");
+		result.Entities[0].IsVirtual.Should().BeTrue(
+			because: "application readback should preserve the runtime virtual-schema flag");
+		result.Entities[1].IsVirtual.Should().BeFalse(
+			because: "schemas without an explicit runtime virtual flag should remain persistent");
 		result.Entities[0].Columns[0].DataValueType.Should().Be("Text",
 			because: "runtime schema data-value types should be mapped to readable names");
 		result.Entities[1].Columns[0].DefaultValueSource.Should().Be("Const",
@@ -380,6 +384,78 @@ public sealed class ApplicationInfoServiceTests {
 				because: "a read failure must propagate so the caller knows the prefix could not be determined rather than receiving silently wrong schema names");
 	}
 
+	[Test]
+	[Description("The settings-based GetApplicationInfo overload loads the same aggregate as the name-based one without any ISettingsRepository lookup (AC-02).")]
+	public void GetApplicationInfo_ShouldLoadAggregateWithoutRepositoryLookup_WhenSettingsProvided() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_settingsRepository.ClearReceivedCalls();
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo(_environment, null, "APP");
+
+		// Assert
+		result.PackageUId.Should().Be("pkg-uid",
+			because: "the settings-based overload must resolve the same primary package as the name-based one");
+		result.PackageName.Should().Be("PrimaryPkg",
+			because: "the settings-based overload must follow the identical package resolution flow");
+		result.Entities.Select(entity => entity.Caption).Should().Equal(new[] { "Alpha caption", "Beta caption" },
+			because: "the settings-based overload must produce the same deterministic entity ordering");
+		_settingsRepository.ReceivedCalls().Should().BeEmpty(
+			because: "the settings-based overload must never consult ISettingsRepository — the caller already supplied settings");
+	}
+
+	[Test]
+	[Description("The settings-based GetApplicationInfo overload rejects a null EnvironmentSettings argument before the client factory is invoked (AC-ERR).")]
+	public void GetApplicationInfo_ShouldThrowArgumentNullException_WhenSettingsIsNull() {
+		// Arrange
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo((EnvironmentSettings)null, null, "APP");
+
+		// Assert
+		action.Should().Throw<ArgumentNullException>(
+			because: "a null settings argument is a programming error that must fail fast in the guard clause");
+		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default);
+	}
+
+	[Test]
+	[Description("The settings-based FindApplicationId overload resolves the same application identity as the name-based one without any ISettingsRepository lookup (AC-03).")]
+	public void FindApplicationId_ShouldResolveIdentityWithoutRepositoryLookup_WhenSettingsProvided() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_settingsRepository.ClearReceivedCalls();
+
+		// Act
+		InstalledAppSummary summary = _sut.FindApplicationId(_environment, "APP");
+
+		// Assert
+		summary.Id.Should().Be("app-uid",
+			because: "the settings-based overload must resolve the same installed-application identity");
+		summary.Code.Should().Be("APP",
+			because: "the settings-based overload must return the resolved application code");
+		summary.Name.Should().Be("App",
+			because: "the settings-based overload must return the resolved application name");
+		summary.Version.Should().Be("1.0",
+			because: "the settings-based overload must return the resolved application version");
+		_settingsRepository.ReceivedCalls().Should().BeEmpty(
+			because: "the settings-based overload must never consult ISettingsRepository — the caller already supplied settings");
+	}
+
+	[Test]
+	[Description("The settings-based FindApplicationId overload rejects a null EnvironmentSettings argument before the client factory is invoked (AC-ERR).")]
+	public void FindApplicationId_ShouldThrowArgumentNullException_WhenSettingsIsNull() {
+		// Arrange
+
+		// Act
+		Action action = () => _sut.FindApplicationId((EnvironmentSettings)null, "APP");
+
+		// Assert
+		action.Should().Throw<ArgumentNullException>(
+			because: "a null settings argument is a programming error that must fail fast in the guard clause");
+		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default);
+	}
+
 	private void ConfigureHappyPathResponses() {
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
@@ -396,7 +472,7 @@ public sealed class ApplicationInfoServiceTests {
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
-			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrAlpha","caption":{"en-US":"Alpha caption"},"columns":{"Items":{"visible":{"name":"Name","caption":{"en-US":"Name"},"dataValueType":1,"isInherited":false},"inherited":{"name":"CreatedOn","caption":{"en-US":"Created On"},"dataValueType":7,"isInherited":true}}}}}""");
+			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrAlpha","caption":{"en-US":"Alpha caption"},"isVirtual":true,"columns":{"Items":{"visible":{"name":"Name","caption":{"en-US":"Name"},"dataValueType":1,"isInherited":false},"inherited":{"name":"CreatedOn","caption":{"en-US":"Created On"},"dataValueType":7,"isInherited":true}}}}}""");
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-b\"", StringComparison.Ordinal)))

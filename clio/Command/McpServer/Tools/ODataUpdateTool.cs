@@ -46,7 +46,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
@@ -76,7 +76,7 @@ public sealed record ODataUpdateArgs {
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public required string EnvironmentName { get; init; }
 

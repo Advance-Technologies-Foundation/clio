@@ -49,7 +49,10 @@ public sealed class GetCreatioInfoTool(
 				 same with or without cliogate, so an agent can reason about every instance the same way.
 
 				 Read get-guidance name=describe-environment for the full field catalogue before interpreting
-				 the output. The report is assembled best-effort from up to three sources and the command still
+				 the output. The required ApplicationInfoService probe classifies invalid/unavailable targets,
+				 authentication failures, non-Creatio content, and malformed Creatio responses separately; these
+				 return exit 1 with an actionable Error log and never expose raw response/parser details or
+				 misleading cliogate guidance. The report is assembled best-effort from up to three sources and the command still
 				 succeeds (exit 0) when an optional source is unavailable:
 				   - ALWAYS (no cliogate, authenticated session): coreVersion plus user / culture / workspace /
 				     maintainer / environmentType metadata, from ApplicationInfoService.

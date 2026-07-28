@@ -1,0 +1,26 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "clio-mcp-server.fullname" . }}
+  labels:
+    app.kubernetes.io/name: clio-mcp-server
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: clio-mcp-server
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicy.allowedClients }}
+    - from:
+        {{- toYaml .Values.networkPolicy.allowedClients | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mcp.port }}
+    {{- else }}
+    # No allowedClients configured: default-deny all ingress (fail-closed).
+    {{- end }}
+{{- end }}

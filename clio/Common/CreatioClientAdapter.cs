@@ -70,6 +70,14 @@ public class CreatioClientAdapter : IApplicationClient{
 		: this(lazyClient, null, null,
 			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
 
+	// Credential-passthrough constructor: lets ApplicationClientFactory.CreateEnvironmentClient
+	// wire BOTH a service-url builder (for environment-relative routes) and an explicit
+	// reauth executor (the NoReauthExecutor, because bearer material cannot re-login).
+	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
+		IReauthExecutor reauthExecutor)
+		: this(lazyClient, serviceUrlBuilder, null,
+			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
+
 	#endregion
 
 	public event EventHandler<WebSocketState> ConnectionStateChanged;

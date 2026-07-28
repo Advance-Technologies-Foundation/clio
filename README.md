@@ -8,6 +8,14 @@ Please give **[clio-explorer](https://marketplace.visualstudio.com/items?itemNam
 
 # Installation and features
 
+> **Prerequisite:** clio requires the **.NET SDK** (or, at minimum, both the .NET runtime
+> **and** the ASP.NET Core shared runtime — `Microsoft.AspNetCore.App`). The SDK bundles the
+> ASP.NET Core shared framework, so SDK-based installs need nothing extra. Runtime-only
+> installs that ship only the base .NET runtime (`Microsoft.NETCore.App`) without ASP.NET Core
+> — e.g. minimal CI agents — are **not supported**: clio references the ASP.NET Core shared
+> framework (used by `clio mcp-http`) for all commands, so it will fail to start with a
+> "framework not found" error when ASP.NET Core is absent.
+
 ## Windows
 
 To register clio as the global tool, run the command:

@@ -4,7 +4,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -19,23 +18,28 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 	[Test]
-	[Description("Advertises execute-esq as a read-only MCP tool through the real MCP server.")]
+	[Description("Exposes execute-esq as a discoverable, non-destructive tool via the get-tool-contract compact index on the lazy MCP surface.")]
 	[AllureTag(ExecuteEsqTool.ToolName)]
-	[AllureName("execute-esq MCP tool is advertised")]
-	public async Task ExecuteEsq_Should_Be_Advertised() {
+	[AllureName("execute-esq MCP tool is discoverable on the lazy surface")]
+	public async Task ExecuteEsq_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
+		IReadOnlyCollection<string> toolNames = await arrangeContext.Session.ListReachableToolNamesAsync(
+			arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyList<ToolContractIndexEntry> index = await arrangeContext.Session.GetToolContractIndexAsync(
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		McpClientTool tool = tools.Single(tool => tool.Name == ExecuteEsqTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(
-			because: "execute-esq must be advertised as a read-only query tool");
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse(
-			because: "execute-esq must not mutate Creatio state");
+		toolNames.Should().Contain(ExecuteEsqTool.ToolName,
+			because: $"the {ExecuteEsqTool.ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
+		ToolContractIndexEntry entry = index.Should()
+			.ContainSingle(entry => entry.Name == ExecuteEsqTool.ToolName,
+				because: "the compact discovery index must carry exactly one entry for execute-esq")
+			.Which;
+		entry.Destructive.Should().NotBe(true,
+			because: "execute-esq is a read-only query tool and must not be flagged destructive in the discovery index");
 	}
 
 	[Test]

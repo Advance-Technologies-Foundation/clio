@@ -33,13 +33,13 @@ public sealed class SqlSchemaGetTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SqlSchemaGetCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaGetCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SqlSchemaGetResponse { Success = false, Error = ex.Message };
+				return new SqlSchemaGetResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSchema(options, out SqlSchemaGetResponse response);
 			return response;

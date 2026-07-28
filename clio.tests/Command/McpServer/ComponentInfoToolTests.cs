@@ -533,6 +533,33 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("The wrong-WORD selector spelling 'component-name' (the field an agent reaches for when it expects the parameter to be named after the component's name rather than its type) is rejected with a rename hint to 'component-type', instead of falling through to the generic unknown-args message or silently degrading into list mode.")]
+	[TestCase("component-name")]
+	[TestCase("componentName")]
+	[TestCase("component_name")]
+	public async Task ComponentInfoTool_Should_Reject_ComponentName_Alias(string spelling) {
+		// Arrange — the deserializer routes the unbound 'component-name' field into ExtensionData
+		// (the canonical bound parameter is the kebab-case 'component-type').
+		ComponentInfoTool tool = CreateTool();
+		ComponentInfoArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[spelling] = JsonSerializer.SerializeToElement("crt.CommunicationOptions")
+			}
+		};
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a 'component-name' selector must not silently fall through to list mode");
+		response.Error.Should().Contain(spelling,
+			because: "the rename hint must name the offending field");
+		response.Error.Should().Contain("component-type",
+			because: "the rename hint must point at the canonical 'component-type' parameter");
+	}
+
+	[Test]
 	[Description("When the platform version resolver succeeds the response reports resolvedFrom=environment and the resolved version.")]
 	public async Task ComponentInfoTool_Should_Report_Environment_When_Resolver_Succeeds() {
 		// Arrange
@@ -832,7 +859,7 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("Passing environment-name routes version resolution through the cliogate probe for that environment (factory + settings repository), mirroring the CLI verb, instead of an ambient server-bound resolver.")]
+	[Description("Passing environment-name routes version resolution through the cliogate probe for that environment (factory + IToolCommandResolver), mirroring the CLI verb, instead of an ambient server-bound resolver.")]
 	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment() {
 		// Arrange
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
@@ -840,10 +867,10 @@ public sealed class ComponentInfoToolTests {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		factory.Create(Arg.Any<EnvironmentSettings>())
 			.Returns(StubPlatformVersionResolver.Environment("8.2.1"));
-		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
-		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, settingsRepository);
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, commandResolver);
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "prod-stand"));
@@ -853,8 +880,86 @@ public sealed class ComponentInfoToolTests {
 			because: "the version must come from the probe of the environment passed in the call, not from ambient state");
 		response.ResolvedFrom.Should().Be("environment",
 			because: "an environment-name-driven probe that matches the catalog is the 'environment' tier");
-		settingsRepository.Received(1).GetEnvironment(Arg.Is<EnvironmentOptions>(o => o.Environment == "prod-stand"));
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "prod-stand"));
 		factory.Received(1).Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("AC-02: passing uri (with no environment-name) is also a hasEnvironment call — it routes version resolution through IToolCommandResolver.Resolve<EnvironmentSettings>, not just the environment-name spelling.")]
+	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Uri() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>())
+			.Returns(StubPlatformVersionResolver.Environment("8.2.2"));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://explicit-uri" });
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Uri: "http://explicit-uri"));
+
+		// Assert
+		response.ResolvedTargetVersion.Should().Be("8.2.2",
+			because: "an explicit uri (without environment-name) must still probe through the resolver, mirroring the CLI verb's uri fallback");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "a successful probe from an explicit uri is still the 'environment' tier");
+		// The uri-only call must reach IToolCommandResolver.Resolve — the SAME hasEnvironment
+		// branch environment-name uses — instead of a settings-repository-only path.
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(
+			Arg.Is<EnvironmentOptions>(o => o.Uri == "http://explicit-uri" && string.IsNullOrEmpty(o.Environment)));
+	}
+
+	[Test]
+	[Description("AC-03/AC-ERR(b): mixed input (an explicit environment-name alongside an active passthrough header) is rejected by IToolCommandResolver's existing transport policy BEFORE any named-tenant probe — the platform-version resolver factory is never invoked and the rejection surfaces as a redacted typed error envelope.")]
+	public async Task ComponentInfoTool_Should_RejectMixedInput_BeforeNamedTenantProbe() {
+		// Arrange
+		const string rejectionMessage =
+			"Explicit credential or environment arguments (uri/login/password/client-id/client-secret/environment) "
+			+ "are not accepted when credential passthrough is enabled over HTTP. Supply the target environment "
+			+ "and credentials via the X-Integration-Credentials header, not tool arguments.";
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(o => o.Environment == "other-registered-env"))
+			.Returns(_ => throw new EnvironmentResolutionException(rejectionMessage));
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(
+			new ComponentInfoArgs(EnvironmentName: "other-registered-env"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "mixed header + environment-name input must be rejected instead of silently succeeding against the named tenant");
+		response.Error.Should().Contain("X-Integration-Credentials",
+			because: "the rejection must teach the caller the correct credential channel, matching the sibling matrix tools' fail-soft error shape");
+		factory.DidNotReceiveWithAnyArgs().Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("AC-01 regression guard: a header-only call (neither environment-name nor uri) never calls IToolCommandResolver — it stays on the CreateNoActiveEnvironmentFallback path this story must not touch.")]
+	public async Task ComponentInfoTool_Should_NeverCallCommandResolver_WhenHeaderOnly() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(TestRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			commandResolver: commandResolver);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the header-only, no-environment branch must keep degrading to the loud latest-fallback marker unchanged");
+		// The compliant no-environment branch must never reach IToolCommandResolver — this story
+		// is scoped exclusively to the hasEnvironment branch.
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -1220,6 +1325,12 @@ public sealed class ComponentInfoToolTests {
 			because: "a composite-only component must tell the agent not to insert it standalone");
 		response.CompositeOnlyHint.Should().Contain("composite=",
 			because: "the hint must steer the agent to the composite lookup that assembles this component");
+		response.CompositeOnlyHint.Should().Contain("If a composite assembles this component",
+			because: "the hint must encode the primary branch: build the composite when one assembles this component");
+		response.CompositeOnlyHint.Should().Contain("fallback",
+			because: "the hint must encode the fallback branch: build the component directly when no composite assembles it");
+		response.CompositeOnlyHint.Should().Contain("appliesToCustomEntities",
+			because: "the fallback must defer to the component's applicability constraints, not invite an off-spec standalone build on an entity those fields exclude");
 	}
 
 	[Test]
@@ -1444,7 +1555,8 @@ public sealed class ComponentInfoToolTests {
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentRegistryDocsClient? docsClient = null,
 		string? environmentVersion = null,
-		IPlatformVersionResolver? resolver = null) {
+		IPlatformVersionResolver? resolver = null,
+		IToolCommandResolver? commandResolver = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		if (resolver is not null) {
 			// Explicit resolver override — wins over environmentVersion so a test can inject a
@@ -1454,15 +1566,22 @@ public sealed class ComponentInfoToolTests {
 			factory.Create(Arg.Any<EnvironmentSettings>())
 				.Returns(StubPlatformVersionResolver.Environment(environmentVersion));
 		}
-		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
-			.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		// ENG-93347 Story 13 (Pattern-A swap): the hasEnvironment branch now resolves
+		// EnvironmentSettings through IToolCommandResolver instead of the root
+		// ISettingsRepository, so it shares the ENG-93208 credential-passthrough seam. A caller
+		// can inject its own substitute (e.g. to simulate a passthrough rejection); otherwise this
+		// default mirrors the pre-change ISettingsRepository.GetEnvironment stub behavior.
+		IToolCommandResolver toolCommandResolver = commandResolver ?? Substitute.For<IToolCommandResolver>();
+		if (commandResolver is null) {
+			toolCommandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+				.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		}
 		return new ComponentInfoTool(
 			catalog,
 			mobileCatalog,
 			docsClient ?? new FakeDocsClient(),
 			factory,
-			settingsRepository);
+			toolCommandResolver);
 	}
 
 	[Test]
@@ -1580,6 +1699,46 @@ public sealed class ComponentInfoToolTests {
 			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
 		response.ComponentType.Should().Be("crt.TabContainer",
 			because: "web catalog lookup should still work when schema-type is not specified");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "an omitted schema-type is a valid selection and must not emit the unrecognized-value warning");
+	}
+
+	[Test]
+	[Description("An unrecognized schema-type value (typo 'moblie') is NOT silently treated as web: the lookup still resolves against the WEB catalog (documented fallback) but the response carries a schemaTypeWarning naming the offending value, so a mis-typed mobile request surfaces instead of quietly serving web-flavored component metadata for a mobile page.")]
+	public async Task ComponentInfoTool_Should_Warn_And_Fall_Back_To_Web_When_SchemaType_Is_Unrecognized() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer", SchemaType: "moblie"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an unrecognized schema-type must fall back to web instead of hard-failing the call");
+		response.ComponentType.Should().Be("crt.TabContainer",
+			because: "crt.TabContainer is a web component, proving the web catalog was served on the fallback");
+		response.SchemaTypeWarning.Should().NotBeNullOrEmpty(
+			because: "an unrecognized schema-type must surface a warning instead of a silent web fallback");
+		response.SchemaTypeWarning.Should().Contain("moblie",
+			because: "the warning must name the offending value so the typo is obvious to the caller");
+		response.SchemaTypeWarning.Should().Contain("mobile",
+			because: "the warning must point at the likely intended value");
+	}
+
+	[Test]
+	[Description("An explicit schema-type='web' is a valid selection: web catalog and NO schemaTypeWarning — the warning is reserved for unrecognized values, never emitted for the explicit default.")]
+	public async Task ComponentInfoTool_Should_Not_Warn_When_SchemaType_Is_Explicit_Web() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer", SchemaType: "web"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "'web' is a valid explicit schema-type selection");
+		response.ComponentType.Should().Be("crt.TabContainer", because: "'web' selects the web catalog");
+		response.SchemaTypeWarning.Should().BeNull(
+			because: "a valid explicit selection must not emit the unrecognized-value warning");
 	}
 
 	[Test]

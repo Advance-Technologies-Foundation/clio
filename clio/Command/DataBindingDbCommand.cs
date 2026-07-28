@@ -535,6 +535,17 @@ internal sealed class DataBindingDbService(
 				Dictionary<string, string?> skippedValues = row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString());
 				skippedValues["Id"] = existingId;
 				skippedRows.Add(new DataBindingCreatedRow(existingId, skippedValues));
+			} else if (RowExistsInTable(schemaName, rowId)) {
+				// Row already exists in the table (matched by Id): register the binding for it without
+				// rewriting the row. Lets a row with no Name column (e.g. SysSchemaAdminUnitRight) be bound
+				// by Id, the same way a Named row is adopted above, instead of inserting a duplicate.
+				if (rowName is not null) {
+					existingNameToId[rowName] = rowId;
+				}
+				AddToBoundIds(boundRecordIds, rowId);
+				skippedRows.Add(new DataBindingCreatedRow(
+					rowId,
+					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 			} else {
 				InsertEntityRow(schemaName, row, schema.SchemaColumns);
 				if (rowName is not null) {
@@ -570,10 +581,14 @@ internal sealed class DataBindingDbService(
 		List<string> existingIds = ExtractBoundRecordIds(existingBoundRows);
 		bool rowAlreadyBound = existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase);
 
-		if (rowAlreadyBound) {
+		if (rowAlreadyBound || RowExistsInTable(entitySchemaName, rowId)) {
+			// Update whether the row is already bound to this package OR exists in the table but is not yet
+			// bound: only a row that exists in neither place is a genuine insert.
 			UpdateEntityRow(entitySchemaName, rowId, values, schema.SchemaColumns);
 		} else {
 			InsertEntityRow(entitySchemaName, values, schema.SchemaColumns);
+		}
+		if (!rowAlreadyBound) {
 			existingIds.Add(rowId);
 		}
 			DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, SingleRowSet(values));
@@ -1134,6 +1149,32 @@ internal sealed class DataBindingDbService(
 			result.TryAdd(row.Name, row.Id);
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Returns whether a row with the given primary-key <paramref name="rowId"/> already exists in the target
+	/// entity table, so an upsert of a live-but-not-yet-bound row updates that row instead of attempting an
+	/// insert that would fail on required columns or a primary-key conflict. A genuine "not found" is a
+	/// successful empty result; a failed probe (e.g. a permission or read error) is propagated so the caller
+	/// surfaces the real cause instead of silently attempting an insert that would fail with a misleading error.
+	/// </summary>
+	private bool RowExistsInTable(string schemaName, string rowId) {
+		if (!Guid.TryParse(rowId, out _)) {
+			return false;
+		}
+		EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(
+			applicationClient,
+			serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQuery(
+				schemaName,
+				[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+				[
+					new SelectQueryHelper.SelectQueryFilterDefinition(
+						"Id",
+						rowId,
+						SelectQueryHelper.GuidDataValueType)
+				]));
+		return response.Rows.Any(row => !string.IsNullOrWhiteSpace(row.Id));
 	}
 
 	private void DeletePackageSchemaData(Guid packageUId, string bindingName) {

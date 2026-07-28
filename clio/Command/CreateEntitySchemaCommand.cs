@@ -32,6 +32,13 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 	[Option("extend-parent", Required = false, Default = false, HelpText = "Create replacement schema")]
 	public bool ExtendParent { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether the created entity schema is virtual and therefore has no physical database table.
+	/// </summary>
+	[Option("is-virtual", Required = false, Default = false,
+		HelpText = "Create a virtual entity schema without a physical database table")]
+	public bool IsVirtual { get; set; }
+
 	[Option("column", Required = false, HelpText = "Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with name/type/title/reference-schema-name/required/default-value-source/default-value. Repeat the option for multiple columns.")]
 	public IEnumerable<string> Columns { get; set; }
 

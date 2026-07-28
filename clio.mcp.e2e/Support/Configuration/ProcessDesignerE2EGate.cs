@@ -19,6 +19,13 @@ internal static class ProcessDesignerE2EGate {
 	private const string FeatureKey = "process-designer";
 
 	/// <summary>
+	/// NUnit category carried by every process-designer E2E fixture. CI lanes that must not even discover
+	/// these tests (the feature ships with the clioprocessbuilder package, not the default stand) exclude
+	/// them at the runner level: <c>dotnet test --filter "TestCategory!=McpE2E.ProcessDesigner"</c>.
+	/// </summary>
+	public const string CategoryName = "McpE2E.ProcessDesigner";
+
+	/// <summary>
 	/// Skips the calling test when <c>process-designer</c> is disabled in the appsettings the configured
 	/// clio MCP server process loads. Call FIRST in a fixture's arrange (after <c>ClioProcessPath</c> is set).
 	/// </summary>

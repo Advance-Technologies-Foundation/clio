@@ -12,7 +12,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -28,28 +27,31 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ValidateProcessGraphTool.ToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class ValidateProcessGraphToolE2ETests {
 
 	private const string ToolName = ValidateProcessGraphTool.ToolName;
 	private const string FeatureKey = "process-designer";
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies validate-process-graph is advertised (requires the feature toggle to be enabled).")]
+	[Description("Starts the real clio MCP server and verifies validate-process-graph is discoverable via the get-tool-contract compact index (requires the feature toggle to be enabled).")]
 	[AllureTag(ToolName)]
-	[AllureName("validate-process-graph is advertised by the clio MCP server")]
+	[AllureName("validate-process-graph is discoverable on the lazy surface of the clio MCP server")]
 	public async Task ValidateProcessGraph_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
+		// ArrangeAsync already Assert.Ignores when the process-designer feature is disabled, so this test
+		// only runs against a server that registered the gated tool. On the lazy surface even an ENABLED
+		// gated tool is never resident in tools/list — discoverability is asserted through the union of
+		// tools/list and the get-tool-contract compact index.
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		if (!tools.Select(tool => tool.Name).Contains(ToolName)) {
-			Assert.Ignore($"{ToolName} is feature-toggled off. Enable it (clio experimental --name {FeatureKey} --enable) to run this E2E.");
-		}
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the validate-process-graph tool must be discoverable on the real clio MCP server when the feature is enabled");
+		toolNames.Should().Contain(ToolName,
+			because: "the validate-process-graph tool must be discoverable via the get-tool-contract compact index when the process-designer feature is enabled");
 	}
 
 	[Test]
@@ -151,8 +153,11 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		new() { ["source"] = source, ["target"] = target, ["flow-kind"] = flowKind };
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext arrangeContext, Dictionary<string, object?> graphArgs) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		if (!tools.Select(tool => tool.Name).Contains(ToolName)) {
+		// Gated tools are never resident in tools/list on the lazy surface, so the availability canary
+		// checks the reachable-name union (tools/list + get-tool-contract compact index) instead.
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		if (!toolNames.Contains(ToolName)) {
 			Assert.Ignore($"{ToolName} is feature-toggled off. Enable it (clio experimental --name {FeatureKey} --enable) to run this E2E.");
 		}
 		return await arrangeContext.Session.CallToolAsync(

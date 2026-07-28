@@ -14,15 +14,12 @@ public sealed class PageCreationGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
-	/// Returns the canonical guidance article for `create-page` and `list-page-templates`.
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
 	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "page-creation-guidance")]
-	[Description("Returns canonical MCP guidance for creating Freedom UI pages from supported templates via create-page.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
-			Uri = ResourceUri,
-			MimeType = "text/plain",
-			Text = """
+	internal static readonly TextResourceContents Guide = new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
 			       clio MCP page-creation guide
 
 			       Canonical flow
@@ -44,6 +41,7 @@ public sealed class PageCreationGuidanceResource {
 			         * `BaseSidebarTemplate` — Sidebar page (feature-flagged)
 			         * `ListPageV3Template` or `ListPageV2Template` — List page (feature-flagged)
 			         * `BlankPageTemplate` — Blank page
+			         * `CentralAreaDesktopTemplate` — Desktop (a desktop-selector workspace; read get-guidance name `desktop-page` FIRST)
 			       - Mobile (schema-type: mobile, schemaType=10):
 			         * `MobilePageWithTabsFreedomTemplate`
 			         * `BaseMobilePageTemplate`
@@ -58,7 +56,7 @@ public sealed class PageCreationGuidanceResource {
 			       Optional inputs
 			       - `caption`: human-readable caption. Defaults to `schema-name` when omitted.
 			       - `description`: free-form description.
-			       - `entity-schema-name`: existing entity schema. When set, the new page records the entity in its dependencies; leave blank for template-pure pages (dashboards, blank pages, custom pages).
+			       - `entity-schema-name`: existing entity schema. When set, the new page records the entity in its dependencies; leave blank for template-pure pages (dashboards, desktops, blank pages, custom pages).
 
 			       Validation and failure modes
 			       - Unknown template: `create-page` rejects the call with a readable error; always call `list-page-templates` first when unsure.
@@ -73,7 +71,7 @@ public sealed class PageCreationGuidanceResource {
 			       - `templateName` — name of the template (e.g. `BlankPageTemplate`, `BaseHomePage`).
 
 			       Designer type mapping
-			       - `BaseHomePage` (schemaType=9): opens in the **Homepage designer**. Do NOT use the standard Freedom UI page designer URL for this template.
+			       - `BaseHomePage` (schemaType=9): opens in the **Homepage designer**. Do NOT use the standard Freedom UI page designer URL for this template. A `BaseHomePage` page becomes a workplace's home page only after you bind it — read get-guidance name `home-page`.
 			       - All other schemaType=9 templates (BlankPageTemplate, PageWithTabsFreedomTemplate, BaseMiniPageTemplate, ListPageV3Template, etc.): open in the **Freedom UI page designer**.
 			       - schemaType=10 mobile templates: open in the **Mobile page designer**.
 			       - IMPORTANT: Do NOT guess or construct a browser designer URL based only on `schemaUId`. Use `templateName` and `schemaType` from the response to determine the correct designer. If unsure, call `get-page` to verify the created page loaded correctly — that is sufficient; the user can open the designer themselves from Workspace Explorer.
@@ -84,5 +82,12 @@ public sealed class PageCreationGuidanceResource {
 			       - Do not assume `create-page` creates an app section. Use `create-app-section` when the requested outcome is "add a new section" rather than "add a standalone Freedom UI page".
 			       - Do not construct a browser designer URL after `create-page` without checking `templateName` in the response. Using the Homepage designer URL for non-homepage pages (or vice versa) opens the wrong designer.
 			       """
-		};
+	};
+
+	/// <summary>
+	/// Returns the canonical guidance article for `create-page` and `list-page-templates`.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "page-creation-guidance")]
+	[Description("Returns canonical MCP guidance for creating Freedom UI pages from supported templates via create-page.")]
+	public ResourceContents GetGuide() => Guide;
 }

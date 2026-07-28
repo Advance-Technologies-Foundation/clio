@@ -36,6 +36,11 @@ namespace Clio.Command
 			set { Json = value; }
 		}
 
+		[Option("legacy-form", Required = false, Hidden = true,
+			HelpText = "Compatibility escape hatch: with --json, emit the legacy {value,success,errorInfo} " +
+			"shape instead of the unified envelope. Only meaningful together with --json.")]
+		public bool LegacyForm { get; set; }
+
 
 		#endregion
 
@@ -47,6 +52,13 @@ namespace Clio.Command
 
 	public class GetPkgListCommand : Command<PkgListOptions>
 	{
+
+		#region Constants: Private
+
+		/// <summary>Canonical kebab-case command name, emitted in the unified <c>--json</c> envelope.</summary>
+		private const string PkgListCommandName = "list-packages";
+
+		#endregion
 
 		#region Fields: Private
 
@@ -104,8 +116,14 @@ namespace Clio.Command
 		}
 
 		private void PrintPackageList(PkgListOptions options, IEnumerable<PackageInfo> filteredPackages) {
-			if (options.Json.HasValue && options.Json.Value) {
-				_logger.WriteLine(_jsonResponseFormater.Format(filteredPackages));
+			if (options.Json == true) {
+				// --json defaults to the unified BL-1 envelope; --legacy-form preserves the historical
+				// {value,success,errorInfo} shape for consumers not yet migrated. Both emit exactly one
+				// JSON object to stdout via WriteLine (no [INF] prefix), keeping the stream jq-parseable.
+				string json = options.LegacyForm
+					? _jsonResponseFormater.Format(filteredPackages)
+					: _jsonResponseFormater.FormatEnvelope(PkgListCommandName, filteredPackages);
+				_logger.WriteLine(json);
 			} else {
 				if (filteredPackages.Any()) {
 					PrintPackageList(filteredPackages);
@@ -116,8 +134,15 @@ namespace Clio.Command
 		}
 
 		private void PrintError(PkgListOptions options, Exception e) {
-			if (options.Json.HasValue && options.Json.Value) {
-				_logger.WriteInfo(_jsonResponseFormater.Format(e));
+			if (options.Json == true) {
+				if (options.LegacyForm) {
+					// Faithful legacy behavior: the historical --json error path wrote via WriteInfo.
+					_logger.WriteInfo(_jsonResponseFormater.Format(e));
+				} else {
+					_logger.WriteLine(_jsonResponseFormater.FormatEnvelope(
+						PkgListCommandName, CommandErrorCodes.UnexpectedError,
+						e.GetReadableMessageException(Program.IsDebugMode)));
+				}
 			} else {
 				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			}

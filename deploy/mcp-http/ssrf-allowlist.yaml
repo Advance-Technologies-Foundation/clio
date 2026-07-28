@@ -1,0 +1,21 @@
+# SSRF allowlist entry for Clio MCP HTTP server
+#
+# Add this host:port pair to the EGRESS_ALLOWED_HOSTS variable in the
+# control-plane configuration so the AI Platform (managed adapter) can
+# reach the Clio MCP server inside the cluster.
+#
+# Where to apply:
+#   Control-plane config (environment-specific) — NOT in this repo.
+#   This file is a reference for the platform team.
+#
+# K8s service DNS name (set via fullnameOverride in values.yaml):
+#   clio-mcp-server
+#
+# Full endpoint URL for MCP clients:
+#   http://clio-mcp-server:8005/mcp
+
+egress_allowed_hosts:
+  - host: clio-mcp-server
+    port: 8005
+    protocol: http
+    description: "Clio MCP HTTP server — internal managed adapter for AI Platform"

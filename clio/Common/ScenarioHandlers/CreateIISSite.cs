@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Common.IIS;
 
 namespace Clio.Common.ScenarioHandlers {
 
@@ -74,6 +75,19 @@ namespace Clio.Common.ScenarioHandlers {
                     if(!bool.TryParse(isNetFramework, out bool _isNetFramework)) {
                         context.AddFailure($"isNetFramework: '{isNetFramework}' is not a valid boolean value");
                     }
+                })
+                .Custom((options, context) => {
+                    options.TryGetValue("protocol", out string protocol);
+                    if (protocol is not ("http" or "https")) {
+                        context.AddFailure("createIISSite step requires protocol http or https");
+                    }
+                    if (!options.TryGetValue("hostName", out string hostName) || string.IsNullOrWhiteSpace(hostName)) {
+                        context.AddFailure("createIISSite step requires hostName options");
+                    }
+                    if (protocol == "https" && (!options.TryGetValue("certificateThumbprint", out string thumbprint)
+                        || string.IsNullOrWhiteSpace(thumbprint))) {
+                        context.AddFailure("createIISSite HTTPS step requires certificateThumbprint options");
+                    }
                 });
         }
     }
@@ -105,11 +119,23 @@ namespace Clio.Common.ScenarioHandlers {
         private readonly IProcessExecutor _processExecutor;
         private readonly ILogger _logger;
         private readonly IValidator<CreateIISSiteRequest> _validator;
+        private readonly INetFrameworkHttpsConfigurator _netFrameworkHttpsConfigurator;
+        private readonly IIisCertificateBindingService _certificateBindingService;
 
-        public CreateIISSiteRequestHandler(IProcessExecutor processExecutor, ILogger logger, IValidator<CreateIISSiteRequest> validator) {
+        /// <summary>Initializes the IIS site scenario handler.</summary>
+        /// <param name="processExecutor">Executes AppCmd operations.</param>
+        /// <param name="logger">Writes command diagnostics.</param>
+        /// <param name="validator">Validates scenario arguments before mutation.</param>
+        /// <param name="netFrameworkHttpsConfigurator">Applies .NET Framework HTTPS configuration.</param>
+        /// <param name="certificateBindingService">Attaches a machine certificate to an HTTPS binding.</param>
+        public CreateIISSiteRequestHandler(IProcessExecutor processExecutor, ILogger logger, IValidator<CreateIISSiteRequest> validator,
+            INetFrameworkHttpsConfigurator netFrameworkHttpsConfigurator,
+            IIisCertificateBindingService certificateBindingService) {
             _processExecutor = processExecutor;
             _logger = logger;
             _validator = validator;
+            _netFrameworkHttpsConfigurator = netFrameworkHttpsConfigurator;
+            _certificateBindingService = certificateBindingService;
         }
 
 
@@ -123,6 +149,10 @@ namespace Clio.Common.ScenarioHandlers {
             string sourceDirectory = request.GetRequired("sourceDirectory");
             string destinationFolder = Path.Combine(request.GetRequired("destinationDirectory").Trim(), siteName);
             bool isNetFramework = request.GetRequired<bool>("isNetFramework");
+            string protocol = request.GetRequired("protocol");
+            string hostName = request.GetRequired("hostName");
+            request.Arguments.TryGetValue("certificateThumbprint", out string certificateThumbprint);
+            certificateThumbprint ??= string.Empty;
             
             StringBuilder sb = new();
 
@@ -136,8 +166,17 @@ namespace Clio.Common.ScenarioHandlers {
                 sb.AppendLine($"Directory already exists: {destinationFolder} skipped copying");
             }
 
+            if (isNetFramework && protocol == "https") {
+                _netFrameworkHttpsConfigurator.Configure(destinationFolder);
+                sb.AppendLine("Configured .NET Framework HTTPS settings.");
+            }
+
             sb.Append(CreateAppPool(siteName, isNetFramework));
-            sb.Append(CreateWebSite(siteName, sitePort, destinationFolder));
+            sb.Append(CreateWebSite(siteName, sitePort, destinationFolder, protocol, hostName));
+            if (protocol == "https") {
+                _certificateBindingService.Attach(siteName, certificateThumbprint);
+                sb.AppendLine($"Attached HTTPS certificate {certificateThumbprint} from LocalMachine/My.");
+            }
             if(isNetFramework) {
                 sb.Append(CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
             }
@@ -162,10 +201,9 @@ namespace Clio.Common.ScenarioHandlers {
             return result;
         }
 
-        private string CreateWebSite(string siteName, int port, string destinationFolder) {
+        private string CreateWebSite(string siteName, int port, string destinationFolder, string protocol, string hostName) {
             string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
-            //string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
-            string command = $"add site /name:\"{siteName}\" /bindings:\"http/*:{port}:{InstallerHelper.FetFQDN()}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
+            string command = $"add site /name:\"{siteName}\" /bindings:\"{protocol}/*:{port}:{hostName}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
             
             var result =  _processExecutor.Execute(appcmdPath, command, true);
 

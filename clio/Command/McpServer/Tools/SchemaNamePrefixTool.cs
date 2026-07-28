@@ -49,7 +49,7 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 /// </summary>
 public sealed record GetSchemaNamePrefixArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName);
 

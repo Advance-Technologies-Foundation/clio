@@ -26,13 +26,15 @@ internal static class SelectQueryHelper
 		IApplicationClient client,
 		IServiceUrlBuilder serviceUrlBuilder,
 		object query,
-		int requestTimeout = Timeout.Infinite)
+		int requestTimeout = Timeout.Infinite,
+		int maxAttempts = 1,
+		int retryDelay = 1)
 		where T : SelectQueryResponseBaseDto
 	{
 		string responseJson = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
 			JsonSerializer.Serialize(query),
-			requestTimeout);
+			requestTimeout, maxAttempts, retryDelay);
 		if (string.IsNullOrWhiteSpace(responseJson))
 		{
 			throw new InvalidOperationException("SelectQuery returned an empty response.");

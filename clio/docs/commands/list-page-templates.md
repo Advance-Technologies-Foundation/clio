@@ -23,6 +23,16 @@ Use this command before calling `create-page` to discover the valid
 template `name`, `uId`, `title`, `groupName`, and `schemaType` (9 for
 web pages, 10 for mobile pages).
 
+The web catalog always includes `BaseDashboardTemplate`, the parent for a
+Freedom UI dashboard page. It appears with `title` `Dashboard` (its
+`groupName` is `DashboardPage`) and is a valid `--template` value for
+`create-page`.
+
+The web catalog also always includes `CentralAreaDesktopTemplate`, the
+parent for a desktop page (a desktop-selector workspace). It appears with
+`title` `Desktop` and `groupName` `Desktop` and is a valid `--template`
+value for `create-page`.
+
 ## Synopsis
 
 ```bash

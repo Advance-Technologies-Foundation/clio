@@ -53,6 +53,9 @@ EXAMPLES
     clio mcp
         Start the same MCP server using the short alias.
 
+    Use your MCP client to call get-tool-contract {}.
+        Discover what tools exist with a compact index (name + one-line purpose + safety flags) without paying for full schemas, then call get-tool-contract with specific tool-names to load only the contracts you need. Pass {"detail":"full"} to expand every tool's full contract at once (legacy behavior).
+
     Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-app-info","get-page","sync-pages"]}.
         Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
 

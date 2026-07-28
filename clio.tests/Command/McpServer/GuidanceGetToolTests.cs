@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -116,6 +117,114 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that builds the theme CSS with the native build-theme tool and routes the agent to the right flow rather than embedding the token catalog.")]
+	public async Task GuidanceGet_Should_Return_Theming_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("theming"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "theming is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/theming",
+			because: "the guidance tool should preserve the canonical theming guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP custom-theme guide",
+			because: "the guidance tool should return the canonical theming article text");
+		result.Article.Text.Should().Contain("Which flow",
+			because: "theming is the single entry point — the article must help the agent pick the workspace/dev vs no-code/server flow");
+		result.Article.Text.Should().NotContain("@creatio/theming",
+			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
+		result.Article.Text.Should().NotContain("AI_GUIDES_INDEX.md",
+			because: "the npm package index is retired; the guide no longer routes through it");
+		result.Article.Text.Should().Contain("push-workspace",
+			because: "the workspace/dev flow must direct deployment through push-workspace");
+		result.Article.Text.Should().Contain("No-code / server flow",
+			because: "the no-code/server flow is now available and must be described, not marked unavailable");
+		result.Article.Text.Should().NotContain("not yet available",
+			because: "the server flow shipped, so the guide must no longer say it is unavailable");
+		result.Article.Text.Should().Contain("create-theme",
+			because: "the server flow must route the agent to the create-theme MCP tool");
+		result.Article.Text.Should().Contain("update-theme",
+			because: "the server flow must route the agent to the update-theme MCP tool");
+		result.Article.Text.Should().Contain("delete-theme",
+			because: "the server flow must route the agent to the delete-theme MCP tool");
+		result.Article.Text.Should().NotContain("-by-environment",
+			because: "the guide routes to theming tools by their canonical names only");
+		result.Article.Text.Should().NotContain("-by-credentials",
+			because: "the guide routes to theming tools by their canonical names only");
+		result.Article.Text.Should().Contain("build-theme",
+			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
+		result.Article.Text.Should().Contain("get-guidance name=branding",
+			because: "the theming guide must route branding-beyond-the-theme (logos, shell background) to the dedicated branding guide instead of carrying it");
+		result.Article.Text.Should().NotContain("Branding — logos and background",
+			because: "the branding mechanics moved to the dedicated branding guide (ENG-92981) and must not be duplicated here");
+		result.Article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the shell-background mechanics are owned by the branding guide, not the theming guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical branding guidance article when the caller requests branding: logo sys settings and the shell background flow routed through the dedicated upload-image and set-background-image tools.")]
+	public async Task GuidanceGet_Should_Return_Branding_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("branding"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "branding is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/branding",
+			because: "the guidance tool should preserve the canonical branding guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP branding guide",
+			because: "the guidance tool should return the canonical branding article text");
+		result.Article.Text.Should().Contain("get-guidance name=theming",
+			because: "the branding guide must route the theme part of branding (colours, fonts, custom themes) to the theming guide");
+		result.Article.Text.Should().Contain("CrtAppToolbarLogo",
+			because: "the logos section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		result.Article.Text.Should().Contain("value-file-path",
+			because: "logo uploads must route through the Binary sys-setting file path, never inline bytes");
+		result.Article.Text.Should().Contain("HideSplashScreenLogoImage",
+			because: "applying logos must also hide the stock splash logo");
+		result.Article.Text.Should().Contain("upload-image",
+			because: "the background image upload must route through the dedicated upload-image tool, since OData JSON cannot write the SysImage binary stream");
+		result.Article.Text.Should().NotContain("ImageAPIService",
+			because: "the raw image-API recipe (endpoint, query literals, headers) is owned by the upload-image tool implementation and must not be hand-executed from the guide");
+		result.Article.Text.Should().NotContain("get-browser-session",
+			because: "the browser-session upload recipe is retired in favor of the dedicated upload-image tool");
+		result.Article.Text.Should().Contain("set-background-image",
+			because: "the background activation must route through the dedicated set-background-image tool");
+		result.Article.Text.Should().NotContain("SysImageInTag",
+			because: "the gallery-registration mechanics are owned by the set-background-image tool implementation and must not be hand-executed from the guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the theming guidance a thin pointer (CM-03): it names the --crt-* token namespace at most once without restating the token catalog.")]
+	public async Task GuidanceGet_Should_Not_Restate_Token_Catalog_When_Topic_Is_Theming() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("theming"));
+
+		// Assert
+		result.Article.Should().NotBeNull(
+			because: "theming is a registered guidance name that resolves to an article");
+		int tokenNamespaceMentions = result.Article!.Text.Split("--crt").Length - 1;
+		tokenNamespaceMentions.Should().BeLessThanOrEqualTo(1,
+			because: "the guide may name the --crt-* token namespace once as a pointer, but must not restate the --crt-* token catalog (CM-03 — single source of truth)");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical indicator widget guidance article when the caller requests indicator-widget.")]
 	public async Task GuidanceGet_Should_Return_Indicator_Widget_Article() {
 		// Arrange
@@ -191,6 +300,50 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical related-page-binding guidance article when the caller requests related-page-binding.")]
+	public async Task GuidanceGet_Should_Return_Related_Page_Binding_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("related-page-binding"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "related-page-binding is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/related-page-binding",
+			because: "the guidance tool should preserve the canonical related-page-binding guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-to-object binding guide",
+			because: "the guidance tool should return the canonical page-to-object binding article text");
+		result.Article.Text.Should().Contain("create-related-page-addon",
+			because: "the resolved article must document the create-related-page-addon write tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the get-component-info-first / anti-bundle-reverse-engineering sentence in the page-modification guidance so it cannot be silently reverted (ENG-91953 recurrence guard). The ENG-91556 split relocated the canonical flow (which carries this sentence) into the page-modification-overview sub-guide.")]
+	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act — the canonical flow moved to the overview sub-guide in the ENG-91556 split
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-overview"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-overview is a registered guidance name that now owns the canonical flow");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Text.Should().Contain("reverse-engineering one is NOT a substitute",
+			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must be guarded against silent reverts");
+		result.Article.Text.Should().Contain("compiled bundle",
+			because: "the guidance must keep warning that a compiled page bundle hides the catalog-only signals get-component-info carries");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical handler guidance article when the caller requests page-schema-handlers.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Article() {
 		// Arrange
@@ -262,39 +415,274 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must make the agent resolve web vs mobile before editing a page");
 		result.Article.Text.Should().Contain("default to web",
 			because: "Step 0 must default to web when the requirement does not name a surface");
-		result.Article.Text.Should().Contain("whenToUse",
-			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
-		result.Article.Text.Should().Contain("CUSTOM CSS IS A LAST RESORT",
-			because: "the page modification guide must force the agent to exhaust native component inputs before any custom CSS (ENG-92541)");
+		result.Article.Text.Should().Contain("page-modification-field-contract",
+			because: "the entry guide must route a data-bound field insert to the focused field-contract sub-guide (ENG-91556 split)");
+		result.Article.Text.Should().Contain("page-modification-overview",
+			because: "the entry guide must point at the save-lifecycle sub-guide so the detailed mechanics stay one get-guidance call away (ENG-91556 split)");
+		result.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
+			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
+		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
+			because: "the page modification guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
+		string entryCrlfWorstCase = result.Article.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+		// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2.
+		new System.Text.UTF8Encoding(false).GetByteCount(entryCrlfWorstCase).Should().BeLessThanOrEqualTo(15 * 1024,
+			because: "the entry guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The page modification guide enforces the native-first / warn-and-confirm CSS rule (ENG-92541).")]
-	public async Task GuidanceGet_Should_ForceNativeFirstAndConfirmBeforeCss_WhenReturningPageModificationArticle() {
+	[Description("Returns the page-modification-overview sub-guide carrying the relocated body save-lifecycle content (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Overview_Article() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
-		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-overview"));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "page-modification is a registered guidance name");
-		result.Article!.Text.Should().Contain("first try to satisfy it with the component's NATIVE inputs",
-			because: "AC1: the agent must never apply custom CSS without first attempting native component properties");
+			because: "page-modification-overview is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-overview",
+			because: "the overview sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification overview guide",
+			because: "the overview sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Replacing-schema concept",
+			because: "the replacing-schema concept moved from the entry guide into the overview sub-guide");
+		result.Article.Text.Should().Contain("do NOT resend the full raw.body",
+			because: "the do-not-resend rule moved into the overview sub-guide");
+		result.Article.Text.Should().Contain("External-modification conflicts",
+			because: "the checksum-conflict recovery content moved into the overview sub-guide");
+		result.Article.Text.Should().Contain("mode: \"append\"",
+			because: "the update-page write-mode rules (replace/append) moved into the overview sub-guide and must not be silently dropped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-field-contract sub-guide carrying the relocated inserted-field contract content plus the shared InsertedFieldContractSummary (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Field_Contract_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-field-contract"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-field-contract is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-field-contract",
+			because: "the field-contract sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification field-contract guide",
+			because: "the field-contract sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Inserted-field contract for a new data-bound field control",
+			because: "the inserted-field contract section moved into the field-contract sub-guide");
+		result.Article.Text.Should().Contain(Clio.Command.SchemaValidationService.InsertedFieldContractSummary,
+			because: "the field-contract sub-guide must still inject the shared inserted-field contract summary verbatim so the guidance matches the validator");
+		result.Article.Text.Should().Contain("the attribute must reach `viewModelConfig.attributes`",
+			because: "the viewModelConfigDiff nesting rule moved into the field-contract sub-guide");
+		result.Article.Text.Should().Contain("Static vs diff body forms",
+			because: "the static-vs-diff body-form decision moved into the field-contract sub-guide and must not be silently dropped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-containers sub-guide carrying the relocated bundle.json and parentName content (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Containers_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-containers"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-containers is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-containers",
+			because: "the containers sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification containers guide",
+			because: "the containers sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Finding a container for a new component",
+			because: "the container-selection section moved into the containers sub-guide");
+		result.Article.Text.Should().Contain("jq recipes for bundle.json",
+			because: "the bundle.json jq recipes moved into the containers sub-guide");
+		result.Article.Text.Should().Contain("ARRAY of objects",
+			because: "the bundle.json top-level shape (containers is an ARRAY) moved into the containers sub-guide and must not be silently dropped");
+		result.Article.Text.Should().Contain("Inserting a NEW container",
+			because: "the new-container slot-init rule (ENG-91555) lives in the containers sub-guide after the ENG-91556 split");
+		result.Article.Text.Should().Contain("its content slot MUST be initialized",
+			because: "the new-container rule must center on initializing the content slot, the verified root cause aligned with related-list and get-component-info (ENG-91555, PR #789 review)");
+		result.Article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must name the exact runtime error a slot-less container raises so the agent recognizes it (ENG-91555)");
+		result.Article.Text.Should().Contain("only a NEWLY-inserted container needs this",
+			because: "the guide must scope the slot-init rule to newly-inserted containers so existing-container inserts are not mistakenly rewritten (ENG-91555, PR #789 review)");
+		result.Article.Text.Should().Contain("dry-run validates JSON/schema shape ONLY and will NOT catch this",
+			because: "the guide must state the dry-run limitation so the agent does not treat a passing validation as proof the page works (ENG-91555)");
+		result.Article.Text.Should().Contain("inline children are config-node objects, NOT diff operations",
+			because: "the example must clarify that inline children carry no operation/parentName key so an agent does not turn them into malformed diff operations (PR #789 review)");
+		result.Article.Text.Should().Contain("initialize the slot empty",
+			because: "the rule must not contradict the related-list composite: separate parentName child inserts are valid when the container initializes its slot (PR #789 review)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-components sub-guide carrying the relocated viewConfigDiff/handler/get-component-info content including the whenToUse selection metadata (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Components_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-components"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-components is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-components",
+			because: "the components sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification components guide",
+			because: "the components sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Adding a button with a click handler",
+			because: "the button+handler section moved into the components sub-guide");
+		result.Article.Text.Should().Contain("whenToUse",
+			because: "the get-component-info selection-metadata guidance (whenToUse/whenNotToUse) moved into the components sub-guide (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("latest-fallback",
+			because: "the get-component-info resolvedFrom interpretation (incl. latest-fallback) moved into the components sub-guide and must not be silently dropped");
+		result.Article.Text.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "AC1: a visual-styling requirement must exhaust the component's native inputs before any custom CSS (ENG-92541)");
+		result.Article.Text.Should().Contain("first try to satisfy it with the component's NATIVE inputs",
+			because: "AC1: the agent must never apply custom CSS without first attempting native component properties (ENG-92541)");
 		result.Article.Text.Should().Contain("break or conflict during future Creatio platform upgrades",
-			because: "AC4: the warning must explicitly mention the upgrade-compatibility risk of custom CSS");
+			because: "AC4: the warning must explicitly mention the upgrade-compatibility risk of custom CSS (ENG-92541)");
 		result.Article.Text.Should().Contain("ask for explicit user confirmation to proceed with CSS",
-			because: "AC5: the agent must ask for explicit confirmation before applying any CSS styling");
-		result.Article.Text.Should().Contain("If the user declines, do NOT apply CSS",
-			because: "AC6: if the user declines, the agent must not apply CSS and should offer alternatives");
-		result.Article.Text.Should().Contain("\"DON'T ASK\" ≠ \"DON'T WARN\"",
-			because: "a 'don't ask/just apply' instruction waives the blocking question but never the upgrade-risk warning (ENG-92541)");
+			because: "AC5: the agent must ask for explicit confirmation before applying any CSS styling (ENG-92541)");
+		result.Article.Text.Should().Contain("do NOT apply CSS",
+			because: "AC6: if the user declines, the agent must not apply CSS and should offer a native alternative (ENG-92541)");
 		result.Article.Text.Should().Contain("NEVER apply custom CSS silently",
 			because: "even when told to 'just apply', the agent must emit the upgrade-risk warning and never apply custom CSS silently (ENG-92541)");
 		result.Article.Text.Should().Contain("extraStyles",
-			because: "AC1/AC8: extraStyles hooks (e.g. font-family/color) are custom CSS too — the real failing sessions applied CSS via extraStyles, so the rule must name it explicitly and not treat it as native (ENG-92541)");
+			because: "AC1/AC8: extraStyles hooks (font-family/color) are custom CSS too — the real failing sessions applied CSS via extraStyles, so the rule must name it explicitly and not treat it as native (ENG-92541)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every guide in the page-modification family stays within the 15 KB per-response budget so no single get-guidance call exceeds the agent token limit (ENG-91556 AC#2). Measured against the CRLF-normalized worst case so the guard holds regardless of the checkout's line endings.")]
+	public async Task GuidanceGet_Should_KeepEveryPageModificationGuideWithin15Kb_AfterSplit() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+		string[] familyNames = [
+			"page-modification", "page-modification-overview", "page-modification-field-contract",
+			"page-modification-containers", "page-modification-components"
+		];
+		System.Text.UTF8Encoding utf8 = new(false);
+
+		// Act / Assert
+		foreach (string name in familyNames) {
+			GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs(name));
+			result.Success.Should().BeTrue(
+				because: $"{name} must resolve in the catalog after the page-modification split");
+			// Normalize every line ending to CRLF so the budget reflects the largest the article can be
+			// served at (a CRLF checkout adds one byte per line over an LF checkout); this keeps the guard
+			// independent of git autocrlf and matches the real runtime size observed on Windows.
+			// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2.
+			string crlfWorstCase = result.Article!.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+			utf8.GetByteCount(crlfWorstCase).Should().BeLessThanOrEqualTo(15 * 1024,
+				because: $"the {name} guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical page-creation guidance article when the caller requests page-creation.")]
+	public async Task GuidanceGet_Should_Return_Page_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-creation is a registered guidance name that the dashboard-creation guide routes to by name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-creation",
+			because: "the guidance tool should preserve the canonical page-creation guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-creation guide",
+			because: "the guidance tool should return the canonical page-creation article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the home-page guide through get-guidance to its canonical URI, confirming the new catalog wiring the create-page tool and routing map route to.")]
+	public async Task GuidanceGet_Should_Return_Home_Page_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("home-page"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "home-page is a registered guidance name the create-page tool and the routing map route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/home-page",
+			because: "the tool must resolve the home-page name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-creation guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-creation is a registered guidance name the create-page tool and the dashboards router route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-creation",
+			because: "the tool must resolve the dashboard-creation name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-and-home-page-layout guide through get-guidance to its canonical URI: the shared layout/styling guide the dashboards router and the home-page guide both route to.")]
+	public async Task GuidanceGet_Should_Return_Widget_Layout_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-and-home-page-layout"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-and-home-page-layout is a registered guidance name the dashboards router and the home-page guide route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-and-home-page-layout",
+			because: "the tool must resolve the dashboard-and-home-page-layout name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-design guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Design_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-design"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-design is a registered guidance name the dashboards router routes to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-design",
+			because: "the tool must resolve the dashboard-design name to its canonical guide URI");
 	}
 
 	[Test]
@@ -433,6 +821,8 @@ public sealed class GuidanceGetToolTests {
 				"page-schema-handlers",
 				"page-schema-creatio-devkit-common",
 				"page-schema-validators",
+				"related-list",
+				"related-page-binding",
 				"sys-setting",
 				"sys-setting-tests",
 				"sys-settings",
@@ -639,8 +1029,8 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Hides process-modeling and run-process-button from availableGuides when the process-designer feature gate is disabled.")]
-	public void GuidanceGet_Should_Hide_ProcessDesigner_Guides_From_AvailableGuides_When_Gate_Disabled() {
+	[Description("Hides process-modeling from availableGuides when the process-designer feature gate is disabled, while ungated guides stay listed.")]
+	public void GuidanceGet_Should_Hide_ProcessModeling_From_AvailableGuides_When_Gate_Disabled() {
 		// Arrange
 		// _featureToggleService is a bare substitute: IsEnabled(...) returns false, so the gated guides are disabled.
 		GuidanceGetTool tool = new(_featureToggleService);
@@ -653,8 +1043,6 @@ public sealed class GuidanceGetToolTests {
 			because: "an unknown guidance name must not resolve");
 		result.AvailableGuides.Should().NotContain("process-modeling",
 			because: "process-modeling is gated behind a disabled process-designer flag and must not leak through get-guidance");
-		result.AvailableGuides.Should().NotContain("run-process-button",
-			because: "run-process-button is gated behind a disabled process-designer flag and must not leak through get-guidance");
 		result.AvailableGuides.Should().Contain("app-modeling",
 			because: "ungated guidance entries must stay listed regardless of feature-toggle state");
 	}
@@ -680,50 +1068,23 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Treats run-process-button as an unknown guide when the process-designer feature gate is disabled.")]
-	public void GuidanceGet_Should_Reject_RunProcessButton_As_Unknown_When_Gate_Disabled() {
-		// Arrange
-		GuidanceGetTool tool = new(_featureToggleService);
-
-		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("run-process-button")).Result;
-
-		// Assert
-		result.Success.Should().BeFalse(
-			because: "a gated guide must resolve as unknown while its feature flag is off");
-		result.Article.Should().BeNull(
-			because: "a disabled gated guide must not return its article");
-		result.Error.Should().Contain("Unknown guidance 'run-process-button'",
-			because: "the failure must name the rejected guide so the disabled gate is indistinguishable from a non-existent guide");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Lists and resolves process-modeling and run-process-button when the process-designer feature gate is enabled.")]
+	[Description("Lists and resolves process-modeling when the process-designer feature gate is enabled.")]
 	public async Task GuidanceGet_Should_List_And_Resolve_ProcessDesigner_Guides_When_Gate_Enabled() {
 		// Arrange
 		_featureToggleService.IsEnabled(typeof(ProcessModelingGuidanceResource)).Returns(true);
-		_featureToggleService.IsEnabled(typeof(RunProcessButtonGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse listing = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
 		GuidanceGetResponse processModeling = await tool.GetGuidance(new GuidanceGetArgs("process-modeling"));
-		GuidanceGetResponse runProcessButton = await tool.GetGuidance(new GuidanceGetArgs("run-process-button"));
 
 		// Assert
 		listing.AvailableGuides.Should().Contain("process-modeling",
 			because: "process-modeling must be listed when the process-designer gate is enabled");
-		listing.AvailableGuides.Should().Contain("run-process-button",
-			because: "run-process-button must be listed when the process-designer gate is enabled");
 		processModeling.Success.Should().BeTrue(
 			because: "process-modeling must resolve when the process-designer gate is enabled");
 		processModeling.Article!.Uri.Should().Be("docs://mcp/guides/process-modeling",
 			because: "the enabled process-modeling guide must return its canonical article URI");
-		runProcessButton.Success.Should().BeTrue(
-			because: "run-process-button must resolve when the process-designer gate is enabled");
-		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
-			because: "the enabled run-process-button guide must return its canonical article URI");
 	}
 
 	[Test]

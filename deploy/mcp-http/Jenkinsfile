@@ -1,0 +1,54 @@
+pipeline {
+    agent { label 'docker' }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        REGISTRY    = 'docker-rnd.creatio.com'
+        IMAGE       = 'creatio-ai/clio-mcp-server'
+        DOCKERFILE  = 'deploy/mcp-http/Dockerfile'
+    }
+
+    stages {
+        stage('Resolve version') {
+            steps {
+                script {
+                    env.APP_VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
+                    env.IMAGE_TAG = "${env.APP_VERSION}-${env.BUILD_NUMBER}"
+                    echo "Version: ${env.APP_VERSION}, tag: ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Build image') {
+            steps {
+                sh """
+                    docker build \
+                        -t ${REGISTRY}/${IMAGE}:${env.IMAGE_TAG} \
+                        -t ${REGISTRY}/${IMAGE}:latest \
+                        -f ${DOCKERFILE} .
+                """
+            }
+        }
+
+        stage('Push image') {
+            steps {
+                withDockerRegistry(credentialsId: 'docker-rnd-creatio', url: "https://${REGISTRY}") {
+                    sh "docker push ${REGISTRY}/${IMAGE}:${env.IMAGE_TAG}"
+                    sh "docker push ${REGISTRY}/${IMAGE}:latest"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "docker rmi ${REGISTRY}/${IMAGE}:${env.IMAGE_TAG} || true"
+            sh "docker rmi ${REGISTRY}/${IMAGE}:latest || true"
+        }
+    }
+}

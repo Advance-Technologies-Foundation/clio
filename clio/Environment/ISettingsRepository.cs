@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using Clio.Common.db;
+using Clio.Common.DbHub;
 
 namespace Clio.UserEnvironment
 {
@@ -163,6 +164,36 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <returns><c>true</c> when at least one local Redis server is configured; otherwise <c>false</c>.</returns>
 		bool HasLocalRedisServersConfiguration();
+
+		/// <summary>
+		/// Gets the default values applied to the <c>deploy-creatio</c> command when the matching option is
+		/// not supplied on the command line.
+		/// </summary>
+		/// <returns>The configured deploy-creatio defaults; never <c>null</c> (an empty instance when none are set).</returns>
+		DeployCreatioDefaults GetDeployCreatioDefaults();
+
+		/// <summary>
+		/// Persists the default values applied to the <c>deploy-creatio</c> command. Passing <c>null</c> or an
+		/// empty instance clears the stored defaults.
+		/// </summary>
+		/// <param name="defaults">The defaults to persist, or <c>null</c>/empty to clear them.</param>
+		void SetDeployCreatioDefaults(DeployCreatioDefaults defaults);
+
+		/// <summary>Gets the preferred LocalMachine/My certificate thumbprint for IIS HTTPS deployment.</summary>
+		/// <returns>The normalized thumbprint, or <c>null</c> when no preference is configured.</returns>
+		string GetPinnedIisCertificateThumbprint();
+
+		/// <summary>Persists or clears the preferred LocalMachine/My certificate thumbprint.</summary>
+		/// <param name="thumbprint">The normalized thumbprint, or <c>null</c> to clear it.</param>
+		void SetPinnedIisCertificateThumbprint(string thumbprint);
+
+		/// <summary>Gets a detached snapshot of the local dbHub integration settings.</summary>
+		/// <returns>Configured settings, or safe disabled defaults when absent.</returns>
+		DbHubSettings GetDbHubSettings();
+
+		/// <summary>Persists local dbHub integration settings.</summary>
+		/// <param name="settings">Validated settings to persist.</param>
+		void SetDbHubSettings(DbHubSettings settings);
 
 		/// <summary>
 		/// Gets the default active environment name.

@@ -71,8 +71,11 @@ public sealed class PageUpdateToolBaselineTests
 		// The target environment resolves to platform version 8.3.4, so chart-widget validation is scoped
 		// to that version rather than 'latest'. Chart validation itself is fail-open here (the substitute
 		// catalog returns no state), so this affects only the requested version, not the other assertions.
+		// ISettingsRepository is retained only as a dependency-presence gate on ResolvePlatformVersionAsync
+		// (Story 11, ENG-93347): the actual settings lookup now goes through IToolCommandResolver so a
+		// header-aware passthrough call routes to the header tenant instead of a silent active-env probe.
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
 		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));

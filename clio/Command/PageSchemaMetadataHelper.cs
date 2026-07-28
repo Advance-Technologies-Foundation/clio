@@ -28,6 +28,7 @@ namespace Clio.Command {
 		private const string SysSchemaName = "SysSchema";
 		private const string ManagerNameColumnPath = "ManagerName";
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
+		private const int ComparisonTypeEqual = 3;
 
 		private static (JArray rows, bool success) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
@@ -44,13 +45,16 @@ namespace Clio.Command {
 			}
 		}
 
-		private static JObject BuildEqFilter(string columnPath, int dataValueType, JToken value) =>
+		private static JObject BuildComparisonFilter(string columnPath, int comparisonType, int dataValueType, JToken value) =>
 			new JObject {
-				[FilterTypeKey] = 1, ["comparisonType"] = 3, [IsEnabledKey] = true,
+				[FilterTypeKey] = 1, ["comparisonType"] = comparisonType, [IsEnabledKey] = true,
 				["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = columnPath },
 				["rightExpression"] = new JObject { [ExpressionTypeKey] = 2,
 					["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value } }
 			};
+
+		private static JObject BuildEqFilter(string columnPath, int dataValueType, JToken value) =>
+			BuildComparisonFilter(columnPath, ComparisonTypeEqual, dataValueType, value);
 
 		private static JObject BuildFilterGroup(params (string key, JObject filter)[] filters) {
 			var items = new JObject();
@@ -159,6 +163,33 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(uId))
 				return (null, $"Package '{packageName}' has no UId in the SysPackage response.");
 			return (uId, null);
+		}
+
+		/// <summary>
+		/// Resolves a page (client-unit) schema <c>UId</c> back to its <c>Name</c> via the DataService
+		/// SelectQuery endpoint. Used by <c>get-related-page-addon</c> to surface friendly page names for the
+		/// UIds stored in the RelatedPage add-on metadata. Returns <c>null</c> when the UId is empty or the
+		/// schema is not found. (The forward name-to-UId resolution the write path needs is package- and
+		/// replacement-aware and lives in <see cref="PageSchemaResolver"/>, not here.)
+		/// </summary>
+		/// <remarks>
+		/// Like the other <c>SysSchema</c> lookups in this helper, schema resolution intentionally uses the
+		/// DataService <c>SelectQuery</c> over <c>SysSchema</c> rather than a ClioGate endpoint — the established,
+		/// repo-consistent pattern (the same primitive backs <c>create-page-business-rules</c> and
+		/// <c>create-page</c>), none of which introduce a ClioGate dependency (reserved for privileged
+		/// write/elevated operations). Trade-off: the caller needs DataService read access to <c>SysSchema</c>
+		/// (a full schema-management user); a restricted solution-management user without that access would get a
+		/// SecurityException. This is a pre-existing, repo-wide limitation, accepted for consistency.
+		/// </remarks>
+		internal static string QueryPageSchemaNameByUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string pageSchemaUId) {
+			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
+				return null;
+			}
+			(JToken row, _) = QuerySysSchemaRowByUId(applicationClient, serviceUrlBuilder, pageSchemaUId, ("Name", "Name"));
+			return row?["Name"]?.ToString();
 		}
 
 		internal static (string uId, string error) QueryEntitySchemaUId(
@@ -270,12 +301,13 @@ namespace Clio.Command {
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
 				[RowCountKey] = 1
 			};
-			string dataServiceUrl = serviceUrlBuilder.Build(SelectQueryUrl);
-			string metadataJson = applicationClient.ExecutePostRequest(dataServiceUrl, query.ToString(Formatting.None));
-			var metadataResponse = JObject.Parse(metadataJson);
-			if (!(metadataResponse["success"]?.Value<bool>() ?? false))
+			// Route through the shared, guarded ExecuteSelectQuery (like QuerySysSchemaRowByUId and every other
+			// lookup in this helper) instead of a raw ExecutePostRequest + JObject.Parse: an expired session that
+			// returns an HTML/redirect body then surfaces as a clean lookup failure rather than a raw
+			// "Unexpected character '<'" JSON parse exception.
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
 				return (null, "Failed to query schema metadata");
-			var rows = metadataResponse["rows"] as JArray ?? new JArray();
 			if (rows.Count == 0)
 				return (null, $"Schema '{schemaName}' not found");
 			return (rows[0], null);

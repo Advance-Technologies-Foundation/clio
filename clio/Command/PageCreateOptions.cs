@@ -34,6 +34,9 @@ namespace Clio.Command {
 
 		[Option("caption-culture", Required = false, HelpText = "Override the culture used for the generated page caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
 		public string? CaptionCulture { get; set; }
+
+		[Option("optional-properties", Required = false, HelpText = "JSON array of {key, value} objects to seed into the new schema optionalProperties (e.g. dashboard DashboardsEntitySchemaName/DashboardsElementName/DashboardsClientUnitSchemaUId)")]
+		public string? OptionalProperties { get; set; }
 	}
 
 	/// <summary>
@@ -78,6 +81,12 @@ namespace Clio.Command {
 				PageCreateResponse validationError = ValidateInput(options);
 				if (validationError != null) {
 					response = validationError;
+					LogFailure(response.Error);
+					return false;
+				}
+				if (!PageOptionalPropertiesHelper.TryParse(
+						options.OptionalProperties, out JArray optionalProperties, out string optionalPropertiesError)) {
+					response = new PageCreateResponse { Success = false, Error = optionalPropertiesError };
 					LogFailure(response.Error);
 					return false;
 				}
@@ -141,7 +150,7 @@ namespace Clio.Command {
 				JObject payload = BuildSaveSchemaPayload(
 					newSchemaUId, options.SchemaName, caption, options.Description,
 					template, packageUId, options.PackageName, entitySchemaUId, templateLocalizableStrings,
-					captionCulture);
+					captionCulture, optionalProperties);
 				if (!TrySaveSchema(payload, out string saveError)) {
 					response = new PageCreateResponse { Success = false, Error = saveError };
 					LogFailure(response.Error);
@@ -222,7 +231,7 @@ namespace Clio.Command {
 		private static JObject BuildSaveSchemaPayload(
 			string newSchemaUId, string schemaName, string caption, string description,
 			PageTemplateInfo template, string packageUId, string packageName, string entitySchemaUId,
-			JArray templateLocalizableStrings, string cultureName = null) {
+			JArray templateLocalizableStrings, string cultureName = null, JArray optionalProperties = null) {
 			// Anchor the page caption/description to the effective culture (override > profile > en-US).
 			// A null cultureName preserves the legacy en-US default; CurrentCulture is never read.
 			string effectiveCulture = string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName;
@@ -249,7 +258,7 @@ namespace Clio.Command {
 				["parameters"] = new JArray(),
 				["messages"] = new JArray(),
 				["images"] = new JArray(),
-				["optionalProperties"] = new JArray(),
+				["optionalProperties"] = optionalProperties ?? new JArray(),
 				["group"] = template.GroupName,
 				["schemaType"] = template.SchemaType,
 				["schemaVersion"] = 1,

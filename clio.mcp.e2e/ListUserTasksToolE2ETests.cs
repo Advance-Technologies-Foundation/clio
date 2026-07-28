@@ -10,7 +10,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -23,24 +22,26 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ListUserTasksTool.ListUserTasksToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class ListUserTasksToolE2ETests {
 
 	private const string ToolName = ListUserTasksTool.ListUserTasksToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies list-user-tasks is advertised (hermetic).")]
+	[Description("Starts the real clio MCP server and verifies list-user-tasks is discoverable via the get-tool-contract compact index (hermetic).")]
 	[AllureTag(ToolName)]
-	[AllureName("list-user-tasks is advertised by the clio MCP server")]
+	[AllureName("list-user-tasks is discoverable on the lazy surface of the clio MCP server")]
 	public async Task ListUserTasks_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the list-user-tasks tool must be discoverable on the real clio MCP server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -65,9 +66,10 @@ public sealed class ListUserTasksToolE2ETests {
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the list-user-tasks tool must be advertised before the end-to-end call");
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: "the list-user-tasks tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
 		return await context.Session.CallToolAsync(
 			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
@@ -76,12 +78,12 @@ public sealed class ListUserTasksToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
-		string environmentName = settings.Sandbox.EnvironmentName;
+		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
 				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run list-user-tasks MCP E2E.");
 			}
-			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
 				Assert.Ignore($"list-user-tasks MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 			}
 		}
@@ -93,7 +95,7 @@ public sealed class ListUserTasksToolE2ETests {
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName) : IAsyncDisposable {
+		string? EnvironmentName) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();

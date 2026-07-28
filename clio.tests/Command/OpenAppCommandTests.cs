@@ -15,6 +15,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 [Category("Unit")]
 [Author("GitHub Copilot", "copilot@github.com")]
 [Description("Tests for OpenAppCommand - verifies opening web applications in browsers across different platforms")]

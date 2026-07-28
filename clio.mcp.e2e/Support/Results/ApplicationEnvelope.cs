@@ -88,7 +88,8 @@ internal sealed record ApplicationEntityEnvelope(
 	[property: JsonPropertyName("u-id")] string UId,
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("caption")] string Caption,
-	[property: JsonPropertyName("columns")] IReadOnlyList<ApplicationColumnEnvelope> Columns);
+	[property: JsonPropertyName("columns")] IReadOnlyList<ApplicationColumnEnvelope> Columns,
+	[property: JsonPropertyName("virtual")] bool? Virtual);
 
 internal sealed record ApplicationColumnEnvelope(
 	[property: JsonPropertyName("name")] string Name,

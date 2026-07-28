@@ -100,9 +100,14 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	};
 
 	private sealed class ContainerResolver(IServiceProvider serviceProvider) : IToolCommandResolver {
-		public TCommand Resolve<TCommand>(EnvironmentOptions options) =>
-			serviceProvider.GetRequiredService<TCommand>();
+		public string LastResolvedTenantKey { get; private set; }
+		public TCommand Resolve<TCommand>(EnvironmentOptions options) {
+			LastResolvedTenantKey = GetTenantKey(options);
+			return serviceProvider.GetRequiredService<TCommand>();
+		}
 		public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) =>
 			serviceProvider.GetRequiredService<TCommand>();
+		public string GetTenantKey(EnvironmentOptions options) =>
+			$"test:{options?.Environment ?? options?.Uri ?? "default"}";
 	}
 }

@@ -49,9 +49,14 @@ public sealed class DeployLifecycleGuidanceResource {
 		       Deploy
 		       - `deploy-creatio` is the most consequential, hardest-to-reverse tool: it drops and recreates the target
 		         site. Required args: `siteName`, `zipFile` (absolute build archive path), `sitePort`. Optional:
-		         `dbServerName`, `redisServerName` (omit to keep the default Kubernetes deployment path).
+		         `dbServerName`, `redisServerName` (omit to keep the default Kubernetes deployment path), and
+		         `useHttps` (local IIS only). HTTPS is opportunistic: clio uses a pinned or deterministically
+		         selected usable LocalMachine/My certificate matching the host, and warns then continues with
+		         HTTP when no usable certificate is installed.
 		       - Prefer the recommended bundle from `show-passing-infrastructure` and the port from `find-empty-iis-port`.
 		       - Do not proceed if assert-infrastructure left the targeted database/Redis sections failing.
+		       - Deployments preserve the build database's existing forced-password-change state by default and do
+		         not clear it automatically. deploy-creatio does not assign a new Supervisor password.
 
 		       IdentityService
 		       - `deploy-identity` deploys IdentityService to IIS for an already registered local Creatio environment,

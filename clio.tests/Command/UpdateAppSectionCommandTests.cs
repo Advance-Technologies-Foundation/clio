@@ -1,5 +1,6 @@
 using Clio.Command;
 using Clio.Common;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -73,7 +74,8 @@ public sealed class UpdateAppSectionCommandTests {
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when environment resolution input is missing");
-		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(string)!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(EnvironmentSettings)!, default!);
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Environment name is required")));
 	}
 }

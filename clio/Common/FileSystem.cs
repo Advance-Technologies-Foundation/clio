@@ -476,6 +476,10 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		return msFileSystem.File.ReadAllBytes(filePath);
 	}
 
+	public System.IO.Stream OpenReadStream(string filePath) {
+		return msFileSystem.File.OpenRead(filePath);
+	}
+
 	public string ReadAllText(string filePath) {
 		return msFileSystem.File.ReadAllText(filePath, Utf8NoBom);
 	}

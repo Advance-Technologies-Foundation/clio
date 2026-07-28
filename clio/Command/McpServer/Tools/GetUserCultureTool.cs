@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
-using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -23,7 +22,7 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class GetUserCultureTool(
 	ICurrentUserCultureResolverFactory resolverFactory,
-	ISettingsRepository settingsRepository) {
+	IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "get-user-culture";
 	internal const string ResolvedFromEnvironment = "environment";
@@ -53,7 +52,9 @@ public sealed class GetUserCultureTool(
 		"in that case ASK the user which language to use; do NOT fall back to the host locale or a silent en-US.")]
 	public async Task<GetUserCultureResponse> GetUserCulture(
 		[Description("Parameters: environment-name (PREFERRED — the registered environment to read the profile culture from). " +
-			"uri/login/password: emergency fallback only when no environment is registered.")]
+			"uri/login/password: emergency fallback only when no environment is registered. " +
+			"Optional under credential passthrough — omit all four so the header-supplied tenant is used; " +
+			"supplying any of them together with an active passthrough header is rejected, not silently honored.")]
 		[Required] GetUserCultureArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
@@ -75,7 +76,7 @@ public sealed class GetUserCultureTool(
 				: GetUserCultureResponse.Failure(resolution.FailureReason);
 		}
 		catch (Exception ex) {
-			return GetUserCultureResponse.Failure(ex.Message);
+			return GetUserCultureResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -86,7 +87,7 @@ public sealed class GetUserCultureTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return settingsRepository.GetEnvironment(options);
+		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
 }
 
@@ -99,15 +100,15 @@ public sealed record GetUserCultureArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Emergency fallback only: direct application URI when no environment is registered.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Emergency fallback only: login paired with 'uri'.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login = null,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Emergency fallback only: password paired with 'uri'.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password = null
 ) {
 	/// <summary>

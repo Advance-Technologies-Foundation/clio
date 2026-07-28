@@ -14,7 +14,16 @@ DESCRIPTION
     This command is the clio-native batch mutation contract for entity schemas.
     Each operation uses the same column-level semantics as
     modify-entity-schema-column, but several mutations can be applied in one
-    request. Supported operation types include Binary, Image, ImageLookup,
+    request.
+
+    After saving the batch, the configuration is published and the OData entities
+    are rebuilt (once for the whole batch), so changed columns become visible to
+    lookup pickers and reachable over OData (/0/odata/<Entity>) without a manual
+    compile. The rebuild runs in the background (~1-2 min); a 404 from OData right
+    after the change is the expected async gap, so wait and retry rather than
+    compiling.
+
+    Supported operation types include Binary, Image, ImageLookup,
     File, SecureText, and Email. Blob is accepted as an alias for Binary.
     ImageLink is accepted as an alias for ImageLookup.
     Encrypted and Password are accepted as aliases for SecureText.
@@ -54,8 +63,15 @@ EXAMPLES
 
 NOTES
     - operations are applied in order
+    - a modify on an INHERITED column may override only its caption/description
+      (title-localizations/description-localizations); changing its name, type, or
+      flags is rejected, and stops the batch on that operation
+    - each operation may set usage-type (General, Advanced, or None; any column
+      type); on modify the stored value is left unchanged when omitted
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
+    - post-save verification checks the final ordered batch state, so a later add may
+      intentionally reuse a column name removed earlier in the same batch
     - operation JSON can also use structured default-value-config; legacy
       default-value-source/default-value remain shorthand for Const and None
     - For default-value-config source=SystemValue:

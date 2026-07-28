@@ -43,6 +43,13 @@ error) it is skipped silently and the command still reports what it has and
 exits 0. The only fields that strictly require cliogate are `productName` and
 `licenseInfo`.
 
+The required base probe classifies invalid URLs, unavailable applications,
+authentication failures, reachable non-Creatio URLs, and malformed Creatio
+responses separately. Normal output never prints raw response bodies, HTML,
+parser exceptions, credentials, cookies, tokens, or stack traces. `--debug`
+adds only safe classification, exception-type, HTTP-status, and response-length
+metadata.
+
 The command returns information such as:
 - Creatio version (available with or without cliogate)
 - Runtime / executing framework (.NET version) — via cliogate, or without
@@ -63,7 +70,7 @@ REQUIREMENTS:
 ## Options
 
 ```bash
--e, --Environment       Environment name from the registered configuration
+-e, --environment       Environment name from the registered configuration
 The environment must be registered using
 'reg-web-app' command (RECOMMENDED)
 
@@ -73,9 +80,9 @@ Alternative authentication (when not using -e):
 -p, --password          Password for basic authentication
 
 OR for OAuth authentication:
---clientid              OAuth Client ID
---clientsecret          OAuth Client Secret
---authappuri            OAuth Authentication App URI
+--client-id             OAuth Client ID
+--client-secret         OAuth Client Secret
+--auth-app-uri          OAuth Authentication App URI
 
 Additional options:
 --timeout               Request timeout in milliseconds (default: 100000)
@@ -90,19 +97,19 @@ clio get-info -e MyEnvironment
 # Short form using environment as positional argument
 clio get-info MyEnvironment
 
-# Using an alias command
-clio get-info -e MyEnvironment
-clio get-info -e MyEnvironment
-clio get-info MyEnvironment
+# Using alias commands
+clio describe -e MyEnvironment
+clio instance-info -e MyEnvironment
+clio describe-creatio MyEnvironment
 
 # Using direct authentication with username/password
 clio get-info -u "https://myapp.creatio.com" -l "admin" -p "password"
 
 # Using OAuth authentication
 clio get-info -u "https://myapp.creatio.com" \
---clientid "your-client-id" \
---clientsecret "your-secret" \
---authappuri "https://oauth.creatio.com"
+--client-id "your-client-id" \
+--client-secret "your-secret" \
+--auth-app-uri "https://oauth.creatio.com"
 
 # With custom timeout (60 seconds)
 clio get-info -e MyEnvironment --timeout 60000
@@ -110,25 +117,28 @@ clio get-info -e MyEnvironment --timeout 60000
 
 ## Behavior
 
-1. Sends a POST request to `ApplicationInfoService.GetApplicationInfo` and uses
-   its `sysValues` as the base report (always; no cliogate required)
-2. Enriches the report from the admin-gated
+1. Validates that the supplied application URI is an absolute HTTP or HTTPS URI
+2. Sends a POST request to `ApplicationInfoService.GetApplicationInfo`,
+   classifies transport, authentication, non-Creatio content, and
+   malformed/unusable responses, and uses valid `sysValues` as the base report
+   (no cliogate required)
+3. Enriches the report from the admin-gated
    `ApplicationInfoService.GetSystemEnvironmentInfo` (POST) — adds `dbEngineType`,
    `frameworkKind` and `frameworkDescription` (requires `CanManageSolution`)
-3. If a compatible cliogate (>= 2.0.0.32) is installed, GETs
+4. If a compatible cliogate (>= 2.0.0.32) is installed, GETs
    `/rest/CreatioApiGateway/GetSysInfo` and merges the cliogate-only `productName`
    and `licenseInfo` into the same object (and backfills db engine / framework if
-   step 2 did not provide them)
-4. Any source in steps 2–3 that is denied, absent, or errors is skipped silently
+   step 3 did not provide them)
+5. Any optional source in steps 3–4 that is denied, absent, or errors is skipped silently
    — the report still includes everything that was available
-5. Displays the single combined report as formatted JSON
+6. Displays the single combined report as formatted JSON
 
 ## Exit Codes
 
     0   Successfully retrieved and displayed system information (regardless of
         which optional sources were available)
-    1   Failed to retrieve information (environment not found, connection error,
-        or ApplicationInfoService returned an unexpected response)
+    1   Invalid URI, unavailable application, authentication failure, reachable
+        non-Creatio target, or unexpected ApplicationInfoService response
 
 ## Notes
 
@@ -146,10 +156,13 @@ clio get-info -e MyEnvironment --timeout 60000
 
     If command fails:
     - Verify environment is registered: clio list-environments
-    - Check cliogate is installed: clio install-gate -e <ENVIRONMENT>
-    - Ensure cliogate version is 2.0.0.32 or higher
-    - Verify network connectivity to Creatio instance
-    - Check credentials are valid for the registered environment
+    - "does not appear to be a Creatio application": verify the application URL
+    - "Could not connect": verify network connectivity and application health
+    - "Authentication failed": verify credentials and authentication settings
+    - "unexpected response": inspect the Creatio ApplicationInfoService health;
+      use --debug for safe diagnostic metadata
+    - Missing ProductName/LicenseInfo on an otherwise successful report: install
+      or update cliogate to 2.0.0.32+ only if those optional fields are required
 
 ## See Also
 

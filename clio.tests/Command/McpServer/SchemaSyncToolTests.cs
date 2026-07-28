@@ -9,6 +9,7 @@ using Clio.Common;
 using ConsoleTables;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -55,6 +56,25 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes batched virtual entity creation callers to the canonical virtual-entities guidance at the decision point.")]
+	public void SchemaSyncTool_ShouldRouteToVirtualEntitiesGuidance_WhenVirtualSchemaIsConsidered() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(SchemaSyncTool)
+			.GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("get-guidance with name virtual-entities",
+			because: "batched is-virtual operations must expose the canonical lifecycle and safety guide");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
 	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange
@@ -90,6 +110,8 @@ public sealed class SchemaSyncToolTests {
 			because: "create-lookup must always inherit from BaseLookup");
 		fakeCreateCommand.CapturedOptions.Environment.Should().Be("dev",
 			because: "the environment should be forwarded from the batch args");
+		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeFalse(
+			because: "lookup schemas remain persistent even if the virtual property is absent");
 		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
 	}
 
@@ -146,7 +168,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
-				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity")]);
+				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true }]);
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(args);
@@ -156,6 +178,8 @@ public sealed class SchemaSyncToolTests {
 			because: "a create-entity with exit code 0 should succeed");
 		fakeCreateCommand.CapturedOptions!.ParentSchemaName.Should().Be("BaseEntity",
 			because: "create-entity should use the specified parent schema");
+		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
+			because: "create-entity should preserve the explicit virtual-schema request");
 	}
 
 	[Test]
@@ -570,13 +594,15 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects legacy scalar title fields in sync-schemas create operations even when title-localizations are also provided.")]
-	public async Task SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
+	[Description("Accepts a legacy scalar title as an en-US fallback in a sync-schemas create operation when title-localizations is omitted.")]
+	public async Task SchemaSync_CreateLookup_Should_Use_Legacy_Title_As_EnUs_Fallback() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
 			"dev",
@@ -584,8 +610,7 @@ public sealed class SchemaSyncToolTests {
 			[
 				new SchemaSyncOperation(
 					"create-lookup",
-					"UsrTodoStatus",
-					TitleLocalizations: Localizations("Todo Status")) {
+					"UsrTodoStatus") {
 					LegacyTitle = "Todo Status"
 				}
 			]);
@@ -594,11 +619,12 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
-		response.Success.Should().BeFalse();
-		response.Results.Should().ContainSingle();
-		response.Results[0].Error.Should().Contain("legacy 'title'",
-			because: "sync-schemas should reject the old scalar field instead of silently accepting it");
-		fakeCreateCommand.CapturedOptions.Should().BeNull();
+		response.Success.Should().BeTrue(
+			because: "a scalar title must be promoted to the en-US localization instead of hard-failing the create");
+		fakeCreateCommand.CapturedOptions!.TitleLocalizations.Should().ContainKey("en-US",
+			because: "the legacy scalar title is the en-US fallback when no localization map is supplied");
+		fakeCreateCommand.CapturedOptions!.TitleLocalizations!["en-US"].Should().Be("Todo Status",
+			because: "the derived en-US caption must be the scalar title value");
 	}
 
 	[Test]
@@ -666,6 +692,42 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller must be told that each seed row requires a values wrapper");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
 			because: "sync-schemas should not attempt create-lookup after local seed-row validation fails");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects seed rows for virtual entity creation before executing any remote command.")]
+	public async Task SchemaSync_VirtualEntityWithSeedRows_Should_Fail_Before_Command_Resolution() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"missing-env", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrVirtualItem",
+					TitleLocalizations: Localizations("Virtual item"),
+					SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Unavailable")
+					})]) {
+					IsVirtual = true
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a virtual entity has no physical table that seed rows could populate");
+		response.Results.Should().ContainSingle(
+			because: "the invalid combined operation must stop before mutating the target environment");
+		response.Results[0].Error.Should().Contain("cannot include seed-rows",
+			because: "the caller needs an actionable explanation of the incompatible fields");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "validation must reject the request before resolving or executing the create command");
 	}
 
 	[Test]
@@ -958,6 +1020,95 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Coerces a columns add-batch whose item identifies the column via the contract-advertised 'column-name' alias and resolves it to a non-empty ColumnName (field-test defect #1).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Resolve_ColumnName_Alias_In_Columns_Array() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					// an agent following get-tool-contract puts the advertised 'column-name' field into columns[]
+					new CreateEntitySchemaColumnArgs(null!, "Text", Localizations("Status")) {
+						ColumnNameAlias = "UsrStatus"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a columns[] add specifying the contract-advertised 'column-name' field must resolve to a valid ColumnName instead of failing 'Column name is required'");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrStatus\"", StringComparison.Ordinal),
+			because: "the 'column-name' alias must resolve to the canonical column name on the coerced add");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Coerces a columns add-batch whose item identifies the column via the canonical 'name' field and resolves it to a non-empty ColumnName (field-test defect #1).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Resolve_Name_In_Columns_Array() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrPriority", "Text", Localizations("Priority"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a columns[] add using the canonical 'name' field must keep working unchanged");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrPriority\"", StringComparison.Ordinal),
+			because: "the canonical 'name' field must resolve to the canonical column name on the coerced add");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Prefers the canonical 'name' over the 'column-name' alias when both are present on a columns add-batch item (field-test defect #1 precedence).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Prefer_Name_Over_ColumnName_Alias() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrCanonical", "Text", Localizations("Canonical")) {
+						ColumnNameAlias = "UsrAlias"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an explicit canonical 'name' must take precedence over the 'column-name' alias");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrCanonical\"", StringComparison.Ordinal),
+			because: "the explicit canonical 'name' wins over the 'column-name' alias when both are present");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Promotes the read-shape scalar 'caption' to title-localizations when coercing a columns add-batch so a get-app-info column round-trips into an add (ENG-90313 AC1).")]
 	public async Task SchemaSync_UpdateEntity_Coercion_Should_Promote_Caption_To_TitleLocalizations() {
 		// Arrange
@@ -1008,6 +1159,361 @@ public sealed class SchemaSyncToolTests {
 			because: "the rejection must list the 'is-required' alias agents commonly send for the required flag");
 		error.Should().Contain("caption",
 			because: "the rejection must tell the agent the read-shape scalar 'caption' is accepted in place of title-localizations");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Auto-derives the en-US caption from the humanized column name for an update-operations add that supplies only column-name and type (field-test title-localizations blocker).")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_AutoDefault_EnUs_From_ColumnName_When_Title_Localizations_Omitted() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a bare {column-name, type} add must not hard-fail purely for a missing localization map");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrDueDate\"", StringComparison.Ordinal)
+				&& operation.Contains("Due Date", StringComparison.Ordinal),
+			because: "the en-US caption must be the humanized column name (Usr prefix stripped, PascalCase space-split)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Promotes a scalar legacy title to the en-US caption for an update-operations add when no localization map is provided.")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Promote_Scalar_Title_When_Map_Omitted() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date") {
+						LegacyTitle = "Deadline"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a scalar title must be promoted to en-US instead of hard-failing the add");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("Deadline", StringComparison.Ordinal),
+			because: "the scalar title outranks the humanized column name in the en-US derivation precedence");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Promotes a scalar legacy caption to the en-US caption for an update-operations add when no title or localization map is provided.")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Promote_Scalar_Caption_When_Title_And_Map_Omitted() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date") {
+						LegacyCaption = "Target Date"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a scalar caption must be promoted to en-US instead of hard-failing the add");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("Target Date", StringComparison.Ordinal),
+			because: "the scalar caption outranks the humanized column name when no scalar title is present");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Honors an explicit title-localizations.en-US over every scalar/column-name fallback for an update-operations add.")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Prefer_Explicit_EnUs_Over_Fallbacks() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date",
+						TitleLocalizations: Localizations("Explicit Caption")) {
+						LegacyTitle = "Scalar Title",
+						LegacyCaption = "Scalar Caption"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an explicit en-US map remains valid for an add");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("Explicit Caption", StringComparison.Ordinal)
+				&& !operation.Contains("Scalar Title", StringComparison.Ordinal),
+			because: "the explicit title-localizations.en-US must win over the scalar title/caption fallbacks");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still rejects a Cyrillic en-US value supplied explicitly for an update-operations add (ENG-91044 script guard preserved).")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Reject_Cyrillic_EnUs() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date",
+						TitleLocalizations: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+							["en-US"] = "Термін"
+						})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "non-English text under en-US must still be rejected by the script/culture guard");
+		response.Results[0].Error.Should().Contain("en-US",
+			because: "the error must identify the culture key whose value is in the wrong script");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "an invalid en-US value must be rejected before the command executes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degrades an operational enrichment failure into a dataforge: warning without failing an otherwise-valid batch (diagnostic enrichment must never gate schema operations).")]
+	public async Task SchemaSync_Should_Degrade_Operational_Enrichment_Failure_Into_Warning() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Throws(new InvalidOperationException("baseUri: Value cannot be null"));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a throwing enrichment service is diagnostic-only and must not fail an otherwise-valid operation");
+		response.DataForge.Should().NotBeNull(
+			because: "the degraded enrichment result must still be attached so the warning surfaces");
+		response.DataForge!.Warnings.Should().ContainSingle(warning => warning.StartsWith("dataforge:", StringComparison.Ordinal),
+			because: "the operational failure must be reported as a dataforge: warning, not swallowed silently");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts paths/URIs out of the degraded dataforge: warning before it surfaces, so a data-layer failure carrying an absolute path or target host never leaks into the MCP transcript.")]
+	public async Task SchemaSync_Should_Redact_Sensitive_Tokens_In_Degraded_Enrichment_Warning() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Throws(new InvalidOperationException("dataforge call to https://target.creatio.com/0/rest failed: /Users/dev/secret/appsettings.json missing"));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.DataForge.Should().NotBeNull(
+			because: "the degraded enrichment result must still be attached so the warning surfaces");
+		string warning = response.DataForge!.Warnings.Single();
+		warning.Should().StartWith("dataforge:",
+			because: "the operational failure must still be reported as a dataforge: warning");
+		warning.Should().NotContain("https://target.creatio.com",
+			because: "the target host/URI must be redacted before surfacing to the MCP transcript");
+		warning.Should().NotContain("/Users/dev/secret/appsettings.json",
+			because: "the absolute path must be redacted before surfacing to the MCP transcript");
+		warning.Should().Contain("[redacted",
+			because: "redaction replaces the sensitive tokens with a stable placeholder rather than dropping them");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does NOT mask an unrecoverable exception (programming defect) from enrichment as a warning — it propagates so the real bug is not hidden as a recoverable degradation.")]
+	public async Task SchemaSync_Should_Propagate_Unrecoverable_Enrichment_Exception() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Throws(new NullReferenceException("object reference not set"));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		Func<Task> act = async () => await tool.SchemaSync(args);
+
+		// Assert
+		await act.Should().ThrowAsync<NullReferenceException>(
+			because: "a programming defect must not be hidden as a benign dataforge: degradation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Streams a per-operation stage marker before each operation and before the seed step, in batch order (ENG-93087).")]
+	public void ExecuteBatch_Should_Stream_Ordered_Stage_Markers_When_Operations_Succeed() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha",
+					TitleLocalizations: Localizations("Alpha"),
+					SeedRows: [
+						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+							["Name"] = ToJsonElement("New")
+						})
+					]),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		var markers = new List<string>();
+
+		// Act
+		SchemaSyncResponse response = tool.ExecuteBatch(args, markers.Add);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "every operation in the batch returned exit code 0");
+		markers.Should().Equal(
+			["1/2: create-entity UsrAlpha", "1/2: seed-data UsrAlpha", "2/2: create-lookup UsrBeta"],
+			because: "sync-schemas must stream one marker per operation plus one before the seed step, in batch order");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not stream a marker for a later operation when an earlier operation fails (stop-on-failure).")]
+	public void ExecuteBatch_Should_Not_Stream_Later_Marker_When_Earlier_Operation_Fails() {
+		// Arrange
+		var failingCreateCommand = new FakeCreateEntitySchemaCommand(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(failingCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha", TitleLocalizations: Localizations("Alpha")),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		var markers = new List<string>();
+
+		// Act
+		SchemaSyncResponse response = tool.ExecuteBatch(args, markers.Add);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the first operation returned a non-zero exit code");
+		markers.Should().Contain("1/2: create-entity UsrAlpha",
+			because: "the first operation's marker is streamed before it runs");
+		markers.Should().NotContain(marker => marker.Contains("2/2", StringComparison.Ordinal),
+			because: "sync-schemas must stop on the first failure and never announce a later operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Aborts the batch and never resolves the second operation's backend command when cancellation is signalled mid-batch after the first operation's marker (ENG-93087).")]
+	public void ExecuteBatch_Should_Abort_Remaining_Operations_When_Cancelled_MidBatch() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha", TitleLocalizations: Localizations("Alpha")),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		using var cts = new System.Threading.CancellationTokenSource();
+		Action<string> reportStage = marker => {
+			if (marker.Contains("1/2", StringComparison.Ordinal)) {
+				cts.Cancel();
+			}
+		};
+
+		// Act
+		Action act = () => tool.ExecuteBatch(args, reportStage, cts.Token);
+
+		// Assert
+		FluentActions.Invoking(act).Should().Throw<OperationCanceledException>(
+			because: "a cancellation signalled after the first operation's marker must abort the batch on the calling thread");
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(
+			Arg.Is<CreateEntitySchemaOptions>(options => options.SchemaName == "UsrBeta"));
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {

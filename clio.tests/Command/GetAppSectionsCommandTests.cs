@@ -100,7 +100,8 @@ public sealed class GetAppSectionsCommandTests : BaseCommandTests<ApplicationSec
 
 		// Assert
 		result.Should().Be(1, "the command should fail fast when environment resolution input is missing");
-		_service.DidNotReceiveWithAnyArgs().GetSections(default!, default!);
+		_service.DidNotReceiveWithAnyArgs().GetSections(default(string)!, default!);
+		_service.DidNotReceiveWithAnyArgs().GetSections(default(EnvironmentSettings)!, default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Environment name is required")));
 	}
 

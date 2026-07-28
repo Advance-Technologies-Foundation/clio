@@ -1,8 +1,13 @@
-﻿<Solution>
+<Solution>
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />
     <File Path="README.md" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="RELEASE.md" />
     <File Path="clio/Commands.md" />
+    <File Path="AGENTS.md" />
+    <File Path="CLAUDE.md" />
+    <File Path="project-context.md" />
   </Folder>
   <Project Path="clio.mcp.e2e/clio.mcp.e2e.csproj" />
   <Project Path="clio.tests\clio.tests.csproj" />
@@ -11,4 +16,10 @@
   <Project Path="cliogate.tests\cliogate.tests.csproj" />
   <Project Path="cliogate\cliogate.csproj" />
   <Project Path="clio\clio.csproj" />
+  <Folder Name="/clio-ring/">
+    <Project Path="clio-ring/ClioRing/ClioRing.csproj" />
+    <Project Path="clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj" />
+    <Project Path="clio-ring/ClioRing.Ipc/ClioRing.Ipc.csproj" />
+    <Project Path="clio-ring/ClioRing.Tests/ClioRing.Tests.csproj" />
+  </Folder>
 </Solution>

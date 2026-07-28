@@ -10,7 +10,7 @@ internal static class McpCommandExecutionParser {
 	/// <summary>
 	/// Parses the <see cref="BusinessRuleBatchResponse"/> JSON envelope returned by the
 	/// create-entity/page-business-rules MCP tools. The tools deliver the structured
-	/// <c>created</c>/<c>failed</c>/<c>results[]</c> contract through the MCP content channel
+	/// <c>succeeded</c>/<c>failed</c>/<c>results[]</c> contract through the MCP content channel
 	/// (there is no legacy "Rule name:" log line), so the batch response is the authoritative
 	/// source for the generated rule name used by add-on readback.
 	/// </summary>

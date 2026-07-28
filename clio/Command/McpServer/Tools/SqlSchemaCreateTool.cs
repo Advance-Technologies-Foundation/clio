@@ -35,13 +35,13 @@ public sealed class SqlSchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SqlSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaCreateCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SqlSchemaCreateResponse { Success = false, Error = ex.Message };
+				return new SqlSchemaCreateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryCreate(options, out SqlSchemaCreateResponse response);
 			return response;

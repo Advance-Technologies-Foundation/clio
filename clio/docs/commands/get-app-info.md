@@ -46,6 +46,9 @@ The command prints:
 
 With --json the full JSON response is printed.
 
+Each CLI JSON entity includes `IsVirtual`; the MCP result exposes the same value as `virtual`.
+A `true` value means the schema has no physical database table.
+
 ### Column fields (round-trip with `sync-schemas`)
 
 Each entity column in the JSON response carries a vocabulary unified with the `sync-schemas`

@@ -36,5 +36,9 @@ public static class ValidateProcessGraphPrompt {
 		4. Only after a clean validation, build the process with `create-business-process` (or edit an
 		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.
 		   Then verify with `describe-business-process`.
+		Note: a clean validation does NOT mean every node is buildable — the rules cover the full BPMN
+		catalog, but only startEvent/signalStart/endEvent/userTask + plain sequence flows can be built
+		today (see the buildable slice in the guidance). Tell the user when the validated design needs
+		elements the builder cannot create yet.
 		""";
 }

@@ -86,7 +86,8 @@ public sealed record EntitySchemaColumnPropertiesInfo(
 	[property: JsonPropertyName("masked")] bool Masked,
 	[property: JsonPropertyName("format-validated")] bool FormatValidated,
 	[property: JsonPropertyName("use-seconds")] bool UseSeconds,
-	[property: JsonPropertyName("default-value-config")] EntitySchemaDefaultValueConfig? DefaultValueConfig = null);
+	[property: JsonPropertyName("default-value-config")] EntitySchemaDefaultValueConfig? DefaultValueConfig = null,
+	[property: JsonPropertyName("usage-type")] string? UsageType = null);
 
 /// <summary>
 /// Represents a domain-specific entity schema designer failure.

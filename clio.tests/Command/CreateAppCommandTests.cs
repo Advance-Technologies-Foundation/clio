@@ -144,7 +144,8 @@ public sealed class CreateAppCommandTests : BaseCommandTests<CreateAppOptions>
 
 		// Assert
 		exitCode.Should().Be(1, because: "an invalid with-mobile-pages value should yield a non-zero exit code");
-		_service.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(string)!, default!);
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(EnvironmentSettings)!, default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("with-mobile-pages")));
 	}
 
@@ -165,7 +166,8 @@ public sealed class CreateAppCommandTests : BaseCommandTests<CreateAppOptions>
 
 		// Assert
 		exitCode.Should().Be(1, because: "missing environment should yield a non-zero exit code");
-		_service.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(string)!, default!);
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(EnvironmentSettings)!, default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("Environment")));
 	}
 

@@ -47,6 +47,21 @@ internal sealed class AddonSaveResponseDto {
 	public ErrorInfoDto? ErrorInfo { get; set; }
 }
 
+/// <summary>
+/// Response of the static-content rebuild (<c>BuildConfiguration</c>). Verified live to carry a
+/// <c>success</c> flag and optional <c>errorInfo</c> (e.g. <c>{"errorInfo":null,"success":true}</c>),
+/// the same shape as the save response. <see cref="Success"/> is nullable so a body that omits the flag
+/// (or a non-committal response) is distinguishable from an explicit <c>success:false</c>: the rebuild is a
+/// shared fire-and-forget refresh, so only an EXPLICIT false is treated as a failure.
+/// </summary>
+internal sealed class AddonBuildResponseDto {
+	[JsonPropertyName("success")]
+	public bool? Success { get; set; }
+
+	[JsonPropertyName("errorInfo")]
+	public ErrorInfoDto? ErrorInfo { get; set; }
+}
+
 internal sealed class AddonSchemaDto {
 	[JsonPropertyName("metaData")]
 	public string MetaData { get; set; } = string.Empty;

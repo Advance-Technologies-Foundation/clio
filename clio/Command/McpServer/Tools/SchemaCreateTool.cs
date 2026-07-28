@@ -43,12 +43,12 @@ public sealed class SchemaCreateTool(
 				Error = PageSchemaMetadataHelper.SchemaNameFormatError
 			};
 		}
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SourceCodeSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SourceCodeSchemaCreateCommand>(options);
 			} catch (Exception ex) {
-				return new SourceCodeSchemaCreateResponse { Success = false, Error = ex.Message };
+				return new SourceCodeSchemaCreateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryCreate(options, out SourceCodeSchemaCreateResponse response);
 			return response;

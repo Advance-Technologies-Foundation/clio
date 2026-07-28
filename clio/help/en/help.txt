@@ -14,6 +14,7 @@ Commands:
   apply-manifest                       Apply an environment manifest, apply-environment-manifest, applym
   assert                               Validates infrastructure and filesystem resources
   build-docker-image                   Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
+  build-theme                          Build the artifacts of a Creatio theme from brand colours and fonts
   build-workspace                      Build the current workspace in Creatio, build, compile, compile-all, rebuild
   call-service                         Call a Creatio service endpoint, cs
   cfg-worspace                         Configure workspace package selection, cfgw
@@ -21,6 +22,7 @@ Commands:
   check-windows-features               Check windows for the required components, cf, checkf, checks, checkw
   clear-local-env                      Clear deleted local environments, clear-env
   clear-redis-db                       Clear redis database, flushdb
+  clear-themes-cache                   Refresh the Creatio theme catalog cache, flush-themes
   clone-env                            Clone one environment to another, clone, clone-environment
   compare-web-farm-node                Compare file content across web farm nodes, check-farm, check-web-farm-node, cwf, farm-check
   compile-configuration                Compile the full configuration in Creatio, cc, compile-remote
@@ -30,6 +32,7 @@ Commands:
   create-data-binding-db               Create a DB-first package data binding by saving data directly to the remote Creatio database
   create-entity-schema                 Create an entity schema in a remote Creatio package
   create-k8-files                      Prepare K8 files for deployment, ck8f
+  create-theme                         Create a custom Creatio theme directly on the target environment via the native ThemeService
   create-workspace                     Create a local workspace, createw
   CustomizeDataProtection              Toggle CustomizeDataProtection in appsettings.json, cdp
   dataservice                          Send a Creatio DataService request, ds
@@ -37,7 +40,9 @@ Commands:
   delete-infrastructure                Delete Kubernetes infrastructure for Creatio (removes namespace and all resources), di-delete, remove-infrastructure
   delete-pkg-remote                    Delete a package from Creatio, delete
   delete-schema                        Delete a schema from a workspace package
+  delete-theme                         Delete a custom Creatio theme from the target environment via the native ThemeService
   delete-toolkit                       Uninstall the Creatio AI App Development Toolkit from coding agents
+  distribute-license                   Add or remove users from a Creatio license package, grant-license
   deploy-application                   Copy an application package between Creatio environments, deploy-app
   deploy-creatio                       Install Creatio from a distribution package, dc, ic, install-creatio
   deploy-infrastructure                Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), di
@@ -64,6 +69,7 @@ Commands:
   hosts                                List all Creatio hosts and their status, list-hosts
   info                                 Show clio, cliogate, and .NET runtime versions, get-version, i, ver
   install-application                  Install an application package into Creatio, install-app, push-app
+  install-dbhub                        Install, adopt, or repair a local loopback dbHub HTTP MCP server
   install-gate                         Install or update cliogate in Creatio, gate, installgate, update-gate
   install-nuget-pkg                    Install NuGet package to a web application (website), installng
   install-toolkit                      Install the Creatio AI App Development Toolkit for all detected coding agents
@@ -72,6 +78,7 @@ Commands:
   link-from-repository                 Link repository package(s) to environment, l4r, link4repo
   link-package-store                   Link PackageStore packages into an environment, lps
   link-to-repository                   Link environment package(s) to repository, l2r, link2repo
+  list-themes                          List the custom Creatio themes available on the target environment, get-themes
   listen                               Stream Creatio log events over WebSocket
   lock-package                         Lock a package in Creatio, lp
   manage-windows-features              Install windows features required for Creatio, mng-win-features, mwf
@@ -81,6 +88,7 @@ Commands:
   modify-entity-schema-column          Add, modify, or remove a column in a remote Creatio entity schema
   modify-user-task-parameters          Add or remove parameters in a user task schema
   new-pkg                              Create a new package project, init
+  new-integration-test-project         Create a portable Creatio integration-test project, integration-test
   new-test-project                     Create a new test project, create-test-project, unit-test
   new-ui-project                       Create a new Freedom UI project, create-ui-project, createup, new-ui, ui, uiproject
   open-k8-files                        Open the Kubernetes manifests folder, cfg-k8, cfg-k8f, cfg-k8s
@@ -125,6 +133,7 @@ Commands:
   start                                Start local Creatio application, sc, start-creatio, start-server
   stop                                 Stop Creatio application(s) and remove services, stop-creatio
   switch-nuget-to-dll-reference        Switches nuget references to dll references in csproj files, nuget2dll
+  sync-dbhub                           Reconcile clio-owned dbHub sources with local Creatio environments
   turn-farm-mode                       Configure IIS site for Creatio web farm deployment, farm-mode, tfm
   turn-fsm                             Turn file system mode on or off for an environment, fsm, tfsm
   uninstall-app-remote                 Uninstall an application package from Creatio, uninstall
@@ -134,6 +143,7 @@ Commands:
   unregister                           Remove clio shell integrations
   update-cli                           Update clio, update
   update-entity-schema                 Apply batch column operations to a remote Creatio entity schema
+  update-theme                         Overwrite an existing custom Creatio theme on the target environment via the native ThemeService
   update-toolkit                       Update the Creatio AI App Development Toolkit for all detected coding agents
   upload-license                       Load license to selected environment, license, load-license, loadlicense
   upload-licenses                      Upload license files to Creatio, lic

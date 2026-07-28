@@ -132,7 +132,8 @@ public sealed record ApplicationEntityResult(
 	[property: JsonPropertyName("u-id")] string UId,
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("caption")] string Caption,
-	[property: JsonPropertyName("columns")] IReadOnlyList<ApplicationColumnResult> Columns);
+	[property: JsonPropertyName("columns")] IReadOnlyList<ApplicationColumnResult> Columns,
+	[property: JsonPropertyName("virtual")] bool Virtual = false);
 
 /// <summary>
 /// Structured application column item returned by the application MCP tool family.
