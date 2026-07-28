@@ -85,8 +85,17 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
-	// Every write this command performs goes through OutputPathConfinement, which takes IoFileSystem — so that is
-	// the only file-system abstraction it needs.
+	/// <summary>
+	/// Creates the command with the collaborators it needs to fetch and persist client-unit schemas.
+	/// </summary>
+	/// <param name="applicationClient">Client used to call the designer service on the target environment.</param>
+	/// <param name="serviceUrlBuilder">Builds the absolute designer-service URLs for the target environment.</param>
+	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
+	/// <param name="logger">Logger for progress and error output.</param>
+	/// <remarks>
+	/// Every write this command performs goes through <c>OutputPathConfinement</c>, which takes
+	/// <see cref="IoFileSystem"/> — so that is the only file-system abstraction it needs.
+	/// </remarks>
 	public GetClientUnitSchemaCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,

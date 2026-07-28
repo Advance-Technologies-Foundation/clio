@@ -153,9 +153,21 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
-	// One file-system abstraction, not two: the confinement guard (OutputPathConfinement) and the cwd anchor
-	// resolution both take IoFileSystem, so routing the default-path write through it as well keeps every write
-	// this command performs on a single abstraction.
+	/// <summary>
+	/// Creates the command with the collaborators it needs to resolve a classic page hierarchy and write its sources.
+	/// </summary>
+	/// <param name="applicationClient">Client used to call the designer and OData services on the target environment.</param>
+	/// <param name="serviceUrlBuilder">Builds the absolute service URLs for the target environment.</param>
+	/// <param name="columnManager">Reads remote entity-schema columns for the resolved section entity.</param>
+	/// <param name="hierarchyClient">Fetches the page-designer inheritance hierarchy for a schema.</param>
+	/// <param name="sectionResolver">Resolves a section name to its classic page schema.</param>
+	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
+	/// <param name="logger">Logger for progress and error output.</param>
+	/// <remarks>
+	/// One file-system abstraction, not two: the confinement guard (<c>OutputPathConfinement</c>) and the cwd anchor
+	/// resolution both take <see cref="IoFileSystem"/>, so routing the default-path write through it as well keeps
+	/// every write this command performs on a single abstraction.
+	/// </remarks>
 	public GetClassicPageSourcesCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
