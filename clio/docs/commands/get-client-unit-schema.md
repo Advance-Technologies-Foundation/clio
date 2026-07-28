@@ -28,8 +28,10 @@ field is omitted from the response JSON printed to stdout. This keeps the termin
 small and makes it easy to edit the body locally before piping it back through
 `update-client-unit-schema`. Because the command is MCP-callable, the output path can be
 supplied by an agent rather than typed at a shell, so it is confined to the workspace anchor
-or the OS temp directory — a path escaping both (a `..` traversal or an absolute system path)
-is rejected before any write.
+or the OS temp directory — a path escaping both (a `..` traversal, an absolute system path, or a
+symlink whose real target escapes) is rejected before any write. The write is additive: an
+`--output-file` that already exists is refused rather than overwritten, so the tool cannot clobber
+an existing file (remove it or choose a new path to re-run).
 
 ## Synopsis
 
@@ -54,7 +56,8 @@ clio get-client-unit-schema [options]
 
 --output-file                      Optional absolute path. When set, the schema body is
                                    written to this file and the body field is omitted
-                                   from the response JSON
+                                   from the response JSON. Confined to the workspace or
+                                   the OS temp directory; an existing file is not overwritten
 
 --uri                    -u       Application uri
 

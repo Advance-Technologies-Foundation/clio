@@ -1,11 +1,11 @@
 namespace Clio.Command;
 
 using System;
-using System.IO;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 [Verb("get-sql-schema", Aliases = ["sql-schema-get"],
 	HelpText = "Read the body and metadata of a SQL script schema from a remote Creatio environment")]
@@ -60,14 +60,17 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
 	public SqlSchemaGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
+		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
 
@@ -76,6 +79,18 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				response = new SqlSchemaGetResponse { Success = false, Error = "schema-name is required" };
 				return false;
+			}
+			// Confine an agent-suppliable output-file BEFORE any network call (this command is MCP-callable via
+			// get-sql-schema): resolve symlinks, drop an untrusted anchor, keep the write inside the workspace or
+			// OS temp dir, and refuse an existing target so the Destructive=false classification stays honest.
+			string resolvedOutputPath = null;
+			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
+				string pathError;
+				(resolvedOutputPath, pathError) = OutputPathConfinement.Resolve(_ioFileSystem, options.OutputFile);
+				if (pathError != null) {
+					response = new SqlSchemaGetResponse { Success = false, Error = pathError };
+					return false;
+				}
 			}
 			(string schemaUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
 				_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
@@ -101,8 +116,8 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 				Caption = caption,
 				BodyLength = body.Length
 			};
-			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
-				File.WriteAllText(options.OutputFile, body);
+			if (resolvedOutputPath != null) {
+				_ioFileSystem.File.WriteAllText(resolvedOutputPath, body);
 			} else {
 				response.Body = body;
 			}

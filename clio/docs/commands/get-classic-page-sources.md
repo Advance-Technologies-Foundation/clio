@@ -54,9 +54,10 @@ clio get-classic-page-sources [options]
 --entity                           Entity schema name (optional; inferred from the page
                                    body when omitted). Drives entityColumns/columnTitles
 
---output-file                      Manifest output path. Must resolve inside the
-                                   workspace or the OS temp directory; a path outside
-                                   both is rejected. Default:
+--output-file                      Manifest output path. An explicit path must resolve
+                                   inside the workspace or the OS temp directory (symlinks
+                                   resolved); a path outside both, or one that already
+                                   exists, is rejected. Omit for the default (re-runnable):
                                    <workspace-root>/.clio-migration/<schema>/manifest.json
 
 --uri                    -u       Application uri
@@ -107,8 +108,11 @@ URI carried in an underlying failure never reaches the caller's context.
   `warnings`.
 - `--output-file` is confined to the workspace anchor or the OS temp directory. The command is MCP-callable, so
   the output path can be supplied by an agent rather than typed at a shell; writing an unconstrained path
-  verbatim would let a `..` traversal or an absolute system path overwrite an arbitrary file. A path escaping
-  both allowed locations fails before any write. The default path is always inside the workspace anchor.
+  verbatim would let a `..` traversal, an absolute system path, or a symlink overwrite an arbitrary file.
+  Symlinks are resolved before the check, an anchor that is a filesystem root or an ancestor of `$HOME` is not
+  trusted (only the OS temp directory then remains allowed), and an explicit `--output-file` that already exists
+  is refused rather than overwritten. A path escaping both allowed locations fails before any write. The default
+  path is always inside the workspace anchor and is overwritten on re-runs.
 
 ## Reporting Bugs
 

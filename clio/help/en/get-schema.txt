@@ -18,14 +18,18 @@ DESCRIPTION
     No local workspace files are created or modified.
 
     When --output-file is set, the schema body is written to the specified file
-    and the body field is omitted from the response JSON printed to stdout.
+    and the body field is omitted from the response JSON printed to stdout. The
+    path must resolve inside the workspace or the OS temp directory (symlinks are
+    resolved; a path outside both, or one that already exists, is rejected before
+    any write).
 
 OPTIONS
     --schema-name                      C# source-code schema name (required)
 
     --output-file                      Optional absolute path. When set, the schema
                                        body is written to this file and the body field
-                                       is omitted from the response JSON
+                                       is omitted from the response JSON. Confined to the
+                                       workspace or the OS temp directory
 
     --uri                    -u       Application uri
 

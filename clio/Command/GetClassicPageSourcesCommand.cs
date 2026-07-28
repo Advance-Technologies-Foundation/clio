@@ -948,9 +948,15 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	// migration skill legitimately targets (in-workspace, or an OS-temp scratch dir) — and anything escaping
 	// both is rejected before any write, returning an error rather than a path.
 	private (string path, string error) ResolveOutputPath(GetClassicPageSourcesOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
+			// Route the explicit output-file through the shared confinement guard (which takes the CwdLock
+			// itself): it resolves symlinks, drops an untrusted anchor (filesystem root / ancestor of $HOME),
+			// confines to the workspace or OS temp dir, and — rejectExistingTarget:true — refuses to overwrite an
+			// existing file so the Destructive=false classification stays honest.
+			return OutputPathConfinement.Resolve(_ioFileSystem, options.OutputFile);
+		}
 		// H1: reading the process-global cwd must serialize against the MCP workspace tools that PIN cwd.
-		// In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
-		// is uncontended.
+		// In the MCP path this runs under the shared tool lock; in the single-threaded CLI path it is uncontended.
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
 			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
 				_ioFileSystem,
@@ -958,17 +964,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 				ClioRuntimePaths.Home,
 				null);
-			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
-				string full = _ioFileSystem.Path.GetFullPath(options.OutputFile);
-				string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
-				if (!OutputPathConfinement.IsPathConfined(full, anchor, tempRoot)) {
-					return (null,
-						$"output-file '{options.OutputFile}' resolves outside the allowed locations; it must be " +
-						"inside the workspace or the OS temp directory. Omit output-file to write the default " +
-						"manifest under the workspace.");
-				}
-				return (full, null);
-			}
+			// The default manifest path is tool-owned and re-runnable — it overwrites its own prior output.
 			return (Path.Combine(anchor, ClioMigrationDirectoryName, options.SchemaName, ManifestFileName), null);
 		}
 	}

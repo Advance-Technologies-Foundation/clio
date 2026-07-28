@@ -177,6 +177,11 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
 		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
 		StubEntityColumns();
+		// Run from a trusted directory under the OS temp root so a relative output-file resolves inside an
+		// allowed (confined) zone — a filesystem-root cwd is no longer trusted as a write boundary (RC-25).
+		string workingDir = _ioFileSystem.Path.Combine(_ioFileSystem.Path.GetTempPath(), "gcps-cwd");
+		_ioFileSystem.Directory.CreateDirectory(workingDir);
+		_ioFileSystem.Directory.SetCurrentDirectory(workingDir);
 		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage", OutputFile = "./sources.json" };
 
 		// Act

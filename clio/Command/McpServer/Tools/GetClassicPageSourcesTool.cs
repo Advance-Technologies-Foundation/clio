@@ -19,10 +19,11 @@ public sealed class GetClassicPageSourcesTool(
 	internal const string ToolName = "get-classic-page-sources";
 
 	// ReadOnly=false: the tool's whole purpose is a local file write (the manifest). Destructive stays false
-	// because every write is confined: the DEFAULT path is anchored under the workspace with a format-validated
-	// schema-name, and an explicit output-file is accepted ONLY when it resolves inside the workspace anchor or
-	// the OS temp directory (ResolveOutputPath/IsPathConfined) — a `..` traversal or absolute system path is
-	// rejected before any write, so this MCP-callable tool cannot be steered into overwriting an arbitrary file.
+	// because every write is additive and confined: the DEFAULT path is anchored under the workspace with a format-validated
+	// schema-name (re-runs overwrite only its own prior manifest), and an explicit output-file is accepted ONLY
+	// when it resolves (symlinks followed) inside a trusted workspace anchor or the OS temp directory AND does not
+	// already exist (OutputPathConfinement) — a `..` traversal, absolute system path, symlink escape, or existing
+	// target is rejected before any write, so this MCP-callable tool cannot be steered into overwriting a file.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Collect the Classic page sources for a classic page schema and WRITE them to disk as a manifest " +

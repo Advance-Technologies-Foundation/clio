@@ -108,8 +108,9 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 		try {
 			// Confine an explicit output-file BEFORE any network call: this tool is MCP-callable and
 			// non-destructive, so the output path can be agent-supplied and the host does not prompt on the
-			// write. Writing it verbatim would let a `..` traversal or absolute system path overwrite an
-			// arbitrary file. Shared guard with get-classic-page-sources (OutputPathConfinement).
+			// write. Writing it verbatim would let a `..` traversal, absolute system path, or symlink overwrite an
+			// arbitrary file. rejectExistingTarget:true refuses an existing target (never overwrites), keeping the
+				// Destructive=false contract honest. Shared guard with get-classic-page-sources (OutputPathConfinement).
 			string outputPath = null;
 			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
 				string pathError;

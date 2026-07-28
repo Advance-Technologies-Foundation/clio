@@ -181,6 +181,29 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 	}
 
 	[Test]
+	[Description("TryGetSchema refuses to overwrite an existing output-file, failing before any write so the additive Destructive=false contract stays honest.")]
+	public void TryGetSchema_Refuses_To_Overwrite_Existing_OutputFile() {
+		// Arrange — an allowed (temp) output-file that already exists on disk
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
+		string outputFile = AllowedOutput("UsrHelper.existing.js");
+		_ioFileSystem.Directory.CreateDirectory(_ioFileSystem.Path.GetDirectoryName(outputFile));
+		_ioFileSystem.File.WriteAllText(outputFile, "old content");
+		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper", OutputFile = outputFile };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "an existing output-file must not be silently overwritten");
+		response.Error.Should().Contain("already exists",
+			because: "the caller is told why the write was refused");
+		_ioFileSystem.File.ReadAllText(outputFile).Should().Be("old content",
+			because: "the existing file is left untouched when the write is refused");
+		_writtenPath.Should().BeNull(because: "no write occurs when the target already exists");
+	}
+
+	[Test]
 	[Description("TryGetSchema with --full-hierarchy returns the merged localizable strings and their count in the response.")]
 	public void TryGetSchema_ReturnsMergedLocalizableStrings_WhenFullHierarchy() {
 		// Arrange

@@ -17,10 +17,11 @@ public sealed class GetClientUnitSchemaTool(
 	internal const string ToolName = "get-client-unit-schema";
 
 	// ReadOnly=false: the tool writes the schema body (or the full-hierarchy contract file) to disk when
-	// output-file is set. Destructive stays false because the write is confined: an explicit output-file is
-	// accepted only when it resolves inside the workspace anchor or the OS temp directory
-	// (OutputPathConfinement, shared with get-classic-page-sources), rejected before any write otherwise, so
-	// this MCP-callable tool cannot be steered into overwriting an arbitrary file.
+	// output-file is set. Destructive stays false because the write is ADDITIVE and confined: an explicit
+	// output-file is accepted only when it resolves (symlinks followed) inside a trusted workspace anchor or the
+	// OS temp directory AND does not already exist — an existing target is refused, never overwritten
+	// (OutputPathConfinement, shared with get-classic-page-sources), rejected before any write otherwise, so this
+	// MCP-callable tool cannot be steered into overwriting an arbitrary file.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment. " +
