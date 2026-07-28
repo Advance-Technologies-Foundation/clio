@@ -194,4 +194,117 @@ public sealed class OutputPathConfinementTests {
 		trusted.Should().BeTrue(
 			because: "a specific directory that is neither a filesystem root nor an ancestor of home is a valid write boundary");
 	}
+
+	[Test]
+	[Description("Resolve follows a DANGLING terminal symlink (target not yet created) and rejects it when the target escapes the allowed zones — File.Exists/Directory.Exists report false for such a link, so it must not be trusted as an ordinary lexical tail segment.")]
+	public void Resolve_ShouldReject_DanglingTerminalSymlinkEscape() {
+		// Arrange — a file symlink under the sandbox whose target does NOT exist and lies at the filesystem root
+		// (outside every allowed zone). The write would follow the link at the OS level and land on the target.
+		string root = Path.GetPathRoot(_sandbox)!;
+		string danglingTarget = Path.Combine(root, "opc-dangling-" + Guid.NewGuid().ToString("N"));
+		string link = Path.Combine(_sandbox, "dead");
+		try {
+			File.CreateSymbolicLink(link, danglingTarget);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, link);
+
+		// Assert
+		path.Should().BeNull(
+			because: "a dangling symlink whose target escapes the allowed zones must be rejected, not written through");
+		error.Should().Contain("output-file",
+			because: "the dangling-link escape is reported rather than silently followed by the write");
+	}
+
+	[Test]
+	[Description("Resolve follows a DANGLING intermediate symlink (a parent component whose target does not exist) and rejects the escape — the write's directory creation would otherwise follow it out of the allowed zones.")]
+	public void Resolve_ShouldReject_DanglingIntermediateSymlinkEscape() {
+		// Arrange — a directory symlink under the sandbox pointing at a non-existent directory at the filesystem
+		// root; the output-file then descends through it, so the dangling link is an intermediate component.
+		string root = Path.GetPathRoot(_sandbox)!;
+		string danglingTarget = Path.Combine(root, "opc-dangling-dir-" + Guid.NewGuid().ToString("N"));
+		string link = Path.Combine(_sandbox, "deadlink");
+		try {
+			Directory.CreateSymbolicLink(link, danglingTarget);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		string throughLink = Path.Combine(link, "opc-" + Guid.NewGuid().ToString("N") + ".js");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, throughLink);
+
+		// Assert
+		path.Should().BeNull(
+			because: "a dangling intermediate symlink resolving outside the allowed zones must be rejected");
+		error.Should().Contain("output-file",
+			because: "a dangling parent-chain symlink escape is caught the same as an existing-target one");
+	}
+
+	[Test]
+	[Description("A dangling symlink whose not-yet-created target stays inside an allowed zone is never resolved to an out-of-bounds write: it is either refused (the link node already occupies the path) or its resolved path stays inside the sandbox. File.Exists reports a dangling link differently on Windows vs POSIX, so only the cross-OS no-escape invariant is asserted (the hardening must not redirect an in-bounds link out of bounds).")]
+	public void Resolve_ShouldNeverEscape_ForDanglingSymlinkTargetInsideAllowedZone() {
+		// Arrange — a file symlink under the sandbox whose (absent) target is also under the sandbox
+		string insideTarget = Path.Combine(_sandbox, "opc-inside-" + Guid.NewGuid().ToString("N") + ".js");
+		string link = Path.Combine(_sandbox, "inlink");
+		try {
+			File.CreateSymbolicLink(link, insideTarget);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, link);
+
+		// Assert
+		if (error == null) {
+			Path.GetFullPath(path).Should().StartWith(_sandbox,
+				because: "an allowed in-bounds link must never resolve to a path outside the sandbox");
+		}
+		else {
+			path.Should().BeNull(
+				because: "a refusal (the dangling link node already occupies the path) must not hand back a path to write");
+		}
+	}
+
+	[Test]
+	[Description("WriteAtomic creates the parent directory and writes the content to a fresh confined path.")]
+	public void WriteAtomic_ShouldCreateParentAndWrite_FreshPath() {
+		// Arrange
+		string outputFile = Path.Combine(_sandbox, "nested", "schema-body.js");
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		error.Should().BeNull(because: "a fresh nested path under the sandbox is inside an allowed zone");
+
+		// Act
+		OutputPathConfinement.WriteAtomic(_fileSystem, path, "content");
+
+		// Assert
+		File.ReadAllText(outputFile).Should().Be("content",
+			because: "WriteAtomic writes the content to the resolved path, creating the parent directory");
+	}
+
+	[Test]
+	[Description("WriteAtomic refuses to overwrite a target that appears after Resolve (FileMode.CreateNew is the atomic gate), keeping the additive Destructive=false contract honest against a resolve->write race.")]
+	public void WriteAtomic_ShouldRefuse_TargetThatAppearedAfterResolve() {
+		// Arrange — Resolve confirms the path is allowed while it does not exist; the file then appears (a racing
+		// writer / a target created between the check and the write).
+		string outputFile = Path.Combine(_sandbox, "raced.js");
+		(string path, string _) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		File.WriteAllText(outputFile, "planted");
+
+		// Act
+		Action write = () => OutputPathConfinement.WriteAtomic(_fileSystem, path, "new");
+
+		// Assert
+		write.Should().Throw<IOException>().WithMessage("*already exists*",
+			because: "CreateNew fails atomically when the target exists, so no overwrite occurs");
+		File.ReadAllText(outputFile).Should().Be("planted",
+			because: "the pre-existing file is left untouched when the atomic create is refused");
+	}
 }

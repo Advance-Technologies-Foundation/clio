@@ -18,6 +18,12 @@ internal static class ClassicEntitySchemaQuery {
 	/// <summary>Row cap for the entity-name lookup; reaching it signals an ambiguous/over-broad result.</summary>
 	internal const int EntityRowCount = 50;
 
+	/// <summary>The all-zero GUID sentinel returned by DataService for an unset UId reference.</summary>
+	internal const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
+
+	/// <summary>Row cap for the section (SysModuleEntity) lookup; reaching it signals a truncated result.</summary>
+	internal const int SectionRowCount = 100;
+
 	/// <summary>Runs a SelectQuery and returns its rows, keyed off the shared failure detector.</summary>
 	internal static JArray Select(IApplicationClient client, IServiceUrlBuilder urlBuilder, JObject query) {
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);

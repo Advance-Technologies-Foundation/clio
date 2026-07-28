@@ -91,13 +91,15 @@ public sealed class ListEntityClientSchemasResponse {
 /// </summary>
 public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
 
-	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
+	// Single-sourced with ClassicEntitySchemaQuery so the sentinel/cap cannot drift between the shared query
+	// builder and its callers.
+	private const string EmptyGuid = ClassicEntitySchemaQuery.EmptyGuid;
 	// Migration classification values emitted in MigrationSectionInfo.Kind / MigrationEditPageInfo.Kind /
 	// MigrationEditPageInfo.MiniPageKind. `unknown` covers a missing template or one in neither known set.
 	private const string KindClassic = "classic";
 	private const string KindFreedom = "freedom";
 	private const string KindUnknown = "unknown";
-	private const int SectionRowCount = 100;
+	private const int SectionRowCount = ClassicEntitySchemaQuery.SectionRowCount;
 	private const int EditPageRowCount = 100;
 
 	private static readonly HashSet<string> FreedomTemplates = new(StringComparer.OrdinalIgnoreCase) {

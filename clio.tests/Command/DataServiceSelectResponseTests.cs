@@ -8,7 +8,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Core")]
+[Property("Module", "Command")]
 public class DataServiceSelectResponseTests {
 
 	[Test]
@@ -121,5 +121,47 @@ public class DataServiceSelectResponseTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "a responseStatus error must not be read as zero rows")
 			.WithMessage("*boom*");
+	}
+
+	[Test]
+	[Description("A success envelope carrying an EMPTY errorInfo object (errorInfo:{}) is not a failure — an empty error object must not turn a genuine success into a hard error.")]
+	public void ReadRows_Should_Return_Rows_When_ErrorInfo_Object_Is_Empty() {
+		// Arrange - an empty error object alongside rows is a success shape, not a failure signal
+		string json = """{"success":true,"errorInfo":{},"rows":[{"Name":"A"}]}""";
+
+		// Act
+		JArray rows = DataServiceSelectResponse.ReadRows(json);
+
+		// Assert
+		rows.Should().HaveCount(1,
+			because: "an empty errorInfo object is not a failure signal, so the rows must be returned");
+	}
+
+	[Test]
+	[Description("A signal-less response with no rows token at all throws instead of being read as an empty success, so the migration tools never silently report zero schemas to migrate.")]
+	public void ReadRows_Should_Throw_When_No_Rows_And_No_Failure_Signal() {
+		// Arrange - a truncated / atypical 200 body: no rows, no success:false, no errorInfo, no responseStatus
+		string json = "{}";
+
+		// Act
+		Action act = () => DataServiceSelectResponse.ReadRows(json);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a body with no rows and no explicit success signal is not a trustworthy empty result");
+	}
+
+	[Test]
+	[Description("An explicit rows:null token (a JValue-Null, not C# null) throws rather than being read as an empty success, so a malformed/atypical body is never mistaken for zero schemas to migrate.")]
+	public void ReadRows_Should_Throw_When_Rows_Token_Is_Json_Null() {
+		// Arrange - "rows": null parses to a JValue-Null, distinct from an absent token and from an empty array
+		string json = """{"rows":null}""";
+
+		// Act
+		Action act = () => DataServiceSelectResponse.ReadRows(json);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a JSON null rows token is not a trustworthy empty result and must not be read as an empty array");
 	}
 }

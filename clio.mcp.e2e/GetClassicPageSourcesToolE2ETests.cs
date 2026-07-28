@@ -74,7 +74,8 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
 		manifest.RootElement.TryGetProperty("schemas", out JsonElement schemas).Should().BeTrue(
 			because: "the manifest must carry the replacing-schema layer chain");
-		schemas.ValueKind.Should().Be(JsonValueKind.Array);
+		schemas.ValueKind.Should().Be(JsonValueKind.Array,
+			because: "the schemas layer chain must serialize as a JSON array");
 		schemas.GetArrayLength().Should().BeGreaterThan(0,
 			because: "at least one classic layer must be assembled for a real page");
 		foreach (JsonElement layer in schemas.EnumerateArray()) {

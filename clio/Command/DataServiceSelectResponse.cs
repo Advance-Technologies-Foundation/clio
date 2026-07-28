@@ -30,8 +30,9 @@ internal static class DataServiceSelectResponse {
 	/// Classifies a parsed DataService <c>SelectQuery</c> envelope as a failure. This is the single
 	/// authoritative failure-detection policy for the endpoint — <see cref="ReadRows"/> throws on it,
 	/// while tuple-returning callers (e.g. the schema-layer enumerators) surface it as an error string —
-	/// so every consumer keys failure off the same three signals instead of the weaker <c>success</c>-only
-	/// check.
+	/// so every consumer keys failure off the same signals instead of the weaker <c>success</c>-only check:
+	/// an explicit <c>success:false</c>, a non-empty <c>errorInfo</c> object, a <c>responseStatus</c> error
+	/// code, or — as a backstop — a body carrying no <c>rows</c> token at all.
 	/// </summary>
 	/// <param name="parsed">The parsed SelectQuery response envelope.</param>
 	/// <param name="message">
@@ -44,17 +45,32 @@ internal static class DataServiceSelectResponse {
 	/// Null, which is NOT C# null, so a bare <c>parsed["errorInfo"] != null</c> test misfires on an otherwise
 	/// successful envelope (and then throws an opaque JValue-indexing error reading <c>["message"]</c>).
 	/// <c>as JObject</c> yields C# null for both the absent and the JSON-null case, so only an actual error
-	/// object is a failure signal. <c>success</c> is read via the nullable <c>Value&lt;bool?&gt;()</c> so a
+	/// object is a failure signal — and only a NON-EMPTY one, so a success envelope carrying <c>errorInfo:{}</c>
+	/// is not misread as a failure. <c>success</c> is read via the nullable <c>Value&lt;bool?&gt;()</c> so a
 	/// <c>"success": null</c> token does not throw.
 	/// </remarks>
 	public static bool TryGetFailure(JObject parsed, out string message) {
 		JObject errorInfo = parsed["errorInfo"] as JObject;
+		// Require the error object to be non-empty: a success envelope that carries an empty "errorInfo": {} must
+		// not be misread as a failure (which would turn a genuine success into a hard error with no message).
+		bool hasErrorInfo = errorInfo != null && errorInfo.HasValues;
 		if (parsed["success"]?.Value<bool?>() == false
-			|| errorInfo != null
+			|| hasErrorInfo
 			|| !string.IsNullOrEmpty(parsed["responseStatus"]?["ErrorCode"]?.Value<string>())) {
 			message = errorInfo?["message"]?.Value<string>()
 				?? parsed["responseStatus"]?["Message"]?.Value<string>()
 				?? "Creatio DataService returned a failure response with no rows";
+			return true;
+		}
+
+		// No explicit failure signal, but also no rows token at all (as opposed to an empty array): a well-formed
+		// success always carries "rows". A signal-less, rows-less body (e.g. a truncated/garbled 200, or an
+		// atypical failure envelope) must NOT be reported as an empty success — for the migration tools that would
+		// read as "nothing to migrate" and silently skip everything. Treat it as a failure instead. A JSON
+		// "rows": null parses to a JValue-Null (NOT C# null), so test both the absent token and the null token.
+		JToken rows = parsed["rows"];
+		if (rows == null || rows.Type == JTokenType.Null) {
+			message = "Creatio DataService returned a response with no rows and no explicit success signal";
 			return true;
 		}
 

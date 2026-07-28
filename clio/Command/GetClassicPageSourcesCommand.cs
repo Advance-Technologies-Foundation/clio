@@ -108,7 +108,7 @@ public sealed class GetClassicPageSourcesResponse {
 public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions> {
 
 	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.ClientUnit;
-	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
+	private const string EmptyGuid = ClassicEntitySchemaQuery.EmptyGuid;
 	private const string ClioMigrationDirectoryName = ".clio-migration";
 	private const string ManifestFileName = "manifest.json";
 	private const int MaxParentDepth = 20;

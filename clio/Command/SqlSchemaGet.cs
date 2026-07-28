@@ -117,7 +117,10 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 				BodyLength = body.Length
 			};
 			if (resolvedOutputPath != null) {
-				_ioFileSystem.File.WriteAllText(resolvedOutputPath, body);
+				// Atomic no-overwrite write (FileMode.CreateNew): closes the resolve→write TOCTOU window that a
+				// bare WriteAllText left open across the two network round-trips above, and keeps Destructive=false
+				// honest even if the target appeared after the confinement check.
+				OutputPathConfinement.WriteAtomic(_ioFileSystem, resolvedOutputPath, body);
 			} else {
 				response.Body = body;
 			}

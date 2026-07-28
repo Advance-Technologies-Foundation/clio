@@ -44,8 +44,10 @@ public interface IClassicSectionSchemaResolver {
 /// <inheritdoc />
 public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver {
 
-	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
-	private const int SectionRowCount = 100;
+	// Single-sourced with ClassicEntitySchemaQuery so the sentinel/cap cannot drift between the shared query
+	// builder and its callers.
+	private const string EmptyGuid = ClassicEntitySchemaQuery.EmptyGuid;
+	private const int SectionRowCount = ClassicEntitySchemaQuery.SectionRowCount;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
