@@ -45,7 +45,8 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("ServiceModel/SourceCodeSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
-		_command = new GetSourceCodeSchemaCommand(_applicationClient, _serviceUrlBuilder, _logger);
+		_command = new GetSourceCodeSchemaCommand(
+			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger);
 	}
 
 	[Test]
@@ -90,7 +91,9 @@ public sealed class GetSourceCodeSchemaCommandTests {
 
 	[Test]
 	public void TryGetSchema_Writes_Body_To_File_When_OutputFile_Provided() {
-		string tempFile = Path.GetTempFileName();
+		// A fresh, non-existent path under the OS temp root: the confined writer is additive and refuses to
+		// overwrite an existing file, so GetTempFileName() (which creates the file) can no longer be used here.
+		string tempFile = Path.Combine(Path.GetTempPath(), "srcget-" + System.Guid.NewGuid().ToString("N") + ".cs");
 		try {
 			_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 			_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);

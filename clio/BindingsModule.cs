@@ -432,12 +432,15 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaCreateCommand>();
 		services.AddTransient<ClientUnitSchemaUpdateCommand>();
 		services.AddTransient<GetClientUnitSchemaCommand>();
+		services.AddTransient<GetClassicPageSourcesCommand>();
+		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
 		services.AddTransient<SqlSchemaInstallCommand>();
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
+		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -569,6 +572,8 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
+		services.AddTransient<GetClassicPageSourcesTool>();
+		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();
