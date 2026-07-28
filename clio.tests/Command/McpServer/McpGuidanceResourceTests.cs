@@ -2166,6 +2166,46 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The page-modification-overview sub-guide owns the predefined list-filter placement and warns against the SysFolder/FilterData DataService dead-end with the exact failure signals (ENG-90052).")]
+	public void PageModificationOverviewGuidanceResource_Should_Warn_Against_SysFolder_FilterData_DataService() {
+		// Arrange
+		PageModificationOverviewGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("`Items_PredefinedFilter` view-model attribute",
+			because: "the overview sub-guide owns the canonical home of a predefined list filter so the agent stops reverse-engineering the storage model");
+		article.Text.Should().Contain("Do NOT reverse-engineer a `SysFolder` row with a `FilterData` blob",
+			because: "the sub-guide must steer the agent away from the DataService dead-end that cost ~11 minutes in ENG-90052");
+		article.Text.Should().Contain("Attempt to set the value of \"System.String\" type into the \"FilterData\" field of the \"System.IO.Stream\" type",
+			because: "pinning the exact failure signal lets the agent recognize the dead-end instantly if it still tries the SysFolder route");
+		article.Text.Should().Contain("esq-filters-frontend",
+			because: "the sub-guide must route the filter value shape to its canonical owner instead of duplicating it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map routes a named/predefined list-page filter to page-modification-overview + esq-filters-frontend and marks it a page edit, not a SysFolder data write (ENG-90052).")]
+	public void RoutingGuidanceResource_Should_Route_Predefined_List_Filter() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("NAMED or PREDEFINED filter a list/section page always applies",
+			because: "the routing row must be keyed to the task wording so the agent picks the page domain, not the data domain");
+		article.Text.Should().Contain("name=page-modification-overview",
+			because: "the routing row must point at the sub-guide that owns the predefined-filter placement rule so the agent lands on it directly");
+		article.Text.Should().Contain("NOT a SysFolder / folder-tree data write",
+			because: "the routing steer must reject the wrong domain (data write) before the agent even reads page-modification");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The mobile page resource includes the request-catalog pointer that names get-request-info as the single source of truth for the run-process parameter contract.")]
 	public void MobilePageGuidanceResource_Should_Include_RequestCatalogPointer() {
 		// Arrange

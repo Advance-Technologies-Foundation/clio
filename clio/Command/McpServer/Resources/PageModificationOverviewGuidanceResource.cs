@@ -122,6 +122,11 @@ public sealed class PageModificationOverviewGuidanceResource {
 		       - Single-line or dense JSON/JS in newly authored content is unacceptable: it blocks human review and produces unreadable diffs.
 		       - If the page body is empty or brand-new (no existing style to match), default to tab indentation.
 
+		       Predefined / named list-page filter (Items_PredefinedFilter)
+		       - A NAMED or PREDEFINED filter that a section/list page ALWAYS applies (e.g. an "Active Requests" list that keeps showing New + In Progress + Escalated) is a PAGE edit, not a data write. It lives in the `Items_PredefinedFilter` view-model attribute on the `*_ListPage` schema: add a `viewModelConfigDiff` `merge` on `["attributes"]` that sets `Items_PredefinedFilter.value` to a filter GROUP (`filterType` 6), then save with `update-page` (append mode is safe on an existing list page).
+		       - Do NOT reverse-engineer a `SysFolder` row with a `FilterData` blob and do NOT INSERT it through DataService — `FilterData` is a `System.IO.Stream`, so a DataService InsertQuery fails with `Object reference not set to an instance of an object` or `Attempt to set the value of "System.String" type into the "FilterData" field of the "System.IO.Stream" type`. A `SysFolder` folder-tree entry (the named folders in the section's left panel) is USER data and a DIFFERENT concept — do not conflate them, and do not go hunting through `SysSchema` / `FolderTree` / `BaseFolder` to place a predefined list filter.
+		       - Build the filter GROUP value with `esq-filters-frontend` (numeric enums, `parameter` envelope, lookup `{Id, value, displayValue}`; an In-list over a status column is a `filterType` 4 leaf).
+
 		       Known limitations
 		       - `update-page` fail-closed on design-package resolution: if `GetDesignPackageUId` fails for a write, the call returns an error instead of silently falling back to the original package.
 		       - `get-page` uses a best-effort fallback to the original package if design-package resolution fails, because reads are non-destructive.

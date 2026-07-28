@@ -479,6 +479,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the guidance tool should return the canonical overview sub-guide text");
 		response.Article.Text.Should().Contain("do NOT resend the full raw.body",
 			because: "the do-not-resend rule moved into the overview sub-guide");
+		response.Article.Text.Should().Contain("`Items_PredefinedFilter` view-model attribute",
+			because: "the overview sub-guide owns the canonical home of a named/predefined list-page filter (ENG-90052)");
+		response.Article.Text.Should().Contain("Do NOT reverse-engineer a `SysFolder` row with a `FilterData` blob",
+			because: "the overview sub-guide must steer the agent away from the SysFolder/FilterData DataService dead-end that cost ~11 minutes in ENG-90052");
 	}
 
 	[Test]
