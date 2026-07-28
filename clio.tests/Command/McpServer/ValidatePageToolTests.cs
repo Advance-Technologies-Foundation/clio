@@ -220,6 +220,31 @@ public sealed class ValidatePageToolTests {
 	}
 
 	[Test]
+	[Description("Mobile path: the differ oracle surfaces a not-a-container error when a child insert targets a slot the in-diff parent does not declare (no auto-repair).")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileInsertTargetsUndeclaredParentSlot_ReturnsInvalid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBody = """
+			{ "viewConfigDiff": [
+				{ "operation": "insert", "name": "ProductsList", "parentName": "ProductsListContainer", "propertyName": "items",
+					"values": { "type": "crt.List", "items": "$ProductsList" } },
+				{ "operation": "insert", "name": "ProductsList_ListItem", "parentName": "ProductsList", "propertyName": "itemLayout",
+					"values": { "type": "crt.ListItem", "title": "$PDS_Name" } }
+			] }
+			""";
+		PageValidateArgs args = new(mobileBody, null);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert — the validator now reproduces the server error instead of injecting the missing slot.
+		response.Valid.Should().BeFalse(
+			because: "the differ rejects an insert into a slot the parent does not declare");
+		response.Validation.Errors.Should().Contain(e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
+			because: "the differ oracle must surface the faithful error for model analysis");
+	}
+
+	[Test]
 	[Description("Routes AMD bodies through AMD validation (not mobile path) when body starts with 'define('.")]
 	public async System.Threading.Tasks.Task ValidatePage_WhenBodyIsAmd_UsesAmdValidation() {
 		// Arrange

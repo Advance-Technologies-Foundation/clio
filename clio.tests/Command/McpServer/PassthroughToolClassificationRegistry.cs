@@ -287,6 +287,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-assertion"] = PassthroughClassification.NotApplicable,
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
+			["get-mobile-page-conversion-guide"] = PassthroughClassification.NotApplicable, // ENG-91228 advisory guide tool; resolver-backed (class b), read-only, not part of the ENG-93347 passthrough audit
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,

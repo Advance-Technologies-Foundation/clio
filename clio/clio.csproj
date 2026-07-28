@@ -58,6 +58,11 @@
 		</AssemblyAttribute>
 	</ItemGroup>
 
+	<ItemGroup Label="ConversionRules">
+		<None Remove="Command\McpServer\Data\WebToMobilePageConversionRules.json" />
+		<EmbeddedResource Include="Command\McpServer\Data\WebToMobilePageConversionRules.json" />
+	</ItemGroup>
+
 	<ItemGroup Label="AdditionalFiles">
 		<AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml"/>
 		<None Include="img\**"/>
