@@ -17,9 +17,21 @@ namespace Clio.Mcp.E2E;
 
 // [AllureNUnit] is intentionally omitted. This destructive fixture performs a long async MCP call and uses
 // explicit Allure metadata; fixture-level AOP can block async continuations in this suite.
+//
+// Developer-local only. This test performs a REAL destructive uninstall of the shared sandbox
+// (settings.Sandbox.EnvironmentName) — the same environment the McpE2E.Sandbox tier depends on — so it must
+// never join that tier or run in TeamCity: doing so would tear the shared stand down mid-suite and fail every
+// later Sandbox test. The deterministic warning-propagation contract (locked profile -> Warning stage +
+// stable error code + SuccessWithWarnings terminal + retained registration + secret redaction) is already
+// covered without any stand by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests. This fixture only
+// adds the real native DeleteProfileW-under-lock path over stdio MCP, which is inherently manual/Windows-only.
+// It is therefore [Explicit] (runs only when selected by name), NOT tagged McpE2E.Sandbox (kept out of the
+// sandbox selection), and Assert.Ignore's under TEAMCITY_VERSION as a final guard — mirroring
+// DbHubLifecycleWarningE2ETests.
 [TestFixture]
-[Category("McpE2E.Sandbox")]
+[Category("LocalOnly")]
 [Category("McpE2E.Manual")]
+[Explicit("Developer-local only: performs a real destructive uninstall of the shared sandbox; the warning contract is covered deterministically by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.")]
 [AllureFeature("uninstall-creatio")]
 [NonParallelizable]
 public sealed class UninstallCreatioWarningE2ETests {
@@ -34,6 +46,12 @@ public sealed class UninstallCreatioWarningE2ETests {
 		// Arrange
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("Application-pool profile deletion is a Windows-only E2E scenario.");
+			return;
+		}
+		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TEAMCITY_VERSION"))) {
+			Assert.Ignore(
+				"This destructive real-uninstall test tears down the shared sandbox and must never run in TeamCity; " +
+				"the warning contract is covered by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.");
 			return;
 		}
 		McpE2ESettings settings = TestConfiguration.Load();
