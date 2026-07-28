@@ -16,7 +16,12 @@ public sealed class GetSchemaTool(
 
 	internal const string ToolName = "get-schema";
 
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// ReadOnly=false: with output-file set the tool writes the schema body to disk (a side effect), so it must
+	// not advertise readOnlyHint=true. Destructive stays false — the write is confined to a trusted workspace
+	// anchor or the OS temp directory (OutputPathConfinement, symlinks resolved), rejected before any write
+	// otherwise. ReadOnly is not consumed by ClioRing (it parses only {Resident, Destructive}), so this flip
+	// changes no Ring-consumed contract.
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Read the C# body and metadata of a source-code schema from a remote Creatio environment. " +
 		"Use before update-schema to inspect current content. " +

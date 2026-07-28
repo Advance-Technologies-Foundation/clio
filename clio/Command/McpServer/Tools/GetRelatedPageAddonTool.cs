@@ -35,6 +35,7 @@ public sealed class GetRelatedPageAddonTool(
 		GetRelatedPageAddonOptions options = new() {
 			EntitySchemaName = args.EntitySchemaName,
 			PackageName = args.PackageName,
+			SchemaType = args.SchemaType,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -79,5 +80,9 @@ public sealed record GetRelatedPageAddonArgs(
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+
+	[property: JsonPropertyName("schema-type")]
+	[property: Description("Which add-on to read: 'web' (RelatedPage, default) or 'mobile' (MobileRelatedPage — the object's default mobile edit page).")]
+	string? SchemaType = null
 );
