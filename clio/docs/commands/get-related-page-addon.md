@@ -35,6 +35,7 @@ clio get-related-page-addon -e ENVIRONMENT --entity-schema-name NAME --package-n
 | `-e, --environment` | No | | Registered Creatio environment to target. |
 | `--entity-schema-name` | Yes | | Object (entity schema) whose related pages to read, e.g. `UsrDeliveryItem`. |
 | `--package-name` | Yes | | Package that owns the add-on configuration, e.g. `Custom`. |
+| `--schema-type` | No | `web` | Which add-on to read: `web` (`RelatedPage`) or `mobile` (`MobileRelatedPage` — the record page used by the Creatio Mobile app). Use the same `--schema-type` on the paired `create-related-page-addon` when writing the set back. |
 
 ## Examples
 

@@ -2470,7 +2470,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
+			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements. Conditions key off page attributes: declared page attributes, data source columns (including ones not surfaced on the page, addressed as '<dataSource>.<column>'), page parameters ('PageParameters.<name>'), system values, and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
 				[
@@ -2622,9 +2622,9 @@ internal static class ToolContractCatalog {
 	private static ToolContractValidator[] PageBusinessRuleActionValidators() =>
 		[
 			new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
-				Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
+				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]). See guidance business-rules."),
 			new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
-				Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
+				Context: "Right-side AttributeValue accepts the same path forms as leftExpression.path (a declared page attribute name, a '<dataSource>.<column>' path, or 'PageParameters.<ParameterName>') and must resolve to the same data value type as the left attribute."),
 			new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
 				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
 			new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
