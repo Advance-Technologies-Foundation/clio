@@ -56,7 +56,7 @@ public sealed class PageUpdateTool(
 			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
 			"unknown ones. " +
 			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary + " " +
-			"Custom CSS is a last resort: a body that introduces a 'styles' object is rejected unless allow-custom-css=true — first exhaust native component inputs (get-component-info), then warn the user about upgrade-compatibility risk and confirm before setting allow-custom-css.")]
+			"CUSTOM CSS IS A LAST RESORT: a visual-styling requirement (color, font/typeface, size, spacing, alignment) must be met with a component's NATIVE inputs first (get-component-info). A custom `styles` object, a `classes`/CSS class, or an `extraStyles` hook is custom CSS that can break on a platform upgrade — apply it only after telling the user no native option exists, warning about the upgrade-compatibility risk, and getting explicit confirmation; see get-guidance name `page-modification`.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
@@ -335,15 +335,6 @@ public sealed class PageUpdateTool(
 					Error = ValidationFailedPrefix + string.Join("; ", mobileRunProcess.Errors)
 				}, null);
 			}
-			if (!options.AllowCustomCss) {
-				SchemaValidationResult mobileStyles = SchemaValidationService.ValidateMobileCustomCssStyles(options.Body);
-				if (!mobileStyles.IsValid) {
-					return (new PageUpdateResponse {
-						Success = false,
-						Error = "Body introduces custom CSS ('styles'): " + string.Join("; ", mobileStyles.Errors)
-					}, null);
-				}
-			}
 			return (null, mobileResult.Warnings);
 		}
 		// Field-binding validators suppress label-resource errors for keys supplied via the
@@ -351,7 +342,7 @@ public sealed class PageUpdateTool(
 		// whose label is provided in `resources` is falsely rejected here, before the
 		// resource-aware post-resolution validation runs (matches PageUpdateOptions / PageSyncTool / PageValidateTool).
 		SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? explicitResources, out _);
-		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources, options.AllowCustomCss);
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
@@ -406,7 +397,6 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password,
 			Force = args.Force ?? false,
-			AllowCustomCss = args.AllowCustomCss == true,
 			NotifyDesignerPresence = true
 		};
 
@@ -539,13 +529,10 @@ public sealed class PageUpdateTool(
 	}
 
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(
-		string body, IReadOnlyDictionary<string, string>? explicitResources = null, bool allowCustomCss = false) {
+		string body, IReadOnlyDictionary<string, string>? explicitResources = null) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
-		if (!allowCustomCss) {
-			Collect(SchemaValidationService.ValidateCustomCssStyles(body), errors);
-		}
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
@@ -653,8 +640,5 @@ public sealed record PageUpdateArgs(
 	bool? Force = null,
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
-	string? OutputDirectory = null,
-	[property: JsonPropertyName("allow-custom-css")]
-	[property: Description("Confirm applying custom CSS. A body that introduces a custom inline 'styles' object is REJECTED unless this is true. Set true ONLY after exhausting native component inputs (get-component-info), warning the user about the upgrade-compatibility risk, and getting explicit confirmation. Default: false")]
-	bool? AllowCustomCss = null
+	string? OutputDirectory = null
 );

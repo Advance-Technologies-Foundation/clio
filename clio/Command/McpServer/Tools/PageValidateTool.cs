@@ -154,9 +154,7 @@ public sealed class PageValidateTool(
 			SchemaDeps: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)),
 			ContextAwait: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateContextAccessAwait(body)),
-			CustomCssStyles: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateCustomCssStyles(body)));
+				() => SchemaValidationService.ValidateContextAccessAwait(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
@@ -174,11 +172,6 @@ public sealed class PageValidateTool(
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
 		warnings.AddRange(content.ContextAwait.Warnings);
-		// Custom-CSS 'styles' findings are reported as non-blocking warnings by validate-page (never
-		// blocking, independent of any flag). The hard reject lives in update-page / sync-pages.
-		if (!content.CustomCssStyles.IsValid) {
-			warnings.AddRange(content.CustomCssStyles.Errors);
-		}
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
 			content.LocalizableText.IsValid &&
 			content.ConverterDecl.IsValid &&
@@ -235,8 +228,7 @@ public sealed class PageValidateTool(
 		SchemaValidationResult ValidatorDecl,
 		SchemaValidationResult ValidatorFactoryShape,
 		SchemaValidationResult SchemaDeps,
-		SchemaValidationResult ContextAwait,
-		SchemaValidationResult CustomCssStyles);
+		SchemaValidationResult ContextAwait);
 }
 
 public sealed record PageValidateArgs(

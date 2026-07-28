@@ -290,9 +290,11 @@ public sealed class GuidanceGetToolTests {
 		result.Article.Text.Should().Contain("If the user declines, do NOT apply CSS",
 			because: "AC6: if the user declines, the agent must not apply CSS and should offer alternatives");
 		result.Article.Text.Should().Contain("\"DON'T ASK\" ≠ \"DON'T WARN\"",
-			because: "a 'don't ask/just apply' instruction waives the blocking question but never the upgrade-risk warning before allow-custom-css=true (ENG-92541)");
-		result.Article.Text.Should().Contain("NEVER set allow-custom-css=true silently",
-			because: "the agent must not self-set the confirmation flag without emitting the upgrade-risk warning (ENG-92541)");
+			because: "a 'don't ask/just apply' instruction waives the blocking question but never the upgrade-risk warning (ENG-92541)");
+		result.Article.Text.Should().Contain("NEVER apply custom CSS silently",
+			because: "even when told to 'just apply', the agent must emit the upgrade-risk warning and never apply custom CSS silently (ENG-92541)");
+		result.Article.Text.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles hooks (e.g. font-family/color) are custom CSS too — the real failing sessions applied CSS via extraStyles, so the rule must name it explicitly and not treat it as native (ENG-92541)");
 	}
 
 	[Test]
