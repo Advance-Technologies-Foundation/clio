@@ -2459,6 +2459,33 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The modify-entity-schema-column contract states the column identity requirement as an any-of over both accepted spellings, so a strict client validating against the contract does not reject the get-app-info readback shape the runtime accepts (ENG-90313).")]
+	public void ToolContractGet_Should_AcceptEitherColumnIdentitySpelling_ForModifyEntitySchemaColumn() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs(["modify-entity-schema-column"]));
+
+		// Assert
+		ToolInputSchemaContract inputSchema = result.Tools!.Single().InputSchema;
+		inputSchema.Required.Should().NotContain("column-name",
+			because: "the emitted MCP schema no longer requires it — a contract that still does would make a " +
+				"name-only readback payload fail validation before the runtime resolver ever sees it");
+		inputSchema.Required.Should().Contain(["environment-name", "package-name", "schema-name", "action"],
+			because: "relaxing the column identity must not silently relax the parameters that stay mandatory");
+		inputSchema.AnyOf.Should().NotBeNullOrEmpty(
+			because: "'at least one of column-name / name' has to be expressed somewhere the client can read");
+		inputSchema.AnyOf!.Should().HaveCount(2)
+			.And.ContainSingle(group => group.SequenceEqual(new[] { "column-name" }))
+			.And.ContainSingle(group => group.SequenceEqual(new[] { "name" }));
+		inputSchema.Properties.Select(field => field.Name).Should().Contain(["column-name", "name"],
+			because: "an any-of group naming an undeclared property is unusable by a validating client");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The modify-entity-schema-column contract enumerates the accepted column types and maps the Creatio display name Money onto the command value Currency2, so the vocabulary is discoverable without provoking a failed write (issue #955).")]
 	public void ToolContractGet_Should_EnumerateColumnTypes_ForModifyEntitySchemaColumn() {
 		// Arrange

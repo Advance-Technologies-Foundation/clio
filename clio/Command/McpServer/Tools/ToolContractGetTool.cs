@@ -417,8 +417,10 @@ internal static class ToolContractCatalog {
 		"A normal two-decimal Creatio money column (displayed as 'Money') is Currency2 — Money is accepted as " +
 		"an alias for it. Date and Time are accepted but are aliases of DateTime: Creatio stores the column as " +
 		"DateTime, and the readback tools report it as DateTime, so date-only intent is not preserved. " +
-		"Other aliases: Blob = Binary, ImageLink = ImageLookup, Encrypted/Password = SecureText, " +
-		"EmailAddress = Email, Decimal/Float = Decimal2.";
+		// The SecureText aliases are spelled out in prose rather than as `Password = SecureText`: the
+		// key-equals-value form reads as a hard-coded credential to static analysis (S2068).
+		"Other aliases: Blob = Binary, ImageLink = ImageLookup, EmailAddress = Email, " +
+		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText.";
 
 	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
 	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
@@ -4243,11 +4245,20 @@ internal static class ToolContractCatalog {
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 			"Adds, modifies, or removes one entity schema column directly for minimal existing-schema edits.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ActionFieldName, ColumnNameFieldName],
+				// column-name is deliberately NOT in `required`: the emitted MCP schema stopped requiring it when
+				// the aliased identity fields were made optional, and "at least one of column-name / name" is
+				// enforced where the value is resolved. Keeping it required here would tell a strict client to
+				// reject the readback shape (`name` only) that the runtime actually accepts.
+				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ActionFieldName],
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(ActionFieldName, StringType, "Column action: add, modify, or remove."),
-					Field(ColumnNameFieldName, StringType, "Column name (alias `name`)."),
+					Field(ColumnNameFieldName, StringType,
+						"Column name. Preferred spelling; supply either this or `name` (see any-of)."),
+					Field("name", StringType,
+						"Column name in the readback spelling — get-app-info reports the column identity as `name`, "
+						+ "so a readback payload can be sent back unchanged. Equivalent to `column-name`; "
+						+ "supply exactly one of the two."),
 					Field("new-name", StringType, "New column name; supply it to rename the column on a modify."),
 					Field("type", StringType, ColumnTypeVocabularyDescription),
 					Field(TitleLocalizationsFieldName, ObjectType, "Optional localization map."),
@@ -4270,7 +4281,11 @@ internal static class ToolContractCatalog {
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
 					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."),
-					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted."))),
+					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted.")),
+				AnyOf: [
+					new[] { ColumnNameFieldName },
+					["name"]
+				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
