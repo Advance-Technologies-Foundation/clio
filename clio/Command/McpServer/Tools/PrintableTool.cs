@@ -43,7 +43,7 @@ public sealed class PrintableGetTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecuteGetRequest(urlBuilder.Build(path), 30_000);
 			return PrintableSupport.ParseRead(responseJson);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure(ex.Message);
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
@@ -108,7 +108,7 @@ public sealed class PrintableCreateTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecutePostRequest(url, JsonSerializer.Serialize(body), 30_000);
 			return PrintableSupport.ParseCreated(responseJson);
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
@@ -181,7 +181,7 @@ public sealed class PrintableUpdateTool(IToolCommandResolver commandResolver) {
 			client.ExecutePatchRequest(url, JsonSerializer.Serialize(body), 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
@@ -220,7 +220,7 @@ public sealed class PrintableDeleteTool(IToolCommandResolver commandResolver) {
 			client.ExecuteDeleteRequest(url, string.Empty, 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }

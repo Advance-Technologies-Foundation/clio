@@ -76,7 +76,7 @@ public sealed class PrintableTemplateUploadTool(IToolCommandResolver commandReso
 			}
 			return result;
 		} catch (Exception ex) {
-			return PrintableTemplateUploadResponse.Failure(ex.Message);
+			return PrintableTemplateUploadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
