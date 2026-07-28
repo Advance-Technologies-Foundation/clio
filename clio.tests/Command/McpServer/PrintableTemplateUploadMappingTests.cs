@@ -47,7 +47,9 @@ public sealed class PrintableTemplateUploadMappingTests {
 		parameters["mimeType"].Should().Be(PrintableSupport.WordMimeType);
 		parameters["parentColumnName"].Should().Be("Id");
 		parameters["reportId"].Should().Be(ReportId);
-		// The service keys the template row on the upload's own fileId, not on the report id.
+		// Pins current behavior: parentColumnValue carries the upload's own fileId, not the report id.
+		// Not independently verified against Creatio's MSWordReportDesigner client — if that contract
+		// says otherwise, fix the implementation and this assertion together.
 		parameters["parentColumnValue"].Should().Be(fileId.ToString());
 		parameters["totalFileLength"].Should().Be("4096");
 		parameters["entitySchemaName"].Should().Be(PrintableSupport.TemplateUploadEntitySchema);
