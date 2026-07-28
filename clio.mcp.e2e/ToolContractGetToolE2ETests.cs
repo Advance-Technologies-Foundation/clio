@@ -402,6 +402,46 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises the convergent sync-schemas outcome, collision, and Name-keyed seed contract")]
+	[Description("Asserts the live get-tool-contract BuildSchemaSync text advertises the convergent outcome discriminators (created/reconciled/already-satisfied/collision), the collision result shape (collision-info), and the Name-keyed seed-data replay-safety contract (Story 4 contract surface asserted end to end).")]
+	public async Task ToolContractGet_Should_Advertise_Convergent_SchemaSync_Contract() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					SchemaSyncTool.ToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the sync-schemas contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single(tool => tool.Name == SchemaSyncTool.ToolName);
+		contract.Description.Should().Contain("convergent",
+			because: "the contract must advertise that create-lookup/create-entity/update-entity are convergent");
+		contract.Description.Should().Contain("already-satisfied/reconciled",
+			because: "the contract must advertise that already-applied operations replay as already-satisfied/reconciled with no duplicate mutation (AC-03 recovery guidance)");
+		contract.Description.Should().Contain("`Name`",
+			because: "the contract must advertise the Name-keyed seed-data replay-safety rule");
+		contract.Description.Should().Contain("NOT replay-safe",
+			because: "the contract must warn that a no-Name seed row is not replay-safe");
+		contract.OutputContract.Fields.Should().Contain(
+			field => field.Name == "results"
+				&& field.Description.Contains("created", StringComparison.Ordinal)
+				&& field.Description.Contains("reconciled", StringComparison.Ordinal)
+				&& field.Description.Contains("already-satisfied", StringComparison.Ordinal)
+				&& field.Description.Contains("collision", StringComparison.Ordinal)
+				&& field.Description.Contains("collision-info", StringComparison.Ordinal),
+			because: "the results output field must document the convergent outcome discriminators and the collision-info shape");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract returns canonical DB-first binding contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_DbFirst_Binding_Surface() {
 		// Arrange
