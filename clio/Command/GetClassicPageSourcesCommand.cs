@@ -229,7 +229,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			JObject resources = BuildResources(ctx, topLayerUId, options.SchemaName);
 
 			// 6. Entity columns + titles from the merged entity schema (best-effort).
-			(JObject entityColumns, JObject columnTitles) = BuildEntityColumns(entity);
+			(JObject entityColumns, JObject columnTitles) = BuildEntityColumns(ctx, entity);
 
 			// 6b. Enrichers (best-effort, heuristic; omit unresolved, never fabricate). All enricher names are
 			//     primed through ONE batched SelectQuery so the fan-out does not pay a round-trip per name.
@@ -287,11 +287,26 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				response = Fail(pathError);
 				return false;
 			}
-			string directory = Path.GetDirectoryName(manifestPath);
-			if (!string.IsNullOrWhiteSpace(directory)) {
-				_fileSystem.CreateDirectoryIfNotExists(directory);
+			string manifestContent = manifest.ToString(Formatting.Indented);
+			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
+				// Explicit, possibly agent-supplied output-file: atomic no-overwrite write (FileMode.CreateNew)
+				// through the confinement guard so the Destructive=false refuse-overwrite contract holds against a
+				// target planted after Resolve, and a symlink at the resolved path cannot redirect the write.
+				try {
+					OutputPathConfinement.WriteAtomic(_ioFileSystem, manifestPath, manifestContent);
+				}
+				catch (IOException ex) {
+					response = Fail(ex.Message);
+					return false;
+				}
+			} else {
+				// Tool-owned default path: re-runnable, overwrites its own prior output.
+				string directory = Path.GetDirectoryName(manifestPath);
+				if (!string.IsNullOrWhiteSpace(directory)) {
+					_fileSystem.CreateDirectoryIfNotExists(directory);
+				}
+				_fileSystem.WriteAllTextToFile(manifestPath, manifestContent);
 			}
-			_fileSystem.WriteAllTextToFile(manifestPath, manifest.ToString(Formatting.Indented));
 
 			response = new GetClassicPageSourcesResponse {
 				Success = true,
@@ -535,15 +550,20 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (depth >= MaxParentDepth) {
 				// Depth cap hit with a parent still to follow: the seed is truncated. Say so, or a truncated
 				// seed looks identical to a page that simply has no more parents (parity with the other exits).
-				_logger.WriteWarning(
+				// Surface to ctx.Warnings too: a logger warning does not reach an MCP caller (log buffer cleared
+				// before the result is returned), so a truncated seed would otherwise read as complete.
+				string warning =
 					$"Parent-template walk stopped at the depth cap ({MaxParentDepth}); the seed may be truncated " +
-					$"(next unwalked parent '{parentUId}').");
+					$"(next unwalked parent '{parentUId}').";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				break;
 			}
 			if (!visitedParentUId.Add(parentUId)) {
 				// Cycle on the parent-link walk: stop and say so — silently truncating hides a corrupt chain.
-				_logger.WriteWarning(
-					$"Parent-template walk stopped on a cycle at '{parentUId}'; the seed may be truncated.");
+				string warning = $"Parent-template walk stopped on a cycle at '{parentUId}'; the seed may be truncated.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				break;
 			}
 			(JObject parentLayer, string error) = LoadSchemaCached(ctx, parentUId, null);
@@ -666,12 +686,14 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		catch (Exception ex) {
-			_logger.WriteWarning($"Could not gather merged localizable strings (resources): {ex.Message}");
+			string warning = $"Could not gather merged localizable strings (resources): {ex.Message}";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
 		}
 		return resources;
 	}
 
-	private (JObject entityColumns, JObject columnTitles) BuildEntityColumns(string entity) {
+	private (JObject entityColumns, JObject columnTitles) BuildEntityColumns(PageSourcesRunContext ctx, string entity) {
 		var entityColumns = new JObject();
 		var columnTitles = new JObject();
 		if (string.IsNullOrWhiteSpace(entity)) {
@@ -704,7 +726,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		catch (Exception ex) {
-			_logger.WriteWarning($"Could not gather entity columns for '{entity}': {ex.Message}");
+			string warning = $"Could not gather entity columns for '{entity}': {ex.Message}";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
 		}
 		return (entityColumns, columnTitles);
 	}
@@ -727,8 +751,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 					continue;
 				}
 				if (detailNames.Count >= collectionCap) {
-					_logger.WriteWarning(
-						$"More than {collectionCap} distinct detail-schema references found; the remainder is ignored.");
+					string warning =
+						$"More than {collectionCap} distinct detail-schema references found; the remainder is ignored.";
+					_logger.WriteWarning(warning);
+					AddWarning(ctx, warning);
 					return detailNames;
 				}
 				detailNames.Add(detailName);
@@ -741,13 +767,17 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		var detailSchemas = new JObject();
 		foreach (string detailName in detailNames) {
 			if (detailSchemas.Count >= MaxDetails) {
-				_logger.WriteWarning($"Detail gathering stopped at {MaxDetails} resolved schemas; the remainder is omitted.");
+				string warning = $"Detail gathering stopped at {MaxDetails} resolved schemas; the remainder is omitted.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				break;
 			}
 			try {
 				(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, detailName);
 				if (enumError != null) {
-					_logger.WriteWarning($"Could not gather detail schema '{detailName}': {enumError}");
+					string warning = $"Could not gather detail schema '{detailName}': {enumError}";
+					_logger.WriteWarning(warning);
+					AddWarning(ctx, warning);
 					continue;
 				}
 				if (layers.Count == 0) {
@@ -756,7 +786,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				string topUId = layers[layers.Count - 1].UId;
 				(JObject detailSchema, string loadError) = LoadSchemaCached(ctx, topUId, detailName);
 				if (loadError != null || detailSchema == null) {
-					_logger.WriteWarning($"Could not gather detail schema '{detailName}': {loadError ?? "no schema returned"}");
+					string warning = $"Could not gather detail schema '{detailName}': {loadError ?? "no schema returned"}";
+					_logger.WriteWarning(warning);
+					AddWarning(ctx, warning);
 					continue;
 				}
 				var detailEntry = new JObject { ["body"] = detailSchema["body"]?.ToString() ?? string.Empty };
@@ -767,7 +799,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				detailSchemas[detailName] = detailEntry;
 			}
 			catch (Exception ex) {
-				_logger.WriteWarning($"Could not gather detail schema '{detailName}': {ex.Message}");
+				string warning = $"Could not gather detail schema '{detailName}': {ex.Message}";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 			}
 		}
 		return detailSchemas;
@@ -878,7 +912,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				continue;
 			}
 			if (editPageNames.Count >= MaxChildPages) {
-				_logger.WriteWarning($"More than {MaxChildPages} distinct child edit pages referenced; the remainder is omitted.");
+				string warning = $"More than {MaxChildPages} distinct child edit pages referenced; the remainder is omitted.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				break;
 			}
 			editPageNames.Add(editPageName);
@@ -888,7 +924,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			try {
 				(JObject childManifest, string error) = AssembleChildManifest(ctx, editPageName);
 				if (error != null) {
-					_logger.WriteWarning($"Could not assemble child page '{editPageName}': {error}");
+					string warning = $"Could not assemble child page '{editPageName}': {error}";
+					_logger.WriteWarning(warning);
+					AddWarning(ctx, warning);
 					continue;
 				}
 				if (childManifest != null) {
@@ -1010,6 +1048,16 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		_logger.WriteWarning(warning);
 		if (!warnings.Contains(warning, StringComparer.Ordinal)) {
 			warnings.Add(warning);
+		}
+	}
+
+	// Surface a completeness gap to the MCP caller. A logger warning alone does not reach an MCP caller (the log
+	// buffer is cleared before the result is returned), so any branch that OMITS or TRUNCATES manifest content
+	// while still returning success must also record it here — otherwise success:true / warnings:null reads as a
+	// complete bundle. Deduped so a repeated gap does not flood the channel.
+	private static void AddWarning(PageSourcesRunContext ctx, string warning) {
+		if (!ctx.Warnings.Contains(warning, StringComparer.Ordinal)) {
+			ctx.Warnings.Add(warning);
 		}
 	}
 }

@@ -275,7 +275,35 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		ok.Should().BeTrue(because: "an output-file inside the OS temp scratch dir is an allowed destination");
 		response.ManifestPath.Should().Be(_ioFileSystem.Path.GetFullPath(scratch),
 			because: "the confined explicit path is honored as the manifest location");
-		_writtenPath.Should().Be(_ioFileSystem.Path.GetFullPath(scratch), because: "the manifest is written to that path");
+		_ioFileSystem.File.Exists(_ioFileSystem.Path.GetFullPath(scratch)).Should().BeTrue(
+			because: "an explicit output-file is written atomically (WriteAtomic) to the confined path");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources refuses to overwrite an explicit output-file that already exists (WriteAtomic FileMode.CreateNew), keeping the Destructive=false contract honest against a target planted after Resolve.")]
+	public void TryAssemblePageSources_ShouldRefuse_ExistingExplicitOutputFile() {
+		// Arrange — an allowed (temp) explicit output-file that already exists on disk
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "gcmb-ws-exist");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		string scratch = _ioFileSystem.Path.Combine(tempRoot, "gcmb-exist", "manifest.json");
+		_ioFileSystem.Directory.CreateDirectory(_ioFileSystem.Path.GetDirectoryName(scratch));
+		_ioFileSystem.File.WriteAllText(scratch, "old manifest");
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage", OutputFile = scratch };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "an existing explicit output-file must not be silently overwritten");
+		response.Error.Should().Contain("already exists",
+			because: "the caller is told why the write was refused");
+		_ioFileSystem.File.ReadAllText(_ioFileSystem.Path.GetFullPath(scratch)).Should().Be("old manifest",
+			because: "the pre-existing file is left untouched when the atomic write is refused");
 	}
 
 	[Test]
@@ -425,6 +453,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		JObject manifest = JObject.Parse(_writtenContent);
 		manifest["entityColumns"].Should().BeNull(because: "the failed enricher is omitted, never fabricated");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrTest")));
+		response.Warnings.Should().Contain(w => w.Contains("entity columns"),
+			because: "the omitted entityColumns section must be visible to an MCP caller via response.Warnings");
 	}
 
 	[Test]
@@ -944,6 +974,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		((JObject)manifest["detailSchemas"]).Count.Should().Be(50,
 			because: "only the first fifty resolvable details are folded into the manifest");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
+		response.Warnings.Should().Contain(w => w.Contains("Detail gathering stopped at 50"),
+			because: "a logger warning does not reach an MCP caller, so the truncation must also surface in response.Warnings");
 	}
 
 	[Test]
@@ -1031,6 +1063,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.SeedCount.Should().Be(20,
 			because: "exactly MaxParentDepth (20) parent levels are walked before the cap stops the walk");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
+		response.Warnings.Should().Contain(w => w.Contains("depth cap"),
+			because: "the truncated seed must be visible to an MCP caller via response.Warnings, not only the logger");
 	}
 
 	[Test]

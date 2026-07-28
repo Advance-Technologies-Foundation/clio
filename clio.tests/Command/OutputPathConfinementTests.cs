@@ -290,6 +290,29 @@ public sealed class OutputPathConfinementTests {
 	}
 
 	[Test]
+	[Description("Resolve fails CLOSED on a symlink CYCLE: the resolution throws UnresolvableLinkException and Resolve refuses with the specific 'unresolvable symbolic link' message, rather than degrading to the lexical path. Locks in the fail-closed branch and its ordering above the broad lexical-fallback catch.")]
+	public void Resolve_ShouldFailClosed_OnSymlinkCycle() {
+		// Arrange — a two-node symlink cycle under the sandbox (a -> b, b -> a)
+		string a = Path.Combine(_sandbox, "cycle-a");
+		string b = Path.Combine(_sandbox, "cycle-b");
+		try {
+			File.CreateSymbolicLink(a, b);
+			File.CreateSymbolicLink(b, a);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, a);
+
+		// Assert
+		path.Should().BeNull(because: "a symlink cycle cannot be resolved, so no path may be handed back for writing");
+		error.Should().Contain("unresolvable symbolic link",
+			because: "the cycle must fail CLOSED via the specific branch, not degrade to the lexical fallback");
+	}
+
+	[Test]
 	[Description("WriteAtomic refuses to overwrite a target that appears after Resolve (FileMode.CreateNew is the atomic gate), keeping the additive Destructive=false contract honest against a resolve->write race.")]
 	public void WriteAtomic_ShouldRefuse_TargetThatAppearedAfterResolve() {
 		// Arrange — Resolve confirms the path is allowed while it does not exist; the file then appears (a racing

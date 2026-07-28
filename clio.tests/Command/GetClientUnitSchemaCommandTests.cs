@@ -153,9 +153,11 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		result.Should().BeTrue(because: "an existing schema is fetched and written");
 		response.Body.Should().BeNull(because: "with an output file the body goes to disk, not the response");
 		response.BodyLength.Should().Be("define('UsrHelper', []);".Length, because: "the length is still reported");
-		_writtenPath.Should().Be(_ioFileSystem.Path.GetFullPath(outputFile),
-			because: "the body is written to the confined, resolved output path");
-		_writtenContent.Should().Be("define('UsrHelper', []);", because: "the raw body is written verbatim");
+		string writtenPath = _ioFileSystem.Path.GetFullPath(outputFile);
+		_ioFileSystem.File.Exists(writtenPath).Should().BeTrue(
+			because: "the body is atomically written to the confined, resolved output path");
+		_ioFileSystem.File.ReadAllText(writtenPath).Should().Be("define('UsrHelper', []);",
+			because: "the raw body is written verbatim");
 	}
 
 	[Test]
@@ -241,9 +243,10 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		result.Should().BeTrue(because: "the schema resolves and the contract is written");
 		response.LocalizableStrings.Should().BeNull(
 			because: "with an output file the strings go to disk, not the response");
-		_writtenPath.Should().Be(_ioFileSystem.Path.GetFullPath(outputFile),
-			because: "the contract is written to the confined, resolved output path");
-		JObject written = JObject.Parse(_writtenContent);
+		string writtenPath = _ioFileSystem.Path.GetFullPath(outputFile);
+		_ioFileSystem.File.Exists(writtenPath).Should().BeTrue(
+			because: "the contract is atomically written to the confined, resolved output path");
+		JObject written = JObject.Parse(_ioFileSystem.File.ReadAllText(writtenPath));
 		written["schemaName"]!.ToString().Should().Be("UsrHelper", because: "the contract documents the schema name");
 		written["fullHierarchy"]!.Value<bool>().Should().BeTrue(because: "the contract records the full-hierarchy mode");
 		written["body"]!.ToString().Should().Be("define('UsrHelper', []);",

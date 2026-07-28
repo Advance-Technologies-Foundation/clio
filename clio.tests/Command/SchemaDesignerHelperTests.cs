@@ -132,6 +132,28 @@ public sealed class SchemaDesignerHelperTests {
 	}
 
 	[Test]
+	[Description("ResolveSchemaUId surfaces a DataService failure envelope (HTTP 200 with success:false, e.g. restricted SysSchema access) as the real error for a non-ClientUnit kind, instead of misreporting it as a not-found empty result.")]
+	public void ResolveSchemaUId_ShouldSurfaceFailure_WhenNonClientUnitSelectReturnsFailureEnvelope() {
+		// Arrange - the single-row (SqlScript/SourceCode) path must key failure off the same detector the
+		// layer path uses; a 200-with-failure body must not be read as "not found".
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(
+			"""{"success":false,"errorInfo":{"errorCode":"AccessDenied","message":"Access to SysSchema is denied"}}""");
+
+		// Act
+		(string uId, string error) = SchemaDesignerHelper.ResolveSchemaUId(
+			client, urlBuilder, "UsrScript", SchemaDesignerKind.SqlScript);
+
+		// Assert
+		uId.Should().BeNull(because: "a failure envelope must not yield a UId");
+		error.Should().Contain("failed",
+			because: "the real DataService failure is surfaced rather than a misleading not-found");
+		error.Should().Contain("Access to SysSchema is denied",
+			because: "the underlying failure reason is carried so the caller can diagnose the permission problem");
+		error.Should().NotContain("not found",
+			because: "a permission failure must not be reported as the schema being absent (which would corrupt SchemaNameExists)");
+	}
+
+	[Test]
 	[Description("EnumerateSchemaLayers returns exactly one layer for a single-package schema.")]
 	public void EnumerateSchemaLayers_ShouldReturnSingleLayer_WhenOnlyOnePackage() {
 		// Arrange

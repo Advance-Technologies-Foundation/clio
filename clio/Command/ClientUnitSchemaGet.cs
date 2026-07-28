@@ -170,7 +170,10 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 						body,
 						localizableStrings
 					};
-					_fileSystem.WriteAllTextToFile(outputPath,
+					// Atomic no-overwrite write (FileMode.CreateNew): closes the resolve→write TOCTOU window a bare
+					// WriteAllTextToFile leaves open (a symlink/file planted at outputPath after Resolve would be
+					// followed/overwritten), and creates the parent directory that Resolve deliberately does not.
+					OutputPathConfinement.WriteAtomic(_ioFileSystem, outputPath,
 						System.Text.Json.JsonSerializer.Serialize(fileContent,
 							new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
 				} else {
@@ -178,7 +181,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 					response.LocalizableStrings = localizableStrings;
 				}
 			} else if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
-				_fileSystem.WriteAllTextToFile(outputPath, body);
+				OutputPathConfinement.WriteAtomic(_ioFileSystem, outputPath, body);
 			} else {
 				response.Body = body;
 			}

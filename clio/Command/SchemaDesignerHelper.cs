@@ -114,6 +114,12 @@ internal static class SchemaDesignerHelper {
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
 		JObject selectResponse = JObject.Parse(responseJson);
+		// DataService returns HTTP 200 even on failure (restricted SysSchema access, auth, invalid column). Key
+		// failure off the same authoritative detector the ClientUnit layer path uses, so a failure envelope is
+		// surfaced as the real error instead of an empty-rows "not found" — which would also silently corrupt
+		// SchemaNameExists (a permission failure read as "schema does not exist").
+		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure))
+			return (null, $"SelectQuery for schema '{schemaName}' failed: {failure}");
 		var rows = selectResponse["rows"] as JArray ?? [];
 		if (rows.Count == 0)
 			return (null, $"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')");
