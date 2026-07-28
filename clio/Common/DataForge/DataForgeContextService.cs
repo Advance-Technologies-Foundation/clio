@@ -81,25 +81,21 @@ internal sealed class DataForgeContextService(
 		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> warnings = [];
+		// Tracks the first warning index per distinct (category, message) cause so repeats collapse into it.
+		Dictionary<string, int> firstIndexByCause = new(StringComparer.Ordinal);
 		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
 		cancellationToken.ThrowIfCancellationRequested();
 
-		// Fail fast when the subsystem is not online. Every read below would throw the SAME underlying error,
-		// once per search term, so an environment without Data Forge configured produced a wall of identical
-		// warnings that buried the one fact the caller needed — the subsystem is unavailable here (issue #948).
-		if (!health.Liveness) {
-			return BuildUnavailableResult(health, status);
-		}
-
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
-		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, cancellationToken);
+		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, firstIndexByCause, cancellationToken);
 
 		List<string> lookupTerms = NormalizeTerms(request.LookupHints, null);
-		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings, cancellationToken);
+		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings, firstIndexByCause, cancellationToken);
 
 		Dictionary<string, IReadOnlyList<string>> relations = GetRelations(
 			request.RelationPairs,
 			warnings,
+			firstIndexByCause,
 			cancellationToken);
 
 		List<SimilarTableResult> distinctTables = GetDistinctTables(similarTables);
@@ -107,6 +103,7 @@ internal sealed class DataForgeContextService(
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(
 			distinctTables,
 			warnings,
+			firstIndexByCause,
 			cancellationToken);
 
 		List<SimilarLookupResult> distinctLookups = GetDistinctLookups(similarLookups);
@@ -133,33 +130,42 @@ internal sealed class DataForgeContextService(
 	}
 
 	/// <summary>
-	/// Builds the single, structured "Data Forge is unavailable here" result used instead of fanning out reads
-	/// that are all guaranteed to fail the same way.
+	/// Records a per-item read failure, collapsing repeats of the SAME underlying error into one warning that
+	/// names the affected items instead of emitting one line per item.
 	/// </summary>
-	/// <param name="health">The health probe result that reported the subsystem offline.</param>
-	/// <param name="status">The maintenance status accompanying it, whose message carries the platform diagnosis.</param>
-	/// <returns>An empty aggregation carrying one actionable warning and honest (all-false) coverage.</returns>
-	private static DataForgeContextAggregationResult BuildUnavailableResult(
-		DataForgeHealthResult health,
-		DataForgeMaintenanceStatusResult status) {
-		// The status message is the platform's own diagnosis (for example a missing service base URI on the
-		// Creatio side). It is surfaced once, prefixed so the caller can see WHERE the limitation is: Data
-		// Forge is an optional Creatio-side subsystem, and clio has no endpoint of its own to configure.
-		string diagnosis = string.IsNullOrWhiteSpace(status.Error)
-			? $"status {status.Status}"
-			: $"status {status.Status}: {status.Error}";
-		return new DataForgeContextAggregationResult(
-			health.CorrelationId,
-			[$"dataforge:unavailable-on-environment:{diagnosis}. Data Forge enrichment is skipped; it is an "
-				+ "optional Creatio-side subsystem and is not configured on this environment. This never blocks "
-				+ "schema work — use find-entity-schema for discovery and explicit read-back for verification."],
-			health,
-			status,
-			[],
-			[],
-			new Dictionary<string, IReadOnlyList<string>>(),
-			new Dictionary<string, IReadOnlyList<DataForgeColumnResult>>(),
-			new DataForgeCoverage(Health: false, Tables: false, Lookups: false, Relations: false, Columns: false));
+	/// <remarks>
+	/// When the Data Forge subsystem is unconfigured on an environment every read fails identically, so an
+	/// N-term request produced N copies of the same message and buried the one fact the caller needed
+	/// (issue #948). Collapsing at the reporting layer — rather than skipping the reads on a health probe —
+	/// is deliberate: the probe's liveness is NOT a reliable predictor of whether the reads work. The
+	/// sandbox proves it, running with liveness false while table-column reads (which go through the
+	/// runtime schema reader, not Data Forge) succeed, so short-circuiting on it would discard real results.
+	/// </remarks>
+	/// <param name="warnings">The accumulating warning list, mutated in place.</param>
+	/// <param name="firstIndexByCause">Maps an already-seen (category, message) cause to its index in <paramref name="warnings"/>.</param>
+	/// <param name="category">Read category (<c>tables</c>, <c>lookups</c>, <c>relations</c>, <c>columns</c>).</param>
+	/// <param name="item">The term, pair key, or table name the read was for.</param>
+	/// <param name="message">The failure message used as the dedup key.</param>
+	private static void AddDedupedWarning(
+		List<string> warnings,
+		Dictionary<string, int> firstIndexByCause,
+		string category,
+		string item,
+		string message) {
+		// NUL-joined so a message containing ':' cannot collide with another category's key.
+		string causeKey = $"{category}\0{message}";
+		if (!firstIndexByCause.TryGetValue(causeKey, out int firstIndex)) {
+			// The first occurrence keeps the ORIGINAL `category:item:message` shape byte for byte, so a
+			// single-failure payload is unchanged for existing consumers; only repeats are collapsed.
+			firstIndexByCause[causeKey] = warnings.Count;
+			warnings.Add($"{category}:{item}:{message}");
+			return;
+		}
+		string existing = warnings[firstIndex];
+		warnings[firstIndex] = existing.EndsWith(")", StringComparison.Ordinal)
+				&& existing.Contains(" (also: ", StringComparison.Ordinal)
+			? $"{existing[..^1]}, {item})"
+			: $"{existing} (also: {item})";
 	}
 
 	private static DataForgeCoverage CreateCoverage(
@@ -202,6 +208,7 @@ internal sealed class DataForgeContextService(
 	private List<SimilarTableResult> FindSimilarTables(
 		IReadOnlyList<string> tableTerms,
 		List<string> warnings,
+		Dictionary<string, int> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		List<SimilarTableResult> similarTables = [];
 		foreach (string term in tableTerms) {
@@ -210,7 +217,7 @@ internal sealed class DataForgeContextService(
 				similarTables.AddRange(readClient.FindSimilarTables(term));
 			}
 			catch (Exception ex) {
-				warnings.Add($"tables:{term}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "tables", term, ex.Message);
 			}
 		}
 
@@ -220,6 +227,7 @@ internal sealed class DataForgeContextService(
 	private List<SimilarLookupResult> FindSimilarLookups(
 		IReadOnlyList<string> lookupTerms,
 		List<string> warnings,
+		Dictionary<string, int> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		List<SimilarLookupResult> similarLookups = [];
 		foreach (string hint in lookupTerms) {
@@ -228,7 +236,7 @@ internal sealed class DataForgeContextService(
 				similarLookups.AddRange(readClient.FindSimilarLookups(hint));
 			}
 			catch (Exception ex) {
-				warnings.Add($"lookups:{hint}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "lookups", hint, ex.Message);
 			}
 		}
 
@@ -238,6 +246,7 @@ internal sealed class DataForgeContextService(
 	private Dictionary<string, IReadOnlyList<string>> GetRelations(
 		IReadOnlyList<DataForgeRelationPair>? relationPairs,
 		List<string> warnings,
+		Dictionary<string, int> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
 		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
@@ -247,7 +256,7 @@ internal sealed class DataForgeContextService(
 				relations[key] = readClient.GetTableRelationships(pair.SourceTable, pair.TargetTable);
 			}
 			catch (Exception ex) {
-				warnings.Add($"relations:{key}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "relations", key, ex.Message);
 			}
 		}
 
@@ -257,6 +266,7 @@ internal sealed class DataForgeContextService(
 	private Dictionary<string, IReadOnlyList<DataForgeColumnResult>> GetColumns(
 		IReadOnlyList<SimilarTableResult> distinctTables,
 		List<string> warnings,
+		Dictionary<string, int> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string tableName in distinctTables.Select(table => table.Name)) {
@@ -266,7 +276,7 @@ internal sealed class DataForgeContextService(
 				columns[tableName] = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
 			}
 			catch (Exception ex) {
-				warnings.Add($"columns:{tableName}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "columns", tableName, ex.Message);
 			}
 		}
 

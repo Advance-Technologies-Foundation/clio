@@ -5,6 +5,7 @@ using Clio.Common.DataForge;
 using Clio.Common.EntitySchema;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
@@ -178,36 +179,87 @@ public sealed class DataForgeContextServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Fails fast with ONE actionable diagnosis when Data Forge is offline, instead of fanning out a read per search term that all fail the same way and bury the diagnosis under identical warnings (issue #948).")]
-	public void GetContext_Should_ReturnSingleDiagnosis_WhenDataForgeIsOffline() {
-		// Arrange — the maintenance probe reports the subsystem offline, mirroring an environment where the
-		// optional Creatio-side Data Forge service is not configured.
+	[Description("Collapses one recurring read failure into a single warning naming every affected term, instead of emitting one identical warning per term and burying the diagnosis (issue #948).")]
+	public void GetContext_Should_CollapseRepeatedIdenticalReadFailures_IntoOneWarning() {
+		// Arrange — the same underlying failure for every term, mirroring an environment where the optional
+		// Creatio-side Data Forge service is unconfigured and every search fails identically.
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables(Arg.Any<string>(), Arg.Any<int?>())
+			.Throws(new InvalidOperationException("Value cannot be null. (Parameter 'baseUri')"));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, CreateReadyMaintenanceClient(), runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors", "invoices"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.Warnings.Should().HaveCount(1,
+			because: "one recurring failure must produce one warning, not one per search term");
+		result.Warnings[0].Should().Contain("Value cannot be null. (Parameter 'baseUri')",
+			because: "the platform's own diagnosis must be preserved so the cause stays identifiable");
+		result.Warnings[0].Should().Contain("orders").And.Contain("vendors").And.Contain("invoices",
+			because: "collapsing must stay specific about every term the failure affected");
+		result.Warnings[0].Should().StartWith("tables:orders:",
+			because: "the first occurrence keeps the original category:item:message shape, so a single-failure "
+				+ "payload is unchanged for existing consumers and only repeats are folded in");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps genuinely different read failures as separate warnings, so collapsing repeats never hides a second, distinct cause.")]
+	public void GetContext_Should_KeepDistinctReadFailures_AsSeparateWarnings() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables("orders", Arg.Any<int?>())
+			.Throws(new InvalidOperationException("first cause"));
+		readClient.FindSimilarTables("vendors", Arg.Any<int?>())
+			.Throws(new InvalidOperationException("second cause"));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, CreateReadyMaintenanceClient(), runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.Warnings.Should().HaveCount(2,
+			because: "two distinct causes are two facts and must both survive the collapse");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still performs the Data Forge reads when the maintenance probe reports the subsystem offline: liveness does not predict whether the reads work, so skipping them would discard real results (the sandbox runs with liveness false while table-column reads succeed).")]
+	public void GetContext_Should_StillAttemptReads_WhenMaintenanceProbeReportsOffline() {
+		// Arrange
 		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
 		maintenanceClient.GetFullStatus().Returns((
 			new DataForgeHealthResult(false, false, false, false, "corr-offline"),
 			new DataForgeMaintenanceStatusResult(false, "Unavailable", "Empty maintenance status response.")));
 		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables("contact", Arg.Any<int?>())
+			.Returns([new SimilarTableResult("Contact", "Contact", "Primary contact")]);
 		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		runtimeReader.GetByName("Contact").Returns(new RuntimeEntitySchemaResult(
+			Guid.NewGuid(), "Contact", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Full name", null, 1, true, false, null)]));
 		DataForgeContextService service = new(readClient, maintenanceClient, runtimeReader);
 
-		// Act — several terms, each of which would otherwise produce its own identical warning.
+		// Act
 		DataForgeContextAggregationResult result = service.GetContext(
-			new DataForgeContextRequest(null, ["orders", "vendors", "invoices"], ["status"], []),
+			new DataForgeContextRequest(null, ["contact"], [], []),
 			CancellationToken.None);
 
 		// Assert
-		readClient.DidNotReceiveWithAnyArgs().FindSimilarTables(default!);
-		readClient.DidNotReceiveWithAnyArgs().FindSimilarLookups(default!);
-		result.Warnings.Should().HaveCount(1,
-			because: "one unavailable subsystem must produce one diagnosis, not one warning per search term");
-		result.Warnings[0].Should().Contain("unavailable-on-environment",
-			because: "the warning must be machine-recognizable, not only prose");
-		result.Warnings[0].Should().Contain("Empty maintenance status response.",
-			because: "the platform's own diagnosis must be preserved so the cause stays identifiable");
-		result.Coverage.Health.Should().BeFalse(
-			because: "coverage must report the subsystem as uncovered rather than claiming health");
+		result.SimilarTables.Should().ContainSingle(table => table.Name == "Contact",
+			because: "a working read must not be discarded because the maintenance probe reported offline");
+		result.Columns.Should().ContainKey("Contact",
+			because: "column enrichment goes through the runtime schema reader, which is independent of the " +
+				"Data Forge subsystem the probe describes");
 		result.Health.CorrelationId.Should().Be("corr-offline",
-			because: "the health probe correlation id must survive the short circuit");
+			because: "the health probe result is still reported alongside the successful reads");
 	}
 
 	private static IDataForgeMaintenanceClient CreateReadyMaintenanceClient() {
