@@ -176,6 +176,40 @@ public sealed class DataForgeContextServiceTests {
 		result.Coverage.Columns.Should().BeTrue(because: "coverage should stay true when there were no resolved tables to enrich");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Fails fast with ONE actionable diagnosis when Data Forge is offline, instead of fanning out a read per search term that all fail the same way and bury the diagnosis under identical warnings (issue #948).")]
+	public void GetContext_Should_ReturnSingleDiagnosis_WhenDataForgeIsOffline() {
+		// Arrange — the maintenance probe reports the subsystem offline, mirroring an environment where the
+		// optional Creatio-side Data Forge service is not configured.
+		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
+		maintenanceClient.GetFullStatus().Returns((
+			new DataForgeHealthResult(false, false, false, false, "corr-offline"),
+			new DataForgeMaintenanceStatusResult(false, "Unavailable", "Empty maintenance status response.")));
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, maintenanceClient, runtimeReader);
+
+		// Act — several terms, each of which would otherwise produce its own identical warning.
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors", "invoices"], ["status"], []),
+			CancellationToken.None);
+
+		// Assert
+		readClient.DidNotReceiveWithAnyArgs().FindSimilarTables(default!);
+		readClient.DidNotReceiveWithAnyArgs().FindSimilarLookups(default!);
+		result.Warnings.Should().HaveCount(1,
+			because: "one unavailable subsystem must produce one diagnosis, not one warning per search term");
+		result.Warnings[0].Should().Contain("unavailable-on-environment",
+			because: "the warning must be machine-recognizable, not only prose");
+		result.Warnings[0].Should().Contain("Empty maintenance status response.",
+			because: "the platform's own diagnosis must be preserved so the cause stays identifiable");
+		result.Coverage.Health.Should().BeFalse(
+			because: "coverage must report the subsystem as uncovered rather than claiming health");
+		result.Health.CorrelationId.Should().Be("corr-offline",
+			because: "the health probe correlation id must survive the short circuit");
+	}
+
 	private static IDataForgeMaintenanceClient CreateReadyMaintenanceClient() {
 		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
 		maintenanceClient.GetFullStatus().Returns((

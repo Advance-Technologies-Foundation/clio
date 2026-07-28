@@ -84,6 +84,13 @@ internal sealed class DataForgeContextService(
 		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
 		cancellationToken.ThrowIfCancellationRequested();
 
+		// Fail fast when the subsystem is not online. Every read below would throw the SAME underlying error,
+		// once per search term, so an environment without Data Forge configured produced a wall of identical
+		// warnings that buried the one fact the caller needed — the subsystem is unavailable here (issue #948).
+		if (!health.Liveness) {
+			return BuildUnavailableResult(health, status);
+		}
+
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
 		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, cancellationToken);
 
@@ -123,6 +130,36 @@ internal sealed class DataForgeContextService(
 			relations,
 			columns,
 			coverage);
+	}
+
+	/// <summary>
+	/// Builds the single, structured "Data Forge is unavailable here" result used instead of fanning out reads
+	/// that are all guaranteed to fail the same way.
+	/// </summary>
+	/// <param name="health">The health probe result that reported the subsystem offline.</param>
+	/// <param name="status">The maintenance status accompanying it, whose message carries the platform diagnosis.</param>
+	/// <returns>An empty aggregation carrying one actionable warning and honest (all-false) coverage.</returns>
+	private static DataForgeContextAggregationResult BuildUnavailableResult(
+		DataForgeHealthResult health,
+		DataForgeMaintenanceStatusResult status) {
+		// The status message is the platform's own diagnosis (for example a missing service base URI on the
+		// Creatio side). It is surfaced once, prefixed so the caller can see WHERE the limitation is: Data
+		// Forge is an optional Creatio-side subsystem, and clio has no endpoint of its own to configure.
+		string diagnosis = string.IsNullOrWhiteSpace(status.Error)
+			? $"status {status.Status}"
+			: $"status {status.Status}: {status.Error}";
+		return new DataForgeContextAggregationResult(
+			health.CorrelationId,
+			[$"dataforge:unavailable-on-environment:{diagnosis}. Data Forge enrichment is skipped; it is an "
+				+ "optional Creatio-side subsystem and is not configured on this environment. This never blocks "
+				+ "schema work — use find-entity-schema for discovery and explicit read-back for verification."],
+			health,
+			status,
+			[],
+			[],
+			new Dictionary<string, IReadOnlyList<string>>(),
+			new Dictionary<string, IReadOnlyList<DataForgeColumnResult>>(),
+			new DataForgeCoverage(Health: false, Tables: false, Lookups: false, Relations: false, Columns: false));
 	}
 
 	private static DataForgeCoverage CreateCoverage(
