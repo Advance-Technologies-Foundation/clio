@@ -351,6 +351,31 @@ internal static class SchemaDesignerHelper {
 		return (body, null);
 	}
 
+	// The SysSchema filter group both selects share: Name == <schemaName> AND ManagerName == <managerName>.
+	// Single-sourced so the UId lookup and the layer enumeration cannot drift on the filter shape or a dataValueType
+	// and start resolving different rows.
+	private static JObject BuildNameAndManagerFilters(string schemaName, string managerName) => new() {
+		[FilterTypeKey] = 6,
+		["logicalOperation"] = 0,
+		[IsEnabledKey] = true,
+		[ItemsKey] = new JObject {
+			["byName"] = BuildTextEqualsFilter("Name", schemaName),
+			["byManager"] = BuildTextEqualsFilter("ManagerName", managerName)
+		}
+	};
+
+	// An ESQ equality filter over a text column (dataValueType 1): <columnPath> == <value>.
+	private static JObject BuildTextEqualsFilter(string columnPath, string value) => new() {
+		[FilterTypeKey] = 1,
+		[ComparisonTypeKey] = 3,
+		[IsEnabledKey] = true,
+		[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = columnPath },
+		[RightExpressionKey] = new JObject {
+			[ExpressionTypeKey] = 2,
+			[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = value }
+		}
+	};
+
 	// Pre-PR UId-by-name query (single row) used by ResolveSchemaUIdSingle for the non-ClientUnit kinds.
 	private static JObject BuildSelectUIdByName(string schemaName, string managerName) {
 		return new JObject {
@@ -363,33 +388,7 @@ internal static class SchemaDesignerHelper {
 					}
 				}
 			},
-			["filters"] = new JObject {
-				[FilterTypeKey] = 6,
-				["logicalOperation"] = 0,
-				[IsEnabledKey] = true,
-				[ItemsKey] = new JObject {
-					["byName"] = new JObject {
-						[FilterTypeKey] = 1,
-						[ComparisonTypeKey] = 3,
-						[IsEnabledKey] = true,
-						[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
-						[RightExpressionKey] = new JObject {
-							[ExpressionTypeKey] = 2,
-							[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = schemaName }
-						}
-					},
-					["byManager"] = new JObject {
-						[FilterTypeKey] = 1,
-						[ComparisonTypeKey] = 3,
-						[IsEnabledKey] = true,
-						[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName" },
-						[RightExpressionKey] = new JObject {
-							[ExpressionTypeKey] = 2,
-							[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = managerName }
-						}
-					}
-				}
-			},
+			["filters"] = BuildNameAndManagerFilters(schemaName, managerName),
 			["rowCount"] = 1
 		};
 	}
@@ -421,33 +420,7 @@ internal static class SchemaDesignerHelper {
 					}
 				}
 			},
-			["filters"] = new JObject {
-				[FilterTypeKey] = 6,
-				["logicalOperation"] = 0,
-				[IsEnabledKey] = true,
-				[ItemsKey] = new JObject {
-					["byName"] = new JObject {
-						[FilterTypeKey] = 1,
-						[ComparisonTypeKey] = 3,
-						[IsEnabledKey] = true,
-						[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
-						[RightExpressionKey] = new JObject {
-							[ExpressionTypeKey] = 2,
-							[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = schemaName }
-						}
-					},
-					["byManager"] = new JObject {
-						[FilterTypeKey] = 1,
-						[ComparisonTypeKey] = 3,
-						[IsEnabledKey] = true,
-						[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName" },
-						[RightExpressionKey] = new JObject {
-							[ExpressionTypeKey] = 2,
-							[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = managerName }
-						}
-					}
-				}
-			},
+			["filters"] = BuildNameAndManagerFilters(schemaName, managerName),
 			// -1 = no limit: return every layer so a multi-package replacing chain enumerates in full.
 			["rowCount"] = -1
 		};
