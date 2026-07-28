@@ -44,6 +44,15 @@ internal static class PrintableSupport {
 	/// <summary>Stream column on <see cref="EntityName"/> that stores the template bytes.</summary>
 	internal const string TemplateColumnName = "File";
 
+	/// <summary>
+	/// Metadata columns a printable read projects. Explicit so the <see cref="TemplateColumnName"/>
+	/// stream column is never pulled into an MCP response: the default projection would ship the whole
+	/// .docx payload for every report that has a template attached. <c>FileName</c> is the metadata that
+	/// tells a caller whether a template exists.
+	/// </summary>
+	internal const string MetadataSelect =
+		"Id,Caption,FileName,ShowInSection,ShowInCard,ConvertInPDF,MacrosSettings,SysEntitySchemaId,SysModuleId,TypeId";
+
 	/// <summary>Entity schema the chunked upload writes through (the report template store).</summary>
 	internal const string TemplateUploadEntitySchema = "SysReportTemplate";
 

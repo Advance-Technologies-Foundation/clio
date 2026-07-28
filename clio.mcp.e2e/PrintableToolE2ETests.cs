@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// own coverage.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [NonParallelizable]
 public sealed class PrintableToolE2ETests {

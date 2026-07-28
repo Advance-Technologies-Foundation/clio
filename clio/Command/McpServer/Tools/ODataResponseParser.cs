@@ -3,6 +3,9 @@ using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
+// SensitiveErrorTextRedactor lives in the parent Clio.Command.McpServer namespace and resolves by
+// enclosing-namespace lookup — no using directive needed.
+
 /// <summary>
 /// Shared JSON parsing helpers for OData v4 responses. Eliminates duplicated parse logic across
 /// <see cref="ODataReadTool"/>, <see cref="ODataCreateTool"/>, and domain-specific tools such as
@@ -29,7 +32,11 @@ internal static class ODataResponseParser {
 			// Single-entity response (no value wrapper).
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {Truncate(json)}");
+			// Both halves are untrusted: the exception text and the raw body (an HTML error page from a
+			// proxy can carry the target URI or session values). Redact at this shared parser, since every
+			// caller — including odata-read — surfaces the result straight across the MCP boundary.
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(
+				$"Failed to parse OData response: {ex.Message} | Response: {Truncate(json)}"));
 		}
 	}
 
@@ -57,7 +64,8 @@ internal static class ODataResponseParser {
 				}
 				: null;
 			if (string.IsNullOrEmpty(id)) {
-				return ODataWriteResponse.Failure($"OData create did not return a record Id. Response: {Truncate(json)}");
+				return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(
+					$"OData create did not return a record Id. Response: {Truncate(json)}"));
 			}
 			return new ODataWriteResponse(true, null, id, root.Clone());
 		} catch (JsonException) {

@@ -38,8 +38,9 @@ public sealed class PrintableGetTool(IToolCommandResolver commandResolver) {
 
 			var (client, urlBuilder) = ODataKeyedWrite.ResolveClients(commandResolver, args.EnvironmentName);
 
+			string select = Uri.EscapeDataString(PrintableSupport.MetadataSelect);
 			string expand = Uri.EscapeDataString("Type($select=Name),SysEntitySchema($select=Name),SysModule($select=Caption)");
-			string path = $"{ODataKeyFormatter.KeyPath(PrintableSupport.EntityName, args.Id)}?$expand={expand}";
+			string path = $"{ODataKeyFormatter.KeyPath(PrintableSupport.EntityName, args.Id)}?$select={select}&$expand={expand}";
 			string responseJson = client.ExecuteGetRequest(urlBuilder.Build(path), 30_000);
 			return PrintableSupport.ParseRead(responseJson);
 		} catch (Exception ex) {
