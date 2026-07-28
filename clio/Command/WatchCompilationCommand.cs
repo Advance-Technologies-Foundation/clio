@@ -155,16 +155,15 @@ public class WatchCompilationCommand : RemoteCommand<WatchCompilationOptions> {
 		}
 	}
 
+	// IsSettled() only ever returns true when either no activity was observed at all (genuinely
+	// idle) or the full-compile marker WAS observed - it never settles on "activity but no
+	// marker" (see CompilationSettleTracker.IsSettled). So by the time this runs, NewRecordCount
+	// > 0 implies SawFinalMarker; only HasErrors distinguishes success from failure here.
 	private int ReportOutcome(Stopwatch sw) {
 		sw.Stop();
 		CompilationSettleSnapshot snapshot = _settleTracker.Snapshot;
 		if (snapshot.HasErrors) {
 			Logger.WriteError($"Compilation finished with errors after {TimeOnly.FromTimeSpan(sw.Elapsed):HH:mm:ss}.");
-			return ExitCompilationFailed;
-		}
-		if (snapshot.NewRecordCount > 0 && !snapshot.SawFinalMarker) {
-			Logger.WriteWarning($"Compilation activity settled, but {CompilationSettleTracker.FinalMarkerProjectName} " +
-				"was never observed - cannot confirm a full successful finish.");
 			return ExitCompilationFailed;
 		}
 
@@ -173,7 +172,13 @@ public class WatchCompilationCommand : RemoteCommand<WatchCompilationOptions> {
 	}
 
 	private int GiveUp(int giveUpAfterSeconds) {
-		Logger.WriteWarning($"Gave up waiting after {giveUpAfterSeconds}s - compilation did not settle.");
+		CompilationSettleSnapshot snapshot = _settleTracker.Snapshot;
+		if (snapshot.NewRecordCount > 0 && !snapshot.SawFinalMarker) {
+			Logger.WriteWarning($"Gave up waiting after {giveUpAfterSeconds}s - activity was observed but " +
+				$"{CompilationSettleTracker.FinalMarkerProjectName} was never seen, so a full finish could not be confirmed.");
+		} else {
+			Logger.WriteWarning($"Gave up waiting after {giveUpAfterSeconds}s - compilation did not settle.");
+		}
 		return ExitGaveUpWaiting;
 	}
 
