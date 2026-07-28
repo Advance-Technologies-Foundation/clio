@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -14,65 +13,21 @@ namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Completeness guard for the durable-invocation authorization gate (ADR D3 / FR-3a). The forgiving
-/// handler silently executes any registry tool whose <c>Destructive</c> annotation is <c>false</c> —
-/// reproducing the pre-lazy host behavior (those tools ran without a destructive prompt when they were
-/// advertised, too). That makes each tool's own annotation the security boundary, so the WRITE-capable
-/// subset of the silently-executable set (<c>ReadOnly=false, Destructive=false</c>) is pinned here as
-/// an explicit, reviewed baseline: adding a new write-capable tool (or flipping an annotation) fails
-/// this test until the change is consciously re-reviewed against the gate.
+/// handler silently executes a registry tool only when it is annotated <c>ReadOnly=true</c>; every
+/// write-capable tool is answered with a <c>confirmation-required</c> retry shape instead.
 /// </summary>
+/// <remarks>
+/// The gate used to key on <c>Destructive</c>, which let every additive-only write run unprompted on this
+/// path — <c>odata-create</c> inserted durable rows with no confirmation, while being correctly annotated
+/// <c>Destructive=false</c> (the MCP contract reserves that flag for updates which can destroy existing
+/// state). Issue #953. The fix moved the gate rather than the annotations, which turns the previous
+/// hand-maintained "reviewed silent write-capable tools" baseline into a structural invariant: the
+/// silently-executable set must contain NO write-capable tool at all, so a newly added write tool can no
+/// longer slip into silent execution and no list has to be curated to notice.
+/// </remarks>
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class DurableInvocationGateCompletenessTests {
-
-	// The reviewed baseline: every tool the durable handler will execute WITHOUT a confirmation
-	// round-trip even though it can write (ReadOnly=false) — because its own annotation says
-	// Destructive=false, exactly as the host treated it pre-#743. Reviewed 2026-07-10 (ENG-93370,
-	// decision: reproduce the pre-#743 per-tool gate as-is). If this test fails, either the new tool's
-	// annotation is wrong (a genuinely destructive tool must declare Destructive=true) or the baseline
-	// must be consciously extended in the same PR that adds the tool.
-	private static readonly IReadOnlyCollection<string> ReviewedSilentWriteCapableTools = new HashSet<string>(
-		StringComparer.OrdinalIgnoreCase) {
-		"add-package",
-		"add-package-dependency",
-		"build-theme",
-		"clear-themes-cache",
-		"create-business-process",
-		"create-client-unit-schema",
-		"create-schema",
-		"create-sql-schema",
-		"create-theme",
-		"create-user-task",
-		"create-workspace",
-		"download-configuration-by-build",
-		"download-configuration-by-environment",
-		"experimental",
-		"finish-hotfix",
-		"generate-source-code",
-		"get-browser-session",
-		"get-classic-page-sources",
-		"get-client-unit-schema",
-		"get-identity-assertion",
-		"get-page",
-		// get-schema / get-sql-schema reclassified ReadOnly=true -> false: with output-file set they write the
-		// schema body to disk, so they are write-capable. They stay Destructive=false (the write is confined to a
-		// trusted anchor or the OS temp dir via OutputPathConfinement), so the gate still runs them silently.
-		// Consciously added to the reviewed baseline for that reclassification (PR #937 / RC-28).
-		"get-schema",
-		"get-sql-schema",
-		"install-gate",
-		"install-toolkit",
-		"new-integration-test-project",
-		"new-test-project",
-		"new-ui-project",
-		"odata-create",
-		"reg-web-app",
-		"send-telemetry",
-		"start-creatio",
-		"unlock-for-hotfix",
-		"update-toolkit",
-		"upload-image"
-	};
 
 	private static McpToolInvokerRegistry BuildRegistryOverFullCatalog() {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
@@ -87,29 +42,53 @@ public sealed class DurableInvocationGateCompletenessTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every registry tool is classifiable by the durable gate, and the write-capable silently-executable subset exactly matches the reviewed baseline — a new or re-annotated write tool cannot slip into silent execution unreviewed.")]
-	public void SilentlyExecutableWriteCapableTools_ShouldMatchReviewedBaseline_OverFullCatalog() {
+	[Description("No write-capable tool is silently executable on the durable path: the gate's silently-executable set contains only tools that explicitly declare ReadOnly=true (issue #953).")]
+	public void SilentlyExecutableTools_ShouldContainNoWriteCapableTool_OverFullCatalog() {
 		// Arrange
 		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
 
-		// Act — classify every tool exactly as the durable handler does: IsDestructive(name)==false
-		// executes silently; the write-capable subset is the security-relevant one.
+		// Act — classify every tool exactly as the durable handler does: IsReadOnly(name)==true executes
+		// silently, everything else is gated. The write-capable members of the silent set are the leak.
 		List<string> silentWriteCapable = [];
 		foreach (string name in registry.ToolNames) {
-			if (registry.IsDestructive(name)) {
+			if (!registry.IsReadOnly(name)) {
 				continue;
 			}
 			registry.TryGetTool(name, out McpServerTool tool);
-			bool readOnly = tool.ProtocolTool.Annotations?.ReadOnlyHint ?? false;
-			if (!readOnly) {
+			if (tool.ProtocolTool.Annotations?.ReadOnlyHint != true) {
 				silentWriteCapable.Add(name);
 			}
 		}
 
 		// Assert
-		silentWriteCapable.Should().BeEquivalentTo(ReviewedSilentWriteCapableTools,
-			because: "the set of write-capable tools the forgiving handler executes without confirmation " +
-				"is a security boundary and must only change through a conscious review of this baseline");
+		silentWriteCapable.Should().BeEmpty(
+			because: "the durable gate keys on write-capability, so a tool that can mutate anything must be " +
+				"answered with confirmation-required rather than executed without a host prompt");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An additive-only remote write such as odata-create is gated by the durable handler even though its destructiveHint is correctly false — the regression #953 reported.")]
+	public void AdditiveOnlyRemoteWrites_ShouldNotBeSilentlyExecutable() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+		string[] additiveOnlyRemoteWrites = [
+			"odata-create",
+			"create-client-unit-schema",
+			"create-schema",
+			"create-sql-schema",
+			"create-theme",
+			"upload-image"
+		];
+
+		// Act & Assert
+		foreach (string name in additiveOnlyRemoteWrites) {
+			registry.IsDestructive(name).Should().BeFalse(
+				because: $"'{name}' performs only additive updates, so its destructiveHint is spec-conformant " +
+					"and this test would be meaningless if the annotation had been flipped instead of the gate");
+			registry.IsReadOnly(name).Should().BeFalse(
+				because: $"'{name}' writes durable state, so the durable gate must refuse to run it silently");
+		}
 	}
 
 	[Test]

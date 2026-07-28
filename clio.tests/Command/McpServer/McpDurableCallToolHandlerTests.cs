@@ -17,11 +17,12 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// The durable (forgiving) unmatched-name handler restores the pre-lazy invocation contract: a
-/// non-destructive tool named directly executes via the native dispatch path with an advisory note, a
-/// destructive tool returns a structured confirmation-required retry shape without executing, aliases
-/// resolve through the compatibility catalog, and unresolvable names return machine-readable outcomes
-/// (feature-disabled / cli-verb / unknown with did-you-mean) — every outcome carrying a correlation id.
+/// The durable (forgiving) unmatched-name handler restores the pre-lazy invocation contract: a read-only
+/// tool named directly executes via the native dispatch path with an advisory note, a write-capable tool
+/// returns a structured confirmation-required retry shape without executing (issue #953 — the gate keys on
+/// <c>readOnlyHint</c>, so an additive-only write is gated too), aliases resolve through the compatibility
+/// catalog, and unresolvable names return machine-readable outcomes (feature-disabled / cli-verb / unknown
+/// with did-you-mean) — every outcome carrying a correlation id.
 /// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
@@ -78,13 +79,14 @@ public sealed class McpDurableCallToolHandlerTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Executes a resolved non-destructive tool through the native dispatch path and appends the model-visible advisory to Content plus the durable-invocation audit to Meta.")]
-	public async Task HandleAsync_ShouldExecuteAndAttachAdvisory_WhenToolIsNonDestructive() {
+	[Description("Executes a resolved read-only tool through the native dispatch path and appends the model-visible advisory to Content plus the durable-invocation audit to Meta.")]
+	public async Task HandleAsync_ShouldExecuteAndAttachAdvisory_WhenToolIsReadOnly() {
 		// Arrange
 		McpServerTool tool = BuildEchoTool();
 		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
 			.Returns(callInfo => { callInfo[1] = tool; return true; });
 		_registry.IsDestructive("echo-tool").Returns(false);
+		_registry.IsReadOnly("echo-tool").Returns(true);
 		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
 		CallToolResult toolResult = new() { Content = [new TextContentBlock { Text = "payload" }] };
 		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
@@ -104,7 +106,7 @@ public sealed class McpDurableCallToolHandlerTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns confirmation-required with a ready-to-retry clio-run-destructive shape and does NOT execute, when the resolved tool is destructive.")]
+	[Description("Returns confirmation-required with a ready-to-retry clio-run shape and does NOT execute, when the resolved tool is destructive.")]
 	public async Task HandleAsync_ShouldReturnConfirmationRequired_WhenToolIsDestructive() {
 		// Arrange
 		McpServerTool tool = BuildEchoTool();
@@ -126,11 +128,14 @@ public sealed class McpDurableCallToolHandlerTests {
 		JsonElement payload = StructuredOf(result);
 		payload.GetProperty("code").GetString().Should().Be("confirmation-required",
 			because: "the outcome must be machine-readable");
-		payload.GetProperty("retry").GetProperty("tool").GetString().Should().Be("clio-run-destructive",
-			because: "the retry shape routes through the advertised, host-gated executor");
+		payload.GetProperty("retry").GetProperty("tool").GetString().Should().Be("clio-run",
+			because: "the retry shape routes through the advertised, host-gated executor — the canonical " +
+				"one, not the deprecated clio-run-destructive alias");
 		payload.GetProperty("retry").GetProperty("arguments").GetProperty("command").GetString()
 			.Should().Be("restart-by-environment-name",
 				because: "the retry command is the canonical tool name");
+		payload.GetProperty("destructive").GetBoolean().Should().BeTrue(
+			because: "the payload reports the tool's actual destructiveHint so the agent can explain the refusal");
 		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
 			because: "every handler outcome carries a correlation id");
 		JsonSerializer.Serialize(payload).Should().NotContain("dev04",
@@ -139,6 +144,59 @@ public sealed class McpDurableCallToolHandlerTests {
 		payload.GetProperty("argument-names").EnumerateArray().Select(name => name.GetString())
 			.Should().Contain("environmentName",
 				because: "the caller is told WHICH keys to re-supply, without their values");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Gates an additive-only write (write-capable but NOT destructive, e.g. odata-create) instead of executing it silently, and reports destructive=false with write-capable=true so the refusal reason stays accurate (issue #953).")]
+	public async Task HandleAsync_ShouldReturnConfirmationRequired_WhenToolIsWriteCapableButNotDestructive() {
+		// Arrange
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("odata-create", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsDestructive("odata-create").Returns(false);
+		_registry.IsReadOnly("odata-create").Returns(false);
+		RequestContext<CallToolRequestParams> context = CallContext("odata-create");
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		await _executor.DidNotReceiveWithAnyArgs()
+			.InvokeResolvedAsync(default, default, default, default);
+		JsonElement payload = StructuredOf(result);
+		payload.GetProperty("code").GetString().Should().Be("confirmation-required",
+			because: "an additive-only write still creates durable state in the target environment, so the " +
+				"gate must stand in for the host prompt instead of running it unprompted");
+		payload.GetProperty("destructive").GetBoolean().Should().BeFalse(
+			because: "the annotation is spec-conformant — additive-only updates are not destructive — and the " +
+				"payload must not misreport it just because the tool was gated");
+		payload.GetProperty("write-capable").GetBoolean().Should().BeTrue(
+			because: "write-capability is the actual reason this outcome was returned");
+		result.Content.OfType<TextContentBlock>().Select(block => block.Text)
+			.Should().Contain(text => text.Contains("additive"),
+				because: "the model-visible text must explain the refusal in terms the agent can relay");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails closed for a tool whose read-only hint is unknown to the registry: an unclassifiable tool is gated rather than executed.")]
+	public async Task HandleAsync_ShouldReturnConfirmationRequired_WhenReadOnlyHintIsUnknown() {
+		// Arrange — a substitute registry returns false for both predicates by default, mirroring the
+		// registry's own fail-closed behavior for an unknown name.
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("mystery-tool", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		RequestContext<CallToolRequestParams> context = CallContext("mystery-tool");
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		await _executor.DidNotReceiveWithAnyArgs()
+			.InvokeResolvedAsync(default, default, default, default);
+		StructuredOf(result).GetProperty("code").GetString().Should().Be("confirmation-required",
+			because: "an unclassifiable tool must never be executed silently");
 	}
 
 	[Test]
@@ -159,6 +217,7 @@ public sealed class McpDurableCallToolHandlerTests {
 		_registry.TryGetTool("new-name", out Arg.Any<McpServerTool>())
 			.Returns(callInfo => { callInfo[1] = tool; return true; });
 		_registry.IsDestructive("new-name").Returns(false);
+		_registry.IsReadOnly("new-name").Returns(true);
 		RequestContext<CallToolRequestParams> context = CallContext("old-name");
 		_executor.InvokeResolvedAsync(tool, "new-name", context, Arg.Any<CancellationToken>())
 			.Returns(new CallToolResult { Content = [] });
@@ -337,6 +396,7 @@ public sealed class McpDurableCallToolHandlerTests {
 		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
 			.Returns(callInfo => { callInfo[1] = tool; return true; });
 		_registry.IsDestructive("echo-tool").Returns(false);
+		_registry.IsReadOnly("echo-tool").Returns(true);
 		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
 		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
 			.Returns((CallToolResult)null);
@@ -363,6 +423,7 @@ public sealed class McpDurableCallToolHandlerTests {
 		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
 			.Returns(callInfo => { callInfo[1] = tool; return true; });
 		_registry.IsDestructive("echo-tool").Returns(false);
+		_registry.IsReadOnly("echo-tool").Returns(true);
 		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
 		CallToolResult errorResult = new() {
 			IsError = true,
