@@ -55,6 +55,10 @@ Currency1, Currency2, Currency3, Color.
 `Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
 (multiline / accent-insensitive / format-validated / masked) do not apply to it.
 ImageLink is accepted as an alias for ImageLookup.
+`Money` is accepted as an alias for `Currency2` (the normal two-decimal Creatio money column), and
+`Decimal` for `Decimal2` (same as `Float`).
+`Date` and `Time` are accepted but are aliases of `DateTime`: Creatio stores the column as `DateTime`
+and the readback tools report it as `DateTime`, so date-only or time-only intent is not preserved.
 For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use
 `ImageLookup` ("Image link") — the binary `Image` type does not work with `crt.ImageInput`.
 `ImageLookup` references the `SysImage` schema automatically (no `--reference-schema`).

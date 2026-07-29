@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -186,6 +187,46 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects inherited BaseLookup columns inside sync-schemas create-lookup operations when the column identity is spelled with the contract's canonical 'column-name' field rather than the 'name' alias (PR #984 review).")]
+	public async Task SchemaSync_CreateLookup_Should_Reject_Inherited_BaseLookup_Columns_WhenSpelledAsColumnName() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation(
+					"create-lookup",
+					"UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status"),
+					Columns: [
+						// `column-name` only, no `name` — the spelling get-tool-contract calls canonical.
+						new CreateEntitySchemaColumnArgs(null, "Text", Localizations("Name")) {
+							ColumnNameAlias = "Name"
+						}
+					])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the guardrail must fire on the canonical spelling too, otherwise the shadowing column " +
+				"reaches the remote creator through this entry point as well");
+		response.Results[0].Error.Should().Contain("BaseLookup",
+			because: "the caller should get clio's purpose-built explanation");
+		response.Results[0].Error.Should().Contain("Name",
+			because: "the failure should identify the rejected inherited column");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "no create command may run once the guardrail rejects the operation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-entity operation with custom parent schema")]
 	public async Task SchemaSync_CreateEntity_Should_Use_Custom_Parent_Schema() {
 		// Arrange
@@ -209,6 +250,42 @@ public sealed class SchemaSyncToolTests {
 			because: "create-entity should use the specified parent schema");
 		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
 			because: "create-entity should preserve the explicit virtual-schema request");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the canonical 'column-name' spelling from a create-entity operation through to the command layer, instead of stopping the ordered batch on a name:null column (issue #947).")]
+	public async Task SchemaSync_CreateEntity_Should_Carry_Canonical_ColumnName_Alias() {
+		// Arrange — the column supplies ONLY `column-name`, exactly as the sync-schemas contract describes the
+		// column identity field.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-entity", "UsrOrder",
+				TitleLocalizations: Localizations("Order"),
+				ParentSchemaName: "BaseEntity",
+				Columns: [
+					new CreateEntitySchemaColumnArgs(null!, "MediumText", Localizations("Customer name")) {
+						ColumnNameAlias = "UsrName"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a contract-following column must not fail the batch");
+		string serializedColumn = fakeCreateCommand.CapturedOptions!.Columns!.Single();
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("UsrName",
+			because: "the ordered batch previously stopped here because the alias was serialized as name:null");
+		document.RootElement.GetProperty("type").GetString().Should().Be("MediumText",
+			because: "the type token is passed through verbatim — resolution is case-insensitive downstream");
 	}
 
 	[Test]
