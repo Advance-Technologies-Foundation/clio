@@ -56,6 +56,27 @@ public sealed class McpFixturePolicyTests {
 			because: "ExperimentalToolE2ETests is a known NoEnvironment-only fixture and should not be treated as Sandbox");
 	}
 
+	[Test]
+	[Description("Verifies that every destructive LocalOnly fixture stays [Explicit] and retains the McpE2E.Sandbox and McpE2E.Manual categories so it can never run automatically in CI.")]
+	public void LocalOnlyDestructiveFixtures_ShouldStayExplicitAndRetainSandboxAndManual_WhenTheyTearDownSharedStand() {
+		// Arrange
+		IReadOnlyList<Type> localOnlyFixtures = GetFixturesWithCategory("LocalOnly");
+
+		// Act
+		Type[] misconfigured = localOnlyFixtures
+			.Where(fixture => fixture.GetCustomAttribute<ExplicitAttribute>(inherit: true) is null
+				|| !FixtureHasCategory(fixture, "McpE2E.Sandbox")
+				|| !FixtureHasCategory(fixture, "McpE2E.Manual"))
+			.OrderBy(fixture => fixture.FullName, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		localOnlyFixtures.Should().NotBeEmpty(
+			because: "the destructive developer-local set (uninstall + dbHub lifecycle) must remain discoverable so this guard cannot silently pass on an empty scan");
+		misconfigured.Should().BeEmpty(
+			because: "a destructive LocalOnly fixture must stay [Explicit] and keep McpE2E.Sandbox + McpE2E.Manual (additive-only per the tiering spec) so it never runs automatically in CI nor drops its tier classification");
+	}
+
 	private static IReadOnlyList<Type> GetFixturesWithCategory(string category) =>
 		// Anchor reflection on a clio.mcp.e2e type so the guard scans the e2e assembly, not clio.tests.
 		typeof(ExperimentalToolE2ETests).Assembly.GetTypes()

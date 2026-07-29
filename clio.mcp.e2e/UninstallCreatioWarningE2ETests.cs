@@ -20,18 +20,29 @@ namespace Clio.Mcp.E2E;
 //
 // Developer-local only. This test performs a REAL destructive uninstall of the shared sandbox
 // (settings.Sandbox.EnvironmentName) — the same environment the McpE2E.Sandbox tier depends on — so it must
-// never join that tier or run in TeamCity: doing so would tear the shared stand down mid-suite and fail every
-// later Sandbox test. The deterministic warning-propagation contract (locked profile -> Warning stage +
-// stable error code + SuccessWithWarnings terminal + retained registration + secret redaction) is already
-// covered without any stand by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests. This fixture only
-// adds the real native DeleteProfileW-under-lock path over stdio MCP, which is inherently manual/Windows-only.
-// It is therefore [Explicit] (runs only when selected by name), NOT tagged McpE2E.Sandbox (kept out of the
-// sandbox selection), and Assert.Ignore's under TEAMCITY_VERSION as a final guard — mirroring
-// DbHubLifecycleWarningE2ETests.
+// never run automatically in CI: doing so would tear the shared stand down mid-suite and fail every later
+// Sandbox test.
+//
+// Per spec/mcp-e2e-tiering/mcp-e2e-tiering-spec.md the McpE2E.* tags are additive-only and assigned by the
+// arrange path. This fixture's arrange checks AllowDestructiveMcpTests and resolves
+// settings.Sandbox.EnvironmentName, so it is Sandbox-tier and KEEPS [Category("McpE2E.Sandbox")]. Safety does
+// NOT come from dropping that classification tag — it comes from the same three guards
+// DbHubLifecycleWarningE2ETests uses: [Explicit] (runs only when selected by name), [Category("McpE2E.Manual")]
+// (excluded by the TeamCity run-step filter), and an Assert.Ignore under TEAMCITY_VERSION. McpFixturePolicyTests
+// enforces that this developer-local set stays [Explicit] + Sandbox + Manual so the invariant cannot silently
+// regress.
+//
+// The deterministic warning-propagation contract (locked profile -> Warning stage + ProfileDeleteFailedErrorCode
+// + SuccessWithWarnings terminal + retained registration + secret redaction) is already covered without any
+// stand by CreatioUninstallerTestFixture.UninstallByEnvironmentName_ShouldWarnAndContinueUnregister_
+// WhenProfileDeletionFails and AppPoolProfileCleanerTests.TryDelete_ShouldReturnWarningAfterThreeAttempts_
+// WhenNativeDeletionKeepsFailing. This fixture only adds the real native DeleteProfileW-under-lock path over
+// stdio MCP, which is inherently manual/Windows-only.
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [Category("LocalOnly")]
 [Category("McpE2E.Manual")]
-[Explicit("Developer-local only: performs a real destructive uninstall of the shared sandbox; the warning contract is covered deterministically by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.")]
+[Explicit("Developer-local only: performs a real destructive uninstall of the shared sandbox; kept out of CI by Explicit + McpE2E.Manual + the TEAMCITY_VERSION guard. Warning contract covered by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.")]
 [AllureFeature("uninstall-creatio")]
 [NonParallelizable]
 public sealed class UninstallCreatioWarningE2ETests {
