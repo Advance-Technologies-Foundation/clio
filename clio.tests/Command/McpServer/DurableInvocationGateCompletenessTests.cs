@@ -60,6 +60,10 @@ public sealed class DurableInvocationGateCompletenessTests {
 		// Consciously added to the reviewed baseline for that reclassification (PR #937 / RC-28).
 		"get-schema",
 		"get-sql-schema",
+		// get-theme is ReadOnly=false for the same reason as get-schema: with output-file set it writes the
+		// theme CSS to disk. The write goes through the same OutputPathConfinement guard (confined, atomic,
+		// no-overwrite), so Destructive stays false. Consciously added with the tool (ENG-93991).
+		"get-theme",
 		"install-gate",
 		"install-toolkit",
 		"new-integration-test-project",

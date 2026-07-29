@@ -2219,3 +2219,14 @@ stories:
     depends_on:
       - story-clio-guidance-development-1
     blocks: []
+  - id: story-get-theme-1
+    title: "get-theme: read an existing theme's content (CLI + MCP)"
+    feature: "get-theme"
+    repo: "clio"
+    size: M
+    status: in-progress
+    note: "ENG-93991. Catalog + cssFilePath static-file fetch (spike-verified); closes the read -> edit -> update-theme loop. ADR: adr-theming.md Area E."
+    file: spec/stories/story-get-theme-1.md
+    adr: spec/adr/adr-theming.md
+    depends_on: []
+    blocks: []

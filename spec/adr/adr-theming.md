@@ -13,6 +13,7 @@ and `adr-theming-agent-advisor.md`. It is the single design-rationale document f
 | Contour B — no-code / server flow | ENG-91387 | **Shipped** — `create-theme`, `update-theme`, `delete-theme` over native `ThemeService` |
 | Native build engine | ENG-90636 (continuation) | **Live** — `build-theme`; `[FeatureToggle("theming")]` removed at go-live (2026-07-08), parity gate verified |
 | Agent advisor | theming-agent | **Live** — renamed `theme-color-advisor` → `advise-theme-palette`; reachable (toggle removed at go-live); advisor story still in progress |
+| Area E — read theme content | ENG-93991 | **In progress** — `get-theme` CLI verb + MCP tool over the catalog + `cssFilePath` static-file fetch |
 
 **Go-live (2026-07-08).** `[FeatureToggle("theming")]` has been removed from the entire theming
 surface (verbs, MCP tools, resources, prompts); the feature is live on all four surfaces and the
@@ -137,6 +138,10 @@ or `[ResolvedDynamically]`.
 - `update-theme` specifics: full overwrite — `--id`, `--caption`, `--css-class-name`, CSS all required;
   **no** `--package-name` (cannot re-home; `GetAvailableThemes` returns `cssFilePath` not `cssContent`,
   so read-modify-write is infeasible). No read-before-write.
+  *(The "read-modify-write is infeasible" clause is superseded by Area E below (ENG-93991): `get-theme`
+  reads the content by fetching the catalog-reported `cssFilePath` static file, making the
+  read → edit → update round-trip first-class. `update-theme` itself stays a full overwrite with no
+  implicit read-before-write — the read is an explicit separate step.)*
 - `delete-theme` specifics: `--id` only; **not idempotent** — no existence pre-check; server `success:false`
   → `Error:` + exit 1.
 
@@ -328,6 +333,62 @@ existing `ChooseBestAccent` filters contrast-only with a degenerate fallback —
 `GetCssTemplate` and reads the defaults directly, so the provider member was removed); a public offline
 `ResolveCompatibleVersion(string)`.
 Verdict/warning-code types are tool-owned, not engine.
+
+### Area E — Read a theme's content: `get-theme` (ENG-93991, added 2026-07-29)
+
+One CLI verb + one MCP tool that read an existing theme's content (`theme.css`) and metadata by id,
+closing the **read → edit → update-theme** loop the B-D3 note declared infeasible.
+
+**E-D1 — Mechanism: catalog + static-file GET, NOT a ThemeService read endpoint.** The theme is resolved
+by id through the existing `IThemeCatalog.TryGetAvailableThemes` (the `list-themes` command), and its CSS
+is fetched with `IApplicationClient.ExecuteGetRequest` from the catalog-reported `cssFilePath` — the same
+static-file route the Creatio Shell loads the theme from (live-verified format:
+`Terrasoft.Configuration/Pkg/<Package>/Files/themes/<themeId>/theme.css?hash=<md5>`;
+`IServiceUrlBuilder.Build(string)` correctly prepends `0/` on .NET Framework). Live probing (2026-07-29,
+trunk build) established: the server always serves the **current** file content regardless of the `hash`
+query value (the hash is a browser cache-buster; a fresh catalog read returns a fresh hash after
+`update-theme`), so re-resolving the catalog on every call makes read-after-update correct with no cache
+step. A native `ThemeService.svc/GetTheme` POST endpoint **exists** on trunk (probes to unknown methods
+return a WCF "Endpoint not found" page; `GetTheme` returns HTTP 200), but it returned an empty body for
+every probed parameter shape *including an existing theme id* (`{"id"}`, `{"themeId"}`, wrapped request,
+css-class-name, empty object) — its contract is opaque and undocumented, so it is not used. No new
+`KnownRoute`, no ClioGate.
+
+**E-D2 — Envelope, not raw CSS.** `GetThemeResponse { success, id, caption, cssClassName, cssFilePath,
+cssContent?, cssContentLength?, error? }` — one shared record used as the CLI JSON output (get-schema
+model: `Execute` prints the serialized envelope, exit 0/1) and the MCP typed result. `caption`,
+`cssClassName`, and `cssContent` feed `update-theme` verbatim, so a single call carries everything the
+round-trip needs. The non-logging `TryGetTheme(options, out response)` data method is the shared
+CLI/MCP seam (the create-theme R-01 silent/logging split).
+
+**E-D3 — Round-trip fields are NOT sanitized.** Unlike the `list-themes` display path,
+`id`/`caption`/`cssClassName`/`cssContent` are returned byte-for-byte — `SanitizeForDisplay` caps and
+strips, which would make `update-theme` silently write back different values. Only the `error` field is
+redacted (`SensitiveErrorTextRedactor`) at the MCP boundary.
+
+**E-D4 — Failure semantics.** Id validated by the shared `ThemeParameterValidator` before any network
+call. An id absent from a non-empty catalog → a clear not-found naming the id + a `list-themes` hint; an
+empty catalog → the not-found also names the possibly-missing `CanCustomizeBranding` license (the shared
+`ThemeCatalogMessages.EmptyCatalogLicenseCaveat`, single-homed with set-user-theme). A CSS fetch
+answering with an HTML document (login redirect / error page, BOM-prefixed included) → an explicit
+"HTML instead of CSS" failure; the known limitation is that CSS deliberately starting with
+`<!DOCTYPE`/`<html` cannot be read back. The read enforces the write side's 1 MiB `cssContent` cap —
+a larger body cannot be a clio-managed theme and is refused instead of ballooning memory / flooding an
+MCP transcript. An existing theme with an empty CSS file → success with `cssContent: ""` (a theme to
+fill in, not an error). `cssFilePath` is the one envelope field that IS `SanitizeForDisplay`-treated —
+it is display/diagnostic only (update-theme never consumes it), mirroring list-themes.
+
+**E-D5 — `--output-file` on both surfaces.** Confined via the shared `OutputPathConfinement.Resolve`
+(before any network call) + `WriteAtomic` (no-overwrite), omitting `cssContent` from the envelope
+(`cssContentLength` still reported) — keeps large CSS out of MCP transcripts and feeds
+`update-theme --css-content-file` directly. Consequently the MCP tool is `ReadOnly=false,
+Destructive=false, Idempotent=true, OpenWorld=false` (the get-schema RC-28 classification), and
+`get-theme` is consciously added to the `DurableInvocationGateCompletenessTests` reviewed baseline.
+
+**E-D6 — Version floor: the family floor.** The mechanism only uses `GetAvailableThemes` + a static file,
+so `[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]` (10.0.0) applies unchanged; the tool is
+added to the uniform-floor `ThemingVersionFloorContractE2ETests` gate. Long-tail on the MCP surface (no
+`McpCoreToolProfile` membership), no compatibility-catalog entry (new tool, not a rename).
 
 ---
 

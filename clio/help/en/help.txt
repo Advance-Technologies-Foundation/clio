@@ -63,6 +63,7 @@ Commands:
   get-info                             Show system information for a Creatio instance, describe, describe-creatio, instance-info
   list-packages                        List packages in a Creatio environment, get-pkg-list, packages
   get-pkg-version                      Get package version, gpv
+  get-theme                            Read the content (theme.css) and metadata of a custom Creatio theme
   get-webservice-url                   Show the configured base URL for a web service, gwu
   git-sync                             Syncs environment with Git repository, sync
   healthcheck                          Run Creatio health checks, hc
