@@ -1,3 +1,5 @@
+using NUnit.Framework;
+
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 /// <summary>
@@ -25,4 +27,16 @@ public static class TeamCityRunGuard {
 	/// <param name="teamCityVersion">The <c>TEAMCITY_VERSION</c> value to evaluate.</param>
 	public static bool IsRunningUnderTeamCity(string? teamCityVersion) =>
 		!string.IsNullOrWhiteSpace(teamCityVersion);
+
+	/// <summary>
+	/// Skips the calling test with <c>Assert.Ignore</c> when running under TeamCity. Single shared
+	/// check-and-ignore entry point so destructive developer-local fixtures cannot independently
+	/// diverge (a trailing <c>return</c>, a forgotten <c>Assert.Ignore</c>) or drift from one another.
+	/// </summary>
+	/// <param name="reason">Human-readable skip reason surfaced in the test report.</param>
+	public static void IgnoreIfRunningUnderTeamCity(string reason) {
+		if (IsRunningUnderTeamCity()) {
+			Assert.Ignore(reason);
+		}
+	}
 }

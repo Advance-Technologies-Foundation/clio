@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Clio.Mcp.E2E;
+using Clio.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -75,6 +76,30 @@ public sealed class McpFixturePolicyTests {
 			because: "the destructive developer-local set (uninstall + dbHub lifecycle) must remain discoverable so this guard cannot silently pass on an empty scan");
 		misconfigured.Should().BeEmpty(
 			because: "a destructive LocalOnly fixture must stay [Explicit] and keep McpE2E.Sandbox + McpE2E.Manual (additive-only per the tiering spec) so it never runs automatically in CI nor drops its tier classification");
+	}
+
+	[Test]
+	[Description("Asserts the off-stand tests that cover the uninstall warning contract still exist, since UninstallCreatioWarningE2ETests is [Explicit] and never runs in CI to catch a regression itself.")]
+	public void UninstallWarningContract_ShouldStayCoveredOffStand_WhenExplicitFixtureNeverRunsInCi() {
+		// Arrange
+		(Type Fixture, string Method)[] coveringTests = [
+			(typeof(CreatioUninstallerTestFixture),
+				nameof(CreatioUninstallerTestFixture.UninstallByEnvironmentName_ShouldWarnAndContinueUnregister_WhenProfileDeletionFails)),
+			(typeof(AppPoolProfileCleanerTests),
+				nameof(AppPoolProfileCleanerTests.TryDelete_ShouldReturnWarningAfterThreeAttempts_WhenNativeDeletionKeepsFailing))
+		];
+
+		// Act
+		string[] missing = coveringTests
+			.Where(covering => covering.Fixture.GetMethod(covering.Method,
+				BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) is null)
+			.Select(covering => $"{covering.Fixture.Name}.{covering.Method}")
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		missing.Should().BeEmpty(
+			because: "the developer-local uninstall exemption relies on these off-stand tests as the only automated guard of the warning contract; a rename or removal must fail here and point back to the exemption rather than silently losing coverage");
 	}
 
 	private static IReadOnlyList<Type> GetFixturesWithCategory(string category) =>

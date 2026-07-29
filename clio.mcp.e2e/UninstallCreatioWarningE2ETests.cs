@@ -59,12 +59,9 @@ public sealed class UninstallCreatioWarningE2ETests {
 			Assert.Ignore("Application-pool profile deletion is a Windows-only E2E scenario.");
 			return;
 		}
-		if (TeamCityRunGuard.IsRunningUnderTeamCity()) {
-			Assert.Ignore(
-				"This destructive real-uninstall test tears down the shared sandbox and must never run in TeamCity; " +
-				"the warning contract is covered by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.");
-			return;
-		}
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCity(
+			"This destructive real-uninstall test tears down the shared sandbox and must never run in TeamCity; " +
+			"the warning contract is covered by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.");
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true for the disposable uninstall sandbox.");

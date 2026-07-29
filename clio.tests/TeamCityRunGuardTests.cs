@@ -58,4 +58,27 @@ public sealed class TeamCityRunGuardTests {
 			Environment.SetEnvironmentVariable("TEAMCITY_VERSION", originalValue);
 		}
 	}
+
+	[Test]
+	[Description("The shared check-and-ignore helper raises an NUnit ignore only when running under TeamCity, and is a no-op otherwise.")]
+	public void IgnoreIfRunningUnderTeamCity_ShouldSkipOnlyUnderTeamCity_WhenEnvironmentVariableToggled() {
+		// Arrange
+		string? originalValue = Environment.GetEnvironmentVariable("TEAMCITY_VERSION");
+		try {
+			// Act + Assert: under TeamCity the shared guard must skip the test.
+			Environment.SetEnvironmentVariable("TEAMCITY_VERSION", "2024.1");
+			Action underTeamCity = () => TeamCityRunGuard.IgnoreIfRunningUnderTeamCity("guard reason");
+			underTeamCity.Should().Throw<IgnoreException>(
+				because: "the shared guard is the CI safety net that must skip a destructive fixture selected under TeamCity, even if [Explicit] is bypassed by an explicit category filter");
+
+			// Act + Assert: off TeamCity the shared guard must be a no-op.
+			Environment.SetEnvironmentVariable("TEAMCITY_VERSION", null);
+			Action offTeamCity = () => TeamCityRunGuard.IgnoreIfRunningUnderTeamCity("guard reason");
+			offTeamCity.Should().NotThrow(
+				because: "off TeamCity the guard must not skip so a developer can run the destructive fixture on demand");
+		}
+		finally {
+			Environment.SetEnvironmentVariable("TEAMCITY_VERSION", originalValue);
+		}
+	}
 }
