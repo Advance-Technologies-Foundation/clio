@@ -57,8 +57,8 @@ public sealed class GetClientUnitSchemaTool(
 			}
 			resolvedCommand.TryGetSchema(options, out GetClientUnitSchemaResponse response);
 			if (!string.IsNullOrEmpty(response?.Error)) {
-				// The command's inner error can carry an HTTP/DataService message with the environment URI/host;
-				// redact before it lands in the MCP transcript (parity with the resolution-failure path above).
+				// The command's inner error can carry an HTTP/DataService message with the environment URI or host,
+				// so redact before it lands in the MCP transcript (parity with the resolution-failure path above).
 				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
 			}
 			return response;

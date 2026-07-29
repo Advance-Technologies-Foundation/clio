@@ -102,6 +102,12 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private const int SectionRowCount = ClassicEntitySchemaQuery.SectionRowCount;
 	private const int EditPageRowCount = 100;
 
+	// SysModuleEntity/SysModuleEdit column names, single-sourced so the selects and the row reads below cannot
+	// drift on a column name (a typo there reads as "no schema bound" rather than failing).
+	private const string SectionSchemaUIdColumn = "SectionSchemaUId";
+	private const string CardSchemaUIdColumn = "CardSchemaUId";
+	private const string MiniPageSchemaUIdColumn = "MiniPageSchemaUId";
+
 	private static readonly HashSet<string> FreedomTemplates = new(StringComparer.OrdinalIgnoreCase) {
 		"PageWithTabsAndProgressBarTemplate",
 		"PageWithTabsFreedomTemplate",
@@ -185,8 +191,8 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 			}
 
 			var sections = moduleRows.Select(r => {
-				string sectionUId = r["SectionSchemaUId"]?.ToString();
-				string cardUId = r["CardSchemaUId"]?.ToString();
+				string sectionUId = r[SectionSchemaUIdColumn]?.ToString();
+				string cardUId = r[CardSchemaUIdColumn]?.ToString();
 				string typeColUId = r["TypeColumnUId"]?.ToString();
 				(string cardName, string template) = Meta(cardUId);
 				return new MigrationSectionInfo {
@@ -202,8 +208,8 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 			}).ToList();
 
 			var editPages = editRows.Select(r => {
-				string cardUId = r["CardSchemaUId"]?.ToString();
-				string miniUId = r["MiniPageSchemaUId"]?.ToString();
+				string cardUId = r[CardSchemaUIdColumn]?.ToString();
+				string miniUId = r[MiniPageSchemaUIdColumn]?.ToString();
 				(string cardName, string template) = Meta(cardUId);
 				(string miniName, string miniTemplate) = Meta(miniUId);
 				return new MigrationEditPageInfo {
@@ -286,12 +292,12 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	// ---- ESQ builders ----
 	private static IEnumerable<string> CollectSchemaUIds(JArray moduleRows, JArray editRows) {
 		foreach (JToken row in moduleRows) {
-			yield return row["SectionSchemaUId"]?.ToString();
-			yield return row["CardSchemaUId"]?.ToString();
+			yield return row[SectionSchemaUIdColumn]?.ToString();
+			yield return row[CardSchemaUIdColumn]?.ToString();
 		}
 		foreach (JToken row in editRows) {
-			yield return row["CardSchemaUId"]?.ToString();
-			yield return row["MiniPageSchemaUId"]?.ToString();
+			yield return row[CardSchemaUIdColumn]?.ToString();
+			yield return row[MiniPageSchemaUIdColumn]?.ToString();
 		}
 	}
 
@@ -305,15 +311,15 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private static JObject BuildSelectSections(string entityUId) => Query("SysModule",
 		new JObject {
 			["Caption"] = Column("Caption"), ["Code"] = Column("Code"),
-			["SectionSchemaUId"] = Column("SectionSchemaUId"), ["CardSchemaUId"] = Column("CardSchemaUId"),
+			[SectionSchemaUIdColumn] = Column(SectionSchemaUIdColumn), [CardSchemaUIdColumn] = Column(CardSchemaUIdColumn),
 			["TypeColumnUId"] = Column("SysModuleEntity.TypeColumnUId")
 		},
 		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), SectionRowCount);
 
 	private static JObject BuildSelectEditPages(string entityUId) => Query("SysModuleEdit",
 		new JObject {
-			["TypeColumnValue"] = Column("TypeColumnValue"), ["CardSchemaUId"] = Column("CardSchemaUId"),
-			["MiniPageSchemaUId"] = Column("MiniPageSchemaUId"), ["MiniPageModes"] = Column("MiniPageModes")
+			["TypeColumnValue"] = Column("TypeColumnValue"), [CardSchemaUIdColumn] = Column(CardSchemaUIdColumn),
+			[MiniPageSchemaUIdColumn] = Column(MiniPageSchemaUIdColumn), ["MiniPageModes"] = Column("MiniPageModes")
 		},
 		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), EditPageRowCount);
 }

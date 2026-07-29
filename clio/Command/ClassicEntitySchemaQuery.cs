@@ -24,6 +24,9 @@ internal static class ClassicEntitySchemaQuery {
 	/// <summary>Row cap for the section (SysModuleEntity) lookup; reaching it signals a truncated result.</summary>
 	internal const int SectionRowCount = 100;
 
+	// ESQ payload key, single-sourced so the DSL below cannot drift on the key name.
+	private const string ExpressionTypeKey = "expressionType";
+
 	/// <summary>Runs a SelectQuery and returns its rows, keyed off the shared failure detector.</summary>
 	internal static JArray Select(IApplicationClient client, IServiceUrlBuilder urlBuilder, JObject query) {
 		string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
@@ -65,13 +68,13 @@ internal static class ClassicEntitySchemaQuery {
 
 	// ---- ESQ DSL ----
 	internal static JObject Column(string path) =>
-		new() { ["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = path } };
+		new() { ["expression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = path } };
 
 	internal static JObject Eq(string columnPath, string value, int dataValueType) => new() {
 		["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true,
-		["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = columnPath },
+		["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = columnPath },
 		["rightExpression"] = new JObject {
-			["expressionType"] = 2,
+			[ExpressionTypeKey] = 2,
 			["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value }
 		}
 	};
@@ -96,7 +99,7 @@ internal static class ClassicEntitySchemaQuery {
 		var expressions = new JArray();
 		foreach (string value in values) {
 			expressions.Add(new JObject {
-				["expressionType"] = 2,
+				[ExpressionTypeKey] = 2,
 				["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value }
 			});
 		}
@@ -104,7 +107,7 @@ internal static class ClassicEntitySchemaQuery {
 			["filterType"] = 4,
 			["comparisonType"] = 3,
 			["isEnabled"] = true,
-			["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = columnPath },
+			["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = columnPath },
 			["rightExpressions"] = expressions
 		};
 	}
