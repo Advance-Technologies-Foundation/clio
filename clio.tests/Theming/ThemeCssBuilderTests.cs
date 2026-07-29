@@ -130,6 +130,90 @@ public sealed class ThemeCssBuilderTests {
 	}
 
 	[Test]
+	[Description("Build applies a locally installed family through the font token without requesting it from Google Fonts.")]
+	public void Build_ShouldSkipImport_ForLocallyInstalledFamily() {
+		// Act
+		string css = Builder().Build(
+			Template(),
+			new BuildThemeInput {
+				Primary = "#004fd6",
+				ThemeCssClass = "T",
+				Fonts = new FontsInput("Verdana", "Verdana", null, new[] { "Verdana" }),
+			});
+
+		// Assert
+		css.Should().NotContain("@import",
+			because: "a family the user confirmed is installed locally must not be fetched, and Google answers 200 with a look-alike substitute for many such names");
+		css.Should().Contain("--crt-font-family-heading: 'Verdana', sans-serif;",
+			because: "the family is still applied through the token so the theme actually restyles");
+	}
+
+	[Test]
+	[Description("Build imports only the downloadable family when a locally installed BODY family is paired with a Google heading font.")]
+	public void Build_ShouldImportOnlyDownloadableFamily_WhenPairedWithLocalFamily() {
+		// Act
+		string css = Builder().Build(
+			Template(),
+			new BuildThemeInput {
+				Primary = "#004fd6",
+				ThemeCssClass = "T",
+				Fonts = new FontsInput("Inter", "Verdana", null, new[] { "Verdana" }),
+			});
+
+		// Assert
+		css.Should().Contain("family=Inter",
+			because: "the Google family still has to be downloaded");
+		css.Should().NotContain("family=Verdana",
+			because: "the locally installed family must never reach the Google Fonts request; the body-side filter is only exercised when the heading family differs");
+	}
+
+	[Test]
+	[Description("Build still rejects an invalid font family listed as locally installed, in the heading slot and in the body slot, so marking a family local cannot smuggle CSS into the theme through either.")]
+	[TestCase("Evil'; }", null, TestName = "Build_ShouldRejectInvalidLocalFamily_InHeadingSlot")]
+	[TestCase("Inter", "Evil'; }", TestName = "Build_ShouldRejectInvalidLocalFamily_InBodySlot")]
+	public void Build_ShouldStillReject_InvalidFamilyListedAsLocallyInstalled(string heading, string body) {
+		// Act / Assert
+		Build(new BuildThemeInput {
+			Primary = "#004fd6",
+			ThemeCssClass = "T",
+			Fonts = new FontsInput(heading, body, null, new[] { "Evil'; }" }),
+		}).Should().Throw<ArgumentException>().WithMessage("INVALID_FONT_FAMILY*",
+			because: "a locally installed family skips the import builder, so each slot needs its own validation call; pinning only the heading slot let the body-side guard be deleted undetected");
+	}
+
+	[Test]
+	[Description("Build rejects a family padded with whitespace, which the family grammar excludes, instead of emitting a quoted name that cannot resolve.")]
+	[TestCase("Verdana ", TestName = "Build_ShouldRejectFamily_WithTrailingSpace")]
+	[TestCase(" Verdana", TestName = "Build_ShouldRejectFamily_WithLeadingSpace")]
+	[TestCase("Roboto\n", TestName = "Build_ShouldRejectFamily_WithTrailingNewline")]
+	public void Build_ShouldReject_PaddedFamily(string family) {
+		// Act / Assert
+		Build(new BuildThemeInput {
+			Primary = "#004fd6",
+			ThemeCssClass = "T",
+			Fonts = new FontsInput(family, null),
+		}).Should().Throw<ArgumentException>().WithMessage("INVALID_FONT_FAMILY*",
+			because: "validating the raw value keeps a padded family from reaching the token, where a quoted ' Verdana ' cannot resolve and a trailing newline produces a bad-string-token that drops the declaration and the one after it");
+	}
+
+	[Test]
+	[Description("Locally installed families are matched without regard to casing, so the confirmed name does not have to match the requested one exactly.")]
+	public void Build_ShouldSkipImport_ForLocallyInstalledFamilyInDifferentCase() {
+		// Act
+		string css = Builder().Build(
+			Template(),
+			new BuildThemeInput {
+				Primary = "#004fd6",
+				ThemeCssClass = "T",
+				Fonts = new FontsInput("Verdana", null, null, new[] { "verdana" }),
+			});
+
+		// Assert
+		css.Should().NotContain("@import",
+			because: "CSS family matching is case-insensitive, so the confirmation should not hinge on exact casing");
+	}
+
+	[Test]
 	[Description("Build throws the documented validation errors for missing/invalid primary, class, and font family.")]
 	public void Build_ShouldThrow_ForTheDocumentedInvalidInputs() {
 		// Act / Assert

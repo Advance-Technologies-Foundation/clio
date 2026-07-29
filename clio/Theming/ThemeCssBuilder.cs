@@ -9,7 +9,11 @@ using PaletteSet = System.Collections.Generic.IReadOnlyDictionary<string, System
 namespace Clio.Theming;
 
 /// <summary>Custom heading/body font selection for a theme, with the weights to load.</summary>
-public sealed record FontsInput(string Heading = null, string Body = null, IReadOnlyList<int> Weights = null);
+public sealed record FontsInput(
+	string Heading = null,
+	string Body = null,
+	IReadOnlyList<int> Weights = null,
+	IReadOnlyCollection<string> LocallyInstalledFamilies = null);
 
 /// <summary>Brand inputs for building a theme's CSS.</summary>
 public sealed record BuildThemeInput {
@@ -164,17 +168,30 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		if (headingFamily == DefaultFontFamily && bodyFamily == DefaultFontFamily) {
 			return css;
 		}
-		List<FontFamilyEntry> families = new();
 		if (headingFamily != DefaultFontFamily) {
+			FontImportBuilder.ValidateFamily(headingFamily);
+		}
+		if (bodyFamily != DefaultFontFamily) {
+			FontImportBuilder.ValidateFamily(bodyFamily);
+		}
+		List<FontFamilyEntry> families = new();
+		if (headingFamily != DefaultFontFamily && NeedsImport(fonts, headingFamily)) {
 			families.Add(new FontFamilyEntry(headingFamily, fonts?.Weights));
 		}
-		if (bodyFamily != DefaultFontFamily && bodyFamily != headingFamily) {
+		if (bodyFamily != DefaultFontFamily && bodyFamily != headingFamily && NeedsImport(fonts, bodyFamily)) {
 			families.Add(new FontFamilyEntry(bodyFamily, fonts?.Weights));
 		}
-		string importRule = FontImportBuilder.BuildRule(families);
 		string next = ReplaceFontFamily(css, "heading", headingFamily);
 		next = ReplaceFontFamily(next, "body", bodyFamily);
-		return importRule + "\n" + next;
+		if (families.Count == 0) {
+			return next;
+		}
+		return FontImportBuilder.BuildRule(families) + "\n" + next;
+	}
+
+	private static bool NeedsImport(FontsInput fonts, string family) {
+		return fonts?.LocallyInstalledFamilies == null
+			|| !fonts.LocallyInstalledFamilies.Contains(family, StringComparer.OrdinalIgnoreCase);
 	}
 
 	private static string ReplaceFontFamily(string css, string which, string family) {

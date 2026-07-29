@@ -3,6 +3,7 @@ namespace Clio.Tests.Command;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +28,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	private ISettingsRepository _settingsRepository;
 	private IFileSystem _fileSystem;
 	private ILogger _logger;
+	private IGoogleFontsCatalog _googleFontsCatalog;
 	private BuildThemeCommand _command;
 
 	public override void Setup() {
@@ -60,6 +62,78 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		containerBuilder.AddTransient<ISettingsRepository>(_ => _settingsRepository);
 		containerBuilder.AddTransient<IFileSystem>(_ => _fileSystem);
 		containerBuilder.AddTransient<ILogger>(_ => _logger);
+		_googleFontsCatalog = Substitute.For<IGoogleFontsCatalog>();
+		_googleFontsCatalog.Lookup(Arg.Any<string>()).Returns(GoogleFontAvailability.InCatalog);
+		containerBuilder.AddTransient<IGoogleFontsCatalog>(_ => _googleFontsCatalog);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Warns and still builds when a requested family is absent from the Google Fonts catalogue, so the agent can relay it and ask the user to confirm the font is installed locally.")]
+	public void Execute_ShouldWarn_WhenFamilyNotInGoogleFonts() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Verdana";
+		_googleFontsCatalog.Lookup("Verdana").Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a family outside Google Fonts is advisory, not fatal — the user may confirm it is installed locally");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("was not found in Google Fonts")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Trims the confirmed-local families and forwards them to the builder, so a list written with spaces after the commas still suppresses the import.")]
+	public void Execute_ShouldTrimAndForwardLocalFontFamilies() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Verdana";
+		options.BodyFont = "Calibri";
+		options.LocalFontFamilies = new[] { "Verdana", " Calibri" };
+		_googleFontsCatalog.Lookup(Arg.Any<string>()).Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "confirmed-local families are valid input");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.LocallyInstalledFamilies.Contains("Verdana") && i.Fonts.LocallyInstalledFamilies.Contains("Calibri")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("not found in Google Fonts")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Warns that the catalogue could not be reached, rather than reporting the family as missing.")]
+	public void Execute_ShouldWarn_WhenGoogleFontsUnreachable() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Roboto";
+		_googleFontsCatalog.Lookup("Roboto").Returns(GoogleFontAvailability.Unverified);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "an unreachable catalogue must not fail the build");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not reach Google Fonts")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Does not check or warn about a family the user already confirmed is installed locally.")]
+	public void Execute_ShouldNotWarn_ForConfirmedLocalFamily() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Verdana";
+		options.LocalFontFamilies = new[] { "Verdana" };
+		_googleFontsCatalog.Lookup("Verdana").Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a confirmed local family is a valid selection");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("was not found in Google Fonts")));
 	}
 
 	private static BuildThemeOptions ValidOptions() => new() {
@@ -202,6 +276,22 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Assert
 		exitCode.Should().Be(0, because: "font weights without a family is a non-fatal advisory, not an error");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("font weights")));
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Warns and still builds the theme when --local-font-families is given without a font family, because the family is applied by --heading-font/--body-font and the list alone changes nothing.")]
+	public void Execute_ShouldWarn_WhenLocalFontFamiliesWithoutFamily() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.LocalFontFamilies = new[] { "Verdana" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "local font families without a family is a non-fatal advisory, not an error");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("local font families were ignored")));
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 

@@ -32,6 +32,13 @@ internal static class FontImportBuilder {
 		return $"@import url('{BuildUrl(fonts)}');";
 	}
 
+	/// <summary>Throws <see cref="ArgumentException"/> unless <paramref name="family"/> is a valid font family name.</summary>
+	internal static void ValidateFamily(string family) {
+		if (family != family?.Trim() || !FontFamilyPattern.IsMatch(family ?? string.Empty)) {
+			throw new ArgumentException($"INVALID_FONT_FAMILY: \"{family}\"", nameof(family));
+		}
+	}
+
 	private static string BuildFamilyParam(FontFamilyEntry font) {
 		IReadOnlyList<int> weights = font.Weights ?? DefaultFontWeights;
 		string trimmed = font.Family.Trim();

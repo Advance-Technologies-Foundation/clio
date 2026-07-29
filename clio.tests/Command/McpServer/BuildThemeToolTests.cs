@@ -33,6 +33,7 @@ public sealed class BuildThemeToolTests
 	private ISettingsRepository _settingsRepository;
 	private IWorkspacePathBuilder _workspacePathBuilder;
 	private IFileSystem _fileSystem;
+	private IGoogleFontsCatalog _googleFontsCatalog;
 	private BuildThemeTool _tool;
 
 	[SetUp]
@@ -47,8 +48,10 @@ public sealed class BuildThemeToolTests
 		_themeTemplateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
 		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>()).Returns("built-css");
+		_googleFontsCatalog = Substitute.For<IGoogleFontsCatalog>();
+		_googleFontsCatalog.Lookup(Arg.Any<string>()).Returns(GoogleFontAvailability.InCatalog);
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		_tool = new BuildThemeTool(command, Substitute.For<ILogger>());
 	}
 
@@ -120,7 +123,7 @@ public sealed class BuildThemeToolTests
 		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(
 			Primary: "#004fd6", CssClassName: "MyTheme", Secondary: "#0d2e4e", Accent: "#f94e11",
 			Success: "#0b8500", Error: "#d2310d", HeadingFont: "Inter", BodyFont: "Roboto",
-			FontWeights: new[] { 400, 700 }));
+			FontWeights: new[] { 400, 700 }, LocalFontFamilies: new[] { "Verdana" }));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a fully-specified build request is valid");
@@ -135,7 +138,9 @@ public sealed class BuildThemeToolTests
 			o.Fonts.Heading == "Inter" &&
 			o.Fonts.Body == "Roboto" &&
 			o.Fonts.Weights != null &&
-			o.Fonts.Weights.SequenceEqual(new[] { 400, 700 })));
+			o.Fonts.Weights.SequenceEqual(new[] { 400, 700 }) &&
+			o.Fonts.LocallyInstalledFamilies != null &&
+			o.Fonts.LocallyInstalledFamilies.Contains("Verdana")));
 	}
 
 	[Test]
@@ -257,7 +262,7 @@ public sealed class BuildThemeToolTests
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(env).Returns(resolver);
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -282,7 +287,7 @@ public sealed class BuildThemeToolTests
 			.Returns(Task.FromResult(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback)));
 		_resolverFactory.Create(env).Returns(resolver);
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -316,7 +321,7 @@ public sealed class BuildThemeToolTests
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "ghost"))
 			.Returns(_ => throw new EnvironmentResolutionException("build-theme: environment 'ghost' is not registered."));
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -338,7 +343,7 @@ public sealed class BuildThemeToolTests
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "ghost"))
 			.Returns(_ => throw new EnvironmentResolutionException("build-theme: environment 'ghost' is not registered."));
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -360,7 +365,7 @@ public sealed class BuildThemeToolTests
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new InvalidOperationException("unexpected DI wiring fault"));
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -385,7 +390,7 @@ public sealed class BuildThemeToolTests
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.1.0", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(headerSettings).Returns(resolver);
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -407,7 +412,7 @@ public sealed class BuildThemeToolTests
 			.Returns(_ => throw new EnvironmentResolutionException(
 				"Explicit credential or environment arguments are not accepted when credential passthrough is enabled over HTTP."));
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 		BuildThemeResult result = null;
 
@@ -439,7 +444,7 @@ public sealed class BuildThemeToolTests
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
@@ -637,7 +642,7 @@ public sealed class BuildThemeToolTests
 
 		// Act
 		BuildThemeArgs kebab = JsonSerializer.Deserialize<BuildThemeArgs>(
-			"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
+			"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"local-font-families":["Verdana"],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
 			options)!;
 		BuildThemeArgs camel = JsonSerializer.Deserialize<BuildThemeArgs>(
 			"""{"fontWeights":[400,700]}""", options)!;
@@ -649,6 +654,8 @@ public sealed class BuildThemeToolTests
 		kebab.BodyFont.Should().Be("Roboto", because: "the advertised kebab-case body-font field must bind");
 		kebab.FontWeights.Should().BeEquivalentTo(new[] { 400, 700 },
 			because: "the advertised kebab-case font-weights array field must bind");
+		kebab.LocalFontFamilies.Should().BeEquivalentTo(new[] { "Verdana" },
+			because: "the advertised kebab-case local-font-families array field must bind, otherwise a confirmed-local family would silently be downloaded anyway");
 		kebab.EnvironmentName.Should().Be("dev", because: "the advertised kebab-case environment-name field must bind");
 		kebab.WorkspaceDirectory.Should().Be("C:/ws", because: "the advertised kebab-case workspace-directory field must bind");
 		kebab.PackageName.Should().Be("UsrTheme", because: "the advertised kebab-case package-name field must bind");

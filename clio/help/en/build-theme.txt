@@ -39,6 +39,8 @@ OPTIONS
 
     --font-weights                  Font weights to load, comma-separated (e.g. 400,500,600); ignored without a custom heading/body font; defaults to 400,500,600
 
+    --local-font-families           Families confirmed to be installed locally, comma-separated. Each must also be passed as --heading-font or --body-font, which is what applies it; this list only suppresses its Google Fonts @import, so it renders only on machines that already have the font. Listing a family here alone applies nothing and is ignored with a warning. build-theme warns when a requested family is not in Google Fonts
+
     --id                            Theme id for theme.json (directory output); an auto-generated UUID when omitted
 
     --caption                       Theme caption for theme.json (directory output); derived from --css-class-name when omitted

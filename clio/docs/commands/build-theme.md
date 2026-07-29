@@ -61,6 +61,19 @@ Optional. Body font family; Montserrat (no @import) when omitted.
 Optional. Comma-separated font weights to load (e.g. 400,500,600); ignored with a warning when no
 --heading-font/--body-font is set; defaults to 400,500,600.
 
+--local-font-families LIST
+Optional. Comma-separated families that are installed locally on the machines which will use the
+theme. Each family must also be passed as --heading-font or --body-font, which is what applies it;
+this option only suppresses the Google Fonts `@import` for it, so nothing is downloaded and it
+renders only where the font is already installed — elsewhere the text falls back to the template's
+generic face. A family listed here without also being passed as --heading-font/--body-font applies
+nothing and is ignored with a warning.
+
+build-theme checks every requested family against the Google Fonts catalogue and warns when one is
+not found, so use this option only for a family the user confirmed is installed locally. Note that
+Google Fonts family names are case-sensitive: `Roboto` is found, `roboto` is reported missing. When
+the catalogue cannot be reached the warning says so rather than assuming either answer.
+
 --id ID
 Optional. Theme id written to theme.json (directory output); an auto-generated UUID when omitted.
 

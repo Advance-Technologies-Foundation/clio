@@ -15,8 +15,9 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end coverage for the build-theme MCP tool. build-theme is pure compute over the bundled template,
-/// so the real clio MCP server can build a theme without a live Creatio environment.
+/// End-to-end coverage for the build-theme MCP tool. It builds over the bundled template without a live
+/// Creatio environment; a custom font additionally triggers a Google Fonts availability check, which fails
+/// soft to an advisory warning when the catalogue is unreachable.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -125,5 +126,39 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 			because: "workspace-write mode writes theme.css into the package theme directory");
 		File.Exists(Path.Combine(themeDir, "theme.json")).Should().BeTrue(
 			because: "workspace-write mode writes theme.json alongside theme.css");
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("build-theme applies a confirmed local font family through the token without a Google Fonts import")]
+	[Description("Starts the real clio MCP server and invokes build-theme with a heading font also listed in local-font-families; verifies the returned CSS carries the family in its --crt-font-family-heading token and contains no @import, so a font the user confirmed is installed locally is never fetched from Google Fonts.")]
+	public async Task BuildTheme_Should_OmitImport_ForConfirmedLocalFontFamily() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = "MyTheme",
+					["heading-font"] = "Verdana",
+					["body-font"] = "Verdana",
+					["local-font-families"] = new[] { "Verdana" }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a confirmed local font family is valid input, not an error");
+		result.Success.Should().BeTrue(
+			because: "build-theme builds normally when the requested family needs no download");
+		result.Css.Should().NotContain("@import",
+			because: "a family the user confirmed is installed locally must not be fetched, and Google answers 200 with a look-alike substitute for many such names");
+		result.Css.Should().Contain("--crt-font-family-heading: 'Verdana', sans-serif;",
+			because: "the family is still applied through the token so the theme actually restyles");
 	}
 }

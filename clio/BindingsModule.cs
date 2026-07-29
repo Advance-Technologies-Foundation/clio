@@ -238,6 +238,8 @@ public class BindingsModule {
 		services.AddTransient<IRingDistributionService, RingDistributionService>();
 		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		services.AddHttpClient<Clio.Theming.IGoogleFontsCatalog, Clio.Theming.GoogleFontsCatalog>()
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(10));
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
 		// (avoids `InvalidOperationException` on reused instances and races on a shared

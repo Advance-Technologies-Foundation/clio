@@ -62,6 +62,8 @@ public sealed class BuildThemeTool(
 		["body_font"] = "body-font",
 		["fontWeights"] = "font-weights",
 		["font_weights"] = "font-weights",
+		["localFontFamilies"] = "local-font-families",
+		["local_font_families"] = "local-font-families",
 		["environmentName"] = "environment-name",
 		["environment_name"] = "environment-name",
 		["workspaceDirectory"] = "workspace-directory",
@@ -84,12 +86,12 @@ public sealed class BuildThemeTool(
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
 	public BuildThemeResult BuildTheme(
 		[Description("Parameters: primary (required), css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name (all optional).")]
+			"heading-font, body-font, font-weights, local-font-families, version, environment-name, workspace-directory, package-name (all optional).")]
 		[Required] BuildThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
 			"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.");
+			"heading-font, body-font, font-weights, local-font-families, version, environment-name, workspace-directory, package-name.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return BuildThemeResult.Failure(aliasError);
 		}
@@ -112,6 +114,7 @@ public sealed class BuildThemeTool(
 			HeadingFont = args.HeadingFont,
 			BodyFont = args.BodyFont,
 			FontWeights = args.FontWeights,
+			LocalFontFamilies = args.LocalFontFamilies,
 			Version = args.Version,
 			EnvironmentName = args.EnvironmentName
 		};
@@ -252,6 +255,10 @@ public sealed record BuildThemeArgs(
 	[property: JsonPropertyName("font-weights")]
 	[property: Description("Font weights to load (e.g. [400,500,600]); ignored without a custom heading/body font; defaults to 400,500,600.")]
 	int[]? FontWeights = null,
+
+	[property: JsonPropertyName("local-font-families")]
+	[property: Description("Families the user explicitly confirmed are installed on the machines that will use the theme, after build-theme warned they are not in Google Fonts. Each family must ALSO be passed as heading-font or body-font, which is what applies it; this list only suppresses the @import for it, so it renders only where installed. Listing a family here alone applies nothing and is ignored with a warning. Never pass a family here without that confirmation.")]
+	string[]? LocalFontFamilies = null,
 
 	[property: JsonPropertyName("version")]
 	[property: Description("Creatio version the theme targets (e.g. 10.0); the newest supported version is used when omitted; mutually exclusive with environment-name.")]

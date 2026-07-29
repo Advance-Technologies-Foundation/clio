@@ -54,6 +54,10 @@ public sealed class BuildThemeOptions {
 	[Option("font-weights", Required = false, Separator = ',', HelpText = "Font weights to load, comma-separated (e.g. 400,500,600); ignored without a custom heading/body font; defaults to 400,500,600")]
 	public IEnumerable<int> FontWeights { get; set; }
 
+	/// <summary>Optional families the user confirmed are installed locally; these are applied without a web-font import.</summary>
+	[Option("local-font-families", Required = false, Separator = ',', HelpText = "Families the user confirmed are installed locally, comma-separated; each must also be passed as --heading-font or --body-font, which is what applies it, while this list only suppresses its Google Fonts @import, so it renders only where installed")]
+	public IEnumerable<string> LocalFontFamilies { get; set; }
+
 	/// <summary>Optional theme id written to theme.json (directory output); an auto-generated UUID when omitted.</summary>
 	[Option("id", Required = false, HelpText = "Theme id for theme.json (directory output); an auto-generated UUID when omitted")]
 	public string Id { get; set; }
@@ -91,11 +95,13 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly IGoogleFontsCatalog _googleFontsCatalog;
 
-	/// <summary>Initializes the command with the theme builder, template provider, version resolver, settings repository, workspace path builder, file system, and logger.</summary>
+	/// <summary>Initializes the command with the theme builder, template provider, version resolver, settings repository, workspace path builder, file system, logger, and Google Fonts catalog.</summary>
 	public BuildThemeCommand(IThemeCssBuilder themeCssBuilder, IThemeTemplateProvider themeTemplateProvider,
 		IPlatformVersionResolverFactory resolverFactory, ISettingsRepository settingsRepository,
-		IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem, ILogger logger) {
+		IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem, ILogger logger,
+		IGoogleFontsCatalog googleFontsCatalog) {
 		_themeCssBuilder = themeCssBuilder;
 		_themeTemplateProvider = themeTemplateProvider;
 		_resolverFactory = resolverFactory;
@@ -103,6 +109,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		_workspacePathBuilder = workspacePathBuilder;
 		_fileSystem = fileSystem;
 		_logger = logger;
+		_googleFontsCatalog = googleFontsCatalog;
 	}
 
 	/// <inheritdoc />
@@ -416,6 +423,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			HeadingFont = options.HeadingFont,
 			BodyFont = options.BodyFont,
 			FontWeights = options.FontWeights,
+			LocalFontFamilies = NormalizeFamilies(options.LocalFontFamilies),
 			Id = options.Id,
 			Caption = options.Caption,
 			Version = options.Version,
@@ -423,6 +431,13 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			Output = options.Output,
 		};
 		return true;
+	}
+
+	private static IEnumerable<string> NormalizeFamilies(IEnumerable<string> families) {
+		return families?
+			.Where(family => !string.IsNullOrWhiteSpace(family))
+			.Select(family => family.Trim())
+			.ToList();
 	}
 
 	private static BuildThemeInput ToBuilderOptions(BuildThemeOptions options) {
@@ -436,19 +451,57 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			Success = options.Success,
 			Error = options.Error,
 			ThemeCssClass = options.CssClassName,
-			Fonts = hasCustomFont ? new FontsInput(options.HeadingFont, options.BodyFont, weights) : null,
+			Fonts = hasCustomFont
+				? new FontsInput(options.HeadingFont, options.BodyFont, weights, options.LocalFontFamilies?.ToList())
+				: null,
 		};
 	}
 
-	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options) {
+	private IReadOnlyList<string> CollectWarnings(BuildThemeOptions options) {
 		List<string> warnings = [];
 		if (FontWeightsWithoutFamily(options)) {
 			warnings.Add("build-theme: font weights were ignored — they apply only to a custom heading or body font.");
 		}
+		if (LocalFontFamiliesWithoutFamily(options)) {
+			warnings.Add("build-theme: local font families were ignored — a family is applied by --heading-font or "
+				+ "--body-font, and listing it in --local-font-families only suppresses the Google Fonts import.");
+		}
+		AddGoogleFontsAvailabilityWarnings(options, warnings);
 		if (string.IsNullOrEmpty(options.Accent)) {
 			AddAutoAccentWarning(options, warnings);
 		}
 		return warnings;
+	}
+
+	private void AddGoogleFontsAvailabilityWarnings(BuildThemeOptions options, List<string> warnings) {
+		foreach (string family in RequestedFamilies(options)) {
+			switch (_googleFontsCatalog.Lookup(family)) {
+				case GoogleFontAvailability.NotInCatalog:
+					warnings.Add($"build-theme: \"{family}\" was not found in Google Fonts. Family names there are "
+						+ "case-sensitive, so check the capitalisation first — \"Roboto\" resolves where \"roboto\" does not. "
+						+ "If the spelling is right and the font is not on Google Fonts, confirm with the user that it is "
+						+ "installed on every machine that will use the theme, then rebuild passing it to "
+						+ "--local-font-families so no web font is requested.");
+					break;
+				case GoogleFontAvailability.Unverified:
+					warnings.Add($"build-theme: could not reach Google Fonts to check \"{family}\". Ask the user whether "
+						+ "it is a Google font or a locally installed one, and pass it to --local-font-families if local.");
+					break;
+			}
+		}
+	}
+
+	private static IEnumerable<string> RequestedFamilies(BuildThemeOptions options) {
+		return new[] { options.HeadingFont, options.BodyFont }
+			.Where(family => !string.IsNullOrWhiteSpace(family))
+			.Select(family => family.Trim())
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Where(family => !IsLocallyInstalled(options, family));
+	}
+
+	private static bool IsLocallyInstalled(BuildThemeOptions options, string family) {
+		return options.LocalFontFamilies != null
+			&& options.LocalFontFamilies.Contains(family, StringComparer.OrdinalIgnoreCase);
 	}
 
 	private static void AddAutoAccentWarning(BuildThemeOptions options, List<string> warnings) {
@@ -465,6 +518,12 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 
 	private static bool FontWeightsWithoutFamily(BuildThemeOptions options) {
 		return options.FontWeights?.Any() == true
+			&& string.IsNullOrEmpty(options.HeadingFont)
+			&& string.IsNullOrEmpty(options.BodyFont);
+	}
+
+	private static bool LocalFontFamiliesWithoutFamily(BuildThemeOptions options) {
+		return options.LocalFontFamilies?.Any() == true
 			&& string.IsNullOrEmpty(options.HeadingFont)
 			&& string.IsNullOrEmpty(options.BodyFont);
 	}
