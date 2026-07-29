@@ -486,6 +486,75 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rebuilds the '<dataSource>.<column>' friendly path from a persisted data-source-scoped attribute expression scopeId.")]
+	public void Read_Should_Rebuild_Datasource_Scoped_Path_From_ScopeId() {
+		// Arrange
+		JsonArray rules = ParseRules($$"""
+			[
+			  {
+			    "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			    "uId": "cdcdcdcd-0000-0000-0000-000000000001",
+			    "name": "BusinessRule_scoped",
+			    "enabled": true,
+			    "caption": "Scoped condition",
+			    "cases": [
+			      {
+			        "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}",
+			        "uId": "cdcdcdcd-0000-0000-0000-000000000002",
+			        "condition": {
+			          "typeName": "{{BusinessRuleConstants.BusinessRuleGroupConditionTypeName}}",
+			          "uId": "cdcdcdcd-0000-0000-0000-000000000003",
+			          "logicalOperation": 1,
+			          "conditions": [
+			            {
+			              "typeName": "{{BusinessRuleConstants.BusinessRuleConditionTypeName}}",
+			              "uId": "cdcdcdcd-0000-0000-0000-000000000004",
+			              "comparisonType": 7,
+			              "leftExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName}}",
+			                "uId": "cdcdcdcd-0000-0000-0000-000000000005",
+			                "type": "AttributeValue",
+			                "path": "ModifiedOn",
+			                "scopeId": "PDS"
+			              },
+			              "rightExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName}}",
+			                "uId": "cdcdcdcd-0000-0000-0000-000000000006",
+			                "type": "AttributeValue",
+			                "path": "CreatedOn",
+			                "scopeId": "PDS"
+			              }
+			            }
+			          ]
+			        },
+			        "actions": [
+			          {
+			            "typeName": "{{BusinessRuleConstants.BusinessRuleShowElementTypeName}}",
+			            "uId": "cdcdcdcd-0000-0000-0000-000000000007",
+			            "enabled": true,
+			            "items": "Name"
+			          }
+			        ]
+			      }
+			    ],
+			    "triggers": []
+			  }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
+
+		// Assert
+		BusinessRuleCondition condition = models.Single().Condition.Conditions.Single();
+		condition.LeftExpression.Path.Should().Be("PDS.ModifiedOn",
+			because: "a persisted scopeId is folded back into the '<dataSource>.<column>' friendly path so the rule round-trips");
+		condition.RightExpression!.Path.Should().Be("PDS.CreatedOn",
+			because: "the right-side scoped attribute path is rebuilt the same way as the left side");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps a persisted formula set-value source to a friendly Formula expression carrying the expressionSchema.expression text as a best effort.")]
 	public void Read_Should_Map_Formula_SetValue_Source_To_Formula_Expression_With_Schema_Text() {
 		// Arrange
@@ -790,6 +859,44 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 				because: "the error must name the unsupported construct so callers can act on it")
 			.WithInnerException<InvalidOperationException>(
 				because: "the underlying conversion failure must be preserved for diagnostics");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Round-trips a persisted SysSetting condition operand back into a friendly SysSetting expression carrying the setting code.")]
+	public void Read_Should_RoundTrip_SysSetting_Operand() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["UseNewShell"] = new("UseNewShell", "Boolean", null)
+			};
+		BusinessRule input = new(
+			"Hide when new shell enabled",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("SysSetting", sysSettingName: "UseNewShell"),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, input, sysSettingMap);
+		JsonArray rules = [JsonSerializer.SerializeToNode(metadata, BusinessRuleConstants.JsonOptions)];
+
+		// Act
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
+
+		// Assert
+		BusinessRuleExpression left = models[0].Condition.Conditions[0].LeftExpression;
+		left.Type.Should().Be(BusinessRuleConstants.SysSettingExpressionType,
+			because: "a persisted SysSetting operand must read back as a SysSetting expression");
+		left.SysSettingName.Should().Be("UseNewShell",
+			because: "the setting code must survive the metadata round-trip so update preserves it");
 	}
 
 	private static JsonArray ParseRules(string json) => (JsonArray)JsonNode.Parse(json)!;

@@ -23,6 +23,7 @@ public sealed class EntityBusinessRuleServiceTests {
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient = null!;
 	private IBusinessRuleFormulaValidationService _formulaValidationService = null!;
 	private IBusinessRuleLookupReferenceValidator _lookupReferenceValidator = null!;
+	private ISysSettingConditionOperandResolver _sysSettingResolver = null!;
 	private EntityBusinessRuleService _service = null!;
 	private AddonSchemaDto? _savedAddonSchema;
 
@@ -34,6 +35,7 @@ public sealed class EntityBusinessRuleServiceTests {
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_formulaValidationService = Substitute.For<IBusinessRuleFormulaValidationService>();
 		_lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
+		_sysSettingResolver = Substitute.For<ISysSettingConditionOperandResolver>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
 				Name = "UsrPkg",
@@ -60,7 +62,54 @@ public sealed class EntityBusinessRuleServiceTests {
 			new StaticFilterContextFactory(
 				schemaProvider,
 				Substitute.For<IApplicationClient>(),
-				Substitute.For<IServiceUrlBuilder>()));
+				Substitute.For<IServiceUrlBuilder>()),
+			_sysSettingResolver);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves system-setting operand types via ISysSettingConditionOperandResolver and threads the resolved map through conversion so the persisted metadata carries a typed SysSetting expression.")]
+	public void Create_Should_Resolve_And_Persist_SysSetting_Operand() {
+		// Arrange
+		_sysSettingResolver.Resolve(Arg.Any<BusinessRule>()).Returns(
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["DisableEquipmentDelivery"] = new("DisableEquipmentDelivery", "Boolean", null)
+			});
+		BusinessRule rule = new(
+			"Lock status when equipment delivery is disabled",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("SysSetting", sysSettingName: "DisableEquipmentDelivery"),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrOrder", rule));
+
+		// Assert
+		_sysSettingResolver.Received(1).Resolve(rule);
+		result.RuleName.Should().NotBeNullOrEmpty(
+			because: "resolving the setting type and threading the map must let the rule persist");
+		_savedAddonSchema.Should().NotBeNull(
+			because: "the SysSetting rule must be saved to the entity add-on");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		// The add-on append preserves the pre-seeded existing rule at index 0, so select the appended rule by caption.
+		JsonElement savedRule = metaData.RootElement.GetProperty("rules").EnumerateArray()
+			.Single(r => r.GetProperty("caption").GetString() == "Lock status when equipment delivery is disabled");
+		JsonElement left = savedRule
+			.GetProperty("cases")[0].GetProperty("condition").GetProperty("conditions")[0].GetProperty("leftExpression");
+		left.GetProperty("type").GetString().Should().Be("SysSetting",
+			because: "the resolved operand must persist as a SysSetting expression");
+		left.GetProperty("sysSettingName").GetString().Should().Be("DisableEquipmentDelivery",
+			because: "the setting code must round-trip into the persisted metadata");
+		left.GetProperty("dataValueTypeName").GetString().Should().Be("Boolean",
+			because: "the resolver-provided data value type must reach the persisted operand");
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]

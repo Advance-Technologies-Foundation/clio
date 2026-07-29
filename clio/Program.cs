@@ -149,6 +149,8 @@ internal class Program {
 		typeof(PageTemplatesListOptions),
 		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(GetClientUnitSchemaOptions),
+		typeof(GetClassicPageSourcesOptions),
+		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
 		typeof(SqlSchemaGetOptions),
 		typeof(SqlSchemaUpdateOptions),
@@ -226,6 +228,8 @@ internal class Program {
 		typeof(UpdateThemeOptions),
 		typeof(DeleteThemeOptions),
 		typeof(SetUserThemeOptions),
+		typeof(UploadImageOptions),
+		typeof(SetBackgroundImageOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(WatchCompilationOptions),
 		typeof(UploadLicenseCommandOptions),
@@ -423,6 +427,8 @@ internal class Program {
 			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
 			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
 			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
+			UploadImageOptions opts => Resolve<UploadImageCommand>(opts).Execute(opts),
+			SetBackgroundImageOptions opts => Resolve<SetBackgroundImageCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -605,6 +611,8 @@ internal class Program {
 			ClientUnitSchemaCreateOptions opts => Resolve<ClientUnitSchemaCreateCommand>(opts).Execute(opts),
 			ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
 			GetClientUnitSchemaOptions opts => Resolve<GetClientUnitSchemaCommand>(opts).Execute(opts),
+			GetClassicPageSourcesOptions opts => Resolve<GetClassicPageSourcesCommand>(opts).Execute(opts),
+			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
 			SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
@@ -1446,6 +1454,12 @@ internal class Program {
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
 	}
 
+	/// <summary>
+	/// The long-form help flag. Recognized in four distinct places (update-check skip, verb help-dispatch,
+	/// token scan, and value classification), so it lives here rather than being re-spelled per site.
+	/// </summary>
+	private const string LongHelpFlag = "--help";
+
 	private static bool ShouldSkipUpdateCheck(string[] args) {
 		if (IsMcpServerMode) return true;
 		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
@@ -1466,7 +1480,7 @@ internal class Program {
 			return true;
 		}
 		return args.Any(arg =>
-			string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
+			string.Equals(arg, LongHelpFlag, StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
 	}
@@ -1552,7 +1566,7 @@ internal class Program {
 	private static bool ContainsHelpLikeToken(string[] normalizedArgs) =>
 		normalizedArgs.Any(token =>
 			string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(token, "--help", StringComparison.OrdinalIgnoreCase));
+			|| string.Equals(token, LongHelpFlag, StringComparison.OrdinalIgnoreCase));
 
 	// Decides whether argv is a genuine `<verb> --help`/`-h` request rather than a real command whose
 	// arguments merely happen to contain a `-h`/`--help` token. A blind array-wide scan is unsafe: a
@@ -1591,7 +1605,7 @@ internal class Program {
 		if (string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)) {
 			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.ShortName, "h", StringComparison.OrdinalIgnoreCase));
 		}
-		if (string.Equals(token, "--help", StringComparison.OrdinalIgnoreCase)) {
+		if (string.Equals(token, LongHelpFlag, StringComparison.OrdinalIgnoreCase)) {
 			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.LongName, "help", StringComparison.OrdinalIgnoreCase));
 		}
 		return false;
@@ -1638,7 +1652,7 @@ internal class Program {
 
 	private static bool IsRootHelpToken(string value) =>
 		string.Equals(value, "help", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(value, "--help", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(value, LongHelpFlag, StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(value, "-h", StringComparison.OrdinalIgnoreCase);
 
 	private static bool IsRootVersionToken(string value) =>

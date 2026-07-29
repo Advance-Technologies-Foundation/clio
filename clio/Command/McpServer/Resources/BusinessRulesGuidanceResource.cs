@@ -66,7 +66,8 @@ public sealed class BusinessRulesGuidanceResource {
 		          - Tool: `create-page-business-rules`
 		          - Supported actions: hide-element, show-element, make-editable, make-read-only, make-required, make-optional.
 		          - Use when the rule should apply only on a specific page.
-		          - Element names come from `get-page` bundle.viewConfig (recursive). Attribute names come from bundle.viewModelConfig.attributes.
+		          - Element names come from `get-page` bundle.viewConfig (recursive). Condition attribute names come from bundle.viewModelConfig.attributes; a data source column that is NOT surfaced on the page is addressed in a condition as `<dataSource>.<column>` (data source names come from bundle.modelConfig.dataSources).
+		          - Page parameters are a condition source too, exposed through the system `PageParameters` scope. The authoritative list is `get-page` bundle.parameters[] (each entry has `name` + `dataValueType` + `caption`); it includes EVERY parameter, even one not bound to any control (so not present in viewModelConfig.attributes or modelConfig.dataSources). Address a page parameter in a condition as `PageParameters.<ParameterName>` (same `<scope>.<name>` shape as a data source column) — prefer this form: it is uniform and works for every parameter, including ones not bound to a control. A parameter that IS bound to a control is additionally addressable by its raw viewModelConfig attribute name (e.g. `PageParameters_<Name>_<hash>`), but `PageParameters.<ParameterName>` is the recommended, portable form.
 
 		       Rule lifecycle (read / update / delete)
 		       - Six maintenance tools complete the CRUD matrix: `read-entity-business-rules` / `read-page-business-rules`, `update-entity-business-rules` / `update-page-business-rules`, `delete-entity-business-rules` / `delete-page-business-rules`.
@@ -85,6 +86,7 @@ public sealed class BusinessRulesGuidanceResource {
 		          - a field being FILLED or EMPTY ("hidden until a value is entered") → comparisonType is-filled-in or is-not-filled-in.
 		          - the current user's ROLE ("Resolved visible only for administrators") → condition CurrentUserRoles CONTAIN <role id>, plus the inverse NOT_CONTAIN → opposite action. Do NOT write a HandleViewModelInitRequest handler or use column access rights just to hide a control — role-based field state IS a business rule. Use column/object permissions only to restrict the underlying DATA, not just the UI control.
 		          - WHO the current user is ("Assignee group visible only for Supervisor") → condition compares CurrentUser / CurrentUserContact / CurrentUserAccount to the target id. Not a handler.
+		          - a SYSTEM SETTING value ("hide Shipping address when the DisableEquipmentDelivery setting is enabled", "make Equipment read-only when LockEquipmentAfterSubmission is on") → condition operand type SysSetting with sysSettingName set to the setting code. The setting can be on either side and its value type is resolved from the environment; a Boolean setting compares against a Const true/false. Binary and SecureText settings are not supported as operands. Do NOT read the setting in a handler to toggle the control.
 
 		       B. Conditional field VALUE → ENTITY BUSINESS RULE with set-values. Do NOT write a handler.
 		          - set a field ("when field X equals Y, set field Z to W") → set-values with the value.

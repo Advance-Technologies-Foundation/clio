@@ -23,6 +23,11 @@ DESCRIPTION
       was seen - it is always the last project built in a full compile, so
       seeing it confirms a genuine full finish rather than a partial/package
       compile.
+    - If activity was observed (e.g. a single package row) but that marker never
+      appears, the watch does NOT settle - it assumes a full compile may still be
+      running and keeps waiting until either the marker shows up or --give-up-after
+      is exhausted (exit code 2), rather than quickly declaring an unconfirmed
+      partial finish.
 
     This command is experimental and disabled by default. Enable it with:
         clio experimental --name watch-compilation --enable
@@ -98,9 +103,10 @@ NOTES
 
 RETURN VALUES
     0       Compilation settled successfully (or was already idle)
-    1       Compilation finished with errors, or activity was observed but the
-            ODataEntities marker was never seen (cannot confirm a full finish)
-    2       Gave up waiting after --give-up-after seconds
+    1       Compilation finished with real (non-warning) errors
+    2       Gave up waiting after --give-up-after seconds - either nothing
+            settled at all, or activity was observed but the ODataEntities
+            marker never appeared (a full finish could not be confirmed)
     3       Startup error - could not read compilation history at all
 
 REPORTING BUGS

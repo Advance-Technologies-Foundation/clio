@@ -48,7 +48,8 @@ internal sealed class EntityBusinessRuleService(
 	IBusinessRuleAddonService businessRuleAddonService,
 	IBusinessRuleFormulaValidationService formulaValidationService,
 	IBusinessRuleValidator businessRuleValidator,
-	IStaticFilterContextFactory staticFilterContextFactory)
+	IStaticFilterContextFactory staticFilterContextFactory,
+	ISysSettingConditionOperandResolver sysSettingResolver)
 	: BaseBusinessRuleService(packageResolver, businessRuleAddonService), IEntityBusinessRuleService {
 
 	private const string EntitySchemaNameField = "entity-schema-name";
@@ -67,7 +68,8 @@ internal sealed class EntityBusinessRuleService(
 			? staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 			: null;
 
-		businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
+		businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider, sysSettingMap);
 		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
 		IReadOnlyList<BusinessRuleMetadataDto> createdRules = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
@@ -75,7 +77,8 @@ internal sealed class EntityBusinessRuleService(
 			rule,
 			attributeContext.EntitySchema.Name,
 			staticFilterContext?.SchemaProvider,
-			staticFilterContext?.LookupResolver);
+			staticFilterContext?.LookupResolver,
+			sysSettingMap: sysSettingMap);
 		return AddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			rule,
@@ -104,7 +107,8 @@ internal sealed class EntityBusinessRuleService(
 					? batchStaticFilterContext ??= staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 					: null;
 
-				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
+				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
+				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider, sysSettingMap);
 				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
 				return SimpleToFullBusinessRuleConverter.ToEntityMetadata(
@@ -112,7 +116,8 @@ internal sealed class EntityBusinessRuleService(
 					rule,
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
-					staticFilterContext?.LookupResolver);
+					staticFilterContext?.LookupResolver,
+					sysSettingMap: sysSettingMap);
 			});
 	}
 
@@ -146,7 +151,8 @@ internal sealed class EntityBusinessRuleService(
 					? batchStaticFilterContext ??= staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 					: null;
 
-				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
+				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
+				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider, sysSettingMap);
 				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
 				return SimpleToFullBusinessRuleConverter.ToEntityMetadata(
@@ -155,7 +161,8 @@ internal sealed class EntityBusinessRuleService(
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
 					staticFilterContext?.LookupResolver,
-					existing);
+					existing,
+					sysSettingMap);
 			});
 	}
 

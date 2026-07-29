@@ -1,5 +1,7 @@
 namespace Clio.Command;
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -35,11 +37,45 @@ internal sealed record SchemaDesignerKind(
 		"/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema");
 }
 
+/// <summary>
+/// One layer of a (possibly multi-package) schema chain: a single <c>SysSchema</c> row for a schema name,
+/// carrying the owning package and its hierarchy level. Layers are ordered base-&gt;top by hierarchy level.
+/// </summary>
+internal sealed record SchemaLayer(string UId, string Name, string PackageName, int HierarchyLevel);
+
+/// <summary>One culture value of a merged localizable string.</summary>
+public sealed record MergedLocalizableStringValue(
+	[property: System.Text.Json.Serialization.JsonPropertyName("cultureName")] string CultureName,
+	[property: System.Text.Json.Serialization.JsonPropertyName("value")] string Value);
+
+/// <summary>
+/// A localizable string from the full-hierarchy-merged schema, carrying the schema that contributed it
+/// (<c>parentSchemaUId</c> provenance) and its per-culture values. This is the honest content a
+/// <c>--full-hierarchy</c> read delivers (the merge folds localization + metadata, not the view body).
+/// </summary>
+public sealed record MergedLocalizableString(
+	[property: System.Text.Json.Serialization.JsonPropertyName("name")] string Name,
+	[property: System.Text.Json.Serialization.JsonPropertyName("parentSchemaUId")] string ParentSchemaUId,
+	[property: System.Text.Json.Serialization.JsonPropertyName("uId")] string UId,
+	[property: System.Text.Json.Serialization.JsonPropertyName("values")] IReadOnlyList<MergedLocalizableStringValue> Values);
+
 internal static class SchemaDesignerHelper {
 
 	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 	private const string ValueKey = "value";
 	private const string ExpressionTypeKey = "expressionType";
+
+	// ESQ payload keys, single-sourced so the select builders below cannot drift on a key name.
+	private const string ItemsKey = "items";
+	private const string ExpressionKey = "expression";
+	private const string ColumnPathKey = "columnPath";
+	private const string FilterTypeKey = "filterType";
+	private const string IsEnabledKey = "isEnabled";
+	private const string ComparisonTypeKey = "comparisonType";
+	private const string LeftExpressionKey = "leftExpression";
+	private const string RightExpressionKey = "rightExpression";
+	private const string ParameterKey = "parameter";
+	private const string DataValueTypeKey = "dataValueType";
 
 	internal static string ValidateCreateInput(string schemaName, string packageName) {
 		if (string.IsNullOrWhiteSpace(schemaName))
@@ -56,10 +92,46 @@ internal static class SchemaDesignerHelper {
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
 		SchemaDesignerKind kind) {
+		// The deterministic top-layer (most-derived) resolution is SCOPED to ClientUnit — the only kind the
+		// Classic->Freedom migration path needs it for. SqlScript/SourceCode keep the pre-PR single-row pick:
+		// ResolveSchemaUId is a shared, kind-generic helper also used by SqlSchemaUpdate/SqlSchemaInstall
+		// (which executes raw SQL against the DB) and SourceCodeSchemaUpdate, none of which are covered by
+		// multi-layer resolution tests. Silently redirecting which physical layer those commands write to /
+		// execute against is out of scope for this PR (see PR #937 review); modernize those kinds separately.
+		if (kind != SchemaDesignerKind.ClientUnit) {
+			return ResolveSchemaUIdSingle(client, urlBuilder, schemaName, kind);
+		}
+		(IReadOnlyList<SchemaLayer> layers, string error) = EnumerateSchemaLayers(client, urlBuilder, schemaName, kind);
+		if (error != null)
+			return (null, error);
+		if (layers.Count == 0)
+			return (null, $"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')");
+		// Layers are ordered base->top; the top (most-derived) layer wins for a single-schema resolve, so a
+		// multi-layer classic name always resolves to the same UId instead of a DB-order-dependent random layer.
+		string uId = layers[layers.Count - 1].UId;
+		if (string.IsNullOrWhiteSpace(uId))
+			return (null, $"Schema '{schemaName}' metadata is missing UId");
+		return (uId, null);
+	}
+
+	// Pre-PR single-row resolution preserved verbatim for the non-ClientUnit kinds (SqlScript/SourceCode):
+	// a UId-by-name query capped at one row, taking that row's UId. Kept deliberately unchanged so the layer
+	// the Sql/SourceCode update/install commands target is not altered by this PR (see ResolveSchemaUId).
+	private static (string uId, string error) ResolveSchemaUIdSingle(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		string schemaName,
+		SchemaDesignerKind kind) {
 		var query = BuildSelectUIdByName(schemaName, kind.ManagerName);
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
 		JObject selectResponse = JObject.Parse(responseJson);
+		// DataService returns HTTP 200 even on failure (restricted SysSchema access, auth, invalid column). Key
+		// failure off the same authoritative detector the ClientUnit layer path uses, so a failure envelope is
+		// surfaced as the real error instead of an empty-rows "not found" — which would also silently corrupt
+		// SchemaNameExists (a permission failure read as "schema does not exist").
+		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure))
+			return (null, $"SelectQuery for schema '{schemaName}' failed: {failure}");
 		var rows = selectResponse["rows"] as JArray ?? [];
 		if (rows.Count == 0)
 			return (null, $"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')");
@@ -67,6 +139,117 @@ internal static class SchemaDesignerHelper {
 		if (string.IsNullOrWhiteSpace(uId))
 			return (null, $"Schema '{schemaName}' metadata is missing UId");
 		return (uId, null);
+	}
+
+	/// <summary>
+	/// Enumerates every same-named schema layer (one <c>SysSchema</c> row per package that defines or replaces
+	/// the schema) ordered base-&gt;top by the owning package's hierarchy level, with a stable package-name
+	/// tiebreaker so equal levels order deterministically. This is the layer chain the Classic-&gt;Freedom
+	/// migration bundle folds; the last element is the effective top (most-derived) layer.
+	/// </summary>
+	internal static (IReadOnlyList<SchemaLayer> layers, string error) EnumerateSchemaLayers(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		string schemaName,
+		SchemaDesignerKind kind) {
+		var query = BuildSelectLayersByName(schemaName, kind.ManagerName);
+		string url = urlBuilder.Build(SelectQueryRoute);
+		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
+		JObject selectResponse = JObject.Parse(responseJson);
+		// Surface an explicit DataService failure instead of masking it as an empty result — otherwise the
+		// caller reports a misleading "not found". Route through the shared SelectQuery detector so this keys
+		// failure off the same three signals as ReadRows (success:false / an errorInfo object / a
+		// responseStatus error), not the weaker success-only check that misses errorInfo/responseStatus-only
+		// failures (e.g. restricted SysSchema access) and throws on a "success":null token.
+		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure)) {
+			return ([], $"SelectQuery for schema '{schemaName}' failed: {failure}");
+		}
+		var rows = selectResponse["rows"] as JArray ?? [];
+		// Sort client-side as the authoritative order so the result is deterministic regardless of the row
+		// order the DataService returns (the query also requests this order server-side).
+		var layers = rows
+			.Select(row => new SchemaLayer(
+				row["UId"]?.ToString(),
+				row["Name"]?.ToString(),
+				row["PackageName"]?.ToString(),
+				row["HierarchyLevel"]?.Value<int?>() ?? 0))
+			.OrderBy(layer => layer.HierarchyLevel)
+			.ThenBy(layer => layer.PackageName, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		return (layers, null);
+	}
+
+	/// <summary>
+	/// Enumerates the layer chains of MANY schema names in a single DataService round-trip (an
+	/// <c>In</c> filter over <c>Name</c>), grouping rows client-side. Every requested name gets an
+	/// entry in the result — an empty list when the schema does not exist — so callers can memoize
+	/// "not found" without re-querying. Ordering per name matches <see cref="EnumerateSchemaLayers"/>.
+	/// </summary>
+	internal static (IReadOnlyDictionary<string, IReadOnlyList<SchemaLayer>> layersByName, string error)
+		EnumerateSchemaLayersBatch(
+			IApplicationClient client,
+			IServiceUrlBuilder urlBuilder,
+			IReadOnlyCollection<string> schemaNames,
+			SchemaDesignerKind kind) {
+		var layersByName = new Dictionary<string, IReadOnlyList<SchemaLayer>>(StringComparer.OrdinalIgnoreCase);
+		foreach (string name in schemaNames) {
+			layersByName[name] = [];
+		}
+		if (layersByName.Count == 0) {
+			return (layersByName, null);
+		}
+		var query = BuildSelectLayersByNames(layersByName.Keys, kind.ManagerName);
+		string url = urlBuilder.Build(SelectQueryRoute);
+		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
+		JObject selectResponse = JObject.Parse(responseJson);
+		// Same shared SelectQuery failure detection as EnumerateSchemaLayers: a batch failure must not be
+		// read as "every requested name is empty", which PrimeLayerBatch would then memoize for the whole run.
+		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure)) {
+			return (layersByName, $"SelectQuery for schema layer batch failed: {failure}");
+		}
+		var rows = selectResponse["rows"] as JArray ?? [];
+		foreach (var group in rows
+			.Select(row => new SchemaLayer(
+				row["UId"]?.ToString(),
+				row["Name"]?.ToString(),
+				row["PackageName"]?.ToString(),
+				row["HierarchyLevel"]?.Value<int?>() ?? 0))
+			.Where(layer => !string.IsNullOrEmpty(layer.Name) && layersByName.ContainsKey(layer.Name))
+			.GroupBy(layer => layer.Name, StringComparer.OrdinalIgnoreCase)) {
+			layersByName[group.Key] = group
+				.OrderBy(layer => layer.HierarchyLevel)
+				.ThenBy(layer => layer.PackageName, StringComparer.OrdinalIgnoreCase)
+				.ToList();
+		}
+		return (layersByName, null);
+	}
+
+	/// <summary>
+	/// Extracts the merged localizable strings from a schema loaded with <c>useFullHierarchy:true</c>, each with
+	/// its <c>parentSchemaUId</c> provenance and per-culture values. Returns an empty list when the schema has none.
+	/// This is the honest content behind <c>--full-hierarchy</c> and the source of the migration bundle's resources.
+	/// </summary>
+	internal static IReadOnlyList<MergedLocalizableString> ExtractMergedLocalizableStrings(JObject schema) {
+		var result = new List<MergedLocalizableString>();
+		if (schema?["localizableStrings"] is not JArray strings) {
+			return result;
+		}
+		foreach (JToken entry in strings) {
+			var values = new List<MergedLocalizableStringValue>();
+			if (entry["values"] is JArray valueArray) {
+				foreach (JToken value in valueArray) {
+					values.Add(new MergedLocalizableStringValue(
+						value["cultureName"]?.ToString(),
+						value["value"]?.ToString()));
+				}
+			}
+			result.Add(new MergedLocalizableString(
+				entry["name"]?.ToString(),
+				entry["parentSchemaUId"]?.ToString(),
+				entry["uId"]?.ToString(),
+				values));
+		}
+		return result;
 	}
 
 	internal static bool SchemaNameExists(
@@ -83,17 +266,25 @@ internal static class SchemaDesignerHelper {
 		IServiceUrlBuilder urlBuilder,
 		string schemaUId,
 		SchemaDesignerKind kind,
-		string schemaName = null) {
+		string schemaName = null,
+		bool useFullHierarchy = false) {
 		var request = new JObject {
 			["schemaUId"] = schemaUId,
-			["useFullHierarchy"] = false
+			["useFullHierarchy"] = useFullHierarchy
 		};
 		string designerUrl = urlBuilder.Build(kind.GetRoute);
 		string json = client.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
 		JObject response = JObject.Parse(json);
 		if (response["schema"] is not JObject loaded) {
 			string label = schemaName ?? schemaUId;
-			return (null, $"Failed to load schema '{label}' via {kind.ServiceName}");
+			// Carry the designer service's own reason (permission, locked package, invalid UId) so a
+			// failed load is diagnosable instead of a generic message — parity with EnumerateSchemaLayers.
+			// `as JObject` keeps a JSON `errorInfo:null` (a JValue of type Null, not C# null) from throwing an
+			// opaque JValue-indexing error when the reason is read.
+			string failure = (response["errorInfo"] as JObject)?["message"]?.ToString();
+			return (null, string.IsNullOrWhiteSpace(failure)
+				? $"Failed to load schema '{label}' via {kind.ServiceName}"
+				: $"Failed to load schema '{label}' via {kind.ServiceName}: {failure}");
 		}
 		return (loaded, null);
 	}
@@ -160,45 +351,99 @@ internal static class SchemaDesignerHelper {
 		return (body, null);
 	}
 
+	// The SysSchema filter group both selects share: Name == <schemaName> AND ManagerName == <managerName>.
+	// Single-sourced so the UId lookup and the layer enumeration cannot drift on the filter shape or a dataValueType
+	// and start resolving different rows.
+	private static JObject BuildNameAndManagerFilters(string schemaName, string managerName) => new() {
+		[FilterTypeKey] = 6,
+		["logicalOperation"] = 0,
+		[IsEnabledKey] = true,
+		[ItemsKey] = new JObject {
+			["byName"] = BuildTextEqualsFilter("Name", schemaName),
+			["byManager"] = BuildTextEqualsFilter("ManagerName", managerName)
+		}
+	};
+
+	// An ESQ equality filter over a text column (dataValueType 1): <columnPath> == <value>.
+	private static JObject BuildTextEqualsFilter(string columnPath, string value) => new() {
+		[FilterTypeKey] = 1,
+		[ComparisonTypeKey] = 3,
+		[IsEnabledKey] = true,
+		[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = columnPath },
+		[RightExpressionKey] = new JObject {
+			[ExpressionTypeKey] = 2,
+			[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = value }
+		}
+	};
+
+	// Pre-PR UId-by-name query (single row) used by ResolveSchemaUIdSingle for the non-ClientUnit kinds.
 	private static JObject BuildSelectUIdByName(string schemaName, string managerName) {
 		return new JObject {
 			["rootSchemaName"] = "SysSchema",
 			["operationType"] = 0,
 			["columns"] = new JObject {
-				["items"] = new JObject {
+				[ItemsKey] = new JObject {
 					["UId"] = new JObject {
-						["expression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "UId" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
 					}
 				}
 			},
-			["filters"] = new JObject {
-				["filterType"] = 6,
-				["logicalOperation"] = 0,
-				["isEnabled"] = true,
-				["items"] = new JObject {
-					["byName"] = new JObject {
-						["filterType"] = 1,
-						["comparisonType"] = 3,
-						["isEnabled"] = true,
-						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "Name" },
-						["rightExpression"] = new JObject {
-							[ExpressionTypeKey] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, [ValueKey] = schemaName }
-						}
-					},
-					["byManager"] = new JObject {
-						["filterType"] = 1,
-						["comparisonType"] = 3,
-						["isEnabled"] = true,
-						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "ManagerName" },
-						["rightExpression"] = new JObject {
-							[ExpressionTypeKey] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, [ValueKey] = managerName }
-						}
-					}
-				}
-			},
+			["filters"] = BuildNameAndManagerFilters(schemaName, managerName),
 			["rowCount"] = 1
 		};
+	}
+
+	private static JObject BuildSelectLayersByName(string schemaName, string managerName) {
+		return new JObject {
+			["rootSchemaName"] = "SysSchema",
+			["operationType"] = 0,
+			["columns"] = new JObject {
+				[ItemsKey] = new JObject {
+					["UId"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
+					},
+					["Name"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" }
+					},
+					["PackageName"] = new JObject {
+						// Secondary, stable tiebreaker so packages at the same hierarchy level order deterministically.
+						["orderDirection"] = 1,
+						["orderPosition"] = 1,
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name" }
+					},
+					["HierarchyLevel"] = new JObject {
+						// Package hierarchy level orders the replacing chain base (lowest) -> top (highest), so a
+						// multi-layer classic schema enumerates/resolves deterministically instead of by DB order.
+						["orderDirection"] = 1,
+						["orderPosition"] = 0,
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.HierarchyLevel" }
+					}
+				}
+			},
+			["filters"] = BuildNameAndManagerFilters(schemaName, managerName),
+			// -1 = no limit: return every layer so a multi-package replacing chain enumerates in full.
+			["rowCount"] = -1
+		};
+	}
+
+	// Same projection/order as BuildSelectLayersByName, but filtering Name with an In filter
+	// (filterType 4 + rightExpressions) so one round-trip enumerates many names at once.
+	private static JObject BuildSelectLayersByNames(IEnumerable<string> schemaNames, string managerName) {
+		var nameExpressions = new JArray();
+		foreach (string schemaName in schemaNames) {
+			nameExpressions.Add(new JObject {
+				[ExpressionTypeKey] = 2,
+				[ParameterKey] = new JObject { [DataValueTypeKey] = 1, [ValueKey] = schemaName }
+			});
+		}
+		JObject query = BuildSelectLayersByName(string.Empty, managerName);
+		query["filters"][ItemsKey]["byName"] = new JObject {
+			[FilterTypeKey] = 4,
+			[ComparisonTypeKey] = 3,
+			[IsEnabledKey] = true,
+			[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
+			["rightExpressions"] = nameExpressions
+		};
+		return query;
 	}
 }

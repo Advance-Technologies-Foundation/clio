@@ -72,7 +72,7 @@ public class RestartTool(
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-credentials MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) polls the instance's health-check endpoint after the restart request and returns only once it answers, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with this operation-id (when the instance is also registered as an environment) instead.")]
+	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) polls the instance's health-check endpoint after the restart request and returns only once it answers, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
@@ -101,9 +101,12 @@ public class RestartTool(
 		};
 		return await ExecuteWithReadinessWait(
 			options, waitReady,
-			// No registered environment name on the credentials path — restart-status is env-keyed, so the
-			// readiness wait is tracked under a null environment (pollable only when this instance is also
-			// registered and resolves to the same tenant key).
+			// No registered environment name on the credentials path. The wait is still TRACKED (so the
+			// registry's lifecycle/eviction invariants hold uniformly), but it is NOT pollable: the record
+			// lands under a URI-derived tenant key, while restart-status derives its key from a required
+			// environment name — BuildCacheKey uses `Environment ?? Uri`, so the two key spaces are
+			// disjoint and a lookup can never match. The in-progress notice says so rather than sending
+			// the agent to a poll target that always answers not-found.
 			new RestartWaitContext(RestartByCredentialsToolName, $"'{url}'", waitTimeoutSeconds, null),
 			server, requestContext, cancellationToken).ConfigureAwait(false);
 	}
@@ -157,7 +160,8 @@ public class RestartTool(
 		} catch (McpResponseDeadlineExceededException) {
 			return CommandExecutionResult.FromInfo(
 				BuildInProgressMessage(
-					waitContext.TargetDescription, waitContext.ToolName, waitContext.WaitTimeoutSeconds, operation.OperationId));
+					waitContext.TargetDescription, waitContext.ToolName, waitContext.WaitTimeoutSeconds,
+					operation.OperationId, waitContext.EnvironmentName));
 		}
 	}
 
@@ -215,11 +219,26 @@ public class RestartTool(
 	/// unit-testable without racing the real response-deadline timer.
 	/// </summary>
 	internal static string BuildInProgressMessage(
-		string targetDescription, string toolName, int waitTimeoutSeconds, string operationId) =>
+		string targetDescription, string toolName, int waitTimeoutSeconds, string operationId,
+		string environmentName) =>
 		$"Restart of {targetDescription} was accepted and the restart request itself already "
 		+ "succeeded; the application is still warming up (MCP response deadline reached, the "
-		+ $"readiness wait continues server-side for up to {waitTimeoutSeconds}s). Poll restart-status "
-		+ $"with the same environment-name (or operation-id '{operationId}') — exit code 0 means the "
-		+ "application is ready. "
-		+ $"Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
+		+ $"readiness wait continues server-side for up to {waitTimeoutSeconds}s). "
+		+ BuildPollGuidance(operationId, environmentName)
+		+ $" Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
+
+	// restart-status resolves its tenant key from a REQUIRED environment-name, and
+	// ToolCommandResolver.BuildCacheKey builds that key from `options.Environment ?? settings.Uri`. The
+	// credentials path has no environment name, so its operation is recorded under a URI-derived key that
+	// an environment-named lookup can never equal — not "only when the instance is also registered", but
+	// never, for a structurally different key. Promising a poll target there would send the agent into a
+	// guaranteed not-found loop, so that path gets honest guidance instead.
+	private static string BuildPollGuidance(string operationId, string environmentName) =>
+		string.IsNullOrWhiteSpace(environmentName)
+			? "This restart was started by credentials, not by environment name, so restart-status "
+			  + "(which is keyed by a registered environment name) cannot report it — re-check the "
+			  + "instance with the healthcheck tool, or use restart-by-environment-name for a "
+			  + "pollable restart."
+			: $"Poll restart-status with environment-name '{environmentName}' (or operation-id "
+			  + $"'{operationId}') — exit code 0 means the application is ready.";
 }

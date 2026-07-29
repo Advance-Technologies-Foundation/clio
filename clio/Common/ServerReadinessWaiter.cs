@@ -50,6 +50,12 @@ public class ServerReadinessWaiter(HealthCheckCommand healthCheckCommand, ILogge
 	/// </summary>
 	internal Action<TimeSpan> Sleep { get; set; } = Thread.Sleep;
 
+	/// <summary>
+	/// Floor for a single probe's request timeout. Keeps an all-but-exhausted budget from degenerating
+	/// into a 0 ms request that fails before the instance can possibly answer.
+	/// </summary>
+	private const int MinProbeTimeoutMs = 1_000;
+
 	/// <inheritdoc/>
 	public bool WaitForReady(ServerReadinessOptions options) {
 		logger.WriteInfo($"Waiting {options.InitialDelay.TotalSeconds:0} seconds for server to start...");
@@ -65,9 +71,18 @@ public class ServerReadinessWaiter(HealthCheckCommand healthCheckCommand, ILogge
 		int attempt = 0;
 		do {
 			attempt++;
+			// Bound EACH probe by what is left of the readiness budget. HealthCheckOptions inherits
+			// RemoteCommandOptions' 100 s DefaultTimeout with MaxAttempts=3/RetryDelay=1, and the deadline
+			// below is only checked AFTER Execute returns — so an instance that accepts the connection and
+			// then stalls (the normal warm-up shape) could pin this loop for minutes past a small
+			// waitTimeoutSeconds. MaxAttempts=1 because THIS loop is the retry: the inner retry would
+			// multiply the overshoot while hiding it from the budget arithmetic.
 			HealthCheckOptions healthOptions = new() {
 				Uri = options.Uri,
-				IsNetCore = options.IsNetCore
+				IsNetCore = options.IsNetCore,
+				TimeOut = ResolveProbeTimeoutMs(deadlineUtc),
+				MaxAttempts = 1,
+				RetryDelay = 0
 			};
 			int result = healthCheckCommand.Execute(healthOptions);
 			if (result == 0) {
@@ -87,5 +102,19 @@ public class ServerReadinessWaiter(HealthCheckCommand healthCheckCommand, ILogge
 		logger.WriteWarning($"Server did not become ready within {options.Timeout.TotalSeconds:0} seconds.");
 		return false;
 	}
+
+	/// <summary>
+	/// Per-probe request timeout, derived from the time left before <paramref name="deadlineUtc"/>. Never
+	/// exceeds the inherited default (so this only ever tightens the probe, never loosens it) and never
+	/// drops below <see cref="MinProbeTimeoutMs"/> — the do/while guarantees one probe even on an already
+	/// exhausted budget, and that probe still deserves a usable window.
+	/// </summary>
+	private static int ResolveProbeTimeoutMs(DateTime deadlineUtc) {
+		double remainingMs = (deadlineUtc - DateTime.UtcNow).TotalMilliseconds;
+		return (int)Math.Clamp(remainingMs, MinProbeTimeoutMs, DefaultProbeTimeoutMs);
+	}
+
+	/// <summary>Upper bound for a single probe: <see cref="RemoteCommandOptions"/>' inherited default.</summary>
+	private const int DefaultProbeTimeoutMs = 100_000;
 
 }

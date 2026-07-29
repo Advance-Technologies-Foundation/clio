@@ -131,6 +131,65 @@ public sealed class ServerReadinessWaiterTests {
 	}
 
 	[Test]
+	[Description("Caps a single probe's request timeout to what is left of the readiness budget, so a small waitTimeoutSeconds cannot be overshot by the inherited 100s health-check default.")]
+	public void WaitForReady_Should_Cap_ProbeTimeout_To_RemainingBudget() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		ServerReadinessWaiter waiter = new(healthCheckCommand, Substitute.For<ILogger>()) {
+			Sleep = _ => { }
+		};
+
+		// Act
+		waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.FromSeconds(5)
+		});
+
+		// Assert
+		healthCheckCommand.Received(1).Execute(Arg.Is<HealthCheckOptions>(options =>
+			options.TimeOut <= 5_000 && options.TimeOut >= 1_000));
+		healthCheckCommand.Received(1).Execute(Arg.Is<HealthCheckOptions>(options => options.MaxAttempts == 1));
+	}
+
+	[Test]
+	[Description("Never lets a probe timeout exceed the inherited 100s default, so a long readiness budget only ever tightens - never loosens - a single request.")]
+	public void WaitForReady_Should_Not_Raise_ProbeTimeout_Above_InheritedDefault() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		ServerReadinessWaiter waiter = new(healthCheckCommand, Substitute.For<ILogger>()) {
+			Sleep = _ => { }
+		};
+
+		// Act
+		waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.FromSeconds(3600)
+		});
+
+		// Assert
+		healthCheckCommand.Received(1).Execute(Arg.Is<HealthCheckOptions>(options => options.TimeOut == 100_000));
+	}
+
+	[Test]
+	[Description("Gives the guaranteed first probe a usable window even when the readiness budget is already exhausted, so a zero timeout does not degenerate into an instant-fail request.")]
+	public void WaitForReady_Should_Floor_ProbeTimeout_When_BudgetExhausted() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		ServerReadinessWaiter waiter = new(healthCheckCommand, Substitute.For<ILogger>()) {
+			Sleep = _ => { }
+		};
+
+		// Act
+		waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.Zero
+		});
+
+		// Assert
+		healthCheckCommand.Received(1).Execute(Arg.Is<HealthCheckOptions>(options => options.TimeOut == 1_000));
+	}
+
+	[Test]
 	[Description("Forwards the requested Uri and IsNetCore to each health-check probe unchanged.")]
 	public void WaitForReady_Should_Propagate_Uri_And_IsNetCore_To_HealthCheckOptions() {
 		// Arrange

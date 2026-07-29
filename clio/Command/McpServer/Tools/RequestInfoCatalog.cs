@@ -132,6 +132,49 @@ public sealed class RequestInfoCatalog : IRequestInfoCatalog {
 }
 
 /// <summary>
+/// Mobile Freedom UI request catalog (<c>MobileRequestRegistry.json</c>). Backed by the same
+/// wrapped-envelope contract and the same CDN → file cache fallback chain as the web request
+/// catalog, differing only in the <see cref="RegistryFlavor.MobileRequests"/> config carried by
+/// the underlying <see cref="IMobileRequestRegistryClient"/> (separate CDN file, cache
+/// subdirectory, and local-override env var). Mirrors how <see cref="IMobileComponentInfoCatalog"/>
+/// relates to <see cref="IComponentInfoCatalog"/> for components. The catalog is scoped to only
+/// the <c>crt.*Request</c> types actually available on Freedom UI mobile.
+/// </summary>
+public interface IMobileRequestInfoCatalog {
+	/// <summary>
+	/// Returns the parsed mobile request catalog state for the requested version, including the
+	/// source tier that produced the bytes. Symmetric with <see cref="IRequestInfoCatalog.LoadAsync"/>.
+	/// </summary>
+	Task<RequestCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Default mobile request catalog implementation. Reuses
+/// <see cref="RequestInfoCatalog.LoadFromStream"/> over the same wrapped envelope, so AI consumers
+/// see the identical response shape on both flavors. The underlying
+/// <see cref="IMobileRequestRegistryClient"/> handles tier resolution (local override → cache → CDN
+/// → <c>latest</c> fallback). Mirrors <see cref="MobileComponentInfoCatalog"/>.
+/// </summary>
+public sealed class MobileRequestInfoCatalog : IMobileRequestInfoCatalog {
+	private readonly IMobileRequestRegistryClient _registryClient;
+
+	public MobileRequestInfoCatalog(IMobileRequestRegistryClient registryClient) {
+		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
+	}
+
+	/// <inheritdoc />
+	public async Task<RequestCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		string key = string.IsNullOrWhiteSpace(requestedVersion)
+			? ComponentRegistryClient.LatestVersion
+			: requestedVersion.Trim();
+		ComponentRegistryFetchResult fetch = await _registryClient.GetAsync(key, cancellationToken).ConfigureAwait(false);
+		using (fetch.Content) {
+			return RequestInfoCatalog.LoadFromStream(fetch.Content, fetch.ResolvedVersion, fetch.Source);
+		}
+	}
+}
+
+/// <summary>
 /// Parsed snapshot of a request registry ready for catalog operations.
 /// </summary>
 /// <param name="Entries">Ordered list of catalog entries.</param>

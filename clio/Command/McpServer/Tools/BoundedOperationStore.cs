@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -118,15 +119,10 @@ internal sealed class BoundedOperationStore<TRecord> where TRecord : class {
 
 	// Evicts every terminal record idle past the TTL. A running record is never dropped (see class remarks).
 	private void EvictIdle(DateTime now) {
-		List<string> expired = null;
-		foreach (KeyValuePair<string, TRecord> kvp in _byId) {
-			if (!_isRunning(kvp.Value) && now - _lastActivityOf(kvp.Value) > _idleTtl) {
-				(expired ??= []).Add(kvp.Key);
-			}
-		}
-		if (expired is null) {
-			return;
-		}
+		List<string> expired = _byId
+			.Where(kvp => !_isRunning(kvp.Value) && now - _lastActivityOf(kvp.Value) > _idleTtl)
+			.Select(kvp => kvp.Key)
+			.ToList();
 		foreach (string id in expired) {
 			Remove(id);
 		}
@@ -161,13 +157,10 @@ internal sealed class BoundedOperationStore<TRecord> where TRecord : class {
 	// latest-per-tenant mapping (which would otherwise be a slow second leak in the tenant index).
 	private void Remove(string operationId) {
 		_byId.Remove(operationId);
-		string staleTenant = null;
-		foreach (KeyValuePair<string, string> kvp in _latestIdByTenant) {
-			if (string.Equals(kvp.Value, operationId, StringComparison.Ordinal)) {
-				staleTenant = kvp.Key;
-				break;
-			}
-		}
+		string staleTenant = _latestIdByTenant
+			.Where(kvp => string.Equals(kvp.Value, operationId, StringComparison.Ordinal))
+			.Select(kvp => kvp.Key)
+			.FirstOrDefault();
 		if (staleTenant is not null) {
 			_latestIdByTenant.Remove(staleTenant);
 		}

@@ -50,8 +50,16 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"finish-hotfix",
 		"generate-source-code",
 		"get-browser-session",
+		"get-classic-page-sources",
+		"get-client-unit-schema",
 		"get-identity-assertion",
 		"get-page",
+		// get-schema / get-sql-schema reclassified ReadOnly=true -> false: with output-file set they write the
+		// schema body to disk, so they are write-capable. They stay Destructive=false (the write is confined to a
+		// trusted anchor or the OS temp dir via OutputPathConfinement), so the gate still runs them silently.
+		// Consciously added to the reviewed baseline for that reclassification (PR #937 / RC-28).
+		"get-schema",
+		"get-sql-schema",
 		"install-gate",
 		"install-toolkit",
 		"new-integration-test-project",
@@ -62,7 +70,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"send-telemetry",
 		"start-creatio",
 		"unlock-for-hotfix",
-		"update-toolkit"
+		"update-toolkit",
+		"upload-image"
 	};
 
 	private static McpToolInvokerRegistry BuildRegistryOverFullCatalog() {
@@ -128,5 +137,18 @@ public sealed class DurableInvocationGateCompletenessTests {
 		registry.IsDestructive("set-user-theme").Should().BeTrue(
 			because: "applying a theme overwrites (or clears) the profile's existing Theme value, so it must be " +
 				"host-gated rather than silently executable — consistent with update-theme/delete-theme");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("set-background-image is classified destructive, so the durable gate never silently runs it — it replaces the environment-wide background for all users and must be host-confirmed. This is why the tool is intentionally absent from the silently-executable ReviewedSilentWriteCapableTools baseline (that list holds Destructive=false write tools only; upload-image is there because it is additive-only).")]
+	public void SetBackgroundImage_ShouldBeDestructive_SoTheGateNeverSilentlyRunsIt() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act & Assert
+		registry.IsDestructive("set-background-image").Should().BeTrue(
+			because: "setting the background replaces the currently configured one for every user, so it must be " +
+				"host-gated rather than silently executable — consistent with set-user-theme");
 	}
 }
