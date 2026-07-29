@@ -32,7 +32,7 @@ public sealed class DbHubLifecycleWarningE2ETests {
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("The disposable IIS deployment lifecycle is Windows-only.");
 		}
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TEAMCITY_VERSION"))) {
+		if (TeamCityRunGuard.IsRunningUnderTeamCity()) {
 			Assert.Ignore("This archive-backed Creatio installation test is forbidden in TeamCity.");
 		}
 		McpE2ESettings settings = TestConfiguration.Load();

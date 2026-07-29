@@ -59,7 +59,7 @@ public sealed class UninstallCreatioWarningE2ETests {
 			Assert.Ignore("Application-pool profile deletion is a Windows-only E2E scenario.");
 			return;
 		}
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TEAMCITY_VERSION"))) {
+		if (TeamCityRunGuard.IsRunningUnderTeamCity()) {
 			Assert.Ignore(
 				"This destructive real-uninstall test tears down the shared sandbox and must never run in TeamCity; " +
 				"the warning contract is covered by CreatioUninstallerTestFixture and AppPoolProfileCleanerTests.");
