@@ -104,6 +104,30 @@
       "note": "A converter-created mobile tab renders with a transparent background (the mobile shell provides the surface); overrides any background color carried from the web tab."
     }
   ],
+  "tabAreaLayers": {
+    "note": "ENG-94188: every converter-created tab gets the designer's 2-layer body — a grid 'tab body' (MainTabContainer_<suffix>) holding one Area card (GridContainer_<suffix>). Mirrors TabItemFactory.getMobileTabContainerConfig().",
+    "tabComponentType": "crt.TabContainer",
+    "mainTabContainer": {
+      "namePrefix": "MainTabContainer_",
+      "values": {
+        "type": "crt.GridContainer",
+        "gap": { "rowGap": "small", "columnGap": "small" },
+        "alignItems": "stretch",
+        "padding": { "bottom": "medium" }
+      }
+    },
+    "areaContainer": {
+      "namePrefix": "GridContainer_",
+      "values": {
+        "type": "crt.GridContainer",
+        "padding": { "top": "medium", "bottom": "medium", "right": "medium", "left": "medium" },
+        "color": "primary",
+        "borderRadius": "medium",
+        "gap": { "rowGap": "medium", "columnGap": "medium" },
+        "alignItems": "stretch"
+      }
+    }
+  },
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },

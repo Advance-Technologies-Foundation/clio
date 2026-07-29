@@ -1147,6 +1147,27 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-94188: the conversion article documents guide.tabAreaLayers — the synthesized tab body + Area card are applied by pasting the element map as it is, so the reader must be told not to reparent or add an Area itself.")]
+	public async Task GuidanceGet_FreedomToMobileArticle_DocumentsTabAreaLayers() {
+		// Arrange
+		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse guide = await tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion"));
+
+		// Assert
+		string article = guide.Article!.Text;
+		article.Should().Contain("tabAreaLayers", because: "the guide key must be described alongside adaptiveLayout");
+		article.Should().Contain("5c.", because: "the flow needs its own step for the synthesized tab body + Area");
+		article.Should().Contain("do NOT reparent",
+			because: "the retargeting is already baked — a reader that reparents children again would break the body");
+		article.Should().Contain("tabAreaLayers is NOT a proposal",
+			because: "the mobile tab body is a team standard: the article must not let the reader offer it as a choice");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Attribute lock-in: both MCP surfaces of the converter carry [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
 	public void MobilePageConverter_McpTypes_CarryFeatureToggle() {
 		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)

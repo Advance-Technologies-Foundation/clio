@@ -42,6 +42,16 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("componentDefaults")]
 	public IReadOnlyList<ComponentDefaultsRule> ComponentDefaults { get; init; } = [];
 
+	/// <summary>
+	/// Group: the designer's 2-layer tab body synthesized into every converter-created tab
+	/// (ENG-94188): a grid "tab body" (MainTabContainer_&lt;suffix&gt;) holding one Area card
+	/// (GridContainer_&lt;suffix&gt;) that receives the tab's content. Null when the section is
+	/// absent from the rules file — the tab-area pass is then a no-op (the feature is switched
+	/// by data, not code).
+	/// </summary>
+	[JsonPropertyName("tabAreaLayers")]
+	public TabAreaLayersRule TabAreaLayers { get; init; }
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -160,6 +170,49 @@ public sealed class ComponentDefaultsRule {
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// Rule for the two containers synthesized inside every converter-created tab (ENG-94188): the
+/// tab-body grid (layer 2) and the Area card inside it. Mirrors the mobile designer's own
+/// <c>TabItemFactory.getMobileTabContainerConfig()</c> output, kept as DATA so the props follow
+/// the platform without a code change. Unlike <see cref="ComponentDefaultsRule"/> (which is forced
+/// onto EVERY insert of a mobile type), these values apply only to the synthesized nodes.
+/// </summary>
+public sealed class TabAreaLayersRule {
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+
+	/// <summary>
+	/// Mobile component type of a tab body — the element that gets the two synthesized layers. Only a tab the
+	/// converter INSERTS is matched; a tab the mobile template provides arrives as a merge twin and is out of
+	/// scope regardless of type. Absent from the rules file means the platform's own tab type; an explicit
+	/// null/empty switches the whole pass off (there is nothing to match against).
+	/// </summary>
+	[JsonPropertyName("tabComponentType")]
+	public string TabComponentType { get; init; } = "crt.TabContainer";
+
+	/// <summary>The synthesized tab-body grid (layer 2, the tab's direct child).</summary>
+	[JsonPropertyName("mainTabContainer")]
+	public SynthesizedContainerRule MainTabContainer { get; init; }
+
+	/// <summary>The synthesized Area card (child of the tab-body grid; receives the tab's content).</summary>
+	[JsonPropertyName("areaContainer")]
+	public SynthesizedContainerRule AreaContainer { get; init; }
+}
+
+/// <summary>
+/// One container the converter synthesizes (no web counterpart): the element-name prefix and the
+/// full mobile <c>values</c> the synthesized node carries verbatim (including its <c>type</c>).
+/// </summary>
+public sealed class SynthesizedContainerRule {
+	/// <summary>Element-name prefix (e.g. "MainTabContainer_"); a deterministic per-tab suffix completes the name.</summary>
+	[JsonPropertyName("namePrefix")]
+	public string NamePrefix { get; init; }
+
+	/// <summary>Property name → value the synthesized element carries as its mobile values.</summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
 }
 
 /// <summary>

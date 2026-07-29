@@ -3,7 +3,11 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
+using System.Numerics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
@@ -198,6 +202,13 @@ public static class WebToMobileAnalysisService {
 		// layoutConfig.adaptive are baked into mobileValues deterministically.
 		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns);
 
+		// Designer's two-layer tab body (tab-body grid + Area card) synthesized into every tab the converter
+		// creates. Deliberately AFTER the adaptive pass: that pass indexes children per multi-column web grid
+		// container, and running it on the pre-synthesis map keeps the synthesized layers from ever shifting a
+		// child's stacking index. The two passes touch disjoint element sets (a tab is not a grid container),
+		// so the order is safe either way — it is fixed here so it stays that way.
+		List<TabAreaLayerGroup> tabAreaLayers = BuildTabAreaLayers(elementMap, rules, sourcePage);
+
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
@@ -255,9 +266,10 @@ public static class WebToMobileAnalysisService {
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
+			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays, tabAreaLayers.Count > 0),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1361,7 +1373,7 @@ public static class WebToMobileAnalysisService {
 	private static List<string> BuildConstraints(
 		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
-		bool mobileTemplateNativesMissingForArrays = false) {
+		bool mobileTemplateNativesMissingForArrays = false, bool hasTabAreaLayers = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1411,10 +1423,23 @@ public static class WebToMobileAnalysisService {
 				"mobileValues (the container's adaptive columns and each child's layoutConfig.adaptive) — paste " +
 				"mobileValues verbatim. Present the layout to the user; they may adjust or decline it.");
 		}
+		if (hasTabAreaLayers) {
+			constraints.Add(
+				"tabAreaLayers is MANDATORY, not a proposal: the two-layer tab body is this team's required mobile " +
+				"structure, so never ask whether to apply it, never offer to skip it, and never build a converted " +
+				"tab any other way. It is ALREADY baked into the element map: every converter-created tab carries two " +
+				"synthesized containers (the tab body grid, then the Area card) as ordinary inserts placed right " +
+				"after the tab's own entry, and every one of that tab's top-level children already points at the " +
+				"Area with a sequential single-column layoutConfig (a child the adaptive pass placed per " +
+				"breakpoint keeps that adaptive placement instead). Apply the inserts in element-map order and " +
+				"paste mobileValues verbatim — do NOT reparent, reorder or re-place anything yourself, and do NOT " +
+				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
+				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
+		}
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout) {
+	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1426,6 +1451,9 @@ public static class WebToMobileAnalysisService {
 		}
 		if (hasAdaptiveLayout) {
 			steps.Add("Adaptive layout for multi-column grid containers is already baked into mobileValues (container adaptive columns + each child's layoutConfig.adaptive: phone collapses to 1 column, tablet/desktop keep the web columns). Present guide.adaptiveLayout to the user for review; they may adjust or decline it.");
+		}
+		if (hasTabAreaLayers) {
+			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab, with the tab's whole top-level content retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
@@ -2396,6 +2424,212 @@ public static class WebToMobileAnalysisService {
 			: "provided by the mobile template (merge into the template's element).";
 
 	private static string Nz(string value) => string.IsNullOrEmpty(value) ? null : value;
+
+	/// <summary>
+	/// Synthesizes the mobile designer's two-layer tab body inside every tab the CONVERTER creates
+	/// (ENG-94188): a grid "tab body" (<c>MainTabContainer_&lt;suffix&gt;</c>) holding one Area card
+	/// (<c>GridContainer_&lt;suffix&gt;</c>). Mobile design puts a tab's content inside a colored, rounded
+	/// Area rather than in the tab body itself, and a tab carried over from web brings neither layer. Both
+	/// are baked straight into the element map as ordinary inserts placed RIGHT AFTER the tab's own entry, so
+	/// applying entries in element-map order always creates a parent before its children — the caller adds
+	/// nothing of its own.
+	/// <para>
+	/// Two cases are excluded BY CONSTRUCTION rather than by a special case: a tab the mobile TEMPLATE
+	/// provides is a <c>merge</c> twin and this pass only looks at inserts; and a tab with no top-level
+	/// content gets no layers at all, so an empty Area is never created in the first place (AC#5 — there is
+	/// nothing to delete afterwards).
+	/// </para>
+	/// <para>
+	/// The tab's whole top-level content is then RETARGETED into the Area, and every retargeted component gets
+	/// a sequential single-column <c>layoutConfig</c> so the mobile order matches the web order. The element
+	/// map is walked in tree order, so the row numbers follow the source page's own ordering.
+	/// </para>
+	/// <para>
+	/// The whole pass is switched by DATA: with no usable <c>tabAreaLayers</c> section in the rules file it is
+	/// a no-op.
+	/// </para>
+	/// </summary>
+	private static List<TabAreaLayerGroup> BuildTabAreaLayers(
+		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules, string sourcePage) {
+		TabAreaLayersRule rule = rules?.TabAreaLayers;
+		if (string.IsNullOrWhiteSpace(rule?.TabComponentType)
+			|| !IsUsableLayer(rule.MainTabContainer) || !IsUsableLayer(rule.AreaContainer)) {
+			return [];
+		}
+		// Every name already spoken for: the source element names and the mobile names the template owns
+		// (merge targets), plus the layers synthesized for tabs handled earlier in this same pass. A suffix is
+		// free only when BOTH names built from it are free — the two layers share one suffix, so checking just
+		// one of them could hand out a suffix whose other name already exists.
+		var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap) {
+			if (entry.WebName is { Length: > 0 } webName) {
+				taken.Add(webName);
+			}
+			if (entry.MobileName is { Length: > 0 } mobileName) {
+				taken.Add(mobileName);
+			}
+		}
+
+		var groups = new List<TabAreaLayerGroup>();
+		List<ElementMapEntry> convertedTabs = elementMap
+			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& string.Equals(e.MobileType, rule.TabComponentType, StringComparison.OrdinalIgnoreCase)
+				&& e.MobileName is { Length: > 0 })
+			.ToList();
+		foreach (ElementMapEntry tab in convertedTabs) {
+			// Top-level content of the tab, in element-map order (= the source tree order): its own inserted
+			// children, plus a wrapper dissolved INTO the tab (a relocate-children entry names the tab as the
+			// container its children are placed in, and those children carry the tab as their parent too).
+			// Anything nested deeper carries its own container as parentName and is none of this pass's
+			// business; a merge twin carries no parentName at all and stays wherever the template put it.
+			List<ElementMapEntry> content = elementMap
+				.Where(e => string.Equals(e.ParentName, tab.MobileName, StringComparison.OrdinalIgnoreCase)
+					&& (string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+						|| string.Equals(e.Operation, "relocate-children", StringComparison.Ordinal)))
+				.ToList();
+			if (content.Count == 0) {
+				continue;
+			}
+			string suffix = StableSuffix(sourcePage, tab.MobileName,
+				candidate => taken.Contains(rule.MainTabContainer.NamePrefix + candidate)
+					|| taken.Contains(rule.AreaContainer.NamePrefix + candidate));
+			string mainName = rule.MainTabContainer.NamePrefix + suffix;
+			string areaName = rule.AreaContainer.NamePrefix + suffix;
+			taken.Add(mainName);
+			taken.Add(areaName);
+
+			// Freshly resolved index: earlier tabs have already shifted this one by their two inserts.
+			int at = elementMap.IndexOf(tab);
+			elementMap.Insert(at + 1, SynthesizedLayerEntry(rule.MainTabContainer, mainName, tab.MobileName,
+				$"synthesized by the converter (no web counterpart) — the tab body of the converted tab "
+				+ $"'{tab.MobileName}'; it holds the Area card that follows"));
+			elementMap.Insert(at + 2, SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
+				$"synthesized by the converter (no web counterpart) — the Area card of the converted tab "
+				+ $"'{tab.MobileName}'; on mobile a tab's content lives in an Area, not in the tab body itself"));
+			// Move the tab's top-level content into the Area and stack it in source order. The Area is a
+			// single-column grid, so each component gets row N of column 1 — element-map order IS the web order.
+			var moved = new List<string>();
+			int row = 1;
+			foreach (ElementMapEntry child in content) {
+				child.ParentName = areaName;
+				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
+					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
+				}
+				moved.Add(child.MobileName);
+				// An element the adaptive pass already placed per breakpoint keeps that placement: mobile
+				// resolves layoutConfig from `adaptive` when it is present, so replacing it with a flat base
+				// placement would drop the responsive columns and gain nothing. A layoutConfig the web page
+				// carried as anything but an object (scalar, array) cannot hold `adaptive` and is replaceable —
+				// string-indexing it directly would throw InvalidOperationException.
+				if (child.MobileValues is JsonObject childValues
+					&& (childValues["layoutConfig"] is not JsonObject layoutConfig
+						|| layoutConfig["adaptive"] is null)) {
+					childValues["layoutConfig"] = new JsonObject {
+						["column"] = 1, ["colSpan"] = 1, ["row"] = row, ["rowSpan"] = 1
+					};
+				}
+				row++;
+			}
+
+			groups.Add(new TabAreaLayerGroup {
+				TabName = tab.MobileName, MainTabContainerName = mainName, AreaName = areaName,
+				MovedChildren = moved
+			});
+		}
+		return groups;
+	}
+
+	/// <summary>
+	/// True when a synthesized-container rule can actually produce an element: it needs a name prefix (two
+	/// layers sharing one suffix would otherwise collapse to the same name) and a component <c>type</c>.
+	/// A rules file that declares neither switches the pass off rather than emitting a broken element.
+	/// </summary>
+	private static bool IsUsableLayer(SynthesizedContainerRule container) =>
+		!string.IsNullOrWhiteSpace(container?.NamePrefix)
+		&& container.Values is not null
+		&& container.Values.TryGetValue("type", out JsonElement type)
+		&& type.ValueKind == JsonValueKind.String
+		&& !string.IsNullOrWhiteSpace(type.GetString());
+
+	/// <summary>
+	/// One synthesized container: an ordinary <c>insert</c> with NO <c>webName</c> (there is no source
+	/// element behind it), carrying the rule's <c>values</c> verbatim plus an initialized <c>items</c> slot —
+	/// <see cref="BuildMobileValues"/> deliberately drops <c>items</c> arrays, so nothing else would give a
+	/// synthesized container somewhere for its children to land.
+	/// </summary>
+	private static ElementMapEntry SynthesizedLayerEntry(
+		SynthesizedContainerRule container, string name, string parentName, string reason) {
+		var values = new JsonObject();
+		foreach (KeyValuePair<string, JsonElement> pair in container.Values) {
+			values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
+		}
+		values["items"] ??= new JsonArray();
+		return new ElementMapEntry {
+			Operation = "insert",
+			MobileName = name,
+			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
+			MobileType = values["type"]!.GetValue<string>(),
+			ParentName = parentName,
+			PropertyName = "items",
+			MobileValues = values,
+			Reason = reason
+		};
+	}
+
+	/// <summary>Base36 digit alphabet for <see cref="StableSuffix"/> (lowercase, designer-style).</summary>
+	private const string Base36Digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+	/// <summary>Preferred suffix length — visually matches designer-generated names (e.g. "g2cfpql").</summary>
+	private const int StableSuffixLength = 7;
+
+	/// <summary>Attempts allowed in the pathological counter fallback of <see cref="StableSuffix"/>.</summary>
+	private const int StableSuffixFallbackLimit = 1000;
+
+	/// <summary>
+	/// Deterministic name suffix for the containers synthesized inside a converter-created tab
+	/// (ENG-94188). A random suffix (Guid.NewGuid) would break reproducibility — baseline diffs and
+	/// repeated guide runs must produce identical names — so the suffix is a content hash: the first
+	/// <see cref="StableSuffixLength"/> lowercase base36 characters of SHA-256 over
+	/// <c>$"{sourcePage}:{tabName}"</c>. Stable across runs, unique across tabs, visually identical to
+	/// designer-generated names (<c>MainTabContainer_g2cfpql</c>). When <paramref name="isSuffixTaken"/>
+	/// reports a collision (a synthesized name already exists in the element map or the mobile
+	/// template), the suffix is deterministically EXTENDED with further hash characters until free.
+	/// </summary>
+	internal static string StableSuffix(string sourcePage, string tabName, Func<string, bool> isSuffixTaken = null) {
+		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{sourcePage}:{tabName}"));
+		string base36 = ToBase36(hash).PadLeft(StableSuffixLength, '0');
+		for (int length = StableSuffixLength; length <= base36.Length; length++) {
+			string candidate = base36[..length];
+			if (isSuffixTaken is null || !isSuffixTaken(candidate)) {
+				return candidate;
+			}
+		}
+		// Pathological fallback (every hash prefix taken): extend with a deterministic counter. Bounded so a
+		// predicate that always reports "taken" fails loudly instead of spinning; the null check keeps this
+		// reachable branch safe on its own, independently of the PadLeft above.
+		for (int i = 0; i < StableSuffixFallbackLimit; i++) {
+			string candidate = base36 + i.ToString(CultureInfo.InvariantCulture);
+			if (isSuffixTaken is null || !isSuffixTaken(candidate)) {
+				return candidate;
+			}
+		}
+		throw new InvalidOperationException(
+			$"Cannot derive a free name suffix for tab '{tabName}' on page '{sourcePage}': every candidate is reported as taken.");
+	}
+
+	/// <summary>Encodes hash bytes as lowercase base36 (most-significant digit first).</summary>
+	private static string ToBase36(byte[] bytes) {
+		var value = new BigInteger(bytes, isUnsigned: true, isBigEndian: true);
+		if (value.IsZero) {
+			return "0";
+		}
+		var digits = new StringBuilder();
+		while (!value.IsZero) {
+			value = BigInteger.DivRem(value, 36, out BigInteger rem);
+			digits.Insert(0, Base36Digits[(int)rem]);
+		}
+		return digits.ToString();
+	}
 
 	private static Dictionary<string, string> BuildAttrToDs(PageBundleInfo bundle) {
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

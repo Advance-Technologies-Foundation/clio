@@ -85,6 +85,10 @@ public sealed class MobilePageConversionGuideTool {
 		"plus adaptiveLayout (the responsive layout for each MULTI-column grid container - phone collapses to 1 column and stacks, " +
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
+			"plus tabAreaLayers (MANDATORY, not a proposal: every converter-created tab carries two synthesized containers — the tab body grid, " +
+			"then the Area card — already baked into elementMap as ordinary inserts right after the tab's entry, with the tab's top-level children " +
+			"retargeted into the Area; the synthesized entries have no web counterpart so they carry no webName; apply the inserts in element-map " +
+			"order, never ask whether to apply it, never offer to skip it; tabs the mobile template provides get no layers), " +
 			"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]

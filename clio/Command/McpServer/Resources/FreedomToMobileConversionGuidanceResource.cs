@@ -69,6 +69,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    mobileValues (the container's adaptive columns into its own values, each child's placement into
 			    elementMap[].mobileValues.layoutConfig.adaptive) — nothing separate to apply. Present it at the
 			    gate so the user can adjust or decline. Null when there is no multi-column grid container.
+			  - tabAreaLayers — the mobile designer's two-layer body synthesized inside every tab the CONVERTER
+			    creates: a tab-body grid (MainTabContainer_<suffix>) holding one Area card (GridContainer_<suffix>),
+			    with the tab's whole top-level content already retargeted into the Area and stacked in web order.
+			    Both layers are ORDINARY elementMap inserts placed right after the tab's own entry — nothing
+			    separate to apply. This structure is MANDATORY (a team standard), NOT a proposal: report it at the
+			    gate so the user knows what the tab bodies look like, but never offer to skip or replace it. Null
+			    when the converter creates no tab, or every converted tab is empty (an empty tab gets no layers,
+			    so an empty Area is never created in the first place).
 			  - resourceStrings — every localized string the converted body references (top-level captions AND
 			    nested tokens like config.title / text.template), keyed by resource name and resolved to its
 			    en-US text. Register this whole map via update-page `resources` so every #ResourceString token renders.
@@ -177,6 +185,18 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   container's adaptive (it is already inside the container's inserted mobileValues; a separate merge
 			   would duplicate the operation). Just PRESENT it to the user in plain language ("fields in <container>
 			   stack on the phone, keep <n> columns on a tablet — adjust?"); they may change it or decline.
+			5c. Tab body + Area (when guide.tabAreaLayers is present): every tab the CONVERTER creates already carries
+			   two synthesized inserts in the element map — the tab-body grid, then the Area card inside it — because on
+			   mobile a tab's content lives in an Area card, not directly in the tab body. Each of that tab's top-level
+			   components already has parentName = the Area and a sequential single-column layoutConfig (a component the
+			   adaptive pass placed per breakpoint keeps that adaptive placement instead). Apply the inserts in
+			   element-map order (a parent always precedes its children) and do NOT reparent, reorder or re-place
+			   anything yourself, do NOT add an Area of your own, and do NOT touch a tab the mobile template provides
+			   (it arrives as a merge twin and gets no layers). The synthesized entries have no webName — they have no
+			   web counterpart. This structure is MANDATORY — do NOT ask whether to apply it, do NOT offer to keep the
+			   web structure instead, and do NOT treat it as a decision at the gate. STATE it in the plain-language
+			   plan as a fact ("the content of <tab> goes into one Area card, stacked in the web order"), the way you
+			   state which components transfer.
 			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
 			7. Persist with update-page — pass target-schema-uid=<create-page schemaUId> so the body lands in the
@@ -266,6 +286,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  placement). A single-column grid gets NO adaptive — the mobile client renders the plain config. Just
 			  paste mobileValues verbatim; do not hand-build adaptive. The mobile runtime reflows children by
 			  `row` / `column`. adaptiveLayout is a PROPOSAL — let the user adjust or decline it at the gate.
+			- TAB BODY + AREA for every tab the CONVERTER creates is baked for you the same way: the tab gets a
+			  tab-body grid holding one Area card (both as ordinary elementMap inserts right after the tab), and the
+			  tab's top-level content is already retargeted into that Area with a sequential single-column
+			  layoutConfig. Apply the map in order — do not add an Area, do not reparent the tab's children, and leave
+			  template-provided tabs (merge twins) alone. An empty tab gets NO layers, so an empty Area never appears.
+			  Unlike adaptiveLayout, tabAreaLayers is NOT a proposal: the tab body + Area card is the REQUIRED mobile
+			  structure for a converted tab — report it at the gate, never put it up for the user's approval.
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
 			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
 			  registry) — paste it verbatim and add only the value binding. validate-page is the backstop and

@@ -81,6 +81,77 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid + Area card) for converter-created tabs (ENG-94188).")]
+	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.TabAreaLayers.Should().NotBeNull();
+		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer",
+			because: "which element gets the layers is data, not a hardcoded type in the engine");
+		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
+		rules.TabAreaLayers.MainTabContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
+		rules.TabAreaLayers.MainTabContainer.Values["padding"].GetProperty("bottom").GetString().Should().Be("medium");
+		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
+		rules.TabAreaLayers.AreaContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
+		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
+		rules.TabAreaLayers.AreaContainer.Values["borderRadius"].GetString().Should().Be("medium");
+	}
+
+	[Test]
+	[Description("A rules file without the tabAreaLayers group parses to null — the tab-area pass is then a no-op (data-switched feature).")]
+	public void ParseStream_WithoutTabAreaLayers_ParsesToNull() {
+		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.TabAreaLayers.Should().BeNull();
+	}
+
+	[Test]
+	[Description("ParseStream parses the tabAreaLayers group into the typed rule (prefixes + verbatim values).")]
+	public void ParseStream_WithTabAreaLayers_ParsesTypedRule() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "tabAreaLayers": {
+			    "note": "n",
+			    "tabComponentType": "usr.CustomTab",
+			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer", "alignItems": "stretch" } },
+			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer", "color": "primary" } }
+			  }
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.TabAreaLayers.Should().NotBeNull();
+		rules.TabAreaLayers.Note.Should().Be("n");
+		rules.TabAreaLayers.TabComponentType.Should().Be("usr.CustomTab");
+		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
+		rules.TabAreaLayers.MainTabContainer.Values["alignItems"].GetString().Should().Be("stretch");
+		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
+		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
+	}
+
+	[Test]
+	[Description("A tabAreaLayers group that omits tabComponentType falls back to the platform's own tab type, so an older rules file keeps working.")]
+	public void ParseStream_TabAreaLayersWithoutTabComponentType_FallsBackToPlatformTabType() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "tabAreaLayers": {
+			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer" } },
+			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
+			  }
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer");
+	}
+
+	[Test]
 	[Description("A rules file without the componentDefaults group parses to an empty list (backward compatible).")]
 	public void ParseStream_WithoutComponentDefaults_ParsesToEmptyList() {
 		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
