@@ -448,6 +448,121 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Emits a machine-readable resume plan when a batch aborts mid-way (ENG-93374).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas emits a resume plan on a mid-batch abort")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and submits a two-operation batch whose first operation fails local validation. Verifies the structured response separates completed/failed/not-run operations and carries a resume-plan whose operations echo the failed op plus the not-run op in re-submittable shape.")]
+	public async Task SchemaSyncTool_Should_Emit_ResumePlan_On_MidBatch_Abort() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						// Op 0 fails local validation (virtual entity cannot carry seed rows) before any
+						// environment resolution, so the batch aborts at index 0 and op 1 never runs.
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = "UsrVirtualItem",
+							["title-localizations"] = BuildLocalizations("Virtual item"),
+							["is-virtual"] = true,
+							["seed-rows"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Unavailable" }
+								}
+							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "UsrBooks",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrPages",
+									["type"] = "Integer"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a mid-batch abort should use the normal structured MCP result envelope");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the batch did not complete every operation");
+		results.Should().HaveCount(1,
+			because: "only the failed operation ran; the second operation never executed");
+		results[0].GetProperty("status").GetString().Should().Be("failed",
+			because: "the aborting operation must be marked failed in the machine-readable status");
+		results[0].GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the failed operation is the first one in the request");
+		JsonElement resumePlan = response.GetProperty("resume-plan");
+		resumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the resume plan must name the failed operation by its request index");
+		resumePlan.GetProperty("not-run-operation-indexes").EnumerateArray().Select(e => e.GetInt32())
+			.Should().Equal([1],
+			because: "the second operation never ran and must be listed as not-run");
+		JsonElement[] resumeOperations = resumePlan.GetProperty("operations").EnumerateArray().ToArray();
+		resumeOperations.Should().HaveCount(2,
+			because: "the resume plan must carry the failed op followed by every not-run op");
+		resumeOperations[0].GetProperty("type").GetString().Should().Be("create-entity",
+			because: "the failed create-entity must be resubmittable as-is");
+		resumeOperations[1].GetProperty("type").GetString().Should().Be("update-entity",
+			because: "the not-run update-entity must be resubmittable as-is");
+	}
+
+	[Test]
+	[Description("Rejects a standalone seed-data operation with no seed rows before environment resolution (ENG-93374).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an empty standalone seed-data operation")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and verifies that a standalone seed-data operation without seed-rows returns a structured validation failure naming the missing field.")]
+	public async Task SchemaSyncTool_Should_Reject_Empty_SeedData_Operation_Before_Environment_Resolution() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "seed-data",
+							["schema-name"] = "UsrGenre"
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an invalid seed-data operation should use the normal structured MCP result envelope");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "a seed-data operation without rows is invalid");
+		result.GetProperty("error").GetString().Should().Contain("seed-rows",
+			because: "the caller must be told the seed-rows array is required");
+		result.GetProperty("error").GetString().Should().NotContain(invalidEnvironmentName,
+			because: "local validation must happen before environment resolution");
+	}
+
+	[Test]
 	[Description("Applies structured default-value-config through sync-schemas update-entity and verifies the resulting DateTime column readback.")]
 	[AllureTag(ToolName)]
 	[AllureTag(ReadColumnToolName)]
@@ -1304,6 +1419,270 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		updatedSchema.Columns.Should().ContainSingle(column =>
 				column.Name == externalIdColumnName && column.Source == "own" && column.Type == "Guid",
 			because: "the final schema should contain exactly one re-added custom Guid column");
+	}
+
+	[Test]
+	[Description("Creates an absent schema through sync-schemas on a real sandbox environment and reports the convergent created outcome (Story 5 AC-E2E absent-create).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas reports the created outcome for an absent schema")]
+	[AllureDescription("Runs a create-entity operation for a schema that does not yet exist on a reachable sandbox environment and verifies the operation succeeds with outcome:created.")]
+	public async Task SchemaSync_AbsentSchema_ShouldReportCreatedOutcome_WhenCreatedOnRealEnvironment() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["title-localizations"] = BuildLocalizations("Created Outcome Entity"),
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = "UsrTitle",
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Title")
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		string payload = FormatPayload(response);
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"creating an absent schema on a reachable sandbox must succeed. Payload: {payload}");
+		JsonElement createResult = FindResult(
+			response.GetProperty("results").EnumerateArray(), "create-entity", context.EntitySchemaName!);
+		createResult.GetProperty("outcome").GetString().Should().Be("created",
+			because: $"an absent schema created on the real environment must report the convergent created outcome. Payload: {payload}");
+	}
+
+	[Test]
+	[Description("Re-running create-entity for an existing schema with one extra column adds only the missing column and reports the reconciled outcome (Story 5 AC-E2E existing-reconcile).")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas reports the reconciled outcome and adds only the missing column")]
+	[AllureDescription("Creates a schema with a single column, then re-runs create-entity for the same schema with the original column plus one new column, and verifies the second run reports outcome:reconciled and materializes only the missing column while preserving the pre-existing one.")]
+	public async Task SchemaSync_ExistingSchema_ShouldReportReconciledOutcomeAndAddOnlyMissingColumn_WhenReconciledOnRealEnvironment() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		const string keepColumnName = "UsrTitle";
+		const string addedColumnName = "UsrExtra";
+		CallToolResult firstResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["title-localizations"] = BuildLocalizations("Reconcile Outcome Entity"),
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = keepColumnName,
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Title")
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ExtractSchemaSyncResponse(firstResult).GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the schema and its initial column must be created before the reconcile run");
+
+		// Act - re-run create-entity for the SAME schema with the original column plus one new column.
+		CallToolResult reconcileResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["title-localizations"] = BuildLocalizations("Reconcile Outcome Entity"),
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = keepColumnName,
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Title")
+								},
+								new Dictionary<string, object?> {
+									["name"] = addedColumnName,
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Extra")
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		JsonElement response = ExtractSchemaSyncResponse(reconcileResult);
+		string payload = FormatPayload(response);
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"reconciling an existing schema by adding a missing column must succeed. Payload: {payload}");
+		JsonElement reconcileOperationResult = FindResult(
+			response.GetProperty("results").EnumerateArray(), "create-entity", context.EntitySchemaName!);
+		reconcileOperationResult.GetProperty("outcome").GetString().Should().Be("reconciled",
+			because: $"an existing schema whose only delta is one missing column must report the reconciled outcome. Payload: {payload}");
+		EntitySchemaPropertiesInfo readback = await GetSchemaPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+		readback.Columns.Should().Contain(column => column.Name == keepColumnName,
+			because: "the pre-existing column must be preserved by the reconcile");
+		readback.Columns.Should().Contain(column => column.Name == addedColumnName,
+			because: "the reconcile must add only the missing column");
+	}
+
+	[Test]
+	[Description("Re-running an identical convergent batch (no seed-rows) reports success with every operation already-satisfied and applies no duplicate mutation (Story 5 AC-03 replay idempotency).")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas replays an identical batch as already-satisfied with no duplicate mutation")]
+	[AllureDescription("Runs a convergent create-entity + create-lookup + update-entity batch (no seed-rows), then re-runs the identical batch verbatim and verifies the replay reports success with every convergent operation reporting outcome:already-satisfied and no duplicate columns on readback.")]
+	public async Task SchemaSync_IdenticalReplay_ShouldReportAlreadySatisfiedWithNoDuplicateMutation_WhenBatchReRun() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		const string lookupColumnName = "UsrStatus";
+		// A purely convergent batch: create-entity, create-lookup WITHOUT seed-rows (seed-data is NOT
+		// replay-safe), and an update-entity add-column referencing the lookup. On replay every op converges.
+		Dictionary<string, object?> batchArgs = new() {
+			["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName!,
+				["package-name"] = context.PackageName!,
+				["operations"] = new object?[] {
+					new Dictionary<string, object?> {
+						["type"] = "create-entity",
+						["schema-name"] = context.EntitySchemaName!,
+						["title-localizations"] = BuildLocalizations("Replay Idempotency Entity"),
+						["columns"] = new object?[] {
+							new Dictionary<string, object?> {
+								["name"] = "UsrTitle",
+								["type"] = "Text",
+								["title-localizations"] = BuildLocalizations("Title")
+							}
+						}
+					},
+					new Dictionary<string, object?> {
+						["type"] = "create-lookup",
+						["schema-name"] = context.LookupSchemaName!,
+						["title-localizations"] = BuildLocalizations("Replay Idempotency Lookup")
+					},
+					new Dictionary<string, object?> {
+						["type"] = "update-entity",
+						["schema-name"] = context.EntitySchemaName!,
+						["update-operations"] = new object?[] {
+							new Dictionary<string, object?> {
+								["action"] = "add",
+								["column-name"] = lookupColumnName,
+								["type"] = "Lookup",
+								["title-localizations"] = BuildLocalizations("Status"),
+								["reference-schema-name"] = context.LookupSchemaName!
+							}
+						}
+					}
+				}
+			}
+		};
+		CallToolResult firstResult = await context.Session.CallToolAsync(
+			ToolName, batchArgs, context.CancellationTokenSource.Token);
+		ExtractSchemaSyncResponse(firstResult).GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the initial convergent batch must apply before the identical replay");
+		EntitySchemaPropertiesInfo afterFirst = await GetSchemaPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+		int columnCountAfterFirst = (afterFirst.Columns ?? []).Count();
+
+		// Act - re-run the IDENTICAL batch verbatim.
+		CallToolResult replayResult = await context.Session.CallToolAsync(
+			ToolName, batchArgs, context.CancellationTokenSource.Token);
+
+		// Assert
+		JsonElement replay = ExtractSchemaSyncResponse(replayResult);
+		string payload = FormatPayload(replay);
+		replay.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"AC-03: re-running an identical convergent batch must report success, not a masked failure. Payload: {payload}");
+		foreach (JsonElement operationResult in replay.GetProperty("results").EnumerateArray()) {
+			operationResult.GetProperty("outcome").GetString().Should().Be("already-satisfied",
+				because: $"AC-03: every already-applied convergent operation must replay as already-satisfied. Payload: {payload}");
+		}
+		EntitySchemaPropertiesInfo afterReplay = await GetSchemaPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+		(afterReplay.Columns ?? []).Count().Should().Be(columnCountAfterFirst,
+			because: "AC-03: an identical replay must apply no duplicate mutation, so the schema column set is unchanged");
+	}
+
+	[Test]
+	[Description("Attempting to create a schema whose name is already owned by a different (base) package reports success:false with the collision outcome and collision-info (Story 5 AC-E2E cross-package collision).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas reports the collision outcome for a cross-package name collision")]
+	[AllureDescription("Attempts to create-entity a schema whose name is already owned by a base Creatio package (never the sandbox package) and verifies the operation fails with success:false, outcome:collision, and a populated collision-info naming the owning package.")]
+	public async Task SchemaSync_CrossPackageSchema_ShouldReportCollisionOutcome_WhenSchemaExistsInDifferentPackage() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		// 'Contact' is an out-of-the-box entity owned by a base Creatio package - never the sandbox package -
+		// so creating it into the sandbox package is a durable cross-package name collision. A columnless
+		// create-entity reaches the classifier (only localization + lookup-column guards run before Classify).
+		const string collidingSchemaName = "Contact";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = collidingSchemaName,
+							["title-localizations"] = BuildLocalizations("Collision Probe")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		string payload = FormatPayload(response);
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: $"creating a schema whose name is owned by a different package is a durable collision. Payload: {payload}");
+		JsonElement collisionResult = FindResult(
+			response.GetProperty("results").EnumerateArray(), "create-entity", collidingSchemaName);
+		collisionResult.GetProperty("outcome").GetString().Should().Be("collision",
+			because: $"a cross-package name collision must surface the collision outcome discriminator. Payload: {payload}");
+		collisionResult.TryGetProperty("collision-info", out JsonElement collisionInfo).Should().BeTrue(
+			because: $"the collision result must carry collision-info naming the owning package. Payload: {payload}");
+		collisionInfo.GetProperty("existing-package-name").GetString().Should().NotBeNullOrWhiteSpace(
+			because: $"collision-info must name the package that owns the existing schema. Payload: {payload}");
 	}
 
 	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {
