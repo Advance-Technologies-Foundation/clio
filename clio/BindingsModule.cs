@@ -670,6 +670,11 @@ public class BindingsModule {
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
+		services.AddTransient<PrintableGetTool>();
+		services.AddTransient<PrintableCreateTool>();
+		services.AddTransient<PrintableUpdateTool>();
+		services.AddTransient<PrintableDeleteTool>();
+		services.AddTransient<PrintableTemplateUploadTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();

@@ -70,5 +70,4 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 		response.Error.Should().Contain(invalidEnvironmentName,
 			because: "the structured failure should identify the missing environment name");
 	}
-
 }

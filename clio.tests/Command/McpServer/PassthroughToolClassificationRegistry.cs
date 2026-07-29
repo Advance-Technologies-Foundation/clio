@@ -221,7 +221,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (127): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (136): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -246,6 +246,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["create-oauth-technical-user"] = PassthroughClassification.NotApplicable,
 			["create-page"] = PassthroughClassification.NotApplicable,
 			["create-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["create-printable"] = PassthroughClassification.NotApplicable,
 			["create-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["create-schema"] = PassthroughClassification.NotApplicable,
 			["create-server-to-server-oauth-app"] = PassthroughClassification.NotApplicable,
@@ -265,6 +266,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["delete-app"] = PassthroughClassification.NotApplicable,
 			["delete-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["delete-printable"] = PassthroughClassification.NotApplicable,
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
@@ -292,6 +294,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-mobile-page-conversion-guide"] = PassthroughClassification.NotApplicable, // ENG-91228 advisory guide tool; resolver-backed (class b), read-only, not part of the ENG-93347 passthrough audit
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
+			["get-printable"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
@@ -351,10 +354,12 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["update-entity-schema"] = PassthroughClassification.NotApplicable,
 			["update-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["update-printable"] = PassthroughClassification.NotApplicable,
 			["update-schema"] = PassthroughClassification.NotApplicable,
 			["update-sql-schema"] = PassthroughClassification.NotApplicable,
 			["update-sys-setting"] = PassthroughClassification.NotApplicable,
 			["update-theme"] = PassthroughClassification.NotApplicable,
+			["upload-report-template"] = PassthroughClassification.NotApplicable,
 			["upsert-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["validate-page"] = PassthroughClassification.NotApplicable,
 			["validate-process-graph"] = PassthroughClassification.NotApplicable,

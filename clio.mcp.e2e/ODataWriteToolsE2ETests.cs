@@ -143,5 +143,4 @@ public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("must be a record GUID");
 	}
-
 }
