@@ -14,6 +14,23 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class CoreRulesGuidanceResourceTests {
 	[Test]
+	[Description("The core-rules guide carries the ENG-93157 pre-compilation confirmation invariant: warn the user compilation is heavy, ask proceed-now-or-postpone every time, and honor a postpone.")]
+	public void Guide_Should_ContainPreCompilationConfirmationRule() {
+		// Arrange
+		string coreRules = CoreRulesGuidanceResource.Guide.Text;
+
+		// Assert
+		coreRules.Should().Contain("compile now or postpone",
+			because: "the agent must offer the proceed-or-postpone choice before every compile-creatio");
+		coreRules.Should().Contain("every time",
+			because: "the warning must be shown every time compilation is planned, not once per session");
+		coreRules.Should().Contain("affects EVERY user",
+			because: "the warning must explain that compilation disrupts every connected user");
+		coreRules.Should().Contain("standing consent",
+			because: "the rule must close the repeat-in-session loophole: a prior warning/answer or a repeated explicit request is not consent, so the agent must re-ask every time (ENG-93157 AC-5)");
+	}
+
+	[Test]
 	[Description("The core-rules guide contains the resident/clio-run invariant with the canonical wording.")]
 	public void Guide_Should_ContainResidentClioRunRule() {
 		// Arrange

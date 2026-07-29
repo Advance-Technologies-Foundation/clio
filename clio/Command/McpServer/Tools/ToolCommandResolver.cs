@@ -122,9 +122,19 @@ public class ToolCommandResolver(
 		(EnvironmentSettings settings, string cacheKey) = ResolveSettingsAndKey(options);
 		_lastResolvedTenantKey.Value = cacheKey;
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings));
+			() => new BindingsModule().Register(settings, ForceNonInteractiveConsole));
 		return container.GetRequiredService<TCommand>();
 	}
+
+	// MCP command execution is NEVER interactive, whatever the transport: the stdio host has piped
+	// stdin, but the mcp-http host's process console can be a real TTY. A resolved command that runs a
+	// warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) must therefore NOT depend on
+	// Console.IsInputRedirected — on an mcp-http host launched in a terminal that probe returns
+	// interactive and Console.ReadKey() would hang the request thread. Forcing NonInteractiveConsole into
+	// every per-request child container makes such confirmations fail OPEN (proceed) by construction,
+	// closing that deadlock hole regardless of how the host process was started.
+	private static void ForceNonInteractiveConsole(IServiceCollection services) =>
+		services.AddSingleton<IInteractiveConsole>(NonInteractiveConsole.Shared);
 
 	/// <inheritdoc />
 	public string GetTenantKey(EnvironmentOptions options) {
@@ -232,7 +242,7 @@ public class ToolCommandResolver(
 		// startup (BindingsModule.ValidateEnvironmentScopedGraph), so re-validating the full ~455-registration
 		// graph on every near-continuous rotating-token cache miss is pure startup-grade cost.
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings, validateGraph: false));
+			() => new BindingsModule().Register(settings, ForceNonInteractiveConsole, validateGraph: false));
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -334,7 +344,7 @@ public class ToolCommandResolver(
 					Login = DefaultIdentifier
 				};
 		settings = settings.Fill(options, interactiveConsole);
-		IServiceProvider container = new BindingsModule().Register(settings);
+		IServiceProvider container = new BindingsModule().Register(settings, ForceNonInteractiveConsole);
 		return container.GetRequiredService<TCommand>();
 	}
 

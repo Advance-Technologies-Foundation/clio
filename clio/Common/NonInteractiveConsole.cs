@@ -8,6 +8,12 @@ namespace Clio.Common;
 /// fails closed on redirected stdin.
 /// </summary>
 public sealed class NonInteractiveConsole : IInteractiveConsole {
+	// CLIO001: stateless, behaviourless singleton for non-DI call sites that must force a non-interactive
+	// console (e.g. the MCP per-request child containers in ToolCommandResolver). Constructed once in a
+	// field initializer, never per-call; DI consumers still receive their registered instance.
+	/// <summary>Shared stateless instance for non-DI call sites that force non-interactive behavior.</summary>
+	public static readonly NonInteractiveConsole Shared = new();
+
 	private readonly ILogger _logger;
 
 	/// <summary>Initializes a non-interactive console that logs a warning when it declines.</summary>
@@ -17,9 +23,14 @@ public sealed class NonInteractiveConsole : IInteractiveConsole {
 	}
 
 	/// <inheritdoc />
+	public bool IsInteractive => false;
+
+	/// <inheritdoc />
 	public bool Prompt(string message) {
+		// General-purpose fail-closed confirmation: any non-interactive caller (a Safe-environment guard,
+		// a warn-and-proceed compile confirmation, …) declines here without touching the console.
 		_logger?.WriteWarning(
-			$"Safe-environment confirmation required but the context is non-interactive; declining. {message}");
+			$"Confirmation required but the context is non-interactive; declining. {message}");
 		return false;
 	}
 }

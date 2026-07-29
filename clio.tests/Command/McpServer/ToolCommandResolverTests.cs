@@ -106,6 +106,46 @@ public class ToolCommandResolverTests {
 	}
 
 	[Test]
+	[Description("Commands resolved for MCP execution get a NON-interactive console regardless of the host process's stdin, so a warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) can never block on Console.ReadKey — closing the mcp-http-at-a-TTY deadlock hole.")]
+	[Category("Unit")]
+	public void Resolve_Should_ForceNonInteractiveConsole_InChildContainer() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"broken",
+			SettingsRepository.AppSettingsFile,
+			null,
+			null,
+			0,
+			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[],
+			true,
+			false));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
+
+		try {
+			// Act
+			IInteractiveConsole resolvedConsole = resolver.Resolve<IInteractiveConsole>(options);
+
+			// Assert
+			resolvedConsole.IsInteractive.Should().BeFalse(
+				because: "MCP command execution must never prompt; the per-request child container forces a non-interactive console so a warn-and-proceed confirmation fails open instead of blocking on Console.ReadKey on a TTY-attached mcp-http host");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
 	[Description("Keeps environmentless MCP resolution independent from the active configured environment.")]
 	[Category("Unit")]
 	public void ResolveWithoutEnvironment_Should_Not_Read_Default_Environment_When_Name_Is_Missing() {

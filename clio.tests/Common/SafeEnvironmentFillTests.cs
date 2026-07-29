@@ -83,6 +83,38 @@ public sealed class SafeEnvironmentFillTests {
 	}
 
 	[Test]
+	[Description("NonInteractiveConsole.IsInteractive is false so warn-and-proceed confirmations (ENG-93157) skip the prompt and proceed without blocking.")]
+	public void IsInteractive_ShouldBeFalse_WhenNonInteractiveConsole() {
+		// Arrange
+		var sut = new NonInteractiveConsole();
+
+		// Act
+		bool isInteractive = sut.IsInteractive;
+
+		// Assert
+		isInteractive.Should().BeFalse(
+			because: "an explicitly non-interactive host cannot ask the user, so warn-and-proceed confirmations must fail open and continue");
+	}
+
+	[Test]
+	[Description("RealInteractiveConsole.IsInteractive reflects whether stdin is a terminal: false on redirected stdin (MCP stdio / CI), true on a real terminal.")]
+	public void IsInteractive_ShouldReflectInputRedirection_WhenRealConsole() {
+		// Arrange
+		var redirected = new RealInteractiveConsole(isInputRedirected: () => true, readKey: () => 'y');
+		var terminal = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'y');
+
+		// Act
+		bool redirectedIsInteractive = redirected.IsInteractive;
+		bool terminalIsInteractive = terminal.IsInteractive;
+
+		// Assert
+		redirectedIsInteractive.Should().BeFalse(
+			because: "redirected stdin (MCP stdio / CI pipe) means no interactive prompt is possible");
+		terminalIsInteractive.Should().BeTrue(
+			because: "a real terminal can prompt the user");
+	}
+
+	[Test]
 	[Description("Fill on a Safe environment with a declining console throws SafeEnvironmentConfirmationRequiredException instead of exiting the process.")]
 	public void Fill_ShouldThrowSafeEnvironmentConfirmationRequiredException_WhenNonInteractiveAndSafeEnvironment() {
 		// Arrange

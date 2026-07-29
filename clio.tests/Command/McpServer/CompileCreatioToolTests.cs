@@ -335,6 +335,52 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("The compile-creatio tool description carries the ENG-93157 pre-compilation confirmation trigger so an agent reading the guaranteed tool-description channel warns and offers to postpone before every call.")]
+	public void CompileCreatio_Description_Should_Carry_Confirmation_Trigger()
+	{
+		// Arrange
+		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+		System.ComponentModel.DescriptionAttribute description =
+			(System.ComponentModel.DescriptionAttribute)typeof(CompileCreatioTool)
+				.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+				.Single();
+		_ = toolAttribute;
+
+		// Assert
+		description.Description.Should().Contain("compile now or postpone",
+			because: "the description must instruct the agent to offer a proceed-or-postpone choice before compiling");
+		description.Description.Should().Contain("ONLY after the user confirms",
+			because: "the description must gate the call on explicit user confirmation");
+		description.Description.Should().Contain("standing consent",
+			because: "the description must close the repeat-in-session loophole so the agent re-asks even on an identical repeated request (ENG-93157 AC-5)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Both compile-creatio prompt branches (full and package-only) carry the ENG-93157 heavy-operation warning and postpone option so the agent confirms before compiling.")]
+	public void CompileCreatioPrompt_Should_Warn_And_Offer_Postpone()
+	{
+		// Act
+		string fullPrompt = FsmAndCompilePrompt.CompileCreatio("sandbox");
+		string packagePrompt = FsmAndCompilePrompt.CompileCreatio("sandbox", "MyPackage");
+
+		// Assert
+		fullPrompt.Should().Contain("postpone",
+			because: "the full-compilation prompt must offer the postpone option");
+		fullPrompt.Should().Contain("HEAVY operation",
+			because: "the full-compilation prompt must warn that compilation is heavy");
+		packagePrompt.Should().Contain("postpone",
+			because: "the package-compilation prompt must offer the postpone option");
+		packagePrompt.Should().Contain("HEAVY operation",
+			because: "the package-compilation prompt must warn that compilation is heavy");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A same-tenant compile requested while one is already in flight fails fast with a poll-and-wait notice — mirroring the Creatio core's reject-on-concurrent-compile — instead of resolving/starting a second compile or tracking a duplicate operation.")]
 	public async Task CompileCreatio_Should_FailFast_When_Compile_Already_In_Flight_For_Same_Tenant()
 	{
@@ -454,7 +500,8 @@ public sealed class CompileCreatioToolTests
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<ICompilationHistoryPoller>(),
-				Substitute.For<ILogger>())
+				Substitute.For<ILogger>(),
+				Substitute.For<IInteractiveConsole>())
 		{
 		}
 
@@ -471,7 +518,8 @@ public sealed class CompileCreatioToolTests
 		public CompilePackageOptions? CapturedOptions { get; private set; }
 
 		public FakeCompilePackageCommand()
-			: base(Substitute.For<Clio.Package.IPackageBuilder>(), Substitute.For<ILogger>())
+			: base(Substitute.For<Clio.Package.IPackageBuilder>(), Substitute.For<ILogger>(),
+				Substitute.For<IInteractiveConsole>())
 		{
 		}
 

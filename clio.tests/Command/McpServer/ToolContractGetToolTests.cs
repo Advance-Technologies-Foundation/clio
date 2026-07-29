@@ -435,6 +435,8 @@ public sealed class ToolContractGetToolTests {
 			because: "FSM-mode toggles are a canonical trigger for full compilation");
 		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("C# schemas", StringComparison.Ordinal),
 			because: "C# schema changes are the primary precondition for package compilation");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("postpone", StringComparison.Ordinal),
+			because: "the contract must require the user to be warned and to confirm-now-or-postpone before compilation (ENG-93157)");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must call out flows where compilation is never required");
 		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(PageUpdateTool.ToolName, StringComparison.Ordinal),
