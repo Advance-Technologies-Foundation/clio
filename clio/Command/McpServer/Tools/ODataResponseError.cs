@@ -93,7 +93,7 @@ internal static class ODataResponseError {
 		// Surface the most specific text: MessageDetail ("No type was found that matches the
 		// controller named 'X'") when present, else the bare Message.
 		string? detail = First(root, "MessageDetail");
-		string primary = !string.IsNullOrEmpty(detail) ? detail! : bareMessage.GetString() ?? string.Empty;
+		string primary = !string.IsNullOrEmpty(detail) ? detail : bareMessage.GetString() ?? string.Empty;
 		if (string.IsNullOrEmpty(primary)) {
 			message = "Creatio returned an empty error response.";
 			return true;
@@ -116,7 +116,7 @@ internal static class ODataResponseError {
 	/// </summary>
 	private static bool IsRoutingMiss(string? text) =>
 		!string.IsNullOrEmpty(text)
-		&& (text!.Contains("No type was found that matches the controller", StringComparison.OrdinalIgnoreCase)
+		&& (text.Contains("No type was found that matches the controller", StringComparison.OrdinalIgnoreCase)
 			|| text.Contains("No HTTP resource was found that matches the request URI", StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>

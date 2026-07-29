@@ -1883,13 +1883,23 @@ public static class SchemaValidationService
 			// insert's type. Bounded to the entry-root object — nested child nodes still resolve type ONLY
 			// from their own "type" sibling (entryRootType is not threaded into the recursion), so the
 			// exemption never bleeds into a nested non-exempt node.
-			string entryRootType = TryGetComponentType(values, out string ownType)
-				? ownType
-				: (!string.IsNullOrEmpty(ownerName) && entryNameToType.TryGetValue(ownerName, out string mappedType)
-					? mappedType
-					: string.Empty);
+			string entryRootType = ResolveEntryRootType(values, ownerName, entryNameToType);
 			ScanNodeForTextLiterals(values, ownerName, entryRootType, result);
 		}
+	}
+
+	// Resolves an entry-root component type: its own "type" sibling wins, else the type a same-name sibling
+	// insert established within this body. Extracted from the caller so the two-level fallback reads as a
+	// sequence of decisions rather than a nested ternary (Sonar S3358).
+	private static string ResolveEntryRootType(
+		JsonElement values, string ownerName, Dictionary<string, string> entryNameToType) {
+		if (TryGetComponentType(values, out string ownType)) {
+			return ownType;
+		}
+		if (!string.IsNullOrEmpty(ownerName) && entryNameToType.TryGetValue(ownerName, out string mappedType)) {
+			return mappedType;
+		}
+		return string.Empty;
 	}
 
 	// Maps each entry's declared name to the component type carried on its own "values":{"type":...} sibling,
@@ -1960,10 +1970,10 @@ public static class SchemaValidationService
 			// resolves to empty at runtime. Reject the resource form and force the working literal —
 			// the mirror of the inline-literal rule applied to everything else (ENG-92940).
 			if (IsLocalizableResourceReference(textValue)) {
-				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue!));
+				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue));
 			}
 		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
-			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue!));
+			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue));
 		}
 	}
 
@@ -1986,7 +1996,7 @@ public static class SchemaValidationService
 		if (element.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
 		    typeElement.ValueKind == JsonValueKind.String &&
 		    !string.IsNullOrWhiteSpace(typeElement.GetString())) {
-			type = typeElement.GetString()!;
+			type = typeElement.GetString();
 			return true;
 		}
 		return false;
