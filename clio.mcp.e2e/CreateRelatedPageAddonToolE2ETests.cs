@@ -213,6 +213,47 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	}
 
 	[Test]
+	[Description("Binds schema-type=mobile with a pages payload through the real MCP server and reports an invalid environment inside the structured response, proving the mobile MobileRelatedPage write path is on the tool contract.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-related-page-addon MCP tool binds schema-type=mobile")]
+	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with schema-type=mobile plus a default pages payload and an intentionally missing environment, then verifies the mobile schema-type binds and the structured response reports the unresolved environment instead of an MCP binding error.")]
+	public async Task CreateRelatedPageAddon_Should_Bind_Mobile_SchemaType_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-create-mobile-related-page-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "Custom",
+					["entity-schema-name"] = "UsrOrder",
+					["schema-type"] = "mobile",
+					["pages"] = new object[] {
+						new Dictionary<string, object?> {
+							["page-schema-name"] = "UsrOrderMobileFormPage",
+							["is-default"] = true
+						}
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CreateRelatedPageAddonResponse response =
+			EntitySchemaStructuredResultParser.Extract<CreateRelatedPageAddonResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "schema-type=mobile plus a valid pages payload should bind and stay inside the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "the intentionally missing environment should fail before the mobile add-on round-trip");
+		response.Error.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
+			because: "the failure should come from resolving the environment, not from rejecting the mobile schema-type or the payload");
+	}
+
+	[Test]
 	[Description("Rejects a pages array containing a null entry via create-related-page-addon before any remote calls.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-related-page-addon MCP tool rejects a null pages entry")]
