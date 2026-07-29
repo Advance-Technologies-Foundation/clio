@@ -192,6 +192,72 @@ public sealed class McpToolInvokerRegistryTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Derives read-only-ness from the tool's [McpServerTool(ReadOnly=...)] annotation: list-pages is read-only, sync-schemas is not (PR #984 review — IsReadOnly had no registry-level coverage while IsDestructive did).")]
+	public void IsReadOnly_ShouldReflectToolAnnotation_WhenToolIsRegistered() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool listPagesReadOnly = registry.IsReadOnly(PageListTool.ToolName);
+		bool syncSchemasReadOnly = registry.IsReadOnly(SchemaSyncTool.ToolName);
+
+		// Assert
+		listPagesReadOnly.Should().BeTrue(
+			because: "list-pages is a read-only discovery tool and is annotated ReadOnly = true");
+		syncSchemasReadOnly.Should().BeFalse(
+			because: "sync-schemas writes schemas, so it must never be classified read-only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails closed for an unknown tool so the durable gate confirms rather than runs it silently.")]
+	public void IsReadOnly_ShouldFailClosed_WhenToolIsUnknown() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool result = registry.IsReadOnly("definitely-not-a-tool");
+
+		// Assert
+		result.Should().BeFalse(
+			because: "an unknown tool must be treated as write-capable so the durable gate asks for " +
+				"confirmation instead of executing it unchecked");
+	}
+
+	[TestCase("")]
+	[TestCase("   ")]
+	[TestCase(null)]
+	[Category("Unit")]
+	[Description("Fails closed for a blank tool name rather than throwing, matching IsDestructive's contract.")]
+	public void IsReadOnly_ShouldFailClosed_WhenToolNameIsBlank(string? toolName) {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool result = registry.IsReadOnly(toolName!);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "there is no tool to classify, so the safe answer is write-capable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Trims the tool name before lookup, so a padded name is not mistaken for an unknown tool and silently gated.")]
+	public void IsReadOnly_ShouldTrimToolName_BeforeLookup() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool result = registry.IsReadOnly($"  {PageListTool.ToolName}  ");
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the registry trims the name, so surrounding whitespace must not change the classification");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Fails closed for an unknown tool so the safe clio-run surface refuses it.")]
 	public void IsDestructive_ShouldFailClosed_WhenToolIsUnknown() {
 		// Arrange

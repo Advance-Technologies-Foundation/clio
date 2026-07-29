@@ -1122,7 +1122,13 @@ public abstract record ColumnModificationArgsBase(
 /// </summary>
 public sealed record UpdateEntitySchemaOperationArgs(
 	string Action,
-	string ColumnName,
+	// Nullable-with-default to match ColumnModificationArgsBase.ColumnName: this derived record is what STJ
+	// binds, and the MCP SDK derives the emitted schema's `required` array from the DERIVED record's
+	// non-nullable, non-defaulted positional parameters. Leaving it non-nullable here kept `column-name` in
+	// `required` for BOTH surfaces this record backs (`update-entity-schema` operations and the
+	// `sync-schemas` update-operations it embeds), so a strict client still rejected the `name`-only read
+	// shape the contract advertises (PR #984 review).
+	string? ColumnName = null,
 	string? NewName = null,
 	string? Type = null,
 	Dictionary<string, string>? TitleLocalizations = null,
@@ -1223,7 +1229,10 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	string SchemaName,
 
 	string Action,
-	string ColumnName,
+	// Nullable-with-default for the same reason as UpdateEntitySchemaOperationArgs.ColumnName: this derived
+	// record is the one STJ binds, so its own parameter nullability is what puts `column-name` into the
+	// emitted schema's `required` array (PR #984 review).
+	string? ColumnName = null,
 	string? NewName = null,
 	string? Type = null,
 	Dictionary<string, string>? TitleLocalizations = null,

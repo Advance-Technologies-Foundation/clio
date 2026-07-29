@@ -704,6 +704,49 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
+	[Description("Rejects inherited BaseLookup columns spelled with the contract's canonical 'column-name' field, not just the 'name' alias — the guardrail must read the resolved name or {\"column-name\":\"Name\"} bypasses it entirely (PR #984 review).")]
+	[Category("Unit")]
+	public async Task CreateLookup_Should_Reject_Inherited_BaseLookup_Columns_WhenSpelledAsColumnName() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act — `column-name` only, no `name`: the spelling get-tool-contract advertises as canonical.
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
+			"MyPackage",
+			"UsrOrderStatus",
+			Localizations("Order status"),
+			"docker_fix2",
+			[
+				new CreateEntitySchemaColumnArgs(null, "Text", Localizations("Name")) {
+					ColumnNameAlias = "Name"
+				}
+			]));
+		string[] outputValues = result.Output
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "the inherited-column guardrail must fire on the canonical spelling too, otherwise the " +
+				"shadowing column reaches RemoteEntitySchemaCreator, which has no equivalent check");
+		outputValues.Should().Contain(value =>
+				value.Contains("BaseLookup", StringComparison.Ordinal) && value.Contains("Name", StringComparison.Ordinal),
+			because: "the caller should still get clio's purpose-built explanation, not a remote failure");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "no command may run once the guardrail rejects the payload");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Preserves omitted optional columns when create-lookup callers only provide the required lookup schema metadata.")]
 	[Category("Unit")]
 	public async Task CreateLookup_Should_Preserve_Defaults_When_Columns_Are_Omitted() {

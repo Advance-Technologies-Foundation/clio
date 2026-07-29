@@ -158,6 +158,46 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects inherited BaseLookup columns inside sync-schemas create-lookup operations when the column identity is spelled with the contract's canonical 'column-name' field rather than the 'name' alias (PR #984 review).")]
+	public async Task SchemaSync_CreateLookup_Should_Reject_Inherited_BaseLookup_Columns_WhenSpelledAsColumnName() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation(
+					"create-lookup",
+					"UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status"),
+					Columns: [
+						// `column-name` only, no `name` — the spelling get-tool-contract calls canonical.
+						new CreateEntitySchemaColumnArgs(null, "Text", Localizations("Name")) {
+							ColumnNameAlias = "Name"
+						}
+					])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the guardrail must fire on the canonical spelling too, otherwise the shadowing column " +
+				"reaches the remote creator through this entry point as well");
+		response.Results[0].Error.Should().Contain("BaseLookup",
+			because: "the caller should get clio's purpose-built explanation");
+		response.Results[0].Error.Should().Contain("Name",
+			because: "the failure should identify the rejected inherited column");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "no create command may run once the guardrail rejects the operation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-entity operation with custom parent schema")]
 	public async Task SchemaSync_CreateEntity_Should_Use_Custom_Parent_Schema() {
 		// Arrange
