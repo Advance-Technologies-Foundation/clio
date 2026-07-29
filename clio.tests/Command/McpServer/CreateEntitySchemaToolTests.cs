@@ -587,9 +587,9 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
-	[Description("Reports a missing column code as a missing column code — naming both accepted spellings — instead of failing later on an unrelated localization or type message (issue #947).")]
+	[Description("Reports a missing column identity as a missing target column — naming both accepted spellings — instead of failing later on an unrelated localization or type message (issue #947). The wording is single-sourced in ColumnIdentityContract.RequireColumnIdentity, so all three throw sites say the same thing (PR #984 review).")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Fail_With_ColumnCode_Message_WhenNeitherSpellingSupplied() {
+	public void CreateEntitySchema_Should_Fail_With_ColumnIdentity_Message_WhenNeitherSpellingSupplied() {
 		// Arrange — neither `name` nor `column-name`, and no title either: the localization contract would
 		// otherwise be the first to fail and would blame the caption.
 		var columns = new[] {
@@ -605,6 +605,10 @@ public class CreateEntitySchemaToolTests {
 				because: "the error must name the canonical field the caller is expected to send")
 			.And.Message.Should().Contain("'name'",
 				because: "both accepted spellings must be named so the caller can pick either");
+		act.Should().Throw<ArgumentException>()
+			.And.Message.Should().Contain("missing the target column",
+				because: "the three throw sites now share one message through RequireColumnIdentity — this pins " +
+					"the canonical noun so the wording cannot drift back apart");
 	}
 
 	[Test]

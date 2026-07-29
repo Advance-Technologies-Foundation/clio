@@ -109,6 +109,17 @@ public sealed class ColumnIdentityEmittedSchemaTests {
 			because: "relaxing one spelling into the other's place would reproduce the same defect mirrored");
 		RequiredNames(columnSchema).Should().NotContain("data-value-type",
 			because: "neither type spelling may be mandatory while the other one is advertised as valid");
+
+		// Anti-vacuity note: every parameter on CreateEntitySchemaColumnArgs is nullable-with-default by
+		// design, so the emitted column item currently carries NO `required` array at all — the negatives
+		// above pass over an empty set. That is the intended state, and they are still the right guard:
+		// verified empirically by reverting `Name` to non-nullable-non-defaulted, which puts "name" back in
+		// `required` and makes both create tests fail. Asserted here so the empty set is a stated fact rather
+		// than something a reader has to infer (PR #984 review).
+		RequiredNames(columnSchema).Should().BeEmpty(
+			because: "a column identifies itself through either spelling of both its code and its type, so " +
+				"nothing on the column item is unconditionally mandatory; a non-empty set here means some " +
+				"single spelling became required and the either-or contract broke");
 	}
 
 	[Test]
