@@ -2206,6 +2206,21 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The page-modification ENTRY guide must NOT carry the predefined list-filter placement rule — it is single-owned by page-modification-overview, and duplicating it in the entry guide would break the single-owner boundary and the 15 KB entry per-response budget (ENG-90052).")]
+	public void PageModificationGuidanceResource_Should_Not_Duplicate_Predefined_List_Filter_Rule() {
+		// Arrange
+		PageModificationGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().NotContain("Items_PredefinedFilter",
+			because: "the predefined-filter placement rule has a single owner (page-modification-overview); duplicating it in the entry guide would break the single-owner boundary and threaten the 15 KB entry per-response budget");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The mobile page resource includes the request-catalog pointer that names get-request-info as the single source of truth for the run-process parameter contract.")]
 	public void MobilePageGuidanceResource_Should_Include_RequestCatalogPointer() {
 		// Arrange
