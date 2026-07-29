@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 	[Test]
-	[Description("Exposes odata-create via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]
+	[Description("Exposes odata-create via the get-tool-contract compact index with a destructive safety flag on the lazy tool surface.")]
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create MCP tool is discoverable on the lazy surface")]
 	public async Task ODataCreate_Should_Be_Advertised() {
@@ -29,8 +29,8 @@ public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == ODataCreateTool.ToolName,
 			because: "odata-create must be discoverable via the get-tool-contract compact index on the lazy surface")
 			.Which;
-		entry.Destructive.Should().NotBe(true,
-			because: "odata-create only inserts new rows and must not be flagged destructive");
+		entry.Destructive.Should().BeTrue(
+			because: "odata-create writes durable Creatio records; a data mutation MCP hosts must gate for approval and audit (GH-953)");
 	}
 
 	[Test]

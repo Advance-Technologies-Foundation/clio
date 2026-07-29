@@ -16,7 +16,7 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable, non-read-only, non-destructive, non-idempotent MCP tool name for odata-create.")]
+	[Description("Advertises a stable, non-read-only, destructive, non-idempotent MCP tool name for odata-create.")]
 	public void Create_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		// Act
@@ -28,7 +28,7 @@ public sealed class ODataCreateToolTests {
 		// Assert
 		attribute.Name.Should().Be(ODataCreateTool.ToolName, because: "the tool name is part of the stable MCP contract");
 		attribute.ReadOnly.Should().BeFalse(because: "odata-create mutates state by inserting records");
-		attribute.Destructive.Should().BeFalse(because: "creating a record does not destroy existing state");
+		attribute.Destructive.Should().BeTrue(because: "odata-create inserts durable Creatio records; a data mutation MCP hosts must gate for approval and audit (GH-953)");
 		attribute.Idempotent.Should().BeFalse(because: "repeating a create inserts another record");
 	}
 
