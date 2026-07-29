@@ -458,13 +458,12 @@ public class CreateEntitySchemaToolTests {
 		string schema = JsonSerializer.Serialize(tool.ProtocolTool.InputSchema);
 
 		// Assert — `name` is one of two accepted spellings, so requiring it in the schema would contradict the
-		// contract that advertises `column-name` as canonical.
+		// contract that advertises `column-name` as canonical. The `required` array itself is asserted by
+		// navigating the schema in ColumnIdentityEmittedSchemaTests: the exact-substring form this test used to
+		// carry (`NotContain("\"required\":[\"name\",\"type\"]")`) passed vacuously on any element-order,
+		// whitespace, or extra-field change — i.e. precisely when the relaxation had regressed (PR #984 review).
 		schema.Should().Contain("column-name",
 			because: "the canonical column identity field must appear in the emitted schema at all");
-		schema.Should().NotContain("\"required\":[\"name\",\"type\"]",
-			because: "the SDK derives `required` from non-nullable, non-defaulted positional parameters, so a " +
-				"column must not demand `name`/`type` while `column-name`/`data-value-type` are equally valid — " +
-				"a strict client validating against the schema would reject a contract-following payload");
 	}
 
 	[Test]

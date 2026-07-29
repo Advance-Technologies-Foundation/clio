@@ -1237,7 +1237,10 @@ internal sealed class DataBindingDbService(
 			+ "unaffected. For record-level access rights use the set-record-rights tool (it goes through the "
 			+ "native RightsService instead). Object-operation rights (SysEntitySchemaOperationRight) have no "
 			+ "administration-capable path in clio yet — deploy them through Creatio's own Object permissions "
-			+ "administration or a package installation script, and see clio issue #954.";
+			// Deliberately no issue number in the user-visible text: the tracker reference belongs in the doc
+			// comment above (which stays accurate for maintainers), not in a runtime message that outlives the
+			// issue and would still point callers at a closed ticket (PR #984 review).
+			+ "administration or a package installation script.";
 	}
 
 	private static List<Dictionary<string, JsonNode?>>? ParseRowsJson(string? json) {

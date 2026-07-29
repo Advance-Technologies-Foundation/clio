@@ -208,6 +208,33 @@ public sealed class DataForgeContextServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Keeps the platform's own message byte-for-byte when it happens to look like clio's collapse marker: collapsed state is tracked structurally, so a cause that both ends in ')' and contains ' (also: ' is never parsed as an already-collapsed line and never has the next term spliced into its own parenthetical.")]
+	public void GetContext_Should_PreserveCauseText_WhenMessageItselfLooksLikeTheCollapseMarker() {
+		// Arrange — a message crafted to satisfy the old `EndsWith(")") && Contains(" (also: ")` test on the
+		// FIRST repeat, which is exactly when the emitted line still carries no collapse marker of its own.
+		const string pathologicalMessage = "Load failed (also: check config)";
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables(Arg.Any<string>(), Arg.Any<int?>())
+			.Throws(new InvalidOperationException(pathologicalMessage));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, CreateReadyMaintenanceClient(), runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.Warnings.Should().HaveCount(1,
+			because: "one recurring failure is still one warning regardless of what its message text looks like");
+		result.Warnings[0].Should().Be($"tables:orders:{pathologicalMessage} (also: vendors)",
+			because: "the cause text must survive verbatim and the collapse marker must be appended after it — "
+				+ "parsing the emitted line instead would have produced "
+				+ "'Load failed (also: check config, vendors)', silently rewriting the platform's own message");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Keeps genuinely different read failures as separate warnings, so collapsing repeats never hides a second, distinct cause.")]
 	public void GetContext_Should_KeepDistinctReadFailures_AsSeparateWarnings() {
 		// Arrange

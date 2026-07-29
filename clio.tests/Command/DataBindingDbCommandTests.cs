@@ -745,9 +745,12 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			because: "the caller must be able to tell an authorization refusal from a malformed request");
 		message.Should().Contain("set-record-rights",
 			because: "record-level rights DO have a supported path and the caller must be steered to it");
-		message.Should().Contain("#954",
-			because: "the missing object-operation-rights path is tracked, so the caller can follow it rather " +
-				"than re-diagnosing the same wall");
+		message.Should().Contain("Object permissions",
+			because: "the caller must be pointed at the mechanism that DOES work for object-operation rights");
+		message.Should().NotContain("#954",
+			because: "a tracker number in a runtime message outlives the issue and would keep pointing callers " +
+				"at a closed ticket — the reference belongs in the doc comment, not the caller-facing text " +
+				"(PR #984 review)");
 	}
 
 	[Test]

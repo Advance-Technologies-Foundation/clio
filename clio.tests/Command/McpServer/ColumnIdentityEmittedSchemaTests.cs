@@ -80,6 +80,57 @@ public sealed class ColumnIdentityEmittedSchemaTests {
 		return names;
 	}
 
+	private static JsonElement ColumnItemSchema(JsonDocument schema) {
+		return schema.RootElement
+			.GetProperty("properties").GetProperty("args")
+			.GetProperty("properties").GetProperty("columns")
+			.GetProperty("items");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-entity-schema does not list either column-identity or column-type spelling as required in its emitted columns item schema, so a strict client can send the canonical 'column-name'/'data-value-type' pair (issue #947).")]
+	public void CreateEntitySchema_Should_NotRequireEitherColumnSpelling_InEmittedColumnSchema() {
+		// Arrange & Act
+		using JsonDocument schema = EmittedInputSchema(CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		JsonElement columnSchema = ColumnItemSchema(schema);
+
+		// Assert — navigate the `required` array rather than substring-matching the serialized schema: an exact
+		// substring test passes vacuously the moment element order, whitespace, or the required set changes,
+		// which is precisely when the relaxation would have silently regressed (PR #984 review).
+		columnSchema.GetProperty("properties").TryGetProperty("column-name", out _).Should().BeTrue(
+			because: "the canonical column identity field must still be advertised on the create surface");
+		RequiredNames(columnSchema).Should().NotContain("name",
+			because: "'name' is one of two accepted identity spellings, so requiring it would make a payload " +
+				"that sends only the canonical 'column-name' fail client-side schema validation");
+		RequiredNames(columnSchema).Should().NotContain("type",
+			because: "'type' has the equally valid 'data-value-type' alias, so it must not be demanded either");
+		RequiredNames(columnSchema).Should().NotContain("column-name",
+			because: "relaxing one spelling into the other's place would reproduce the same defect mirrored");
+		RequiredNames(columnSchema).Should().NotContain("data-value-type",
+			because: "neither type spelling may be mandatory while the other one is advertised as valid");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-lookup binds the same column record, so its emitted columns item schema must not require either identity or type spelling either — relaxing only create-entity-schema would leave this sibling surface broken (issue #947).")]
+	public void CreateLookup_Should_NotRequireEitherColumnSpelling_InEmittedColumnSchema() {
+		// Arrange & Act
+		using JsonDocument schema = EmittedInputSchema(CreateLookupTool.CreateLookupToolName);
+		JsonElement columnSchema = ColumnItemSchema(schema);
+
+		// Assert
+		RequiredNames(columnSchema).Should().NotContain("name",
+			because: "create-lookup binds the same CreateEntitySchemaColumnArgs record, so it inherits the same " +
+				"either-spelling contract and must not demand the alias");
+		RequiredNames(columnSchema).Should().NotContain("type",
+			because: "the column type has the same two accepted spellings on this surface");
+
+		// And nothing else nested in this schema may demand a single spelling either.
+		CollectRequiredNames(schema.RootElement).Should().NotContain("column-name",
+			because: "no nested `required` array anywhere in this surface may demand the column identity");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("modify-entity-schema-column does not list 'column-name' as required in its emitted input schema, so a strict client can send the advertised 'name' alias instead (PR #984 review).")]

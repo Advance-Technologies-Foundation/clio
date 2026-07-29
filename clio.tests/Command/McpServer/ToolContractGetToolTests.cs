@@ -2477,9 +2477,13 @@ public sealed class ToolContractGetToolTests {
 			because: "relaxing the column identity must not silently relax the parameters that stay mandatory");
 		inputSchema.AnyOf.Should().NotBeNullOrEmpty(
 			because: "'at least one of column-name / name' has to be expressed somewhere the client can read");
-		inputSchema.AnyOf!.Should().HaveCount(2)
-			.And.ContainSingle(group => group.SequenceEqual(new[] { "column-name" }))
-			.And.ContainSingle(group => group.SequenceEqual(new[] { "name" }));
+		inputSchema.AnyOf!.Should().HaveCount(2,
+				because: "the rule is exactly two alternatives — a third group would advertise a spelling the " +
+					"runtime resolver does not accept, and one group would collapse the either-or into a demand")
+			.And.ContainSingle(group => group.SequenceEqual(new[] { "column-name" }),
+				because: "the canonical spelling must stand alone as a sufficient identity, not only in a pair")
+			.And.ContainSingle(group => group.SequenceEqual(new[] { "name" }),
+				because: "the alias must be equally sufficient on its own, which is the whole point of the any-of");
 		inputSchema.Properties.Select(field => field.Name).Should().Contain(["column-name", "name"],
 			because: "an any-of group naming an undeclared property is unusable by a validating client");
 	}

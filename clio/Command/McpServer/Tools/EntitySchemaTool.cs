@@ -13,6 +13,35 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
+/// Single source of the "at least one of <c>column-name</c> / <c>name</c>" rule and the caller-facing message
+/// that states it.
+/// </summary>
+/// <remarks>
+/// Neither spelling is schema-required — the emitted MCP schema deliberately leaves both optional so a strict
+/// client can validate a payload that sends either one (issue #947) — so the rule has to be enforced in code.
+/// It fires from three surfaces (create columns, update operations, modify-entity-schema-column), and the
+/// wording had already drifted between them ("missing the column code" vs "missing the target column"). Since
+/// the whole point of the fix is caller-facing message quality, the message is owned here rather than repeated.
+/// </remarks>
+internal static class ColumnIdentityContract {
+	/// <summary>
+	/// Returns the trimmed column code, or throws naming both accepted spellings when neither was supplied.
+	/// </summary>
+	/// <param name="resolvedName">The already-resolved column code (canonical field, then alias).</param>
+	/// <param name="context">Caller-facing prefix identifying which payload element is at fault.</param>
+	/// <param name="parameterName">Argument name to attribute the <see cref="ArgumentException" /> to.</param>
+	internal static string RequireColumnIdentity(string? resolvedName, string context, string parameterName) {
+		string? trimmed = resolvedName?.Trim();
+		if (string.IsNullOrWhiteSpace(trimmed)) {
+			throw new ArgumentException(
+				$"{context} is missing the target column. Send it as 'column-name' (or its alias 'name').",
+				parameterName);
+		}
+		return trimmed;
+	}
+}
+
+/// <summary>
 /// MCP tool surface for remote entity schema creation.
 /// </summary>
 public sealed class CreateEntitySchemaTool(
@@ -118,12 +147,8 @@ public sealed class CreateEntitySchemaTool(
 		// fallback: with no code, that contract fails first and reports a missing en-US caption instead of the
 		// real problem. `name` is not schema-required precisely because `column-name` is an equally valid
 		// spelling, so the "at least one of the two" rule is enforced here (issue #947).
-		string? resolvedName = column.ResolveName()?.Trim();
-		if (string.IsNullOrWhiteSpace(resolvedName)) {
-			throw new ArgumentException(
-				$"{context} is missing the column code. Send it as 'column-name' (or its alias 'name').",
-				nameof(column));
-		}
+		string resolvedName = ColumnIdentityContract.RequireColumnIdentity(
+			column.ResolveName(), context, nameof(column));
 		// Type is checked here for the same reason as the code above: it is optional in the EMITTED SCHEMA so
 		// the `data-value-type` alias stays usable, which means the "one of the two is required" rule has to
 		// live in code or a typeless column would reach the creator and fail with a vaguer message.
@@ -350,11 +375,7 @@ public sealed class UpdateEntitySchemaTool(
 		// Checked before the localization contract, which uses the column name as its caption fallback and
 		// would otherwise fail first and blame the caption. `column-name` is optional in the emitted schema on
 		// purpose so its `name` alias stays usable, so this is where "at least one of the two" is enforced.
-		if (string.IsNullOrWhiteSpace(operation.ResolveColumnName())) {
-			throw new ArgumentException(
-				$"{context} is missing the target column. Send it as 'column-name' (or its alias 'name').",
-				nameof(operation));
-		}
+		ColumnIdentityContract.RequireColumnIdentity(operation.ResolveColumnName(), context, nameof(operation));
 		IReadOnlyDictionary<string, string>? titleLocalizations =
 			EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(
 				operation.Action,
@@ -575,15 +596,10 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required; column-name accepts the alias 'name'); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
-			string? resolvedColumnName = args.ResolveColumnName();
-			if (string.IsNullOrWhiteSpace(resolvedColumnName)) {
-				// Enforced here because `column-name` is deliberately optional in the emitted schema so its
-				// `name` alias stays usable by strict clients (see ColumnModificationArgsBase.ColumnName).
-				throw new ArgumentException(
-					"modify-entity-schema-column is missing the target column. Send it as 'column-name' "
-						+ "(or its alias 'name').",
-					nameof(args));
-			}
+			// Enforced here because `column-name` is deliberately optional in the emitted schema so its
+			// `name` alias stays usable by strict clients (see ColumnModificationArgsBase.ColumnName).
+			string resolvedColumnName = ColumnIdentityContract.RequireColumnIdentity(
+				args.ResolveColumnName(), ModifyEntitySchemaColumnToolName, nameof(args));
 			string context = $"Column '{resolvedColumnName}' action '{args.Action}'";
 			IReadOnlyDictionary<string, string>? titleLocalizations =
 				EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(

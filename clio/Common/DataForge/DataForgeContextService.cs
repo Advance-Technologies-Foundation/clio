@@ -81,8 +81,8 @@ internal sealed class DataForgeContextService(
 		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> warnings = [];
-		// Tracks the first warning index per distinct (category, message) cause so repeats collapse into it.
-		Dictionary<string, int> firstIndexByCause = new(StringComparer.Ordinal);
+		// Tracks the collapsed state per distinct (category, message) cause so repeats collapse into one warning.
+		Dictionary<string, CollapsedWarning> firstIndexByCause = new(StringComparer.Ordinal);
 		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
 		cancellationToken.ThrowIfCancellationRequested();
 
@@ -142,30 +142,49 @@ internal sealed class DataForgeContextService(
 	/// runtime schema reader, not Data Forge) succeed, so short-circuiting on it would discard real results.
 	/// </remarks>
 	/// <param name="warnings">The accumulating warning list, mutated in place.</param>
-	/// <param name="firstIndexByCause">Maps an already-seen (category, message) cause to its index in <paramref name="warnings"/>.</param>
+	/// <param name="firstIndexByCause">Maps an already-seen (category, message) cause to its collapsed state.</param>
 	/// <param name="category">Read category (<c>tables</c>, <c>lookups</c>, <c>relations</c>, <c>columns</c>).</param>
 	/// <param name="item">The term, pair key, or table name the read was for.</param>
 	/// <param name="message">The failure message used as the dedup key.</param>
 	private static void AddDedupedWarning(
 		List<string> warnings,
-		Dictionary<string, int> firstIndexByCause,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		string category,
 		string item,
 		string message) {
 		// NUL-joined so a message containing ':' cannot collide with another category's key.
 		string causeKey = $"{category}\0{message}";
-		if (!firstIndexByCause.TryGetValue(causeKey, out int firstIndex)) {
+		if (!firstIndexByCause.TryGetValue(causeKey, out CollapsedWarning? collapsed)) {
 			// The first occurrence keeps the ORIGINAL `category:item:message` shape byte for byte, so a
 			// single-failure payload is unchanged for existing consumers; only repeats are collapsed.
-			firstIndexByCause[causeKey] = warnings.Count;
-			warnings.Add($"{category}:{item}:{message}");
+			collapsed = new CollapsedWarning(warnings.Count, category, item, message);
+			firstIndexByCause[causeKey] = collapsed;
+			warnings.Add(collapsed.Render());
 			return;
 		}
-		string existing = warnings[firstIndex];
-		warnings[firstIndex] = existing.EndsWith(")", StringComparison.Ordinal)
-				&& existing.Contains(" (also: ", StringComparison.Ordinal)
-			? $"{existing[..^1]}, {item})"
-			: $"{existing} (also: {item})";
+		// Collapsed state is tracked STRUCTURALLY and the line re-rendered from it. Inferring "already
+		// collapsed" by parsing the emitted line (`EndsWith(")") && Contains(" (also: ")`) could not tell
+		// clio's own marker from the same substring occurring inside an exception message, so a cause like
+		// `Load failed (also: check config)` had the next item spliced into the message's own parenthetical.
+		collapsed.AlsoItems.Add(item);
+		warnings[collapsed.Index] = collapsed.Render();
+	}
+
+	/// <summary>
+	/// Structural state of one collapsed warning: where it sits in the warning list, the cause it reports, and
+	/// every item that hit that same cause. The emitted line is always rendered from this, never parsed back.
+	/// </summary>
+	private sealed class CollapsedWarning(int index, string category, string firstItem, string message) {
+		public int Index { get; } = index;
+
+		public List<string> AlsoItems { get; } = [];
+
+		public string Render() {
+			string head = $"{category}:{firstItem}:{message}";
+			return AlsoItems.Count == 0
+				? head
+				: $"{head} (also: {string.Join(", ", AlsoItems)})";
+		}
 	}
 
 	private static DataForgeCoverage CreateCoverage(
@@ -208,7 +227,7 @@ internal sealed class DataForgeContextService(
 	private List<SimilarTableResult> FindSimilarTables(
 		IReadOnlyList<string> tableTerms,
 		List<string> warnings,
-		Dictionary<string, int> firstIndexByCause,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		List<SimilarTableResult> similarTables = [];
 		foreach (string term in tableTerms) {
@@ -227,7 +246,7 @@ internal sealed class DataForgeContextService(
 	private List<SimilarLookupResult> FindSimilarLookups(
 		IReadOnlyList<string> lookupTerms,
 		List<string> warnings,
-		Dictionary<string, int> firstIndexByCause,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		List<SimilarLookupResult> similarLookups = [];
 		foreach (string hint in lookupTerms) {
@@ -246,7 +265,7 @@ internal sealed class DataForgeContextService(
 	private Dictionary<string, IReadOnlyList<string>> GetRelations(
 		IReadOnlyList<DataForgeRelationPair>? relationPairs,
 		List<string> warnings,
-		Dictionary<string, int> firstIndexByCause,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
 		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
@@ -266,7 +285,7 @@ internal sealed class DataForgeContextService(
 	private Dictionary<string, IReadOnlyList<DataForgeColumnResult>> GetColumns(
 		IReadOnlyList<SimilarTableResult> distinctTables,
 		List<string> warnings,
-		Dictionary<string, int> firstIndexByCause,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string tableName in distinctTables.Select(table => table.Name)) {
