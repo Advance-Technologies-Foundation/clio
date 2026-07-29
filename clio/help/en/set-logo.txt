@@ -1,0 +1,77 @@
+COMMAND TYPE
+    Customization commands
+
+NAME
+    set-logo - apply the product logos from local image files and bind them
+    into a package
+
+DESCRIPTION
+    set-logo writes the product logos of the target environment from local
+    image files — one option per logo slot — and binds the applied values
+    into a package as Creatio data bindings, so the logos ship with the
+    package on an install instead of living only on the source environment.
+
+    There are three white-background logo types plus the logo for a dark background:
+    - --logo                -> LogoImage (login page)
+    - --menu-logo           -> MenuLogoImage (main menu)
+    - --configuration-logo  -> ConfigurationPageLogoImage (configuration page)
+    - --dark-logo           -> CrtAppToolbarLogo (the Freedom UI top panel —
+                               a dark surface; pass the white/light variant)
+
+    Pass at least one slot. After applying, the command sets
+    HideSplashScreenLogoImage to true so the stock splash logo does not
+    flash during load (best-effort: a failure is a warning). The change
+    applies to all users after a page refresh and cannot be automatically
+    reverted by clio.
+
+    Each file is uploaded as the slot's Binary sys-setting value; the
+    environment's file-security policy is enforced client-side and a
+    per-value size cap (10 MB) applies.
+
+    Every applied slot is bound into --package (default: Custom) under its
+    own binding. Bindings are created when missing and updated in place when
+    present, so re-running with a new file refreshes both the environment
+    and the packaged snapshot. Only the slots you pass — plus slots shipped
+    by an earlier run — are bound: an unbranded slot is never delivered, so
+    the package cannot overwrite an install target's own logo with this
+    environment's stock value. The run output reports every delivery gap as
+    a Skipped line — read them. A SecureText setting is never bound. The
+    target package must be editable (unlocked) and the caller needs rights
+    to modify package configuration; when the apply succeeds but the binding
+    fails, the command exits with an error — re-run it to retry the binding.
+
+SYNOPSIS
+    clio set-logo [--logo <path>] [--menu-logo <path>]
+        [--configuration-logo <path>] [--dark-logo <path>] [--package <name>]
+        [options]
+
+OPTIONS
+    --logo                          Local image file for the main logo, shown on the login page (LogoImage).
+
+    --menu-logo                     Local image file for the main menu logo (MenuLogoImage).
+
+    --configuration-logo            Local image file for the configuration page logo (ConfigurationPageLogoImage).
+
+    --dark-logo                     Local image file for the logo shown on a dark background — the Freedom UI top panel (CrtAppToolbarLogo). Use the white/light variant.
+
+    --package                       Package that receives the logo data bindings (default: Custom).
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio set-logo --logo C:\brand\logo.svg -e myapp
+        apply the main logo and bind it into the Custom package
+
+    clio set-logo --logo C:\brand\logo.svg --dark-logo C:\brand\logo-white.svg -e myapp --package UsrMyApp
+        apply the main and dark-background logos and bind them into UsrMyApp
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

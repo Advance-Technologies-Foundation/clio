@@ -19,13 +19,37 @@ DESCRIPTION
     currently configured background. Re-running the command with the same
     image is safe and leaves the same background in place.
 
+    Applying a background also turns the UsePanelIconBackground feature off
+    for all users, because while it is on the panel's own icon background
+    hides the shell background. This is best-effort: if the toggle fails the
+    background is still applied and a warning is logged. Pass
+    --keep-icon-background to leave the feature untouched.
+
+    After a successful apply the command binds the background into a package
+    as Creatio data bindings, so it ships with the package on an install:
+    the configuration value and definition, (for an image background) the
+    image and its gallery membership, and the UsePanelIconBackground
+    off-state. Bindings are created when missing and updated in place when
+    present; re-running after a background change refreshes the packaged
+    snapshot. The run output reports every delivery gap as a Skipped line —
+    read them. A SecureText setting and a gallery membership under a
+    customized shell_background tag are never bound; the configuration
+    definition is delivered by id, so brand one environment and deliver
+    outward. The target package must be editable (unlocked) and the caller
+    needs rights to modify package configuration.
+
 SYNOPSIS
-    clio set-background-image [<image-id>] [--file <path>] [options]
+    clio set-background-image [<image-id>] [--file <path>] [--package <name>]
+        [--keep-icon-background] [options]
 
 OPTIONS
     <image-id>                      Id of an already-uploaded image (printed by upload-image). Pass either this or --file.
 
     --file                          Path to a local image file to upload and set as the background in one step.
+
+    --package                       Package that receives the background data bindings (default: Custom).
+
+    --keep-icon-background          Keep the UsePanelIconBackground feature as is instead of turning it off.
 
     --uri               -u          Application uri
 
@@ -39,10 +63,13 @@ OPTIONS
 
 EXAMPLE
     clio set-background-image --file C:\brand\background.png -e myapp
-        upload the image and set it as the shell background in one step
+        upload the image, set it as the shell background, and bind it into the Custom package
 
-    clio set-background-image aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee -e myapp
-        set an already-uploaded image as the shell background
+    clio set-background-image aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee -e myapp --package UsrMyApp
+        set an already-uploaded image as the shell background and bind it into UsrMyApp
+
+    clio set-background-image --file C:\brand\background.png -e myapp --keep-icon-background
+        apply a background but keep the panel icon background feature untouched
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

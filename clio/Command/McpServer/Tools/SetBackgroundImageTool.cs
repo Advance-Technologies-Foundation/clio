@@ -24,22 +24,27 @@ public class SetBackgroundImageTool(
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
 			["imageId"] = "image-id",
-			["image_id"] = "image-id"
+			["image_id"] = "image-id",
+			["packageName"] = "package",
+			["keepIconBackground"] = "keep-icon-background"
 		};
 
-	/// <summary>Sets the image as the shell background and returns a structured result.</summary>
+	/// <summary>Sets the image as the shell background, binds it into the package, and returns a structured result.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Set an image as a registered environment's shell background. Pass exactly one of: " +
-		"file (a local image file — uploaded and applied in one call) or image-id (an image already " +
-		"uploaded with upload-image). The background changes for all users after a page refresh, " +
-		"replacing the currently configured one. Returns { success, image-id, error? }. " +
+	 Description("Set an image as a registered environment's shell background and bind it into a package " +
+		"as data bindings so it ships with the package. Pass exactly one of: file (a local image file — " +
+		"uploaded and applied in one call) or image-id (an image already uploaded with upload-image). " +
+		"The background changes for all users after a page refresh, replacing the currently configured " +
+		"one; the panel-icon background feature is turned off unless keep-icon-background is true. " +
+		"package defaults to Custom. Returns { success, image-id, package, skipped?, error? } — relay the " +
+		"skipped entries, they are the only place a delivery gap is reported. " +
 		"For the full branding flow (logos, background), read get-guidance branding first.")]
 	public SetBackgroundImageResult SetBackgroundImage(
-		[Description("Parameters: environment-name (required), and exactly one of file (local image path) or image-id (id returned by upload-image).")]
+		[Description("Parameters: environment-name (required); exactly one of file (local image path) or image-id (id returned by upload-image); package (optional, default Custom); keep-icon-background (optional bool).")]
 		[Required] SetBackgroundImageArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, file, image-id.");
+			"Valid: environment-name, file, image-id, package, keep-icon-background.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return SetBackgroundImageResult.Failure(aliasError);
 		}
@@ -57,7 +62,9 @@ public class SetBackgroundImageTool(
 		SetBackgroundImageOptions options = new() {
 			Environment = args.EnvironmentName,
 			ImageId = args.ImageId,
-			File = args.File
+			File = args.File,
+			PackageName = args.Package,
+			KeepIconBackground = args.KeepIconBackground ?? false
 		};
 		return Execute(options);
 	}
@@ -71,7 +78,7 @@ public class SetBackgroundImageTool(
 						? "SetBackground returned success=false."
 						: SensitiveErrorTextRedactor.Redact(result.Error));
 				}
-				return SetBackgroundImageResult.Successful(result.ImageId);
+				return SetBackgroundImageResult.Successful(result);
 			},
 			SetBackgroundImageResult.Failure);
 	}
@@ -92,7 +99,15 @@ public sealed record SetBackgroundImageArgs(
 
 	[property: JsonPropertyName("file")]
 	[property: Description("Path to a local image file to upload and set as the background in one call. Pass either this or image-id, not both.")]
-	string? File = null
+	string? File = null,
+
+	[property: JsonPropertyName("package")]
+	[property: Description("Package that receives the background data bindings. Defaults to Custom when omitted.")]
+	string? Package = null,
+
+	[property: JsonPropertyName("keep-icon-background")]
+	[property: Description("When true, leaves the UsePanelIconBackground feature untouched instead of turning it off. While the feature is on, the panel's own icon background can hide the shell background.")]
+	bool? KeepIconBackground = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
@@ -103,7 +118,7 @@ public sealed record SetBackgroundImageArgs(
 /// Structured result of the <c>set-background-image</c> MCP tool.
 /// </summary>
 public sealed record SetBackgroundImageResult {
-	/// <summary>Whether the background was set.</summary>
+	/// <summary>Whether the background was set and bound.</summary>
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
 
@@ -112,16 +127,28 @@ public sealed record SetBackgroundImageResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ImageId { get; init; }
 
+	/// <summary>The package the background data was bound into; omitted on failure.</summary>
+	[JsonPropertyName("package")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Package { get; init; }
+
+	/// <summary>Delivery gaps reported by the binding reconcile; relay them to the user. Omitted when empty.</summary>
+	[JsonPropertyName("skipped")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Skipped { get; init; }
+
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
-	/// <summary>Creates a success result carrying the applied image id.</summary>
-	public static SetBackgroundImageResult Successful(Guid imageId) {
+	/// <summary>Creates a success result from the command outcome.</summary>
+	public static SetBackgroundImageResult Successful(SetBackgroundResult result) {
 		return new SetBackgroundImageResult {
 			Success = true,
-			ImageId = imageId.ToString()
+			ImageId = result.ImageId.ToString(),
+			Package = result.Package,
+			Skipped = result.Skipped.Count > 0 ? result.Skipped : null
 		};
 	}
 

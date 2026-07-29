@@ -580,6 +580,7 @@ public class BindingsModule {
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<UploadImageTool>();
 		services.AddTransient<SetBackgroundImageTool>();
+		services.AddTransient<SetLogoTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
@@ -684,6 +685,7 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
+		services.AddTransient<IBrandingBindingService, BrandingBindingService>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();
@@ -735,8 +737,10 @@ public class BindingsModule {
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
 		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<IPanelIconBackgroundFeatureManager, PanelIconBackgroundFeatureManager>();
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
+		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();

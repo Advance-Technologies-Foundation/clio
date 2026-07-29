@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -10,7 +11,7 @@ namespace Clio.Command;
 /// Options for the <c>set-background-image</c> command.
 /// </summary>
 [Verb("set-background-image",
-	HelpText = "Set an image as the environment's shell background, from a local file or an uploaded image id")]
+	HelpText = "Set an image as the environment's shell background and bind it into a package as data bindings")]
 public class SetBackgroundImageOptions : RemoteCommandOptions {
 
 	/// <summary>
@@ -28,6 +29,20 @@ public class SetBackgroundImageOptions : RemoteCommandOptions {
 	[Option("file", Required = false,
 		HelpText = "Path to a local image file to upload and set as the background in one step. Pass either this or the image-id argument.")]
 	public string File { get; set; }
+
+	/// <summary>Package that receives the background data bindings.</summary>
+	[Option("package", Required = false, Default = BrandingBindingService.DefaultPackageName,
+		HelpText = "Package that receives the background data bindings (default: " +
+			BrandingBindingService.DefaultPackageName + ")")]
+	public string PackageName { get; set; }
+
+	/// <summary>
+	/// When true, leaves the <c>UsePanelIconBackground</c> feature untouched instead of turning it off.
+	/// </summary>
+	[Option("keep-icon-background", Required = false,
+		HelpText = "Keep the panel icon background feature (UsePanelIconBackground) as is instead of turning " +
+			"it off. While the feature is on, the panel's own icon background can hide the shell background.")]
+	public bool KeepIconBackground { get; set; }
 }
 
 /// <summary>
@@ -35,17 +50,24 @@ public class SetBackgroundImageOptions : RemoteCommandOptions {
 /// </summary>
 public sealed record SetBackgroundResult {
 
-	/// <summary>Whether the background was set.</summary>
+	/// <summary>Whether the background was set and bound.</summary>
 	public bool Success { get; private init; }
 
 	/// <summary>The id of the image the background points at; <see cref="Guid.Empty"/> on failure.</summary>
 	public Guid ImageId { get; private init; }
 
+	/// <summary>The package the background data was bound into; null when the run failed before binding.</summary>
+	public string Package { get; private init; }
+
+	/// <summary>Delivery gaps reported by the binding reconcile (missing rows, dropped bindings).</summary>
+	public IReadOnlyList<string> Skipped { get; private init; } = [];
+
 	/// <summary>The failure message; null on success.</summary>
 	public string Error { get; private init; }
 
-	/// <summary>Creates a success result carrying the applied image id.</summary>
-	public static SetBackgroundResult Successful(Guid imageId) => new() { Success = true, ImageId = imageId };
+	/// <summary>Creates a success result carrying the applied image id, the bound package, and any delivery gaps.</summary>
+	public static SetBackgroundResult Successful(Guid imageId, string package, IReadOnlyList<string> skipped) =>
+		new() { Success = true, ImageId = imageId, Package = package, Skipped = skipped };
 
 	/// <summary>Creates a failure result carrying the diagnostic message.</summary>
 	public static SetBackgroundResult Failure(string error) => new() { Success = false, Error = error };
@@ -73,17 +95,22 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly ISysImageUploader _sysImageUploader;
+	private readonly IPanelIconBackgroundFeatureManager _panelIconBackgroundFeature;
+	private readonly IBrandingBindingService _brandingBindingService;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="SetBackgroundImageCommand"/> class.
 	/// </summary>
 	public SetBackgroundImageCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, ISysSettingsManager sysSettingsManager,
-		ISysImageUploader sysImageUploader)
+		ISysImageUploader sysImageUploader, IPanelIconBackgroundFeatureManager panelIconBackgroundFeature,
+		IBrandingBindingService brandingBindingService)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_sysSettingsManager = sysSettingsManager;
 		_sysImageUploader = sysImageUploader;
+		_panelIconBackgroundFeature = panelIconBackgroundFeature;
+		_brandingBindingService = brandingBindingService;
 	}
 
 	/// <summary>
@@ -107,7 +134,46 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			return SetBackgroundResult.Failure(
 				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting failed.");
 		}
-		return SetBackgroundResult.Successful(imageId);
+		if (options.KeepIconBackground) {
+			Logger.WriteInfo($"The {PanelIconBackgroundFeatureManager.FeatureCode} feature was left as is " +
+				"(keep-icon-background); while it is on, the panel's icon background can hide the shell background.");
+		} else {
+			DisablePanelIconBackground();
+		}
+		return BindBackground(imageId, options.PackageName);
+	}
+
+	/// <summary>
+	/// Reconciles the background data bindings in the target package after a successful apply, so the
+	/// background ships with the package (creating the bindings when they do not exist yet, updating them
+	/// when they do). The apply cannot be rolled back at this point, so a binding failure is reported as a
+	/// failure that names the applied image and asks for a re-run rather than pretending nothing happened.
+	/// </summary>
+	private SetBackgroundResult BindBackground(Guid imageId, string packageName) {
+		string package = BrandingBindingService.ResolvePackageName(packageName);
+		try {
+			BrandingScopeReport report = _brandingBindingService.BindBackground(package);
+			return SetBackgroundResult.Successful(imageId, package, report.Skipped);
+		} catch (Exception exception) {
+			return SetBackgroundResult.Failure(
+				$"The background was applied (image {imageId}), but binding it into package '{package}' failed: " +
+				$"{exception.Message} Re-run the command to retry the binding.");
+		}
+	}
+
+	/// <summary>
+	/// Turns the <c>UsePanelIconBackground</c> feature off for everyone so the just-applied background image is
+	/// not overridden by the panel's own icon background. Best-effort: the background is already applied and
+	/// cannot be cleanly rolled back, so a failure here is surfaced as a warning rather than failing the apply.
+	/// </summary>
+	private void DisablePanelIconBackground() {
+		try {
+			_panelIconBackgroundFeature.DisableForAllUsers();
+		} catch (Exception exception) {
+			Logger.WriteWarning(
+				$"The background image was applied, but turning off the {PanelIconBackgroundFeatureManager.FeatureCode} " +
+				$"feature failed, so the panel may still hide it: {exception.Message}");
+		}
 	}
 
 	/// <summary>
@@ -164,6 +230,10 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		if (result.Success) {
 			Logger.WriteInfo($"Image {result.ImageId} is set as the shell background. " +
 				"Users see it after a page refresh.");
+			Logger.WriteInfo($"Background data bound into package '{result.Package}'.");
+			foreach (string skipped in result.Skipped) {
+				Logger.WriteInfo($"Skipped: {skipped}.");
+			}
 			return;
 		}
 		CommandSuccess = false;

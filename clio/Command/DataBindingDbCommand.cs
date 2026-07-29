@@ -672,14 +672,25 @@ internal sealed class DataBindingDbService(
 		string entitySchemaName,
 		DataBindingDbSchema schema,
 		List<string> boundRecordIds,
-		Guid? existingBindingUId = null) {
+		Guid? existingBindingUId = null,
+		DataBindingColumnPolicy? columnPolicy = null) {
 		string schemaDataUId = (existingBindingUId ?? Guid.NewGuid()).ToString();
+
+		HashSet<string>? keyColumns = null;
+		HashSet<string>? forceUpdateColumns = null;
+		if (columnPolicy is not null) {
+			keyColumns = new HashSet<string>(columnPolicy.KeyColumns, StringComparer.OrdinalIgnoreCase);
+			forceUpdateColumns = new HashSet<string>(columnPolicy.ForceUpdateColumns, StringComparer.OrdinalIgnoreCase);
+			ValidateColumnPolicy(schema, keyColumns, forceUpdateColumns);
+		}
 
 		var columnsArray = schema.SchemaColumns.Select(col => new {
 			id = Guid.NewGuid().ToString(),
 			uId = col.UId.ToString(),
-			isForceUpdate = false,
-			isKey = string.Equals(col.Name, "Id", StringComparison.OrdinalIgnoreCase),
+			isForceUpdate = forceUpdateColumns?.Contains(col.Name) ?? false,
+			isKey = keyColumns is null
+				? string.Equals(col.Name, "Id", StringComparison.OrdinalIgnoreCase)
+				: keyColumns.Contains(col.Name),
 			name = col.Name,
 			caption = col.Name,
 			dataValueTypeUId = ResolveBindingDataTypeValueUId(col).ToString()
@@ -700,6 +711,44 @@ internal sealed class DataBindingDbService(
 		};
 
 		return JsonSerializer.Serialize(payload);
+	}
+
+	/// <summary>
+	/// Validates a <see cref="DataBindingColumnPolicy"/> against the projected binding schema: at least one
+	/// key column, every named column present in the schema, and no column both a key and force-updated (a
+	/// key is a match column, so force-updating it is contradictory). Throws
+	/// <see cref="InvalidOperationException"/> with the offending columns so the caller surfaces a precise
+	/// cause instead of the platform rejecting an opaque SaveSchema payload.
+	/// </summary>
+	private static void ValidateColumnPolicy(
+		DataBindingDbSchema schema,
+		HashSet<string> keyColumns,
+		HashSet<string> forceUpdateColumns) {
+		if (keyColumns.Count == 0) {
+			throw new InvalidOperationException("A data-binding column policy must declare at least one key column.");
+		}
+
+		HashSet<string> schemaColumnNames = schema.SchemaColumns
+			.Select(col => col.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		List<string> missingColumns = keyColumns.Concat(forceUpdateColumns)
+			.Where(name => !schemaColumnNames.Contains(name))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		if (missingColumns.Count > 0) {
+			throw new InvalidOperationException(
+				$"Data-binding column policy references columns not present in schema '{schema.SchemaName}': " +
+				$"{string.Join(", ", missingColumns)}.");
+		}
+
+		List<string> keyedAndForced = keyColumns
+			.Where(forceUpdateColumns.Contains)
+			.ToList();
+		if (keyedAndForced.Count > 0) {
+			throw new InvalidOperationException(
+				"A data-binding key column cannot also be force-updated: " +
+				$"{string.Join(", ", keyedAndForced)}.");
+		}
 	}
 
 	private static string BuildDeleteQueryBody(string rootSchemaName, string keyValue) {
@@ -1288,6 +1337,20 @@ internal sealed record DataBindingDbSchema(
 /// Holds resolved package identity — UId and Name — needed by the SaveSchema endpoint.
 /// </summary>
 internal sealed record PackageRef(Guid UId, string Name);
+
+/// <summary>
+/// Per-column install-time matching policy for a DB-first binding: <see cref="KeyColumns"/> are the columns
+/// the platform matches on when installing the binding onto a target environment, and
+/// <see cref="ForceUpdateColumns"/> are the columns whose values overwrite the target row on install.
+/// Without a policy a binding keys on the primary <c>Id</c> column and force-updates nothing — correct for
+/// clio-generated rows whose Ids have no counterpart on the target. A policy is required to deliver an
+/// environment-random row (for example a <c>SysSettingsValue</c> All-Users default row, whose Id differs per
+/// environment) by its natural key with a forced value update, so install merges the existing row instead of
+/// inserting a duplicate.
+/// </summary>
+internal sealed record DataBindingColumnPolicy(
+	IReadOnlyCollection<string> KeyColumns,
+	IReadOnlyCollection<string> ForceUpdateColumns);
 
 /// <summary>
 /// Result of a <see cref="DataBindingDbService.CreateBinding"/> operation.

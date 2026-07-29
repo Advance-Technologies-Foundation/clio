@@ -60,7 +60,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId));
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "Custom", []));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -156,7 +156,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId));
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "Custom", []));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -233,6 +233,56 @@ public class SetBackgroundImageToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards the package and keep-icon-background arguments into the command options, so the binding target and the feature opt-out reach the command.")]
+	public void SetBackgroundImage_ShouldForwardPackageAndKeepIconBackground() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "UsrMyApp", []));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString(),
+			Package: "UsrMyApp", KeepIconBackground: true));
+
+		// Assert
+		commandResolver.Received(1).Resolve<SetBackgroundImageCommand>(Arg.Is<SetBackgroundImageOptions>(options =>
+			options.PackageName == "UsrMyApp" && options.KeepIconBackground));
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the bound package and the reconcile's skipped entries on the structured result, because the skipped entries are the only place a delivery gap is reported.")]
+	public void SetBackgroundImage_ShouldCarryPackageAndSkippedEntries_OnTheResult() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "Custom",
+			["UsePanelIconBackground: no All-Users feature state on this environment"]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Package.Should().Be("Custom",
+			because: "the caller must learn which package the background data was bound into");
+		result.Skipped.Should().ContainSingle(entry => entry.Contains("UsePanelIconBackground"),
+			because: "the delivery gaps the reconcile reported must reach the MCP caller for relay to the user");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeSetBackgroundImageCommand : SetBackgroundImageCommand {
 		private readonly SetBackgroundResult _result;
 
@@ -241,8 +291,9 @@ public class SetBackgroundImageToolTests {
 		public FakeSetBackgroundImageCommand(SetBackgroundResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
-				Substitute.For<ISysImageUploader>()) {
-			_result = result ?? SetBackgroundResult.Successful(ImageId);
+				Substitute.For<ISysImageUploader>(), Substitute.For<IPanelIconBackgroundFeatureManager>(),
+				Substitute.For<IBrandingBindingService>()) {
+			_result = result ?? SetBackgroundResult.Successful(ImageId, "Custom", []);
 		}
 
 		public override SetBackgroundResult SetBackground(SetBackgroundImageOptions options) {

@@ -699,29 +699,46 @@ Companion surfaces:
 
 ### 13. Branding
 
-These tools brand a Creatio app: the product logos and the shell background image.
-Both act on a registered environment (`environment-name`) and require the `CanCustomizeBranding`
-license (precheck with `check-theming-access`). All tools take a single `args` object with
-kebab-case fields.
+These tools brand a Creatio app: the product logos and the shell background image. Each apply tool
+also binds the applied branding into a package (data bindings) so it travels with an install.
+All act on a registered environment (`environment-name`). Applying branding requires the
+`CanCustomizeBranding` license (precheck with `check-theming-access`); the binding side additionally
+needs an editable (unlocked) target package and rights to modify package configuration. All tools
+take a single `args` object with kebab-case fields.
 
 - `upload-image`
   Upload a local image file to the environment and return the created `image-id`. Additive only
   (`Destructive=false`) — each call stores a new image. Requires forms-auth credentials
   (login/password) on the environment.
 - `set-background-image`
-  Set an image as the environment's shell background for all users — pass exactly one of `file`
-  (a local image, uploaded and applied in one call) or `image-id` (an image already uploaded with
-  `upload-image`). A confirmed write (`Destructive=true`: it replaces the currently configured
-  background, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued
-  through `clio-run-destructive`). Idempotent — re-applying the same image converges to the same
-  state.
+  Set an image as the environment's shell background for all users and bind it into a package —
+  pass exactly one of `file` (a local image, uploaded and applied in one call) or `image-id` (an
+  image already uploaded with `upload-image`); `package` names the binding target (default
+  `Custom`), and `keep-icon-background=true` leaves the `UsePanelIconBackground` feature untouched
+  instead of turning it off. A confirmed write (`Destructive=true`: it replaces the currently
+  configured background, so the MCP host prompts before it runs; on the lazy tool surface it is
+  re-issued through `clio-run-destructive`). Idempotent — re-applying the same image converges to
+  the same state and refreshes the packaged snapshot. The `skipped` entries on the result are where
+  delivery gaps (a `SecureText` setting, a customized gallery tag) are surfaced.
+- `set-logo`
+  Apply the product logos from local image files and bind them into a package — pass at least one
+  slot: `logo` (login page), `menu-logo` (main menu), `configuration-logo` (configuration page),
+  `dark-logo` (the Freedom UI top panel — a dark surface, pass the white/light variant);
+  `package` names the binding target (default `Custom`).
+  The stock splash logo is suppressed automatically. A confirmed write (`Destructive=true`: the
+  logos change for all users and cannot be automatically reverted; re-issued through
+  `clio-run-destructive` on the lazy surface). Idempotent — re-applying the same files converges.
+  Only the slots passed (plus slots shipped by an earlier run) are bound, so an unbranded slot can
+  never overwrite the install target's own logo.
 
 What an external AI can practically do here:
 
 - apply a shell background in one call: `set-background-image` with the local file (or with the
-  `image-id` of an already-uploaded image)
-- write the four product logo slots as Binary sys settings (`update-sys-setting` +
-  `value-file-path`) — the slot list and rules live in the `branding` guidance
+  `image-id` of an already-uploaded image) — the background data lands in the target package in the
+  same call
+- apply the product logos in one call: `set-logo` with a file per branded slot — the logo data
+  lands in the target package in the same call; the slot list and rules live in the `branding`
+  guidance, including the package-notification contract (name the target package to the user)
 
 Companion surfaces:
 

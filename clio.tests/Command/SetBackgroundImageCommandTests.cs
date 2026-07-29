@@ -19,6 +19,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ISysSettingsManager _sysSettingsManager;
 	private ISysImageUploader _sysImageUploader;
+	private IPanelIconBackgroundFeatureManager _panelIconBackgroundFeature;
+	private IBrandingBindingService _brandingBindingService;
 	private ILogger _logger;
 	private SetBackgroundImageCommand _command;
 
@@ -27,6 +29,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_command = Container.GetRequiredService<SetBackgroundImageCommand>();
 		_logger = Substitute.For<ILogger>();
 		_command.Logger = _logger;
+		_brandingBindingService.BindBackground(Arg.Any<string>())
+			.Returns(new BrandingScopeReport(BrandingScope.Background, [], [], false));
 	}
 
 	public override void TearDown() {
@@ -34,6 +38,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_serviceUrlBuilder.ClearReceivedCalls();
 		_sysSettingsManager.ClearReceivedCalls();
 		_sysImageUploader.ClearReceivedCalls();
+		_panelIconBackgroundFeature.ClearReceivedCalls();
+		_brandingBindingService.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -44,10 +50,14 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_sysImageUploader = Substitute.For<ISysImageUploader>();
+		_panelIconBackgroundFeature = Substitute.For<IPanelIconBackgroundFeatureManager>();
+		_brandingBindingService = Substitute.For<IBrandingBindingService>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient<IServiceUrlBuilder>(_ => _serviceUrlBuilder);
 		containerBuilder.AddTransient<ISysSettingsManager>(_ => _sysSettingsManager);
 		containerBuilder.AddTransient<ISysImageUploader>(_ => _sysImageUploader);
+		containerBuilder.AddTransient<IPanelIconBackgroundFeatureManager>(_ => _panelIconBackgroundFeature);
+		containerBuilder.AddTransient<IBrandingBindingService>(_ => _brandingBindingService);
 	}
 
 	private void ArrangeImageExists(bool exists = true) {
@@ -60,10 +70,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	private static string Rows(bool withRow) =>
 		withRow ? $"{{\"value\":[{{\"Id\":\"{Guid.NewGuid()}\"}}]}}" : "{\"value\":[]}";
 
-	// The membership filter must use navigation paths (Entity/Id, Tag/Id): flat EntityId/TagId
-	// names in $filter fail on the platform with "Column by path ... not found" (verified live).
-	// The registration is verified by a read-back after the insert POST, so each response in
-	// "sequence" answers one consecutive membership GET.
 	private void ArrangeGalleryReads(params bool[] sequence) {
 		string[] responses = System.Linq.Enumerable.ToArray(
 			System.Linq.Enumerable.Select(sequence, withRow => Rows(withRow)));
@@ -77,7 +83,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		if (alreadyRegistered) {
 			ArrangeGalleryReads(true);
 		} else {
-			// Not registered before the insert; the post-insert read-back confirms the new row.
 			ArrangeGalleryReads(false, true);
 		}
 	}
@@ -292,8 +297,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_applicationClient.ExecutePostRequest("odata/SysImageInTag",
 				Arg.Is<string>(body => body.Contains(CustomTagId.ToString())))
 			.Returns($"{{\"Id\":\"{Guid.NewGuid()}\"}}");
-		// Seeded tag: pre-check empty, read-back still empty (the insert was rejected);
-		// resolved tag: pre-check empty, read-back confirms the row.
 		ArrangeGalleryReads(false, false, false, true);
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
@@ -332,7 +335,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	public void Execute_ShouldFail_WhenPostLooksSuccessfulButReadBackShowsNoRow() {
 		// Arrange
 		ArrangeImageExists();
-		// Pre-check and read-back stay empty for both the seeded and the resolved tag.
 		ArrangeGalleryReads(false, false, false, false);
 		_applicationClient.ExecuteGetRequest(
 				Arg.Is<string>(url => url.StartsWith("odata/SysImageTag?")))
@@ -368,5 +370,194 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		exitCode.Should().Be(1, because: "the background is not applied until the configuration write succeeds");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains(SetBackgroundImageCommand.BackgroundConfigCode)));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Turns the UsePanelIconBackground feature off for everyone after the background is applied, so the panel does not hide the shell background.")]
+	public void Execute_ShouldDisablePanelIconBackground_AfterApplyingBackground() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the background was applied and the feature was turned off");
+		_panelIconBackgroundFeature.Received(1).DisableForAllUsers();
+	}
+
+	[Test, Category("Unit")]
+	[Description("Does not touch the panel-icon-background feature when the background is not applied (the configuration write failed).")]
+	public void Execute_ShouldNotDisablePanelIconBackground_WhenBackgroundNotApplied() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(false);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_panelIconBackgroundFeature.DidNotReceive().DisableForAllUsers();
+	}
+
+	[Test, Category("Unit")]
+	[Description("Still reports success when the feature turn-off fails: the background is already applied, so the failure is a warning, not a command failure.")]
+	public void Execute_ShouldSucceedWithWarning_WhenFeatureTurnOffFails() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		_panelIconBackgroundFeature.When(feature => feature.DisableForAllUsers())
+			.Do(_ => throw new InvalidOperationException("feature service unavailable"));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the background is applied and cannot be cleanly rolled back, so a failed feature toggle is only a warning");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains(PanelIconBackgroundFeatureManager.FeatureCode)));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Leaves the UsePanelIconBackground feature untouched when keep-icon-background is passed, so the caller can opt out of the turn-off.")]
+	public void Execute_ShouldNotDisablePanelIconBackground_WhenKeepIconBackgroundIsPassed() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString(), KeepIconBackground = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "keeping the feature as is must not fail the apply");
+		_panelIconBackgroundFeature.DidNotReceive().DisableForAllUsers();
+	}
+
+	[Test, Category("Unit")]
+	[Description("Binds the background into the default Custom package when the caller names no package.")]
+	public void Execute_ShouldBindBackgroundIntoCustomPackage_WhenNoPackageIsNamed() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the apply and the default-package bind both succeeded");
+		_brandingBindingService.Received(1).BindBackground("Custom");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Binds the background into the caller-named package instead of the default.")]
+	public void Execute_ShouldBindBackgroundIntoNamedPackage_WhenPackageIsPassed() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		_brandingBindingService.BindBackground("UsrMyApp")
+			.Returns(new BrandingScopeReport(BrandingScope.Background, ["background image"], [], false));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString(), PackageName = "UsrMyApp" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a user-named package must be honored");
+		_brandingBindingService.Received(1).BindBackground("UsrMyApp");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Reports the bound package in the run output so the user learns where the background data landed.")]
+	public void Execute_ShouldNameTheBoundPackage_InTheRunOutput() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("bound into package 'Custom'")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails with a message naming the applied image and the package when the apply succeeded but the binding failed, so a delivery failure is never silent.")]
+	public void Execute_ShouldFailNamingTheAppliedImage_WhenBindingFails() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		_brandingBindingService.BindBackground(Arg.Any<string>())
+			.Throws(new InvalidOperationException("package is locked"));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the user asked for a background that ships with the package, and the package part failed");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains(ImageId.ToString()) && message.Contains("package is locked")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Never runs the binding when the background apply itself failed, so a broken apply cannot ship stale package data.")]
+	public void Execute_ShouldNotBind_WhenApplyFails() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(false);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_brandingBindingService.DidNotReceiveWithAnyArgs().BindBackground(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Relays the binding reconcile's skipped entries in the run output, because they are the only place a delivery gap is reported.")]
+	public void Execute_ShouldRelayTheSkippedEntries_FromTheBindingReport() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		_brandingBindingService.BindBackground(Arg.Any<string>())
+			.Returns(new BrandingScopeReport(BrandingScope.Background, ["background image"],
+				["UsePanelIconBackground: no All-Users feature state on this environment"], false));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Skipped:") && message.Contains("UsePanelIconBackground")));
 	}
 }

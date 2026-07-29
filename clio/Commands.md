@@ -599,7 +599,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="upload-image"></a>
 - [`upload-image`](docs/commands/upload-image.md) - Upload a local image to an environment and print its image id
 <a id="set-background-image"></a>
-- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background, from a local file or an uploaded image id
+- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background and bind it into a package as data bindings
+<a id="set-logo"></a>
+- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos from local image files and bind them into a package as data bindings
 
 ## Record rights
 

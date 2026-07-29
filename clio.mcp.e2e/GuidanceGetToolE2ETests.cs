@@ -833,7 +833,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical branding guide")]
-	[Description("Verifies get-guidance returns the branding article that carries the logo sys-setting slots, routes the shell-background flow through the dedicated upload-image and set-background-image tools, and routes the theme part of branding to the theming guide (ENG-92981).")]
+	[Description("Verifies get-guidance returns the branding article that routes the logo flow through set-logo (with the dark-background slot), routes the shell-background flow through the dedicated upload-image and set-background-image tools, and routes the theme part of branding to the theming guide (ENG-92981/ENG-93848).")]
 	public async Task GuidanceGet_Should_Return_Branding_Guide() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -858,8 +858,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Article.Text.Should().Contain("get-guidance name=theming",
 			because: "the branding guide must route the theme part of branding to the theming guide instead of restating it");
-		response.Article.Text.Should().Contain("CrtAppToolbarLogo",
-			because: "the logos section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		response.Article.Text.Should().Contain("set-logo",
+			because: "the logos section must route the logo flow through the dedicated apply-and-bind tool");
+		response.Article.Text.Should().Contain("dark-logo",
+			because: "the logos section must map the dark-background (Freedom UI top panel) slot");
 		response.Article.Text.Should().Contain("upload-image",
 			because: "the shell-background upload must route through the dedicated upload-image tool");
 		response.Article.Text.Should().NotContain("ImageAPIService",

@@ -333,6 +333,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
+			["set-logo"] = PassthroughClassification.NotApplicable,
 			["set-record-rights"] = PassthroughClassification.NotApplicable,
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
