@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E.Support.Configuration;
 
@@ -8,6 +9,16 @@ internal sealed class McpE2ESettings {
 	public string? ClioProcessPath { get; set; }
 
 	public Dictionary<string, string?> ProcessEnvironmentVariables { get; set; } = new();
+
+	/// <summary>
+	/// Overrides the <c>clientInfo</c> (Name/Version) that <see cref="Mcp.McpServerSession.StartAsync(McpE2ESettings,System.Threading.CancellationToken)"/>
+	/// sends during the MCP "initialize" handshake. <c>null</c> (the default) keeps the harness's
+	/// standard <c>clio.mcp.e2e</c>/<c>1.0.0</c> identity so every existing fixture is unaffected; set
+	/// this (for example from <see cref="Mcp.McpContractFixtureBase.ConfigureMcpServerSettings"/>) to
+	/// impersonate a specific real-world MCP client for tests that assert client-identity-dependent
+	/// server behavior (ENG-93885).
+	/// </summary>
+	public Implementation? ClientInfo { get; set; }
 
 	public SandboxSettings Sandbox { get; set; } = new();
 
