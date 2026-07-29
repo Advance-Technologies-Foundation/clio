@@ -152,6 +152,81 @@ public sealed class McpToolInvokerRegistryTests {
 			because: "list-pages is a read-only discovery tool and is not destructive");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies a read-only tool (list-pages) as retry-safe so the read-response deadline may bound it (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeTrue_WhenToolIsReadOnly() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(PageListTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeTrue(
+			because: "list-pages is ReadOnly = true, the canonical retry-safe read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies get-page (ReadOnly=false because it writes local .clio-pages files) as retry-safe: it is admitted by name because it reads from Creatio and a retry re-reads + overwrites (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeTrue_WhenToolIsGetPage() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(PageGetTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeTrue(
+			because: "get-page reads from Creatio (its ReadOnly=false only reflects the local file write), so it is retry-safe");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Excludes an idempotent, non-destructive SERVER write (add-package-dependency) from retry-safe classification so the read deadline never bounds a server write (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeFalse_WhenToolIsIdempotentServerWrite() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act — add-package-dependency is ReadOnly=false, Destructive=false, Idempotent=true.
+		bool retrySafe = registry.IsRetrySafe(AddPackageDependencyTool.AddPackageDependencyToolName);
+
+		// Assert
+		retrySafe.Should().BeFalse(
+			because: "an idempotent server write is not safe to retry concurrently while an abandoned first call is still mutating the server");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Excludes a destructive tool (sync-schemas) from retry-safe classification so it never gets the read deadline (it owns its own timeout contract) (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeFalse_WhenToolIsDestructive() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(SchemaSyncTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeFalse(
+			because: "sync-schemas is Destructive = true, so a 'safe to retry' timeout would be wrong");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails closed for an unknown tool so it is never bounded on the assumption it is safe to abandon (ENG-93373).")]
+	public void IsRetrySafe_ShouldFailClosed_WhenToolIsUnknown() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe("definitely-not-a-tool");
+
+		// Assert
+		retrySafe.Should().BeFalse(
+			because: "an unknown tool must not be assumed retry-safe");
+	}
+
 	// Two deliberately colliding tool types for the duplicate-name guard test below. They live in the
 	// TEST assembly, so the production catalog stays collision-free while the guard is still provable.
 	[McpServerToolType]

@@ -104,6 +104,67 @@ public sealed class McpDurableCallToolHandlerTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Dispatches a retry-safe unmatched tool through the read-response deadline wrapper on the happy path: the fast result passes through unchanged with the advisory attached (ENG-93373).")]
+	public async Task HandleAsync_ShouldExecuteThroughDeadline_WhenToolIsRetrySafe() {
+		// Arrange
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsDestructive("echo-tool").Returns(false);
+		_registry.IsRetrySafe("echo-tool").Returns(true);
+		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
+		CallToolResult toolResult = new() { Content = [new TextContentBlock { Text = "payload" }] };
+		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
+			.Returns(toolResult);
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		await _executor.Received(1).InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>());
+		result.Content.OfType<TextContentBlock>().Select(block => block.Text)
+			.Should().Contain(text => text.Contains("payload"),
+				because: "a fast retry-safe read must return its real payload through the deadline wrapper unchanged");
+		result.Content.OfType<TextContentBlock>().Select(block => block.Text)
+			.Should().Contain(text => text.Contains("[clio] Executed 'echo-tool'"),
+				because: "the deadline wrapper must not strip the forgiving-invocation advisory");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Bounds the durable/raw-name dispatch vector by the read-response deadline: when a retry-safe unmatched tool's work outlives the deadline, the handler returns a structured creatio-timeout envelope instead of hanging (ENG-93373, AC #7). Exercised via the internal readDeadline test seam so the timeout branch is covered without a 120 s wait.")]
+	public async Task HandleAsync_ShouldReturnStructuredTimeout_WhenRetrySafeWorkExceedsDeadline() {
+		// Arrange — a retry-safe unmatched tool whose native dispatch blocks well past the tiny deadline.
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsDestructive("echo-tool").Returns(false);
+		_registry.IsRetrySafe("echo-tool").Returns(true);
+		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
+		TimeSpan stopGuard = TimeSpan.FromSeconds(5);
+		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
+			.Returns(callInfo => new ValueTask<CallToolResult>(
+				Task.Delay(stopGuard, callInfo.Arg<CancellationToken>())
+					.ContinueWith(_ => new CallToolResult(), TaskScheduler.Default)));
+
+		// Act — a tiny deadline wins the race against the parked work.
+		CallToolResult result = await _sut.HandleAsync(
+			context, CancellationToken.None, TimeSpan.FromMilliseconds(50));
+
+		// Assert — the durable vector returned the bounded timeout envelope, not a hang.
+		result.IsError.Should().BeTrue(
+			because: "a timed-out retry-safe dispatch must be reported as an error result");
+		JsonElement structured = result.StructuredContent!.Value;
+		structured.GetProperty("error-class").GetString().Should().Be("creatio-timeout",
+			because: "the durable vector must emit the same machine-readable timeout token as the other dispatch paths");
+		structured.GetProperty("read-response-timed-out").GetBoolean().Should().BeTrue(
+			because: "the read envelope must be distinguishable from a write in-progress envelope");
+		structured.GetProperty("tool").GetString().Should().Be("echo-tool",
+			because: "the envelope must name the tool that timed out");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns confirmation-required with a ready-to-retry clio-run-destructive shape and does NOT execute, when the resolved tool is destructive.")]
 	public async Task HandleAsync_ShouldReturnConfirmationRequired_WhenToolIsDestructive() {
 		// Arrange

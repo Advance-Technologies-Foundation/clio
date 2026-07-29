@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
@@ -129,6 +131,136 @@ public sealed class RequestRegistrySnapshotTests {
 			because: "templateId must be resolved from the list-printables probe - pinned at the data layer, not as a guide-text substring");
 	}
 
+	[Test]
+	[Description("A detail response against the pinned payload must inline type definitions referenced ONLY through `keyType`/`valueType` strings — crt.OpenPageRequest's parameters map (valueType: JsonData, transitively JsonObject) and the RequestBindingConfig.params wiring hop (valueType: ...RequestParamBindingConfigValue...) — otherwise the response names types it never defines and stops being self-contained.")]
+	public void Pinned_Snapshot_Detail_Should_Inline_ValueType_Referenced_TypeDefinitions() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.OpenPageRequest", out RequestRegistryEntry? openPage).Should().BeTrue(
+			because: "crt.OpenPageRequest is the pinned entry whose parameters map declares valueType: JsonData");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			openPage!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the parameter-level valueType reference resolves...
+		detail.References.Should().NotBeNull(
+			because: "crt.OpenPageRequest references named types, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("JsonData",
+			because: "parameters.valueType names JsonData, and a named type must ship its definition");
+		// ...transitively through the resolved type's own union string...
+		detail.References.TypeDefinitions.Should().ContainKey("JsonObject",
+			because: "JsonData's union references JsonObject, so the closure must pull it through");
+		// ...and the wiring chain broken at the same valueType hop heals for every request.
+		detail.References.TypeDefinitions.Should().ContainKey("RequestParamBindingConfigValue",
+			because: "RequestBindingConfig.params references its value type only through a valueType string");
+		// Following two more property names must not degrade the closure into "merge the whole global bag":
+		// over-inclusion on real fixture data is the risk the widened tokenizer introduces.
+		detail.References.TypeDefinitions.Should().NotContainKey("FilterGroup",
+			because: "FilterGroup is reachable only from crt.RunBusinessProcessRequest.filters - crt.OpenPageRequest must not pull it in");
+		detail.References.TypeDefinitions.Should().NotContainKey("SortColumnOptions",
+			because: "sorting types belong to other requests; the closure must stay scoped to what this entry references");
+		detail.References.TypeDefinitions.Should().NotContainKey("DefaultAttributeValue",
+			because: "DefaultAttributeValue is crt.CreateRecordRequest's defaultValues item type, unreachable from crt.OpenPageRequest");
+	}
+
+	[Test]
+	[Description("Content-level pin for the crt.CreateRecordRequest entry this fixture refresh added: defaultValues must surface as an array of DefaultAttributeValue with the item type's schema inlined through the closure, defaultValues itself must stay optional, and none of the three record-target parameters may carry a required flag — the producer models 'at least one of entityName / itemsAttributeName / entityPageName' in prose because a per-parameter flag cannot express a disjunctive contract.")]
+	public void Pinned_Snapshot_Detail_Should_Pin_CreateRecordRequest_DefaultValues_Content() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.CreateRecordRequest", out RequestRegistryEntry? createRecord).Should().BeTrue(
+			because: "crt.CreateRecordRequest is one of the record-page entries this fixture refresh added");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			createRecord!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the authorable surface carries exactly the four authored parameters.
+		detail.Parameters.Should().NotBeNull(
+			because: "crt.CreateRecordRequest declares authorable parameters");
+		detail.Parameters!.Keys.Should().BeEquivalentTo(
+			["defaultValues", "entityName", "entityPageName", "itemsAttributeName"],
+			because: "the pinned entry authors exactly these parameters — a lost or extra key means the fixture and the producer diverged");
+		// Assert — defaultValues content: an optional array whose items are DefaultAttributeValue entries.
+		JsonElement defaultValues = detail.Parameters["defaultValues"];
+		defaultValues.GetProperty("type").GetString().Should().Be("array",
+			because: "defaultValues is a list of column pre-fills, not a single value");
+		defaultValues.GetProperty("items").GetProperty("type").GetString().Should().Be("DefaultAttributeValue",
+			because: "each entry follows the `{ attributeName, value }` contract named by the item type");
+		defaultValues.TryGetProperty("required", out _).Should().BeFalse(
+			because: "defaultValues is optional — omitting it opens the page with the entity's own defaults");
+		// Assert — the disjunctive target contract stays prose, never per-parameter required flags.
+		foreach (string targetParameter in new[] { "entityName", "entityPageName", "itemsAttributeName" }) {
+			detail.Parameters[targetParameter].TryGetProperty("required", out _).Should().BeFalse(
+				because: $"'{targetParameter}' alone is not required — the contract is 'at least one of the three', "
+					+ "and a per-parameter required flag would misstate it");
+		}
+		// Assert — the item type named by defaultValues is inlined, so the response stays self-contained...
+		detail.References.Should().NotBeNull(
+			because: "the entry references named types, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("DefaultAttributeValue",
+			because: "a named item type must ship its definition on the same response");
+		JsonElement attributeName = detail.References.TypeDefinitions!["DefaultAttributeValue"]
+			.GetProperty("fields").GetProperty("attributeName");
+		attributeName.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "each defaultValues entry must name the column it pre-fills");
+		// ...and the closure stays scoped: the mobile seeding twin must not ride along.
+		detail.References.TypeDefinitions.Should().NotContainKey("ModelDefaultValue",
+			because: "ModelDefaultValue is the model-seeding type reached from crt.OpenPageRequest's modelInitConfigs, "
+				+ "unreachable from crt.CreateRecordRequest on the web flavor");
+	}
+
+	[Test]
+	[Description("Content-level pin for the crt.UpdateRecordRequest entry this fixture refresh added: recordId must carry required:true and the 'string | number' union (0 is a valid Id, so number must not be dropped from the union), while entityName stays flag-free because it is disjunctively required with itemsAttributeName.")]
+	public void Pinned_Snapshot_Detail_Should_Pin_UpdateRecordRequest_RecordId_Content() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.UpdateRecordRequest", out RequestRegistryEntry? updateRecord).Should().BeTrue(
+			because: "crt.UpdateRecordRequest is one of the record-page entries this fixture refresh added");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			updateRecord!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the authorable surface carries exactly the three authored parameters.
+		detail.Parameters.Should().NotBeNull(
+			because: "crt.UpdateRecordRequest declares authorable parameters");
+		detail.Parameters!.Keys.Should().BeEquivalentTo(
+			["entityName", "itemsAttributeName", "recordId"],
+			because: "the pinned entry authors exactly these parameters — a lost or extra key means the fixture and the producer diverged");
+		// Assert — recordId content: the one genuinely required parameter, with the full Id union.
+		JsonElement recordId = detail.Parameters["recordId"];
+		recordId.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "the handler shows a settings error and opens nothing without a recordId");
+		recordId.GetProperty("type").GetString().Should().Be("string | number",
+			because: "0 is a valid Id, so the number alternative must survive on the wire");
+		// Assert — the disjunctive target contract stays prose, never per-parameter required flags.
+		foreach (string targetParameter in new[] { "entityName", "itemsAttributeName" }) {
+			detail.Parameters[targetParameter].TryGetProperty("required", out _).Should().BeFalse(
+				because: $"'{targetParameter}' alone is not required — the contract is 'at least one of the two', "
+					+ "and a per-parameter required flag would misstate it");
+		}
+	}
+
 	private const string MobileSnapshotRelativePath = "Command/McpServer/Fixtures/MobileRequestRegistry.live-snapshot.json";
 
 	[Test]
@@ -196,6 +328,209 @@ public sealed class RequestRegistrySnapshotTests {
 		detail.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
 			because: "every request is wired through RequestBindingConfig, so the mobile detail inlines its schema");
 	}
+
+	[Test]
+	[Description("The MOBILE counterpart of the valueType closure pin, on the flavor whose parameter surface differs: mobile crt.OpenPageRequest declares parameters as Record<string, unknown> (the web flavor uses Record<string, JsonData>), so the closure must inline what the entry really reaches - the items type behind modelInitConfigs and the wiring chain behind RequestBindingConfig.params' valueType - while a lowercase `unknown` value type contributes nothing and unrelated globals stay out.")]
+	public void Pinned_Mobile_Snapshot_Detail_Should_Resolve_TypeDefinitions_For_The_Mobile_Parameter_Shape() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, MobileSnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.OpenPageRequest", out RequestRegistryEntry? openPage).Should().BeTrue(
+			because: "crt.OpenPageRequest ships in the pinned mobile payload");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			openPage!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — everything the mobile entry genuinely reaches is inlined.
+		detail.References.Should().NotBeNull(
+			because: "the mobile entry references named types, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("ModelInitConfig",
+			because: "modelInitConfigs names its element type through items.type");
+		detail.References.TypeDefinitions.Should().ContainKey("ModelDefaultValue",
+			because: "ModelInitConfig.defaultValues reaches ModelDefaultValue transitively");
+		detail.References.TypeDefinitions.Should().ContainKey("RequestParamBindingConfigValue",
+			because: "the mobile RequestBindingConfig.params also names its value type only through a valueType string");
+		detail.References.TypeDefinitions.Should().ContainKey("RequestParamsBindingConfig",
+			because: "the same valueType union names the nested params config");
+
+		// Assert — the mobile-specific parameter shape stays honest: `unknown` is a built-in, and
+		// JsonData (the web value type for the same parameter) is not published on mobile at all.
+		detail.References.TypeDefinitions.Should().NotContainKey("JsonData",
+			because: "mobile declares parameters as Record<string, unknown>; JsonData is a web-only type definition");
+		detail.References.TypeDefinitions.Should().NotContainKey("SortColumnOptions",
+			because: "sorting types are reachable only from crt.RunBusinessProcessRequest on mobile");
+	}
+
+	[Test]
+	[Description("Content-level pin for the MOBILE crt.CreateRecordRequest entry this fixture refresh added, on the exact points where it diverges from the web twin: defaultValues items are ModelDefaultValue (not the web-only DefaultAttributeValue), the mobile-only preventCardClose boolean is present, and the web-only entityPageName / itemsAttributeName parameters are absent because mobile resolves the entity through a page preprocessor instead.")]
+	public void Pinned_Mobile_Snapshot_Detail_Should_Pin_CreateRecordRequest_Mobile_Divergence() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, MobileSnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.CreateRecordRequest", out RequestRegistryEntry? createRecord).Should().BeTrue(
+			because: "crt.CreateRecordRequest is one of the record-page entries the mobile fixture refresh added");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			createRecord!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the mobile authorable surface: no entityPageName / itemsAttributeName, plus the mobile-only flag.
+		detail.Parameters.Should().NotBeNull(
+			because: "the mobile crt.CreateRecordRequest declares authorable parameters");
+		detail.Parameters!.Keys.Should().BeEquivalentTo(
+			["defaultValues", "entityName", "preventCardClose"],
+			because: "mobile resolves the entity through a page preprocessor, so the web-only target parameters "
+				+ "must not appear, while preventCardClose exists only on mobile");
+		// Assert — defaultValues content: same array shape as web, but the mobile item type.
+		JsonElement defaultValues = detail.Parameters["defaultValues"];
+		defaultValues.GetProperty("type").GetString().Should().Be("array",
+			because: "defaultValues is a list of attribute pre-fills on mobile too");
+		defaultValues.GetProperty("items").GetProperty("type").GetString().Should().Be("ModelDefaultValue",
+			because: "the mobile flavor seeds through ModelDefaultValue, not the web-only DefaultAttributeValue");
+		detail.Parameters["preventCardClose"].GetProperty("type").GetString().Should().Be("boolean",
+			because: "preventCardClose toggles the add-then-edit reopen behavior");
+		// Assert — the item type is inlined and the web twin's item type stays out.
+		detail.References.Should().NotBeNull(
+			because: "the mobile entry references named types, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("ModelDefaultValue",
+			because: "a named item type must ship its definition on the same response");
+		detail.References.TypeDefinitions.Should().NotContainKey("ModelInitConfig",
+			because: "ModelInitConfig belongs to crt.OpenPageRequest's modelInitConfigs; crt.CreateRecordRequest must not pull it in");
+	}
+
+	[Test]
+	[Description("Content-level pin for the MOBILE crt.UpdateRecordRequest entry this fixture refresh added, on the exact points where it diverges from the web twin: recordId is required but typed plain 'string' (no `| number` union on mobile), and the web-only itemsAttributeName parameter is absent because mobile resolves the entity through a page preprocessor instead.")]
+	public void Pinned_Mobile_Snapshot_Detail_Should_Pin_UpdateRecordRequest_Mobile_Divergence() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, MobileSnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.UpdateRecordRequest", out RequestRegistryEntry? updateRecord).Should().BeTrue(
+			because: "crt.UpdateRecordRequest is one of the record-page entries the mobile fixture refresh added");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			updateRecord!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the mobile authorable surface: no itemsAttributeName resolution on mobile.
+		detail.Parameters.Should().NotBeNull(
+			because: "the mobile crt.UpdateRecordRequest declares authorable parameters");
+		detail.Parameters!.Keys.Should().BeEquivalentTo(
+			["entityName", "recordId"],
+			because: "mobile resolves the entity through a page preprocessor, so the web-only itemsAttributeName must not appear");
+		// Assert — recordId content: required on both flavors, but mobile narrows the type to string.
+		JsonElement recordId = detail.Parameters["recordId"];
+		recordId.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "the request does nothing without a recordId on mobile too");
+		recordId.GetProperty("type").GetString().Should().Be("string",
+			because: "the mobile flavor resolves bound values to the primary key string; the web 'string | number' union does not apply");
+	}
+
+	[TestCase(SnapshotRelativePath)]
+	[TestCase(MobileSnapshotRelativePath)]
+	[Description("Completeness guard against dangling type references, on BOTH request-registry flavors: every PascalCase identifier tokenised from a `type`/`keyType`/`valueType` string anywhere in the pinned payload (entry parameters, per-request typedefs, global typedefs, baseParameters) must resolve to a type definition the same payload publishes, or sit on the explicit built-in/platform allowlist. A named-but-undefined type is silently dropped from detail responses — the silent-data-loss mode the keyType/valueType closure fix removed — and this invariant catches EVERY typedef removed or renamed by a future fixture refresh, unlike the denylist of specific removed names it replaces. Prose mentions stay unchecked by design: `description` text may discuss types freely, and the closure never tokenises payload properties.")]
+	public void Pinned_Snapshot_Every_Type_Reference_Should_Resolve_To_A_Published_TypeDefinition(string snapshotRelativePath) {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, snapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		List<string> typeReferences = state.Entries
+			.SelectMany(entry => (entry.Parameters?.Values ?? Enumerable.Empty<JsonElement>())
+				.Concat(entry.References?.TypeDefinitions?.Values ?? Enumerable.Empty<JsonElement>()))
+			.Concat(state.GlobalReferences?.TypeDefinitions?.Values ?? Enumerable.Empty<JsonElement>())
+			.Concat(state.GlobalReferences?.BaseParameters?.Values ?? Enumerable.Empty<JsonElement>())
+			.SelectMany(TypeReferenceStrings)
+			.ToList();
+		HashSet<string> publishedTypeNames = new(
+			(state.GlobalReferences?.TypeDefinitions?.Keys ?? Enumerable.Empty<string>())
+				.Concat(state.Entries.SelectMany(entry =>
+					entry.References?.TypeDefinitions?.Keys ?? Enumerable.Empty<string>())),
+			System.StringComparer.Ordinal);
+		// `Record` is the TypeScript built-in generic the closure silently drops. `ViewModelContext`
+		// is named only by the platform-injected baseParameters.$context — never authorable, never a
+		// closure seed — so the producer deliberately publishes no schema for it on either flavor.
+		HashSet<string> knownUnpublishedTypeNames = new(System.StringComparer.Ordinal) { "Record", "ViewModelContext" };
+
+		// Act
+		List<string> danglingTypeNames = typeReferences
+			.SelectMany(PascalCaseIdentifiers)
+			.Where(identifier => !publishedTypeNames.Contains(identifier))
+			.Where(identifier => !knownUnpublishedTypeNames.Contains(identifier))
+			.Distinct(System.StringComparer.Ordinal)
+			.ToList();
+
+		// Assert — the payload carries type references at all, so the sweep below is not vacuous...
+		typeReferences.Should().NotBeEmpty(
+			because: "request entries and type definitions declare types through `type` / `keyType` / `valueType` strings");
+		// ...and every producer-defined-looking name resolves to a definition the payload actually ships.
+		danglingTypeNames.Should().BeEmpty(
+			because: "a type named by any `type`/`keyType`/`valueType` string but defined nowhere in the same payload "
+				+ "would be silently dropped from detail responses — a typedef removal must take every reference "
+				+ "with it, which a hand-maintained list of removed names cannot guarantee");
+	}
+
+	/// <summary>
+	/// Collects every type-reference string (<c>type</c> / <c>keyType</c> / <c>valueType</c>) reachable in a
+	/// payload element, skipping the producer's payload properties exactly as the production closure does.
+	/// Deliberately duplicated here rather than reused: this test pins WHICH properties carry type references,
+	/// so sharing the production set would make the guard agree with a regression in it.
+	/// </summary>
+	private static IEnumerable<string> TypeReferenceStrings(JsonElement element) {
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					if (property.Name is "description" or "default" or "values" or "valueSource") {
+						continue;
+					}
+					if ((property.Name is "type" or "keyType" or "valueType")
+						&& property.Value.ValueKind == JsonValueKind.String) {
+						string? value = property.Value.GetString();
+						if (!string.IsNullOrEmpty(value)) {
+							yield return value!;
+						}
+						continue;
+					}
+					foreach (string nested in TypeReferenceStrings(property.Value)) {
+						yield return nested;
+					}
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					foreach (string nested in TypeReferenceStrings(item)) {
+						yield return nested;
+					}
+				}
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Tokenises a type-reference string into candidate producer-defined type names using the same
+	/// PascalCase heuristic as the production closure (identifiers starting with an uppercase letter;
+	/// lowercase tokens are TypeScript built-ins like <c>string</c> or <c>unknown</c>). Deliberately
+	/// duplicated for the same reason as <see cref="TypeReferenceStrings"/>: the completeness guard
+	/// must not inherit a regression in the production tokenizer.
+	/// </summary>
+	private static IEnumerable<string> PascalCaseIdentifiers(string typeReference) =>
+		Regex.Matches(typeReference, "[A-Za-z_][A-Za-z0-9_]*")
+			.Select(match => match.Value)
+			.Where(token => char.IsUpper(token[0]));
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
 		bucket is null ? System.Array.Empty<string>() : bucket.Keys;

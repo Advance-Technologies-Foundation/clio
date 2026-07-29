@@ -22,7 +22,9 @@ internal static class ODataResponseParser {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return ODataReadResponse.Failure(serverError);
+				// Redact like the sibling error paths: a routing Message can embed the absolute request
+				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
+				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
 			}
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
 				int count = valueEl.ValueKind == JsonValueKind.Array ? valueEl.GetArrayLength() : 1;
@@ -52,7 +54,9 @@ internal static class ODataResponseParser {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return ODataWriteResponse.Failure(serverError);
+				// Redact like the sibling error paths: a routing Message can embed the absolute request
+				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
+				return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
 			}
 			// The primary key is normally a GUID string, but some entities key on a numeric column;
 			// accept either representation so a created record is never misreported as a failure.
