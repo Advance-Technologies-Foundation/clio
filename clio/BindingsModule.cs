@@ -372,6 +372,9 @@ public class BindingsModule {
 		services.AddTransient<BuildThemeCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
+		// Singleton so its per-key SemaphoreSlim registry is process-wide (shared across the CLI verb and the
+		// MCP tool); injected into ApplicationSectionCreateService, so it stays CLIO005-alive (ENG-93089).
+		services.AddSingleton<ISectionCreateSerializationGuard, SectionCreateSerializationGuard>();
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
@@ -417,6 +420,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
@@ -432,12 +436,15 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaCreateCommand>();
 		services.AddTransient<ClientUnitSchemaUpdateCommand>();
 		services.AddTransient<GetClientUnitSchemaCommand>();
+		services.AddTransient<GetClassicPageSourcesCommand>();
+		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
 		services.AddTransient<SqlSchemaInstallCommand>();
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
+		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -489,6 +496,15 @@ public class BindingsModule {
 		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
 		services.AddSingleton<IRequestInfoCatalog, RequestInfoCatalog>();
 		services.AddSingleton<IMobileRequestInfoCatalog, MobileRequestInfoCatalog>();
+		services.AddSingleton<IWebToMobilePageConversionRulesRegistryClient>(sp => new WebToMobilePageConversionRulesRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.WebToMobilePageConversionRules.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<WebToMobilePageConversionRulesRegistryClient>>()));
+		services.AddSingleton<IWebToMobilePageConversionRulesCatalog, WebToMobilePageConversionRulesCatalog>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -560,12 +576,15 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
+		services.AddTransient<GetClassicPageSourcesTool>();
+		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
 		services.AddTransient<DeleteSchemaTool>();
 		services.AddTransient<PageSyncTool>();
+		services.AddTransient<MobilePageConversionGuideTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
@@ -600,6 +619,12 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
+		services.AddTransient<ISchemaConvergenceService, SchemaConvergenceService>();
+		// Synchronous backoff for the sync-schemas per-operation transient-retry loop (ENG-93374). The
+		// loop runs inside the per-tenant McpToolExecutionLock where await is illegal, so the delay must
+		// be synchronous. Registered as the shared stateless singleton; tests substitute a zero-delay
+		// double so retry logic runs instantly.
+		services.AddSingleton<IRetryDelay>(ThreadSleepRetryDelay.Shared);
 		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
 		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
 		// the real accessor/validator are absent). The mcp-http host registers the REAL
@@ -627,6 +652,14 @@ public class BindingsModule {
 		// tenant serializes on the SAME lock regardless of which container (root or per-session
 		// ephemeral) the call flows through, while DIFFERENT tenants use distinct locks.
 		services.AddSingleton<ITenantExecutionLockProvider>(TenantExecutionLockProvider.Shared);
+		// Process-wide compile-creatio operation tracker (ENG-91315). A singleton (not the auto-scanned
+		// transient default) so compile-creatio's Begin/Finish calls and compile-status's later lookup
+		// share the SAME in-memory table regardless of which container resolves them.
+		services.AddSingleton<ICompileOperationRegistry, CompileOperationRegistry>();
+		// Process-wide restart readiness-wait tracker (ENG-91315). A singleton for the same reason as the
+		// compile registry: restart-by-environment-name's Begin/Finish and restart-status's later lookup must
+		// share the SAME in-memory table regardless of which container resolves them.
+		services.AddSingleton<IRestartOperationRegistry, RestartOperationRegistry>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -1143,7 +1176,16 @@ public class BindingsModule {
 					// process-wide shared instance. Its impl ctor is private (locks must be shared across
 					// every container the host builds), so auto-registering the type would fail
 					// ValidateOnBuild.
-					|| implementedInterface == typeof(ITenantExecutionLockProvider)) {
+					|| implementedInterface == typeof(ITenantExecutionLockProvider)
+					// The compile-creatio operation registry (ENG-91315) is registered explicitly as a
+					// SINGLETON. Its ctor has no unresolvable args, so the auto-scan COULD register it —
+					// but only as a transient, which would give compile-creatio and compile-status each
+					// their own empty table and silently break status polling.
+					|| implementedInterface == typeof(ICompileOperationRegistry)
+					// The restart readiness-wait registry (ENG-91315), like the compile registry above, is
+					// registered explicitly as a SINGLETON; the auto-scan would give restart-by-environment-name
+					// and restart-status each their own empty table and silently break status polling.
+					|| implementedInterface == typeof(IRestartOperationRegistry)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

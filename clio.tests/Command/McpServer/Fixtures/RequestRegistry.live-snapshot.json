@@ -41,6 +41,73 @@
 			}
 		},
 		{
+			"requestType": "crt.CreateRecordRequest",
+			"parameters": {
+				"defaultValues": {
+					"type": "array",
+					"items": {
+						"type": "DefaultAttributeValue"
+					},
+					"description": "Column values pre-filled on the new record page; each entry is `{ attributeName, value }` where `value` may be a constant, a lookup record Id or a `{ value, displayValue }` pair, or an `$Attribute` binding; entries with a falsy value are dropped. Optional - omit it to open the page with the entity's own defaults."
+				},
+				"entityName": {
+					"type": "string",
+					"description": "Schema name of the entity to create a new record of (e.g. \"Contact\"). Provide it for a button that always adds the same entity. On a list \"New\" action you may omit it and set `itemsAttributeName` instead - the handler then resolves the entity from that collection's bound data source. At least one of `entityName`, `itemsAttributeName`, or `entityPageName` must be present, otherwise the handler shows a settings error and opens nothing."
+				},
+				"entityPageName": {
+					"type": "string",
+					"description": "Schema name of a specific add page to open for the new record (for example a typed card page). Usually stamped by the platform's quick-add menu items (the in-page typed-page \"New <type>\" menu stamps the record-type default value instead, not this field); author it directly only to force a particular add page. When set it satisfies the settings check on its own - the entity is derived from the page - so `entityName` may be omitted."
+				},
+				"itemsAttributeName": {
+					"type": "string",
+					"description": "Name of the list collection attribute (the grid's items attribute, e.g. \"DataGrid_6m6ky7l\") whose bound data source supplies `entityName` when `entityName` is not given. Author it without a leading `$`; ignored when `entityName` is set."
+				}
+			},
+			"description": "Opens a blank add page to create a new record of an entity, optionally pre-filling column values. Bound to \"New\" buttons wired to the \"Open new record\" action of the Designer's event panel, and to the quick-add and typed-page menu items the platform generates from them.",
+			"references": {
+				"docs": [
+					"request-docs/create-record.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.OpenPageRequest",
+			"parameters": {
+				"modelInitConfigs": {
+					"type": "array",
+					"items": {
+						"type": "ModelInitConfig"
+					},
+					"description": "Initial model configuration forwarded to the opened page: for each entry, which model to seed (`name`), the record to load (`recordId`), the mode (`action`: `edit` / `add` / `copy`), and `defaultValues` to pre-fill. Use it to open a page already scoped to a specific record, or to a new record with defaults."
+				},
+				"parameters": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "JsonData",
+					"description": "Page-parameter values passed to the opened page, keyed by page-parameter name; values may be static constants or `$Attribute` view-model bindings. The target page reads them through its `crt.PageParametersDataSource`."
+				},
+				"schemaName": {
+					"type": "string",
+					"required": true,
+					"valueSource": {
+						"kind": "environment",
+						"tool": "list-pages"
+					},
+					"description": "Schema name (code) of the page to open, not its display caption (e.g. \"OrderProductCatalogPage\"). Required: the handler shows a settings-error dialog and opens nothing when it is empty. Authored via the \"Open specific page\" action's page picker, or supplied as a literal / `$Attribute` binding from custom code."
+				},
+				"skipUnsavedData": {
+					"type": "boolean",
+					"description": "Only affects card pages. When `false`, a card with unsaved changes is saved before the target page opens and the page opens only if the save succeeds; when `true` or omitted, the page opens without saving. Rarely authored; most page surfaces leave it unset."
+				}
+			},
+			"description": "Opens a Freedom UI page by its schema name, optionally passing page-parameter values and model init configs. Bound to buttons and menu items wired to the \"Open specific page\" action of the Designer's event panel. On a card page the current record's unsaved changes can be saved first before the target page opens.",
+			"references": {
+				"docs": [
+					"request-docs/open-page.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.PrintablesRequest",
 			"parameters": {
 				"convertInPDF": {
@@ -161,6 +228,53 @@
 			"references": {
 				"docs": [
 					"request-docs/run-business-process.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.SaveDataRequest",
+			"parameters": {
+				"dataSourceName": {
+					"type": "string",
+					"required": true,
+					"description": "Name of the page data source to save, as declared in the page's `modelConfig`. Only this data source is persisted; the rest of the page is left untouched."
+				},
+				"parameters": {
+					"type": "array",
+					"items": {
+						"type": "ModelParameterConfig"
+					},
+					"description": "Data-source parameters identifying the row being persisted. Author a single `primaryColumnValue` entry whose `value` names the view-model attribute holding the record Id; the resolved value becomes the update query's primary-column filter (updates send only the changed attribute values; inserts send all the data source's bound values and need no filter)."
+				}
+			},
+			"description": "Persists the pending changes of a single named data source of the current page; whenever a record is saved, the platform record-save pipeline emits one such request per data source that has changes to persist (the standard full page save is crt.SaveRecordRequest). Bound to buttons that save one data source without running the full page save, and intercepted in page handlers to run logic around each data-source save.",
+			"references": {
+				"docs": [
+					"request-docs/save-data.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.UpdateRecordRequest",
+			"parameters": {
+				"entityName": {
+					"type": "string",
+					"description": "Schema name of the entity whose record edit page is opened (e.g. \"Contact\"). Provide it for a button that opens a specific record. On a list or detail row action you may omit it and set `itemsAttributeName` instead - the handler then resolves the entity from that collection's bound data source (falling back to the page's primary data source when the attribute is not bound). At least one of `entityName` or `itemsAttributeName` must be present, otherwise the handler shows a settings error and opens nothing."
+				},
+				"itemsAttributeName": {
+					"type": "string",
+					"description": "Name of the list/detail collection attribute the record belongs to (the grid's items attribute, e.g. \"DataGrid_6m6ky7l\" or \"GridDetail_h7omalt\"), used to resolve `entityName` from that data source when `entityName` is not given. Author it (without a leading `$`) on a grid row's primary-column link or row menu action so the row opens its own entity; ignored when `entityName` is set."
+				},
+				"recordId": {
+					"type": "string | number",
+					"required": true,
+					"description": "Primary-key value (Id) of the record to open; required - the handler shows a settings error and opens nothing when it is null or an empty string (`0` is a valid Id). Usually an `$Attribute` binding to the row's Id (e.g. \"$Items.PDS_Id\" or \"$GridDetail_h7omalt.<DS>_Id\"), an `@event` value, or a literal Id."
+				}
+			},
+			"description": "Opens the edit page of an existing record so the user can view or change it. Bound to record links (a list row's primary-column link), row \"Open\" menu actions, and buttons wired to the \"Open existing record\" action of the Designer's event panel. Prompts to discard unsaved changes on the current page before navigating.",
+			"references": {
+				"docs": [
+					"request-docs/update-record.request.md"
 				]
 			}
 		},
@@ -288,6 +402,20 @@
 					}
 				}
 			},
+			"DefaultAttributeValue": {
+				"fields": {
+					"attributeName": {
+						"type": "string",
+						"required": true,
+						"description": "Name of the entity column to pre-fill on the new record."
+					},
+					"value": {
+						"type": "unknown",
+						"required": true,
+						"description": "Value to set on that column: a constant, a lookup record Id or a `{ value, displayValue }` pair (the pair carries the display value, so the platform does not resolve it again), or an `$Attribute` view-model binding. Entries with a falsy value (null, empty string, 0, false) are dropped by the add flow - a default cannot clear a column."
+					}
+				}
+			},
 			"FilterGroup": {
 				"fields": {
 					"backwardReferenceFilters": {
@@ -389,6 +517,10 @@
 					}
 				}
 			},
+			"JsonData": {
+				"type": "string | number | boolean | null | JsonObject | JsonData[]",
+				"description": "Any JSON-serializable value: a primitive, a JsonObject, or an array of JsonData."
+			},
 			"JsonObject": {
 				"type": "object",
 				"description": "Arbitrary JSON object."
@@ -457,6 +589,69 @@
 					"value": {
 						"type": "number",
 						"required": true
+					}
+				}
+			},
+			"ModelDefaultValue": {
+				"fields": {
+					"attributeName": {
+						"type": "string",
+						"required": true,
+						"description": "Name of the model attribute to seed."
+					},
+					"value": {
+						"type": "unknown",
+						"required": true,
+						"description": "Value to seed the attribute with. For a lookup attribute, either the record Id or a `{ value, displayValue }` pair - the pair carries the display value, so the platform does not resolve it again."
+					}
+				}
+			},
+			"ModelInitConfig": {
+				"fields": {
+					"action": {
+						"type": "string",
+						"values": [
+							"edit",
+							"add",
+							"copy"
+						],
+						"required": true,
+						"description": "Mode the target model is initialized in."
+					},
+					"defaultValues": {
+						"type": "array",
+						"items": {
+							"type": "ModelDefaultValue"
+						},
+						"description": "Attribute values to pre-fill on the model."
+					},
+					"name": {
+						"type": "string",
+						"description": "Name of the model (from the target page's modelConfig) to initialize."
+					},
+					"recordId": {
+						"type": "string",
+						"description": "Primary-key value of the record to load into the model."
+					}
+				}
+			},
+			"ModelParameterConfig": {
+				"fields": {
+					"type": {
+						"type": "string",
+						"values": [
+							"primaryColumnValue",
+							"columnValue",
+							"filter",
+							"primaryDisplayValueFilter"
+						],
+						"required": true,
+						"description": "Kind of parameter; authored bindings normally use \"primaryColumnValue\". These four are the only kinds a page schema may author: the platform enum also carries the internal sentinels \"empty\" and \"never\", which the data-load pipeline produces for itself and the authored-parameter converter does not handle, so authoring either one fails the save whenever the request must target rows (updates and deletes; inserts ignore parameters)."
+					},
+					"value": {
+						"type": "unknown",
+						"required": true,
+						"description": "Parameter value; for \"primaryColumnValue\", the name of the view-model attribute holding the record Id."
 					}
 				}
 			},

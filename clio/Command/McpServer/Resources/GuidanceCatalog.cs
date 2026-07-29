@@ -195,6 +195,11 @@ internal static class GuidanceCatalog {
 				"desktop-page",
 				"Canonical MCP guidance for Creatio desktop pages (desktop-selector workspaces): create-page with template CentralAreaDesktopTemplate, the Desktop schema-group invariant, automatic Desktop-entity registration by the platform, the FixedGridSlot_qwe4asds editable-slot rule, and record-rights-based selector visibility.",
 				DesktopPageGuidanceResource.Guide),
+			["freedom-page-web-to-mobile-conversion"] = Create(
+				"freedom-page-web-to-mobile-conversion",
+				"Canonical MCP guidance for converting a source page into a Freedom UI MOBILE page via get-mobile-page-conversion-guide: advisory guide (detected sourceType, recommended template, container map, component suggestions, inline mobile contracts), the model-driven flow where you build the body with create-page/update-page/validate-page, the five component categories, the Freedom-UI-only precondition (Classic UI must be converted to Freedom UI web first), mobile constraints, and how to finish in Freedom UI Mobile Designer.",
+				FreedomToMobileConversionGuidanceResource.Guide,
+				featureGateType: typeof(FreedomToMobileConversionGuidanceResource)),
 			["sys-settings"] = Create(
 				"sys-settings",
 				"""

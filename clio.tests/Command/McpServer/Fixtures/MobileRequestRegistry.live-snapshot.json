@@ -21,6 +21,65 @@
 			}
 		},
 		{
+			"requestType": "crt.CreateRecordRequest",
+			"parameters": {
+				"defaultValues": {
+					"type": "array",
+					"items": {
+						"type": "ModelDefaultValue"
+					},
+					"description": "Column values pre-filled on the new record; each entry is `{ attributeName, value }` where `value` may be a constant, a lookup record Id, or an `$Attribute` binding. Optional. On a binding whose entity resolves to the page's primary object, the platform also injects the page's relation context (e.g. the master record link) as a default value, so a detail's new record is linked automatically."
+				},
+				"entityName": {
+					"type": "string",
+					"description": "Schema name of the entity to create a new record of (e.g. \"Activity\"). When omitted, a page preprocessor fills it with the page's primary data source entity, so set it only for a record that belongs to a different entity - a detail, nested collection, or list of another object. If it is still missing after preprocessing the request does nothing (an error is logged). There is no `itemsAttributeName` resolution on mobile: name the entity explicitly for non-primary collections."
+				},
+				"preventCardClose": {
+					"type": "boolean",
+					"description": "Controls what happens after the new record is saved. When `true` (the default), the saved record is reopened in edit mode - the add page closes and the record's edit page is pushed. When `false`, the flow ends when the add page closes and the record is not reopened. Omit it for the standard add-then-edit behavior."
+				}
+			},
+			"description": "Opens a blank add page to create a new record of an entity, optionally pre-filling column values; by default the saved record is then reopened in edit mode. Bound to list add buttons and row/menu actions. The add page is pushed onto the navigation stack; creating a record does not prompt to discard unsaved changes on the current page.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-create-record.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.OpenPageRequest",
+			"parameters": {
+				"modelInitConfigs": {
+					"type": "array",
+					"items": {
+						"type": "ModelInitConfig"
+					},
+					"description": "Initial model configuration for the opened page: for each entry, which model to seed (`name`), the record to load (`recordId`), the mode (`action`: `edit` / `add` / `copy`), and `defaultValues` to pre-fill. Honored by the mobile runtime and forwarded to the opened page's route."
+				},
+				"parameters": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "unknown",
+					"description": "Page parameters passed to the opened page, keyed by parameter name; values may be constants or `$Attribute` bindings. The opened page reads them through a `crt.PageParametersDataSource` bound as `PageParameters.<key>`. Not declared on the TS request class but honored by the mobile runtime."
+				},
+				"schemaName": {
+					"type": "string",
+					"required": true,
+					"valueSource": {
+						"kind": "environment",
+						"tool": "list-pages"
+					},
+					"description": "Schema name (code) of the mobile Freedom UI page to open, not its display caption. Required: the handler does nothing (no navigation) when it is not set. Usually a literal; an `$Attribute` binding is also accepted."
+				}
+			},
+			"description": "Opens a mobile Freedom UI page by its schema name, pushing it onto the navigation stack, optionally passing page parameters and initial model configuration. Bound to buttons and row/menu actions. Opening a page does not prompt to discard unsaved changes on the current page.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-open-page.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.RunBusinessProcessRequest",
 			"parameters": {
 				"activeRow": {
@@ -113,6 +172,26 @@
 			}
 		},
 		{
+			"requestType": "crt.UpdateRecordRequest",
+			"parameters": {
+				"entityName": {
+					"type": "string",
+					"description": "Schema name of the entity whose record edit page is opened (e.g. \"Account\"). When omitted, a page preprocessor fills it with the page's primary data source entity, so you only need to set it for a record that belongs to a different entity - a detail, nested collection, or map/list of another object. If it is still missing after preprocessing the request does nothing (an error is logged). Note there is no `itemsAttributeName` resolution on mobile: name the entity explicitly for non-primary collections."
+				},
+				"recordId": {
+					"type": "string",
+					"required": true,
+					"description": "Primary-key value (Id) of the record to open; required - the request does nothing (an error is logged) when it is null or empty. Usually an `$Attribute` binding to the row's Id (e.g. \"$NearbyDS_Id\", \"$Participant.Id\"); a literal Id is also accepted. A bound value is resolved to the record's primary key before navigation."
+				}
+			},
+			"description": "Opens an existing record's edit page so the user can view or change it. Bound to list/detail row taps and link cells, and to buttons. The new page is pushed onto the navigation stack; opening a record does not prompt to discard unsaved changes on the current page.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-update-record.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.UploadFileRequest",
 			"parameters": {
 				"allowedFileTypes": {
@@ -191,6 +270,49 @@
 			"JsonObject": {
 				"type": "object",
 				"description": "Arbitrary JSON object."
+			},
+			"ModelDefaultValue": {
+				"fields": {
+					"attributeName": {
+						"type": "string",
+						"required": true,
+						"description": "Name of the model attribute to seed."
+					},
+					"value": {
+						"type": "unknown",
+						"required": true,
+						"description": "Value to seed the attribute with."
+					}
+				}
+			},
+			"ModelInitConfig": {
+				"fields": {
+					"action": {
+						"type": "string",
+						"values": [
+							"edit",
+							"add",
+							"copy"
+						],
+						"required": true,
+						"description": "Mode the target model is initialized in."
+					},
+					"defaultValues": {
+						"type": "array",
+						"items": {
+							"type": "ModelDefaultValue"
+						},
+						"description": "Attribute values to pre-fill on the model."
+					},
+					"name": {
+						"type": "string",
+						"description": "Name of the model (from the target page's modelConfig) to initialize."
+					},
+					"recordId": {
+						"type": "string",
+						"description": "Primary-key value of the record to load into the model."
+					}
+				}
 			},
 			"RequestBindingConfig": {
 				"fields": {
