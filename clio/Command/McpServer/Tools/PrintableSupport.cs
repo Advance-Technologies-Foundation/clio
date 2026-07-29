@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Common;
 
 namespace Clio.Command.McpServer.Tools;
@@ -80,8 +83,12 @@ internal static class PrintableSupport {
 					return id;
 				}
 			}
-		} catch {
-			// Fall through to the well-known fast-path constant when the lookup is unavailable.
+		} catch (Exception ex) when (ex is JsonException or HttpRequestException or TaskCanceledException
+			or InvalidOperationException or WebException) {
+			// The lookup is a best-effort optimisation over the well-known constant, so a transport or
+			// payload failure must fall through rather than fail the whole create. Narrowed deliberately:
+			// a bare catch would also swallow OutOfMemoryException / cancellation-by-the-host and make
+			// this method report success on a genuinely broken process (PR #651 review).
 		}
 		return MsWordTypeId;
 	}
