@@ -988,8 +988,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the guide must promise a behavioral escape guarantee instead of leaking the System.Text.Json implementation detail to agents");
 		result.Article.Text.Should().Contain("shell-execution tool",
 			because: "the CLI anti-pattern must be tool-agnostic (Bash/run_in_terminal/execution_subagent) rather than naming one specific shell tool");
-		result.Article.Text.Should().Contain("set-logo",
-			because: "the Binary write-only wording must not read as 'cannot ship in a package' — the guide must route branding value delivery to the apply-and-bind tools (get-guidance name=branding)");
 	}
 
 	[Test]

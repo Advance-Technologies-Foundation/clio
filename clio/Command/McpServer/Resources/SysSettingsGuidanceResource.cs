@@ -80,11 +80,10 @@ public sealed class SysSettingsGuidanceResource {
 			       - For application-level modeling context (when sys-settings supply default values for entity columns), see `app-modeling` guidance.
 			       - For inspecting an existing app before mutating its sys-settings, see `existing-app-maintenance`.
 			       - For lookup table seeding (creating the entries a Lookup sys-setting points at), see `data-bindings` guidance.
-			       - For shipping branding sys-setting values (logos, background) inside a package so they install elsewhere, see `branding` guidance — the `set-logo` / `set-background-image` tools own that flow (they apply and bind in one call).
 
 			       Anti-patterns
 			       - Do not inline a large Binary blob (e.g. the logo) in `value`; pass `value-file-path` so clio encodes the file locally and the bytes stay out of the tool-call arguments.
-			       - Do not expect a real `Binary` value from `get-sys-setting` / `list-sys-settings`; the row is listed for discovery but the value shows as `<binary>` (write-only surface for Binary). Write-only does NOT mean the value cannot ship in a package: `set-logo` applies a Binary logo value and binds it as package data in one call — the snapshot is taken server-side, no read-back is needed (`get-guidance name=branding`).
+			       - Do not expect a real `Binary` value from `get-sys-setting` / `list-sys-settings`; the row is listed for discovery but the value shows as `<binary>` (write-only surface for Binary).
 			       - Do not call `update-sys-setting` for SecureText and then try to verify the plaintext through `get-sys-setting`. The response is masked.
 			       - Do not retry Date/Time writes to "fix" a TZ delta on the read side; the platform-side conversion is consistent and orthogonal to the tool.
 			       - Prefer the MCP `create-sys-setting` / `update-sys-setting` tools over shelling out to the legacy `clio set-syssetting` CLI through any shell-execution tool; the MCP path validates input, masks secrets, and returns structured errors.

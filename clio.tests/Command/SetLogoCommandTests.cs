@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -12,19 +13,25 @@ using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 /// <summary>
-/// Unit coverage for <see cref="SetLogoCommand"/>: the four logo slots (login, menu, configuration,
-/// dark toolbar), the splash suppression toggle, and the apply-then-bind flow into the target package
-/// (default <c>Custom</c>). The real <see cref="SysSettingsCommand"/> sits under the command so the Binary
-/// file write path (existing-type check, file-security policy, Base64 encoding) is exercised, over a
-/// substituted <see cref="ISysSettingsManager"/> and file system.
+/// Unit coverage for <see cref="SetLogoCommand"/>: the all-slots <c>--logo</c> shortcut and its per-slot
+/// overrides (login, menu, configuration, dark toolbar), the splash suppression toggle, and the
+/// apply-then-bind flow into the target package. The real <see cref="SysSettingsCommand"/> sits under the
+/// command so the Binary file write path (existing-type check, file-security policy, Base64 encoding) is
+/// exercised, over a substituted <see cref="ISysSettingsManager"/> and file system.
 /// </summary>
 [TestFixture]
 [Property("Module", "Command")]
 public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 
+	/// <summary>The package the substituted binding service reports back as the resolved delivery target.</summary>
+	private const string TestPackageName = "UsrBrandingPkg";
+
 	private const string LogoFile = "C:/brand/logo.svg";
 	private const string DarkLogoFile = "C:/brand/logo-white.svg";
 	private static readonly byte[] LogoBytes = Encoding.UTF8.GetBytes("logo-image-bytes");
+
+	/// <summary>Distinct bytes for the dark slot, so an override can be told apart from the all-slots file.</summary>
+	private static readonly byte[] DarkLogoBytes = Encoding.UTF8.GetBytes("dark-logo-image-bytes");
 
 	private ISysSettingsManager _sysSettingsManager;
 	private IFileSystem _fileSystem;
@@ -46,7 +53,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_sysSettingsManager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>())
 			.Returns(true);
 		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
-			.Returns(new BrandingScopeReport(BrandingScope.Logos, [], [], false));
+			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, [], [], false));
 	}
 
 	public override void TearDown() {
@@ -86,7 +93,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	public void Execute_ShouldFail_WhenALogoFileDoesNotExist() {
 		// Arrange
 		_fileSystem.ExistsFile("C:/brand/missing.svg").Returns(false);
-		SetLogoOptions options = new() { Logo = LogoFile, MenuLogo = "C:/brand/missing.svg" };
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/missing.svg" };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -102,7 +109,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Writes the login-page logo setting as a Binary payload encoded from the passed file.")]
 	public void Execute_ShouldWriteTheLoginLogoSetting_FromTheFile() {
 		// Arrange
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -134,7 +141,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	public void Execute_ShouldWriteEveryPassedSlot() {
 		// Arrange
 		SetLogoOptions options = new() {
-			Logo = LogoFile,
+			LoginLogo = LogoFile,
 			MenuLogo = "C:/brand/menu.svg",
 			ConfigurationLogo = "C:/brand/configuration.svg",
 			DarkLogo = DarkLogoFile
@@ -155,7 +162,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Suppresses the stock splash-screen logo after applying logos so it does not flash during load.")]
 	public void Execute_ShouldSuppressTheSplashLogo_AfterApplying() {
 		// Arrange
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		_command.Execute(options);
@@ -173,7 +180,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.HideSplashLogoCode, Arg.Any<object>(), Arg.Any<string>())
 			.Returns(false);
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -190,7 +197,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
 			.Returns(false);
-		SetLogoOptions options = new() { Logo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -202,30 +209,79 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Binds the logos into the default Custom package when the caller names no package.")]
-	public void Execute_ShouldBindLogosIntoCustomPackage_WhenNoPackageIsNamed() {
+	[Description("Leaves the package unset on the binding call when the caller names none, so the environment's CurrentPackageId decides where the data lands.")]
+	public void Execute_ShouldLeaveThePackageUnset_WhenNoPackageIsNamed() {
+		// Arrange
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_brandingBindingService.Received(1).BindLogos(
+			Arg.Is<string>(package => string.IsNullOrWhiteSpace(package)),
+			Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Applies the all-slots --logo file to every logo slot in one run, so branding the whole product does not take four calls.")]
+	public void Execute_ShouldApplyTheAllSlotsLogo_ToEverySlot() {
 		// Arrange
 		SetLogoOptions options = new() { Logo = LogoFile };
 
 		// Act
-		int exitCode = _command.Execute(options);
+		_command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "the apply and the default-package bind both succeeded");
-		_brandingBindingService.Received(1).BindLogos("Custom", Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>());
+		_sysSettingsManager.Received(1).UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), "Binary");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Lets a slot option override the all-slots --logo file for its own slot, so a light variant can go on the dark top panel in the same run.")]
+	public void Execute_ShouldLetASlotOptionOverrideTheAllSlotsLogo() {
+		// Arrange
+		SetLogoOptions options = new() { Logo = LogoFile, DarkLogo = DarkLogoFile };
+		_fileSystem.OpenReadStream(DarkLogoFile).Returns(_ => new MemoryStream(DarkLogoBytes));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_sysSettingsManager.Received(1).UpdateSysSetting(
+			SetLogoCommand.DarkLogoCode,
+			Arg.Is<object>(value => value.ToString() == Convert.ToBase64String(DarkLogoBytes)),
+			"Binary");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Keeps the all-slots --logo file on the slots no slot option overrode, so an override narrows the fan-out instead of replacing it.")]
+	public void Execute_ShouldKeepTheAllSlotsLogo_OnSlotsWithoutAnOverride() {
+		// Arrange
+		SetLogoOptions options = new() { Logo = LogoFile, DarkLogo = DarkLogoFile };
+		_fileSystem.OpenReadStream(DarkLogoFile).Returns(_ => new MemoryStream(DarkLogoBytes));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_sysSettingsManager.Received(1).UpdateSysSetting(
+			SetLogoCommand.LoginLogoCode,
+			Arg.Is<object>(value => value.ToString() == Convert.ToBase64String(LogoBytes)),
+			"Binary");
 	}
 
 	[Test, Category("Unit")]
 	[Description("Passes exactly the applied setting codes to the binding, so a slot this run never wrote cannot be shipped as newly branded.")]
 	public void Execute_ShouldBindOnlyTheAppliedSettingCodes() {
 		// Arrange
-		SetLogoOptions options = new() { Logo = LogoFile, DarkLogo = DarkLogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile, DarkLogo = DarkLogoFile };
 
 		// Act
 		_command.Execute(options);
 
 		// Assert
-		_brandingBindingService.Received(1).BindLogos("Custom",
+		_brandingBindingService.Received(1).BindLogos(
+			Arg.Any<string>(),
 			Arg.Is<System.Collections.Generic.IReadOnlyCollection<string>>(codes =>
 				codes.Contains(SetLogoCommand.LoginLogoCode)
 				&& codes.Contains(SetLogoCommand.DarkLogoCode)
@@ -239,13 +295,14 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.HideSplashLogoCode, Arg.Any<object>(), Arg.Any<string>())
 			.Returns(false);
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		_command.Execute(options);
 
 		// Assert
-		_brandingBindingService.Received(1).BindLogos("Custom",
+		_brandingBindingService.Received(1).BindLogos(
+			Arg.Any<string>(),
 			Arg.Is<System.Collections.Generic.IReadOnlyCollection<string>>(codes =>
 				!codes.Contains(SetLogoCommand.HideSplashLogoCode)));
 	}
@@ -255,8 +312,8 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	public void Execute_ShouldBindLogosIntoNamedPackage_WhenPackageIsPassed() {
 		// Arrange
 		_brandingBindingService.BindLogos("UsrMyApp", Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
-			.Returns(new BrandingScopeReport(BrandingScope.Logos, ["LogoImage"], [], false));
-		SetLogoOptions options = new() { Logo = LogoFile, PackageName = "UsrMyApp" };
+			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, ["LogoImage"], [], false));
+		SetLogoOptions options = new() { LoginLogo = LogoFile, PackageName = "UsrMyApp" };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -270,14 +327,14 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Reports the bound package in the run output so the user learns where the logo data landed.")]
 	public void Execute_ShouldNameTheBoundPackage_InTheRunOutput() {
 		// Arrange
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		_command.Execute(options);
 
 		// Assert
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("bound into package 'Custom'")));
+			message.Contains($"bound into package '{TestPackageName}'")));
 	}
 
 	[Test, Category("Unit")]
@@ -286,7 +343,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
 			.Throws(new InvalidOperationException("package is locked"));
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -294,7 +351,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Assert
 		exitCode.Should().Be(1, because: "the user asked for logos that ship with the package, and the package part failed");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("'Custom'") && message.Contains("package is locked") && message.Contains("Re-run")));
+			message.Contains("CurrentPackageId") && message.Contains("package is locked") && message.Contains("Re-run")));
 	}
 
 	[Test, Category("Unit")]
@@ -303,7 +360,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
 			.Throws(new InvalidOperationException("package is locked"));
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		_command.Execute(options);
@@ -318,9 +375,9 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	public void Execute_ShouldRelayTheSkippedEntries_FromTheBindingReport() {
 		// Arrange
 		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
-			.Returns(new BrandingScopeReport(BrandingScope.Logos, ["LogoImage"],
+			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, ["LogoImage"],
 				["MenuLogoImage: no All-Users value on this environment"], false));
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		_command.Execute(options);
@@ -337,7 +394,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_sysSettingsManager.GetFileSecurityPolicy().Returns(new FileSecurityPolicy(
 			FileSecurityMode.AllowList, new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase) { "png" },
 			AllowUnknownType: false));
-		SetLogoOptions options = new() { Logo = LogoFile };
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		int exitCode = _command.Execute(options);

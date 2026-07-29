@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -16,6 +17,9 @@ namespace Clio.Tests.Command.McpServer;
 public class SetBackgroundImageToolTests {
 
 	private static readonly Guid ImageId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+	/// <summary>An arbitrary package the fake command reports back; the tool only relays whatever it resolved.</summary>
+	private const string BoundPackageName = "UsrBrandingPkg";
 
 	[Test]
 	[Category("Unit")]
@@ -60,7 +64,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "Custom", []));
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, BoundPackageName, []));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -156,7 +160,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "Custom", []));
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, BoundPackageName, []));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -264,7 +268,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "Custom",
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, BoundPackageName,
 			["UsePanelIconBackground: no All-Users feature state on this environment"]));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
@@ -276,10 +280,58 @@ public class SetBackgroundImageToolTests {
 			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
 
 		// Assert
-		result.Package.Should().Be("Custom",
+		result.Package.Should().Be(BoundPackageName,
 			because: "the caller must learn which package the background data was bound into");
 		result.Skipped.Should().ContainSingle(entry => entry.Contains("UsePanelIconBackground"),
 			because: "the delivery gaps the reconcile reported must reach the MCP caller for relay to the user");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects package_name with the canonical rename hint, so the snake_case spelling of the package field cannot silently redirect the delivery to the environment's current package.")]
+	public void SetBackgroundImage_ShouldReturnRenameHint_WhenPackageNameVariantIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetBackgroundImageArgs args = new(EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()) {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["package_name"] = System.Text.Json.JsonSerializer.SerializeToElement("UsrMyApp")
+			}
+		};
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(args);
+
+		// Assert
+		result.Error.Should().Contain("'package'",
+			because: "a dropped package field delivers the background into the environment's current package instead of the named one, which is a silent wrong-target write");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects keep_icon_background with the canonical rename hint, so the snake_case spelling cannot be dropped into a false default that turns the panel icon background off against the caller's intent.")]
+	public void SetBackgroundImage_ShouldReturnRenameHint_WhenKeepIconBackgroundVariantIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetBackgroundImageArgs args = new(EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()) {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["keep_icon_background"] = System.Text.Json.JsonSerializer.SerializeToElement(true)
+			}
+		};
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(args);
+
+		// Assert
+		result.Error.Should().Contain("'keep-icon-background'",
+			because: "a dropped opt-out flag defaults to false and turns off a feature the caller explicitly asked to keep, so it must fail loudly instead");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -293,7 +345,7 @@ public class SetBackgroundImageToolTests {
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
 				Substitute.For<ISysImageUploader>(), Substitute.For<IPanelIconBackgroundFeatureManager>(),
 				Substitute.For<IBrandingBindingService>()) {
-			_result = result ?? SetBackgroundResult.Successful(ImageId, "Custom", []);
+			_result = result ?? SetBackgroundResult.Successful(ImageId, BoundPackageName, []);
 		}
 
 		public override SetBackgroundResult SetBackground(SetBackgroundImageOptions options) {

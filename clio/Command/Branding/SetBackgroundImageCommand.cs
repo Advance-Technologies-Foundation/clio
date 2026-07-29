@@ -5,7 +5,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command;
+namespace Clio.Command.Branding;
 
 /// <summary>
 /// Options for the <c>set-background-image</c> command.
@@ -31,9 +31,9 @@ public class SetBackgroundImageOptions : RemoteCommandOptions {
 	public string File { get; set; }
 
 	/// <summary>Package that receives the background data bindings.</summary>
-	[Option("package", Required = false, Default = BrandingBindingService.DefaultPackageName,
-		HelpText = "Package that receives the background data bindings (default: " +
-			BrandingBindingService.DefaultPackageName + ")")]
+	[Option("package", Required = false,
+		HelpText = "Package that receives the background data bindings. When omitted, the package from the " +
+			"environment's CurrentPackageId system setting is used.")]
 	public string PackageName { get; set; }
 
 	/// <summary>
@@ -150,14 +150,14 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// failure that names the applied image and asks for a re-run rather than pretending nothing happened.
 	/// </summary>
 	private SetBackgroundResult BindBackground(Guid imageId, string packageName) {
-		string package = BrandingBindingService.ResolvePackageName(packageName);
 		try {
-			BrandingScopeReport report = _brandingBindingService.BindBackground(package);
-			return SetBackgroundResult.Successful(imageId, package, report.Skipped);
+			BrandingScopeReport report = _brandingBindingService.BindBackground(packageName);
+			return SetBackgroundResult.Successful(imageId, report.Package, report.Skipped);
 		} catch (Exception exception) {
 			return SetBackgroundResult.Failure(
-				$"The background was applied (image {imageId}), but binding it into package '{package}' failed: " +
-				$"{exception.Message} Re-run the command to retry the binding.");
+				$"The background was applied (image {imageId}), but binding it into " +
+				$"{BrandingBindingService.DescribeTargetPackage(packageName)} failed: {exception.Message} " +
+				"Re-run the command to retry the binding.");
 		}
 	}
 

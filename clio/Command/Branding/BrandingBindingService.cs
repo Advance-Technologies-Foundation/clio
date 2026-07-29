@@ -5,7 +5,7 @@ using System.Text.Json;
 using Clio.Common;
 using Clio.Package;
 
-namespace Clio.Command;
+namespace Clio.Command.Branding;
 
 /// <summary>
 /// The branding areas that <see cref="IBrandingBindingService"/> can bind into a package. Each area maps to
@@ -37,7 +37,10 @@ public interface IBrandingBindingService {
 	/// already shipped by an earlier run — a slot the user never branded is never bound, so the package
 	/// cannot overwrite an install target's own logo with this environment's stock value.
 	/// </summary>
-	/// <param name="packageName">Target package that receives the bindings.</param>
+	/// <param name="packageName">
+	/// Target package that receives the bindings. Blank means "the package the environment's
+	/// <c>CurrentPackageId</c> system setting points at"; the resolved name comes back on the report.
+	/// </param>
 	/// <param name="appliedSettingCodes">The logo setting codes the current run applied.</param>
 	/// <returns>A report of what was bound, skipped, or dropped.</returns>
 	BrandingScopeReport BindLogos(string packageName, IReadOnlyCollection<string> appliedSettingCodes);
@@ -47,13 +50,20 @@ public interface IBrandingBindingService {
 	/// environment's current background: the configuration value and definition, the image and its gallery
 	/// membership (for an image background), and the <c>UsePanelIconBackground</c> All-Users off-state.
 	/// </summary>
-	/// <param name="packageName">Target package that receives the bindings.</param>
+	/// <param name="packageName">
+	/// Target package that receives the bindings. Blank means "the package the environment's
+	/// <c>CurrentPackageId</c> system setting points at"; the resolved name comes back on the report.
+	/// </param>
 	/// <returns>A report of what was bound, skipped, or dropped.</returns>
 	BrandingScopeReport BindBackground(string packageName);
 }
 
 /// <summary>Per-scope outcome of a branding binding reconcile.</summary>
 /// <param name="Scope">The branding area this outcome describes.</param>
+/// <param name="Package">
+/// The package the bindings were actually written into. Carried on the report because the caller may name no
+/// package at all, in which case only the reconcile knows which one the environment resolved to.
+/// </param>
 /// <param name="Bound">Labels of the rows delivered by the scope's bindings.</param>
 /// <param name="Skipped">Human-readable reasons for everything the scope did not deliver.</param>
 /// <param name="BindingsDropped">
@@ -63,6 +73,7 @@ public interface IBrandingBindingService {
 /// </param>
 public sealed record BrandingScopeReport(
 	BrandingScope Scope,
+	string Package,
 	IReadOnlyList<string> Bound,
 	IReadOnlyList<string> Skipped,
 	bool BindingsDropped);
@@ -76,19 +87,27 @@ internal sealed class BrandingBindingService(
 	ILogger logger) : IBrandingBindingService {
 
 	/// <summary>
-	/// The package that receives branding data bindings when the caller names none. <c>Custom</c> exists on
-	/// every installation, so the branding always lands in a package even without an explicit choice.
+	/// The system setting that names the package design-time writes land in when the caller chooses none. The
+	/// platform's own tooling keys off it (and the <c>create-theme</c> server call falls back to it), so branding
+	/// follows the same convention instead of hardcoding a well-known package name.
 	/// </summary>
-	public const string DefaultPackageName = "Custom";
+	internal const string CurrentPackageSettingCode = "CurrentPackageId";
 
-	/// <summary>Returns the caller-chosen binding package name, or <see cref="DefaultPackageName"/> when blank.</summary>
-	public static string ResolvePackageName(string packageName) =>
-		string.IsNullOrWhiteSpace(packageName) ? DefaultPackageName : packageName;
+	/// <summary>
+	/// Names the binding target in a message written before the package is resolved — either the package the
+	/// caller asked for, or the environment's current one. Used for failure text, where the resolved name may
+	/// not exist yet because resolution is what failed.
+	/// </summary>
+	internal static string DescribeTargetPackage(string packageName) =>
+		string.IsNullOrWhiteSpace(packageName)
+			? $"the environment's current package ({CurrentPackageSettingCode})"
+			: $"package '{packageName}'";
 
 	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
 	private const string SysSettingsValueSchema = "SysSettingsValue";
 	private const string SysSettingsSchema = "SysSettings";
+	private const string SysPackageSchema = "SysPackage";
 	private const string SysImageSchema = "SysImage";
 	private const string SysImageInTagSchema = "SysImageInTag";
 	private const string ShellBackgroundTagName = "shell_background";
@@ -162,7 +181,7 @@ internal sealed class BrandingBindingService(
 			}
 			anyDropped |= ReconcileLogoSlot(packageRef, code, bindingName, bound, skipped);
 		}
-		return new BrandingScopeReport(BrandingScope.Logos, bound, skipped, anyDropped);
+		return new BrandingScopeReport(BrandingScope.Logos, packageRef.Name, bound, skipped, anyDropped);
 	}
 
 	/// <inheritdoc />
@@ -171,11 +190,48 @@ internal sealed class BrandingBindingService(
 		return ReconcileBackgroundScope(packageRef);
 	}
 
-	private PackageRef ResolvePackage(string packageName) {
-		if (string.IsNullOrWhiteSpace(packageName)) {
-			throw new InvalidOperationException("Package name is required to bind branding.");
+	/// <summary>
+	/// Resolves the package that receives the bindings: the one the caller named, or — when the caller named
+	/// none — the package the environment's <see cref="CurrentPackageSettingCode"/> system setting points at,
+	/// the same "current package" the platform's own design-time writes land in. A well-known package name is
+	/// never silently substituted: when no package is named and the setting does not resolve to one, the
+	/// operation stops and asks for an explicit package rather than delivering branding somewhere the user
+	/// never chose.
+	/// </summary>
+	private PackageRef ResolvePackage(string packageName) =>
+		string.IsNullOrWhiteSpace(packageName) ? ResolveCurrentPackageRef() : ResolvePackageRef(packageName);
+
+	/// <summary>
+	/// Reads <see cref="CurrentPackageSettingCode"/> and resolves the package row it points at. Read through
+	/// <see cref="ISysSettingsManager.GetSysSettingValueByCode"/> rather than the All-Users default, because
+	/// the current package is a per-developer setting and the value that matters is the calling user's.
+	/// </summary>
+	private PackageRef ResolveCurrentPackageRef() {
+		string currentPackageId = sysSettingsManager.GetSysSettingValueByCode(CurrentPackageSettingCode);
+		if (!Guid.TryParse(currentPackageId, out Guid packageId) || packageId == Guid.Empty) {
+			throw new InvalidOperationException(
+				$"No package was named, and the environment's {CurrentPackageSettingCode} system setting does not " +
+				"point at one, so there is nowhere to deliver the branding. Name the package explicitly (see " +
+				"list-packages for the available names).");
 		}
-		return ResolvePackageRef(packageName);
+		BrandingPackageResponse response = SelectQueryHelper.ExecuteSelectQuery<BrandingPackageResponse>(
+			applicationClient, serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQuery(
+				SysPackageSchema,
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId")
+				],
+				[new SelectQueryHelper.SelectQueryFilterDefinition("Id", packageId.ToString(), SelectQueryHelper.GuidDataValueType)]));
+		EnsureAtMostOneRow(response.Rows.Count, $"the {CurrentPackageSettingCode} package '{packageId}'");
+		BrandingPackageDto row = response.Rows.FirstOrDefault();
+		if (row is null || !Guid.TryParse(row.UId, out Guid packageUId) || string.IsNullOrWhiteSpace(row.Name)) {
+			throw new InvalidOperationException(
+				$"The environment's {CurrentPackageSettingCode} system setting points at package '{packageId}', " +
+				"which could not be resolved to a usable package. Name the package explicitly (see list-packages " +
+				"for the available names).");
+		}
+		return new PackageRef(packageUId, row.Name);
 	}
 
 	/// <summary>
@@ -233,14 +289,20 @@ internal sealed class BrandingBindingService(
 
 		anyDropped |= BindBackgroundImageAndGallery(packageRef, bound, skipped);
 		anyDropped |= BindPanelIconBackgroundFeature(packageRef, bound, skipped);
-		return new BrandingScopeReport(BrandingScope.Background, bound, skipped, BindingsDropped: anyDropped);
+		return new BrandingScopeReport(
+			BrandingScope.Background, packageRef.Name, bound, skipped, BindingsDropped: anyDropped);
 	}
 
 	/// <summary>
 	/// Binds the All-Users off-state of the <c>UsePanelIconBackground</c> feature (the panel-icon background that
 	/// would otherwise hide the shell background), plus — defensively, by Id — its <c>Feature</c> definition so
-	/// the state row's Feature reference resolves on the target. When the feature is not defined or has no
-	/// All-Users state row, both folders are dropped so the package does not ship a stale feature toggle.
+	/// the state row's Feature reference resolves on the target. Only a state row this method itself confirmed
+	/// to be <see langword="false"/> is ever delivered: the state binding force-updates <c>FeatureState</c> on
+	/// install, so shipping a row that is still on would turn the panel icon background back on for the target
+	/// and hide the very background the run just delivered. When the feature is not defined, has no All-Users
+	/// state row, or that row is not confirmed off — the caller passed <c>--keep-icon-background</c>, or the
+	/// turn-off failed and was reported as a warning — both folders are dropped so the package ships no feature
+	/// toggle at all instead of the wrong one.
 	/// </summary>
 	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
 	private bool BindPanelIconBackgroundFeature(PackageRef packageRef, List<string> bound, List<string> skipped) {
@@ -252,8 +314,8 @@ internal sealed class BrandingBindingService(
 			return droppedState || droppedDef;
 		}
 
-		string stateRowId = FindAllUsersFeatureStateRowId(featureId.Value);
-		if (stateRowId is null) {
+		FeatureStateRow stateRow = FindAllUsersFeatureStateRow(featureId.Value);
+		if (stateRow is null) {
 			skipped.Add(
 				$"{PanelIconBackgroundFeatureCode}: no All-Users feature state on this environment " +
 				"(the feature was not turned off here)");
@@ -261,9 +323,19 @@ internal sealed class BrandingBindingService(
 			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, skipped);
 			return droppedState || droppedDef;
 		}
+		if (stateRow.IsOff != true) {
+			skipped.Add(
+				$"{PanelIconBackgroundFeatureCode}: the All-Users feature state on this environment is " +
+				$"{(stateRow.IsOff is null ? "not readable as a Boolean" : "still on")}, and only a confirmed " +
+				"off-state is bound — the binding force-updates FeatureState on install, so delivering this row " +
+				"would turn the panel icon background back on for the target and hide the background");
+			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, skipped);
+			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, skipped);
+			return droppedState || droppedDef;
+		}
 
 		SaveBinding(packageRef, PanelIconFeatureBindingName, AdminUnitFeatureStateSchema, AdminUnitFeatureStateColumns,
-			[stateRowId], AdminUnitFeatureStatePolicy);
+			[stateRow.RowId], AdminUnitFeatureStatePolicy);
 		bound.Add($"{PanelIconBackgroundFeatureCode} feature state");
 		SaveBinding(packageRef, PanelIconFeatureDefBindingName, FeatureSchema, FeatureColumns,
 			[featureId.Value.ToString()], columnPolicy: null);
@@ -497,19 +569,52 @@ internal sealed class BrandingBindingService(
 		return id is not null && Guid.TryParse(id, out Guid featureId) ? featureId : null;
 	}
 
-	/// <summary>Returns the id of a feature's All-Users <c>AdminUnitFeatureState</c> row, or null when there is none.</summary>
-	private string FindAllUsersFeatureStateRowId(Guid featureId) {
-		BrandingRowIdResponse response = SelectQueryHelper.ExecuteSelectQuery<BrandingRowIdResponse>(
+	/// <summary>A feature's All-Users <c>AdminUnitFeatureState</c> row: its id and whether it is confirmed off.</summary>
+	/// <param name="RowId">Id of the state row.</param>
+	/// <param name="IsOff">
+	/// True when <c>FeatureState</c> read back as <see langword="false"/>, false when it read back as
+	/// <see langword="true"/>, and null when the value could not be read as a Boolean at all. Null and false are
+	/// both "not confirmed off" — the caller must refuse to deliver the row in either case.
+	/// </param>
+	private sealed record FeatureStateRow(string RowId, bool? IsOff);
+
+	/// <summary>
+	/// Returns a feature's All-Users <c>AdminUnitFeatureState</c> row with its current state, or null when there
+	/// is none. <c>FeatureState</c> is read together with the id because a state binding force-updates that
+	/// column on install: the value decides whether the row may be delivered at all, so it can never be assumed
+	/// from the caller's own turn-off attempt.
+	/// </summary>
+	private FeatureStateRow FindAllUsersFeatureStateRow(Guid featureId) {
+		BrandingFeatureStateResponse response = SelectQueryHelper.ExecuteSelectQuery<BrandingFeatureStateResponse>(
 			applicationClient, serviceUrlBuilder,
 			SelectQueryHelper.BuildSelectQuery(
 				AdminUnitFeatureStateSchema,
-				[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("FeatureState", "FeatureState")
+				],
 				[
 					new SelectQueryHelper.SelectQueryFilterDefinition("Feature", featureId.ToString(), SelectQueryHelper.GuidDataValueType),
 					new SelectQueryHelper.SelectQueryFilterDefinition("SysAdminUnit", AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
 				]));
-		return SingleRowId(response, $"All-Users feature state of feature '{featureId}'");
+		EnsureAtMostOneRow(response.Rows.Count, $"All-Users feature state of feature '{featureId}'");
+		BrandingFeatureStateDto row = response.Rows.FirstOrDefault();
+		return row is null || string.IsNullOrWhiteSpace(row.Id)
+			? null
+			: new FeatureStateRow(row.Id, ReadOffState(row.FeatureState));
 	}
+
+	/// <summary>
+	/// Interprets a delivered <c>FeatureState</c> value as "confirmed off". DataService answers a Boolean column
+	/// with a JSON Boolean, but a customized or proxied endpoint can answer with its string form, so both are
+	/// accepted; anything else yields null, which the caller treats exactly like "still on" and refuses to ship.
+	/// </summary>
+	private static bool? ReadOffState(JsonElement? featureState) => featureState?.ValueKind switch {
+		JsonValueKind.False => true,
+		JsonValueKind.True => false,
+		JsonValueKind.String => bool.TryParse(featureState.Value.GetString(), out bool parsed) ? !parsed : null,
+		_ => null
+	};
 
 	/// <summary>The definition metadata of a system setting: its row id and declared value type.</summary>
 	private sealed record SysSettingsDefinition(Guid Id, string ValueTypeName);
@@ -651,13 +756,21 @@ internal sealed class BrandingBindingService(
 	/// lookup-registration and package-binding queries already apply.
 	/// </summary>
 	private static string SingleRowId(BrandingRowIdResponse response, string subject) {
-		if (response.Rows.Count > 1) {
-			throw new InvalidOperationException(
-				$"Expected at most one match for {subject} on this environment, but found {response.Rows.Count}. " +
-				"Resolve the duplicates before binding branding, so the package delivers a row you chose.");
-		}
+		EnsureAtMostOneRow(response.Rows.Count, subject);
 		string id = response.Rows.FirstOrDefault()?.Id;
 		return string.IsNullOrWhiteSpace(id) ? null : id;
+	}
+
+	/// <summary>
+	/// Rejects a multi-row match for a query that must identify at most one row, so every branding lookup — not
+	/// only the ones that return a bare id — fails loudly instead of picking a row the caller never chose.
+	/// </summary>
+	private static void EnsureAtMostOneRow(int rowCount, string subject) {
+		if (rowCount > 1) {
+			throw new InvalidOperationException(
+				$"Expected at most one match for {subject} on this environment, but found {rowCount}. " +
+				"Resolve the duplicates before binding branding, so the package delivers a row you chose.");
+		}
 	}
 
 	private sealed class BrandingRowIdResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
@@ -668,6 +781,37 @@ internal sealed class BrandingBindingService(
 	private sealed class BrandingRowIdDto {
 		[System.Text.Json.Serialization.JsonPropertyName("Id")]
 		public string Id { get; init; }
+	}
+
+	private sealed class BrandingPackageResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[System.Text.Json.Serialization.JsonPropertyName("rows")]
+		public List<BrandingPackageDto> Rows { get; init; } = [];
+	}
+
+	private sealed class BrandingPackageDto {
+		[System.Text.Json.Serialization.JsonPropertyName("Name")]
+		public string Name { get; init; }
+
+		[System.Text.Json.Serialization.JsonPropertyName("UId")]
+		public string UId { get; init; }
+	}
+
+	private sealed class BrandingFeatureStateResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[System.Text.Json.Serialization.JsonPropertyName("rows")]
+		public List<BrandingFeatureStateDto> Rows { get; init; } = [];
+	}
+
+	private sealed class BrandingFeatureStateDto {
+		[System.Text.Json.Serialization.JsonPropertyName("Id")]
+		public string Id { get; init; }
+
+		/// <summary>
+		/// The raw delivered <c>FeatureState</c> value. Kept as a <see cref="JsonElement"/> rather than a
+		/// <see cref="bool"/> so a non-Boolean answer degrades to "not confirmed off" instead of throwing a
+		/// deserialization error that would abort the whole background reconcile.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonPropertyName("FeatureState")]
+		public JsonElement? FeatureState { get; init; }
 	}
 
 	private sealed class BrandingBindingUIdResponse : SelectQueryHelper.SelectQueryResponseBaseDto {

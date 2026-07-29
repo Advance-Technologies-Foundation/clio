@@ -33,13 +33,6 @@ When no rows remain, deletes the binding schema data record via DeletePackageSch
 After remote mutation, read back from Creatio instead of treating the request payload
 or install log as proof.
 
-Bindings named `ClioBranding_*` are owned by the branding commands
-([set-logo](set-logo.md), [set-background-image](set-background-image.md)), which
-reconcile them on every run — a binding whose source row is gone is dropped
-automatically. Do not touch them with this command: it would also DELETE the underlying
-branding row from the environment and reset the binding metadata the branding commands
-configured.
-
 ## Example
 
 ```bash

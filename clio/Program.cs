@@ -16,6 +16,7 @@ using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;

@@ -4,21 +4,31 @@ using System.Linq;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command;
+namespace Clio.Command.Branding;
 
 /// <summary>
-/// Options for the <c>set-logo</c> command. Each logo option carries a local image file for one product
-/// logo slot; at least one slot is required. Every applied logo is also bound into
-/// <see cref="PackageName"/> as package data so it ships with an install.
+/// Options for the <c>set-logo</c> command. <see cref="Logo"/> brands every slot at once from one file;
+/// each slot option brands that slot alone and overrides <see cref="Logo"/> for it. At least one of them is
+/// required. Every applied logo is also bound into <see cref="PackageName"/> as package data so it ships
+/// with an install.
 /// </summary>
 [Verb("set-logo",
 	HelpText = "Apply the product logos from local image files and bind them into a package as data bindings")]
 public class SetLogoOptions : RemoteCommandOptions {
 
-	/// <summary>Local image file for the main logo (login page).</summary>
+	/// <summary>
+	/// Local image file applied to every logo slot at once. A slot option (<see cref="LoginLogo"/>,
+	/// <see cref="MenuLogo"/>, <see cref="ConfigurationLogo"/>, <see cref="DarkLogo"/>) wins for its own slot.
+	/// </summary>
 	[Option("logo", Required = false,
-		HelpText = "Local image file for the main logo, shown on the login page (LogoImage)")]
+		HelpText = "Local image file applied to every logo slot at once. A slot option (--login-logo, " +
+			"--menu-logo, --configuration-logo, --dark-logo) overrides it for that slot.")]
 	public string Logo { get; set; }
+
+	/// <summary>Local image file for the login-page logo.</summary>
+	[Option("login-logo", Required = false,
+		HelpText = "Local image file for the logo on the login page (LogoImage)")]
+	public string LoginLogo { get; set; }
 
 	/// <summary>Local image file for the main-menu logo.</summary>
 	[Option("menu-logo", Required = false,
@@ -32,14 +42,15 @@ public class SetLogoOptions : RemoteCommandOptions {
 
 	/// <summary>Local image file for the dark-surface logo (the Freedom UI top panel).</summary>
 	[Option("dark-logo", Required = false,
-		HelpText = "Local image file for the logo shown on a dark background — the Freedom UI top panel " +
-			"(CrtAppToolbarLogo). Use the white/light variant of the logo.")]
+		HelpText = "Local image file for the logo on the dark Freedom UI top panel (CrtAppToolbarLogo). " +
+			"Pass the light variant of the logo here — a logo drawn for a white background is hard to read " +
+			"on the dark panel.")]
 	public string DarkLogo { get; set; }
 
 	/// <summary>Package that receives the logo data bindings.</summary>
-	[Option("package", Required = false, Default = BrandingBindingService.DefaultPackageName,
-		HelpText = "Package that receives the logo data bindings (default: " +
-			BrandingBindingService.DefaultPackageName + ")")]
+	[Option("package", Required = false,
+		HelpText = "Package that receives the logo data bindings. When omitted, the package from the " +
+			"environment's CurrentPackageId system setting is used.")]
 	public string PackageName { get; set; }
 }
 
@@ -105,7 +116,8 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 
 	/// <summary>Error text shared by the CLI and MCP surfaces when no logo file is passed.</summary>
 	internal const string NoLogoError =
-		"Pass at least one logo file: logo, menu-logo, configuration-logo, or dark-logo.";
+		"Pass at least one logo file: logo (every slot at once), login-logo, menu-logo, configuration-logo, " +
+		"or dark-logo.";
 
 	private readonly SysSettingsCommand _sysSettingsCommand;
 	private readonly IBrandingBindingService _brandingBindingService;
@@ -167,13 +179,13 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 				$"logo may still flash during load: {splash.Error}";
 		}
 
-		string package = BrandingBindingService.ResolvePackageName(options.PackageName);
 		try {
-			BrandingScopeReport report = _brandingBindingService.BindLogos(package, appliedCodes);
-			return SetLogoResult.Successful(applied, package, report.Skipped, warning);
+			BrandingScopeReport report = _brandingBindingService.BindLogos(options.PackageName, appliedCodes);
+			return SetLogoResult.Successful(applied, report.Package, report.Skipped, warning);
 		} catch (Exception exception) {
 			return SetLogoResult.Failure(
-				$"The logos were applied, but binding them into package '{package}' failed: {exception.Message} " +
+				$"The logos were applied, but binding them into " +
+				$"{BrandingBindingService.DescribeTargetPackage(options.PackageName)} failed: {exception.Message} " +
 				"Re-run the command to retry the binding.", applied);
 		}
 	}
@@ -198,16 +210,25 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 		}
 	}
 
+	/// <summary>
+	/// Expands the options into the slots to write. <c>--logo</c> seeds every slot from one file so branding all
+	/// four takes a single call; a slot option overrides it for its own slot, which is how a brand with a light
+	/// variant for the dark top panel supplies both in the same run.
+	/// </summary>
 	private static IReadOnlyList<LogoSlot> CollectRequestedSlots(SetLogoOptions options) {
 		(string Label, string Code, string File)[] candidates = [
-			("logo", LoginLogoCode, options.Logo),
-			("menu-logo", MenuLogoCode, options.MenuLogo),
-			("configuration-logo", ConfigurationLogoCode, options.ConfigurationLogo),
-			("dark-logo", DarkLogoCode, options.DarkLogo)
+			("login-logo", LoginLogoCode, SlotFile(options.LoginLogo, options.Logo)),
+			("menu-logo", MenuLogoCode, SlotFile(options.MenuLogo, options.Logo)),
+			("configuration-logo", ConfigurationLogoCode, SlotFile(options.ConfigurationLogo, options.Logo)),
+			("dark-logo", DarkLogoCode, SlotFile(options.DarkLogo, options.Logo))
 		];
 		return candidates
 			.Where(candidate => !string.IsNullOrWhiteSpace(candidate.File))
 			.Select(candidate => new LogoSlot(candidate.Label, candidate.Code, candidate.File))
 			.ToList();
 	}
+
+	/// <summary>Returns the slot-specific file when one was passed, otherwise the all-slots <c>--logo</c> file.</summary>
+	private static string SlotFile(string slotFile, string allSlotsFile) =>
+		string.IsNullOrWhiteSpace(slotFile) ? allSlotsFile : slotFile;
 }

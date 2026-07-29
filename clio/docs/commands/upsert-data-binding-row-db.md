@@ -35,12 +35,6 @@ After remote mutation, read back from Creatio instead of treating the request pa
 or install log as proof.
 To sync the result to a local workspace, use restore-workspace separately.
 
-Bindings named `ClioBranding_*` are owned and reconciled by the branding commands
-([set-logo](set-logo.md), [set-background-image](set-background-image.md)). Do not
-re-save them with this command: the rebuilt metadata resets the natural-key /
-force-update columns the branding commands configured back to the default Id key and
-breaks the branding delivery.
-
 ## Example
 
 ```bash

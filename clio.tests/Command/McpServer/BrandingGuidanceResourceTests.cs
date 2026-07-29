@@ -49,7 +49,7 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The branding guide routes all logo work through the set-logo tool and maps every slot — the three white-background logo types plus the dark-background toolbar logo — so dropping any slot from the guide fails this test.")]
+	[Description("The branding guide routes all logo work through the set-logo tool and maps every argument — the all-slots shortcut, the three light-background slots, and the dark-background toolbar slot — so dropping any of them from the guide fails this test.")]
 	public void BrandingGuidanceResource_Should_Route_Logos_Through_SetLogo_And_Map_Every_Slot() {
 		// Arrange
 		BrandingGuidanceResource resource = new();
@@ -62,6 +62,8 @@ public sealed class BrandingGuidanceResourceTests {
 		article.Text.Should().Contain("set-logo",
 			because: "the dedicated tool owns the logo apply-and-bind flow");
 		article.Text.Should().Contain("`logo`",
+			because: "the all-slots shortcut is what makes branding every slot a single call, and an agent that does not know it exists falls back to four");
+		article.Text.Should().Contain("`login-logo`",
 			because: "the login-page logo slot is part of the acceptance criterion");
 		article.Text.Should().Contain("`menu-logo`",
 			because: "the main-menu logo slot is part of the acceptance criterion");
@@ -148,7 +150,7 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The branding guide carries the package-delivery contract of the apply tools: both take a package argument, default to the Custom package, and their skipped entries are the delivery-gap channel to relay.")]
+	[Description("The branding guide carries the package-delivery contract of the apply tools: both take a package argument, fall back to the environment's CurrentPackageId when it is omitted, and their skipped entries are the delivery-gap channel to relay.")]
 	public void BrandingGuidanceResource_Should_Describe_Package_Delivery_Through_The_Apply_Tools() {
 		// Arrange
 		BrandingGuidanceResource resource = new();
@@ -160,8 +162,8 @@ public sealed class BrandingGuidanceResourceTests {
 		// Assert
 		article.Text.Should().Contain("`package` argument",
 			because: "the guide must say the apply tools themselves bind the branding into a package");
-		article.Text.Should().Contain("default `Custom`",
-			because: "when the user names no package the branding lands in the Custom package, and the agent must know that default");
+		article.Text.Should().Contain("CurrentPackageId",
+			because: "omitting the package delivers into the environment's current package, and an agent that does not know that cannot tell the user where the branding will land");
 		article.Text.Should().NotContain("bind-branding",
 			because: "the standalone bind step no longer exists; naming it would send the agent to a tool that is not there");
 		article.Text.Should().Contain("skipped",
@@ -194,8 +196,8 @@ public sealed class BrandingGuidanceResourceTests {
 			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
 
 		// Assert
-		article.Text.Should().Contain("an unbranded slot is never delivered",
-			because: "shipping a slot the user never branded would overwrite an install target's own logo with this environment's stock value");
+		article.Text.Should().Contain("a slot nobody branded stays out of the package",
+			because: "shipping a slot the user never branded would replace an install target's own logo with this environment's image");
 	}
 
 	[Test]

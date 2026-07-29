@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.Branding;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -24,27 +25,36 @@ public class SetLogoTool(
 
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
+			["loginLogo"] = "login-logo",
+			["login_logo"] = "login-logo",
 			["menuLogo"] = "menu-logo",
+			["menu_logo"] = "menu-logo",
 			["configurationLogo"] = "configuration-logo",
+			["configuration_logo"] = "configuration-logo",
 			["darkLogo"] = "dark-logo",
-			["packageName"] = "package"
+			["dark_logo"] = "dark-logo",
+			["packageName"] = "package",
+			["package_name"] = "package",
+			["package-name"] = "package"
 		};
 
 	/// <summary>Applies the requested logo slots, binds them into the package, and returns a structured result.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Apply the product logos on a registered environment from local image files and bind them " +
-		"into a package as data bindings so they ship with the package. Pass at least one slot: logo (login " +
-		"page), menu-logo (main menu), configuration-logo (configuration page), " +
-		"dark-logo (the Freedom UI top panel — a dark surface, pass the white/light logo variant). The " +
-		"stock splash logo is suppressed automatically. package defaults to Custom. The logos change for " +
-		"all users and cannot be automatically reverted — warn the user first. " +
+		"into a package as data bindings so they ship with the package. Pass at least one of: logo (one file " +
+		"for every slot at once), login-logo (login page), menu-logo (main menu), configuration-logo " +
+		"(configuration page), dark-logo (the Freedom UI top panel — a dark surface, pass the light logo " +
+		"variant). A slot argument overrides logo for that slot, so one call can brand every slot and still " +
+		"give the dark panel its own file. The stock splash logo is suppressed automatically. When package is " +
+		"omitted, the environment's CurrentPackageId system setting decides where the bindings land. The logos " +
+		"change for all users and cannot be automatically reverted — warn the user first. " +
 		"Read get-guidance branding first.")]
 	public SetLogoToolResult SetLogo(
-		[Description("Parameters: environment-name (required); at least one of logo, menu-logo, configuration-logo, dark-logo (local image paths); package (optional, default Custom).")]
+		[Description("Parameters: environment-name (required); at least one of logo (all slots), login-logo, menu-logo, configuration-logo, dark-logo (local image paths); package (optional, the environment's CurrentPackageId when omitted).")]
 		[Required] SetLogoArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, logo, menu-logo, configuration-logo, dark-logo, package.");
+			"Valid: environment-name, logo, login-logo, menu-logo, configuration-logo, dark-logo, package.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return SetLogoToolResult.Failure(aliasError);
 		}
@@ -52,6 +62,7 @@ public class SetLogoTool(
 			return SetLogoToolResult.Failure("environment-name is required and cannot be empty.");
 		}
 		bool anySlot = !string.IsNullOrWhiteSpace(args.Logo)
+			|| !string.IsNullOrWhiteSpace(args.LoginLogo)
 			|| !string.IsNullOrWhiteSpace(args.MenuLogo)
 			|| !string.IsNullOrWhiteSpace(args.ConfigurationLogo)
 			|| !string.IsNullOrWhiteSpace(args.DarkLogo);
@@ -61,6 +72,7 @@ public class SetLogoTool(
 		SetLogoOptions options = new() {
 			Environment = args.EnvironmentName,
 			Logo = args.Logo,
+			LoginLogo = args.LoginLogo,
 			MenuLogo = args.MenuLogo,
 			ConfigurationLogo = args.ConfigurationLogo,
 			DarkLogo = args.DarkLogo,
@@ -95,8 +107,12 @@ public sealed record SetLogoArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("logo")]
-	[property: Description("Local image file for the main logo, shown on the login page (LogoImage).")]
+	[property: Description("Local image file applied to every logo slot at once. A slot argument (login-logo, menu-logo, configuration-logo, dark-logo) overrides it for that slot.")]
 	string? Logo = null,
+
+	[property: JsonPropertyName("login-logo")]
+	[property: Description("Local image file for the logo on the login page (LogoImage).")]
+	string? LoginLogo = null,
 
 	[property: JsonPropertyName("menu-logo")]
 	[property: Description("Local image file for the main menu logo (MenuLogoImage).")]
@@ -107,11 +123,11 @@ public sealed record SetLogoArgs(
 	string? ConfigurationLogo = null,
 
 	[property: JsonPropertyName("dark-logo")]
-	[property: Description("Local image file for the logo shown on a dark background — the Freedom UI top panel (CrtAppToolbarLogo). Pass the white/light variant of the logo.")]
+	[property: Description("Local image file for the logo on the dark Freedom UI top panel (CrtAppToolbarLogo). Pass the light variant of the logo here — a logo drawn for a white background is hard to read on the dark panel.")]
 	string? DarkLogo = null,
 
 	[property: JsonPropertyName("package")]
-	[property: Description("Package that receives the logo data bindings. Defaults to Custom when omitted.")]
+	[property: Description("Package that receives the logo data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.")]
 	string? Package = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>

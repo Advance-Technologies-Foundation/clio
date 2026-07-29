@@ -1,5 +1,5 @@
 COMMAND TYPE
-    Customization commands
+    Branding commands
 
 NAME
     set-logo - apply the product logos from local image files and bind them
@@ -7,54 +7,47 @@ NAME
 
 DESCRIPTION
     set-logo writes the product logos of the target environment from local
-    image files — one option per logo slot — and binds the applied values
-    into a package as Creatio data bindings, so the logos ship with the
-    package on an install instead of living only on the source environment.
+    image files and binds the applied values into a package as Creatio data
+    bindings, so installing that package elsewhere reproduces the same logos
+    instead of leaving them behind on this environment.
 
-    There are three white-background logo types plus the logo for a dark background:
-    - --logo                -> LogoImage (login page)
+    Use --logo to brand every slot from one file. A slot option overrides it
+    for that slot, so one run can set the whole product and still give the
+    dark top panel its own file:
+    - --logo                -> every slot below
+    - --login-logo          -> LogoImage (login page)
     - --menu-logo           -> MenuLogoImage (main menu)
     - --configuration-logo  -> ConfigurationPageLogoImage (configuration page)
     - --dark-logo           -> CrtAppToolbarLogo (the Freedom UI top panel —
-                               a dark surface; pass the white/light variant)
+                               a dark surface; pass the light variant)
 
-    Pass at least one slot. After applying, the command sets
-    HideSplashScreenLogoImage to true so the stock splash logo does not
-    flash during load (best-effort: a failure is a warning). The change
-    applies to all users after a page refresh and cannot be automatically
-    reverted by clio.
+    Pass at least one of them. The stock splash-screen logo is suppressed so
+    it does not flash during load (best-effort: a failure is a warning). The
+    change applies to all users after a page refresh and cannot be
+    automatically reverted by clio.
 
     Each file is uploaded as the slot's Binary sys-setting value; the
     environment's file-security policy is enforced client-side and a
     per-value size cap (10 MB) applies.
 
-    Every applied slot is bound into --package (default: Custom) under its
-    own binding. Bindings are created when missing and updated in place when
-    present, so re-running with a new file refreshes both the environment
-    and the packaged snapshot. Only the slots you pass — plus slots shipped
-    by an earlier run — are bound: an unbranded slot is never delivered, so
-    the package cannot overwrite an install target's own logo with this
-    environment's stock value. The run output reports every delivery gap as
-    a Skipped line — read them. A SecureText setting is never bound. The
-    target package must be editable (unlocked) and the caller needs rights
-    to modify package configuration; when the apply succeeds but the binding
-    fails, the command exits with an error — re-run it to retry the binding.
+    Read the run output: every gap between what was applied and what the
+    package will actually deliver is reported as a Skipped line.
 
 SYNOPSIS
-    clio set-logo [--logo <path>] [--menu-logo <path>]
-        [--configuration-logo <path>] [--dark-logo <path>] [--package <name>]
-        [options]
+    clio set-logo [options]
 
 OPTIONS
-    --logo                          Local image file for the main logo, shown on the login page (LogoImage).
+    --logo                          Local image file applied to every logo slot at once. A slot option below overrides it for that slot.
+
+    --login-logo                    Local image file for the logo on the login page (LogoImage).
 
     --menu-logo                     Local image file for the main menu logo (MenuLogoImage).
 
     --configuration-logo            Local image file for the configuration page logo (ConfigurationPageLogoImage).
 
-    --dark-logo                     Local image file for the logo shown on a dark background — the Freedom UI top panel (CrtAppToolbarLogo). Use the white/light variant.
+    --dark-logo                     Local image file for the logo on the dark Freedom UI top panel (CrtAppToolbarLogo). Pass the light variant here — a logo drawn for a white background is hard to read on the dark panel.
 
-    --package                       Package that receives the logo data bindings (default: Custom).
+    --package                       Package that receives the logo data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.
 
     --uri               -u          Application uri
 
@@ -68,10 +61,13 @@ OPTIONS
 
 EXAMPLE
     clio set-logo --logo C:\brand\logo.svg -e myapp
-        apply the main logo and bind it into the Custom package
+        apply one logo to every slot
 
-    clio set-logo --logo C:\brand\logo.svg --dark-logo C:\brand\logo-white.svg -e myapp --package UsrMyApp
-        apply the main and dark-background logos and bind them into UsrMyApp
+    clio set-logo --logo C:\brand\logo.svg --dark-logo C:\brand\logo-white.svg -e myapp
+        apply one logo everywhere, with the light variant on the dark top panel
+
+    clio set-logo --login-logo C:\brand\logo.svg -e myapp --package UsrMyApp
+        apply the login-page logo only and bind it into UsrMyApp
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

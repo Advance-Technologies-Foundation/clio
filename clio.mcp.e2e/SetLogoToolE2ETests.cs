@@ -130,4 +130,35 @@ public sealed class SetLogoToolE2ETests : McpContractFixtureBase {
 		result.Error.Should().Contain("'menuLogo' -> 'menu-logo'",
 			because: "the failure must tell the caller the exact rename that fixes the call");
 	}
+
+	[Test]
+	[AllureTag(SetLogoTool.ToolName)]
+	[AllureName("set-logo rejects a snake_case login_logo with a rename hint naming the canonical login-logo field")]
+	[AllureDescription("Calls set-logo through the real clio MCP server with a snake_case login_logo field and verifies the rename hint names login-logo — proving the dedicated login slot is advertised under its canonical kebab-case name over the wire, distinct from the all-slots logo field, without a live Creatio environment.")]
+	[Description("Calls set-logo through the real clio MCP server with a snake_case login_logo field and verifies the rename hint names login-logo — proving the dedicated login slot is advertised under its canonical kebab-case name over the wire, distinct from the all-slots logo field, without a live Creatio environment.")]
+	public async Task SetLogo_Should_Return_RenameHint_Naming_LoginLogo_When_SnakeCase_Is_Passed_Over_The_Wire() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetLogoTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "docker_fix2",
+					["login_logo"] = "C:/brand/logo.svg"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		SetLogoToolResult result =
+			EntitySchemaStructuredResultParser.Extract<SetLogoToolResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
+		result.Success.Should().BeFalse(
+			because: "a snake_case field must be rejected, not silently dropped into the overflow bag");
+		result.Error.Should().Contain("'login_logo' -> 'login-logo'",
+			because: "login-logo brands the login page alone while logo brands every slot, so the caller must be pointed at the exact field rather than left to guess that logo is the same thing");
+	}
 }

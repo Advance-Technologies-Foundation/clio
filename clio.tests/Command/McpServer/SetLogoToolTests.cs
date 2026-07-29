@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -15,6 +16,9 @@ namespace Clio.Tests.Command.McpServer;
 public class SetLogoToolTests {
 
 	private const string LogoFile = "C:/brand/logo.svg";
+
+	/// <summary>An arbitrary package the fake command reports back; the tool only relays whatever it resolved.</summary>
+	private const string BoundPackageName = "UsrBrandingPkg";
 
 	[Test]
 	[Category("Unit")]
@@ -134,7 +138,7 @@ public class SetLogoToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetLogoCommand defaultCommand = new();
 		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Successful(
-			["logo"], "Custom", ["MenuLogoImage: no All-Users value on this environment"]));
+			["logo"], BoundPackageName, ["MenuLogoImage: no All-Users value on this environment"]));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>())
 			.Returns(resolvedCommand);
@@ -147,7 +151,7 @@ public class SetLogoToolTests {
 		// Assert
 		result.Applied.Should().BeEquivalentTo(["logo"],
 			because: "the caller must learn which slots were actually written");
-		result.Package.Should().Be("Custom",
+		result.Package.Should().Be(BoundPackageName,
 			because: "the caller must learn which package the logo data was bound into");
 		result.Skipped.Should().ContainSingle(entry => entry.Contains("MenuLogoImage"),
 			because: "the delivery gaps the reconcile reported must reach the MCP caller for relay to the user");
@@ -209,6 +213,95 @@ public class SetLogoToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Maps the login-logo argument onto the command's own login slot, so the all-slots logo argument and the login slot stay distinct over the wire.")]
+	public void SetLogo_ShouldMapLoginLogo_OntoTheLoginSlot() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.SetLogo(new SetLogoArgs(EnvironmentName: "docker_fix2", LoginLogo: LogoFile));
+
+		// Assert
+		resolvedCommand.CapturedOptions.LoginLogo.Should().Be(LogoFile,
+			because: "login-logo brands one slot while logo brands them all, so mapping it onto the wrong property would silently write four slots");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts login-logo alone as a complete request, so a caller branding only the login page does not have to pass the all-slots argument.")]
+	public void SetLogo_ShouldAcceptLoginLogo_AsTheOnlySlot() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(new FakeSetLogoCommand());
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(EnvironmentName: "docker_fix2", LoginLogo: LogoFile));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "login-logo is one of the accepted slot arguments, so a request carrying only it has something to apply");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a snake_case slot field with the canonical kebab-case rename hint, because an agent that guesses snake_case would otherwise have its file silently dropped.")]
+	public void SetLogo_ShouldReturnRenameHint_WhenASnakeCaseSlotFieldIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetLogoArgs args = new(EnvironmentName: "docker_fix2") {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["login_logo"] = System.Text.Json.JsonSerializer.SerializeToElement(LogoFile)
+			}
+		};
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(args);
+
+		// Assert
+		result.Error.Should().Contain("login-logo",
+			because: "snake_case is as likely a guess as camelCase, so it must produce the same actionable rename hint instead of being dropped into the overflow bag");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects package-name and package_name with the canonical rename hint, so the two most likely spellings of the package field do not silently redirect the delivery.")]
+	public void SetLogo_ShouldReturnRenameHint_WhenAPackageNameVariantIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetLogoArgs args = new(EnvironmentName: "docker_fix2", Logo: LogoFile) {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["package-name"] = System.Text.Json.JsonSerializer.SerializeToElement("UsrMyApp")
+			}
+		};
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(args);
+
+		// Assert
+		result.Error.Should().Contain("'package'",
+			because: "a dropped package field would deliver the branding into the environment's current package instead of the one the caller named, which is a silent wrong-target write");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeSetLogoCommand : SetLogoCommand {
 		private readonly SetLogoResult _result;
 
@@ -219,7 +312,7 @@ public class SetLogoToolTests {
 				new SysSettingsCommand(Substitute.For<ISysSettingsManager>(), Substitute.For<ILogger>(),
 					Substitute.For<IFileSystem>()),
 				Substitute.For<IBrandingBindingService>(), Substitute.For<IFileSystem>()) {
-			_result = result ?? SetLogoResult.Successful(["logo"], "Custom", []);
+			_result = result ?? SetLogoResult.Successful(["logo"], BoundPackageName, []);
 		}
 
 		public override SetLogoResult ApplyLogos(SetLogoOptions options) {

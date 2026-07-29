@@ -6,7 +6,7 @@ using ATF.Repository.Providers;
 using Clio.Common;
 using CreatioModel;
 
-namespace Clio.Command;
+namespace Clio.Command.Branding;
 
 /// <summary>
 /// Turns the platform <c>UsePanelIconBackground</c> feature off for everyone so a custom shell background

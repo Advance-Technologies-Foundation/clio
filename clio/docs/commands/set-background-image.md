@@ -2,7 +2,7 @@
 
 ## Command Type
 
-    Customization commands
+    Branding commands
 
 ## Name
 
@@ -24,21 +24,21 @@ The change applies to all users after a page refresh and replaces the currently 
 background. Re-running the command with the same image is safe and leaves the same background in
 place.
 
-Applying a background also turns the `UsePanelIconBackground` feature off for all users (writing its
-All-Users `AdminUnitFeatureState` to `false`), because while it is on the panel's own icon background
-hides the shell background. This is best-effort: if the toggle fails, the background is still applied
-and a warning is logged. Pass `--keep-icon-background` to leave the feature untouched.
+So the new background is actually visible, the command also turns off the panel's own icon background
+(the `UsePanelIconBackground` feature, written as an All-Users `AdminUnitFeatureState` of `false`) —
+while it is on it can cover the shell background. This is best-effort: if the write fails, the
+background is still applied and a warning is logged. Pass `--keep-icon-background` when the panel icon
+background must stay.
 
 After a successful apply the command binds the background into a package as Creatio data bindings
-(`SysPackageSchemaData`), so the background ships with the package on an install or a transfer to
-another site. The target package is `--package` (default: `Custom`); the bindings are created when
-they do not exist yet and updated in place when they do, so re-running after a background change
-refreshes the packaged snapshot. See "Package delivery" below.
+(`SysPackageSchemaData`), so installing that package elsewhere reproduces the same background. The
+bindings are created when they do not exist yet and updated in place when they do, so re-running after
+a background change refreshes what the package carries. See "Package delivery" below.
 
 ## Synopsis
 
 ```bash
-clio set-background-image [<image-id>] [--file <path>] [--package <name>] [--keep-icon-background] [options]
+clio set-background-image [<image-id>] [options]
 ```
 
 ## Options
@@ -48,9 +48,9 @@ clio set-background-image [<image-id>] [--file <path>] [--package <name>] [--kee
 
 --file                          Path to a local image file to upload and set as the background in one step.
 
---package                       Package that receives the background data bindings (default: Custom).
+--package                       Package that receives the background data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.
 
---keep-icon-background          Keep the UsePanelIconBackground feature as is instead of turning it off.
+--keep-icon-background          Keep the panel's own icon background instead of turning it off. By default the command turns it off, because it can cover the shell background and leave the new background invisible.
 
 --uri               -u          Application uri
 
@@ -64,6 +64,10 @@ clio set-background-image [<image-id>] [--file <path>] [--package <name>] [--kee
 ```
 
 ## Package delivery
+
+When `--package` is omitted, the package named by the environment's `CurrentPackageId` system setting
+receives the bindings; when that setting points at nothing resolvable, the command stops and asks for
+an explicit package rather than picking one.
 
 The bound rows: the background configuration value and its setting definition, (for an image
 background) the image and its gallery membership, and the All-Users off-state of the
@@ -85,9 +89,12 @@ each one means the package ships less than you may expect. Deliberate limits:
 - **The background configuration definition is delivered by id** so the value row's reference
   resolves. If the target created that setting independently the ids differ and the install can add
   a second definition rather than merging; brand one environment and deliver outward.
-- **The `UsePanelIconBackground` off-state** is bound only when the feature was turned off on this
-  environment; when it never was (for example every apply ran with `--keep-icon-background`), it is
-  reported as skipped.
+- **The `UsePanelIconBackground` off-state** is bound only when the All-Users state row on this
+  environment is confirmed to read `false`. A missing row (the feature was never toggled here), a row
+  that still reads `true` (every apply ran with `--keep-icon-background`, or the toggle failed), and a
+  row whose `FeatureState` is not readable as a Boolean are all reported as skipped, and any binding an
+  earlier run shipped for the slot is dropped. Its `Feature` definition folder follows the same
+  decision, because it exists only to keep the state row's reference resolvable.
 
 The binding writes package data through the design-time schema-data services, so the target package
 must be editable (unlocked) and the caller needs rights to modify package configuration. When the
@@ -96,7 +103,7 @@ re-run it to retry the binding.
 
 ## Examples
 
-Upload a local image and set it as the shell background in one step (bindings land in `Custom`):
+Upload a local image and set it as the shell background in one step:
 
 ```bash
 clio set-background-image --file C:\brand\background.png -e myapp
@@ -108,7 +115,7 @@ Set an already-uploaded image as the shell background and bind it into a specifi
 clio set-background-image aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee -e myapp --package UsrMyApp
 ```
 
-Apply a background but keep the panel icon background feature untouched:
+Set the shell background but leave the panel icon background in place:
 
 ```bash
 clio set-background-image --file C:\brand\background.png -e myapp --keep-icon-background

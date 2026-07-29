@@ -60,9 +60,6 @@ public sealed class DataBindingsGuidanceResource {
 			       - Verify local artifacts by inspecting generated files or normalized command output.
 			       - Never treat a planned row list as proof of installed state.
 
-			       Branding asset bindings
-			       - Logo and background bindings (`ClioBranding_*`) are owned and reconciled by `set-logo` / `set-background-image` (`get-guidance name=branding`). Do not hand-assemble, re-save, or edit them with `upsert-data-binding-row-db` / `remove-data-binding-row-db`: those reset the binding metadata to the default Id key and break the natural-key / force-update delivery the branding tools set up.
-
 			       Anti-patterns
 			       - Do not duplicate live contract tables in skill docs.
 			       - Do not use direct SQL as the canonical MCP path.

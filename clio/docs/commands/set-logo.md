@@ -2,7 +2,7 @@
 
 ## Command Type
 
-    Customization commands
+    Branding commands
 
 ## Name
 
@@ -10,24 +10,24 @@ set-logo - apply the product logos from local image files and bind them into a p
 
 ## Description
 
-`set-logo` writes the product logos of the target environment from local image files — one option per
-logo slot — and binds the applied values into a package as Creatio data bindings
-(`SysPackageSchemaData`), so the logos ship with the package on an install or a transfer to another
-site instead of living only on the source environment.
+`set-logo` writes the product logos of the target environment from local image files and binds the
+applied values into a package as Creatio data bindings (`SysPackageSchemaData`), so installing that
+package elsewhere reproduces the same logos instead of leaving them behind on this environment.
 
-There are three white-background logo types plus the logo for a dark background:
+Use `--logo` to brand every slot from one file. A slot option overrides it for that slot, so one run
+can set the whole product and still give the dark top panel its own file:
 
 | Option | System setting | Where it appears |
 |---|---|---|
-| `--logo` | `LogoImage` | login page |
+| `--logo` | every slot below | — |
+| `--login-logo` | `LogoImage` | login page |
 | `--menu-logo` | `MenuLogoImage` | main menu |
 | `--configuration-logo` | `ConfigurationPageLogoImage` | configuration page |
-| `--dark-logo` | `CrtAppToolbarLogo` | the Freedom UI top panel — a dark surface; pass the white/light variant of the logo |
+| `--dark-logo` | `CrtAppToolbarLogo` | the Freedom UI top panel — a dark surface; pass the light variant of the logo |
 
-Pass at least one slot. After applying, the command sets `HideSplashScreenLogoImage` to `true` so the
-stock splash logo does not flash during load (best-effort: a failure is a warning, not a command
-failure). The change applies to all users after a page refresh and cannot be automatically reverted
-by clio.
+Pass at least one of them. The stock splash-screen logo is suppressed so it does not flash during
+load (best-effort: a failure is a warning, not a command failure). The change applies to all users
+after a page refresh and cannot be automatically reverted by clio.
 
 Each file is uploaded as the slot's Binary sys-setting value: the environment's file-security policy
 (extension allow/deny lists) is enforced client-side and a per-value size cap (10 MB) applies —
@@ -36,21 +36,23 @@ the same rules as `update-sys-setting` with `value-file-path`.
 ## Synopsis
 
 ```bash
-clio set-logo [--logo <path>] [--menu-logo <path>] [--configuration-logo <path>] [--dark-logo <path>] [--package <name>] [options]
+clio set-logo [options]
 ```
 
 ## Options
 
 ```bash
---logo                          Local image file for the main logo, shown on the login page (LogoImage).
+--logo                          Local image file applied to every logo slot at once. A slot option below overrides it for that slot.
+
+--login-logo                    Local image file for the logo on the login page (LogoImage).
 
 --menu-logo                     Local image file for the main menu logo (MenuLogoImage).
 
 --configuration-logo            Local image file for the configuration page logo (ConfigurationPageLogoImage).
 
---dark-logo                     Local image file for the logo shown on a dark background — the Freedom UI top panel (CrtAppToolbarLogo). Use the white/light variant.
+--dark-logo                     Local image file for the logo on the dark Freedom UI top panel (CrtAppToolbarLogo). Pass the light variant here — a logo drawn for a white background is hard to read on the dark panel.
 
---package                       Package that receives the logo data bindings (default: Custom).
+--package                       Package that receives the logo data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.
 
 --uri               -u          Application uri
 
@@ -65,13 +67,16 @@ clio set-logo [--logo <path>] [--menu-logo <path>] [--configuration-logo <path>]
 
 ## Package delivery
 
-Every applied slot is bound into `--package` (default: `Custom`) under its own binding
-(`ClioBranding_Logo_<setting>`). A binding is created when it does not exist yet and updated in place
-when it does, so re-running with a new file refreshes both the environment and the packaged snapshot.
+Every applied slot is bound into `--package` under its own binding (`ClioBranding_Logo_<setting>`).
+When `--package` is omitted, the package named by the environment's `CurrentPackageId` system setting
+receives the bindings; when that setting points at nothing resolvable, the command stops and asks for
+an explicit package rather than picking one. A binding is created when it does not exist yet and
+updated in place when it does, so re-running with a new file refreshes both the environment and the
+packaged snapshot.
 
-Only the slots you pass — plus slots shipped by an earlier run — are bound. An unbranded slot is
-never delivered, so the package cannot overwrite an install target's own logo with this
-environment's stock value. A slot an earlier run shipped is refreshed on every run, and dropped
+Only the slots this run wrote — plus slots an earlier run already shipped — are bound. A slot nobody
+branded stays out of the package, so installing it cannot replace the target's own logo with this
+environment's stock image. A slot an earlier run shipped is refreshed on every run, and dropped
 (with a report line) when its value row is gone.
 
 Setting-value bindings are keyed by their natural columns (setting + admin unit) and force-update
@@ -89,16 +94,22 @@ binding.
 
 ## Examples
 
-Apply the main logo (bindings land in `Custom`):
+Apply one logo to every slot:
 
 ```bash
 clio set-logo --logo C:\brand\logo.svg -e myapp
 ```
 
-Apply every slot, with the white variant on the dark top panel, into a specific package:
+Apply one logo everywhere, with the light variant on the dark top panel, into a specific package:
 
 ```bash
-clio set-logo --logo C:\brand\logo.svg --menu-logo C:\brand\logo.svg --configuration-logo C:\brand\logo.svg --dark-logo C:\brand\logo-white.svg -e myapp --package UsrMyApp
+clio set-logo --logo C:\brand\logo.svg --dark-logo C:\brand\logo-white.svg -e myapp --package UsrMyApp
+```
+
+Apply the login-page logo only:
+
+```bash
+clio set-logo --login-logo C:\brand\logo.svg -e myapp
 ```
 
 ## Reporting Bugs

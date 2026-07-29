@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.Branding;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -26,7 +27,10 @@ public class SetBackgroundImageTool(
 			["imageId"] = "image-id",
 			["image_id"] = "image-id",
 			["packageName"] = "package",
-			["keepIconBackground"] = "keep-icon-background"
+			["package_name"] = "package",
+			["package-name"] = "package",
+			["keepIconBackground"] = "keep-icon-background",
+			["keep_icon_background"] = "keep-icon-background"
 		};
 
 	/// <summary>Sets the image as the shell background, binds it into the package, and returns a structured result.</summary>
@@ -35,12 +39,13 @@ public class SetBackgroundImageTool(
 		"as data bindings so it ships with the package. Pass exactly one of: file (a local image file — " +
 		"uploaded and applied in one call) or image-id (an image already uploaded with upload-image). " +
 		"The background changes for all users after a page refresh, replacing the currently configured " +
-		"one; the panel-icon background feature is turned off unless keep-icon-background is true. " +
-		"package defaults to Custom. Returns { success, image-id, package, skipped?, error? } — relay the " +
-		"skipped entries, they are the only place a delivery gap is reported. " +
+		"one; the panel's own icon background is turned off so the new background is actually visible, " +
+		"unless keep-icon-background is true. When package is omitted, the environment's CurrentPackageId " +
+		"system setting decides where the bindings land. Returns { success, image-id, package, skipped?, " +
+		"error? } — relay the skipped entries, they are the only place a delivery gap is reported. " +
 		"For the full branding flow (logos, background), read get-guidance branding first.")]
 	public SetBackgroundImageResult SetBackgroundImage(
-		[Description("Parameters: environment-name (required); exactly one of file (local image path) or image-id (id returned by upload-image); package (optional, default Custom); keep-icon-background (optional bool).")]
+		[Description("Parameters: environment-name (required); exactly one of file (local image path) or image-id (id returned by upload-image); package (optional, the environment's CurrentPackageId when omitted); keep-icon-background (optional bool).")]
 		[Required] SetBackgroundImageArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
@@ -102,11 +107,11 @@ public sealed record SetBackgroundImageArgs(
 	string? File = null,
 
 	[property: JsonPropertyName("package")]
-	[property: Description("Package that receives the background data bindings. Defaults to Custom when omitted.")]
+	[property: Description("Package that receives the background data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.")]
 	string? Package = null,
 
 	[property: JsonPropertyName("keep-icon-background")]
-	[property: Description("When true, leaves the UsePanelIconBackground feature untouched instead of turning it off. While the feature is on, the panel's own icon background can hide the shell background.")]
+	[property: Description("When true, leaves the panel's own icon background in place instead of turning it off (the UsePanelIconBackground feature). While it is on it can cover the shell background, so the new background may not be visible.")]
 	bool? KeepIconBackground = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>

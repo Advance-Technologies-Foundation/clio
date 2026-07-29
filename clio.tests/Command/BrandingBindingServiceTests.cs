@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -27,6 +28,9 @@ public sealed class BrandingBindingServiceTests {
 	private static readonly Guid BackgroundImageId = Guid.Parse("7a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d");
 	private static readonly Guid GalleryRowId = Guid.Parse("8a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d");
 	private static readonly Guid ExistingBindingUId = Guid.Parse("9a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d");
+	/// <summary>The SysPackage row id the environment's CurrentPackageId setting points at.</summary>
+	private static readonly Guid CurrentPackageRowId = Guid.Parse("2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b");
+
 	private static readonly Guid PanelIconFeatureId = Guid.Parse("6b1c2d3e-4f50-4a6b-8c9d-0e1f2a3b4c5d");
 	private static readonly Guid PanelIconFeatureStateRowId = Guid.Parse("7c1d2e3f-4a50-4b6c-8d9e-0f1a2b3c4d5e");
 
@@ -53,32 +57,100 @@ public sealed class BrandingBindingServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a blank caller-supplied package name to the default Custom package.")]
-	public void ResolvePackageName_Should_Default_To_Custom_When_Blank() {
+	[Description("Binds into the package the environment's CurrentPackageId system setting points at when the caller names none.")]
+	public void BindBackground_Should_Use_The_CurrentPackageId_Package_When_None_Is_Named() {
 		// Arrange
-		string blankName = "   ";
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		IBrandingBindingService sut = environment.CreateService();
 
 		// Act
-		string resolved = BrandingBindingService.ResolvePackageName(blankName);
+		BrandingScopeReport report = sut.BindBackground(null);
 
 		// Assert
-		resolved.Should().Be("Custom",
-			because: "when the user names no package the branding must still land in a package, and Custom exists on every installation");
+		report.Package.Should().Be(PackageName,
+			because: "design-time writes land in the environment's current package, so branding follows the same convention instead of a hardcoded well-known package name");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps a caller-supplied package name instead of overriding it with the default.")]
-	public void ResolvePackageName_Should_Keep_A_Named_Package() {
+	[Description("Reports the resolved package on the report so the caller can name it to the user even when it named none itself.")]
+	public void BindLogos_Should_Report_The_Named_Package() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindLogos(PackageName, AllLogoCodes);
+
+		// Assert
+		report.Package.Should().Be(PackageName,
+			because: "the run summary names the package the branding was delivered into, and only the reconcile knows it when the caller passed none");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops with an actionable error when no package is named and CurrentPackageId is unset, instead of silently picking a well-known package.")]
+	public void BindBackground_Should_Throw_When_No_Package_Is_Named_And_CurrentPackageId_Is_Unset() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.CurrentPackageIdValue = string.Empty;
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		Action act = () => sut.BindBackground(null);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "guessing a package would deliver branding somewhere the user never chose, so the run must stop and ask for one")
+			.WithMessage("*CurrentPackageId*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops with an actionable error when CurrentPackageId points at a package that cannot be resolved on the environment.")]
+	public void BindBackground_Should_Throw_When_CurrentPackageId_Does_Not_Resolve() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.CurrentPackageIdValue = "3f2a1b0c-4d5e-4f60-8a9b-0c1d2e3f4a5b";
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		Action act = () => sut.BindBackground(null);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a dangling current-package id is a configuration problem the user has to see, not a reason to fall back to another package")
+			.WithMessage("*CurrentPackageId*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Names the caller's package in pre-resolution failure text so an error raised before resolution still says where the branding was headed.")]
+	public void DescribeTargetPackage_Should_Name_A_Supplied_Package() {
 		// Arrange
 		const string named = "UsrMyApp";
 
 		// Act
-		string resolved = BrandingBindingService.ResolvePackageName(named);
+		string described = BrandingBindingService.DescribeTargetPackage(named);
 
 		// Assert
-		resolved.Should().Be(named,
-			because: "a package the user explicitly named must never be silently replaced by the default");
+		described.Should().Contain(named,
+			because: "a failure message written before the package is resolved must still tell the user which package they asked for");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Names the environment's current package in pre-resolution failure text when the caller supplied none.")]
+	public void DescribeTargetPackage_Should_Name_The_Current_Package_When_Blank() {
+		// Arrange
+		string blankName = "   ";
+
+		// Act
+		string described = BrandingBindingService.DescribeTargetPackage(blankName);
+
+		// Assert
+		described.Should().Contain("CurrentPackageId",
+			because: "when resolution itself is what failed there is no resolved name to print, so the message must point at the setting the package would have come from");
 	}
 
 	#endregion
@@ -488,6 +560,112 @@ public sealed class BrandingBindingServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Does not bind the panel-icon feature state when the All-Users row is still on, so an install cannot force the feature back on and hide the delivered background.")]
+	public void BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_The_Row_Is_Still_On() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.LeavePanelIconFeatureOn();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeature",
+			because: "the state binding force-updates FeatureState on install, so shipping a row that is still on — what --keep-icon-background and a swallowed turn-off failure both leave behind — would re-enable the panel icon background on the target and hide the background just delivered");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not bind the panel-icon Feature definition either when the state row is still on, so the package ships no half of an undeliverable feature toggle.")]
+	public void BindBackground_Should_Not_Bind_Panel_Icon_Feature_Definition_When_The_Row_Is_Still_On() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.LeavePanelIconFeatureOn();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeatureDef",
+			because: "the definition folder exists only to make the state row's Feature reference resolve, so it must not ship when no state row is delivered");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports the still-on panel-icon feature state as skipped, so a delivery gap the user caused with --keep-icon-background or a failed turn-off is never silent.")]
+	public void BindBackground_Should_Report_Panel_Icon_Feature_As_Skipped_When_The_Row_Is_Still_On() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.LeavePanelIconFeatureOn();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindBackground(PackageName);
+
+		// Assert
+		report.Skipped.Should().Contain(entry => entry.Contains("still on", StringComparison.Ordinal),
+			because: "the skipped list is the only channel that reports a delivery gap on both the CLI and the MCP surface, so it must name why the off-state was not shipped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not bind the panel-icon feature state when FeatureState cannot be read as a Boolean, because an unverifiable state is not a confirmed off-state.")]
+	public void BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_It_Is_Unreadable() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.MakePanelIconFeatureStateUnreadable();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeature",
+			because: "an unreadable FeatureState must be treated exactly like a still-on one — the binding force-updates the column, so only a value confirmed false may be delivered");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Drops a previously shipped panel-icon feature binding when the All-Users row is on again, so a package that once delivered the off-state stops delivering the wrong one.")]
+	public void BindBackground_Should_Drop_Panel_Icon_Feature_Binding_When_The_Row_Is_Still_On() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.LeavePanelIconFeatureOn();
+		environment.RegisterExistingBinding("ClioBranding_PanelIconFeature", ExistingBindingUId);
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindBackground(PackageName);
+
+		// Assert
+		report.BindingsDropped.Should().BeTrue(
+			because: "leaving the earlier off-state binding in place would keep force-updating the target from a row that is no longer off, so the reconcile must delete it and report the change");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still binds the other background folders when the panel-icon feature state is not deliverable, so one undeliverable toggle does not cost the whole background.")]
+	public void BindBackground_Should_Still_Bind_The_Background_When_Panel_Icon_Feature_Is_Still_On() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.LeavePanelIconFeatureOn();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().BeEquivalentTo([
+				"ClioBranding_BackgroundConfig", "ClioBranding_BackgroundConfigDef",
+				"ClioBranding_BackgroundImage", "ClioBranding_BackgroundGallery"
+			],
+			because: "the feature toggle is one scope member among five; refusing to ship it must not suppress the config, definition, image, and gallery folders the run did apply");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Drops a previously shipped panel-icon feature binding when the feature is no longer turned off, and reports it, so a dropped binding is never a silent side effect.")]
 	public void BindBackground_Should_Drop_Panel_Icon_Feature_Binding_When_No_Longer_Turned_Off() {
 		// Arrange
@@ -637,19 +815,18 @@ public sealed class BrandingBindingServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects a blank package name rather than resolving it to an arbitrary package; the default-package fallback is the calling command's responsibility.")]
-	public void BindLogos_Should_Throw_When_Package_Name_Is_Blank() {
+	[Description("Treats a whitespace-only package name as 'none supplied' and resolves the environment's current package, so a padded argument does not become a package name that cannot exist.")]
+	public void BindLogos_Should_Resolve_The_Current_Package_When_The_Name_Is_Blank() {
 		// Arrange
 		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
 		IBrandingBindingService sut = environment.CreateService();
 
 		// Act
-		Action act = () => sut.BindLogos("   ", AllLogoCodes);
+		BrandingScopeReport report = sut.BindLogos("   ", AllLogoCodes);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("*Package name*",
-				because: "the target package is the one thing the caller must get right, so a blank name is rejected up front");
+		report.Package.Should().Be(PackageName,
+			because: "a blank argument carries no choice, so it must take the same CurrentPackageId path as an omitted one rather than being looked up verbatim");
 	}
 
 	#endregion
@@ -860,6 +1037,12 @@ public sealed class BrandingBindingServiceTests {
 
 		private Guid? _panelIconFeatureId;
 		private Guid? _panelIconFeatureStateRowId;
+
+		/// <summary>
+		/// The raw JSON token the AdminUnitFeatureState query answers for <c>FeatureState</c>. A token rather than
+		/// a <see cref="bool"/> so a test can also model a non-Boolean answer from a customized endpoint.
+		/// </summary>
+		private string _panelIconFeatureStateJson = "false";
 		private readonly Dictionary<string, Guid> _existingBindings = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, string> _existingBindingSchemas = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, List<string>> _schemaColumns = new(StringComparer.OrdinalIgnoreCase);
@@ -883,6 +1066,12 @@ public sealed class BrandingBindingServiceTests {
 
 		/// <summary>Envelope returned by the DeletePackageSchemaData endpoint, so a test can simulate a rejection.</summary>
 		public string DeleteBindingResponse { get; set; } = """{"success":true}""";
+
+		/// <summary>
+		/// Value the CurrentPackageId sys-setting answers with. Defaults to the row id that resolves to this
+		/// environment's package; blank models an environment where no current package is set.
+		/// </summary>
+		public string CurrentPackageIdValue { get; set; } = CurrentPackageRowId.ToString();
 
 		private BrandingEnvironment() {
 			_schemaColumns["SysSettingsValue"] = [
@@ -921,6 +1110,15 @@ public sealed class BrandingBindingServiceTests {
 
 		/// <summary>Models an environment where the feature is defined but was never turned off (no All-Users state row).</summary>
 		public void RemovePanelIconFeatureState() => _panelIconFeatureStateRowId = null;
+
+		/// <summary>
+		/// Models an All-Users state row that is still on — what <c>--keep-icon-background</c> leaves behind, and
+		/// what a swallowed turn-off failure leaves behind too.
+		/// </summary>
+		public void LeavePanelIconFeatureOn() => _panelIconFeatureStateJson = "true";
+
+		/// <summary>Models an endpoint answering FeatureState with a value that is not a Boolean at all.</summary>
+		public void MakePanelIconFeatureStateUnreadable() => _panelIconFeatureStateJson = "\"maybe\"";
 
 		/// <summary>Models an environment where the UsePanelIconBackground feature is not defined at all.</summary>
 		public void RemovePanelIconFeature() {
@@ -976,6 +1174,7 @@ public sealed class BrandingBindingServiceTests {
 
 			ISysSettingsManager sysSettingsManager = Substitute.For<ISysSettingsManager>();
 			sysSettingsManager.GetAllUsersDefaultByCode("CrtBackgroundConfig").Returns(_ => BackgroundConfigJson);
+			sysSettingsManager.GetSysSettingValueByCode("CurrentPackageId").Returns(_ => CurrentPackageIdValue);
 
 			return new BrandingBindingService(
 				applicationClient,
@@ -1011,11 +1210,23 @@ public sealed class BrandingBindingServiceTests {
 				"SysImageInTag" => Rows("Id", LookupGalleryRow(filters)),
 				"SysImageTag" => Rows("Id", NamedShellBackgroundTagId?.ToString()),
 				"Feature" => Rows("Id", LookupFeatureDefinition(filters)),
-				"AdminUnitFeatureState" => Rows("Id", LookupFeatureStateRow(filters)),
+				"AdminUnitFeatureState" => FeatureStateRows(LookupFeatureStateRow(filters)),
+				"SysPackage" => LookupPackage(filters),
 				"SysPackageSchemaData" => LookupBinding(filters),
 				_ => throw new InvalidOperationException($"Unexpected SelectQuery schema: {schemaName}")
 			};
 		}
+
+		/// <summary>
+		/// Answers the SysPackage lookup behind the CurrentPackageId fallback: the row this environment's current
+		/// package points at resolves to its name and UId, and any other id resolves to nothing (a dangling
+		/// current-package setting).
+		/// </summary>
+		private string LookupPackage(Dictionary<string, string> filters) =>
+			filters.TryGetValue("Id", out string? id)
+			&& string.Equals(id, CurrentPackageRowId.ToString(), StringComparison.OrdinalIgnoreCase)
+				? $$"""{"success":true,"rows":[{"Name":"{{PackageName}}","UId":"{{PackageUId}}"}]}"""
+				: """{"success":true,"rows":[]}""";
 
 		private string? LookupFeatureDefinition(Dictionary<string, string> filters) =>
 			_panelIconFeatureId is not null
@@ -1087,6 +1298,15 @@ public sealed class BrandingBindingServiceTests {
 			string schemaProperty = schemaName is null ? string.Empty : $""","EntitySchemaName":"{schemaName}" """.TrimEnd();
 			return $$"""{"success":true,"rows":[{"UId":"{{uId}}"{{schemaProperty}}}]}""";
 		}
+
+		/// <summary>
+		/// Answers the AdminUnitFeatureState lookup the way the platform does: the row id together with its
+		/// <c>FeatureState</c>, so the binding service can decide whether the row is deliverable at all.
+		/// </summary>
+		private string FeatureStateRows(string? rowId) =>
+			rowId is null
+				? """{"success":true,"rows":[]}"""
+				: $$"""{"success":true,"rows":[{"Id":"{{rowId}}","FeatureState":{{_panelIconFeatureStateJson}}}]}""";
 
 		private static string Rows(string columnName, string? value) =>
 			value is null

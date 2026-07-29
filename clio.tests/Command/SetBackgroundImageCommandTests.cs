@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
+using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -12,6 +13,9 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgroundImageOptions>
 {
+	/// <summary>The package the substituted binding service reports back as the resolved delivery target.</summary>
+	private const string TestPackageName = "UsrBrandingPkg";
+
 	private static readonly Guid ImageId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 	private static readonly Guid CustomTagId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
@@ -30,7 +34,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_logger = Substitute.For<ILogger>();
 		_command.Logger = _logger;
 		_brandingBindingService.BindBackground(Arg.Any<string>())
-			.Returns(new BrandingScopeReport(BrandingScope.Background, [], [], false));
+			.Returns(new BrandingScopeReport(BrandingScope.Background, TestPackageName, [], [], false));
 	}
 
 	public override void TearDown() {
@@ -447,8 +451,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	}
 
 	[Test, Category("Unit")]
-	[Description("Binds the background into the default Custom package when the caller names no package.")]
-	public void Execute_ShouldBindBackgroundIntoCustomPackage_WhenNoPackageIsNamed() {
+	[Description("Leaves the package unset on the binding call when the caller names none, so the environment's CurrentPackageId decides where the data lands.")]
+	public void Execute_ShouldLeaveThePackageUnset_WhenNoPackageIsNamed() {
 		// Arrange
 		ArrangeImageExists();
 		ArrangeGalleryState(alreadyRegistered: true);
@@ -460,8 +464,9 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "the apply and the default-package bind both succeeded");
-		_brandingBindingService.Received(1).BindBackground("Custom");
+		exitCode.Should().Be(0, because: "the apply and the bind both succeeded");
+		_brandingBindingService.Received(1).BindBackground(
+			Arg.Is<string>(package => string.IsNullOrWhiteSpace(package)));
 	}
 
 	[Test, Category("Unit")]
@@ -473,7 +478,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
 		_brandingBindingService.BindBackground("UsrMyApp")
-			.Returns(new BrandingScopeReport(BrandingScope.Background, ["background image"], [], false));
+			.Returns(new BrandingScopeReport(BrandingScope.Background, TestPackageName, ["background image"], [], false));
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString(), PackageName = "UsrMyApp" };
 
 		// Act
@@ -499,7 +504,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 
 		// Assert
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("bound into package 'Custom'")));
+			message.Contains($"bound into package '{TestPackageName}'")));
 	}
 
 	[Test, Category("Unit")]
@@ -549,7 +554,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
 		_brandingBindingService.BindBackground(Arg.Any<string>())
-			.Returns(new BrandingScopeReport(BrandingScope.Background, ["background image"],
+			.Returns(new BrandingScopeReport(BrandingScope.Background, TestPackageName, ["background image"],
 				["UsePanelIconBackground: no All-Users feature state on this environment"], false));
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
 
