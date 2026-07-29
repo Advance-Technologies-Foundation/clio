@@ -25,7 +25,7 @@ internal static class OutputPathConfinement {
 	/// a chain deeper than <see cref="MaxLinkResolutionDepth"/>). It forces <see cref="Resolve"/> to fail closed
 	/// rather than degrade to a lexical path that would slip past confinement.
 	/// </summary>
-	private sealed class UnresolvableLinkException : Exception { }
+	public sealed class UnresolvableLinkException : Exception { }
 
 	/// <summary>
 	/// Resolves <paramref name="outputFile"/> to an absolute path and confirms it stays inside a trusted

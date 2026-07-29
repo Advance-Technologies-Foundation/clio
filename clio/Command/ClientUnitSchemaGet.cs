@@ -82,19 +82,27 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
-	private readonly IFileSystem _fileSystem;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
+	/// <summary>
+	/// Creates the command with the collaborators it needs to fetch and persist client-unit schemas.
+	/// </summary>
+	/// <param name="applicationClient">Client used to call the designer service on the target environment.</param>
+	/// <param name="serviceUrlBuilder">Builds the absolute designer-service URLs for the target environment.</param>
+	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
+	/// <param name="logger">Logger for progress and error output.</param>
+	/// <remarks>
+	/// Every write this command performs goes through <c>OutputPathConfinement</c>, which takes
+	/// <see cref="IoFileSystem"/> — so that is the only file-system abstraction it needs.
+	/// </remarks>
 	public GetClientUnitSchemaCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
-		IFileSystem fileSystem,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
-		_fileSystem = fileSystem;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
@@ -120,21 +128,10 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 					return false;
 				}
 			}
-			string schemaUId;
-			if (!string.IsNullOrWhiteSpace(options.SchemaUId)) {
-				schemaUId = options.SchemaUId;
-			} else {
-				if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-					response = new GetClientUnitSchemaResponse { Success = false, Error = "schema-name or schema-uid is required" };
-					return false;
-				}
-				string resolveError;
-				(schemaUId, resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
-					_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
-				if (resolveError != null) {
-					response = new GetClientUnitSchemaResponse { Success = false, Error = resolveError };
-					return false;
-				}
+			(string schemaUId, string uIdError) = ResolveTargetSchemaUId(options);
+			if (uIdError != null) {
+				response = new GetClientUnitSchemaResponse { Success = false, Error = uIdError };
+				return false;
 			}
 			(JObject schema, string loadError) = SchemaDesignerHelper.LoadSchema(
 				_applicationClient, _serviceUrlBuilder, schemaUId, Kind, options.SchemaName, options.FullHierarchy);
@@ -191,6 +188,19 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 			response = new GetClientUnitSchemaResponse { Success = false, Error = ex.Message };
 			return false;
 		}
+	}
+
+	// An explicit --schema-uid targets that exact layer as given; otherwise the name resolves deterministically to
+	// the top (most-derived) layer. Neither supplied is a caller error, not a lookup miss.
+	private (string schemaUId, string error) ResolveTargetSchemaUId(GetClientUnitSchemaOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.SchemaUId)) {
+			return (options.SchemaUId, null);
+		}
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return (null, "schema-name or schema-uid is required");
+		}
+		return SchemaDesignerHelper.ResolveSchemaUId(
+			_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
 	}
 
 	public override int Execute(GetClientUnitSchemaOptions options) {

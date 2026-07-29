@@ -25,7 +25,6 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private IPageDesignerHierarchyClient _hierarchyClient;
 	private IClassicSectionSchemaResolver _sectionResolver;
-	private IFileSystem _fileSystem;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
 
@@ -34,16 +33,12 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	private readonly Dictionary<string, JArray> _layersByName = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, JObject> _schemaByUid = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, JArray> _localizableByUid = new(StringComparer.OrdinalIgnoreCase);
-	private string _writtenPath;
-	private string _writtenContent;
 
 	public override void Setup() {
 		base.Setup();
 		_layersByName.Clear();
 		_schemaByUid.Clear();
 		_localizableByUid.Clear();
-		_writtenPath = null;
-		_writtenContent = null;
 		_command = Container.GetRequiredService<GetClassicPageSourcesCommand>();
 	}
 
@@ -54,7 +49,6 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		_sectionResolver = Substitute.For<IClassicSectionSchemaResolver>();
-		_fileSystem = Substitute.For<IFileSystem>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://localhost/svc");
@@ -67,17 +61,23 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// conventions and the pre-existing tests keep asserting that path unchanged.
 		_sectionResolver.ResolveSectionSchemaNames(Arg.Any<string>())
 			.Returns(new ClassicSectionLookup(Array.Empty<string>(), null));
-		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
-			.Do(ci => { _writtenPath = ci.ArgAt<string>(0); _writtenContent = ci.ArgAt<string>(1); });
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_columnManager);
 		containerBuilder.AddSingleton(_hierarchyClient);
 		containerBuilder.AddSingleton(_sectionResolver);
-		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
 	}
+
+	// The manifest content the command wrote, read back through the io file system — the single abstraction every
+	// write now goes through (the tool-owned default path and an explicit --output-file alike).
+	private string ReadManifest(GetClassicPageSourcesResponse response) =>
+		_ioFileSystem.File.ReadAllText(response.ManifestPath);
+
+	// True when nothing landed under the tool-owned default output directory, i.e. the run wrote no manifest at all.
+	private bool NoDefaultManifestWritten =>
+		!_ioFileSystem.AllFiles.Any(path => path.Contains(".clio-migration", StringComparison.OrdinalIgnoreCase));
 
 	[Test]
 	[Description("TryAssemblePageSources writes a manifest with base->top schemas, the parent seed, resources, and entity columns; the response carries only a summary.")]
@@ -104,7 +104,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.ColumnCount.Should().Be(2, because: "both entity columns contributed a title");
 
 		// Assert — manifest content (bodies live here, NOT in the response)
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		var schemas = (JArray)manifest["schemas"];
 		schemas.Should().HaveCount(2, because: "every replacing layer body belongs to the manifest chain");
 		schemas[0]["pkg"]!.ToString().Should().Be("BaseApp", because: "the base layer sorts first (base->top)");
@@ -141,7 +141,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "the default output anchors at the resolved directory (PRD OQ-04, get-page convention)");
 		Path.IsPathRooted(response.ManifestPath).Should().BeTrue(
 			because: "the reported path must be absolute — the MCP caller does not know the server's cwd");
-		_writtenPath.Should().Be(expected, because: "the manifest is written to the same resolved path");
+		_ioFileSystem.File.Exists(expected).Should().BeTrue(
+			because: "the manifest is written to the same resolved path it reports");
 	}
 
 	[Test]
@@ -327,7 +328,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		ok.Should().BeFalse(because: "an output-file escaping both allowed zones must not be written");
 		response.Error.Should().Contain("output-file",
 			because: "the failure must name the offending option so the caller can correct it");
-		_writtenPath.Should().BeNull(because: "no file may be written when the path is rejected");
+		_ioFileSystem.File.Exists(_ioFileSystem.Path.GetFullPath(escape)).Should().BeFalse(
+			because: "no file may be written when the path is rejected");
 	}
 
 	[Test]
@@ -344,7 +346,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.Error.Should().Be(PageSchemaMetadataHelper.SchemaNameFormatError,
 			because: "the canonical format error tells the caller what a valid name looks like");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
-		_writtenContent.Should().BeNull(because: "nothing is written for a rejected name");
+		NoDefaultManifestWritten.Should().BeTrue(because: "nothing is written for a rejected name");
 	}
 
 	[Test]
@@ -359,7 +361,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		ok.Should().BeFalse(because: "an unresolvable schema cannot have its sources collected");
 		response.Error.Should().Contain("not found", because: "the caller needs a clear not-found message");
-		_writtenContent.Should().BeNull(because: "no manifest is written when the schema is missing");
+		NoDefaultManifestWritten.Should().BeTrue(because: "no manifest is written when the schema is missing");
 	}
 
 	[Test]
@@ -378,7 +380,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		ok.Should().BeFalse(because: "a manifest with a hole in the layer chain would misfold in the engine");
 		response.Error.Should().Contain("Failed to load layer", because: "the error names the failing step");
 		response.Error.Should().Contain("uid-top", because: "the error identifies the exact layer that failed");
-		_writtenContent.Should().BeNull(because: "no partial manifest may be written on a chain failure");
+		NoDefaultManifestWritten.Should().BeTrue(because: "no partial manifest may be written on a chain failure");
 	}
 
 	[Test]
@@ -394,7 +396,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		ok.Should().BeFalse(because: "a malformed transport response cannot produce a manifest");
 		response.Error.Should().NotBeNullOrWhiteSpace(because: "the parse failure must surface as a readable error");
-		_writtenContent.Should().BeNull(because: "nothing is written when assembly fails");
+		NoDefaultManifestWritten.Should().BeTrue(because: "nothing is written when assembly fails");
 	}
 
 	[Test]
@@ -428,7 +430,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		ok.Should().BeTrue(because: "a page without a resolvable entity still collects its layer chain");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["entity"].Should().BeNull(because: "an unknown entity is omitted, never fabricated");
 		manifest["entityColumns"].Should().BeNull(because: "no entity means no columns block");
 		manifest["section"].Should().BeNull(because: "no entity means no section naming convention to probe");
@@ -450,7 +452,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		ok.Should().BeTrue(because: "entity columns are a best-effort enricher, not a bundling precondition");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["entityColumns"].Should().BeNull(because: "the failed enricher is omitted, never fabricated");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrTest")));
 		response.Warnings.Should().Contain(w => w.Contains("entity columns"),
@@ -483,7 +485,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.DetailCount.Should().Be(1, because: "the referenced detail schema resolves");
 		response.SectionLayerCount.Should().Be(1, because: "the <Entity>SectionV2 convention resolves one layer");
 		response.ChildPageCount.Should().Be(1, because: "the detail's edit page resolves to a nested manifest");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["detailSchemas"]!["UsrNoteDetail"]!["title"]!.ToString().Should().Be("Notes",
 			because: "the detail's caption becomes its title");
 		manifest["detailSchemas"]!["UsrNoteDetail"]!["body"]!.ToString().Should().Contain("UsrNote",
@@ -563,7 +565,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		response.DetailCount.Should().Be(0, because: "an unresolved detail is omitted, not fabricated");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["detailSchemas"].Should().BeNull(because: "no detail resolved, so the field is absent");
 	}
 
@@ -605,7 +607,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		response.SectionLayerCount.Should().Be(1,
 			because: "the section named off the page prefix resolves even though no <Entity>Section[V2] schema exists");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		((JArray)manifest["section"]).Should().ContainSingle(because: "the page-prefixed section layer is gathered")
 			.Which["body"]!.ToString().Should().Contain("UsrApplicant1Section",
 				because: "the resolved section is the page-prefixed schema, not a bare-entity section");
@@ -630,7 +632,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1, because: "the first section candidate that resolves wins, and only one chain is emitted");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		((JArray)manifest["section"])[0]["pkg"]!.ToString().Should().Be("PagePkg",
 			because: "the page-prefixed section (UsrApplicant1Section) takes precedence over the bare-entity section (UsrApplicantSection)");
 	}
@@ -659,7 +661,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.SectionLayerCount.Should().Be(1,
 			because: "the SysModule binding resolves a section name that no naming convention can derive");
 		response.Warnings.Should().BeNull(because: "a resolved section leaves nothing for the caller to weigh");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		((JArray)manifest["section"]).Should().ContainSingle(because: "the metadata-resolved section layer is gathered")
 			.Which["pkg"]!.ToString().Should().Be("SectionPkg",
 				because: "the gathered chain is the section the metadata pointed at");
@@ -686,7 +688,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		response.SectionLayerCount.Should().Be(1, because: "the first candidate that resolves wins and only one chain is emitted");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		((JArray)manifest["section"])[0]["pkg"]!.ToString().Should().Be("MetaPkg",
 			because: "the SysModule binding is authoritative and outranks the name convention");
 	}
@@ -823,7 +825,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		response.SeedCount.Should().Be(2,
 			because: "both layers of the multi-package parent template must be seeded, not only the parent.uId layer");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		var seed = (JArray)manifest["seed"];
 		seed.Should().HaveCount(2, because: "the seed carries the whole template layer set for the level");
 		seed[0]["pkg"]!.ToString().Should().Be("Core",
@@ -874,7 +876,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		response.SeedCount.Should().Be(1, because: "the parent body itself is still seeded");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		JToken entry = ((JArray)manifest["seed"])[0];
 		entry["pkg"].Should().BeNull(
 			because: "pkg is package provenance — when unknown it is omitted, never substituted with the schema name");
@@ -941,7 +943,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "the real DataService reason must surface, not a masked empty-result not-found");
 		response.Error.Should().NotContain("not found",
 			because: "an access failure must not be reported as a missing schema");
-		_writtenContent.Should().BeNull(because: "no manifest is written when enumeration fails");
+		NoDefaultManifestWritten.Should().BeTrue(because: "no manifest is written when enumeration fails");
 	}
 
 	[Test]
@@ -970,7 +972,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		response.DetailCount.Should().Be(50,
 			because: "detail gathering is capped at MaxDetails (50) resolved schemas even when more resolve");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		((JObject)manifest["detailSchemas"]).Count.Should().Be(50,
 			because: "only the first fifty resolvable details are folded into the manifest");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
@@ -1036,7 +1038,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		response.ChildPageCount.Should().Be(50,
 			because: "child pages come only from the fifty resolved details, so the set is bounded at MaxChildPages (50)");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		((JObject)manifest["childPageSchemas"]).Count.Should().Be(50,
 			because: "exactly fifty child edit pages are nested into the manifest");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
@@ -1118,7 +1120,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.LayerCount.Should().Be(2, because: "both UsrPage-named layers become the schemas[] chain");
 		response.SeedCount.Should().Be(1, because: "the one non-page (parent-template) layer becomes the seed");
 		response.Entity.Should().Be("UsrX", because: "the entity is inferred from the split page bodies");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		var schemas = (JArray)manifest["schemas"];
 		schemas[0]["pkg"]!.ToString().Should().Be("pkgA", because: "schemas[] is ordered base->top (lower hierarchy first)");
 		schemas[1]["pkg"]!.ToString().Should().Be("pkgB", because: "the most-derived page layer sorts last");
@@ -1164,7 +1166,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		response.LayerCount.Should().Be(3,
 			because: "the full re-fetched chain (three UsrPage layers) is used, not the two-layer partial initial fetch");
 		response.SeedCount.Should().Be(1, because: "the parent template from the full re-fetched chain becomes the seed");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		var schemas = (JArray)manifest["schemas"];
 		schemas[0]["pkg"]!.ToString().Should().Be("pkgRoot", because: "the full chain is ordered base->top (most-base root layer first)");
 		schemas[2]["pkg"]!.ToString().Should().Be("pkgTop", because: "the most-derived layer of the full chain sorts last");
@@ -1254,7 +1256,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_hierarchyClient.Received(1).GetParentSchemas("uid-child", Arg.Any<string>());
 		response.ChildPageCount.Should().Be(1,
 			because: "the child edit page resolves — proving the hierarchy path ran, since its body was never registered on the DataService fan-out");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		JToken childManifest = manifest["childPageSchemas"]!["UsrNotePage"]!;
 		var childSchemas = (JArray)childManifest["schemas"]!;
 		childSchemas.Should().HaveCount(2,
@@ -1294,7 +1296,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		ok.Should().BeTrue(because: "the legacy per-layer fan-out still assembles the child manifest");
 		response.ChildPageCount.Should().Be(1,
 			because: "with an empty hierarchy the child resolves through the identical legacy LoadLayerChain + BuildSeed path");
-		JObject manifest = JObject.Parse(_writtenContent);
+		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["childPageSchemas"]!["UsrNotePage"]!["schemas"].Should().NotBeNull(
 			because: "the child edit page is still nested as its own manifest via the fallback");
 	}
