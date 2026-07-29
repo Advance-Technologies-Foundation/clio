@@ -21,6 +21,26 @@
 			}
 		},
 		{
+			"requestType": "crt.CopilotActionRequest",
+			"parameters": {
+				"prompt": {
+					"type": "string",
+					"required": true,
+					"description": "Prompt text sent to Creatio.ai as the user's message; static text or an `$Attribute` view-model binding."
+				},
+				"useCurrentSession": {
+					"type": "boolean",
+					"description": "When `true`, the prompt continues the page context's own AI session (created on first use and reused on subsequent calls). When `false` (or omitted), the prompt goes to the last open chat if the AI panel is open, or a new chat is opened with the prompt."
+				}
+			},
+			"description": "Sends a prompt to Creatio.ai: opens the AI chat panel and posts the prompt into a chat session. Bound to buttons (the \"Creatio.ai action\" of the Designer's event panel).",
+			"references": {
+				"docs": [
+					"request-docs/copilot-action.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.PrintablesRequest",
 			"parameters": {
 				"convertInPDF": {
@@ -63,14 +83,6 @@
 		{
 			"requestType": "crt.RunBusinessProcessRequest",
 			"parameters": {
-				"activeRow": {
-					"type": "string",
-					"description": "Mobile-only: current row context on a mobile list."
-				},
-				"activeRowAttributeName": {
-					"type": "string",
-					"description": "Mobile-only: name of the view-model attribute holding the current row on a mobile list."
-				},
 				"dataSourceName": {
 					"type": "string",
 					"description": "Data source of the list whose selected records the process runs for (`ForTheSelectedRecords` run type)."
@@ -149,6 +161,29 @@
 			"references": {
 				"docs": [
 					"request-docs/run-business-process.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.SaveDataRequest",
+			"parameters": {
+				"dataSourceName": {
+					"type": "string",
+					"required": true,
+					"description": "Name of the page data source to save, as declared in the page's `modelConfig`. Only this data source is persisted; the rest of the page is left untouched."
+				},
+				"parameters": {
+					"type": "array",
+					"items": {
+						"type": "ModelParameterConfig"
+					},
+					"description": "Data-source parameters identifying the row being persisted. Author a single `primaryColumnValue` entry whose `value` names the view-model attribute holding the record Id; the resolved value becomes the update query's primary-column filter (updates send only the changed attribute values; inserts send all the data source's bound values and need no filter)."
+				}
+			},
+			"description": "Persists the pending changes of a single named data source of the current page; whenever a record is saved, the platform record-save pipeline emits one such request per data source that has changes to persist (the standard full page save is crt.SaveRecordRequest). Bound to buttons that save one data source without running the full page save, and intercepted in page handlers to run logic around each data-source save.",
+			"references": {
+				"docs": [
+					"request-docs/save-data.request.md"
 				]
 			}
 		}
@@ -390,6 +425,26 @@
 					"value": {
 						"type": "number",
 						"required": true
+					}
+				}
+			},
+			"ModelParameterConfig": {
+				"fields": {
+					"type": {
+						"type": "string",
+						"values": [
+							"primaryColumnValue",
+							"columnValue",
+							"filter",
+							"primaryDisplayValueFilter"
+						],
+						"required": true,
+						"description": "Kind of parameter; authored bindings normally use \"primaryColumnValue\". These four are the only kinds a page schema may author: the platform enum also carries the internal sentinels \"empty\" and \"never\", which the data-load pipeline produces for itself and the authored-parameter converter does not handle, so authoring either one fails the save whenever the request must target rows (updates and deletes; inserts ignore parameters)."
+					},
+					"value": {
+						"type": "unknown",
+						"required": true,
+						"description": "Parameter value; for \"primaryColumnValue\", the name of the view-model attribute holding the record Id."
 					}
 				}
 			},

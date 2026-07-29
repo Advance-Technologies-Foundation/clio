@@ -60,7 +60,8 @@ public sealed class CreateRelatedPageAddonToolTests {
 		string entitySchemaName = "UsrDeliveryItem",
 		string packageName = "UsrDeliveryTracking",
 		System.Collections.Generic.IReadOnlyList<RelatedPageArg> pages = null,
-		string environmentName = "dev") =>
+		string environmentName = "dev",
+		string schemaType = null) =>
 		new(
 			entitySchemaName,
 			packageName,
@@ -69,7 +70,8 @@ public sealed class CreateRelatedPageAddonToolTests {
 			environmentName,
 			null,
 			null,
-			null);
+			null,
+			schemaType);
 
 	[Test]
 	[Description("Resolves the command for the requested environment, maps the args onto the command options, and returns the resolved command's response.")]
@@ -145,6 +147,33 @@ public sealed class CreateRelatedPageAddonToolTests {
 			because: "role-name maps by position, not swapped with role");
 		spec.TypeColumnValue.Should().Be("TYPE-VALUE-RECORD-ID",
 			because: "type-column-value maps by position");
+	}
+
+	[Test]
+	[Description("Maps schema-type=mobile through the options and into the RelatedPageAddonRequest as SchemaType.Mobile, so the command writes the MobileRelatedPage add-on rather than the web RelatedPage add-on.")]
+	public void CreateRelatedPageAddon_ShouldMapMobileSchemaType_OntoMobileAddonRequest() {
+		// Act
+		_tool.CreateRelatedPageAddon(Args(schemaType: "mobile"));
+
+		// Assert
+		_resolverOptions.Should().NotBeNull(because: "the tool must resolve an environment-bound command");
+		_resolverOptions.SchemaType.Should().Be("mobile",
+			because: "the schema-type arg maps onto the command options");
+		_captured.Should().NotBeNull(because: "the resolved command forwards a request to the service");
+		_captured.SchemaType.Should().Be(RelatedPageSchemaType.Mobile,
+			because: "the command parses schema-type=mobile into SchemaType.Mobile so the MobileRelatedPage add-on is targeted");
+	}
+
+	[Test]
+	[Description("Defaults to the web RelatedPage add-on (SchemaType.Web) when schema-type is omitted, preserving the tool's original web-only behavior for existing callers.")]
+	public void CreateRelatedPageAddon_ShouldDefaultToWebSchemaType_WhenOmitted() {
+		// Act — no schema-type supplied.
+		_tool.CreateRelatedPageAddon(Args());
+
+		// Assert
+		_captured.Should().NotBeNull(because: "the resolved command forwards a request to the service");
+		_captured.SchemaType.Should().Be(RelatedPageSchemaType.Web,
+			because: "an omitted schema-type defaults to the web RelatedPage add-on");
 	}
 
 	[Test]

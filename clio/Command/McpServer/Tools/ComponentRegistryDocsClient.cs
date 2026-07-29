@@ -243,8 +243,8 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 	}
 
 	// Builds {base}{version}/{docPath} via Uri composition. docPath has been validated
-	// to start with "docs/" and contain only safe characters, so it can be appended
-	// directly as part of the relative URL.
+	// to start with the docs namespace ("docs/" or "mobile-docs/") and contain only safe
+	// characters, so it can be appended directly as part of the relative URL.
 	private string BuildCdnUrl(string version, string normalisedDocPath) {
 		Uri baseUri = new(_cdnBaseUrl, UriKind.Absolute);
 		Uri relativeUri = new($"{version}/{normalisedDocPath}", UriKind.Relative);

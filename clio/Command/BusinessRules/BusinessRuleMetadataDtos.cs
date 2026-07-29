@@ -140,6 +140,9 @@ internal sealed class BusinessRuleTriggerMetadataDto {
 
 	[JsonPropertyName("type")]
 	public int Type { get; set; }
+
+	[JsonPropertyName("scopeId")]
+	public string? ScopeId { get; set; }
 }
 
 internal class BusinessRuleExpressionMetadataDto {
@@ -171,10 +174,14 @@ internal class BusinessRuleExpressionMetadataDto {
 	public string? Path { get; set; }
 
 	[JsonPropertyOrder(6)]
+	[JsonPropertyName("scopeId")]
+	public string? ScopeId { get; set; }
+
+	[JsonPropertyOrder(7)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 
-	[JsonPropertyOrder(7)]
+	[JsonPropertyOrder(8)]
 	[JsonPropertyName("sysValueName")]
 	public string? SysValueName { get; set; }
 

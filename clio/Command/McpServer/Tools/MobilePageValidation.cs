@@ -38,6 +38,18 @@ internal static class MobilePageValidation {
 			StringComparer.OrdinalIgnoreCase);
 		(List<string> errors, List<string> warnings) =
 			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly, explicitResources);
+		// Once the cheap structural checks pass, run the faithful differ oracle: apply the diff sections
+		// through the client-engine clones (JsonDiffApplier / JsonPathDiffApplier) and surface any exception
+		// the Creatio differ would raise (e.g. "Item \"X\" is not a container for other items"). The error is
+		// returned to the caller for analysis instead of being silently patched (no heuristic auto-repair).
+		// Gated on a structurally-sound body so a
+		// malformed diff is not double-reported (the structural validators already flag it).
+		if (errors.Count == 0) {
+			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body);
+			if (!applyResult.IsValid) {
+				errors.AddRange(applyResult.Errors);
+			}
+		}
 		bool valid = errors.Count == 0;
 		return new PageSyncValidationResult {
 			MarkersOk = true,

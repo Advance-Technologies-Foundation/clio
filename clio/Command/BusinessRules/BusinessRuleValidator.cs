@@ -463,7 +463,10 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 				throw new ArgumentException($"{fieldName}.path is required when {fieldName}.type is 'AttributeValue'.");
 			}
 
-			ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
+			if (!IsScopedAttributePath(attributeMap, expression.Path)) {
+				ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
+			}
+
 			BusinessRuleAttributeDescriptor descriptor = ResolveAttribute(attributeMap, expression.Path, $"{fieldName}.path");
 			return new ConditionOperand(
 				fieldName,
@@ -696,6 +699,12 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 				$"{fieldName} must reference a direct entity attribute. Forward reference paths are supported only in rule.actions[*].items[*].value.path.");
 		}
 	}
+
+	private static bool IsScopedAttributePath(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string path) =>
+		attributeMap.TryGetValue(path, out BusinessRuleAttributeDescriptor? descriptor)
+		&& descriptor.IsScoped;
 
 	private static bool IsApplyFilterOnlyRule(BusinessRule rule) =>
 		rule.Actions.Count == 1
