@@ -58,6 +58,11 @@
 		</AssemblyAttribute>
 	</ItemGroup>
 
+	<ItemGroup Label="ConversionRules">
+		<None Remove="Command\McpServer\Data\WebToMobilePageConversionRules.json" />
+		<EmbeddedResource Include="Command\McpServer\Data\WebToMobilePageConversionRules.json" />
+	</ItemGroup>
+
 	<ItemGroup Label="AdditionalFiles">
 		<AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml"/>
 		<None Include="img\**"/>
@@ -113,22 +118,6 @@
 		</Otherwise>
 	</Choose>
 
-	<!--
-	 Warning NU1903 : Microsoft.PowerShell.SDK (via Microsoft.Windows.Compatibility)
-	 pulls in a vulnerable transitive 'System.Security.Cryptography.Xml' on both
-	 target frameworks (10.0.9 on net8.0, 10.0.6 on net10.0).
-
-	 Workaround: pin it to the patched version managed centrally via MsPackageVersion
-	 in Directory.Packages.props (currently 10.0.10, which fixes
-	 CVE-2026-50648 / 50525 / 47302 / 47304). Kept unconditional so both TFMs restore
-	 the patched build.
-
-	 Offending package Powershell.SDK
-	-->
-	<ItemGroup>
-		<PackageReference Include="System.Security.Cryptography.Xml" />
-	</ItemGroup>
-
 	<ItemGroup>
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
@@ -149,8 +138,11 @@
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />
-		<!-- PowerShell brings this package transitively. Pin the audited dependency graph for every target;
-		     framework-provided assemblies still require a current installed ASP.NET Core runtime. -->
+		<!-- NU1903: Microsoft.PowerShell.SDK (via Microsoft.Windows.Compatibility) pulls in a
+		     vulnerable transitive System.Security.Cryptography.Xml on BOTH target frameworks
+		     (10.0.9 on net8.0, 10.0.6 on net10.0; GHSA-23rf-6693-g89p family). This direct
+		     reference lifts it to the patched centrally-managed $(MsPackageVersion) and must stay
+		     unconditional — a TFM-scoped lift leaves the other TFM vulnerable and fails CI restore. -->
 		<PackageReference Include="System.Security.Cryptography.Xml" />
 		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />

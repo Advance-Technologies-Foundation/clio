@@ -357,6 +357,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-classic-page-sources"></a>
+<a id="classic-page-sources"></a>
+<a id="get-classic-migration-bundle"></a>
+<a id="classic-migration-bundle"></a>
+- [`get-classic-page-sources`](docs/commands/get-classic-page-sources.md) - Collect the Classic page sources for folding and write the manifest JSON to disk, `classic-page-sources`, `get-classic-migration-bundle`, `classic-migration-bundle`
 <a id="get-client-unit-schema"></a>
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
@@ -425,6 +430,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page-hierarchy"></a>
 <a id="page-hierarchy-get"></a>
 - [`get-page-hierarchy`](docs/commands/get-page-hierarchy.md) - Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, `page-hierarchy-get`
+<a id="list-entity-client-schemas"></a>
+<a id="migration-unit-resolve"></a>
+- [`list-entity-client-schemas`](docs/commands/list-entity-client-schemas.md) - Resolve the Classic page-role graph (sections, edit pages, mini pages) of an entity, `migration-unit-resolve`
 <a id="list-pages"></a>
 <a id="page-list"></a>
 - [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
@@ -596,6 +604,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-user-theme`](docs/commands/set-user-theme.md) - Apply a theme to the current user's profile on an environment (Creatio 10.0.0+), `apply-user-theme`
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
+
+## Customization
+
+<a id="upload-image"></a>
+- [`upload-image`](docs/commands/upload-image.md) - Upload a local image to an environment and print its image id
+<a id="set-background-image"></a>
+- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background, from a local file or an uploaded image id
 
 ## Record rights
 

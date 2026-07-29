@@ -1,0 +1,333 @@
+namespace Clio.Tests.Command;
+
+using System;
+using System.IO;
+using System.Linq;
+using Clio.Command;
+using FluentAssertions;
+using NUnit.Framework;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class OutputPathConfinementTests {
+
+	private readonly IoFileSystem _fileSystem = new System.IO.Abstractions.FileSystem();
+	private string _sandbox;
+
+	[SetUp]
+	public void SetUp() {
+		// A real directory under the OS temp root — one of the two zones OutputPathConfinement allows. Using the
+		// real file system (not a mock) is required so the symlink and macOS /var->/private/var realpath behavior
+		// is exercised as it runs in production.
+		_sandbox = Path.Combine(Path.GetTempPath(), "opc-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(_sandbox);
+	}
+
+	[TearDown]
+	public void TearDown() {
+		try {
+			if (Directory.Exists(_sandbox)) {
+				Directory.Delete(_sandbox, recursive: true);
+			}
+		}
+		catch (IOException) {
+			// Best-effort cleanup; a leftover temp directory must never fail a test.
+		}
+	}
+
+	[Test]
+	[Description("Resolve allows a fresh output-file inside the OS temp directory and returns its resolved absolute path.")]
+	public void Resolve_ShouldAllow_FreshPathInsideTempRoot() {
+		// Arrange
+		string outputFile = Path.Combine(_sandbox, "schema-body.js");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+
+		// Assert
+		error.Should().BeNull(because: "a fresh path under the OS temp root is inside an allowed zone");
+		path.Should().Be(_fileSystem.Path.GetFullPath(outputFile),
+			because: "the resolved absolute path is returned for the caller to write");
+	}
+
+	[Test]
+	[Description("Resolve rejects an output-file that resolves outside the workspace anchor and the OS temp directory, naming the offending option.")]
+	public void Resolve_ShouldReject_PathOutsideAllowedZones() {
+		// Arrange — an absolute path at the filesystem root, outside both the temp root and any workspace anchor
+		string escape = Path.Combine(Path.GetPathRoot(_sandbox)!, "opc-escape-" + Guid.NewGuid().ToString("N") + ".js");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, escape);
+
+		// Assert
+		path.Should().BeNull(because: "a path escaping every allowed zone must not be handed back for writing");
+		error.Should().Contain("output-file",
+			because: "the error names the offending option so the caller can correct it");
+	}
+
+	[Test]
+	[Description("Resolve follows a symlink and rejects an output-file whose parent link escapes the allowed zones, rather than trusting the lexical path.")]
+	public void Resolve_ShouldReject_SymlinkEscapingAllowedZones() {
+		// Arrange — a directory symlink under the sandbox pointing at the filesystem root (outside every allowed zone)
+		string linkDir = Path.Combine(_sandbox, "link");
+		string root = Path.GetPathRoot(_sandbox)!;
+		try {
+			Directory.CreateSymbolicLink(linkDir, root);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		string throughLink = Path.Combine(linkDir, "opc-escape-" + Guid.NewGuid().ToString("N") + ".js");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, throughLink);
+
+		// Assert
+		path.Should().BeNull(
+			because: "the symlink resolves to the filesystem root, which is outside the workspace and temp zones");
+		error.Should().Contain("output-file",
+			because: "the link escape is reported to the caller rather than silently followed");
+	}
+
+	[Test]
+	[Description("Resolve follows an INTERMEDIATE (non-terminal) symlink in the path chain and rejects the escape, not just a terminal symlink — a link one level up cannot smuggle the write past the confinement check.")]
+	public void Resolve_ShouldReject_IntermediateSymlinkEscape() {
+		// Arrange — a directory symlink under the sandbox pointing at the filesystem root; the output-file then
+		// descends through an EXISTING directory under the real root, so the symlink is a parent (intermediate)
+		// component, not the terminal one.
+		string root = Path.GetPathRoot(_sandbox)!;
+		string existingRootChild;
+		try {
+			existingRootChild = Directory.GetDirectories(root)
+				.Select(d => Path.GetFileName(d.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
+				.FirstOrDefault(name => !string.IsNullOrEmpty(name));
+		}
+		catch (IOException) {
+			Assert.Ignore("Filesystem root is not enumerable in this environment.");
+			return;
+		}
+		if (string.IsNullOrEmpty(existingRootChild)) {
+			Assert.Ignore("Filesystem root has no enumerable child directory to descend into.");
+		}
+		string linkDir = Path.Combine(_sandbox, "link");
+		try {
+			Directory.CreateSymbolicLink(linkDir, root);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		string throughIntermediateLink = Path.Combine(linkDir, existingRootChild, "opc-" + Guid.NewGuid().ToString("N") + ".js");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, throughIntermediateLink);
+
+		// Assert
+		path.Should().BeNull(
+			because: "the intermediate symlink resolves to the filesystem root, outside the workspace and temp zones");
+		error.Should().Contain("output-file",
+			because: "a parent-chain symlink escape must be caught the same as a terminal one");
+	}
+
+	[Test]
+	[Description("Resolve refuses an output-file that already exists and leaves it untouched — an explicit output-file is additive, so the Destructive=false classification of every routing tool stays honest.")]
+	public void Resolve_ShouldRefuse_ExistingTarget() {
+		// Arrange
+		string existing = Path.Combine(_sandbox, "already-there.js");
+		File.WriteAllText(existing, "old");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, existing);
+
+		// Assert
+		path.Should().BeNull(because: "an additive-only writer must not silently overwrite an existing file");
+		error.Should().Contain("already exists",
+			because: "the caller is told the target exists so the Destructive=false classification stays honest");
+		File.ReadAllText(existing).Should().Be("old", because: "the existing file is left untouched when the write is refused");
+	}
+
+	[Test]
+	[Description("IsTrustedAnchor rejects a filesystem root as a confinement boundary because it confines to the whole volume.")]
+	public void IsTrustedAnchor_ShouldReject_FilesystemRoot() {
+		// Arrange
+		string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+		string root = Path.GetPathRoot(_sandbox)!;
+
+		// Act
+		bool trusted = OutputPathConfinement.IsTrustedAnchor(_fileSystem, root, home);
+
+		// Assert
+		trusted.Should().BeFalse(
+			because: "a filesystem root would confine to every file on the volume and is too broad to be a write boundary");
+	}
+
+	[Test]
+	[Description("IsTrustedAnchor rejects an ancestor of the user's home directory (e.g. /Users, C:\\Users) as a confinement boundary.")]
+	public void IsTrustedAnchor_ShouldReject_AncestorOfHome() {
+		// Arrange
+		string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+		string ancestorOfHome = Path.GetDirectoryName(
+			home.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		if (string.IsNullOrEmpty(ancestorOfHome)) {
+			Assert.Ignore("The home directory has no parent on this platform.");
+		}
+
+		// Act
+		bool trusted = OutputPathConfinement.IsTrustedAnchor(_fileSystem, ancestorOfHome, home);
+
+		// Assert
+		trusted.Should().BeFalse(
+			because: "an ancestor of $HOME confines to every user profile and is too broad to be a write boundary");
+	}
+
+	[Test]
+	[Description("IsTrustedAnchor accepts an ordinary project directory that is neither a filesystem root nor an ancestor of home.")]
+	public void IsTrustedAnchor_ShouldAccept_OrdinaryDirectory() {
+		// Arrange
+		string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+		// Act
+		bool trusted = OutputPathConfinement.IsTrustedAnchor(_fileSystem, _sandbox, home);
+
+		// Assert
+		trusted.Should().BeTrue(
+			because: "a specific directory that is neither a filesystem root nor an ancestor of home is a valid write boundary");
+	}
+
+	[Test]
+	[Description("Resolve follows a DANGLING terminal symlink (target not yet created) and rejects it when the target escapes the allowed zones — File.Exists/Directory.Exists report false for such a link, so it must not be trusted as an ordinary lexical tail segment.")]
+	public void Resolve_ShouldReject_DanglingTerminalSymlinkEscape() {
+		// Arrange — a file symlink under the sandbox whose target does NOT exist and lies at the filesystem root
+		// (outside every allowed zone). The write would follow the link at the OS level and land on the target.
+		string root = Path.GetPathRoot(_sandbox)!;
+		string danglingTarget = Path.Combine(root, "opc-dangling-" + Guid.NewGuid().ToString("N"));
+		string link = Path.Combine(_sandbox, "dead");
+		try {
+			File.CreateSymbolicLink(link, danglingTarget);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, link);
+
+		// Assert
+		path.Should().BeNull(
+			because: "a dangling symlink whose target escapes the allowed zones must be rejected, not written through");
+		error.Should().Contain("output-file",
+			because: "the dangling-link escape is reported rather than silently followed by the write");
+	}
+
+	[Test]
+	[Description("Resolve follows a DANGLING intermediate symlink (a parent component whose target does not exist) and rejects the escape — the write's directory creation would otherwise follow it out of the allowed zones.")]
+	public void Resolve_ShouldReject_DanglingIntermediateSymlinkEscape() {
+		// Arrange — a directory symlink under the sandbox pointing at a non-existent directory at the filesystem
+		// root; the output-file then descends through it, so the dangling link is an intermediate component.
+		string root = Path.GetPathRoot(_sandbox)!;
+		string danglingTarget = Path.Combine(root, "opc-dangling-dir-" + Guid.NewGuid().ToString("N"));
+		string link = Path.Combine(_sandbox, "deadlink");
+		try {
+			Directory.CreateSymbolicLink(link, danglingTarget);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		string throughLink = Path.Combine(link, "opc-" + Guid.NewGuid().ToString("N") + ".js");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, throughLink);
+
+		// Assert
+		path.Should().BeNull(
+			because: "a dangling intermediate symlink resolving outside the allowed zones must be rejected");
+		error.Should().Contain("output-file",
+			because: "a dangling parent-chain symlink escape is caught the same as an existing-target one");
+	}
+
+	[Test]
+	[Description("A dangling symlink whose not-yet-created target stays inside an allowed zone is never resolved to an out-of-bounds write: it is either refused (the link node already occupies the path) or its resolved path stays inside the sandbox. File.Exists reports a dangling link differently on Windows vs POSIX, so only the cross-OS no-escape invariant is asserted (the hardening must not redirect an in-bounds link out of bounds).")]
+	public void Resolve_ShouldNeverEscape_ForDanglingSymlinkTargetInsideAllowedZone() {
+		// Arrange — a file symlink under the sandbox whose (absent) target is also under the sandbox
+		string insideTarget = Path.Combine(_sandbox, "opc-inside-" + Guid.NewGuid().ToString("N") + ".js");
+		string link = Path.Combine(_sandbox, "inlink");
+		try {
+			File.CreateSymbolicLink(link, insideTarget);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, link);
+
+		// Assert
+		if (error == null) {
+			Path.GetFullPath(path).Should().StartWith(_sandbox,
+				because: "an allowed in-bounds link must never resolve to a path outside the sandbox");
+		}
+		else {
+			path.Should().BeNull(
+				because: "a refusal (the dangling link node already occupies the path) must not hand back a path to write");
+		}
+	}
+
+	[Test]
+	[Description("WriteAtomic creates the parent directory and writes the content to a fresh confined path.")]
+	public void WriteAtomic_ShouldCreateParentAndWrite_FreshPath() {
+		// Arrange
+		string outputFile = Path.Combine(_sandbox, "nested", "schema-body.js");
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		error.Should().BeNull(because: "a fresh nested path under the sandbox is inside an allowed zone");
+
+		// Act
+		OutputPathConfinement.WriteAtomic(_fileSystem, path, "content");
+
+		// Assert
+		File.ReadAllText(outputFile).Should().Be("content",
+			because: "WriteAtomic writes the content to the resolved path, creating the parent directory");
+	}
+
+	[Test]
+	[Description("Resolve fails CLOSED on a symlink CYCLE: the resolution throws UnresolvableLinkException and Resolve refuses with the specific 'unresolvable symbolic link' message, rather than degrading to the lexical path. Locks in the fail-closed branch and its ordering above the broad lexical-fallback catch.")]
+	public void Resolve_ShouldFailClosed_OnSymlinkCycle() {
+		// Arrange — a two-node symlink cycle under the sandbox (a -> b, b -> a)
+		string a = Path.Combine(_sandbox, "cycle-a");
+		string b = Path.Combine(_sandbox, "cycle-b");
+		try {
+			File.CreateSymbolicLink(a, b);
+			File.CreateSymbolicLink(b, a);
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, a);
+
+		// Assert
+		path.Should().BeNull(because: "a symlink cycle cannot be resolved, so no path may be handed back for writing");
+		error.Should().Contain("unresolvable symbolic link",
+			because: "the cycle must fail CLOSED via the specific branch, not degrade to the lexical fallback");
+	}
+
+	[Test]
+	[Description("WriteAtomic refuses to overwrite a target that appears after Resolve (FileMode.CreateNew is the atomic gate), keeping the additive Destructive=false contract honest against a resolve->write race.")]
+	public void WriteAtomic_ShouldRefuse_TargetThatAppearedAfterResolve() {
+		// Arrange — Resolve confirms the path is allowed while it does not exist; the file then appears (a racing
+		// writer / a target created between the check and the write).
+		string outputFile = Path.Combine(_sandbox, "raced.js");
+		(string path, string _) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		File.WriteAllText(outputFile, "planted");
+
+		// Act
+		Action write = () => OutputPathConfinement.WriteAtomic(_fileSystem, path, "new");
+
+		// Assert
+		write.Should().Throw<IOException>().WithMessage("*already exists*",
+			because: "CreateNew fails atomically when the target exists, so no overwrite occurs");
+		File.ReadAllText(outputFile).Should().Be("planted",
+			because: "the pre-existing file is left untouched when the atomic create is refused");
+	}
+}

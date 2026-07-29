@@ -81,11 +81,11 @@ public class WatchCompilationCommandTests : BaseCommandTests<WatchCompilationOpt
 	}
 
 	[Test]
-	[Description("Verifies Execute returns exit code 1 when activity was observed but the ODataEntities marker was never seen")]
-	public void Execute_ReturnsOne_WhenActivityObservedButFinalMarkerNeverSeen() {
+	[Description("Verifies Execute returns exit code 2 (gave up), not a confirmed failure, when activity was observed but the ODataEntities marker never appeared and the give-up deadline is exceeded - a CI/TeamCity trigger that knows a full compile is running should get 'still waiting', not 'failed', when only a package-level row has shown up so far")]
+	public void Execute_ReturnsTwo_WhenActivityObservedButFinalMarkerNeverSeen_AndDeadlineExceeded() {
 		// Arrange
 		WatchCompilationCommand command = Container.GetRequiredService<WatchCompilationCommand>();
-		WatchCompilationOptions options = new() { GiveUpAfterSeconds = 300 };
+		WatchCompilationOptions options = new() { GiveUpAfterSeconds = 0 };
 		_poller.GetBaseline().Returns((CompilationHistory)null);
 		_settleTracker.Snapshot.Returns(new CompilationSettleSnapshot(false, false, 1, DateTime.UtcNow));
 
@@ -93,7 +93,7 @@ public class WatchCompilationCommandTests : BaseCommandTests<WatchCompilationOpt
 		int result = command.Execute(options);
 
 		// Assert
-		result.Should().Be(1, because: "new activity happened this session but the ODataEntities marker was never observed, so a full finish cannot be confirmed");
+		result.Should().Be(2, because: "IsSettled never reports true while activity was observed but the marker is missing (see CompilationSettleTracker), so only the overall give-up-after budget ends the wait, never a confirmed-failure verdict");
 	}
 
 	[Test]

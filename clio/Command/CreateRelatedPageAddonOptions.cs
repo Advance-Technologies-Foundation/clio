@@ -52,6 +52,9 @@ namespace Clio.Command {
 		[Option("type-column-uid", Required = false, HelpText = "Optional UId of the type column that drives type-specific page sets")]
 		public string TypeColumnUId { get; set; }
 
+		[Option("schema-type", Required = false, HelpText = "Target UI: 'web' (RelatedPage add-on, default) or 'mobile' (MobileRelatedPage add-on — the page opened for a record in the Creatio Mobile app)")]
+		public string SchemaType { get; set; }
+
 		/// <summary>
 		/// Full set of related-page entries to store. When non-null this fully replaces the page list and
 		/// the scalar <see cref="DefaultPage"/>/<see cref="AddPage"/> options are ignored. Populated by the
@@ -96,7 +99,8 @@ namespace Clio.Command {
 					options.PackageName,
 					options.EntitySchemaName,
 					pages,
-					options.TypeColumnUId);
+					options.TypeColumnUId,
+					RelatedPageSchemaTypeParser.Parse(options.SchemaType));
 
 				RelatedPageAddonResult result = _relatedPageAddonService.Create(request);
 

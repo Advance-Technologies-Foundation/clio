@@ -56,7 +56,8 @@ public class SqlSchemaGetToolTests {
 		public SqlSchemaGetOptions CapturedOptions { get; private set; }
 
 		public FakeSqlSchemaGetCommand()
-			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance) {
+			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(),
+				Substitute.For<System.IO.Abstractions.IFileSystem>(), ConsoleLogger.Instance) {
 		}
 
 		public override bool TryGetSchema(SqlSchemaGetOptions options, out SqlSchemaGetResponse response) {

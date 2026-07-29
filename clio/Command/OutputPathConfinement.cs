@@ -1,0 +1,316 @@
+namespace Clio.Command;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Clio.Common;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
+
+/// <summary>
+/// Shared guard for the <c>--output-file</c> write path of the MCP-callable schema-writing tools
+/// (<c>get-classic-page-sources</c>, <c>get-client-unit-schema</c>, <c>get-schema</c>, <c>get-sql-schema</c>).
+/// Those tools can be invoked over MCP, so the output path may be supplied by an agent rather than typed at a
+/// shell. Writing an unconstrained path verbatim would let a <c>..</c> traversal, an absolute system path, or a
+/// symlink overwrite an arbitrary file, so an explicit output-file is confined to the workspace anchor OR the OS
+/// temp directory — the two locations the migration flow legitimately writes to.
+/// </summary>
+internal static class OutputPathConfinement {
+
+	// Upper bound on how many links a single path component may chain through before it is treated as a cycle.
+	// A legitimate link chain is a handful deep; anything beyond this is pathological and fails closed.
+	private const int MaxLinkResolutionDepth = 40;
+
+	/// <summary>
+	/// Raised internally when a component is a CONFIRMED symbolic link whose chain cannot be resolved (a cycle or
+	/// a chain deeper than <see cref="MaxLinkResolutionDepth"/>). It forces <see cref="Resolve"/> to fail closed
+	/// rather than degrade to a lexical path that would slip past confinement.
+	/// </summary>
+	private sealed class UnresolvableLinkException : Exception { }
+
+	/// <summary>
+	/// Resolves <paramref name="outputFile"/> to an absolute path and confirms it stays inside a trusted
+	/// workspace anchor or the OS temp directory. Symlinks are resolved before the check so a link cannot smuggle
+	/// the write outside the allowed zones, and an anchor that is a filesystem root or an ancestor of the user's
+	/// home directory is not trusted as a confinement boundary.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for path resolution and the workspace-marker probe.</param>
+	/// <param name="outputFile">The caller-supplied output path (may be relative).</param>
+	/// <returns>
+	/// The resolved absolute path with a <c>null</c> error when allowed; <c>(null, error)</c> when the path
+	/// escapes the allowed locations or already exists (an explicit output-file is additive; a target that
+		/// already exists is never overwritten, keeping every routing tool's Destructive=false honest).
+	/// </returns>
+	internal static (string path, string error) Resolve(IoFileSystem fileSystem, string outputFile) {
+		// H1: reading the process-global cwd (for the anchor) must serialize against the MCP workspace tools that
+		// PIN cwd. In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
+		// is uncontended. lock is reentrant, so a caller already holding it (the bundle command) is unaffected.
+		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
+			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				home,
+				ClioRuntimePaths.Home,
+				null);
+			string full = fileSystem.Path.GetFullPath(outputFile);
+			string tempRoot = fileSystem.Path.GetFullPath(fileSystem.Path.GetTempPath());
+
+			// Confine the REAL (symlink-followed) path, not just the lexical one: Path.GetFullPath collapses `..`
+			// but never resolves a symlink, and the later write follows links. A link planted under an allowed
+			// root (the classic world-writable /tmp attack) could otherwise land the write on an arbitrary file.
+			// BOTH bounds are resolved the same way so a symlinked temp/home root (e.g. macOS /var -> /private/var)
+			// does not cause a false rejection of an in-bounds path.
+			string real, realTempRoot, realAnchor, realHome;
+			try {
+				real = ResolveRealPath(fileSystem, full);
+				// Resolve the bounds the same way — including these system paths — so an unresolvable link
+				// anywhere in the comparison fails CLOSED with the friendly message rather than escaping Resolve
+				// as an opaque exception.
+				realTempRoot = ResolveRealPath(fileSystem, tempRoot);
+				realAnchor = ResolveRealPath(fileSystem, anchor);
+				realHome = string.IsNullOrEmpty(home) ? home : ResolveRealPath(fileSystem, home);
+			}
+			catch (UnresolvableLinkException) {
+				// A confirmed symlink whose chain could not be resolved (cycle / pathological depth / a target
+				// that cannot be normalized). Fail CLOSED: never fall back to a lexical path that would slip past
+				// confinement (see ResolveRealPath / ResolveSymlink).
+				return (null,
+					$"output-file '{outputFile}' resolves through an unresolvable symbolic link; refusing to write.");
+			}
+
+			// A filesystem root ('/', 'C:\') or an ancestor of the user's home directory ('/Users', '/home',
+			// 'C:\Users') is too broad to be a write boundary — an MCP host launched with such a cwd (Claude
+			// Desktop has historically used '/') would otherwise confine to the whole volume. Drop an untrusted
+			// anchor so only the OS temp root remains allowed.
+			string trustedAnchor = IsTrustedAnchor(fileSystem, realAnchor, realHome) ? realAnchor : null;
+
+			if (!IsPathConfined(real, trustedAnchor, realTempRoot)) {
+				return (null,
+					$"output-file '{outputFile}' resolves outside the allowed locations; it must be inside the " +
+					"workspace or the OS temp directory.");
+			}
+
+			// Keep the Destructive=false classification honest: an explicit output-file must not silently
+			// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
+			// existing content. The tool-owned default output path does not flow through here, so re-runs to it
+			// still overwrite their own output.
+			if (fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full)) {
+				return (null,
+					$"output-file '{outputFile}' already exists; refusing to overwrite it. Choose a different " +
+					"path or remove the existing file.");
+			}
+
+			return (full, null);
+		}
+	}
+
+	/// <summary>
+	/// Atomically writes <paramref name="content"/> to <paramref name="resolvedPath"/> — a path already returned
+	/// by <see cref="Resolve"/> — creating the parent directory if needed. The create itself is the gate:
+	/// <see cref="FileMode.CreateNew"/> fails if the target exists, so it (a) keeps the additive Destructive=false
+	/// contract honest even against a target that appeared after <see cref="Resolve"/> checked, and (b) collapses
+	/// the resolve→write TOCTOU window; on POSIX its <c>O_EXCL</c> also refuses to follow a symlink at the final
+	/// component. Throws <see cref="IOException"/> with a caller-facing message when the target already exists.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for the directory probe and the atomic write.</param>
+	/// <param name="resolvedPath">The confined absolute path returned by <see cref="Resolve"/>.</param>
+	/// <param name="content">The text to write.</param>
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, string content) {
+		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
+		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
+			fileSystem.Directory.CreateDirectory(directory);
+		}
+		try {
+			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
+			using var writer = new StreamWriter(stream);
+			writer.Write(content);
+		}
+		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
+			throw new IOException(
+				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
+				"path or remove the existing file.");
+		}
+	}
+
+	/// <summary>
+	/// True when <paramref name="fullCandidate"/> (an already-resolved absolute path) lies within the workspace
+	/// anchor OR the OS temp root. Both bounds are the two locations the schema-writing tools write to; everything
+	/// else — parent-traversal escapes, absolute system paths, other volumes — is out of bounds. A <c>null</c> or
+	/// empty <paramref name="workspaceAnchor"/> disables the workspace bound (temp-only), used when the resolved
+	/// anchor is not trustworthy as a confinement boundary.
+	/// </summary>
+	internal static bool IsPathConfined(string fullCandidate, string workspaceAnchor, string tempRoot) =>
+		IsWithinDirectory(workspaceAnchor, fullCandidate) || IsWithinDirectory(tempRoot, fullCandidate);
+
+	/// <summary>
+	/// Resolves the real (symlink-followed) form of <paramref name="fullPath"/> by resolving the link target of
+	/// its deepest existing ancestor and re-appending the not-yet-existing tail. Best-effort: any file-system or
+	/// platform limitation (e.g. a test mock or a filesystem without link support) falls back to the lexical
+	/// path, which is no weaker than the pre-symlink-aware behavior.
+	/// </summary>
+	private static string ResolveRealPath(IoFileSystem fileSystem, string fullPath) {
+		try {
+			var tail = new List<string>();
+			string current = fullPath;
+			// Directory.Exists / File.Exists FOLLOW a symlink and both report false for a DANGLING link (target
+			// absent), so a dangling symlink would otherwise be treated as an ordinary not-yet-created tail
+			// segment and appended lexically — never canonicalized. The later write follows the link at the OS
+			// level and lands OUTSIDE the allowed zone (the terminal-/intermediate-symlink escape). Stop the walk
+			// at a reparse point too, so its own component is canonicalized (and thus confinement-checked)
+			// regardless of whether its target exists yet.
+			while (!string.IsNullOrEmpty(current)
+				&& !fileSystem.Directory.Exists(current)
+				&& !fileSystem.File.Exists(current)
+				&& !IsReparsePoint(fileSystem, current)) {
+				tail.Add(fileSystem.Path.GetFileName(current));
+				string parent = fileSystem.Path.GetDirectoryName(current);
+				if (string.IsNullOrEmpty(parent) || string.Equals(parent, current, StringComparison.Ordinal)) {
+					return fullPath; // reached the root without finding an existing ancestor
+				}
+				current = parent;
+			}
+			// Canonicalize EVERY component of the deepest existing ancestor (or dangling reparse point), not just
+			// its terminal component: a link one level up (e.g. /tmp/link -> /etc, output /tmp/link/existing-dir/x)
+			// would otherwise keep its lexical prefix, slip past the confinement check, and let the write follow
+			// the link out of the allowed zone.
+			string realBase = CanonicalizeExisting(fileSystem, current);
+			tail.Reverse();
+			foreach (string segment in tail) {
+				realBase = fileSystem.Path.Combine(realBase, segment);
+			}
+			return fileSystem.Path.GetFullPath(realBase);
+		}
+		catch (UnresolvableLinkException) {
+			// A CONFIRMED symlink whose chain cannot be resolved (cycle / pathological depth). Propagate so
+			// Resolve fails CLOSED — never degrade to the lexical fallback below, which would let a link slip
+			// past confinement.
+			throw;
+		}
+		catch (Exception) {
+			// Link INSPECTION is unavailable (a file system without symlink support, e.g. a unit-test mock) or
+			// failed on a path that is not a confirmed link. Degrade to the lexical path. This does NOT reopen the
+			// intermediate-symlink escape: on a real file system where links exist, per-component canonicalization
+			// above resolves them WITHOUT throwing, so a genuine escape is still caught; and a confirmed-but-
+			// unresolvable link takes the fail-closed branch above.
+			return fullPath;
+		}
+	}
+
+	// Resolves an existing path (or a dangling reparse point) to its real location by resolving symlinks at EVERY
+	// component, parent-first, so a symlink anywhere in the chain is followed before the confinement check runs.
+	private static string CanonicalizeExisting(IoFileSystem fileSystem, string existingPath) {
+		string parent = fileSystem.Path.GetDirectoryName(existingPath);
+		if (string.IsNullOrEmpty(parent) || string.Equals(parent, existingPath, StringComparison.Ordinal)) {
+			// Filesystem root — never a symlink, and ResolveLinkTarget throws DirectoryNotFoundException on a
+			// drive root on Windows, so return it unresolved.
+			return existingPath;
+		}
+		string realParent = CanonicalizeExisting(fileSystem, parent);
+		string combined = fileSystem.Path.Combine(realParent, fileSystem.Path.GetFileName(existingPath));
+		return ResolveSymlink(fileSystem, combined, 0);
+	}
+
+	// Returns the real target of <paramref name="path"/> when it is a symlink (following the link chain, bounded),
+	// otherwise the path itself. Unlike ResolveLinkTarget(returnFinalTarget:true), this reads the link target via
+	// LinkTarget so a DANGLING link (target not yet created) is still resolved rather than left lexical.
+	private static string ResolveSymlink(IoFileSystem fileSystem, string path, int depth) {
+		if (!TryReadLinkTarget(fileSystem, path, out string target)) {
+			return path; // not a symlink — nothing to resolve
+		}
+		if (depth >= MaxLinkResolutionDepth) {
+			// A link chain this long is a cycle or pathological. Fail CLOSED rather than trust a lexical path.
+			throw new UnresolvableLinkException();
+		}
+		// A link target may be relative to the link's own directory; resolve it there, then collapse it.
+		string resolved;
+		try {
+			resolved = fileSystem.Path.IsPathRooted(target)
+				? target
+				: fileSystem.Path.Combine(fileSystem.Path.GetDirectoryName(path) ?? string.Empty, target);
+			resolved = fileSystem.Path.GetFullPath(resolved);
+		}
+		catch (Exception) {
+			// The node IS a confirmed link but its target cannot be normalized (e.g. a malformed target). Fail
+			// CLOSED so ResolveRealPath's broad catch cannot degrade a real link to its lexical path — that broad
+			// catch is reserved strictly for filesystems that do not support link inspection at all.
+			throw new UnresolvableLinkException();
+		}
+		// The target may itself be a symlink — follow the chain (bounded by MaxLinkResolutionDepth).
+		return ResolveSymlink(fileSystem, resolved, depth + 1);
+	}
+
+	// True when <paramref name="path"/> is a symbolic link / reparse point, EVEN when its target does not exist
+	// (a dangling link). Distinct from File.Exists / Directory.Exists, which follow the link and report false for
+	// a dangling one. Returns false — never throws — when link metadata cannot be read (mock / unsupported FS),
+	// so a filesystem without link support degrades to the lexical fallback in ResolveRealPath.
+	private static bool IsReparsePoint(IoFileSystem fileSystem, string path) =>
+		TryReadLinkTarget(fileSystem, path, out _);
+
+	private static bool TryReadLinkTarget(IoFileSystem fileSystem, string path, out string target) {
+		// Probe the two info kinds INDEPENDENTLY: a `??` would skip the DirectoryInfo fallback if reading
+		// FileInfo.LinkTarget threw, so a directory symlink whose FileInfo probe throws would be misread as
+		// not-a-link (a security softening). Read each under its own guard instead.
+		target = ReadLinkTargetOrNull(() => fileSystem.FileInfo.New(path).LinkTarget)
+			?? ReadLinkTargetOrNull(() => fileSystem.DirectoryInfo.New(path).LinkTarget);
+		return target != null;
+	}
+
+	private static string ReadLinkTargetOrNull(Func<string> read) {
+		try {
+			return read();
+		}
+		catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// True when <paramref name="anchor"/> is safe to use as a write-confinement boundary: not empty, not a
+	/// filesystem root, and not an ancestor (or equal) of the user's home directory.
+	/// </summary>
+	internal static bool IsTrustedAnchor(IoFileSystem fileSystem, string anchor, string homeDirectory) {
+		if (string.IsNullOrEmpty(anchor)) {
+			return false;
+		}
+		// Do NOT trim a trailing separator here: on Windows 'C:\' trimmed to 'C:' is a *different*, drive-relative
+		// path (the current directory on C:), not the drive root. Compare with a normalized single trailing
+		// separator so a filesystem root is detected as such.
+		string fullAnchor = fileSystem.Path.GetFullPath(anchor);
+		string root = fileSystem.Path.GetPathRoot(fullAnchor);
+		if (!string.IsNullOrEmpty(root)
+			&& string.Equals(WithTrailingSeparator(fullAnchor), WithTrailingSeparator(root), StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		if (!string.IsNullOrEmpty(homeDirectory) && IsWithinDirectory(fullAnchor, fileSystem.Path.GetFullPath(homeDirectory))) {
+			// home is inside (or equal to) the anchor → the anchor is an ancestor of home → too broad.
+			return false;
+		}
+		return true;
+	}
+
+	private static string WithTrailingSeparator(string path) {
+		if (string.IsNullOrEmpty(path)) {
+			return path;
+		}
+		char last = path[path.Length - 1];
+		return last == Path.DirectorySeparatorChar || last == Path.AltDirectorySeparatorChar
+			? path
+			: path + Path.DirectorySeparatorChar;
+	}
+
+	// True when <paramref name="target"/> is <paramref name="baseDirectory"/> itself or a descendant of it.
+	// Uses GetRelativePath so the comparison honors the platform's own case rules: a relative result that stays
+	// put (".") or descends is inside; one that starts with ".." (escape) or is rooted (different volume) is not.
+	private static bool IsWithinDirectory(string baseDirectory, string target) {
+		if (string.IsNullOrEmpty(baseDirectory)) {
+			return false;
+		}
+		string relative = Path.GetRelativePath(baseDirectory, target);
+		if (relative == "..") {
+			return false;
+		}
+		return !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+			&& !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal)
+			&& !Path.IsPathRooted(relative);
+	}
+}
