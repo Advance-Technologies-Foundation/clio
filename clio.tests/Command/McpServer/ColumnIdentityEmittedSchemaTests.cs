@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using Clio;
 using Clio.Command;
@@ -57,6 +58,28 @@ public sealed class ColumnIdentityEmittedSchemaTests {
 		return names;
 	}
 
+	/// <summary>Collects every <c>required</c> entry from every nested object schema.</summary>
+	private static List<string> CollectRequiredNames(JsonElement node) {
+		List<string> names = [];
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (property.NameEquals("required") && property.Value.ValueKind == JsonValueKind.Array) {
+						names.AddRange(RequiredNames(node));
+						continue;
+					}
+					names.AddRange(CollectRequiredNames(property.Value));
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					names.AddRange(CollectRequiredNames(item));
+				}
+				break;
+		}
+		return names;
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("modify-entity-schema-column does not list 'column-name' as required in its emitted input schema, so a strict client can send the advertised 'name' alias instead (PR #984 review).")]
@@ -99,15 +122,24 @@ public sealed class ColumnIdentityEmittedSchemaTests {
 	public void SyncSchemas_Should_NotRequireColumnName_InEmittedUpdateOperationSchema() {
 		// Arrange & Act
 		using JsonDocument schema = EmittedInputSchema(SchemaSyncTool.ToolName);
-		string serialized = schema.RootElement.ToString();
+		JsonElement updateOperationSchema = schema.RootElement
+			.GetProperty("properties").GetProperty("args")
+			.GetProperty("properties").GetProperty("operations")
+			.GetProperty("items")
+			.GetProperty("properties").GetProperty("update-operations")
+			.GetProperty("items");
 
-		// Assert — the embedded operation record is reached through sync-schemas' own operations wrapper, so
-		// assert on the whole emitted schema: no nested required set anywhere may demand the column identity.
-		serialized.Should().Contain("column-name",
-			because: "the column identity field must still be advertised by this surface");
-		serialized.Should().NotContain("\"column-name\"]",
-			because: "no nested `required` array may end with the column identity");
-		serialized.Should().NotContain("\"required\":[\"column-name\"",
-			because: "no nested `required` array may start with the column identity either");
+		// Assert
+		updateOperationSchema.GetProperty("properties").TryGetProperty("column-name", out _).Should().BeTrue(
+			because: "the column identity field must still be advertised by the embedded operation record");
+		RequiredNames(updateOperationSchema).Should().NotContain("column-name",
+			because: "this is the third surface the same record backs, and fixing only modify/update would " +
+				"leave it demanding an identity field the contract calls optional");
+		RequiredNames(updateOperationSchema).Should().Contain("action",
+			because: "the action verb stays mandatory, so an empty required set would not prove anything");
+
+		// And nothing else nested in this schema may demand it either.
+		CollectRequiredNames(schema.RootElement).Should().NotContain("column-name",
+			because: "no nested `required` array anywhere in this surface may demand the column identity");
 	}
 }
