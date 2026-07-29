@@ -268,7 +268,7 @@ public sealed class RestartToolTests {
 	public void BuildInProgressMessage_Should_Reference_Target_PollTarget_And_NoRetry() {
 		// Act
 		string message = RestartTool.BuildInProgressMessage(
-			"environment 'sandbox'", RestartTool.RestartByEnvironmentNameToolName, 600, "op-1234");
+			"environment 'sandbox'", RestartTool.RestartByEnvironmentNameToolName, 600, "op-1234", "sandbox");
 
 		// Assert
 		message.Should().Contain("sandbox", because: "the agent must know which target is still warming up");
@@ -276,6 +276,26 @@ public sealed class RestartToolTests {
 		message.Should().Contain("op-1234", because: "the notice must carry the operation-id the agent can poll by");
 		message.Should().Contain("600", because: "the notice should reflect the actual readiness budget");
 		message.Should().Contain("do NOT retry", because: "retrying restart while the instance is warming up is unnecessary and disruptive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On the credentials path the in-progress notice must NOT advertise an operation-id to poll: restart-status keys off a required environment name, and ToolCommandResolver.BuildCacheKey derives that key from Environment ?? Uri, so a credentials-started operation lives in a disjoint key space and can never be found.")]
+	public void BuildInProgressMessage_Should_Not_Promise_PollTarget_On_CredentialsPath() {
+		// Act
+		string message = RestartTool.BuildInProgressMessage(
+			"'http://sandbox.local'", RestartTool.RestartByCredentialsToolName, 600, "op-9999",
+			environmentName: null);
+
+		// Assert
+		message.Should().NotContain("op-9999",
+			because: "advertising an operation-id the agent cannot poll by would drive a guaranteed not-found loop");
+		message.Should().NotContain("Poll restart-status",
+			because: "restart-status requires an environment name, which the credentials path does not have");
+		message.Should().Contain("healthcheck",
+			because: "the agent still needs an actionable way to confirm the instance finished warming up");
+		message.Should().Contain("do NOT retry",
+			because: "the no-retry instruction applies on both paths — the restart request itself already succeeded");
 	}
 
 	[Test]
