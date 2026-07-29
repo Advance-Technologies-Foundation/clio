@@ -17,6 +17,7 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
+[NonParallelizable]
 public sealed class TeamCityRunGuardTests {
 
 	[TestCase(null, false)]
@@ -38,7 +39,6 @@ public sealed class TeamCityRunGuardTests {
 	}
 
 	[Test]
-	[NonParallelizable]
 	[Description("The parameterless predicate reads the real TEAMCITY_VERSION environment variable, so a typo in the variable name or an inverted read would be caught.")]
 	public void IsRunningUnderTeamCity_ShouldReadTeamCityVersionEnvironmentVariable_WhenSetAndCleared() {
 		// Arrange
