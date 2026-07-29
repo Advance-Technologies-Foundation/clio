@@ -2234,6 +2234,8 @@ public sealed class McpGuidanceResourceTests {
 		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
 
 		// Assert
+		article.Text.Should().Contain("ENTRY guide for editing a Freedom UI page",
+			because: "a positive anchor proves the entry guide actually loaded, so the NotContain assertion below cannot pass vacuously on an empty/broken resource");
 		article.Text.Should().NotContain("Items_PredefinedFilter",
 			because: "the predefined-filter placement rule has a single owner (page-modification-overview); duplicating it in the entry guide would break the single-owner boundary and threaten the 15 KB entry per-response budget");
 	}
