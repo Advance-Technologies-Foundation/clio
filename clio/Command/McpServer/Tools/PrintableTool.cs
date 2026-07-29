@@ -42,7 +42,7 @@ public sealed class PrintableGetTool(IToolCommandResolver commandResolver) {
 			string expand = Uri.EscapeDataString("Type($select=Name),SysEntitySchema($select=Name),SysModule($select=Caption)");
 			string path = $"{ODataKeyFormatter.KeyPath(PrintableSupport.EntityName, args.Id)}?$select={select}&$expand={expand}";
 			string responseJson = client.ExecuteGetRequest(urlBuilder.Build(path), 30_000);
-			return PrintableSupport.ParseRead(responseJson);
+			return ODataResponseParser.ParseODataRead(responseJson);
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -107,7 +107,7 @@ public sealed class PrintableCreateTool(IToolCommandResolver commandResolver) {
 
 			string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(PrintableSupport.EntityName));
 			string responseJson = client.ExecutePostRequest(url, JsonSerializer.Serialize(body), 30_000);
-			return PrintableSupport.ParseCreated(responseJson);
+			return ODataResponseParser.ParseODataCreated(responseJson);
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -172,7 +172,7 @@ public sealed class PrintableUpdateTool(IToolCommandResolver commandResolver) {
 					"No fields to update. Provide at least one of: caption, entity-schema-id, sys-module-id, show-in-section, show-in-card, convert-in-pdf, macros-settings.");
 			}
 
-			ODataWriteResponse notConfirmed = PrintableSupport.RequireConfirmation(args.Confirm, ToolName, args.Id, "change");
+			ODataWriteResponse notConfirmed = PrintableSupport.RequireConfirmation(args.Confirm, ToolName, args.Id, "modify", "change");
 			if (notConfirmed is not null) {
 				return notConfirmed;
 			}
@@ -211,7 +211,7 @@ public sealed class PrintableDeleteTool(IToolCommandResolver commandResolver) {
 				return invalidTarget;
 			}
 
-			ODataWriteResponse notConfirmed = PrintableSupport.RequireConfirmation(args.Confirm, ToolName, args.Id, "deletion");
+			ODataWriteResponse notConfirmed = PrintableSupport.RequireConfirmation(args.Confirm, ToolName, args.Id, "delete", "deletion");
 			if (notConfirmed is not null) {
 				return notConfirmed;
 			}

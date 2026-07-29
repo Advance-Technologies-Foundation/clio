@@ -185,6 +185,39 @@ public sealed class PrintableToolE2ETests {
 	}
 
 	[Test]
+	[Description("update-printable refuses without confirmation, before any remote call — the core safety property of a Destructive=true tool, previously only asserted for delete and upload (PR #651 review).")]
+	[AllureTag(PrintableUpdateTool.ToolName)]
+	[AllureName("update-printable MCP tool requires confirmation")]
+	public async Task UpdatePrintable_Should_Require_Confirmation() {
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// A caption is supplied on purpose: update-printable rejects an empty change set BEFORE the
+		// confirmation gate, so a fieldless payload would be refused for the wrong reason and the gate
+		// would stay untested.
+		CallToolResult callResult = await arrange.Session.CallToolAsync(
+			PrintableUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = $"missing-{Guid.NewGuid():N}",
+					["id"] = Guid.NewGuid().ToString(),
+					["caption"] = "Renamed by an unconfirmed call"
+				}
+			},
+			arrange.CancellationTokenSource.Token);
+		ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "the confirmation gate is reported as a structured tool failure, not an MCP protocol error");
+		response.Success.Should().BeFalse(
+			because: "a destructive update must not run without confirm=true");
+		response.Error.Should().Contain("without confirmation",
+			because: "the error must tell the caller to re-call with confirm=true");
+		response.Error.Should().NotContain("No fields to update",
+			because: "the refusal must be the confirmation gate itself — an empty-change-set rejection would " +
+				"pass this test while leaving the gate unverified");
+	}
+
+	[Test]
 	[Description("upload-report-template rejects a non-.docx file before any remote call.")]
 	[AllureTag(PrintableTemplateUploadTool.ToolName)]
 	[AllureName("upload-report-template MCP tool validates file extension")]

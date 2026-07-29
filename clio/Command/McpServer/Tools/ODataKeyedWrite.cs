@@ -50,7 +50,9 @@ internal static class ODataKeyedWrite {
 	/// <summary>
 	/// Resolves the environment-scoped application client and URL builder.
 	/// </summary>
-	internal static (IApplicationClient Client, IServiceUrlBuilder UrlBuilder) ResolveClients(
+	// Tuple elements are named camelCase to match the pre-existing ResolveTarget below; the two are read
+	// side by side and a split convention in one small helper pair is pure noise (PR #651 review).
+	internal static (IApplicationClient client, IServiceUrlBuilder urlBuilder) ResolveClients(
 		IToolCommandResolver commandResolver, string environmentName) {
 		EnvironmentOptions options = new() { Environment = environmentName };
 		return (

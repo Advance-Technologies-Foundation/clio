@@ -35,12 +35,15 @@ public sealed class PrintableTemplateUploadMappingTests {
 	}
 
 	[Test]
-	[Description("Every parameter the design service requires is present and carries the value the service expects.")]
+	[Description("Every VERIFIED parameter the design service requires is present and carries the value the service expects. The one unverified parameter (parentColumnValue) is deliberately excluded and lives in its own explicitly-titled test, so a green run of this test is not read as 'the wire contract is confirmed' (PR #651 review).")]
 	public void BuildUploadQuery_ShouldMapEveryServiceParameter() {
+		// Arrange
 		Guid fileId = Guid.Parse("6f1f6a4f-1d31-4a2e-9a08-2c6d0f4c1e77");
 
+		// Act
 		string query = PrintableSupport.BuildUploadQuery(ReportId, fileId, 4096, "Invoice.docx");
 
+		// Assert
 		Dictionary<string, string> parameters = ParseQuery(query);
 		parameters["columnName"].Should().Be(PrintableSupport.TemplateColumnName,
 			because: "the template bytes land in the File stream column");
@@ -52,11 +55,6 @@ public sealed class PrintableTemplateUploadMappingTests {
 			because: "the template row is linked through its Id column");
 		parameters["reportId"].Should().Be(ReportId,
 			because: "the service needs the printable the template belongs to");
-		// Pins current behavior: parentColumnValue carries the upload's own fileId, not the report id.
-		// Not independently verified against Creatio's MSWordReportDesigner client — if that contract
-		// says otherwise, fix the implementation and this assertion together.
-		parameters["parentColumnValue"].Should().Be(fileId.ToString(),
-			because: "this pins the current, not-yet-verified mapping so a silent drift is caught");
 		parameters["totalFileLength"].Should().Be("4096",
 			because: "the service reassembles the chunks against the declared total size");
 		parameters["entitySchemaName"].Should().Be(PrintableSupport.TemplateUploadEntitySchema,
@@ -71,10 +69,28 @@ public sealed class PrintableTemplateUploadMappingTests {
 	}
 
 	[Test]
+	[Description("UNVERIFIED CONTRACT — pins only, proves nothing. parentColumnValue currently carries the upload's own fresh fileId rather than the reportId, so as written the pair says 'the SysReportTemplate row whose Id equals the file's own id' — a self-reference, with the report linkage carried solely by additionalParams.ReportId. Whether the design service reads the linkage from additionalParams (current code correct) or applies generic FileApiService parent-link semantics (parentColumnValue must be the reportId) can only be settled by a real MSWordReportDesigner request capture against a live stand. Isolated here on purpose so a green suite never implies the contract is confirmed (PR #651 review).")]
+	[Ignore("Deliberately not enforced: this pins an UNVERIFIED wire-contract parameter. Settle it with a real MSWordReportDesigner capture, then fix BuildUploadQuery and this assertion together and remove the Ignore. See PR #651 discussion.")]
+	public void BuildUploadQuery_PinsUnverifiedParentColumnValueMapping() {
+		// Arrange
+		Guid fileId = Guid.Parse("6f1f6a4f-1d31-4a2e-9a08-2c6d0f4c1e77");
+
+		// Act
+		string query = PrintableSupport.BuildUploadQuery(ReportId, fileId, 4096, "Invoice.docx");
+
+		// Assert
+		ParseQuery(query)["parentColumnValue"].Should().Be(fileId.ToString(),
+			because: "this records the current, NOT-YET-VERIFIED mapping so the open question stays visible — " +
+				"it is not evidence the service accepts it");
+	}
+
+	[Test]
 	[Description("A file name with spaces and non-ASCII characters survives the round trip through the query string.")]
 	public void BuildUploadQuery_ShouldEscapeFileName() {
+		// Arrange & Act
 		string query = PrintableSupport.BuildUploadQuery(ReportId, Guid.NewGuid(), 1, "Рахунок для клієнта.docx");
 
+		// Assert
 		query.Should().NotContain("Рахунок для клієнта.docx",
 			because: "the raw name must be percent-encoded, not embedded verbatim");
 		ParseQuery(query)["fileName"].Should().Be("Рахунок для клієнта.docx",
@@ -84,8 +100,10 @@ public sealed class PrintableTemplateUploadMappingTests {
 	[Test]
 	[Description("A zero-length file still reports its size explicitly rather than omitting the parameter.")]
 	public void BuildUploadQuery_ShouldReportZeroLengthExplicitly() {
+		// Arrange & Act
 		string query = PrintableSupport.BuildUploadQuery(ReportId, Guid.NewGuid(), 0, "Empty.docx");
 
+		// Assert
 		ParseQuery(query)["totalFileLength"].Should().Be("0",
 			because: "omitting the size would let the service fall back to an unbounded read");
 	}
@@ -93,10 +111,13 @@ public sealed class PrintableTemplateUploadMappingTests {
 	[Test]
 	[Description("The design service's errorInfo message is surfaced as the failure reason.")]
 	public void ParseUploadResponse_ShouldSurfaceServiceErrorMessage() {
+		// Arrange
 		string json = """{"success":false,"errorInfo":{"message":"Report template exceeds the allowed size."}}""";
 
+		// Act
 		PrintableTemplateUploadResponse response = PrintableSupport.ParseUploadResponse(json, ReportId, "Invoice.docx");
 
+		// Assert
 		response.Success.Should().BeFalse(because: "the service reported an explicit failure");
 		response.Error.Should().Be("Report template exceeds the allowed size.",
 			because: "the caller needs the service's own reason, not a generic one");
@@ -105,9 +126,11 @@ public sealed class PrintableTemplateUploadMappingTests {
 	[Test]
 	[Description("A failure without a usable errorInfo still fails, with a generic reason instead of a silent success.")]
 	public void ParseUploadResponse_ShouldFailClosed_WhenErrorInfoIsMissing() {
+		// Arrange & Act
 		PrintableTemplateUploadResponse response =
 			PrintableSupport.ParseUploadResponse("""{"success":false}""", ReportId, "Invoice.docx");
 
+		// Assert
 		response.Success.Should().BeFalse(because: "an explicit success:false is a failure regardless of errorInfo");
 		response.Error.Should().Be("Template upload failed.",
 			because: "a missing errorInfo must still produce a reason instead of an empty error");
@@ -116,9 +139,11 @@ public sealed class PrintableTemplateUploadMappingTests {
 	[Test]
 	[Description("An explicit success is the only body that reports the template as stored.")]
 	public void ParseUploadResponse_ShouldReportSuccess_OnExplicitSuccess() {
+		// Arrange & Act
 		PrintableTemplateUploadResponse response =
 			PrintableSupport.ParseUploadResponse("""{"success":true}""", ReportId, "Invoice.docx");
 
+		// Assert
 		response.Success.Should().BeTrue(because: "the service explicitly confirmed the upload");
 		response.Error.Should().BeNull(because: "a confirmed upload carries no error");
 		response.Id.Should().Be(ReportId, because: "the response echoes the report the template belongs to");
@@ -133,8 +158,10 @@ public sealed class PrintableTemplateUploadMappingTests {
 	[TestCase("""{"success":"true"}""", TestName = "ParseUploadResponse fails closed on a non-boolean success flag")]
 	[Description("Anything short of an explicit success must fail closed: a 200 with an empty, plain-text, HTML or unrecognized JSON body means the template may never have landed, and a false success would also patch FileName so get-printable corroborates the wrong answer.")]
 	public void ParseUploadResponse_ShouldFailClosed_WhenSuccessIsNotConfirmed(string json) {
+		// Arrange & Act
 		PrintableTemplateUploadResponse response = PrintableSupport.ParseUploadResponse(json, ReportId, "Invoice.docx");
 
+		// Assert
 		response.Success.Should().BeFalse(
 			because: "the design service never confirmed the upload, so the tool must not claim it landed");
 		response.Error.Should().Contain("not confirmed",

@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -70,8 +73,14 @@ public sealed class PrintableTemplateUploadTool(IToolCommandResolver commandReso
 					string patchUrl = urlBuilder.Build(ODataKeyFormatter.KeyPath(PrintableSupport.EntityName, reportId));
 					string patchBody = JsonSerializer.Serialize(new Dictionary<string, object?> { ["FileName"] = fileName });
 					client.ExecutePatchRequest(patchUrl, patchBody, 30_000);
-				} catch {
-					// FileName is a convenience indicator only; ignore patch failures.
+				} catch (Exception ex) when (ex is JsonException or HttpRequestException or TaskCanceledException
+					or InvalidOperationException or WebException) {
+					// Narrowed to the same transport set as PrintableSupport.ResolveMsWordTypeId: the bytes are
+					// already stored, so a failed convenience patch must not fail the upload — but a bare catch
+					// would also swallow OutOfMemoryException / cancellation-by-the-host (PR #651 review).
+					// FileName is then NOT set, so the response reports it as unwritten rather than claiming a
+					// value get-printable would contradict: get-printable is authoritative for it.
+					return result with { FileName = null };
 				}
 			}
 			return result;

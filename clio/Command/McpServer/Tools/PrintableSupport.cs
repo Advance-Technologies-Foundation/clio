@@ -100,20 +100,24 @@ internal static class PrintableSupport {
 	/// Enforces the confirmation gate for a destructive printable operation, naming the actual tool
 	/// to re-call. Returns a failure response when <paramref name="confirm"/> is false, otherwise <c>null</c>.
 	/// </summary>
-	internal static ODataWriteResponse RequireConfirmation(bool confirm, string toolName, string id, string consequence) {
+	/// <param name="confirm">The caller's <c>confirm</c> flag.</param>
+	/// <param name="toolName">The tool to re-call, named verbatim in the message.</param>
+	/// <param name="id">Record key the operation targets.</param>
+	/// <param name="verb">
+	/// What the operation does to the record (<c>modify</c>, <c>delete</c>). Parameterized because a
+	/// hardcoded "modify" made the delete refusal read "Refusing to modify ... to authorize this deletion"
+	/// (PR #651 review).
+	/// </param>
+	/// <param name="consequence">Noun naming the authorized change (<c>change</c>, <c>deletion</c>).</param>
+	internal static ODataWriteResponse RequireConfirmation(
+		bool confirm, string toolName, string id, string verb, string consequence) {
 		if (confirm) {
 			return null;
 		}
 		return ODataWriteResponse.Failure(
-			$"Refusing to modify {EntityName}({id.Trim()}) without confirmation. " +
+			$"Refusing to {verb} {EntityName}({id.Trim()}) without confirmation. " +
 			$"This is a destructive operation; re-call {toolName} with \"confirm\": true to authorize this {consequence}.");
 	}
-
-	/// <summary>Parses a Creatio OData read response into an <see cref="ODataReadResponse"/>.</summary>
-	internal static ODataReadResponse ParseRead(string json) => ODataResponseParser.ParseODataRead(json);
-
-	/// <summary>Parses a Creatio OData create response into an <see cref="ODataWriteResponse"/>.</summary>
-	internal static ODataWriteResponse ParseCreated(string json) => ODataResponseParser.ParseODataCreated(json);
 
 	/// <summary>
 	/// Builds the fully-qualified query string for the chunked template upload, mirroring the
