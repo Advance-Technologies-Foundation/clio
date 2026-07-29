@@ -145,11 +145,11 @@
 				},
 				"recordEntitySchemaName": {
 					"type": "string",
-					"description": "Entity schema of the parent record the files attach to; derived by the platform from the target `crt.FileList`. Optional at runtime - when unresolved it falls back to the page's primary model schema. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+					"description": "Entity schema of the parent record the files attach to. Not derived from the file list on mobile; optional - when absent the runtime falls back to the page's primary model schema. Hand-author only in an advanced scenario."
 				},
 				"recordId": {
-					"type": "string | LookupValue",
-					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList`. An unresolved record Id yields a \"Cannot upload files for unsaved records\" error. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+					"type": "string",
+					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList`'s `masterRecordColumnValue` binding - the file list must carry that property (the Designer's attachments template sets `\"$Id\"`) or the record Id stays unresolved. An unresolved record Id yields a \"Cannot upload files for unsaved records\" error. Hand-author only in an advanced scenario; an authored value overrides the derived one."
 				},
 				"tag": {
 					"type": "string",

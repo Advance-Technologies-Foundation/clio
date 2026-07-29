@@ -181,7 +181,7 @@
 				},
 				"files": {
 					"type": "File[]",
-					"description": "Files to upload, authored only as the `@event.files` event binding on a `crt.FileList`'s `fileDropped` or `uploadClicked` output. When absent the platform opens the file picker before uploading; never set it on a button's `clicked` binding."
+					"description": "Files to upload, carried as the `@event.files` event binding. The platform wires it automatically on a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; hand-author it only when wiring the request to a `crt.FileDrop`'s `fileDropped`, where nothing is derived and the storage parameters must be authored too. Never set it on a button's `clicked` binding - a click carries no files, so the platform opens the file picker before uploading."
 				},
 				"itemsAttributeName": {
 					"type": "string",
@@ -197,11 +197,11 @@
 				},
 				"recordEntitySchemaName": {
 					"type": "string",
-					"description": "Entity schema of the parent record the files attach to; derived by the platform from the target `crt.FileList` or the page's primary data source. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+					"description": "Entity schema of the parent record the files attach to; derived by the platform from the entity behind the target `crt.FileList`'s `masterRecordColumnValue` binding, and left unset when that cannot be resolved (this parameter has no page-defaults fallback). Hand-author only in an advanced scenario; an authored value overrides the derived one."
 				},
 				"recordId": {
 					"type": "string | LookupValue",
-					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList` (a `LookupValue` is unwrapped to its `value`). Uploading to a non-`SysFile` storage on an unsaved record is rejected with a notification. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList`'s `masterRecordColumnValue` binding - the file list must carry that property (the Designer's attachments template sets `\"$Id\"`) or the upload is rejected. A `LookupValue` is unwrapped to its `value`. Uploading to a non-`SysFile` storage on an unsaved record is rejected with a notification. Hand-author only in an advanced scenario; an authored value overrides the derived one."
 				},
 				"tag": {
 					"type": "string",
@@ -209,8 +209,7 @@
 				},
 				"viewElementName": {
 					"type": "string",
-					"required": true,
-					"description": "Name of the `crt.FileList` view element on the same page that this upload targets, and the only parameter a standard page authors by hand. At page load the platform reads that file list to derive the storage parameters below; when it is absent or matches no `crt.FileList` on the page, page defaults derived from the primary data source apply (`SysFile` storage, `RecordId` link column, the primary record's Id)."
+					"description": "Name of the `crt.FileList` view element on the same page that this upload targets - the standard page contract, and the only parameter such a page authors by hand. At page load the platform reads that file list to derive the storage parameters below. Either name a `crt.FileList` here, or (advanced, no file list on the page) hand-author `recordId`, `recordColumnName`, and `fileEntitySchemaName` instead; when this parameter is absent or matches no `crt.FileList`, page defaults derived from the primary data source apply (`SysFile` storage, `RecordId` link column, the primary record's Id)."
 				}
 			},
 			"description": "Uploads one or more files and attaches them to a record, targeting the `crt.FileList` named by `viewElementName`. Bound to a button or menu item `clicked`, or to a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName`.",

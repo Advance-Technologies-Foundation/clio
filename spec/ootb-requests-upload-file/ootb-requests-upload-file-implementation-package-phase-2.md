@@ -347,3 +347,34 @@ CDN once the producer publishes.
 
 Rule 5's mechanism-free discipline is general: it applies to any future request added to this
 catalog, not just `crt.UploadFileRequest`.
+
+### 2026-07-29 — second adversarial review (user-approved fixes)
+
+A second independent review was source-verified; its confirmed findings were fixed. Its two
+"hard" claims were falsified during verification (a cited clio guard test that does not exist,
+and corpus/test citations for requests that are not in the registry) — recorded here so a
+future reader does not re-litigate them: the refreshed fixtures pass all 5 snapshot guards and
+the full McpServer suite.
+
+| # | Confirmed finding | Fix applied |
+|---|---|---|
+| B2 | `recordId` is derived SOLELY from the file list's `masterRecordColumnValue` (`upload-file-request-worker.ts:126,138`; mobile `upload_file_request_preprocessor.dart:70`); no preprocessor fills that property, and the Designer's attachments template authors it as `"$Id"` (`expansion-panel.component.ts:183`). A from-scratch `crt.FileList` without it rejects every upload — and a NAMED under-configured list is worse than no name on web (the page-defaults fallback is foreclosed by the name match). | `masterRecordColumnValue: "$Id"` added to every recipe file-list snippet; provenance stated on both entries' `recordId`; new pitfall + checklist items in both recipes; §1.2 tables corrected. |
+| M2 | Mobile upload is offline-capable: local save (`DataSourceType.local`) + background export; a failed sync is logged (`upload_file_request_handler.dart` `_saveAttachments`). The doc's "online operation" line was invented. | Mobile recipe Connectivity line rewritten to the offline-capable behavior. |
+| M4 | `recordEntitySchemaName` has NO primary-DS fallback on web (`data-source.utils.ts:195-211`; `getDefaultRequestParams` never sets it) and is NEVER derived on mobile (only the runtime handler falls back to the primary model, `upload_file_request_handler.dart:58`). | Both entries' descriptions, both §1.2 tables, the mobile specifics bullet, and the base-class JSDoc corrected. |
+| M3 | The platform AUTO-INSTALLS `fileDropped`/`uploadClicked` upload bindings on every `crt.FileList` (`file-list-worker.ts:46-67`) — the recipe taught hand-wiring them; and `crt.FileDrop`'s `fileDropped` (a real component the worker does not scan) genuinely requires full hand-authoring incl. `files`, unmentioned anywhere. | Web §3 rewritten: outputs are automatic, author only to customize; new `crt.FileDrop` recipe (nothing derived — author `files` + storage parameters); `files` descriptions updated on the entry and JSDoc. |
+| B1-residue | The mobile runtime model declares `recordId` as `String?` with no LookupValue unwrap (`upload_file_request.dart:80`) — `"string \| LookupValue"` on the MOBILE entry overstated the runtime. | Mobile entry `recordId.type` → `"string"`; base-class JSDoc notes the web/mobile difference. Web keeps `"string \| LookupValue"` (web handler unwraps; the corpus documents TS contract types — cf. web Printables `filters`). |
+
+Deferred pending user decision (NOT treated as defects): the web `files` type `"File[]"`
+(corpus precedent supports documenting the TS contract type).
+
+**2026-07-29 addendum (user-approved): web `required` flag dropped (review F2).** The revised
+review re-argued the point self-containedly: the web entry's own `viewElementName.description`
+documents the absent-behavior (page-defaults fallback), and a parameter with documented
+absent-behavior contradicts its own `required: true`; the handler never reads the field
+(`upload-file-handler.ts:211-217` validates only the trio). Fix applied WEB-ONLY: flag removed,
+either/or stated in the description and the recipe Metadata ("name a `crt.FileList`, or
+hand-author `recordId` + `recordColumnName` + `fileEntitySchemaName`"). Mobile KEEPS
+`required: true` — derivation aborts without a matching file list and there is no fallback
+(`upload_file_request_preprocessor.dart:28-35`), so the flag is honest there. This supersedes
+contract rule 5's "required: true ONLY on viewElementName" for the WEB entry (web now has no
+required parameter); rule 5 stands unchanged for mobile.
