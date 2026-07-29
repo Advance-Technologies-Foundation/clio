@@ -921,6 +921,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the canonical resource URI for the routing guide should be stable");
 		response.Article.Text.Should().Contain("name=page-modification",
 			because: "the routing map must carry the domain routing table that points at the matching guides");
+		response.Article.Text.Should().Contain("add/update a NAMED or PREDEFINED filter a list/section page always applies",
+			because: "the live routing map must serve the ENG-90052 predefined-list-filter row so the agent is routed to page-modification-overview + esq-filters-frontend");
+		response.Article.Text.Should().NotContain("Items_PredefinedFilter",
+			because: "the served routing map must route by guide name only — the placement rule stays in page-modification-overview, never duplicated in the routing article (ENG-90052 PR #987 blocker)");
 	}
 
 	[Test]

@@ -2187,7 +2187,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The routing map routes a named/predefined list-page filter to page-modification-overview + esq-filters-frontend and marks it a page edit, not a SysFolder data write (ENG-90052).")]
+	[Description("The routing map routes a named/predefined list-page filter to page-modification-overview + esq-filters-frontend by guide name only, without duplicating the owning guide's rule content (ENG-90052).")]
 	public void RoutingGuidanceResource_Should_Route_Predefined_List_Filter() {
 		// Arrange
 		RoutingGuidanceResource resource = new();
@@ -2200,8 +2200,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the routing row must be keyed to the task wording so the agent picks the page domain, not the data domain");
 		article.Text.Should().Contain("name=page-modification-overview",
 			because: "the routing row must point at the sub-guide that owns the predefined-filter placement rule so the agent lands on it directly");
-		article.Text.Should().Contain("NOT a SysFolder / folder-tree data write",
-			because: "the routing steer must reject the wrong domain (data write) before the agent even reads page-modification");
+		article.Text.Should().Contain("name=esq-filters-frontend",
+			because: "the routing row must also route to the frontend filter-shape owner so the agent gets the serialized-filter guide");
+		article.Text.Should().NotContain("Items_PredefinedFilter",
+			because: "AGENTS.md requires the routing map to carry guide names only — the Items_PredefinedFilter placement rule is owned by page-modification-overview and must not be duplicated in the routing map (ENG-90052 PR #987 blocker)");
 	}
 
 	[Test]
