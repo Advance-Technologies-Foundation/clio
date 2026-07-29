@@ -184,9 +184,21 @@ public sealed class PageUpdateToolTests {
 		// Act
 		string description = descriptionAttribute.Description;
 
-		// Assert
-		description.Should().Contain(SchemaValidationService.CustomCssPolicySummary,
-			because: "the tool description must carry the ENG-92541 custom-CSS policy verbatim from the single-sourced const so the two tool descriptions cannot drift (RB-A5) and the rule is actually wired into the surface the agent reads (RB-A7)");
+		// Assert — pin the actual policy CONTENT, not `Contains(const)` (which is tautological because
+		// the description is composed from that const); a future edit that guts the const's wording
+		// must fail this test (ENG-92541, N-2).
+		description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "AC1: the description must state that custom CSS is a last resort, not a default");
+		description.Should().Contain("NATIVE inputs first",
+			because: "AC1: native-first must be stated in the surface the agent actually reads when calling update-page");
+		description.Should().Contain("already-inserted component",
+			because: "RC-3: the policy must explicitly cover the style-an-existing-component path, the real failure the PR targets");
+		description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles is custom CSS too and must be named so the agent does not treat it as native");
+		description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be stated before the agent applies CSS");
+		description.Should().Contain("explicit confirmation",
+			because: "AC5: the description must require explicit user confirmation before applying custom CSS");
 		description.Should().Contain("page-modification-components",
 			because: "the CSS trigger must route to the sub-guide that carries the STOP block — the entry page-modification guide's GATE table has no general visual-styling row, so pointing there would leave the policy unreachable on the style-an-existing-component path (RC-3)");
 	}
