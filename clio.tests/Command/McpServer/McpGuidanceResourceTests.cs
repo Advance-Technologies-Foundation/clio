@@ -2187,6 +2187,23 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The predefined-filter section distinguishes the ADD path (append is safe) from the UPDATE path (mode:replace, because viewModelConfigDiff is plain-concat with no dedupe) so an agent updating an existing filter does not stack a duplicate merge (ENG-90052 PR #989 review).")]
+	public void PageModificationOverviewGuidanceResource_Should_Scope_Append_To_Add_And_Route_Update_To_Replace() {
+		// Arrange
+		PageModificationOverviewGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("UPDATING an existing predefined filter",
+			because: "the guide must call out the update path separately so the agent does not blindly append on an existing filter");
+		article.Text.Should().Contain("mode:\"replace\"",
+			because: "updating an existing Items_PredefinedFilter must edit the op in place and save with mode:replace, since viewModelConfigDiff append is plain-concat with no dedupe and would stack a duplicate op");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The routing map routes a named/predefined list-page filter to page-modification-overview + esq-filters-frontend by guide name only, without duplicating the owning guide's rule content (ENG-90052).")]
 	public void RoutingGuidanceResource_Should_Route_Predefined_List_Filter() {
 		// Arrange

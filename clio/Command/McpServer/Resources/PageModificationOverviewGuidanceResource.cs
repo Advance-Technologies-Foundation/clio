@@ -123,9 +123,11 @@ public sealed class PageModificationOverviewGuidanceResource {
 		       - If the page body is empty or brand-new (no existing style to match), default to tab indentation.
 
 		       Predefined / named list-page filter (Items_PredefinedFilter)
-		       - A NAMED or PREDEFINED filter that a section/list page ALWAYS applies (e.g. an "Active Requests" list that keeps showing New + In Progress + Escalated) is a PAGE edit, not a data write. It lives in the `Items_PredefinedFilter` view-model attribute on the `*_ListPage` schema: add a `viewModelConfigDiff` `merge` on `["attributes"]` that sets `Items_PredefinedFilter.value` to a serialized filter GROUP, then save with `update-page` in append mode (per the write-modes section above, `viewModelConfigDiff` is plain-concat in append, so adding this attribute merge does not disturb the page's existing config).
+		       - A NAMED or PREDEFINED filter a section/list page ALWAYS applies (e.g. an "Active Requests" list showing New + In Progress + Escalated) is a PAGE edit, not a data write. It lives in the `Items_PredefinedFilter` view-model attribute on the `*_ListPage` schema: a `viewModelConfigDiff` `merge` on `["attributes"]` setting `Items_PredefinedFilter.value` to a serialized filter GROUP, saved with `update-page`.
+		       - ADDING a first predefined filter: append mode is fine — `viewModelConfigDiff` is plain-concat (see write-modes above), so a fresh `["attributes"]` merge leaves config intact.
+		       - UPDATING an existing predefined filter: do NOT append a second `["attributes"]` merge — plain-concat has NO dedupe, so it STACKS a duplicate op instead of replacing. Instead `get-page`, edit the existing `Items_PredefinedFilter` op in place, and save with `mode:"replace"`.
 		       - Do NOT reverse-engineer a `SysFolder` row with a `FilterData` blob and do NOT INSERT it through DataService — `FilterData` is a `System.IO.Stream`, so a DataService InsertQuery fails with `Object reference not set to an instance of an object` or `Attempt to set the value of "System.String" type into the "FilterData" field of the "System.IO.Stream" type`. A `SysFolder` folder-tree entry (the named folders in the section's left panel) is USER data and a DIFFERENT concept — do not conflate them, and do not go hunting through `SysSchema` / `FolderTree` / `BaseFolder` to place a predefined list filter.
-		       - Build the filter GROUP value per `esq-filters-frontend` — it owns the serialized filter shape (group/leaf types, numeric enums, the `parameter` envelope, and lookup value objects); a status membership condition is an In-list leaf. This guide owns only the placement (the `Items_PredefinedFilter.value` slot), not the filter shape.
+		       - Build the filter GROUP value per `esq-filters-frontend` — it owns the serialized filter shape (group/leaf types, numeric enums, the `parameter` envelope, and lookup value objects). This guide owns only the placement (the `Items_PredefinedFilter.value` slot), not the filter shape.
 
 		       Known limitations
 		       - `update-page` fail-closed on design-package resolution: if `GetDesignPackageUId` fails for a write, the call returns an error instead of silently falling back to the original package.
@@ -141,6 +143,6 @@ public sealed class PageModificationOverviewGuidanceResource {
 	/// Returns the canonical page-body save-lifecycle sub-guide of the page-modification family.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "page-modification-overview-guidance")]
-	[Description("Returns the page-body save lifecycle sub-guide of the page-modification family: canonical get-page/update-page/sync-pages flow, replacing-schema concept, design-package resolution, write modes, external-modification conflicts, body formatting, and known limitations.")]
+	[Description("Returns the page-body save lifecycle sub-guide of the page-modification family: canonical get-page/update-page/sync-pages flow, replacing-schema concept, design-package resolution, write modes, external-modification conflicts, body formatting, predefined list-page filter placement, and known limitations.")]
 	public ResourceContents GetGuide() => Guide;
 }
