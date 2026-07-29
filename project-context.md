@@ -29,6 +29,13 @@
 - Commands are registered via DI in `clio/BindingsModule.cs` and wired as verbs in
   `clio/Program.cs` — never forget to register.
 - `IApplicationClient` / `CreatioClient` is the ONLY way to talk to Creatio HTTP API — never use raw `HttpClient`
+  - **Narrow sanctioned exception — binary uploads/reads the JSON surface cannot carry.**
+    `IApplicationClient` only sends/receives string bodies, and `Creatio.Client.UploadFile`
+    cannot set a caller-chosen `fileId` (it appends its own query string). Flows that need a raw
+    binary body with `Content-Range`/`Content-Disposition`/CSRF headers or a byte-exact binary
+    read may use a named `IHttpClientFactory` client with cookies from `ICreatioAuthClient`.
+    `Clio.Common.SysImageUploader` is the sanctioned reference example; any new deviation must
+    justify itself against this bullet and follow the same pattern.
 
 ### CLI flag naming — HARD RULE
 - **All CLI option names must be kebab-case**: `--package-name`, not `--packageName` or `--PackageName`

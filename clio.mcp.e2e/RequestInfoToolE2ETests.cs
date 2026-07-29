@@ -39,6 +39,10 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	/// Offline registry fixture: the pilot parameterless request (no docs, so the detail
 	/// path never touches the docs CDN) plus a parameterised request for search coverage,
 	/// with the base-parameter and wiring-contract globals the detail response surfaces.
+	/// The wiring contract deliberately names its value type through a <c>valueType</c> string
+	/// (never a <c>type</c> one) so the type-reference closure's keyType/valueType hop is
+	/// exercised over the wire; <c>SortColumnOptions</c> is the unreferenced global that proves
+	/// the closure stays scoped instead of inlining the whole bag.
 	/// </summary>
 	private const string RegistryFixtureJson = """
 	{
@@ -63,8 +67,16 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	    "typeDefinitions": {
 	      "RequestBindingConfig": {
 	        "fields": {
-	          "params": { "type": "Record", "keyType": "string", "valueType": "string | boolean | number" },
+	          "params": { "type": "Record", "keyType": "string", "valueType": "string | boolean | number | RequestParamBindingConfigValue" },
 	          "request": { "type": "string", "required": true }
+	        }
+	      },
+	      "RequestParamBindingConfigValue": {
+	        "type": "string | boolean | number | null"
+	      },
+	      "SortColumnOptions": {
+	        "fields": {
+	          "columnName": { "type": "string", "required": true }
 	        }
 	      }
 	    }
@@ -315,6 +327,32 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 			because: "the wiring contract is reachable from the closure seed");
 		response.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
 			because: "every request is wired through RequestBindingConfig, so the detail inlines its schema");
+	}
+
+	[Test]
+	[Description("Type-reference closure over the wire: a detail response must inline a type definition that is reachable ONLY through a keyType/valueType string, not through a `type` one. The fixture's RequestBindingConfig.params names RequestParamBindingConfigValue in its valueType union, so a response that omits that definition would name a type it never defines - the non-self-contained schema this closure hop fixes. SortColumnOptions is published but unreferenced, pinning that the widened tokenizer did not turn into a merge-everything.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-request-info inlines valueType-referenced type definitions over the wire")]
+	[AllureDescription("Requests crt.ClosePageRequest detail against the local registry fixture and verifies references.typeDefinitions carries the type reachable only through the wiring contract's valueType union, while an unreferenced global stays out.")]
+	public async Task RequestInfoTool_Should_Inline_ValueType_Referenced_TypeDefinitions_When_Detail_Is_Returned() {
+		// Arrange
+		await using var context = Arrange();
+
+		// Act
+		RequestInfoResponse response = await CallRequestInfoAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["request-type"] = "crt.ClosePageRequest" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "crt.ClosePageRequest exists in the fixture registry");
+		response.References.Should().NotBeNull(
+			because: "the wiring contract is reachable from the closure seed, so the detail carries typeDefinitions");
+		response.References!.TypeDefinitions.Should().ContainKey("RequestParamBindingConfigValue",
+			because: "RequestBindingConfig.params names it only through a valueType string - the hop this closure follows");
+		response.References.TypeDefinitions.Should().NotContainKey("SortColumnOptions",
+			because: "nothing reachable from this request references it, so the closure must leave it out of the response");
 	}
 
 	[Test]

@@ -19,8 +19,8 @@ namespace Clio.Command.McpServer.Tools;
 ///
 /// This helper walks the transitive closure starting from:
 /// <list type="bullet">
-/// <item>type identifiers tokenised from every <c>"type": "..."</c> string in
-/// <c>entry.inputs</c> and <c>entry.outputs</c>;</item>
+/// <item>type identifiers tokenised from every <c>"type"</c> / <c>"keyType"</c> /
+/// <c>"valueType"</c> string in <c>entry.inputs</c> and <c>entry.outputs</c>;</item>
 /// <item>the type identifiers tokenised from inside the per-component typedefs
 /// themselves (a per-component schema can reference a global type — e.g. a
 /// <c>filter</c> field whose type is <c>BaseFilter</c>).</item>
@@ -49,6 +49,20 @@ internal static class TypeReferenceClosure {
 		"default",
 		"values",
 		"valueSource",
+	};
+
+	/// <summary>
+	/// Property names whose string value carries type references to tokenise.
+	/// <c>type</c> is the primary carrier; Record-shaped schemas reference their key and
+	/// value types through <c>keyType</c> / <c>valueType</c> instead (e.g. a request's
+	/// <c>parameters</c> map or <c>RequestBindingConfig.params</c>), so those strings
+	/// must feed the closure too - otherwise the detail response names types it never
+	/// defines.
+	/// </summary>
+	private static readonly HashSet<string> TypeReferencePropertyNames = new(System.StringComparer.Ordinal) {
+		"type",
+		"keyType",
+		"valueType",
 	};
 
 	/// <summary>
@@ -148,7 +162,8 @@ internal static class TypeReferenceClosure {
 
 	/// <summary>
 	/// Walks a <see cref="JsonElement"/> and pushes every PascalCase-ish identifier
-	/// found under a <c>"type"</c> string into the queue. Recurses through nested
+	/// found under a <see cref="TypeReferencePropertyNames"/> string (<c>type</c>,
+	/// <c>keyType</c>, <c>valueType</c>) into the queue. Recurses through nested
 	/// objects and arrays; skips properties listed in <see cref="PayloadPropertyNames"/>
 	/// because their string values are user-facing data (allowed values, defaults,
 	/// descriptions), not type references.
@@ -157,10 +172,13 @@ internal static class TypeReferenceClosure {
 		switch (element.ValueKind) {
 			case JsonValueKind.Object:
 				foreach (JsonProperty property in element.EnumerateObject()) {
-					if (PayloadPropertyNames.Contains(property.Name)) {
+					// JsonProperty.Name transcodes UTF-8 to a new string on every access,
+					// so read it once per property — this walk runs on every detail call.
+					string propertyName = property.Name;
+					if (PayloadPropertyNames.Contains(propertyName)) {
 						continue;
 					}
-					if (property.NameEquals("type") && property.Value.ValueKind == JsonValueKind.String) {
+					if (TypeReferencePropertyNames.Contains(propertyName) && property.Value.ValueKind == JsonValueKind.String) {
 						TokenizeTypeString(property.Value.GetString(), queue);
 						continue;
 					}

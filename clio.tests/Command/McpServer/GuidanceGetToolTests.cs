@@ -158,6 +158,51 @@ public sealed class GuidanceGetToolTests {
 			because: "the guide routes to theming tools by their canonical names only");
 		result.Article.Text.Should().Contain("build-theme",
 			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
+		result.Article.Text.Should().Contain("get-guidance name=branding",
+			because: "the theming guide must route branding-beyond-the-theme (logos, shell background) to the dedicated branding guide instead of carrying it");
+		result.Article.Text.Should().NotContain("Branding — logos and background",
+			because: "the branding mechanics moved to the dedicated branding guide (ENG-92981) and must not be duplicated here");
+		result.Article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the shell-background mechanics are owned by the branding guide, not the theming guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical branding guidance article when the caller requests branding: logo sys settings and the shell background flow routed through the dedicated upload-image and set-background-image tools.")]
+	public async Task GuidanceGet_Should_Return_Branding_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("branding"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "branding is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/branding",
+			because: "the guidance tool should preserve the canonical branding guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP branding guide",
+			because: "the guidance tool should return the canonical branding article text");
+		result.Article.Text.Should().Contain("get-guidance name=theming",
+			because: "the branding guide must route the theme part of branding (colours, fonts, custom themes) to the theming guide");
+		result.Article.Text.Should().Contain("CrtAppToolbarLogo",
+			because: "the logos section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		result.Article.Text.Should().Contain("value-file-path",
+			because: "logo uploads must route through the Binary sys-setting file path, never inline bytes");
+		result.Article.Text.Should().Contain("HideSplashScreenLogoImage",
+			because: "applying logos must also hide the stock splash logo");
+		result.Article.Text.Should().Contain("upload-image",
+			because: "the background image upload must route through the dedicated upload-image tool, since OData JSON cannot write the SysImage binary stream");
+		result.Article.Text.Should().NotContain("ImageAPIService",
+			because: "the raw image-API recipe (endpoint, query literals, headers) is owned by the upload-image tool implementation and must not be hand-executed from the guide");
+		result.Article.Text.Should().NotContain("get-browser-session",
+			because: "the browser-session upload recipe is retired in favor of the dedicated upload-image tool");
+		result.Article.Text.Should().Contain("set-background-image",
+			because: "the background activation must route through the dedicated set-background-image tool");
+		result.Article.Text.Should().NotContain("SysImageInTag",
+			because: "the gallery-registration mechanics are owned by the set-background-image tool implementation and must not be hand-executed from the guide");
 	}
 
 	[Test]
@@ -1043,5 +1088,75 @@ public sealed class GuidanceGetToolTests {
 			because: "app-modeling carries no feature gate and must resolve even while process-designer is off");
 		result.Article!.Uri.Should().Be("docs://mcp/guides/app-modeling",
 			because: "the ungated guide must return its canonical article URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Hides freedom-page-web-to-mobile-conversion from availableGuides when the mobile-page-converter feature gate is disabled.")]
+	public void GuidanceGet_Should_Hide_FreedomToMobile_From_AvailableGuides_When_Gate_Disabled() {
+		// Arrange — bare substitute: IsEnabled(...) returns false, so the gated guide is disabled.
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
+
+		// Assert
+		result.AvailableGuides.Should().NotContain("freedom-page-web-to-mobile-conversion",
+			because: "the conversion guide is gated behind the disabled mobile-page-converter flag and must not leak through get-guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats freedom-page-web-to-mobile-conversion as an unknown guide when the mobile-page-converter feature gate is disabled.")]
+	public void GuidanceGet_Should_Reject_FreedomToMobile_As_Unknown_When_Gate_Disabled() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion")).Result;
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a gated guide must resolve as unknown while its feature flag is off");
+		result.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article");
+		result.Error.Should().Contain("Unknown guidance 'freedom-page-web-to-mobile-conversion'",
+			because: "the failure must name the rejected guide so the disabled gate is indistinguishable from a non-existent guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Lists and resolves freedom-page-web-to-mobile-conversion when the mobile-page-converter feature gate is enabled.")]
+	public async Task GuidanceGet_Should_List_And_Resolve_FreedomToMobile_When_Gate_Enabled() {
+		// Arrange
+		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse listing = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
+		GuidanceGetResponse guide = await tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion"));
+
+		// Assert
+		listing.AvailableGuides.Should().Contain("freedom-page-web-to-mobile-conversion",
+			because: "the conversion guide must be listed when the mobile-page-converter gate is enabled");
+		guide.Success.Should().BeTrue(
+			because: "the conversion guide must resolve when the mobile-page-converter gate is enabled");
+		guide.Article!.Uri.Should().Be("docs://mcp/guides/freedom-page-web-to-mobile-conversion",
+			because: "the enabled conversion guide must return its canonical article URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Attribute lock-in: both MCP surfaces of the converter carry [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
+	public void MobilePageConverter_McpTypes_CarryFeatureToggle() {
+		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)
+			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
+		FeatureToggleAttribute resourceToggle = typeof(FreedomToMobileConversionGuidanceResource)
+			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
+
+		toolToggle.Should().NotBeNull(because: "get-mobile-page-conversion-guide must stay gated");
+		toolToggle!.FeatureName.Should().Be("mobile-page-converter");
+		resourceToggle.Should().NotBeNull(because: "the conversion guidance resource must stay gated");
+		resourceToggle!.FeatureName.Should().Be("mobile-page-converter");
 	}
 }

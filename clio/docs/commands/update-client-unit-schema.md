@@ -21,6 +21,10 @@ making it suitable for classic 7x schemas and low-level Freedom UI edits.
 Pass the new body directly via --body or point to a file via --body-file.
 When both are provided, --body-file takes precedence.
 
+When a schema name exists in several packages, the target is resolved
+deterministically to the top (most-derived) layer — the same layer
+`get-client-unit-schema` reads — so the update never writes to an arbitrary layer.
+
 ## Synopsis
 
 ```bash

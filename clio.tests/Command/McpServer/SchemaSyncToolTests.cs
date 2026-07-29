@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -75,6 +76,34 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("TC-U-31: guards that the sync-schemas tool description states whole-batch verbatim re-run safety, that already-applied ops replay as already-satisfied/reconciled, and that a hand-composed catch-up batch is forbidden, so the shipped re-run-safety contract cannot silently regress.")]
+	public void SchemaSyncTool_ShouldDocumentReRunSafetyAndForbidHandComposedCatchUp_WhenBatchIsReSubmitted() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(SchemaSyncTool)
+			.GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("re-submit the whole batch verbatim",
+			because: "the tool contract must tell callers a whole-batch verbatim re-submit is the safe recovery path");
+		description.Should().Contain("replay as already-satisfied/reconciled",
+			because: "the tool contract must state that already-applied schema operations replay convergently with no duplicate mutation");
+		description.Should().Contain("do NOT hand-compose a batch of only the remaining operations",
+			because: "the tool contract must forbid a hand-composed catch-up batch of only the remaining operations");
+		description.Should().Contain("Whole-batch verbatim replay is safe for the convergent SCHEMA operations only",
+			because: "the whole-batch re-run safety must be explicitly scoped to schema operations so it does not overstate replay safety when seed data is present");
+		description.Should().Contain("seed-data is NOT replay-safe",
+			because: "the tool contract must warn that seed-data is not replay-safe and steer callers to resume-plan.operations");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
 	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange
@@ -85,7 +114,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -124,7 +153,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -164,7 +193,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
@@ -191,7 +220,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -235,7 +264,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeSeedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
@@ -272,6 +301,207 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("Inline seed-rows are SKIPPED when the create converged to already-satisfied (ENG-93807 review, AC-2): a verbatim replay of a create+inline-seed batch whose schema already fully existed must not re-run the seed, because no-Name/no-Id rows mint a fresh Id and would double-insert. The skip is surfaced as an explicit, replay-safe result note, not a silent drop.")]
+	public async Task SchemaSync_InlineSeed_ShouldSkip_WhenCreateAlreadySatisfied() {
+		// Arrange - the create classifies AlreadySatisfied (the schema already exists, e.g. on a verbatim replay
+		// of a previously-successful create+seed batch). The inline seed row carries no Name/Id, so re-running it
+		// would double-insert. The guard must skip the seed and never resolve/execute the seeding command.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.AlreadySatisfied));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Caption"] = ToJsonElement("New")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "skipping a replay-unsafe inline seed on an already-satisfied create is a success, not a failure");
+		fakeSeedCommand.CapturedOptions.Should().BeNull(
+			because: "the inline seed must NOT execute when the create converged to already-satisfied, or a verbatim replay would double-insert the no-Name rows");
+		response.Results.Should().HaveCount(2,
+			because: "the create result and an explicit seed-skipped result are both surfaced");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "the create observed an existing schema, so it converges to already-satisfied");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "the skipped inline seed is reported under the canonical seed-data type");
+		response.Results[1].Success.Should().BeTrue(
+			because: "the seed was intentionally skipped for replay-safety, not failed");
+		GetMessageValues(response.Results[1]).Should().Contain(
+			message => message.Contains("SKIPPED", StringComparison.Ordinal) && message.Contains("standalone seed-data", StringComparison.Ordinal),
+			because: "the skip must be observable and steer a genuine seed-an-existing-schema intent to a standalone seed-data op");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a skipped inline seed must still hand the caller a recovery affordance — an already-satisfied "
+				+ "create may also come from a landed-but-lost-response attempt of THIS call, where the rows were never seeded");
+		response.ResumePlan!.FailedOperation.Should().BeNull(
+			because: "nothing failed: the plan is a deferred-seed affordance, not an abort report");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A fully-successful batch whose inline seed was skipped (already-satisfied create) emits a resume-plan carrying the equivalent STANDALONE seed-data operation (ENG-93807 review, AC-2/AC-3): the already-satisfied outcome cannot distinguish 'rows already there' from 'attempt 1 of this call committed and lost its response', so a success-keyed consumer must still get a keyed, replay-safe way to apply the rows instead of silently losing them.")]
+	public async Task SchemaSync_InlineSeed_Skipped_Should_Emit_DeferredSeed_ResumePlan() {
+		// Arrange - same shape as the skip test, but asserting the recovery affordance: the create converges to
+		// already-satisfied, the inline seed is skipped, and the response must carry a resume-plan whose single
+		// operation is a standalone seed-data op (which reconciles rows by key) for the same schema and rows.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.AlreadySatisfied));
+		SchemaSyncSeedRow seedRow = new(new Dictionary<string, System.Text.Json.JsonElement> {
+			["Caption"] = ToJsonElement("New")
+		});
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [seedRow])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the batch itself completed — the deferred seed is an affordance, not a failure");
+		response.ResumePlan.Should().NotBeNull(
+			because: "the skipped inline seed must be recoverable, so a resume-plan is emitted even on full success");
+		response.ResumePlan!.FailedOperation.Should().BeNull(
+			because: "no operation failed, so the plan carries no failed-operation");
+		response.ResumePlan.Operations.Should().HaveCount(1,
+			because: "only the one skipped inline seed is deferred");
+		response.ResumePlan.Operations[0].Type.Should().Be("seed-data",
+			because: "the deferred operation must be a STANDALONE seed-data op, which reconciles rows by key, not a re-submitted create");
+		response.ResumePlan.Operations[0].SchemaName.Should().Be("UsrTodoStatus",
+			because: "the deferred seed must target the schema whose inline seed was skipped");
+		response.ResumePlan.Operations[0].SeedRows.Should().BeEquivalentTo([seedRow],
+			because: "the deferred seed must carry the original rows so it is ready to resubmit verbatim");
+		response.ResumePlan.NotRunOperationIndexes.Should().Equal([0],
+			because: "the plan must name which operation's inline seed was deferred");
+		response.ResumePlan.Instruction.Should().Contain("SKIPPED",
+			because: "the instruction must explain that the seed was deliberately skipped, not lost");
+		fakeSeedCommand.CapturedOptions.Should().BeNull(
+			because: "emitting the affordance must not itself run the replay-unsafe inline seed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("Inline seed-rows DO run when the create converged to reconciled (ENG-93807 review, test completeness): only already-satisfied is the verbatim-replay signal — a reconcile applied a genuine delta on this call, so its rows have never been seeded and the inline seed must execute (and emit no deferred-seed resume-plan).")]
+	public async Task SchemaSync_InlineSeed_Should_Run_WhenCreateReconciled() {
+		// Arrange - the create classifies Reconcile (the schema existed but was missing a column, which this call
+		// adds). This is a FIRST application, not a replay, so the inline seed must run exactly as on a fresh create.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Reconcile,
+			columnsToAdd: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))]);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Caption"] = ToJsonElement("New")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a reconciled create followed by its inline seed is a fully successful operation");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "the create applied the missing-column delta on this call");
+		fakeSeedCommand.CapturedOptions.Should().NotBeNull(
+			because: "a reconcile is a first application, not a verbatim replay, so its inline seed must actually run");
+		fakeSeedCommand.CapturedOptions!.SchemaName.Should().Be("UsrTodoStatus",
+			because: "the inline seed must target the reconciled schema");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "the executed inline seed is reported as its own seed-data result");
+		response.Results[1].Success.Should().BeTrue(
+			because: "the seeding succeeded");
+		response.ResumePlan.Should().BeNull(
+			because: "nothing failed and no seed was deferred, so the batch emits no resume plan");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A durable collision observed on the FIRST classify fails fast (ENG-93807 review, test completeness): a collision is not a transient fault, so the retry loop must not spin — Classify is called exactly once, no create is attempted, and attempts stays null.")]
+	public async Task ExecuteCreateSchema_FirstReadCollision_Should_FailFast_WithoutRetrySpin() {
+		// Arrange - the very first classify observes a same-name schema in a different package.
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPackage",
+			error: "Error: schema 'UsrGenre' already exists in package 'OtherPackage'.");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence,
+			retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a durable cross-package collision is a real failure, not a convergent success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the structured collision shape must be surfaced from the first-read path too");
+		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPackage",
+			because: "the caller needs to know which package owns the colliding schema");
+		convergence.Received(1).Classify(Arg.Any<SchemaConvergenceTarget>());
+		response.Results[0].Attempts.Should().BeNull(
+			because: "a collision fails fast on the first attempt, so no retry count is reported");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "no create may be attempted once a durable collision is classified");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops processing on first operation failure")]
 	public async Task SchemaSync_Should_Stop_On_First_Failure() {
 		// Arrange
@@ -281,7 +511,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(_ => resolveCount++ == 0 ? failingCommand : secondCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -318,7 +548,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(failingCommand);
-		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
@@ -337,22 +567,22 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Includes collision-info when schema already exists in a different package")]
+	[Description("Surfaces the cross-package collision pre-emptively without ever attempting the create when the convergence classifier reports a different owning package.")]
 	public async Task SchemaSync_CreateLookup_Should_Include_CollisionInfo_When_Schema_Exists_In_Different_Package() {
 		// Arrange
 		TestLogger logger = new();
-		var failingCommand = new FakeCreateEntitySchemaCommand(
-			logger,
-			exitCode: 1,
-			messages: ["Schema 'UsrFirst' already exists."]);
-		var fakeFindCommand = new FakeFindEntitySchemaCommand(
-			[new EntitySchemaSearchResult("UsrFirst", "OtherPackage", "Customer", "BaseLookup")]);
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger);
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
-			.Returns(failingCommand);
-		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
-			.Returns(fakeFindCommand);
-		SchemaSyncTool tool = new(commandResolver, logger);
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPackage",
+			error: "Error: schema 'UsrFirst' already exists in package 'OtherPackage'.");
+		SchemaSyncTool tool = new(commandResolver, logger, convergence);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
@@ -361,31 +591,34 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "a cross-package name collision is a durable failure, not a success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the collision outcome discriminator must be surfaced to callers");
 		response.Results[0].CollisionInfo.Should().NotBeNull(
-			because: "find-entity-schema found the schema in a different package");
+			because: "the classifier found the schema in a different package");
 		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPackage",
 			because: "the collision info should name the package that owns the stale schema");
-		response.Results[0].CollisionInfo.Hint.Should().Contain("OtherPackage",
-			because: "the hint should reference the owning package to guide the agent");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the collision must be detected pre-emptively — create is never attempted");
+		registrationService.DidNotReceive().EnsureLookupRegistration(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Omits collision-info when schema is not found after a failed create operation")]
+	[Description("Omits collision-info and reports the created outcome when the convergence classifier reports the schema is absent.")]
 	public async Task SchemaSync_CreateLookup_Should_Not_Include_CollisionInfo_When_Schema_Not_Found() {
 		// Arrange
 		TestLogger logger = new();
-		var failingCommand = new FakeCreateEntitySchemaCommand(
-			logger,
-			exitCode: 1,
-			messages: ["create-lookup failed with exit code 1: network timeout"]);
-		var fakeFindCommand = new FakeFindEntitySchemaCommand([]);
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
-			.Returns(failingCommand);
-		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
-			.Returns(fakeFindCommand);
-		SchemaSyncTool tool = new(commandResolver, logger);
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create));
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
@@ -396,6 +629,8 @@ public sealed class SchemaSyncToolTests {
 		// Assert
 		response.Results[0].CollisionInfo.Should().BeNull(
 			because: "no existing schema was found, so there is no collision to report");
+		response.Results[0].Outcome.Should().Be("created",
+			because: "an absent schema that is created must report the created outcome");
 	}
 
 	[Test]
@@ -404,7 +639,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_Unknown_OperationType_Should_Return_Error() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("delete-schema", "UsrOops")]);
@@ -430,7 +665,7 @@ public sealed class SchemaSyncToolTests {
 	[Description("Rejects the legacy operation field name with a targeted sync-schemas validation message.")]
 	public async Task SchemaSync_Should_Reject_Legacy_Operation_Field_Name() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -465,7 +700,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Fail() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
@@ -486,7 +721,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Enumerate_Accepted_Shapes() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
@@ -517,7 +752,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -557,7 +792,10 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		// Both target columns already exist (UsrStatus with a different type, UsrObsolete present) so the
+		// modify converges and the remove is issued — the reconcile keeps both operations in the delta.
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrStatus", "Text"), ("UsrObsolete", "Text"))));
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -601,9 +839,9 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<CreateEntitySchemaOptions>())
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(Substitute.For<ILookupRegistrationService>());
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -639,7 +877,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(failingCreateCommand);
 		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
 			.Returns(fakeSeedCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrBroken",
@@ -669,7 +907,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"missing-env", "UsrPkg",
 			[
@@ -703,7 +941,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"missing-env", "UsrPkg",
 			[
@@ -739,7 +977,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"missing-env", "UsrPkg",
 			[
@@ -781,7 +1019,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeUpdateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -836,7 +1074,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeUpdateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -901,7 +1139,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncArgs(
@@ -929,7 +1167,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -964,7 +1202,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -996,7 +1234,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1027,7 +1265,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1058,7 +1296,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1086,7 +1324,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1116,7 +1354,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1145,7 +1383,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Enumerate_IsRequired_And_Caption_Aliases() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
@@ -1170,7 +1408,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1199,7 +1437,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1229,7 +1467,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1259,7 +1497,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1292,7 +1530,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1330,7 +1568,7 @@ public sealed class SchemaSyncToolTests {
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
 			.Throws(new InvalidOperationException("baseUri: Value cannot be null"));
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -1362,7 +1600,7 @@ public sealed class SchemaSyncToolTests {
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
 			.Throws(new InvalidOperationException("dataforge call to https://target.creatio.com/0/rest failed: /Users/dev/secret/appsettings.json missing"));
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -1397,7 +1635,7 @@ public sealed class SchemaSyncToolTests {
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
 			.Throws(new NullReferenceException("object reference not set"));
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
@@ -1409,6 +1647,1069 @@ public sealed class SchemaSyncToolTests {
 		await act.Should().ThrowAsync<NullReferenceException>(
 			because: "a programming defect must not be hidden as a benign dataforge: degradation");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries a transient network failure on the first attempt and continues the batch when the retry succeeds (ENG-93374 AC1).")]
+	public async Task SchemaSync_Should_Retry_Transient_Failure_And_Continue_Batch() {
+		// Arrange
+		var logger = new TestLogger();
+		// First attempt reports a transient DNS flap; the retry succeeds.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("One or more errors occurred. (No such host is known.)"),
+			Success());
+		var scriptedUpdate = new ScriptedUpdateEntitySchemaCommand(logger, Success());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(scriptedUpdate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre")),
+				new SchemaSyncOperation("update-entity", "UsrBooks",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a single transient network flap must no longer abort the batch once the retry succeeds");
+		scriptedCreate.Invocations.Should().Be(2,
+			because: "the create must be retried exactly once after the transient failure");
+		response.Results.Should().HaveCount(2,
+			because: "both the create-lookup and the update-entity should have executed");
+		response.Results[1].Type.Should().Be("update-entity",
+			because: "the batch must proceed to the operation that previously never ran");
+		response.ResumePlan.Should().BeNull(
+			because: "a fully-successful batch must not carry a resume plan");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the number of attempts should be surfaced when the operation was retried");
+		string[] createMessages = GetMessageValues(response.Results[0]);
+		createMessages.Should().NotContain(message => message.Contains("No such host is known", StringComparison.Ordinal),
+			because: "the discarded failed-attempt error text must not leak into the successful result (only the final attempt's messages are kept)");
+		createMessages.Should().Contain(message => message.Contains("transient network failure on attempt", StringComparison.Ordinal),
+			because: "an info-level retry note should record that a retry happened");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries a transient failure up to the attempt budget, then fails the operation and emits a resume plan (ENG-93374 AC2/AC4).")]
+	public async Task SchemaSync_Should_Fail_After_Exhausting_Retries_And_Emit_Resume_Plan() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."),
+			Transient("No such host is known."),
+			Transient("No such host is known."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre")),
+				new SchemaSyncOperation("update-entity", "UsrBooks",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the operation still fails once the transient retries are exhausted");
+		scriptedCreate.Invocations.Should().Be(SchemaSyncTool.MaxAttempts,
+			because: "the create must be attempted exactly MaxAttempts times before failing");
+		retryDelay.Received(1).Wait(TimeSpan.FromSeconds(1));
+		retryDelay.Received(1).Wait(TimeSpan.FromSeconds(2));
+		response.Results.Should().HaveCount(1,
+			because: "the batch aborts at the failed operation and the update-entity never runs");
+		response.Results[0].Status.Should().Be("failed",
+			because: "the aborting operation must be marked failed");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a mid-batch abort must surface a resume plan");
+		response.ResumePlan!.FailedOperation!.OperationIndex.Should().Be(0,
+			because: "the failed operation is the first one in the batch");
+		response.ResumePlan.NotRunOperationIndexes.Should().Equal([1],
+			because: "the second operation never ran");
+		response.ResumePlan.Operations.Should().HaveCount(2,
+			because: "the resume plan must carry the failed op plus every not-run op");
+		response.ResumePlan.Operations[0].Type.Should().Be("create-lookup",
+			because: "the failed create-lookup must be resubmittable as-is");
+		response.ResumePlan.Operations[1].Type.Should().Be("update-entity",
+			because: "the not-run update-entity must be resubmittable as-is");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not retry a non-transient (business/validation) failure — it fails on the first attempt (ENG-93374 AC6).")]
+	public async Task SchemaSync_Should_Not_Retry_Non_Transient_Failure() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Fail("Schema UsrGenre already exists in package UsrApp."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a durable business error must fail the operation");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "a non-transient failure must not be retried");
+		retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
+		response.Results[0].Attempts.Should().BeNull(
+			because: "attempts is omitted when the operation was not retried");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries only the lookup registration after a successful create, never re-running the applied create (ENG-93374).")]
+	public async Task SchemaSync_Should_Retry_Only_Registration_After_Successful_Create() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		int registrationCalls = 0;
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(service => service.EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()))
+			.Do(_ => {
+				registrationCalls++;
+				if (registrationCalls < 3) {
+					throw new System.Net.Sockets.SocketException();
+				}
+			});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a transient registration flap must be retried and eventually succeed");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "the create already applied server-side and must not be re-run on a registration retry");
+		registrationCalls.Should().Be(3,
+			because: "the registration must be retried until it succeeds within the attempt budget");
+		response.Results[0].Attempts.Should().Be(3,
+			because: "the combined result must surface the maximum attempt count across the create and registration steps");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A transient flap on the create whose mutation actually applied re-classifies on retry and converges IN-CALL to already-satisfied — success, no duplicate create, no deferral to batch resubmit (ENG-93807 convergent-retry).")]
+	public async Task ExecuteCreateSchema_ShouldConvergeInCallToAlreadySatisfied_WhenTransientFlapAfterMutationApplied() {
+		// Arrange - the first classify sees an absent schema (Create); the transient flap after the mutation
+		// actually applied means the retry's RE-classify observes the schema now present (AlreadySatisfied).
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("One or more errors occurred. (No such host is known.)"));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
+			.Returns(
+				new SchemaConvergencePlan(SchemaConvergenceOutcome.Create, [], [], null, null),
+				new SchemaConvergencePlan(SchemaConvergenceOutcome.AlreadySatisfied, [], [], null, null));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger, convergence, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a lost-response create whose mutation applied must converge in-call, not fail on the retry");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "the retry re-classifies and observes the already-applied schema, so the outcome is already-satisfied");
+		response.Results[0].Status.Should().Be("completed",
+			because: "the in-call convergence is a genuine success");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "the create must be attempted once; the retry re-classifies to a no-op and must NOT re-create");
+		convergence.Received(2).Classify(Arg.Any<SchemaConvergenceTarget>());
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrGenre", "Genre");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the operation was retried once before it converged in-call");
+		response.ResumePlan.Should().BeNull(
+			because: "the op succeeded in-call, so no resume plan is emitted and no batch resubmit is required");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("update-entity converges IN-CALL on a retry re-read (ENG-93807 review, AC-2): attempt 1 sees an absent column and issues an add that transiently flaps AFTER applying server-side; the retry RE-READS the columns, observes the now-present same-type column, recomputes an empty delta and converges to already-satisfied — one update invocation, no duplicate add, attempts==2.")]
+	public async Task ExecuteUpdateEntity_ShouldConvergeInCallToAlreadySatisfied_WhenTransientFlapAfterAddApplied() {
+		// Arrange - mirror of ExecuteCreateSchema_ShouldConvergeInCallToAlreadySatisfied for the update path.
+		// ReadColumns returns "absent" on the first read and "present same-type" on the retry re-read; the update
+		// command flaps transient on the first (and only) execution so the retry re-reads and finds nothing to do.
+		var logger = new TestLogger();
+		var scriptedUpdate = new ScriptedUpdateEntitySchemaCommand(logger,
+			Transient("One or more errors occurred. (No such host is known.)"));
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.ReadColumns(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(
+				new Dictionary<string, EntitySchemaPropertyColumnInfo>(StringComparer.OrdinalIgnoreCase),
+				ExistingColumns(("UsrPages", "Integer")));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(scriptedUpdate);
+		SchemaSyncTool tool = new(commandResolver, logger, convergence, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrBooks",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a lost-response add whose mutation applied must converge in-call on the retry re-read, not fail as a duplicate add");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "the retry re-reads the columns, finds the add already applied, recomputes an empty delta and converges to already-satisfied");
+		response.Results[0].Status.Should().Be("completed",
+			because: "the in-call convergence is a genuine success");
+		scriptedUpdate.Invocations.Should().Be(1,
+			because: "the add is executed once on the transient flap; the retry re-reads to an empty delta and must NOT re-issue the add");
+		convergence.Received(2).ReadColumns("dev", "UsrBooks");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the operation was retried once before it converged in-call on the re-read");
+		response.ResumePlan.Should().BeNull(
+			because: "the op succeeded in-call, so no resume plan is emitted and no batch resubmit is required");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A collision observed only on the retry re-classify (attempt-1 transient flap, then a concurrent different-package create) fails fast with the structured collision shape — success:false, outcome:collision, collision-info — and never re-attempts the create (ENG-93807 convergent-retry contract consistency).")]
+	public async Task ExecuteCreateSchema_ShouldReturnStructuredCollision_WhenCollisionSurfacesOnRetryReclassify() {
+		// Arrange - attempt 1 classifies Create and the create flaps transient WITHOUT landing; before the
+		// retry, a concurrent create lands the same name in a DIFFERENT package, so the retry's re-classify
+		// observes a durable cross-package collision.
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("One or more errors occurred. (No such host is known.)"));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
+			.Returns(
+				new SchemaConvergencePlan(SchemaConvergenceOutcome.Create, [], [], null, null),
+				new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], "OtherPackage",
+					"Error: schema 'UsrGenre' already exists in package 'OtherPackage'."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger, convergence, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "a durable collision observed on the retry is a genuine failure, not a resumable flap");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the retry-surfaced collision must carry the same outcome discriminator as the pre-emptive path");
+		response.Results[0].CollisionInfo.Should().NotBeNull(
+			because: "the structured collision result must include collision-info, not a bare error");
+		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPackage",
+			because: "the collision-info must name the owning package resolved by the re-classify");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "the create is attempted once on the transient flap; the retry re-classifies to a collision and must NOT re-create");
+		registrationService.DidNotReceive().EnsureLookupRegistration(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("A transient network fault on the FIRST convergence classify read is retried in-call (ENG-93807): the initial classify runs inside the retry loop, so a lost/flapped first read converges on the retry instead of aborting the operation.")]
+	public async Task ExecuteCreateSchema_ShouldRetryFirstClassify_WhenInitialClassifyFaultsTransiently() {
+		// Arrange - the FIRST classify read throws a transient timeout; the retry's classify then succeeds
+		// with a Create plan and the create applies. If the first classify were outside the retry loop (the
+		// pre-ENG-93807 behaviour) this would abort with a failed result instead of retrying.
+		var logger = new TestLogger();
+		var fakeCreate = new FakeCreateEntitySchemaCommand();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
+			.Returns(
+				_ => throw new TimeoutException("The operation has timed out."),
+				_ => new SchemaConvergencePlan(SchemaConvergenceOutcome.Create, [], [], null, null));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger, convergence, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a transient fault on the first classify read must be retried in-call, not surfaced as a failure");
+		response.Results[0].Outcome.Should().Be("created",
+			because: "the retry's classify returns Create and the create applies, so the outcome is created");
+		convergence.Received(2).Classify(Arg.Any<SchemaConvergenceTarget>());
+		fakeCreate.CapturedOptions.Should().NotBeNull(
+			because: "the create runs once, on the successful retry attempt");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the operation was retried once after the first classify's transient fault");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrGenre", "Genre");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("An update-entity operation with an unsupported action verb on a present same-type column is FORWARDED unchanged, not silently dropped (ENG-93807 review): the reconcile never treats a non add|modify|remove action as satisfied, so UpdateEntitySchemaCommand's own validator can reject it.")]
+	public async Task ExecuteUpdateEntity_ShouldForwardUnsupportedAction_WhenColumnPresentSameType() {
+		// Arrange - the schema already has UsrCol as Text; the caller sends an invalid 'rename' action for it.
+		// Pre-fix, a present same-type column with a non-remove/non-modify action fell through and was dropped
+		// as already-satisfied, bypassing update validation.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCol", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("rename", "UsrCol", Type: "Text")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "an unsupported action must reach the update command, not be dropped as already-satisfied");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrCol\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"rename\"", StringComparison.Ordinal),
+			because: "the invalid action is forwarded verbatim so the downstream validator can reject it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("An update-entity operation with an unsupported action verb on a present DIFFERENT-type column is FORWARDED verbatim, never rewritten to modify (ENG-93807 review): an invalid action cannot masquerade as a modify and bypass validation, and it is not treated as a column collision either (that rule is scoped to adds).")]
+	public async Task ExecuteUpdateEntity_ShouldNotRewriteUnsupportedActionToModify_WhenColumnPresentDifferentType() {
+		// Arrange - the schema already has UsrCol as Text; the caller sends an invalid 'rename' action with a
+		// divergent type. Pre-fix, a present different-type column had ANY action rewritten to 'modify'; today an
+		// add there is a collision, but an unsupported verb must still reach the command's own validator.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCol", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("rename", "UsrCol", Type: "Integer")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the invalid action must reach the update command");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"action\":\"rename\"", StringComparison.Ordinal),
+			because: "an unsupported action on a type-divergent column must be forwarded, not silently coerced to modify");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
+			operation => operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "an unsupported action is never rewritten on a type divergence — an add now collides there, and only an explicit modify converges the type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An ordered remove + re-add of the SAME column in one update-entity issues BOTH operations: the re-add is reconciled against the post-remove state, not the pre-batch snapshot (ENG-93807 review).")]
+	public async Task ExecuteUpdateEntity_ShouldIssueBothOperations_WhenColumnRemovedAndReaddedInSameBatch() {
+		// Arrange - UsrExternalId exists as Guid and is removed then re-added at the same type. Against the
+		// pre-batch snapshot the re-add looked already-satisfied and was dropped, so the column was removed
+		// and never restored.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrExternalId", "Guid"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("remove", "UsrExternalId"),
+					new UpdateEntitySchemaOperationArgs("add", "UsrExternalId", Type: "Guid")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an ordered remove + re-add is a supported way to recreate a column in one call");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "both the remove and the re-add must be issued — dropping the re-add would delete the column");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"action\":\"remove\"", StringComparison.Ordinal),
+			because: "the remove must reach the update command");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "the re-add must be reconciled against the post-remove state, where the column is absent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A remove followed by a re-add at a DIFFERENT type is a legitimate recreate, not a column collision — the collision gate reads the advancing state, not the pre-batch snapshot (ENG-93807 review).")]
+	public async Task ExecuteUpdateEntity_ShouldNotCollide_WhenColumnRemovedThenReaddedAtDifferentType() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("remove", "UsrCode"),
+					new UpdateEntitySchemaOperationArgs("add", "UsrCode", Type: "Text")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Outcome.Should().NotBe("collision",
+			because: "the caller explicitly removed the column first, so the re-add cannot collide with it");
+		response.Results[0].Success.Should().BeTrue(
+			because: "remove-then-re-add is the sanctioned way to recreate a column at a different type");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "both the remove and the differently-typed re-add must be issued");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit add naming a present column of a DIFFERENT type is reported as a column collision, never silently rewritten to a type-changing modify (ENG-93807 review, FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldReportCollision_WhenAddNamesPresentDifferentTypeColumn() {
+		// Arrange - the schema already has UsrCode as Integer; the caller asks to ADD UsrCode as Text. Pre-fix
+		// this silently mutated the existing column's type; it must now surface the name collision instead.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("add", "UsrCode", Type: "Text")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "an add that collides with a different pre-existing column must not report success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the per-column name collision is surfaced with the collision outcome");
+		response.Results[0].Error.Should().Contain("UsrCode",
+			because: "the error must name the colliding column");
+		response.Results[0].Error.Should().Contain("modify",
+			because: "the error must point at the explicit-modify remedy");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "a collision is detected before any mutation — no update command may run");
+		response.Results[0].Attempts.Should().BeNull(
+			because: "a collision is durable, not transient, so it must not burn the retry budget");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A columns add-batch (implicit adds, ENG-90313 round-trip) also collides on a present different-type column, and one response names EVERY colliding column (ENG-93807 review, FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldReportEveryCollision_WhenColumnsBatchDivergesOnType() {
+		// Arrange - two present columns diverge by type and one is absent; the batch carries no action verbs,
+		// so every item is an implicit add. All collisions must be reported together, not just the first.
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"), ("UsrTitle", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrCode", "Text", Localizations("Code")),
+					new CreateEntitySchemaColumnArgs("UsrTitle", "Integer", Localizations("Title")),
+					new CreateEntitySchemaColumnArgs("UsrAbsent", "Text", Localizations("Absent"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the implicit add-batch is held to the same no-silent-type-mutation rule as an explicit add");
+		response.Results[0].Error.Should().Contain("UsrCode",
+			because: "the first colliding column must be named");
+		response.Results[0].Error.Should().Contain("UsrTitle",
+			because: "every colliding column must be named, not only the first");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "the whole operation aborts before any mutation — the absent column is not added either");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit modify of a present different-type column still converges the type — the collision rule is scoped to adds (ENG-93807 review, FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldStillConvergeType_WhenExplicitModifyOnPresentDifferentTypeColumn() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrCode", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("modify", "UsrCode", Type: "Text")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an explicit modify is the sanctioned way to change a present column's type");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "the type divergence is converged through the modify write path");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal)
+				&& operation.Contains("\"column-name\":\"UsrCode\"", StringComparison.Ordinal),
+			because: "the explicit modify must reach the update command unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When a create succeeds but its inline seeding fails, the resume plan carries a standalone seed-data op — never a recreate (ENG-93374 AC4).")]
+	public async Task SchemaSync_Should_Emit_SeedData_Resume_Op_When_Seed_Fails_After_Create() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Fail("Seeding failed: duplicate key."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre",
+				TitleLocalizations: Localizations("Genre"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the seeding step failed");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a failed seed after a successful create must produce a resume plan");
+		response.ResumePlan!.Operations.Should().HaveCount(1,
+			because: "only the failed seeding needs to be resubmitted");
+		response.ResumePlan.Operations[0].Type.Should().Be("seed-data",
+			because: "resuming must seed the already-created schema, not recreate it");
+		response.ResumePlan.Operations[0].SchemaName.Should().Be("UsrGenre",
+			because: "the resume seed-data op must target the created schema");
+		response.ResumePlan.Operations[0].SeedRows.Should().NotBeNull(
+			because: "the seed rows must be echoed so the seeding is resubmittable as-is");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a standalone seed-data operation as a first-class batch operation type (ENG-93374).")]
+	public async Task SchemaSync_Should_Execute_Standalone_SeedData_Operation() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Success());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("seed-data", "UsrGenre",
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a standalone seed-data operation should be executed like any other operation");
+		response.Results.Should().HaveCount(1,
+			because: "a standalone seed-data op must not also trigger the post-create seeding step");
+		response.Results[0].Type.Should().Be("seed-data",
+			because: "the result must expose the canonical seed-data type");
+		scriptedSeed.Invocations.Should().Be(1,
+			because: "the seeding command must run exactly once for a standalone seed-data op");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a standalone seed-data operation that carries no seed rows (ENG-93374).")]
+	public async Task SchemaSync_Should_Reject_SeedData_Operation_Without_Rows() {
+		// Arrange
+		var logger = new TestLogger();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("seed-data", "UsrGenre")]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a seed-data operation without rows is invalid");
+		response.Results[0].Error.Should().Contain("seed-rows",
+			because: "the validation error must name the missing seed-rows array");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A standalone seed-data operation is NOT retried on a transient failure — it fails fast into the resume-plan so a committed-but-lost insert is never silently double-applied (ENG-93374 AC2).")]
+	public async Task SchemaSync_SeedData_Should_Not_Retry_On_Transient_Failure() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Transient("No such host is known."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("seed-data", "UsrGenre",
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		scriptedSeed.Invocations.Should().Be(1,
+			because: "a non-idempotent seed-data write must never be auto-retried, even on a transient fault");
+		retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
+		response.Success.Should().BeFalse(
+			because: "the transient seed failure fails fast rather than retrying");
+		response.ResumePlan.Should().NotBeNull(
+			because: "the failed seed-data op must be offered for a deliberate resubmit via the resume plan");
+		response.ResumePlan!.Operations[0].Type.Should().Be("seed-data",
+			because: "the resume plan must echo the seed-data op so the operator resubmits it consciously");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The inline seeding after a successful create is NOT retried on a transient failure (ENG-93374 AC2).")]
+	public async Task SchemaSync_InlineSeed_Should_Not_Retry_On_Transient_Failure() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Transient("Connection refused"));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre",
+				TitleLocalizations: Localizations("Genre"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		scriptedSeed.Invocations.Should().Be(1,
+			because: "the inline seeding step is also a non-idempotent write and must not be auto-retried");
+		retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
+		response.Success.Should().BeFalse(
+			because: "the transient inline-seed failure fails fast");
+		response.ResumePlan!.Operations[0].Type.Should().Be("seed-data",
+			because: "the create already applied, so the resume plan must offer a seed-only op, not a recreate");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The batch-level cumulative retry budget caps total in-lock backoff: once spent, a later flapping operation fails fast without sleeping and surfaces a budget-exhausted note (ENG-93374 AC4).")]
+	public async Task SchemaSync_Should_Fail_Fast_When_Cumulative_Retry_Budget_Is_Exhausted() {
+		// Arrange
+		var logger = new TestLogger();
+		// A tiny 1.5s budget: the single op's first retry consumes 1s (allowed), the second wants 2s
+		// which exceeds the remaining 0.5s, so retry stops and the op fails fast with the exhausted note.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."),
+			Transient("No such host is known."),
+			Transient("No such host is known."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		int waitCount = 0;
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		retryDelay.When(delay => delay.Wait(Arg.Any<TimeSpan>())).Do(_ => waitCount++);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create),
+			retryDelay: retryDelay, maxCumulativeRetryDelay: TimeSpan.FromSeconds(1.5));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		waitCount.Should().Be(1,
+			because: "only the first 1s backoff fits the 1.5s budget; the 2s second backoff is denied");
+		scriptedCreate.Invocations.Should().Be(2,
+			because: "the op runs twice (initial + one budget-allowed retry) then fails fast on budget exhaustion");
+		response.Success.Should().BeFalse(
+			because: "the operation fails once the batch retry budget is exhausted");
+		string[] messages = GetMessageValues(response.Results[0]);
+		messages.Should().Contain(message => message.Contains("batch retry budget exhausted", StringComparison.Ordinal),
+			because: "the result must record that retry stopped due to the batch-level budget cap");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The cumulative retry budget is shared ACROSS operations: once an earlier op spends most of it, a later flapping op fails fast without sleeping, proving the cap is per-batch and not per-op (ENG-93374 AC4).")]
+	public async Task SchemaSync_RetryBudget_Should_Be_Shared_Across_Operations() {
+		// Arrange
+		var logger = new TestLogger();
+		// Shared 1.5s budget. op0 flaps once (consumes the single allowed 1s backoff) then succeeds,
+		// leaving 0.5s. op1 flaps and its first 1s backoff cannot be funded, so it must fail fast with
+		// no additional sleep — only possible if op0 and op1 draw from ONE batch budget.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."), // op0 attempt 1
+			Success(),                            // op0 attempt 2
+			Transient("No such host is known.")); // op1 attempt 1 (fails fast on exhausted budget)
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		int waitCount = 0;
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		retryDelay.When(delay => delay.Wait(Arg.Any<TimeSpan>())).Do(_ => waitCount++);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create),
+			retryDelay: retryDelay, maxCumulativeRetryDelay: TimeSpan.FromSeconds(1.5));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre")),
+				new SchemaSyncOperation("create-lookup", "UsrAuthor", TitleLocalizations: Localizations("Author"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		waitCount.Should().Be(1,
+			because: "op0 spends the only budget-funded backoff; op1 gets none because the budget is shared across the batch");
+		response.Success.Should().BeFalse(
+			because: "op1 aborts the batch once the shared retry budget is exhausted");
+		response.Results.Should().HaveCount(2,
+			because: "both create-lookup ops produce a result row even though op1 aborts the batch");
+		response.Results[0].Success.Should().BeTrue(
+			because: "op0 recovered after its single funded retry");
+		response.Results[1].Success.Should().BeFalse(
+			because: "op1 could not fund its backoff from the residual shared budget");
+		GetMessageValues(response.Results[1]).Should().Contain(
+			message => message.Contains("batch retry budget exhausted", StringComparison.Ordinal),
+			because: "op1's failure must record that the shared batch budget was exhausted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Within a single create-lookup op the create and registration steps share ONE retry budget: a create retry that spends the budget starves a subsequent registration flap, so the op fails fast at registration (ENG-93374 AC4).")]
+	public async Task SchemaSync_RetryBudget_Should_Be_Shared_Between_Create_And_Registration() {
+		// Arrange
+		var logger = new TestLogger();
+		// Create flaps once (spends the only 1s backoff the 1.5s budget can fund), then succeeds.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."),
+			Success());
+		// Registration then flaps; its 1s backoff cannot be funded from the residual 0.5s, so the op fails fast.
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(service => service.EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()))
+			.Do(_ => throw new TimeoutException("registration attempt timed out"));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		int waitCount = 0;
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		retryDelay.When(delay => delay.Wait(Arg.Any<TimeSpan>())).Do(_ => waitCount++);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create),
+			retryDelay: retryDelay, maxCumulativeRetryDelay: TimeSpan.FromSeconds(1.5));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		scriptedCreate.Invocations.Should().Be(2,
+			because: "the create step retried once (funded by the budget) before succeeding");
+		waitCount.Should().Be(1,
+			because: "the create retry consumed the budget, leaving nothing for a registration retry");
+		response.Success.Should().BeFalse(
+			because: "registration flapped with no budget left to retry, so the op fails fast");
+		GetMessageValues(response.Results[0]).Should().Contain(
+			message => message.Contains("batch retry budget exhausted", StringComparison.Ordinal),
+			because: "the shared budget must be reported exhausted at the registration step");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When inline seeding fails after a successful create, response.Results carries two rows sharing operation-index 0: the completed create then the failed seed-data, cleanly separating completed/failed (ENG-93374 AC2).")]
+	public async Task SchemaSync_InlineSeed_Failure_Should_Emit_Completed_Create_Then_Failed_Seed_Rows() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Fail("Seeding failed: duplicate key."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre",
+				TitleLocalizations: Localizations("Genre"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results.Should().HaveCount(2,
+			because: "a create-succeeded / inline-seed-failed op emits a completed create row and a failed seed row");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "the first row is the completed create it followed");
+		response.Results[0].Status.Should().Be("completed",
+			because: "the create applied server-side before the seeding failed");
+		response.Results[0].OperationIndex.Should().Be(0,
+			because: "the create is the first (index 0) batch operation");
+		response.Results[0].Success.Should().BeTrue(
+			because: "the create step succeeded before the seeding failed");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "the second row is the inline seed reported under the canonical seed-data type");
+		response.Results[1].Status.Should().Be("failed",
+			because: "the inline seeding failed");
+		response.Results[1].OperationIndex.Should().Be(0,
+			because: "the failed seed row shares the operation-index of the create it followed");
+		response.Results[1].Success.Should().BeFalse(
+			because: "the inline seeding failed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A two-op batch where op0's inline seed fails lists the untouched op1 in not-run-operation-indexes starting at abortedAtIndex+1, and the resume plan carries the seed-only resume plus the not-run op (ENG-93374 AC2).")]
+	public async Task SchemaSync_InlineSeed_Failure_TwoOps_Should_List_Remaining_Op_As_NotRun() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Fail("Seeding failed: duplicate key."));
+		var scriptedUpdate = new ScriptedUpdateEntitySchemaCommand(logger, Success());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(scriptedUpdate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(SchemaConvergenceOutcome.Create), retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre",
+					TitleLocalizations: Localizations("Genre"),
+					SeedRows: [
+						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+							["Name"] = ToJsonElement("Fiction")
+						})
+					]),
+				new SchemaSyncOperation("update-entity", "UsrBooks",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "op0's inline seed failed, so the batch is not fully successful");
+		response.Results.Should().HaveCount(2,
+			because: "op0 emits the completed create and the failed seed; op1 never runs");
+		response.Results[0].Status.Should().Be("completed",
+			because: "op0's create applied server-side before its seeding failed");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "op0's failed inline seed is reported under the canonical seed-data type");
+		response.Results[1].Status.Should().Be("failed",
+			because: "op0's inline seeding failed");
+		scriptedUpdate.Invocations.Should().Be(0,
+			because: "the batch aborts on op0's seed failure before op1 runs");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a mid-batch abort must emit a resume plan for the failed and not-run operations");
+		response.ResumePlan!.NotRunOperationIndexes.Should().Equal([1],
+			because: "op1 (index 1) never ran and must be listed starting at abortedAtIndex+1");
+		response.ResumePlan.Operations.Should().HaveCount(2,
+			because: "the resume plan carries the seed-only resume for op0 plus the not-run op1");
+		response.ResumePlan.Operations[0].Type.Should().Be("seed-data",
+			because: "op0's create already applied, so its resume is a seed-only op, never a recreate");
+		response.ResumePlan.Operations[1].Type.Should().Be("update-entity",
+			because: "the untouched op1 is echoed re-submittable after the failed op");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Serializes the additive response fields with their kebab-case JSON names and omits resume-plan/attempts when not applicable, preserving the wire contract (ENG-93374).")]
+	public async Task SchemaSyncResponse_Should_Serialize_Additive_Fields_With_Stable_Contract() {
+		// Arrange
+		var completed = new SchemaSyncOperationResult {
+			Type = "create-lookup", SchemaName = "UsrGenre", Success = true, Status = "completed", OperationIndex = 0
+		};
+		var fullSuccess = new SchemaSyncResponse { Success = true, Results = [completed] };
+		var failed = new SchemaSyncOperationResult {
+			Type = "create-lookup", SchemaName = "UsrGenre", Success = false, Status = "failed", OperationIndex = 0, Attempts = 3, Error = "boom"
+		};
+		var midAbort = new SchemaSyncResponse {
+			Success = false,
+			Results = [failed],
+			ResumePlan = new SchemaSyncResumePlan {
+				Instruction = "resubmit",
+				FailedOperation = new SchemaSyncResumeFailure(0, "create-lookup", "UsrGenre", "boom"),
+				NotRunOperationIndexes = [1],
+				Operations = [new SchemaSyncOperation("update-entity", "UsrBooks")]
+			}
+		};
+
+		// Act
+		string fullSuccessJson = System.Text.Json.JsonSerializer.Serialize(fullSuccess);
+		string midAbortJson = System.Text.Json.JsonSerializer.Serialize(midAbort);
+
+		// Assert
+		fullSuccessJson.Should().Contain("\"status\":\"completed\"",
+			because: "each result must expose the kebab/lower-case status field");
+		fullSuccessJson.Should().Contain("\"operation-index\":0",
+			because: "the operation-index must serialize with its kebab-case name");
+		fullSuccessJson.Should().NotContain("resume-plan",
+			because: "a fully-successful response must omit the resume-plan block");
+		fullSuccessJson.Should().NotContain("attempts",
+			because: "attempts must be omitted when the operation was not retried");
+		fullSuccessJson.Should().NotContain("dataforge",
+			because: "the dataforge block must be omitted when null, preserving the existing contract");
+		midAbortJson.Should().Contain("\"resume-plan\"",
+			because: "a mid-batch abort must serialize the resume-plan block with its kebab-case name");
+		midAbortJson.Should().Contain("\"failed-operation\"",
+			because: "the resume plan must expose the failed-operation summary");
+		midAbortJson.Should().Contain("\"not-run-operation-indexes\":[1]",
+			because: "the resume plan must list the not-run operation indexes with the kebab-case name");
+		midAbortJson.Should().Contain("\"attempts\":3",
+			because: "attempts must serialize when the operation was retried");
+	}
+
+	private static AttemptOutcome Success() => new(0, null, null);
+
+	private static AttemptOutcome Fail(string message) => new(1, message, null);
+
+	private static AttemptOutcome Transient(string message) => new(1, message, null);
 
 	[Test]
 	[Category("Unit")]
@@ -1425,7 +2726,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeSeedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -1460,7 +2761,7 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(failingCreateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -1492,7 +2793,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(Substitute.For<ILookupRegistrationService>());
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
@@ -1514,6 +2815,679 @@ public sealed class SchemaSyncToolTests {
 			because: "a cancellation signalled after the first operation's marker must abort the batch on the calling thread");
 		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(
 			Arg.Is<CreateEntitySchemaOptions>(options => options.SchemaName == "UsrBeta"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Creates the schema and ensures the Lookups registration when the convergence classifier reports the schema is absent.")]
+	public async Task ExecuteCreateSchema_ShouldReturnCreatedOutcomeAndEnsureRegistration_WhenSchemaAbsent() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.Create));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an absent schema must be created successfully");
+		response.Results[0].Outcome.Should().Be("created",
+			because: "the created outcome discriminator must be surfaced for an absent schema");
+		fakeCreateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the create path must run when the schema is absent");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Adds only the missing columns via the update-entity add-column path without recreating the schema when the classifier reports a same-package subset.")]
+	public async Task ExecuteCreateSchema_ShouldAddOnlyMissingColumnsWithoutRecreate_WhenSchemaExistsWithSubset() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Reconcile,
+			columnsToAdd: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))]);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "adding a missing column to an existing schema should succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an existing schema with a missing column must report the reconciled outcome");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "CreateEntitySchemaCommand is create-only and must never recreate an existing schema");
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "missing columns are added through the update-entity add-column path");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrExtra\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "only the single missing column must be added, as an add operation");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Applies the classifier's ColumnsToModify delta through the update-entity add-column path on the create/reconcile branch (the modify write path Story 1 surfaced but deferred).")]
+	public async Task ExecuteCreateSchema_ShouldApplyModifyDelta_WhenClassifierSurfacesColumnsToModify() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Reconcile,
+			columnsToModify: [new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer")]);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "applying only a column-shape modification to an existing schema must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "a modify-only reconcile still reports the reconciled outcome");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "a modify-only reconcile must never recreate the schema");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrScore\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "the classifier's ColumnsToModify delta must now be applied through the update-entity write path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Ensures the Lookups registration on the already-exists path (moved out of the freshly-created branch) when the classifier reports the schema is already satisfied.")]
+	public async Task ExecuteCreateSchema_ShouldEnsureLookupRegistrationOnAlreadyExistsPath_WhenRegistrationMissing() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.AlreadySatisfied));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an already-satisfied schema requires no mutation and must succeed");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "a schema that already matches the requested shape must report already-satisfied");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "an already-satisfied schema must not be recreated");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "an already-satisfied schema has no columns to add");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Cross-package pre-existing schema is surfaced pre-emptively as a collision without ever calling create.")]
+	public async Task ExecuteCreateSchema_ShouldFailWithCollisionAndNotCallCreate_WhenSchemaInDifferentPackage() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPkg",
+			error: "Error: schema 'UsrTodoStatus' already exists in package 'OtherPkg'.");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "a cross-package name collision is a durable failure, not a success");
+		response.Results[0].Outcome.Should().Be("collision",
+			because: "the collision outcome discriminator must be surfaced to callers");
+		response.Results[0].CollisionInfo.Should().NotBeNull(
+			because: "the owning package must be machine-readable");
+		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPkg",
+			because: "the collision info must name the owning package");
+		response.Results[0].Error.Should().StartWith("Error:",
+			because: "errors must be user-friendly Error: {message} strings");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the collision must be detected pre-emptively — create is never attempted (no masked collision)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops the batch on the first operation when a create collision is detected and never runs the following operation.")]
+	public async Task SchemaSync_ShouldStopOnFirstFailure_WhenCreateCollisionDetected() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Collision,
+			collisionPackageName: "OtherPkg",
+			error: "Error: schema 'UsrFirst' already exists in package 'OtherPkg'.");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First")),
+				new SchemaSyncOperation("create-lookup", "UsrSecond", TitleLocalizations: Localizations("Second"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a collision on the first operation fails the batch");
+		response.Results.Should().HaveCount(1,
+			because: "stop-on-first-failure must prevent the second operation from running");
+		response.Results[0].SchemaName.Should().Be("UsrFirst",
+			because: "only the first (failing) operation result should be present");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the collision is pre-emptive, so no create is attempted on either operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the outcome field from the serialized result when the outcome is null so the existing wire shape is preserved.")]
+	public void SchemaSyncOperationResult_ShouldOmitOutcomeField_WhenOutcomeIsNull() {
+		// Arrange
+		SchemaSyncOperationResult result = new() {
+			Type = "create-lookup",
+			SchemaName = "UsrTodoStatus",
+			Success = true,
+			Outcome = null
+		};
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(result);
+
+		// Assert
+		json.Should().NotContain("\"outcome\"",
+			because: "the outcome field is JsonIgnoreCondition.WhenWritingNull, so a null outcome must not appear on the wire");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Adds a requested column that is absent on the server and reports the reconciled outcome (FR-04, AC-FR04).")]
+	public async Task ExecuteUpdateEntity_ShouldAddColumn_WhenRequestedColumnAbsent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "adding an absent column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an update-entity that applies a delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrExtra\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "the absent column must be issued as a single add operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Converges a requested column that is present but of a different type into a modify for exactly that column (FR-04, AC-FR04). The request uses an explicit modify: post-ENG-93807-review only a modify converges a type divergence, an add there collides.")]
+	public async Task ExecuteUpdateEntity_ShouldModifyColumn_WhenRequestedColumnPresentButDifferent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrScore", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "modifying a differing column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an update-entity that applies a delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrScore\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "a present-but-different column must be converged via a modify for exactly that column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns already-satisfied and never calls the update command when every requested column is present and identical (FR-05, AC-05, residual hole b).")]
+	public async Task ExecuteUpdateEntity_ShouldReturnAlreadySatisfiedAndNotCallUpdate_WhenColumnsIdentical() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrExtra", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an already-applied change on replay must be reported as a success, not a failure");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "an empty reconcile delta must report already-satisfied");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "no duplicate mutation may be issued when the requested columns already match");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats a remove of an already-absent column as a satisfied ensure-absent no-op with no mutation issued (FR-04, AC-06).")]
+	public async Task ExecuteUpdateEntity_ShouldTreatRemoveAsSuccess_WhenColumnAlreadyAbsent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("remove", "UsrGone")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "remove means ensure-absent, and the column is already absent");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "an ensure-absent remove of an absent column leaves an empty delta");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "no remove mutation may be issued for an already-absent column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Issues a remove for a requested column that is present on the server (FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldIssueRemove_WhenRequestedRemoveColumnPresent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrObsolete", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("remove", "UsrObsolete")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "removing a present column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "issuing a remove delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrObsolete\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"remove\"", StringComparison.Ordinal),
+			because: "the present column must be issued as a single remove operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves columns not named in the request out of the delta — no delete-unlisted reconcile (FR-04, AC-07).")]
+	public async Task ExecuteUpdateEntity_ShouldLeaveUnlistedColumnsOutOfDelta_WhenReconciling() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		// The schema already has UsrExisting, which the request never names; only UsrNew is requested.
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrExisting", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrNew", "Text", Localizations("New"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "adding the single named column must succeed");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrNew\"", StringComparison.Ordinal),
+			because: "only the requested column belongs to the delta");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
+			operation => operation.Contains("UsrExisting", StringComparison.Ordinal),
+			because: "a column not named in the request must never enter the delta — no delete-unlisted reconcile");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits exactly the computed delta (one add, one modify) and drops the identical column when column states are mixed (FR-04, AC-FR04). The type-divergent column is sent as an EXPLICIT modify — post-ENG-93807-review an add of a present different-type column is a collision, not an implicit modify.")]
+	public async Task ExecuteUpdateEntity_ShouldEmitExactlyComputedDelta_WhenColumnStatesMixed() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrDiff", "Text"), ("UsrSame", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrAbsent", Type: "Text"),
+					new UpdateEntitySchemaOperationArgs("modify", "UsrDiff", Type: "Integer"),
+					new UpdateEntitySchemaOperationArgs("add", "UsrSame", Type: "Text")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "a non-empty mixed delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "only the absent column (add) and the differing column (modify) belong to the delta");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrAbsent\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "the absent column must be added");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrDiff\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "the differing column must be modified");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
+			operation => operation.Contains("UsrSame", StringComparison.Ordinal),
+			because: "the identical column produces no mutation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces a per-column type incompatibility on an EXPLICIT modify as a modify-conflict (success:false, Error, outcome not collision) and preserves stop-on-first-failure (FR-04, AC-ERR). A backend-rejected modify stays a modify-conflict — only an add of a present different-type column is a collision.")]
+	public async Task ExecuteUpdateEntity_ShouldFailWithModifyConflictNotCollision_WhenColumnTypeIncompatible() {
+		// Arrange
+		TestLogger logger = new();
+		var failingUpdateCommand = new FakeUpdateEntitySchemaCommand(logger, exitCode: 1, messages: ["Cannot change column type from Text to Integer."]);
+		var secondUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		int resolveCount = 0;
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(_ => resolveCount++ == 0 ? failingUpdateCommand : secondUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, logger,
+			Convergence(existingColumns: ExistingColumns(("UsrScore", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("update-entity", "UsrTodoList",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer")]),
+				new SchemaSyncOperation("update-entity", "UsrOther",
+					Columns: [new CreateEntitySchemaColumnArgs("UsrLate", "Text", Localizations("Late"))])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "an incompatible per-column modify that the backend rejects is a failure");
+		response.Results[0].Error.Should().Contain("Cannot change column type",
+			because: "the user-friendly modify-conflict message must be surfaced");
+		response.Results[0].Outcome.Should().NotBe("collision",
+			because: "a per-column modify-conflict is not a whole-schema collision");
+		response.Results.Should().HaveCount(1,
+			because: "stop-on-first-failure must prevent the second update-entity operation from running");
+		secondUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "the second operation must not execute after the first fails");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns already-satisfied and issues no mutation when the requested type token (text50) matches the server's divergent friendly read-back name (ShortText) on replay (SM-02/AC-05, ordinal-normalized comparison).")]
+	public async Task ExecuteUpdateEntity_ShouldReturnAlreadySatisfied_WhenRequestedTypeTokenMatchesFriendlyReadbackName() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		// The column was created as 'text50' and is read back with the divergent friendly name 'ShortText'.
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrNote", "ShortText"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrNote", "text50", Localizations("Note"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "a byte-different but type-equivalent read-back must not turn an already-applied add into a failure");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "text50 and its ShortText read-back denote the same DataValueType, so the delta is empty");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "a divergent friendly read-back name must not force a spurious re-issue on replay (SM-02: zero new mutations)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards an explicit modify of a present, matching-type column unconditionally so caption/flag changes are preserved (add-shape reconciles by type only).")]
+	public async Task ExecuteUpdateEntity_ShouldForwardExplicitModify_WhenColumnPresentWithMatchingType() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrScore", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer") { IsRequired = true }
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an explicit modify of a present column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an explicit modify is forwarded as a delta even when only non-type attributes change");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrScore\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "an explicit modify is the channel for non-type attribute changes and must be forwarded unconditionally");
+	}
+
+	// ------------------------------------------------------------------------------------------------
+	#region Ambiguous-failure re-run class (AC-03 - SM-01c/SM-02c counter-metric)
+	// ------------------------------------------------------------------------------------------------
+	// AC-03 (the thesis): re-submitting an identical batch after an ambiguous/lost-response failure must
+	// CONVERGE - an already-applied convergent operation replays as created/reconciled/already-satisfied
+	// with NO masked failure and NO duplicate or rejected mutation. The full re-run matrix for the
+	// convergent create/update paths IS the SM-01c/SM-02c counter-metric; keeping every cell green is the
+	// guard. Rather than physically relocate the (already-green) discriminating tests introduced in
+	// Stories 1/2/3, this region is the authoritative MANIFEST mapping each matrix cell to the test that
+	// covers it, plus the genuinely-missing read-budget cells added below.
+	//
+	//   create-lookup/entity | created             -> ExecuteCreateSchema_ShouldReturnCreatedOutcomeAndEnsureRegistration_WhenSchemaAbsent
+	//                        | reconciled (add)     -> ExecuteCreateSchema_ShouldAddOnlyMissingColumnsWithoutRecreate_WhenSchemaExistsWithSubset
+	//                        | reconciled (modify)  -> ExecuteCreateSchema_ShouldApplyModifyDelta_WhenClassifierSurfacesColumnsToModify
+	//                        | already-satisfied    -> ExecuteCreateSchema_ShouldEnsureLookupRegistrationOnAlreadyExistsPath_WhenRegistrationMissing
+	//                        | collision            -> ExecuteCreateSchema_ShouldFailWithCollisionAndNotCallCreate_WhenSchemaInDifferentPackage
+	//                        | collision (stop)     -> SchemaSync_ShouldStopOnFirstFailure_WhenCreateCollisionDetected
+	//   update-entity        | reconciled (add)     -> ExecuteUpdateEntity_ShouldAddColumn_WhenRequestedColumnAbsent
+	//                        | reconciled (modify)  -> ExecuteUpdateEntity_ShouldModifyColumn_WhenRequestedColumnPresentButDifferent
+	//                        | reconciled (remove)  -> ExecuteUpdateEntity_ShouldIssueRemove_WhenRequestedRemoveColumnPresent
+	//                        | already-satisfied    -> ExecuteUpdateEntity_ShouldReturnAlreadySatisfiedAndNotCallUpdate_WhenColumnsIdentical
+	//                        | no-op / remove-absent -> ExecuteUpdateEntity_ShouldTreatRemoveAsSuccess_WhenColumnAlreadyAbsent
+	//                        | idempotent type-eq   -> ExecuteUpdateEntity_ShouldReturnAlreadySatisfied_WhenRequestedTypeTokenMatchesFriendlyReadbackName
+	//                        | no delete-unlisted   -> ExecuteUpdateEntity_ShouldLeaveUnlistedColumnsOutOfDelta_WhenReconciling
+	//
+	// The SERVER-side read-count budget (AC-BUDGET: 1 create-only / 2 reconcile) is proven at the service
+	// tier in SchemaConvergenceServiceTests (Classify_ShouldReadSchemaExactlyOnce_WhenSchemaIsAbsent /
+	// Classify_ShouldReadSchemaTwice_WhenSchemaExistsInTargetPackage). The two tests below add the
+	// remaining TOOL-tier cell: the clean path adds ZERO extra MCP round-trips and performs NO post-write
+	// verify read-back (exactly one state read per operation, and none after the mutation).
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads server state exactly once (a single Classify) and performs no post-write verify read-back on the clean create path, so the convergent create adds zero extra MCP round-trips (AC-BUDGET, round-trip formulation per OI-01).")]
+	public async Task SchemaSync_CreateLookup_ShouldClassifyOnceAndNotReadBackAfterWrite_WhenSchemaCreatedCleanly() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(SchemaConvergenceOutcome.Create);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "a clean create must succeed");
+		convergence.Received(1).Classify(Arg.Any<SchemaConvergenceTarget>());
+		convergence.DidNotReceive().ReadColumns(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads the current columns exactly once (a single ReadColumns) and performs no post-write verify read-back on the clean update-entity reconcile path, so it adds zero extra MCP round-trips (AC-BUDGET, round-trip formulation per OI-01).")]
+	public async Task SchemaSync_UpdateEntity_ShouldReadColumnsOnceAndNotReadBackAfterWrite_WhenReconcilingCleanly() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "a clean update reconcile must succeed");
+		convergence.Received(1).ReadColumns("dev", "UsrTodoList");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	#endregion
+
+	private static ISchemaConvergenceService Convergence(
+		SchemaConvergenceOutcome outcome = SchemaConvergenceOutcome.Create,
+		IReadOnlyList<CreateEntitySchemaColumnArgs>? columnsToAdd = null,
+		IReadOnlyList<UpdateEntitySchemaOperationArgs>? columnsToModify = null,
+		string? collisionPackageName = null,
+		string? error = null,
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo>? existingColumns = null) {
+		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
+		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
+			.Returns(new SchemaConvergencePlan(outcome, columnsToAdd ?? [], columnsToModify ?? [], collisionPackageName, error));
+		convergence.ReadColumns(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(existingColumns ?? new Dictionary<string, EntitySchemaPropertyColumnInfo>(StringComparer.OrdinalIgnoreCase));
+		return convergence;
+	}
+
+	private static IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> ExistingColumns(
+		params (string Name, string Type)[] columns) {
+		Dictionary<string, EntitySchemaPropertyColumnInfo> map = new(StringComparer.OrdinalIgnoreCase);
+		foreach ((string name, string type) in columns) {
+			map[name] = new EntitySchemaPropertyColumnInfo(
+				Name: name,
+				UId: Guid.NewGuid(),
+				Source: "own",
+				Title: name,
+				Description: null,
+				Type: type,
+				Required: false,
+				Indexed: false,
+				ReferenceSchemaName: null);
+		}
+		return map;
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
@@ -1561,30 +3535,27 @@ public sealed class SchemaSyncToolTests {
 	}
 
 	private sealed class FakeUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
+		private readonly int _exitCode;
 		private readonly ILogger _logger;
 		private readonly IReadOnlyList<string> _messages;
 		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
-		public FakeUpdateEntitySchemaCommand(ILogger logger = null, IReadOnlyList<string> messages = null)
+		public FakeUpdateEntitySchemaCommand(ILogger logger = null, int exitCode = 0, IReadOnlyList<string> messages = null)
 			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger ?? Substitute.For<ILogger>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
+			_exitCode = exitCode;
 			_messages = messages ?? [];
 		}
 		public override int Execute(UpdateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
-				_logger.WriteInfo(message);
+				if (_exitCode == 0) {
+					_logger.WriteInfo(message);
+				} else {
+					_logger.WriteError(message);
+				}
 			}
-			return 0;
+			return _exitCode;
 		}
-	}
-
-	private sealed class FakeFindEntitySchemaCommand : FindEntitySchemaCommand {
-		private readonly IReadOnlyList<EntitySchemaSearchResult> _results;
-		public FakeFindEntitySchemaCommand(IReadOnlyList<EntitySchemaSearchResult> results)
-			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>()) {
-			_results = results;
-		}
-		public override IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) => _results;
 	}
 
 	private sealed class FakeCreateDataBindingDbCommand : CreateDataBindingDbCommand {
@@ -1602,6 +3573,86 @@ public sealed class SchemaSyncToolTests {
 				_logger.WriteInfo(message);
 			}
 			return 0;
+		}
+	}
+
+	private sealed record AttemptOutcome(int ExitCode, string? Message, Exception? Throw);
+
+	private sealed class ScriptedCreateEntitySchemaCommand : CreateEntitySchemaCommand {
+		private readonly ILogger _logger;
+		private readonly Queue<AttemptOutcome> _outcomes;
+		public int Invocations { get; private set; }
+		public ScriptedCreateEntitySchemaCommand(ILogger logger, params AttemptOutcome[] outcomes)
+			: base(Substitute.For<IRemoteEntitySchemaCreator>(), logger) {
+			_logger = logger;
+			_outcomes = new Queue<AttemptOutcome>(outcomes);
+		}
+		public override int Execute(CreateEntitySchemaOptions options) {
+			Invocations++;
+			AttemptOutcome outcome = _outcomes.Count > 0 ? _outcomes.Dequeue() : new AttemptOutcome(0, null, null);
+			if (outcome.Throw is not null) {
+				throw outcome.Throw;
+			}
+			if (!string.IsNullOrEmpty(outcome.Message)) {
+				if (outcome.ExitCode == 0) {
+					_logger.WriteInfo(outcome.Message);
+				} else {
+					_logger.WriteError(outcome.Message);
+				}
+			}
+			return outcome.ExitCode;
+		}
+	}
+
+	private sealed class ScriptedUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
+		private readonly ILogger _logger;
+		private readonly Queue<AttemptOutcome> _outcomes;
+		public int Invocations { get; private set; }
+		public ScriptedUpdateEntitySchemaCommand(ILogger logger, params AttemptOutcome[] outcomes)
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger) {
+			_logger = logger;
+			_outcomes = new Queue<AttemptOutcome>(outcomes);
+		}
+		public override int Execute(UpdateEntitySchemaOptions options) {
+			Invocations++;
+			AttemptOutcome outcome = _outcomes.Count > 0 ? _outcomes.Dequeue() : new AttemptOutcome(0, null, null);
+			if (outcome.Throw is not null) {
+				throw outcome.Throw;
+			}
+			if (!string.IsNullOrEmpty(outcome.Message)) {
+				if (outcome.ExitCode == 0) {
+					_logger.WriteInfo(outcome.Message);
+				} else {
+					_logger.WriteError(outcome.Message);
+				}
+			}
+			return outcome.ExitCode;
+		}
+	}
+
+	private sealed class ScriptedCreateDataBindingDbCommand : CreateDataBindingDbCommand {
+		private readonly ILogger _logger;
+		private readonly Queue<AttemptOutcome> _outcomes;
+		public int Invocations { get; private set; }
+		public ScriptedCreateDataBindingDbCommand(ILogger logger, params AttemptOutcome[] outcomes)
+			: base(Substitute.For<IDataBindingDbService>(), logger) {
+			_logger = logger;
+			_outcomes = new Queue<AttemptOutcome>(outcomes);
+		}
+		public override int Execute(CreateDataBindingDbOptions options) {
+			Invocations++;
+			AttemptOutcome outcome = _outcomes.Count > 0 ? _outcomes.Dequeue() : new AttemptOutcome(0, null, null);
+			if (outcome.Throw is not null) {
+				throw outcome.Throw;
+			}
+			if (!string.IsNullOrEmpty(outcome.Message)) {
+				if (outcome.ExitCode == 0) {
+					_logger.WriteInfo(outcome.Message);
+				} else {
+					_logger.WriteError(outcome.Message);
+				}
+			}
+			return outcome.ExitCode;
 		}
 	}
 

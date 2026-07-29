@@ -60,7 +60,7 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 		}
 	}
 
-	internal EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
+	internal virtual EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		Validate(options);
 		return _columnManager.GetSchemaProperties(options);
 	}
