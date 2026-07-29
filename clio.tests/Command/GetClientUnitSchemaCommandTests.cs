@@ -53,12 +53,9 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
-	private IFileSystem _fileSystem;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
 	private GetClientUnitSchemaCommand _command;
-	private string _writtenPath;
-	private string _writtenContent;
 
 	// An output-file under the OS temp root — one of the two locations OutputPathConfinement allows.
 	private string AllowedOutput(string fileName) =>
@@ -68,17 +65,12 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		base.Setup();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
-		_writtenPath = null;
-		_writtenContent = null;
-		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
-			.Do(ci => { _writtenPath = ci.ArgAt<string>(0); _writtenContent = ci.ArgAt<string>(1); });
 		_command = Container.GetRequiredService<GetClientUnitSchemaCommand>();
 	}
 
 	public override void TearDown() {
 		_applicationClient.ClearReceivedCalls();
 		_serviceUrlBuilder.ClearReceivedCalls();
-		_fileSystem.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -87,12 +79,10 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		_fileSystem = Substitute.For<IFileSystem>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
-		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
 	}
@@ -178,7 +168,8 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		result.Should().BeFalse(because: "an output-file escaping both allowed zones must not be written");
 		response.Error.Should().Contain("output-file",
 			because: "the failure names the offending option so the caller can correct it");
-		_writtenPath.Should().BeNull(because: "no file may be written when the path is rejected");
+		_ioFileSystem.File.Exists(_ioFileSystem.Path.GetFullPath(escape)).Should().BeFalse(
+			because: "no file may be written when the path is rejected");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
@@ -202,7 +193,8 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 			because: "the caller is told why the write was refused");
 		_ioFileSystem.File.ReadAllText(outputFile).Should().Be("old content",
 			because: "the existing file is left untouched when the write is refused");
-		_writtenPath.Should().BeNull(because: "no write occurs when the target already exists");
+		_ioFileSystem.AllFiles.Should().HaveCount(1,
+			because: "no additional file is written when the target already exists");
 	}
 
 	[Test]

@@ -115,6 +115,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private const int MaxDetails = 50;
 	private const int MaxChildPages = 50;
 	private const string DefaultCulture = "en-US";
+	// Stand-in reason when the designer answered without an error AND without a schema — an empty success the
+	// walk/enricher paths must report as a gap rather than as a resolved-but-empty layer.
+	private const string NoSchemaReturned = "no schema returned";
 
 	// Classic client-unit page bodies declare their bound object as `entitySchemaName: "Contact"`. The leading
 	// non-word lookbehind stops the match from firing inside a longer identifier (e.g. `masterEntitySchemaName`),
@@ -147,17 +150,30 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
 	private readonly IClassicSectionSchemaResolver _sectionResolver;
-	private readonly IFileSystem _fileSystem;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
+	/// <summary>
+	/// Creates the command with the collaborators it needs to resolve a classic page hierarchy and write its sources.
+	/// </summary>
+	/// <param name="applicationClient">Client used to call the designer and OData services on the target environment.</param>
+	/// <param name="serviceUrlBuilder">Builds the absolute service URLs for the target environment.</param>
+	/// <param name="columnManager">Reads remote entity-schema columns for the resolved section entity.</param>
+	/// <param name="hierarchyClient">Fetches the page-designer inheritance hierarchy for a schema.</param>
+	/// <param name="sectionResolver">Resolves a section name to its classic page schema.</param>
+	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
+	/// <param name="logger">Logger for progress and error output.</param>
+	/// <remarks>
+	/// One file-system abstraction, not two: the confinement guard (<c>OutputPathConfinement</c>) and the cwd anchor
+	/// resolution both take <see cref="IoFileSystem"/>, so routing the default-path write through it as well keeps
+	/// every write this command performs on a single abstraction.
+	/// </remarks>
 	public GetClassicPageSourcesCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IRemoteEntitySchemaColumnManager columnManager,
 		IPageDesignerHierarchyClient hierarchyClient,
 		IClassicSectionSchemaResolver sectionResolver,
-		IFileSystem fileSystem,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
@@ -165,7 +181,6 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		_columnManager = columnManager;
 		_hierarchyClient = hierarchyClient;
 		_sectionResolver = sectionResolver;
-		_fileSystem = fileSystem;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
@@ -259,53 +274,19 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (!string.IsNullOrWhiteSpace(entity)) {
 				manifest["entity"] = entity;
 			}
-			if (seed.Count > 0) {
-				manifest["seed"] = seed;
-			}
-			if (entityColumns.HasValues) {
-				manifest["entityColumns"] = entityColumns;
-			}
-			if (columnTitles.HasValues) {
-				manifest["columnTitles"] = columnTitles;
-			}
-			if (resources.HasValues) {
-				manifest["resources"] = resources;
-			}
-			if (detailSchemas.HasValues) {
-				manifest["detailSchemas"] = detailSchemas;
-			}
-			if (section.Count > 0) {
-				manifest["section"] = section;
-			}
-			if (childPageSchemas.HasValues) {
-				manifest["childPageSchemas"] = childPageSchemas;
-			}
+			AddBlock(manifest, "seed", seed);
+			AddBlock(manifest, "entityColumns", entityColumns);
+			AddBlock(manifest, "columnTitles", columnTitles);
+			AddBlock(manifest, "resources", resources);
+			AddBlock(manifest, "detailSchemas", detailSchemas);
+			AddBlock(manifest, "section", section);
+			AddBlock(manifest, "childPageSchemas", childPageSchemas);
 
 			// 8. Write the manifest to disk. The bodies live here, not in the response.
-			(string manifestPath, string pathError) = ResolveOutputPath(options);
-			if (pathError != null) {
-				response = Fail(pathError);
+			(string manifestPath, string writeError) = WriteManifest(options, manifest);
+			if (writeError != null) {
+				response = Fail(writeError);
 				return false;
-			}
-			string manifestContent = manifest.ToString(Formatting.Indented);
-			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
-				// Explicit, possibly agent-supplied output-file: atomic no-overwrite write (FileMode.CreateNew)
-				// through the confinement guard so the Destructive=false refuse-overwrite contract holds against a
-				// target planted after Resolve, and a symlink at the resolved path cannot redirect the write.
-				try {
-					OutputPathConfinement.WriteAtomic(_ioFileSystem, manifestPath, manifestContent);
-				}
-				catch (IOException ex) {
-					response = Fail(ex.Message);
-					return false;
-				}
-			} else {
-				// Tool-owned default path: re-runnable, overwrites its own prior output.
-				string directory = Path.GetDirectoryName(manifestPath);
-				if (!string.IsNullOrWhiteSpace(directory)) {
-					_fileSystem.CreateDirectoryIfNotExists(directory);
-				}
-				_fileSystem.WriteAllTextToFile(manifestPath, manifestContent);
 			}
 
 			response = new GetClassicPageSourcesResponse {
@@ -328,6 +309,49 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			response = Fail(ex.Message);
 			return false;
 		}
+	}
+
+	// Adds a manifest block only when it carries content: the engine's contract reads an absent field as "nothing
+	// collected", while an empty object/array would read as a resolved-but-empty one.
+	private static void AddBlock(JObject manifest, string name, JObject block) {
+		if (block.HasValues) {
+			manifest[name] = block;
+		}
+	}
+
+	private static void AddBlock(JObject manifest, string name, JArray block) {
+		if (block.Count > 0) {
+			manifest[name] = block;
+		}
+	}
+
+	// Resolves the output path and writes the manifest there, returning the absolute path written or the reason the
+	// write was refused (a rejected path, or an explicit output-file that already exists).
+	private (string path, string error) WriteManifest(GetClassicPageSourcesOptions options, JObject manifest) {
+		(string manifestPath, string pathError) = ResolveOutputPath(options);
+		if (pathError != null) {
+			return (null, pathError);
+		}
+		string manifestContent = manifest.ToString(Formatting.Indented);
+		if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
+			// Explicit, possibly agent-supplied output-file: atomic no-overwrite write (FileMode.CreateNew)
+			// through the confinement guard so the Destructive=false refuse-overwrite contract holds against a
+			// target planted after Resolve, and a symlink at the resolved path cannot redirect the write.
+			try {
+				OutputPathConfinement.WriteAtomic(_ioFileSystem, manifestPath, manifestContent);
+			}
+			catch (IOException ex) {
+				return (null, ex.Message);
+			}
+			return (manifestPath, null);
+		}
+		// Tool-owned default path: re-runnable, overwrites its own prior output.
+		string directory = _ioFileSystem.Path.GetDirectoryName(manifestPath);
+		if (!string.IsNullOrWhiteSpace(directory)) {
+			_ioFileSystem.Directory.CreateDirectory(directory); // no-op when it already exists
+		}
+		_ioFileSystem.File.WriteAllText(manifestPath, manifestContent);
+		return (manifestPath, null);
 	}
 
 	/// <inheritdoc />
@@ -447,7 +471,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	// resolve name -> UId + package, ask the designer for the design package (fallback to the schema's package),
 	// fetch the full hierarchy, then re-anchor on the ROOT variant of the name (a name->UId lookup can resolve to
 	// an arbitrary replacing layer) and re-fetch. Returned base->top: the service yields leaf-first, reversed here
-	// to match the engine's merge order. Returns null when the schema cannot be resolved (caller falls back).
+	// to match the engine's merge order. Returns an EMPTY list when the schema cannot be resolved (caller falls back).
 	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchyBaseToTop(string schemaName) {
 		(JToken metadata, _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 			_applicationClient, _serviceUrlBuilder, schemaName,
@@ -455,7 +479,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		string schemaUId = metadata?["UId"]?.ToString();
 		string packageUId = metadata?["PackageUId"]?.ToString();
 		if (string.IsNullOrWhiteSpace(schemaUId) || string.IsNullOrWhiteSpace(packageUId)) {
-			return null;
+			return [];
 		}
 		string designPackageUId;
 		try {
@@ -474,7 +498,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		IReadOnlyList<PageDesignerHierarchySchema> initial =
 			_hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
 		if (initial.Count == 0) {
-			return null;
+			return [];
 		}
 		string rootSchemaUId = FindRootSchemaUId(initial, schemaName) ?? schemaUId;
 		IReadOnlyList<PageDesignerHierarchySchema> leafFirst;
@@ -570,7 +594,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (error != null || parentLayer == null) {
 				// Best-effort: stop the walk and keep what we have — but say so, or a truncated seed looks
 				// identical to a page that simply has no parents.
-				_logger.WriteWarning($"Parent-template walk stopped at '{parentUId}': {error ?? "no schema returned"}");
+				_logger.WriteWarning($"Parent-template walk stopped at '{parentUId}': {error ?? NoSchemaReturned}");
 				break;
 			}
 			levels.Add(LoadParentLevelLayers(ctx, parentUId, parentLayer, seededTemplateNames, seededLayerUIds));
@@ -598,19 +622,43 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		HashSet<string> seededLayerUIds) {
 		string parentName = parentLayer["name"]?.ToString();
 		if (string.IsNullOrWhiteSpace(parentName) || !seededTemplateNames.Add(parentName)) {
-			return seededLayerUIds.Add(parentUId)
-				? [CreateSeedEntry(parentLayer, parentLayer["package"]?["name"]?.ToString())]
-				: [];
+			return LinkedLayerOnly(parentUId, parentLayer, seededLayerUIds);
 		}
 		(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, parentName);
-		if (enumError != null || layers.Count == 0) {
-			if (enumError != null) {
-				_logger.WriteWarning($"Could not enumerate parent template '{parentName}' layers: {enumError}");
-			}
-			return seededLayerUIds.Add(parentUId)
-				? [CreateSeedEntry(parentLayer, parentLayer["package"]?["name"]?.ToString())]
-				: [];
+		if (enumError != null) {
+			_logger.WriteWarning($"Could not enumerate parent template '{parentName}' layers: {enumError}");
 		}
+		if (enumError != null || layers.Count == 0) {
+			return LinkedLayerOnly(parentUId, parentLayer, seededLayerUIds);
+		}
+		List<JObject> levelEntries =
+			LoadEnumeratedLevelLayers(ctx, layers, parentName, parentUId, parentLayer, seededLayerUIds);
+		if (levelEntries.Count == 0) {
+			// Every enumerated sibling failed to load (the linked layer itself was not among the rows):
+			// never drop the level entirely — seed at least the layer the walk already holds.
+			return LinkedLayerOnly(parentUId, parentLayer, seededLayerUIds);
+		}
+		return levelEntries;
+	}
+
+	// The fallback for a level whose siblings cannot be enumerated or loaded: seed just the layer the walk already
+	// holds — unless that layer was seeded at an earlier level, in which case the level contributes nothing.
+	private static List<JObject> LinkedLayerOnly(
+		string parentUId, JObject parentLayer, HashSet<string> seededLayerUIds) =>
+		seededLayerUIds.Add(parentUId)
+			? [CreateSeedEntry(parentLayer, parentLayer["package"]?["name"]?.ToString())]
+			: [];
+
+	// Loads one parent-template level's enumerated layers into seed entries, base->top. A layer already seeded
+	// earlier in the walk is skipped (no duplicate body), the linked layer reuses the schema the walk already
+	// loaded, and a layer whose body fails to load is skipped with a warning rather than failing the level.
+	private List<JObject> LoadEnumeratedLevelLayers(
+		PageSourcesRunContext ctx,
+		IReadOnlyList<SchemaLayer> layers,
+		string parentName,
+		string parentUId,
+		JObject parentLayer,
+		HashSet<string> seededLayerUIds) {
 		var levelEntries = new List<JObject>();
 		foreach (SchemaLayer layer in layers) {
 			if (!seededLayerUIds.Add(layer.UId)) {
@@ -622,15 +670,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, parentName);
 			if (loadError != null || layerSchema == null) {
-				_logger.WriteWarning($"Could not load parent-template layer '{parentName}' ({layer.UId}): {loadError ?? "no schema returned"}");
+				_logger.WriteWarning($"Could not load parent-template layer '{parentName}' ({layer.UId}): {loadError ?? NoSchemaReturned}");
 				continue;
 			}
 			levelEntries.Add(CreateSeedEntry(layerSchema, layer.PackageName));
-		}
-		if (levelEntries.Count == 0 && seededLayerUIds.Add(parentUId)) {
-			// Every enumerated sibling failed to load (the linked layer itself was not among the rows):
-			// never drop the level entirely — seed at least the layer the walk already holds.
-			levelEntries.Add(CreateSeedEntry(parentLayer, parentLayer["package"]?["name"]?.ToString()));
 		}
 		return levelEntries;
 	}
@@ -670,7 +713,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
 			if (error != null || schema == null) {
-				_logger.WriteWarning($"Could not gather merged localizable strings (resources): {error ?? "no schema returned"}");
+				_logger.WriteWarning($"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}");
 				return resources;
 			}
 			foreach (MergedLocalizableString localizableString in SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema)) {
@@ -786,7 +829,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				string topUId = layers[layers.Count - 1].UId;
 				(JObject detailSchema, string loadError) = LoadSchemaCached(ctx, topUId, detailName);
 				if (loadError != null || detailSchema == null) {
-					string warning = $"Could not gather detail schema '{detailName}': {loadError ?? "no schema returned"}";
+					string warning = $"Could not gather detail schema '{detailName}': {loadError ?? NoSchemaReturned}";
 					_logger.WriteWarning(warning);
 					AddWarning(ctx, warning);
 					continue;
@@ -896,6 +939,31 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private JObject BuildChildPageSchemas(PageSourcesRunContext ctx, JObject detailSchemas) {
 		var childPageSchemas = new JObject();
 		// Collect the distinct edit-page names first so the whole set is resolved in one batched enumeration.
+		IReadOnlyList<string> editPageNames = CollectChildPageNames(ctx, detailSchemas);
+		PrimeLayerBatch(ctx, editPageNames);
+		foreach (string editPageName in editPageNames) {
+			try {
+				(JObject childManifest, string error) = AssembleChildManifest(ctx, editPageName);
+				if (error != null) {
+					string warning = $"Could not assemble child page '{editPageName}': {error}";
+					_logger.WriteWarning(warning);
+					AddWarning(ctx, warning);
+					continue;
+				}
+				if (childManifest != null) {
+					childPageSchemas[editPageName] = childManifest;
+				}
+			}
+			catch (Exception ex) {
+				_logger.WriteWarning($"Could not assemble child page '{editPageName}': {ex.Message}");
+			}
+		}
+		return childPageSchemas;
+	}
+
+	// The distinct edit-page names named across the detail bodies, capped at MaxChildPages. The names come from
+	// server-supplied bodies, so the cap bounds the nested-manifest fan-out; hitting it is reported as a gap.
+	private List<string> CollectChildPageNames(PageSourcesRunContext ctx, JObject detailSchemas) {
 		var editPageNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (JProperty detail in detailSchemas.Properties()) {
@@ -919,25 +987,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			editPageNames.Add(editPageName);
 		}
-		PrimeLayerBatch(ctx, editPageNames);
-		foreach (string editPageName in editPageNames) {
-			try {
-				(JObject childManifest, string error) = AssembleChildManifest(ctx, editPageName);
-				if (error != null) {
-					string warning = $"Could not assemble child page '{editPageName}': {error}";
-					_logger.WriteWarning(warning);
-					AddWarning(ctx, warning);
-					continue;
-				}
-				if (childManifest != null) {
-					childPageSchemas[editPageName] = childManifest;
-				}
-			}
-			catch (Exception ex) {
-				_logger.WriteWarning($"Could not assemble child page '{editPageName}': {ex.Message}");
-			}
-		}
-		return childPageSchemas;
+		return editPageNames;
 	}
 
 	// Assembles the CORE nested manifest (schemas + seed + entity) for a child edit page. Bounded to one
@@ -1010,7 +1060,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private static GetClassicPageSourcesResponse Fail(string error) =>
 		new() { Success = false, Error = error };
 
-	// Best-effort regex evaluation over server-supplied bodies. The compiled patterns carry a 1s match timeout;
+	// Best-effort regex evaluation over server-supplied bodies. The compiled patterns carry a 1s match timeout, and
 	// a timeout on one pathological body must DEGRADE (skip that body, keep the rest of the collected sources) exactly like
 	// every other enricher, never abort the whole assembly. Every Match/Matches call funnels through these two
 	// guards so no regex pass can turn a would-be-successful collection into a hard failure.
