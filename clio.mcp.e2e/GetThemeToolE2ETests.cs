@@ -14,11 +14,15 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end coverage for the get-theme MCP tool. Actually reading a theme's content requires a live
-/// Creatio environment with branding licensing, so the hermetic CI-safe assertions are that the real clio
-/// MCP server advertises get-theme and binds its args wrapper to a structured validation error; the live
-/// read → edit → update round-trip is covered by <see cref="ThemingSandboxE2ETests"/>.
+/// Discovery and argument-validation coverage for the get-theme MCP tool: the real clio MCP server
+/// advertises get-theme and binds its args wrapper to a structured validation error.
 /// </summary>
+/// <remarks>
+/// A SUCCESSFUL read is covered separately: <see cref="GetThemeHappyPathE2ETests"/> serves the theme catalog
+/// and theme.css from a local stub and runs on every CI run, and
+/// <see cref="ThemingSandboxE2ETests"/> exercises the full create → read → edit → update → delete round-trip
+/// against a live branded environment.
+/// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]

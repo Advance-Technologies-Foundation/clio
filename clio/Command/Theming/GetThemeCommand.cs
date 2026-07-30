@@ -127,7 +127,6 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				response = GetThemeResponse.Failure(idError);
 				return false;
 			}
-			// The output path can be supplied by an agent over MCP, so confine it BEFORE any network call.
 			string resolvedOutputPath = null;
 			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
 				string pathError;
@@ -145,9 +144,8 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				response = GetThemeResponse.Failure(fetchError);
 				return false;
 			}
-			// caption/cssClassName/cssContent are deliberately NOT run through SanitizeForDisplay: the caller
-			// writes them back verbatim, and capping or stripping them here would change what gets written.
-			// cssFilePath is display/diagnostic only, so it gets the same treatment list-themes applies.
+			// Only cssFilePath is sanitized: the caller writes the other fields back verbatim, so capping or
+			// stripping them here would change what gets written.
 			response = new GetThemeResponse {
 				Success = true,
 				Id = theme.Id,

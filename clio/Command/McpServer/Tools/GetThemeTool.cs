@@ -64,8 +64,6 @@ public class GetThemeTool(
 		return ExecuteResolved<GetThemeCommand, GetThemeResponse>(options,
 			resolvedCommand => {
 				resolvedCommand.TryGetTheme(options, out GetThemeResponse response);
-				// The error can carry a server-supplied message, so redact it before it crosses into the MCP
-				// client transcript. Success fields are the caller's payload and stay verbatim.
 				return response.Success || string.IsNullOrWhiteSpace(response.Error)
 					? response
 					: response with { Error = SensitiveErrorTextRedactor.Redact(response.Error) };
