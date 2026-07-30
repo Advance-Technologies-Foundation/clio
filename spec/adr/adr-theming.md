@@ -369,12 +369,16 @@ redacted (`SensitiveErrorTextRedactor`) at the MCP boundary.
 **E-D4 — Failure semantics.** Id validated by the shared `ThemeParameterValidator` before any network
 call. An id absent from a non-empty catalog → a clear not-found naming the id + a `list-themes` hint; an
 empty catalog → the not-found also names the possibly-missing `CanCustomizeBranding` license (the shared
-`ThemeCatalogMessages.EmptyCatalogLicenseCaveat`, single-homed with set-user-theme). A CSS fetch
-answering with an HTML document (login redirect / error page, BOM-prefixed included) → an explicit
-"HTML instead of CSS" failure; the known limitation is that CSS deliberately starting with
-`<!DOCTYPE`/`<html` cannot be read back. The read enforces the write side's 1 MiB `cssContent` cap —
-a larger body cannot be a clio-managed theme and is refused instead of ballooning memory / flooding an
-MCP transcript. An existing theme with an empty CSS file → success with `cssContent: ""` (a theme to
+`ThemeCatalogMessages.EmptyCatalogLicenseCaveat`, single-homed with set-user-theme, which now consumes it
+through `ListThemesOptions.From` as well). A CSS fetch answering with markup (login redirect / error page,
+BOM-prefixed included) → an explicit "HTML instead of CSS" failure. The sniff is a leading-`<` check, not
+the `<!DOCTYPE`/`<html` document markers: valid CSS can never start with `<`, so the broad form also
+catches an error page leading with `<!-- -->`, `<HEAD`, or `<?xml` — bodies that would otherwise be handed
+back as `cssContent` and written straight over a real theme by the update-theme round-trip. The known limitation is
+correspondingly that CSS deliberately starting with `<` cannot be read back. The read enforces the write
+side's 1 MiB `cssContent` cap — a larger body cannot be a clio-managed theme and is refused instead of
+flooding an MCP transcript (NOT a memory bound: `ExecuteGetRequest` has already materialized the whole body
+by then; capping the allocation would need a transport-layer content-length/stream limit). An existing theme with an empty CSS file → success with `cssContent: ""` (a theme to
 fill in, not an error). `cssFilePath` is the one envelope field that IS `SanitizeForDisplay`-treated —
 it is display/diagnostic only (update-theme never consumes it), mirroring list-themes.
 

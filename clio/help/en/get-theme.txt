@@ -59,7 +59,7 @@ EXAMPLE
 NOTES
     - Find a theme's id with 'clio list-themes'.
     - The read enforces the same 1 MiB content cap as create-theme/update-theme; a served file larger than that is refused.
-    - An HTML response (e.g. a login or error page) is reported as an error rather than returned as content.
+    - A markup response (e.g. a login or error page) is reported as an error rather than returned as content; any body starting with '<' is refused, because valid CSS never does.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

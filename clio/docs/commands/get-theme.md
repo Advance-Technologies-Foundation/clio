@@ -81,7 +81,7 @@ clio get-theme --id <id> -e myapp   # confirm the change is reflected
 
 - Find a theme's id with [`list-themes`](list-themes.md).
 - The read enforces the same 1 MiB content cap as `create-theme`/`update-theme`; a served file larger than that is refused (it cannot be a clio-managed theme CSS).
-- A response that is an HTML document (for example a login or error page) is reported as an error rather than returned as content; consequently a theme whose CSS deliberately starts with `<!DOCTYPE`/`<html` cannot be read back.
+- A markup response (for example a login or error page) is reported as an error rather than returned as content. The check refuses any body whose first non-whitespace character is `<` — valid CSS never starts with `<`, so this also catches an error page that leads with `<!-- -->`, `<HEAD`, or `<?xml`. Consequently a theme whose CSS deliberately starts with `<` cannot be read back.
 
 ## Reporting Bugs
 

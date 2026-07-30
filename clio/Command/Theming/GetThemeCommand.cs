@@ -228,19 +228,24 @@ public class GetThemeCommand : Command<GetThemeOptions>
 		// a theme with no CSS, and the write side never produces a distinguishable difference between them.
 		string content = _applicationClient.ExecuteGetRequest(url, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay) ?? string.Empty;
-		// A CSS file never starts with an HTML document marker; an HTML body here means the request was
-		// redirected (e.g. to a login page) or the environment answered with an error page instead of the
-		// file. TrimStart() does not strip a BOM (U+FEFF is not whitespace), so trim it explicitly — an
-		// HTML error page served as UTF-8-with-BOM must not slip past the sniff into cssContent.
+		// A markup body here means the request was redirected (e.g. to a login page) or the environment
+		// answered with an error page instead of the file. Sniff a leading '<' rather than the specific
+		// '<!DOCTYPE'/'<html' document markers: valid CSS can never START with '<' (it opens no selector,
+		// at-rule, or comment), so the broad check also catches an error page leading with '<!-- -->',
+		// '<HEAD', or '<?xml' — a body that would otherwise be handed back as cssContent and written
+		// straight over a real theme by the documented update-theme round-trip. TrimStart() does not strip
+		// a BOM (U+FEFF is not whitespace), so trim it explicitly — an error page served as UTF-8-with-BOM
+		// must not slip past the sniff either.
 		string trimmed = content.TrimStart().TrimStart('\uFEFF').TrimStart();
-		if (trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
-			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)) {
+		if (trimmed.StartsWith('<')) {
 			error = $"The environment returned an HTML page instead of the theme CSS for '{theme.Id}'. " +
 				"The CSS file may be missing on the server or the request was redirected.";
 			return false;
 		}
 		// The write side caps cssContent at 1 MiB (ThemeParameterValidator), so a larger body cannot be a
-		// theme created through clio — refuse it instead of ballooning memory or flooding an MCP transcript.
+		// theme created through clio — refuse it instead of flooding an MCP transcript. This is NOT a memory
+		// bound: ExecuteGetRequest has already materialized the whole body into `content` by this point, so
+		// capping the allocation would need a content-length/stream limit at the transport layer.
 		if (Encoding.UTF8.GetByteCount(content) > ThemeParameterValidator.MaxCssContentBytes) {
 			error = $"The theme CSS for '{theme.Id}' exceeds the 1 MiB content limit and cannot be read. " +
 				"Themes managed through clio are capped at 1 MiB; the served file is not a clio-managed theme CSS.";

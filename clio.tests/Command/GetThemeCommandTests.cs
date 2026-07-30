@@ -279,7 +279,24 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Refuses a fetched body larger than the 1 MiB cssContent cap — anything bigger cannot be a clio-managed theme CSS, and returning it would balloon memory or flood an MCP transcript.")]
+	[Description("Refuses a markup body that does not open with <!DOCTYPE or <html — valid CSS never starts with '<', so an error page leading with a comment, <head, or <?xml must not be handed back as content the update-theme round-trip would write over a real theme.")]
+	public void TryGetTheme_ShouldFail_WhenCssFetchReturnsMarkupWithoutDocumentMarker() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss("<!-- error --><head><title>Sign in</title></head>");
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "any body whose first non-whitespace character is '<' cannot be CSS and must not be returned as content");
+		response.Error.Should().Contain("HTML",
+			because: "the error must explain that a page came back instead of the CSS file");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Refuses a fetched body larger than the 1 MiB cssContent cap — anything bigger cannot be a clio-managed theme CSS, and returning it would flood an MCP transcript.")]
 	public void TryGetTheme_ShouldFail_WhenCssContentExceedsSizeCap() {
 		// Arrange
 		ArrangeCatalog();

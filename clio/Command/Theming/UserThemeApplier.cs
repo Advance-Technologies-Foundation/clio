@@ -87,12 +87,9 @@ public class UserThemeApplier : IUserThemeApplier
 			return true;
 		}
 		string selector = options.Theme.Trim();
-		ListThemesOptions listOptions = new() {
-			Environment = options.Environment,
-			TimeOut = options.TimeOut,
-			MaxAttempts = options.MaxAttempts,
-			RetryDelay = options.RetryDelay
-		};
+		// The single home for the catalog-options copy (see ListThemesOptions.From), so a newly added
+		// connection/retry knob cannot be picked up by get-theme and silently missed here.
+		ListThemesOptions listOptions = ListThemesOptions.From(options);
 		IReadOnlyList<ThemeDescriptor> themes;
 		bool listed;
 		try {
