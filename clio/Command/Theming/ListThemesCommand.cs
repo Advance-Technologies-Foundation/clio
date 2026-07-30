@@ -17,11 +17,10 @@ namespace Clio.Command.Theming;
 public class ListThemesOptions : RemoteCommandOptions
 {
 	/// <summary>
-	/// Builds catalog-read options carrying over the connection, timeout, and retry settings of another
-	/// command's options — the single home for the copy so a catalog consumer (<c>get-theme</c>,
-	/// <c>set-user-theme</c>) cannot silently miss a newly added retry knob.
+	/// Builds catalog-read options that carry over the environment, timeout, and retry settings of
+	/// <paramref name="source"/>.
 	/// </summary>
-	/// <param name="source">The consuming command's options to copy the shared settings from.</param>
+	/// <param name="source">The options to copy the environment and retry settings from.</param>
 	/// <returns>Catalog-read options addressed at the same environment with the same retry behavior.</returns>
 	public static ListThemesOptions From(RemoteCommandOptions source) {
 		return new ListThemesOptions {

@@ -75,7 +75,7 @@ public class GetThemeToolTests {
 
 		// Act
 		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(
-			EnvironmentName: "docker_fix2", Id: "ocean-theme", OutputFile: "out/theme.css"));
+			EnvironmentName: "docker_fix2", Id: "ocean-theme") { OutputFile = "out/theme.css" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a successful read must report success");
@@ -110,6 +110,54 @@ public class GetThemeToolTests {
 		result.Error.Should().Contain("environment-name",
 			because: "the failure must name the exact kebab-case field the caller has to add");
 		commandResolver.DidNotReceive().Resolve<GetThemeCommand>(Arg.Any<GetThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Lets the resolver arbitrate the tenant when credential passthrough is active and environment-name is omitted: under passthrough the target comes from the X-Integration-Credentials header and ToolCommandResolver rejects an explicit environment argument, so a hard pre-resolver check would leave get-theme unreachable in that mode.")]
+	public void GetTheme_ShouldNotRequireEnvironmentName_WhenPassthroughIsActive() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeGetThemeCommand defaultCommand = new();
+		FakeGetThemeCommand resolvedCommand = new(new GetThemeResponse {
+			Success = true, Id = "ocean-theme", CssContent = ".ocean-theme {}"
+		});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetThemeCommand>(Arg.Any<GetThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		ICredentialPassthroughToolGuard passthroughGuard = Substitute.For<ICredentialPassthroughToolGuard>();
+		passthroughGuard.IsPassthroughActive.Returns(true);
+		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, passthroughGuard);
+
+		// Act
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(Id: "ocean-theme"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an omitted environment-name under active passthrough must reach the resolver, which resolves the tenant from the header, instead of being rejected by the tool");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still requires environment-name when a passthrough guard is wired but no passthrough context is active, so the helpful pre-resolver error survives on stdio and on default HTTP.")]
+	public void GetTheme_ShouldStillRequireEnvironmentName_WhenPassthroughIsNotActive() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeGetThemeCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ICredentialPassthroughToolGuard passthroughGuard = Substitute.For<ICredentialPassthroughToolGuard>();
+		passthroughGuard.IsPassthroughActive.Returns(false);
+		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, passthroughGuard);
+
+		// Act
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(Id: "ocean-theme"));
+
+		// Assert
+		result.Error.Should().Contain("environment-name",
+			because: "without an active passthrough context the tenant can only come from the argument, so the tool must still name the missing field");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

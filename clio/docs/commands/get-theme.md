@@ -12,11 +12,9 @@ get-theme - read the content (theme.css) and metadata of a custom Creatio theme
 
 `get-theme` reads a custom theme from the target environment by its id and
 prints a JSON envelope with the theme's `id`, `caption`, `cssClassName`,
-`cssFilePath`, and `cssContent` (the `theme.css` text). The theme is resolved
-through the native `ThemeService.svc/GetAvailableThemes` catalog and its CSS is
-fetched from the catalog-reported `cssFilePath` — the same file the Creatio
-Shell loads the theme from, so the content always reflects the current state,
-including right after an [`update-theme`](update-theme.md).
+`cssFilePath`, and `cssContent` (the `theme.css` text). The content always
+reflects the theme's current state, including right after an
+[`update-theme`](update-theme.md).
 
 The `caption`, `cssClassName`, and `cssContent` fields are usable verbatim as
 `update-theme` arguments, closing the read → edit → update-theme loop: read the

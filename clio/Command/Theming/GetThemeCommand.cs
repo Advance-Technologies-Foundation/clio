@@ -32,9 +32,7 @@ public class GetThemeOptions : RemoteCommandOptions
 
 /// <summary>
 /// Result envelope of the <c>get-theme</c> command, printed as JSON by the CLI and returned as the
-/// structured result of the <c>get-theme</c> MCP tool. On success it carries everything
-/// <c>update-theme</c> needs for a read → edit → update round-trip (<c>id</c>, <c>caption</c>,
-/// <c>cssClassName</c>, <c>cssContent</c>).
+/// structured result of the <c>get-theme</c> MCP tool.
 /// </summary>
 public sealed record GetThemeResponse
 {
@@ -47,12 +45,12 @@ public sealed record GetThemeResponse
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Id { get; init; }
 
-	/// <summary>The theme caption, usable verbatim as <c>update-theme --caption</c>. Omitted on failure.</summary>
+	/// <summary>The theme caption. Omitted on failure.</summary>
 	[JsonPropertyName("caption")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Caption { get; init; }
 
-	/// <summary>The theme CSS class name, usable verbatim as <c>update-theme --css-class-name</c>. Omitted on failure.</summary>
+	/// <summary>The CSS class applied when the theme is active. Omitted on failure.</summary>
 	[JsonPropertyName("cssClassName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string CssClassName { get; init; }
@@ -91,12 +89,9 @@ public sealed record GetThemeResponse
 
 /// <summary>
 /// Reads the content (<c>theme.css</c>) and metadata of a custom Creatio theme from the target
-/// environment. The theme is resolved by id through the native <c>ThemeService.svc/GetAvailableThemes</c>
-/// catalog (via <see cref="IThemeCatalog"/>) and its CSS is fetched from the catalog-reported
-/// <c>cssFilePath</c> — the same static-file route the Creatio Shell loads the theme from. The catalog is
-/// re-read on every call, so the content reflects the current state even right after an
-/// <c>update-theme</c> (the server always serves the current file; the <c>hash</c> query parameter on
-/// <c>cssFilePath</c> only busts browser caches). Requires the <c>CanCustomizeBranding</c> license;
+/// environment. The theme is resolved by id through the environment's theme catalog and its CSS is read
+/// from the catalog-reported <c>cssFilePath</c>. The catalog is re-read on every call, so the returned
+/// content always reflects the theme's current state. Requires the <c>CanCustomizeBranding</c> license;
 /// callers without it see an empty catalog and therefore a not-found result.
 /// </summary>
 public class GetThemeCommand : Command<GetThemeOptions>
@@ -120,8 +115,8 @@ public class GetThemeCommand : Command<GetThemeOptions>
 	}
 
 	/// <summary>
-	/// Reads the theme's metadata and CSS content without writing to the logger (the create-theme
-	/// silent/logging split), so the MCP tool can return the envelope with no log-channel noise.
+	/// Reads the theme's metadata and CSS content without writing to the logger, so a caller that needs the
+	/// result as data (the MCP tool) gets the envelope with no log-channel noise.
 	/// </summary>
 	/// <param name="options">The command options carrying the theme id and the optional output file.</param>
 	/// <param name="response">The result envelope; on failure it carries only <c>success:false</c> and <c>error</c>.</param>
@@ -132,9 +127,7 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				response = GetThemeResponse.Failure(idError);
 				return false;
 			}
-			// Confine an agent-suppliable output-file BEFORE any network call (this command is MCP-callable via
-			// get-theme): resolve symlinks, drop an untrusted anchor, keep the write inside the workspace or OS
-			// temp dir, and refuse an existing target so the Destructive=false classification stays honest.
+			// The output path can be supplied by an agent over MCP, so confine it BEFORE any network call.
 			string resolvedOutputPath = null;
 			if (!string.IsNullOrWhiteSpace(options.OutputFile)) {
 				string pathError;
@@ -152,11 +145,9 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				response = GetThemeResponse.Failure(fetchError);
 				return false;
 			}
-			// The id/caption/cssClassName/cssContent fields feed the update-theme round-trip verbatim, so
-			// unlike the list-themes display path they are deliberately NOT run through SanitizeForDisplay —
-			// capping or stripping them here would silently write different values back on update.
-			// cssFilePath is the exception: update-theme never consumes it (display/diagnostic only), so it
-			// gets the same SanitizeForDisplay treatment list-themes applies to the identical field.
+			// caption/cssClassName/cssContent are deliberately NOT run through SanitizeForDisplay: the caller
+			// writes them back verbatim, and capping or stripping them here would change what gets written.
+			// cssFilePath is display/diagnostic only, so it gets the same treatment list-themes applies.
 			response = new GetThemeResponse {
 				Success = true,
 				Id = theme.Id,
@@ -166,8 +157,6 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				CssContentLength = cssContent.Length
 			};
 			if (resolvedOutputPath != null) {
-				// Atomic no-overwrite write (FileMode.CreateNew): closes the resolve→write TOCTOU window and
-				// keeps Destructive=false honest even if the target appeared after the confinement check.
 				OutputPathConfinement.WriteAtomic(_ioFileSystem, resolvedOutputPath, cssContent);
 			} else {
 				response = response with { CssContent = cssContent };
@@ -195,23 +184,24 @@ public class GetThemeCommand : Command<GetThemeOptions>
 			error = ThemeServiceResponseParser.DescribeFailure("GetAvailableThemes", catalogError);
 			return false;
 		}
-		// Theme ids are case-insensitive identifiers (the same convention set-user-theme resolves them with).
-		List<ThemeDescriptor> matches = themes
+		if (themes.Count == 0) {
+			error = $"Theme '{options.Id}' was not found and no custom themes are listed on this environment. " +
+				ThemeCatalogMessages.EmptyCatalogLicenseCaveat;
+			return false;
+		}
+		List<ThemeDescriptor> matchingThemes = themes
 			.Where(descriptor => string.Equals(descriptor.Id, options.Id, StringComparison.OrdinalIgnoreCase))
 			.ToList();
-		if (matches.Count > 1) {
+		if (matchingThemes.Count > 1) {
 			error = $"Theme id '{options.Id}' matches more than one theme on the environment; " +
 				"the catalog is inconsistent. Run 'clio list-themes' to inspect it.";
 			return false;
 		}
-		if (matches.Count == 0) {
-			error = themes.Count == 0
-				? $"Theme '{options.Id}' was not found and no custom themes are listed on this environment. " +
-					ThemeCatalogMessages.EmptyCatalogLicenseCaveat
-				: $"Theme '{options.Id}' was not found. Run 'clio list-themes' to see the available theme ids.";
+		if (matchingThemes.Count == 0) {
+			error = $"Theme '{options.Id}' was not found. Run 'clio list-themes' to see the available theme ids.";
 			return false;
 		}
-		theme = matches[0];
+		theme = matchingThemes[0];
 		error = null;
 		return true;
 	}
@@ -224,28 +214,16 @@ public class GetThemeCommand : Command<GetThemeOptions>
 			return false;
 		}
 		string url = _urlBuilder.Build(theme.CssFilePath);
-		// A null body (no content at all) is deliberately treated the same as an empty file: both render as
-		// a theme with no CSS, and the write side never produces a distinguishable difference between them.
 		string content = _applicationClient.ExecuteGetRequest(url, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay) ?? string.Empty;
-		// A markup body here means the request was redirected (e.g. to a login page) or the environment
-		// answered with an error page instead of the file. Sniff a leading '<' rather than the specific
-		// '<!DOCTYPE'/'<html' document markers: valid CSS can never START with '<' (it opens no selector,
-		// at-rule, or comment), so the broad check also catches an error page leading with '<!-- -->',
-		// '<HEAD', or '<?xml' — a body that would otherwise be handed back as cssContent and written
-		// straight over a real theme by the documented update-theme round-trip. TrimStart() does not strip
-		// a BOM (U+FEFF is not whitespace), so trim it explicitly — an error page served as UTF-8-with-BOM
-		// must not slip past the sniff either.
+		// Valid CSS never starts with '<', so any markup body is a redirect or an error page, not the file.
+		// TrimStart() does not strip a BOM (U+FEFF is not whitespace), so trim it explicitly.
 		string trimmed = content.TrimStart().TrimStart('\uFEFF').TrimStart();
 		if (trimmed.StartsWith('<')) {
 			error = $"The environment returned an HTML page instead of the theme CSS for '{theme.Id}'. " +
 				"The CSS file may be missing on the server or the request was redirected.";
 			return false;
 		}
-		// The write side caps cssContent at 1 MiB (ThemeParameterValidator), so a larger body cannot be a
-		// theme created through clio — refuse it instead of flooding an MCP transcript. This is NOT a memory
-		// bound: ExecuteGetRequest has already materialized the whole body into `content` by this point, so
-		// capping the allocation would need a content-length/stream limit at the transport layer.
 		if (Encoding.UTF8.GetByteCount(content) > ThemeParameterValidator.MaxCssContentBytes) {
 			error = $"The theme CSS for '{theme.Id}' exceeds the 1 MiB content limit and cannot be read. " +
 				"Themes managed through clio are capped at 1 MiB; the served file is not a clio-managed theme CSS.";

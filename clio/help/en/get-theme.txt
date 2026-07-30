@@ -7,11 +7,8 @@ NAME
 DESCRIPTION
     get-theme reads a custom theme from the target environment by its id and
     prints a JSON envelope with the theme's id, caption, cssClassName,
-    cssFilePath, and cssContent (the theme.css text). The theme is resolved
-    through the native ThemeService.svc/GetAvailableThemes catalog and its CSS
-    is fetched from the catalog-reported cssFilePath - the same file the
-    Creatio Shell loads the theme from, so the content always reflects the
-    current state, including right after an update-theme.
+    cssFilePath, and cssContent (the theme.css text). The content always
+    reflects the theme's current state, including right after an update-theme.
 
     The caption, cssClassName, and cssContent fields are usable verbatim as
     update-theme arguments, closing the read -> edit -> update-theme loop:
@@ -59,7 +56,6 @@ EXAMPLE
 NOTES
     - Find a theme's id with 'clio list-themes'.
     - The read enforces the same 1 MiB content cap as create-theme/update-theme; a served file larger than that is refused.
-    - A markup response (e.g. a login or error page) is reported as an error rather than returned as content; any body starting with '<' is refused, because valid CSS never does.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

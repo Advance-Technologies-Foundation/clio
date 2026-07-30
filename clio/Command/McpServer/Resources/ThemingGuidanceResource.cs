@@ -93,9 +93,9 @@ public sealed class ThemingGuidanceResource {
 		       - An empty list means the environment has no custom themes, or the caller lacks the `CanCustomizeBranding` license.
 
 		       Read a theme's content — get-theme
-		       - Read an existing theme by its `id` with `get-theme`: it returns `{ success, id, caption, cssClassName, cssFilePath, cssContent, cssContentLength, error? }`. The `caption`, `cssClassName`, and `cssContent` fields feed `update-theme` verbatim, so one call gives you everything the read → edit → update round-trip needs.
-		       - The content always reflects the current state — `get-theme` re-reads the theme catalog on every call, so reading right after an `update-theme` returns the updated CSS.
-		       - Pass `output-file` to write the CSS to disk instead of returning it in the result (`cssContentLength` is still reported) — use this to keep a large theme out of the transcript; the file feeds the `update-theme` CLI's `--css-content-file` directly. The path must not already exist and must stay inside the workspace or the OS temp directory.
+		       - Read an existing theme by its `id` with `get-theme`: it returns `{ success, id, caption, cssClassName, cssFilePath, cssContent, cssContentLength, error? }` — one call gives you the theme's full current definition.
+		       - The content always reflects the current state: `get-theme` re-reads the theme catalog on every call, so a read right after a write returns the new CSS.
+		       - Pass `output-file` to write the CSS to disk instead of returning it in the result (`cssContentLength` is still reported) — use this to keep a large theme out of the transcript. The path must not already exist and must stay inside the workspace or the OS temp directory.
 		       - An unknown `id` is a clear in-tool error, not a protocol failure: the tool names the id and points at `list-themes`. When the whole catalog is empty the error also names the possible missing `CanCustomizeBranding` license (see "List themes").
 		       - A theme that exists but has empty content returns `success: true` with an empty `cssContent` — treat it as a theme to fill in, not an error.
 

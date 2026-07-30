@@ -87,8 +87,6 @@ public class UserThemeApplier : IUserThemeApplier
 			return true;
 		}
 		string selector = options.Theme.Trim();
-		// The single home for the catalog-options copy (see ListThemesOptions.From), so a newly added
-		// connection/retry knob cannot be picked up by get-theme and silently missed here.
 		ListThemesOptions listOptions = ListThemesOptions.From(options);
 		IReadOnlyList<ThemeDescriptor> themes;
 		bool listed;
@@ -163,8 +161,6 @@ public class UserThemeApplier : IUserThemeApplier
 
 	private static string BuildUnknownThemeMessage(string selector, IReadOnlyList<ThemeDescriptor> themes) {
 		if (themes.Count == 0) {
-			// The shared caveat names the license possibility (see ThemeCatalogMessages); the tail keeps the
-			// set-user-theme-specific create-a-theme/--reset hint.
 			return $"Theme '{selector}' was not found and no custom themes are listed on this environment. " +
 				ThemeCatalogMessages.EmptyCatalogLicenseCaveat + " Otherwise create a theme with " +
 				"create-theme, or use --reset to restore the environment default.";
