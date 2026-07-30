@@ -75,7 +75,7 @@ public sealed class MobilePageConversionGuideTool {
 		"data-source section from a pre-existing body or attribute types like ForwardReference get dropped), " +
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
 		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
-		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding; " +
+		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, the field's control binding included (fields bind via control on mobile exactly as on web, ComboBox included; never rebind a field via value); " +
 		"on a tabbed record page every web tab inserts as its own new mobile tab (elementMap parentName Tabs), and a positional insert carries an `index` to sit above/below the mobile Tabs; " +
 		"localized strings (captions AND nested ones like config.title/text.template) are carried verbatim in mobileValues as #ResourceString tokens and collected+resolved into guide.resourceStrings ({key: en-US text}) — register that whole map via update-page resources so every token renders), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
