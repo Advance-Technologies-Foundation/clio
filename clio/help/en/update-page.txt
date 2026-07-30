@@ -78,13 +78,31 @@ DESCRIPTION
     false-conflict. A small race window between the check and the save remains
     (last write wins).
 
+    WRITE MODES:
+    --mode replace (default) saves the body verbatim. --mode append loads the
+    current schema body from the server and merges your incoming fragment into
+    it (viewConfigDiff dedupes by name, handlers by request). Append requires the
+    diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
+    markers, instead of the *_DIFF markers) cannot be merged and is rejected with
+    an actionable hint — use --mode replace for such a body.
+
 SYNOPSIS
     clio update-page [options]
 
 OPTIONS
     --schema-name                      Page schema name to update
 
-    --body                             Full raw JavaScript schema body
+    --body                             Full raw JavaScript schema body (a
+                                       string with /**MARKER*/ pairs, not a
+                                       structured object)
+
+    --body-file                        Path to a file containing the body.
+                                       Alternative to --body for large bodies
+
+    --mode                             Write mode: 'replace' (default) or
+                                       'append' (merge with the current body).
+                                       Append requires the diff form; a full-
+                                       config body is rejected — use 'replace'
 
     --dry-run                          Validate only and do not save
 

@@ -119,16 +119,6 @@
 	</Choose>
 
 	<ItemGroup>
-		<!--
-		 PowerShell.SDK drags in a System.Security.Cryptography.Xml version with known high-severity
-		 vulnerabilities (NU1903, e.g. GHSA-23rf-6693-g89p) on EVERY target framework, so the direct
-		 reference lifting it to the patched centrally-managed version must be unconditional — a
-		 TFM-scoped lift leaves the other TFM's transitive graph vulnerable and fails CI restore.
-		-->
-		<PackageReference Include="System.Security.Cryptography.Xml" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"
@@ -148,8 +138,11 @@
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />
-		<!-- PowerShell brings this package transitively. Pin the audited dependency graph for every target;
-		     framework-provided assemblies still require a current installed ASP.NET Core runtime. -->
+		<!-- NU1903: Microsoft.PowerShell.SDK (via Microsoft.Windows.Compatibility) pulls in a
+		     vulnerable transitive System.Security.Cryptography.Xml on BOTH target frameworks
+		     (10.0.9 on net8.0, 10.0.6 on net10.0; GHSA-23rf-6693-g89p family). This direct
+		     reference lifts it to the patched centrally-managed $(MsPackageVersion) and must stay
+		     unconditional — a TFM-scoped lift leaves the other TFM vulnerable and fails CI restore. -->
 		<PackageReference Include="System.Security.Cryptography.Xml" />
 		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />

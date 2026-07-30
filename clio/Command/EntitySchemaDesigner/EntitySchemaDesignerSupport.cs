@@ -83,6 +83,15 @@ internal static class EntitySchemaDesignerSupport
 			["imagelink"] = ImageLookupTypeName,
 			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
+			["decimal"] = "decimal2",
+			// Creatio displays dataValueType 6 as "Money" and clio's own sys-setting surface uses that exact
+			// name, so an agent naturally sends "Money" for a money column and used to get a hard rejection
+			// listing currency0..currency3 without saying which one it meant (issue #955). currency2 IS
+			// dataValueType 6, so this alias is an identity, not an approximation.
+			["money"] = "currency2",
+			// NOTE: lossy on purpose-of-record — Creatio stores these as DateTime, so date-only/time-only intent
+			// does not survive and the readback tools report DateTime. Kept for compatibility; the contract now
+			// states the collapse explicitly rather than advertising Date/Time as distinct types (issue #949).
 			["date"] = DateTimeTypeName,
 			["time"] = DateTimeTypeName,
 			["encrypted"] = SecureTextTypeName,
@@ -360,6 +369,42 @@ internal static class EntitySchemaDesignerSupport
 		return SupportedDataValueTypes.TryGetValue(normalizedTypeName, out dataValueType);
 	}
 
+	/// <summary>
+	/// Determines whether a requested column-type token (request/input vocabulary, e.g. <c>phoneNumber</c>,
+	/// <c>text50</c>) denotes the same underlying <see cref="DataValueType"/> as a type read back from the
+	/// server (read vocabulary, e.g. <c>"42"</c>, <c>ShortText</c>). Both sides are normalized to the
+	/// canonical ordinal before comparison: the read-back friendly-name vocabulary
+	/// (<see cref="GetFriendlyTypeName"/>) diverges from the request vocabulary for several types — raw
+	/// ordinals such as <c>"42"</c>/<c>"44"</c> (phoneNumber/webLink), the text-size names
+	/// <c>ShortText</c>/<c>MediumText</c>/<c>LongText</c>/<c>MaxSizeText</c>, and <c>Float</c> — so a plain
+	/// string compare would wrongly treat an identical column as changed and re-issue a mutation on replay
+	/// (violating idempotency). Falls back to a case-insensitive string compare when either token cannot be
+	/// resolved to an ordinal, so unknown/forward-compatible types never regress into a failure. A blank on
+	/// either side is treated as equivalent (no type is asserted, so no type-driven mutation is forced).
+	/// </summary>
+	/// <param name="requestedType">The requested type token (request vocabulary or alias).</param>
+	/// <param name="existingType">The type read back from the server (friendly-name vocabulary).</param>
+	/// <returns><see langword="true"/> when both denote the same data-value type.</returns>
+	internal static bool AreColumnTypesEquivalent(string? requestedType, string? existingType) {
+		if (string.IsNullOrWhiteSpace(requestedType) || string.IsNullOrWhiteSpace(existingType)) {
+			return true;
+		}
+		if (TryResolveDataValueTypeOrdinal(requestedType, out int requestedOrdinal)
+			&& TryResolveDataValueTypeOrdinal(existingType, out int existingOrdinal)) {
+			return requestedOrdinal == existingOrdinal;
+		}
+		return string.Equals(requestedType.Trim(), existingType.Trim(), StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool TryResolveDataValueTypeOrdinal(string typeName, out int dataValueType) {
+		if (TryResolveDataValueType(typeName, out dataValueType)) {
+			return true;
+		}
+		// A read-back friendly name for an unmapped type is the raw DataValueType ordinal as a string
+		// (GetFriendlyTypeName's default branch, e.g. "42" for phoneNumber, "44" for webLink).
+		return int.TryParse(typeName.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out dataValueType);
+	}
+
 	private static string NormalizeDataValueTypeName(string typeName) {
 		return new string(typeName
 			.Trim()
@@ -425,18 +470,36 @@ internal static class EntitySchemaDesignerSupport
 			18 => "Color",
 			24 => "SecureText",
 			25 => "File",
+			42 => "PhoneNumber",
+			43 => "RichText",
+			44 => "WebLink",
 			45 => "Email",
 			27 => "ShortText",
 			28 => "MediumText",
 			30 => "LongText",
 			29 => "MaxSizeText",
+			// Decimal and currency scales were absent, so every one of them fell through to the numeric
+			// fallback below: a Currency2 column read back as the raw string "6" and could not be
+			// round-tripped through the documented write vocabulary (issue #949).
+			31 => "Decimal1",
 			32 => "Float",
+			33 => "Decimal3",
+			34 => "Decimal4",
+			40 => "Decimal8",
+			47 => "Decimal0",
+			6 => "Currency2",
+			48 => "Currency0",
+			49 => "Currency1",
+			50 => "Currency3",
 			0 => "Guid",
 			1 => "Text",
 			4 => "Integer",
 			7 => "DateTime",
 			10 => "Lookup",
 			12 => "Boolean",
+			// A genuinely unknown ordinal still degrades to its number rather than throwing: readback must
+			// keep working against a platform that introduces a type clio does not model yet. Every ordinal
+			// clio can WRITE is covered above, and a guard test keeps that true.
 			_ => dataValueType.Value.ToString()
 		};
 	}
@@ -572,7 +635,11 @@ internal static class EntitySchemaDesignerSupport
 			},
 			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
 				Source = source,
-				SequencePrefix = NormalizeTextValue(defValue.SequencePrefix, allowEmpty: true),
+				// Preserve the persisted prefix verbatim on readback. Trimming here would drop a
+				// mask's accepted edge whitespace ('INV {0}' persists 'INV ') so the structured
+				// readback would report 'INV', and a consumer reusing it would recreate INV00001
+				// instead of INV 00001 (ENG-93375).
+				SequencePrefix = PreserveSequencePrefix(defValue.SequencePrefix),
 				SequenceNumberOfChars = defValue.SequenceNumberOfChars > 0 ? defValue.SequenceNumberOfChars : null
 			},
 			// A None source means the column has no default. Project it the same as a missing
@@ -628,7 +695,7 @@ internal static class EntitySchemaDesignerSupport
 			},
 			EntitySchemaColumnDefSource.Sequence => new EntitySchemaColumnDefValueDto {
 				ValueSourceType = source,
-				SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
+				SequencePrefix = ResolveSequencePrefix(config, context),
 				SequenceNumberOfChars = RequirePositiveNumber(
 					config.SequenceNumberOfChars,
 					$"{context} requires default-value-config.sequence-number-of-chars when source is Sequence.")
@@ -702,11 +769,7 @@ internal static class EntitySchemaDesignerSupport
 				Source = GetFriendlyDefaultValueSource(source),
 				ValueSource = NormalizeTextValue(config.ValueSource)
 			},
-			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
-				Source = GetFriendlyDefaultValueSource(source),
-				SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
-				SequenceNumberOfChars = config.SequenceNumberOfChars
-			},
+			EntitySchemaColumnDefSource.Sequence => NormalizeSequenceDefaultValueConfig(config, source, context),
 			EntitySchemaColumnDefSource.None => new EntitySchemaDefaultValueConfig {
 				Source = GetFriendlyDefaultValueSource(source)
 			},
@@ -759,6 +822,76 @@ internal static class EntitySchemaDesignerSupport
 			return decimalValue;
 		}
 		return value.GetDouble();
+	}
+
+	// The platform sequence default supports only a static prefix before the padded number;
+	// a mask therefore must keep '{0}' as its single, trailing placeholder.
+	private const string SequenceMaskPlaceholder = "{0}";
+
+	// Normalizes a Sequence default without consuming the mask. The mask/prefix/value-source
+	// combination is validated up front (throws on conflict or unsupported mask), but the raw
+	// mask stays in Value so the single authoritative parse happens later in CreateDefaultValueDto.
+	// Parsing here and again there would run the extracted prefix through the prefix trim twice and
+	// silently drop a mask's edge whitespace ('INV {0}' -> 'INV') on the request path only (ENG-93375).
+	private static EntitySchemaDefaultValueConfig NormalizeSequenceDefaultValueConfig(
+		EntitySchemaDefaultValueConfig config,
+		EntitySchemaColumnDefSource source,
+		string context) {
+		_ = ResolveSequencePrefix(config, context);
+		return new EntitySchemaDefaultValueConfig {
+			Source = GetFriendlyDefaultValueSource(source),
+			Value = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value"),
+			// Preserve an explicit prefix verbatim so it stays whitespace-significant like the mask
+			// and readback paths; trimming here would drop 'INV ' to 'INV' on the explicit-prefix
+			// path and break the round-trip a mask-created config relies on (ENG-93375).
+			SequencePrefix = PreserveSequencePrefix(config.SequencePrefix),
+			SequenceNumberOfChars = config.SequenceNumberOfChars
+		};
+	}
+
+	private static string? ResolveSequencePrefix(EntitySchemaDefaultValueConfig config, string context) {
+		if (NormalizeTextValue(config.ValueSource) != null) {
+			throw new EntitySchemaDesignerException(
+				$"{context} cannot set default-value-config.value-source when source is Sequence.");
+		}
+		// Keep an explicit prefix whitespace-significant so re-applying a mask-created readback config
+		// (which persists 'INV ' verbatim) does not silently trim it back to 'INV' here (ENG-93375).
+		string? explicitPrefix = PreserveSequencePrefix(config.SequencePrefix);
+		object? maskValue = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value");
+		if (maskValue == null) {
+			return explicitPrefix;
+		}
+		if (explicitPrefix != null) {
+			throw new EntitySchemaDesignerException(
+				$"{context} cannot combine default-value-config.value and sequence-prefix when source is Sequence. Set the static prefix in one of them.");
+		}
+		if (maskValue is not string mask) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default-value-config.value for source Sequence must be a text mask that ends with '{{0}}' (for example 'LN-{{0}}'), or use sequence-prefix for the static prefix.");
+		}
+		return ParseSequenceMask(mask, context);
+	}
+
+	private static string? ParseSequenceMask(string mask, string context) {
+		int placeholderIndex = mask.IndexOf(SequenceMaskPlaceholder, StringComparison.Ordinal);
+		if (placeholderIndex < 0) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default-value-config.value '{mask}' for source Sequence must contain the sequence placeholder '{{0}}' (for example 'LN-{{0}}'), or use sequence-prefix for the static prefix.");
+		}
+		// When the first '{0}' is the string tail there can be no second one, so a single
+		// trailing-placeholder check also rejects repeated placeholders.
+		if (placeholderIndex != mask.Length - SequenceMaskPlaceholder.Length) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default-value-config.value mask '{mask}' is not supported: sequence defaults apply only a static prefix before a single trailing '{{0}}' (for example 'LN-{{0}}' produces LN-00001). Static text after the number cannot be applied.");
+		}
+		string prefix = mask[..placeholderIndex];
+		return prefix.Length == 0 ? null : prefix;
+	}
+
+	// Keeps a persisted sequence prefix exactly as stored (including significant edge whitespace
+	// such as the trailing space of 'INV '), collapsing only null/empty to "no prefix".
+	private static string? PreserveSequencePrefix(string? value) {
+		return string.IsNullOrEmpty(value) ? null : value;
 	}
 
 	private static string? NormalizeTextValue(string? value, bool allowEmpty = false) {

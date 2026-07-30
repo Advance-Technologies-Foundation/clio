@@ -42,12 +42,15 @@ public abstract class McpContractFixtureBase {
 	/// <summary>
 	/// Allows a derived fixture to customize the child MCP server settings before the
 	/// shared process starts. Use this for fixture-scoped environment overrides such as
-	/// <c>CLIO_HOME</c>, <c>HOME</c>, <c>USERPROFILE</c>, or feature-specific test inputs.
+	/// <c>CLIO_HOME</c>, <c>HOME</c>, <c>USERPROFILE</c>, or feature-specific test inputs —
+	/// or to set <see cref="McpE2ESettings.ClientInfo"/> when the fixture needs the session
+	/// to present a specific client identity during the MCP "initialize" handshake.
 	/// </summary>
 	/// <param name="settings">The settings that will be used to start the shared MCP server process.</param>
 	/// <remarks>
-	/// Implementations must mutate only <see cref="McpE2ESettings.ProcessEnvironmentVariables"/>
-	/// or other child-process settings. Do not call <see cref="Environment.SetEnvironmentVariable(string, string?)"/>.
+	/// Implementations must mutate only <see cref="McpE2ESettings.ProcessEnvironmentVariables"/>,
+	/// <see cref="McpE2ESettings.ClientInfo"/>, or other child-process/client-session settings.
+	/// Do not call <see cref="Environment.SetEnvironmentVariable(string, string?)"/>.
 	/// </remarks>
 	private protected virtual void ConfigureMcpServerSettings(McpE2ESettings settings) {
 	}

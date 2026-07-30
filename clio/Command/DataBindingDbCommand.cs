@@ -1253,12 +1253,43 @@ internal sealed class DataBindingDbService(
 				}
 
 				throw new InvalidOperationException(
-					$"{operationName} failed: {errorMessage}");
+					$"{operationName} failed: {errorMessage}{BuildProtectedObjectGuidance(errorMessage)}");
 			}
 		}
 		catch (JsonException) {
 			// Response is not JSON — nothing to validate
 		}
+	}
+
+	/// <summary>
+	/// Turns Creatio's bare object-permission denial into actionable guidance. The DB-first binding path
+	/// applies rows through the DataService <c>InsertQuery</c>/<c>UpdateQuery</c>, which enforces object
+	/// permissions, so a protected security schema such as <c>SysEntitySchemaOperationRight</c> is refused even
+	/// for Supervisor. Without this, the caller only saw "Current user does not have permissions for the X
+	/// object" and had no way to tell an authorization mistake from a schema clio simply cannot reach on this
+	/// path (issue #954).
+	/// </summary>
+	/// <param name="errorMessage">The <c>errorInfo.message</c> Creatio returned.</param>
+	/// <returns>A guidance suffix, or an empty string when the failure is not a permission denial.</returns>
+	private static string BuildProtectedObjectGuidance(string errorMessage) {
+		// Matched on the platform's own denial wording rather than a hardcoded schema list: the set of
+		// permission-protected objects is owned by Creatio and differs per installation, so any list clio
+		// invented here would be both incomplete and stale.
+		if (errorMessage is null
+			|| !errorMessage.Contains("does not have permissions for the", StringComparison.OrdinalIgnoreCase)) {
+			return string.Empty;
+		}
+
+		return " This is an object-permission refusal, not a bad request: DB-first bindings apply rows through "
+			+ "the DataService, which enforces object permissions, so a protected system object is refused "
+			+ "regardless of the authenticated user's administrative rights. Bindings for ordinary schemas are "
+			+ "unaffected. For record-level access rights use the set-record-rights tool (it goes through the "
+			+ "native RightsService instead). Object-operation rights (SysEntitySchemaOperationRight) have no "
+			+ "administration-capable path in clio yet — deploy them through Creatio's own Object permissions "
+			// Deliberately no issue number in the user-visible text: the tracker reference belongs in the doc
+			// comment above (which stays accurate for maintainers), not in a runtime message that outlives the
+			// issue and would still point callers at a closed ticket (PR #984 review).
+			+ "administration or a package installation script.";
 	}
 
 	private static List<Dictionary<string, JsonNode?>>? ParseRowsJson(string? json) {
