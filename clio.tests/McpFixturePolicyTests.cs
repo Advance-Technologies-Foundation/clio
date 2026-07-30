@@ -72,8 +72,10 @@ public sealed class McpFixturePolicyTests {
 			.ToArray();
 
 		// Assert
-		localOnlyFixtures.Should().NotBeEmpty(
-			because: "the destructive developer-local set (uninstall + dbHub lifecycle) must remain discoverable so this guard cannot silently pass on an empty scan");
+		localOnlyFixtures.Should().Contain(typeof(UninstallCreatioWarningE2ETests),
+			because: "UninstallCreatioWarningE2ETests is a documented LocalOnly member; if it lost the category this invariant must fail rather than pass on the remaining fixture");
+		localOnlyFixtures.Should().Contain(typeof(DbHubLifecycleWarningE2ETests),
+			because: "DbHubLifecycleWarningE2ETests is the other documented LocalOnly member; asserting it explicitly stops a silent category drop from being masked by the open-ended scan");
 		misconfigured.Should().BeEmpty(
 			because: "a destructive LocalOnly fixture must stay [Explicit] and keep McpE2E.Sandbox + McpE2E.Manual (additive-only per the tiering spec) so it never runs automatically in CI nor drops its tier classification");
 	}
