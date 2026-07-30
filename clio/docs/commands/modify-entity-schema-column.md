@@ -55,6 +55,10 @@ Currency1, Currency2, Currency3, Color.
 `Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
 (multiline / accent-insensitive / format-validated / masked) do not apply to it.
 ImageLink is accepted as an alias for ImageLookup.
+`Money` is accepted as an alias for `Currency2` (the normal two-decimal Creatio money column), and
+`Decimal` for `Decimal2` (same as `Float`).
+`Date` and `Time` are accepted but are aliases of `DateTime`: Creatio stores the column as `DateTime`
+and the readback tools report it as `DateTime`, so date-only or time-only intent is not preserved.
 For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use
 `ImageLookup` ("Image link") — the binary `Image` type does not work with `crt.ImageInput`.
 `ImageLookup` references the `SysImage` schema automatically (no `--reference-schema`).
@@ -162,6 +166,7 @@ cliogate must be installed on the target Creatio environment.
 - MCP structured `default-value-config` also supports `Settings` and `SystemValue`.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
 - For `Settings`, clio resolves code/name/id to canonical setting code before save.
+- For `Sequence` (text columns only), the static prefix comes from `sequence-prefix` (e.g. `LN-`) or from a `value` mask whose single `{0}` placeholder is at the end (e.g. `LN-{0}` produces `LN-00001`); setting both is rejected. Masks with static text after `{0}` (a suffix) are not supported and fail with a validation error instead of being silently dropped.
 - For a **lookup** column, a `Const` value is the GUID of a record in the referenced schema. clio validates the record exists before save and rejects an unknown GUID with `Error: ... default value record '<guid>' was not found in referenced schema '<schema>'.` (non-zero exit, schema not saved). The check is point-in-time (TOCTOU) and is skipped when the referenced record cannot be read (e.g. no access), so a write is never blocked on an unverifiable check.
 - `--caption-culture <VALUE>` overrides the culture for the written column caption/description (e.g. `en-US`, `uk-UA`). Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved. Column READ/display (`get-entity-schema-column-properties`) keeps using the host locale.
 - For `add`/`modify`, each `title-localizations` / `description-localizations` value must be written in the language of its culture key. The `en-US` value must be English; a value in a script that does not match a Latin-script culture key (e.g. Cyrillic under `en-US`) is rejected — put localized text under its own culture key such as `uk-UA`.

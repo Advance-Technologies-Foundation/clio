@@ -28,7 +28,7 @@ public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 			Maintainer = "Test",
 			Uri = "http://test.domain.com"
 		};
-		RestartCommand restartCommand = new(applicationClient, environmentSettings);
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, Substitute.For<IServerReadinessWaiter>());
 		RestartOptions options = new();
 
 		// Act
@@ -55,7 +55,7 @@ public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 			Maintainer = "Test",
 			Uri = "http://test.domain.com"
 		};
-		RestartCommand restartCommand = new(applicationClient, environmentSettings);
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, Substitute.For<IServerReadinessWaiter>());
 		RestartOptions options = new();
 
 		// Act
@@ -81,7 +81,7 @@ public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 		var connectFailure = new WebException("Connection refused (localhost:1616)", WebExceptionStatus.ConnectFailure);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(_ => throw new AggregateException(connectFailure));
-		RestartCommand restartCommand = new(applicationClient, environmentSettings);
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, Substitute.For<IServerReadinessWaiter>());
 		restartCommand.Logger = mockLogger;
 		try {
 			restartCommand.Execute(new RestartOptions());
@@ -107,7 +107,7 @@ public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 		};
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(_ => throw new AggregateException(new WebException("Connection refused", WebExceptionStatus.ConnectFailure)));
-		RestartCommand restartCommand = new(applicationClient, environmentSettings);
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, Substitute.For<IServerReadinessWaiter>());
 		restartCommand.Logger = mockLogger;
 		try {
 			restartCommand.Execute(new RestartOptions());
@@ -116,6 +116,88 @@ public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 		} finally {
 			Program.IsDebugMode = originalDebugMode;
 		}
+	}
+
+	[Test]
+	[Description("When --wait-ready is not set, the readiness waiter must never be invoked, preserving the pre-ENG-91315 fire-and-forget behavior.")]
+	public void Execute_Should_NotCallWaiter_When_WaitReady_Is_False() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings environmentSettings = new() {
+			Login = "Test", Password = "Test", IsNetCore = true, Maintainer = "Test", Uri = "http://test.domain.com"
+		};
+		IServerReadinessWaiter waiter = Substitute.For<IServerReadinessWaiter>();
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, waiter);
+
+		// Act
+		int exitCode = restartCommand.Execute(new RestartOptions { WaitReady = false });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the restart request itself succeeded");
+		waiter.DidNotReceive().WaitForReady(Arg.Any<ServerReadinessOptions>());
+	}
+
+	[Test]
+	[Description("When --wait-ready is set and the waiter confirms readiness, Execute returns 0.")]
+	public void Execute_Should_ReturnZero_When_WaitReady_True_And_WaiterConfirmsReady() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings environmentSettings = new() {
+			Login = "Test", Password = "Test", IsNetCore = true, Maintainer = "Test", Uri = "http://test.domain.com"
+		};
+		IServerReadinessWaiter waiter = Substitute.For<IServerReadinessWaiter>();
+		waiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, waiter);
+
+		// Act
+		int exitCode = restartCommand.Execute(new RestartOptions { WaitReady = true, ReadyTimeout = 120 });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the instance answered its health-check within the readiness budget");
+		waiter.Received(1).WaitForReady(Arg.Is<ServerReadinessOptions>(readinessOptions =>
+			readinessOptions.Uri == environmentSettings.Uri &&
+			readinessOptions.IsNetCore == environmentSettings.IsNetCore &&
+			readinessOptions.Timeout == TimeSpan.FromSeconds(120)));
+	}
+
+	[Test]
+	[Description("When --wait-ready is set and the waiter times out, Execute returns a non-zero exit code.")]
+	public void Execute_Should_ReturnOne_When_WaitReady_True_And_WaiterTimesOut() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings environmentSettings = new() {
+			Login = "Test", Password = "Test", IsNetCore = false, Maintainer = "Test", Uri = "http://test.domain.com"
+		};
+		IServerReadinessWaiter waiter = Substitute.For<IServerReadinessWaiter>();
+		waiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(false);
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, waiter);
+
+		// Act
+		int exitCode = restartCommand.Execute(new RestartOptions { WaitReady = true });
+
+		// Assert
+		exitCode.Should().Be(1, because: "the instance never answered its health-check within the readiness budget");
+	}
+
+	[Test]
+	[Description("When the restart request itself fails, the readiness waiter must not run even if --wait-ready was requested.")]
+	public void Execute_Should_NotCallWaiter_When_RestartRequestFails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings environmentSettings = new() {
+			Login = "Test", Password = "Test", IsNetCore = true, Maintainer = "Test", Uri = "http://localhost:1616"
+		};
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new AggregateException(new WebException("Connection refused", WebExceptionStatus.ConnectFailure)));
+		IServerReadinessWaiter waiter = Substitute.For<IServerReadinessWaiter>();
+		RestartCommand restartCommand = new(applicationClient, environmentSettings, waiter) { Logger = Substitute.For<ILogger>() };
+
+		// Act
+		int exitCode = restartCommand.Execute(new RestartOptions { WaitReady = true });
+
+		// Assert
+		exitCode.Should().Be(1, because: "the restart request itself failed before any readiness wait could start");
+		waiter.DidNotReceive().WaitForReady(Arg.Any<ServerReadinessOptions>());
 	}
 
 }
