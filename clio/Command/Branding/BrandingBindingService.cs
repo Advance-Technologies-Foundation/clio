@@ -124,16 +124,24 @@ internal sealed class BrandingBindingService(
 
 	private const string SecureTextValueTypeName = "SecureText";
 
+	// Column names shared by the binding column lists and the select queries below. Creatio names a lookup
+	// column after the schema it points at, so these deliberately carry the same text as a schema constant
+	// above: those name an entity, these name a column on a different entity.
+	private const string SysSettingsColumn = "SysSettings";
+	private const string SysAdminUnitColumn = "SysAdminUnit";
+	private const string FeatureColumn = "Feature";
+	private const string FeatureStateColumn = "FeatureState";
+
 	private static readonly IReadOnlyList<string> LogoSettingCodes = [
 		SetLogoCommand.LoginLogoCode, SetLogoCommand.MenuLogoCode,
 		SetLogoCommand.ConfigurationLogoCode, SetLogoCommand.DarkLogoCode, SetLogoCommand.HideSplashLogoCode
 	];
 
 	private static readonly IReadOnlyList<string> SysSettingsValueColumns = [
-		"Id", "SysSettings", "SysAdminUnit", "IsDef",
+		"Id", SysSettingsColumn, SysAdminUnitColumn, "IsDef",
 		"TextValue", "IntegerValue", "FloatValue", "BooleanValue", "DateTimeValue", "GuidValue", "BinaryValue"
 	];
-	private static readonly IReadOnlyList<string> SysSettingsValueKeyColumns = ["SysSettings", "SysAdminUnit"];
+	private static readonly IReadOnlyList<string> SysSettingsValueKeyColumns = [SysSettingsColumn, SysAdminUnitColumn];
 	private static readonly IReadOnlyList<string> SysSettingsValueForceUpdateColumns = [
 		"IsDef", "TextValue", "IntegerValue", "FloatValue", "BooleanValue", "DateTimeValue", "GuidValue", "BinaryValue"
 	];
@@ -148,10 +156,10 @@ internal sealed class BrandingBindingService(
 	];
 
 	private static readonly IReadOnlyList<string> AdminUnitFeatureStateColumns = [
-		"Id", "Feature", "SysAdminUnit", "FeatureState"
+		"Id", FeatureColumn, SysAdminUnitColumn, FeatureStateColumn
 	];
-	private static readonly IReadOnlyList<string> AdminUnitFeatureStateKeyColumns = ["Feature", "SysAdminUnit"];
-	private static readonly IReadOnlyList<string> AdminUnitFeatureStateForceUpdateColumns = ["FeatureState"];
+	private static readonly IReadOnlyList<string> AdminUnitFeatureStateKeyColumns = [FeatureColumn, SysAdminUnitColumn];
+	private static readonly IReadOnlyList<string> AdminUnitFeatureStateForceUpdateColumns = [FeatureStateColumn];
 	private static readonly DataBindingColumnPolicy AdminUnitFeatureStatePolicy =
 		new(AdminUnitFeatureStateKeyColumns, AdminUnitFeatureStateForceUpdateColumns);
 	private static readonly IReadOnlyList<string> FeatureColumns = ["Id", "Code", "Name"];
@@ -556,8 +564,8 @@ internal sealed class BrandingBindingService(
 				SysSettingsValueSchema,
 				[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
 				[
-					new SelectQueryHelper.SelectQueryFilterDefinition("SysSettings", definitionId.ToString(), SelectQueryHelper.GuidDataValueType),
-					new SelectQueryHelper.SelectQueryFilterDefinition("SysAdminUnit", AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
+					new SelectQueryHelper.SelectQueryFilterDefinition(SysSettingsColumn, definitionId.ToString(), SelectQueryHelper.GuidDataValueType),
+					new SelectQueryHelper.SelectQueryFilterDefinition(SysAdminUnitColumn, AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
 				]));
 		return SingleRowId(response,
 			$"All-Users value rows of setting '{definitionId}'");
@@ -597,11 +605,11 @@ internal sealed class BrandingBindingService(
 				AdminUnitFeatureStateSchema,
 				[
 					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("FeatureState", "FeatureState")
+					new SelectQueryHelper.SelectQueryColumnDefinition(FeatureStateColumn, FeatureStateColumn)
 				],
 				[
-					new SelectQueryHelper.SelectQueryFilterDefinition("Feature", featureId.ToString(), SelectQueryHelper.GuidDataValueType),
-					new SelectQueryHelper.SelectQueryFilterDefinition("SysAdminUnit", AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
+					new SelectQueryHelper.SelectQueryFilterDefinition(FeatureColumn, featureId.ToString(), SelectQueryHelper.GuidDataValueType),
+					new SelectQueryHelper.SelectQueryFilterDefinition(SysAdminUnitColumn, AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
 				]));
 		EnsureAtMostOneRow(response.Rows.Count, $"All-Users feature state of feature '{featureId}'");
 		BrandingFeatureStateDto row = response.Rows.FirstOrDefault();

@@ -154,10 +154,9 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 		if (slots.Count == 0) {
 			return SetLogoResult.Failure(NoLogoError);
 		}
-		foreach (LogoSlot slot in slots) {
-			if (!_fileSystem.ExistsFile(slot.File)) {
-				return SetLogoResult.Failure($"File not found: '{slot.File}' (passed for {slot.Label}).");
-			}
+		LogoSlot missingFile = slots.FirstOrDefault(slot => !_fileSystem.ExistsFile(slot.File));
+		if (missingFile is not null) {
+			return SetLogoResult.Failure($"File not found: '{missingFile.File}' (passed for {missingFile.Label}).");
 		}
 
 		List<string> applied = [];
