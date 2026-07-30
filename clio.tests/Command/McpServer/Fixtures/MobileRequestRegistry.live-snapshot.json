@@ -205,6 +205,62 @@
 					"mobile-request-docs/mobile-update-record.request.md"
 				]
 			}
+		},
+		{
+			"requestType": "crt.UploadFileRequest",
+			"parameters": {
+				"allowedFileTypes": {
+					"type": "string",
+					"description": "Comma-separated list of file EXTENSIONS only (MIME patterns are not supported on mobile); matching is case-sensitive against the file's lowercased extension, so author lowercase entries. The list is intersected with the `FileExtensionsAllowList` system setting, which acts as an allow-list; empty or absent means that setting alone constrains the types."
+				},
+				"fileEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema that stores the uploaded file (default `SysFile`); runtime-required and derived by the platform from the target `crt.FileList`'s entity. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"fileGroup": {
+					"type": "string",
+					"description": "Id of the file group the upload is filed under; derived by the platform from the target `crt.FileList` (the OOTB Attachments group is `efbf3a0d-d780-465a-8e4b-8c0765197cfb`). Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"itemsAttributeName": {
+					"type": "string",
+					"description": "View-model attribute backing the target `crt.FileList`'s items collection; derived by the platform from that list. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"maximumAllowedFileSize": {
+					"type": "number",
+					"description": "Maximum size of one uploaded file, in megabytes; the effective limit is the minimum of this value and the `MaxFileSize` system setting, and when unset `MaxFileSize` alone applies."
+				},
+				"params": {
+					"type": "JsonObject",
+					"description": "Optional mobile-only options object. Its documented shape is `{ \"selectFileOptions\": { \"allowCamera\", \"allowGallery\", \"allowFiles\", \"allowMultiple\" } }`, each a boolean defaulting to `true`, controlling the file-source picker; the mobile designer panel exposes only `allowCamera`, `allowGallery`, and `allowFiles`, while `allowMultiple` is honored by the runtime but not surfaced in the panel."
+				},
+				"recordColumnName": {
+					"type": "string",
+					"description": "Column on the file entity that links each file to its parent record (default `RecordId`); runtime-required and derived by the platform from the target `crt.FileList`. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"recordEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema of the parent record the files attach to. Not derived from the file list on mobile; optional - when absent the runtime falls back to the page's primary model schema. Hand-author only in an advanced scenario."
+				},
+				"recordId": {
+					"type": "string",
+					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList`'s `masterRecordColumnValue` binding - the file list must carry that property (the Designer's attachments template sets `\"$Id\"`) or the record Id stays unresolved. An unresolved record Id yields a \"Cannot upload files for unsaved records\" error. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"tag": {
+					"type": "string",
+					"description": "Optional tag stamped on the uploaded file records; derived by the platform from the target `crt.FileList` when configured there. Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"viewElementName": {
+					"type": "string",
+					"required": true,
+					"description": "Name of the `crt.FileList` view element on the same mobile page that this upload targets, and the only storage-targeting parameter a standard page authors by hand (optional upload restrictions like `allowedFileTypes` / `maximumAllowedFileSize` / `params.selectFileOptions` may be authored alongside it). At page load the platform reads that file list to derive the storage parameters below; unlike web there is no page-defaults fallback - when no matching `crt.FileList` is found, parameter derivation stops with an error and the upload cannot work."
+				}
+			},
+			"description": "Uploads one or more files and attaches them to a record on a mobile page, targeting the `crt.FileList` named by `viewElementName`. Bound to a `crt.Button` or `crt.MenuItem` `clicked` - the only wiring processed on mobile; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName` plus optional upload restrictions. Files are always chosen through the mobile file-source picker.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-upload-file.request.md"
+				]
+			}
 		}
 	],
 	"references": {

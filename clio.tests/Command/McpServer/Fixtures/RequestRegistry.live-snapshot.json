@@ -304,6 +304,61 @@
 					"request-docs/update-record.request.md"
 				]
 			}
+		},
+		{
+			"requestType": "crt.UploadFileRequest",
+			"parameters": {
+				"allowedFileTypes": {
+					"type": "string",
+					"description": "Comma-separated, case-insensitive allow-list of file types; each item is `.ext`, `ext`, `mime/type`, or `mime/*`. Empty or absent allows every type except those in the `FileExtensionsDenyList` system setting, which always applies."
+				},
+				"fileEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema that stores the uploaded file (default `SysFile`); runtime-required and derived by the platform from the `crt.FileList` named by `viewElementName`. Hand-author only in an advanced scenario with no file list; an authored value overrides the derived one."
+				},
+				"fileGroup": {
+					"type": "string",
+					"description": "Id of the file group the upload is filed under; derived by the platform from the target `crt.FileList` (the OOTB Attachments group is `efbf3a0d-d780-465a-8e4b-8c0765197cfb`). Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"files": {
+					"type": "File[]",
+					"description": "Files to upload, carried as the `@event.files` event binding. The platform wires it automatically on a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; hand-author it only when wiring the request to a `crt.FileDrop`'s `fileDropped`, where nothing is derived and the storage parameters must be authored too. Never set it on a button's `clicked` binding - a click carries no files, so the platform opens the file picker before uploading."
+				},
+				"itemsAttributeName": {
+					"type": "string",
+					"description": "View-model attribute backing the target `crt.FileList`'s items collection; derived by the platform from that list. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"maximumAllowedFileSize": {
+					"type": "number",
+					"description": "Maximum size of one uploaded file, in megabytes; the effective limit is the minimum of this value and the `MaxFileSize` system setting, and when unset `MaxFileSize` alone applies. The designer enforces a minimum of 1."
+				},
+				"recordColumnName": {
+					"type": "string",
+					"description": "Column on the file entity that links each file to its parent record (default `RecordId`); runtime-required and derived by the platform from the target `crt.FileList`. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"recordEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema of the parent record the files attach to; derived by the platform from the entity behind the target `crt.FileList`'s `masterRecordColumnValue` binding, and left unset when that cannot be resolved (this parameter has no page-defaults fallback). Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"recordId": {
+					"type": "string | LookupValue",
+					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList`'s `masterRecordColumnValue` binding - the file list must carry that property (the Designer's attachments template sets `\"$Id\"`) or the upload is rejected. A `LookupValue` is unwrapped to its `value`. Uploading to a non-`SysFile` storage on an unsaved record is rejected with a notification. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"tag": {
+					"type": "string",
+					"description": "Optional tag stamped on the uploaded file records; derived by the platform from the target `crt.FileList` when configured there. Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"viewElementName": {
+					"type": "string",
+					"description": "Name of the `crt.FileList` view element on the same page that this upload targets - the standard page contract, and the only storage-targeting parameter such a page authors by hand (optional upload restrictions like `allowedFileTypes` / `maximumAllowedFileSize` may be authored alongside it). At page load the platform reads that file list to derive the storage parameters below. Either name a `crt.FileList` here, or (advanced, no file list on the page) hand-author `recordId`, `recordColumnName`, and `fileEntitySchemaName` instead; when this parameter is absent or matches no `crt.FileList`, page defaults derived from the primary data source apply (`SysFile` storage, `RecordId` link column, the primary record's Id)."
+				}
+			},
+			"description": "Uploads one or more files and attaches them to a record, targeting the `crt.FileList` named by `viewElementName`. Bound to a button or menu item `clicked`, or to a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName` plus optional upload restrictions.",
+			"references": {
+				"docs": [
+					"request-docs/upload-file.request.md"
+				]
+			}
 		}
 	],
 	"references": {
@@ -536,6 +591,37 @@
 						"items": {
 							"type": "string"
 						},
+						"required": true
+					}
+				}
+			},
+			"LookupValue": {
+				"fields": {
+					"dataValueType": {
+						"type": "string"
+					},
+					"displayValue": {
+						"type": "string",
+						"required": true
+					},
+					"index": {
+						"type": "number"
+					},
+					"name": {
+						"type": "string",
+						"required": true
+					},
+					"parentName": {
+						"type": "string"
+					},
+					"primaryImageValue": {
+						"type": "string"
+					},
+					"propertyName": {
+						"type": "string"
+					},
+					"value": {
+						"type": "string",
 						"required": true
 					}
 				}

@@ -457,15 +457,9 @@ public sealed class MobilePageGuidanceResource {
 		       ── Files ───────────────────────────────────────────────────
 
 		       crt.UploadFileRequest
-		         Uploads a file. On mobile supports camera, gallery, and file picker.
-		         params: viewElementName? (string),
-		                 itemsAttributeName? (string),
-		                 maximumAllowedFileSize? (number, MB),
-		                 allowedFileTypes? (string, comma-separated extensions),
-		                 fileEntitySchemaName? (string),
-		                 recordEntitySchemaName? (string),
-		                 recordColumnName? (string),
-		                 recordId? (string)
+		         Uploads files into a crt.FileList on the page and attaches them to its record; the
+		         file-source picker is always used. FULL parameter contract is the request catalog
+		         (single source of truth): get-request-info request-type=crt.UploadFileRequest schema-type=mobile.
 
 		       crt.DeleteFileRequest
 		         Deletes an uploaded file.
