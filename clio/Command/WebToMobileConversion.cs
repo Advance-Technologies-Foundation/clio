@@ -1934,29 +1934,10 @@ public static class WebToMobileAnalysisService {
 				values["label"] = label;
 			}
 		}
-		ApplyComponentDefaults(ctx, mobileType, values);
 		try {
 			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
 		} catch (System.Text.Json.JsonException) {
 			return null;
-		}
-	}
-
-	/// <summary>
-	/// Forces the rules' <c>componentDefaults</c> onto an INSERTED element's values — properties the
-	/// mobile platform mandates for the type (e.g. a converter-created tab renders with a transparent
-	/// background). Applied last, AFTER the verbatim web-property carry, so a default OVERRIDES a
-	/// same-named carried web value (a web designer background is exactly what the default neutralizes).
-	/// Merge-by-name twins never pass through here — template-provided elements keep the template's values.
-	/// </summary>
-	private static void ApplyComponentDefaults(ElementMapContext ctx, string mobileType, JObject values) {
-		ComponentDefaultsRule defaults = ctx.Rules.ComponentDefaults?.FirstOrDefault(r =>
-			string.Equals(r.MobileType, mobileType, StringComparison.OrdinalIgnoreCase));
-		if (defaults?.Values is not { Count: > 0 }) {
-			return;
-		}
-		foreach ((string prop, JsonElement value) in defaults.Values) {
-			values[prop] = JToken.Parse(value.GetRawText());
 		}
 	}
 

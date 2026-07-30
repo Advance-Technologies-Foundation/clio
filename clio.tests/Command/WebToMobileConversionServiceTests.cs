@@ -523,62 +523,6 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "HistGrid").Operation.Should().Be("drop");
 	}
 
-	private static WebToMobilePageConversionRules RulesWithTabDefaults() => new() {
-		Components = GridRule.Components,
-		ComponentDefaults = [
-			new ComponentDefaultsRule {
-				MobileType = "crt.TabContainer",
-				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "color": "transparent" }""")
-			}
-		]
-	};
-
-	[Test]
-	[Description("componentDefaults: an inserted tab gets the mandated color:transparent; a carried web color is OVERRIDDEN; a type without defaults is untouched; template-twin (merge) tabs get no values.")]
-	public void Analyze_ComponentDefaults_ForceTransparentColorOnInsertedTabs() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "color": "#FFFFFF", "items": [
-					{ "name": "LeadName", "type": "crt.Input" } ] },
-				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
-					{ "name": "Budget", "type": "crt.Input" } ] },
-				{ "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [ { "name": "Feed", "type": "crt.Feed" } ] }
-			] } ]
-			""",
-			modelConfigJson: """{ "dataSources": { "PDS": {} } }""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabDefaults());
-
-		// Inserted tab WITHOUT a web color → the default is added.
-		Element(guide, "SalesTab").Operation.Should().Be("insert");
-		Element(guide, "SalesTab").MobileValues!.AsObject()["color"]!.GetValue<string>().Should().Be("transparent");
-		// Inserted tab WITH a carried web color → the default OVERRIDES it.
-		Element(guide, "OverviewTab").MobileValues!.AsObject()["color"]!.GetValue<string>().Should().Be("transparent",
-			because: "a web-designer background is exactly what the mandated default neutralizes");
-		// A type with no componentDefaults entry stays untouched.
-		Element(guide, "LeadName").MobileValues!.AsObject().ContainsKey("color").Should().BeFalse();
-		// A template twin merges without prebuilt values — defaults never reach template-provided tabs.
-		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
-		Element(guide, "FeedTabContainer").MobileValues.Should().BeNull();
-	}
-
-	[Test]
-	[Description("componentDefaults absent (default rules): inserted tab values carry no forced color — behavior unchanged.")]
-	public void Analyze_ComponentDefaults_AbsentGroup_LeavesTabValuesUnchanged() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
-					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
-			""",
-			modelConfigJson: """{ "dataSources": { "PDS": {} } }""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
-
-		Element(guide, "SalesTab").MobileValues!.AsObject().ContainsKey("color").Should().BeFalse();
-	}
-
 	[Test]
 	[Description("Positional rule: a sibling ABOVE the anchor inserts into the mobile Tabs' parent at index 0 (above Tabs); a sibling BELOW appends (no index); the anchor's own non-tab content goes to GeneralTabContainer and each web tab becomes a new mobile tab.")]
 	public void Analyze_ElementMap_PositionalSiblings_PlacedAroundMobileTabs() {

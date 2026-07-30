@@ -71,16 +71,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules mandate a transparent background for converter-inserted mobile tabs (ENG-94188).")]
-	public void LoadBundled_ComponentDefaults_ForceTransparentTabColor() {
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		ComponentDefaultsRule tab = rules.ComponentDefaults.Single(d => d.MobileType == "crt.TabContainer");
-		tab.Values.Should().ContainKey("color");
-		tab.Values["color"].GetString().Should().Be("transparent");
-	}
-
-	[Test]
 	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid + Area card) for converter-created tabs (ENG-94188).")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -185,16 +175,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
 
 		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer");
-	}
-
-	[Test]
-	[Description("A rules file without the componentDefaults group parses to an empty list (backward compatible).")]
-	public void ParseStream_WithoutComponentDefaults_ParsesToEmptyList() {
-		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
-
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
-
-		rules.ComponentDefaults.Should().NotBeNull().And.BeEmpty();
 	}
 
 	[Test]

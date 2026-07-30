@@ -35,14 +35,6 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<RequestMappingRule> Requests { get; init; } = [];
 
 	/// <summary>
-	/// Group: per-mobile-type property defaults FORCED onto every element the converter INSERTS
-	/// (applied last, overriding same-named properties carried from the web node). Template-provided
-	/// elements (merge-by-name twins) are not touched — they already carry the mobile template's values.
-	/// </summary>
-	[JsonPropertyName("componentDefaults")]
-	public IReadOnlyList<ComponentDefaultsRule> ComponentDefaults { get; init; } = [];
-
-	/// <summary>
 	/// Group: the designer's 2-layer tab body synthesized into every converter-created tab
 	/// (ENG-94188): a grid "tab body" (MainTabContainer_&lt;suffix&gt;) holding one Area card
 	/// (GridContainer_&lt;suffix&gt;) that receives the tab's content. Null when the section is
@@ -154,30 +146,11 @@ public sealed class ComponentMappingRule {
 }
 
 /// <summary>
-/// Property defaults the mobile platform mandates for a component type, applied to every element the
-/// converter INSERTS with that mobile type (e.g. a converter-created tab must render with a transparent
-/// background). Values OVERRIDE same-named properties carried from the web node — a carried web value
-/// (e.g. a web designer background color) is exactly what the default exists to neutralize.
-/// </summary>
-public sealed class ComponentDefaultsRule {
-	/// <summary>Mobile component type the defaults apply to (e.g. "crt.TabContainer").</summary>
-	[JsonPropertyName("mobileType")]
-	public string MobileType { get; init; }
-
-	/// <summary>Property name → value forced onto the inserted element's mobile values.</summary>
-	[JsonPropertyName("values")]
-	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
-
-	[JsonPropertyName("note")]
-	public string Note { get; init; }
-}
-
-/// <summary>
 /// Rule for the two containers synthesized inside every converter-created tab (ENG-94188): the
 /// tab-body grid (layer 2) and the Area card inside it. Mirrors the mobile designer's own
 /// <c>TabItemFactory.getMobileTabContainerConfig()</c> output, kept as DATA so the props follow
-/// the platform without a code change. Unlike <see cref="ComponentDefaultsRule"/> (which is forced
-/// onto EVERY insert of a mobile type), these values apply only to the synthesized nodes.
+/// the platform without a code change. These values apply only to the synthesized nodes, never to
+/// elements converted from the web page.
 /// </summary>
 public sealed class TabAreaLayersRule {
 	[JsonPropertyName("note")]
