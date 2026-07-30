@@ -47,9 +47,6 @@ public class GetThemeTool(
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return GetThemeResponse.Failure(aliasError);
 		}
-		// Under credential passthrough the tenant arrives in the X-Integration-Credentials header and
-		// ToolCommandResolver REJECTS an explicit environment argument, so requiring one here would leave the
-		// tool unreachable in that mode; let the resolver arbitrate instead.
 		if (!IsPassthroughActive && string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return GetThemeResponse.Failure("environment-name is required and cannot be empty.");
 		}

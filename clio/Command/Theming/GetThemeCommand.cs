@@ -144,8 +144,6 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				response = GetThemeResponse.Failure(fetchError);
 				return false;
 			}
-			// Only cssFilePath is sanitized: the caller writes the other fields back verbatim, so capping or
-			// stripping them here would change what gets written.
 			response = new GetThemeResponse {
 				Success = true,
 				Id = theme.Id,
@@ -214,8 +212,6 @@ public class GetThemeCommand : Command<GetThemeOptions>
 		string url = _urlBuilder.Build(theme.CssFilePath);
 		string content = _applicationClient.ExecuteGetRequest(url, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay) ?? string.Empty;
-		// Valid CSS never starts with '<', so any markup body is a redirect or an error page, not the file.
-		// TrimStart() does not strip a BOM (U+FEFF is not whitespace), so trim it explicitly.
 		string trimmed = content.TrimStart().TrimStart('\uFEFF').TrimStart();
 		if (trimmed.StartsWith('<')) {
 			error = $"The environment returned an HTML page instead of the theme CSS for '{theme.Id}'. " +
