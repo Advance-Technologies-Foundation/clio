@@ -781,6 +781,50 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		return JsonSerializer.Serialize(payload);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Explains an object-permission refusal from the DB-first binding path — the DataService enforces object permissions, so a protected security schema is refused even for Supervisor — and points at the supported mechanisms instead of leaving the bare platform message (issue #954).")]
+	public void ThrowIfUnsuccessful_Should_ExplainObjectPermissionRefusal_ForProtectedSecuritySchema() {
+		// Arrange — the exact response shape reported for SysEntitySchemaOperationRight.
+		const string response = """
+		{"success":false,"errorInfo":{"message":"Current user does not have permissions for the \"SysEntitySchemaOperationRight\" object"}}
+		""";
+
+		// Act
+		Action act = () => DataBindingDbService.ThrowIfUnsuccessful(response, "InsertQuery");
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>().Which.Message;
+		message.Should().Contain("SysEntitySchemaOperationRight",
+			because: "the platform's own message must be preserved so the refused object stays identifiable");
+		message.Should().Contain("object-permission refusal",
+			because: "the caller must be able to tell an authorization refusal from a malformed request");
+		message.Should().Contain("set-record-rights",
+			because: "record-level rights DO have a supported path and the caller must be steered to it");
+		message.Should().Contain("Object permissions",
+			because: "the caller must be pointed at the mechanism that DOES work for object-operation rights");
+		message.Should().NotContain("#954",
+			because: "a tracker number in a runtime message outlives the issue and would keep pointing callers " +
+				"at a closed ticket — the reference belongs in the doc comment, not the caller-facing text " +
+				"(PR #984 review)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves an ordinary binding failure message untouched, so the permission guidance does not become noise on unrelated errors.")]
+	public void ThrowIfUnsuccessful_Should_NotAppendGuidance_ForUnrelatedFailure() {
+		// Arrange
+		const string response = """{"success":false,"errorInfo":{"message":"Column 'Name' is required"}}""";
+
+		// Act
+		Action act = () => DataBindingDbService.ThrowIfUnsuccessful(response, "InsertQuery");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("InsertQuery failed: Column 'Name' is required",
+				because: "guidance is scoped to permission refusals; any other failure keeps its exact message");
+	}
+
 	private const string SchemaResponseJson = """
 	{
 	  "schema": {

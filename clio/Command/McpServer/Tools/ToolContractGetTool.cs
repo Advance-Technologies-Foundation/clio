@@ -437,6 +437,36 @@ internal static class ToolContractCatalog {
 	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
+
+	// The accepted column-type vocabulary, enumerated in the contract itself. It used to say only "Optional
+	// column data type", so the only way to discover a valid value was to send an invalid one and read the
+	// runtime rejection — and the Creatio display name a caller would naturally reach for (Money) was not
+	// connected to the command value (issue #955). The alias notes matter because clio's OWN sys-setting
+	// contract uses the Creatio internal names Money/Date/Time, so the two surfaces read inconsistently
+	// without them.
+	private const string ColumnTypeVocabularyDescription =
+		"Optional column data type. Accepted values: Guid, Text, ShortText, MediumText, LongText, MaxSizeText, " +
+		"Text50, Text250, Text500, TextUnlimited, RichText, PhoneNumber, WebLink, Email, SecureText, " +
+		"Integer, Float, Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, " +
+		"Currency0, Currency1, Currency2, Currency3, Boolean, DateTime, Lookup, " +
+		"Binary, Image, ImageLookup, File, Color. Case-insensitive. " +
+		"A normal two-decimal Creatio money column (displayed as 'Money') is Currency2 — Money is accepted as " +
+		"an alias for it. Date and Time are accepted but are aliases of DateTime: Creatio stores the column as " +
+		"DateTime, and the readback tools report it as DateTime, so date-only intent is not preserved. " +
+		// The SecureText aliases are spelled out in prose rather than as `Password = SecureText`: the
+		// key-equals-value form reads as a hard-coded credential to static analysis (S2068).
+		"Other aliases: Blob = Binary, ImageLink = ImageLookup, EmailAddress = Email, " +
+		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText.";
+
+	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
+	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
+	// to learn the field names from the contract and reasonably reused the `column-name` spelling documented
+	// for sync-schemas — which the create path then dropped (issue #947).
+	private const string CreateColumnsDescription =
+		"Optional initial columns. Each item: `column-name` (alias `name`), `type` (alias `data-value-type`), " +
+		"optional `title-localizations` (auto-derived from the column name when omitted), " +
+		"`reference-schema-name` (alias `reference-schema`, required for type Lookup), and `required` " +
+		"(alias `is-required`). Type names are case-insensitive.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string PassthroughEnvironmentNameSuffix =
@@ -3575,7 +3605,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -3909,7 +3939,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					"Lookup schema name.",
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field(ColumnsFieldName, ArrayType, "Optional custom columns.")),
+					Field(ColumnsFieldName, ArrayType, CreateColumnsDescription)),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
 				]),
@@ -3941,7 +3971,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field("columns", ArrayType, "Optional initial columns."),
+					Field("columns", ArrayType, CreateColumnsDescription),
 					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
 					Field("extend-parent", BooleanType, "Optional replacement-schema flag."),
 					Field(IsVirtualFieldName, BooleanType, "Creates a virtual entity schema without a physical database table when true.")),
@@ -4363,20 +4393,47 @@ internal static class ToolContractCatalog {
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 			"Adds, modifies, or removes one entity schema column directly for minimal existing-schema edits.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ActionFieldName, ColumnNameFieldName],
+				// column-name is deliberately NOT in `required`: the emitted MCP schema stopped requiring it when
+				// the aliased identity fields were made optional, and "at least one of column-name / name" is
+				// enforced where the value is resolved. Keeping it required here would tell a strict client to
+				// reject the readback shape (`name` only) that the runtime actually accepts.
+				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ActionFieldName],
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(ActionFieldName, StringType, "Column action: add, modify, or remove."),
-					Field(ColumnNameFieldName, StringType, "Column name."),
-					Field("type", StringType, "Optional column data type."),
+					Field(ColumnNameFieldName, StringType,
+						"Column name. Preferred spelling; supply either this or `name` (see any-of)."),
+					Field("name", StringType,
+						"Column name in the readback spelling — get-app-info reports the column identity as `name`, "
+						+ "so a readback payload can be sent back unchanged. Equivalent to `column-name`; "
+						+ "supply exactly one of the two."),
+					Field("new-name", StringType, "New column name; supply it to rename the column on a modify."),
+					Field("type", StringType, ColumnTypeVocabularyDescription),
 					Field(TitleLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(DescriptionLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(ReferenceSchemaNameFieldName, StringType, "Optional lookup target."),
 					Field("required", BooleanType, "Optional required flag."),
+					Field("indexed", BooleanType, "Optional indexed flag."),
+					Field("cloneable", BooleanType, "Optional cloneable flag."),
+					Field("track-changes", BooleanType, "Optional track-changes flag."),
+					Field("multiline-text", BooleanType, "Optional multi-line text flag. Text columns only — not Color."),
+					Field("localizable-text", BooleanType, "Optional localizable text flag. Text columns only."),
+					Field("accent-insensitive", BooleanType, "Optional accent-insensitive flag. Text columns only — not Color."),
+					Field("masked", BooleanType, "Optional masked flag. Text and SecureText columns only — not Color."),
+					Field("format-validated", BooleanType, "Optional format-validated flag. Text columns only — not Color."),
+					Field("use-seconds", BooleanType, "Optional use-seconds flag. Date/time columns only."),
+					Field("simple-lookup", BooleanType, "Optional simple-lookup flag. Lookup columns only."),
+					Field("cascade", BooleanType, "Optional cascade-connection flag. Lookup columns only."),
+					Field("do-not-control-integrity", BooleanType, "Optional do-not-control-integrity flag. Lookup columns only."),
+					Field("caption-culture", StringType, "Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US; supplying it skips the profile-culture lookup."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
 					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected). For Sequence (text columns only), set the static prefix via sequence-prefix (e.g. LN-) or a value mask ending with {0} (e.g. LN-{0} produces LN-00001), not both; a mask with static text after {0} is rejected with a validation error."),
-					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted."))),
+					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted.")),
+				AnyOf: [
+					new[] { ColumnNameFieldName },
+					["name"]
+				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
