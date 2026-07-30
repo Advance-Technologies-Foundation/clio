@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -42,7 +43,7 @@ public interface IBrandingBindingService {
 	/// <c>CurrentPackageId</c> system setting points at"; the resolved name comes back on the report.
 	/// </param>
 	/// <param name="appliedSettingCodes">The logo setting codes the current run applied.</param>
-	/// <returns>A report of what was bound, skipped, or dropped.</returns>
+	/// <returns>A report of what was bound, what was dropped, and every delivery gap as a warning.</returns>
 	BrandingScopeReport BindLogos(string packageName, IReadOnlyCollection<string> appliedSettingCodes);
 
 	/// <summary>
@@ -54,7 +55,7 @@ public interface IBrandingBindingService {
 	/// Target package that receives the bindings. Blank means "the package the environment's
 	/// <c>CurrentPackageId</c> system setting points at"; the resolved name comes back on the report.
 	/// </param>
-	/// <returns>A report of what was bound, skipped, or dropped.</returns>
+	/// <returns>A report of what was bound, what was dropped, and every delivery gap as a warning.</returns>
 	BrandingScopeReport BindBackground(string packageName);
 }
 
@@ -65,7 +66,12 @@ public interface IBrandingBindingService {
 /// package at all, in which case only the reconcile knows which one the environment resolved to.
 /// </param>
 /// <param name="Bound">Labels of the rows delivered by the scope's bindings.</param>
-/// <param name="Skipped">Human-readable reasons for everything the scope did not deliver.</param>
+/// <param name="Warnings">
+/// Human-readable reasons for every gap between what the run applied and what the package will actually
+/// deliver: a row that could not be bound, a row deliberately refused by policy, and a previously shipped
+/// binding this run dropped. Each entry means the package delivers less than the caller may expect, so both
+/// the CLI and the MCP surface relay them as warnings.
+/// </param>
 /// <param name="BindingsDropped">
 /// True when the run deleted at least one of the scope's package bindings — either because
 /// <c>remove</c> was requested, or because a previously shipped binding no longer has a source row. Either way
@@ -75,7 +81,7 @@ public sealed record BrandingScopeReport(
 	BrandingScope Scope,
 	string Package,
 	IReadOnlyList<string> Bound,
-	IReadOnlyList<string> Skipped,
+	IReadOnlyList<string> Warnings,
 	bool BindingsDropped);
 
 internal sealed class BrandingBindingService(
@@ -172,16 +178,16 @@ internal sealed class BrandingBindingService(
 		}
 
 		List<string> bound = [];
-		List<string> skipped = [];
+		List<string> warnings = [];
 		bool anyDropped = false;
 		foreach (string code in LogoSettingCodes) {
 			string bindingName = LogoBindingName(code);
 			if (!applied.Contains(code) && FindExistingBindingUId(packageRef.UId, bindingName) is null) {
 				continue;
 			}
-			anyDropped |= ReconcileLogoSlot(packageRef, code, bindingName, bound, skipped);
+			anyDropped |= ReconcileLogoSlot(packageRef, code, bindingName, bound, warnings);
 		}
-		return new BrandingScopeReport(BrandingScope.Logos, packageRef.Name, bound, skipped, anyDropped);
+		return new BrandingScopeReport(BrandingScope.Logos, packageRef.Name, bound, warnings, anyDropped);
 	}
 
 	/// <inheritdoc />
@@ -237,27 +243,27 @@ internal sealed class BrandingBindingService(
 	/// <summary>
 	/// Reconciles one logo slot's binding against the setting's live All-Users default value row, with the
 	/// natural-key / force-update policy. A slot with no deliverable row — the setting is undefined, has no
-	/// All-Users value, or is defined as a secret-bearing type — is reported as skipped (never silently
+	/// All-Users value, or is defined as a secret-bearing type — is reported as a warning (never silently
 	/// omitted) and any previously shipped binding for it is dropped and reported.
 	/// </summary>
 	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
 	private bool ReconcileLogoSlot(
-		PackageRef packageRef, string code, string bindingName, List<string> bound, List<string> skipped) {
+		PackageRef packageRef, string code, string bindingName, List<string> bound, List<string> warnings) {
 		SysSettingsDefinition definition = FindSysSettingsDefinition(code);
 		if (definition is null) {
-			skipped.Add($"{code}: no All-Users value on this environment");
-			return ReportDroppedBinding(packageRef, bindingName, skipped);
+			warnings.Add($"{code}: no All-Users value on this environment");
+			return ReportDroppedBinding(packageRef, bindingName, warnings);
 		}
 		if (string.Equals(definition.ValueTypeName, SecureTextValueTypeName, StringComparison.OrdinalIgnoreCase)) {
-			skipped.Add(
+			warnings.Add(
 				$"{code}: the setting is defined as {SecureTextValueTypeName} on this environment, and a secret " +
 				"value is never shipped in a package");
-			return ReportDroppedBinding(packageRef, bindingName, skipped);
+			return ReportDroppedBinding(packageRef, bindingName, warnings);
 		}
 		string valueRowId = FindAllUsersValueRowId(definition.Id);
 		if (valueRowId is null) {
-			skipped.Add($"{code}: no All-Users value on this environment");
-			return ReportDroppedBinding(packageRef, bindingName, skipped);
+			warnings.Add($"{code}: no All-Users value on this environment");
+			return ReportDroppedBinding(packageRef, bindingName, warnings);
 		}
 		SaveBinding(packageRef, bindingName, SysSettingsValueSchema, SysSettingsValueColumns, [valueRowId],
 			SysSettingsValuePolicy);
@@ -272,25 +278,25 @@ internal sealed class BrandingBindingService(
 	/// </summary>
 	private BrandingScopeReport ReconcileBackgroundScope(PackageRef packageRef) {
 		List<string> bound = [];
-		List<string> skipped = [];
+		List<string> warnings = [];
 		bool anyDropped = false;
 
 		string configRowId = FindAllUsersValueRowId(SetBackgroundImageCommand.BackgroundConfigCode);
 		if (configRowId is null) {
-			skipped.Add($"{SetBackgroundImageCommand.BackgroundConfigCode}: no background configured on this environment");
-			anyDropped |= ReportDroppedBinding(packageRef, BackgroundConfigBindingName, skipped);
-			anyDropped |= ReportDroppedBinding(packageRef, BackgroundConfigDefBindingName, skipped);
+			warnings.Add($"{SetBackgroundImageCommand.BackgroundConfigCode}: no background configured on this environment");
+			anyDropped |= ReportDroppedBinding(packageRef, BackgroundConfigBindingName, warnings);
+			anyDropped |= ReportDroppedBinding(packageRef, BackgroundConfigDefBindingName, warnings);
 		} else {
 			SaveBinding(packageRef, BackgroundConfigBindingName, SysSettingsValueSchema, SysSettingsValueColumns,
 				[configRowId], SysSettingsValuePolicy);
 			bound.Add(SetBackgroundImageCommand.BackgroundConfigCode);
-			BindBackgroundConfigDefinition(packageRef, bound, skipped);
+			BindBackgroundConfigDefinition(packageRef, bound, warnings);
 		}
 
-		anyDropped |= BindBackgroundImageAndGallery(packageRef, bound, skipped);
-		anyDropped |= BindPanelIconBackgroundFeature(packageRef, bound, skipped);
+		anyDropped |= BindBackgroundImageAndGallery(packageRef, bound, warnings);
+		anyDropped |= BindPanelIconBackgroundFeature(packageRef, bound, warnings);
 		return new BrandingScopeReport(
-			BrandingScope.Background, packageRef.Name, bound, skipped, BindingsDropped: anyDropped);
+			BrandingScope.Background, packageRef.Name, bound, warnings, BindingsDropped: anyDropped);
 	}
 
 	/// <summary>
@@ -305,32 +311,32 @@ internal sealed class BrandingBindingService(
 	/// toggle at all instead of the wrong one.
 	/// </summary>
 	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
-	private bool BindPanelIconBackgroundFeature(PackageRef packageRef, List<string> bound, List<string> skipped) {
+	private bool BindPanelIconBackgroundFeature(PackageRef packageRef, List<string> bound, List<string> warnings) {
 		Guid? featureId = FindFeatureDefinitionId(PanelIconBackgroundFeatureCode);
 		if (featureId is null) {
-			skipped.Add($"{PanelIconBackgroundFeatureCode}: the feature is not defined on this environment");
-			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, skipped);
-			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, skipped);
+			warnings.Add($"{PanelIconBackgroundFeatureCode}: the feature is not defined on this environment");
+			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, warnings);
+			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, warnings);
 			return droppedState || droppedDef;
 		}
 
 		FeatureStateRow stateRow = FindAllUsersFeatureStateRow(featureId.Value);
 		if (stateRow is null) {
-			skipped.Add(
+			warnings.Add(
 				$"{PanelIconBackgroundFeatureCode}: no All-Users feature state on this environment " +
 				"(the feature was not turned off here)");
-			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, skipped);
-			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, skipped);
+			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, warnings);
+			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, warnings);
 			return droppedState || droppedDef;
 		}
 		if (stateRow.IsOff != true) {
-			skipped.Add(
+			warnings.Add(
 				$"{PanelIconBackgroundFeatureCode}: the All-Users feature state on this environment is " +
-				$"{(stateRow.IsOff is null ? "not readable as a Boolean" : "still on")}, and only a confirmed " +
+				$"{(stateRow.IsOff is null ? "not readable as an on/off value" : "still on")}, and only a confirmed " +
 				"off-state is bound — the binding force-updates FeatureState on install, so delivering this row " +
 				"would turn the panel icon background back on for the target and hide the background");
-			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, skipped);
-			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, skipped);
+			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, warnings);
+			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, warnings);
 			return droppedState || droppedDef;
 		}
 
@@ -348,10 +354,10 @@ internal sealed class BrandingBindingService(
 	/// resolves on a target that does not already ship the definition. Keyed by Id (not Code): the definition
 	/// is usually product-shipped with a stable id, and preserving the id keeps the value-row reference intact.
 	/// </summary>
-	private void BindBackgroundConfigDefinition(PackageRef packageRef, List<string> bound, List<string> skipped) {
+	private void BindBackgroundConfigDefinition(PackageRef packageRef, List<string> bound, List<string> warnings) {
 		SysSettingsDefinition definition = FindSysSettingsDefinition(SetBackgroundImageCommand.BackgroundConfigCode);
 		if (definition is null) {
-			skipped.Add($"{SetBackgroundImageCommand.BackgroundConfigCode} definition: not found");
+			warnings.Add($"{SetBackgroundImageCommand.BackgroundConfigCode} definition: not found");
 			return;
 		}
 		SaveBinding(packageRef, BackgroundConfigDefBindingName, SysSettingsSchema, SysSettingsColumns,
@@ -362,13 +368,13 @@ internal sealed class BrandingBindingService(
 	/// <summary>
 	/// When the background is an image, binds the SysImage row and its gallery membership row by Id; when it is
 	/// a color (or unset, or unreadable), drops those two folders so the package does not ship a stale image.
-	/// Every outcome is recorded in <paramref name="bound"/> or <paramref name="skipped"/>.
+	/// Every outcome is recorded in <paramref name="bound"/> or <paramref name="warnings"/>.
 	/// </summary>
 	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
-	private bool BindBackgroundImageAndGallery(PackageRef packageRef, List<string> bound, List<string> skipped) {
+	private bool BindBackgroundImageAndGallery(PackageRef packageRef, List<string> bound, List<string> warnings) {
 		BackgroundImageResolution resolution = ResolveConfiguredBackgroundImage();
 		if (resolution.ImageId is null) {
-			skipped.Add(resolution.Kind switch {
+			warnings.Add(resolution.Kind switch {
 				BackgroundImageKind.Unreadable =>
 					$"background image: the {SetBackgroundImageCommand.BackgroundConfigCode} value is not readable " +
 					"as background configuration JSON, so no image could be identified",
@@ -376,16 +382,16 @@ internal sealed class BrandingBindingService(
 					"background image: no background is configured on this environment",
 				_ => "background image: the configured background is a colour, not an image"
 			});
-			bool droppedImage = ReportDroppedBinding(packageRef, BackgroundImageBindingName, skipped);
-			bool droppedGallery = ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, skipped);
+			bool droppedImage = ReportDroppedBinding(packageRef, BackgroundImageBindingName, warnings);
+			bool droppedGallery = ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
 			return droppedImage || droppedGallery;
 		}
 
 		Guid imageId = resolution.ImageId.Value;
 		if (!RowExists(SysImageSchema, imageId)) {
-			skipped.Add($"background image {imageId}: not found on this environment");
-			bool droppedImage = ReportDroppedBinding(packageRef, BackgroundImageBindingName, skipped);
-			bool droppedGallery = ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, skipped);
+			warnings.Add($"background image {imageId}: not found on this environment");
+			bool droppedImage = ReportDroppedBinding(packageRef, BackgroundImageBindingName, warnings);
+			bool droppedGallery = ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
 			return droppedImage || droppedGallery;
 		}
 
@@ -395,14 +401,14 @@ internal sealed class BrandingBindingService(
 
 		GalleryMembership membership = FindGalleryMembership(imageId);
 		if (membership is null) {
-			skipped.Add("background gallery membership: not found");
-			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, skipped);
+			warnings.Add("background gallery membership: not found");
+			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
 		}
 		if (membership.TagId != SetBackgroundImageCommand.ShellBackgroundTagId) {
-			skipped.Add(
+			warnings.Add(
 				$"background gallery membership: this environment's {ShellBackgroundTagName} tag has a customized id " +
 				$"({membership.TagId}) that would not resolve on an install target, so the membership row was not bound");
-			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, skipped);
+			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
 		}
 		SaveBinding(packageRef, BackgroundGalleryBindingName, SysImageInTagSchema, SysImageInTagColumns,
 			[membership.RowId], columnPolicy: null);
@@ -412,15 +418,15 @@ internal sealed class BrandingBindingService(
 
 	/// <summary>
 	/// Deletes a binding that the current live state no longer supports and, when one was actually deleted,
-	/// records it in <paramref name="skipped"/>. Reconciling away a previously shipped binding is a change to
+	/// records it in <paramref name="warnings"/>. Reconciling away a previously shipped binding is a change to
 	/// the package the user must see in the report, not a silent side effect.
 	/// </summary>
 	/// <returns><see langword="true"/> when a binding was actually deleted.</returns>
-	private bool ReportDroppedBinding(PackageRef packageRef, string bindingName, List<string> skipped) {
+	private bool ReportDroppedBinding(PackageRef packageRef, string bindingName, List<string> warnings) {
 		if (!DeleteBindingIfExists(packageRef, bindingName)) {
 			return false;
 		}
-		skipped.Add($"{bindingName}: previously shipped binding removed, it no longer has a source row");
+		warnings.Add($"{bindingName}: previously shipped binding removed, it no longer has a source row");
 		return true;
 	}
 
@@ -572,9 +578,9 @@ internal sealed class BrandingBindingService(
 	/// <summary>A feature's All-Users <c>AdminUnitFeatureState</c> row: its id and whether it is confirmed off.</summary>
 	/// <param name="RowId">Id of the state row.</param>
 	/// <param name="IsOff">
-	/// True when <c>FeatureState</c> read back as <see langword="false"/>, false when it read back as
-	/// <see langword="true"/>, and null when the value could not be read as a Boolean at all. Null and false are
-	/// both "not confirmed off" — the caller must refuse to deliver the row in either case.
+	/// True when <c>FeatureState</c> read back as off, false when it read back as on, and null when the value
+	/// could not be interpreted either way. Null and false are both "not confirmed off" — the caller must refuse
+	/// to deliver the row in either case. See <see cref="ReadOffState"/> for the value shapes accepted.
 	/// </param>
 	private sealed record FeatureStateRow(string RowId, bool? IsOff);
 
@@ -605,16 +611,34 @@ internal sealed class BrandingBindingService(
 	}
 
 	/// <summary>
-	/// Interprets a delivered <c>FeatureState</c> value as "confirmed off". DataService answers a Boolean column
-	/// with a JSON Boolean, but a customized or proxied endpoint can answer with its string form, so both are
-	/// accepted; anything else yields null, which the caller treats exactly like "still on" and refuses to ship.
+	/// Interprets a delivered <c>FeatureState</c> value as "confirmed off". The platform declares this one column
+	/// differently in each of its two projections over the same row: <c>AdminUnitFeatureState</c> — the read
+	/// projection this class selects from — types it as <b>Integer</b> (<c>dataValueType 4</c>), so DataService
+	/// answers a JSON number where <c>0</c> is off, while the writable <c>AppFeatureState</c> projection used to
+	/// turn the feature off types it as Boolean (<c>dataValueType 12</c>). Both numeric and Boolean answers are
+	/// therefore accepted, plus their string forms for a proxied endpoint that stringifies scalars. Anything else
+	/// yields null, which the caller treats exactly like "still on" and refuses to ship.
 	/// </summary>
 	private static bool? ReadOffState(JsonElement? featureState) => featureState?.ValueKind switch {
+		JsonValueKind.Number => featureState.Value.TryGetInt32(out int state) ? state == 0 : null,
 		JsonValueKind.False => true,
 		JsonValueKind.True => false,
-		JsonValueKind.String => bool.TryParse(featureState.Value.GetString(), out bool parsed) ? !parsed : null,
+		JsonValueKind.String => ReadOffStateFromText(featureState.Value.GetString()),
 		_ => null
 	};
+
+	/// <summary>
+	/// Interprets the string form of a <c>FeatureState</c> value, accepting both the Boolean spelling and the
+	/// numeric one so a stringified answer is read the same way as its scalar equivalent.
+	/// </summary>
+	private static bool? ReadOffStateFromText(string featureState) {
+		if (bool.TryParse(featureState, out bool flag)) {
+			return !flag;
+		}
+		return int.TryParse(featureState, NumberStyles.Integer, CultureInfo.InvariantCulture, out int state)
+			? state == 0
+			: null;
+	}
 
 	/// <summary>The definition metadata of a system setting: its row id and declared value type.</summary>
 	private sealed record SysSettingsDefinition(Guid Id, string ValueTypeName);
@@ -807,8 +831,9 @@ internal sealed class BrandingBindingService(
 
 		/// <summary>
 		/// The raw delivered <c>FeatureState</c> value. Kept as a <see cref="JsonElement"/> rather than a
-		/// <see cref="bool"/> so a non-Boolean answer degrades to "not confirmed off" instead of throwing a
-		/// deserialization error that would abort the whole background reconcile.
+		/// <see cref="bool"/> because the read projection types this column as Integer, so a Boolean property
+		/// would fail to deserialize the number DataService actually answers; the loose element also lets an
+		/// unexpected shape degrade to "not confirmed off" instead of aborting the whole background reconcile.
 		/// </summary>
 		[System.Text.Json.Serialization.JsonPropertyName("FeatureState")]
 		public JsonElement? FeatureState { get; init; }

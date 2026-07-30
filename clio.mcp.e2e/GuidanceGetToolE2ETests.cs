@@ -870,8 +870,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the shell-background activation must route through the dedicated set-background-image tool");
 		response.Article.Text.Should().NotContain("CrtBackgroundConfig",
 			because: "the background-configuration mechanics are owned by the set-background-image tool implementation, not hand-executed from the guide");
-		response.Article.Text.Should().Contain("skipped",
-			because: "the guide must tell the agent to relay the skipped entry when the UsePanelIconBackground off-state is not deliverable — that gap means the package will not turn the feature off on the install target and the delivered background can stay hidden there");
+		response.Article.Text.Should().Contain("`warnings`",
+			because: "the guide must name the exact result field the agent relays when the UsePanelIconBackground off-state is not deliverable — that gap means the package will not turn the feature off on the install target and the delivered background can stay hidden there");
 	}
 
 	[Test]

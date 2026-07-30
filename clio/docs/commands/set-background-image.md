@@ -79,8 +79,9 @@ existing All-Users row instead of inserting a duplicate whose id differs per env
 and gallery bindings are keyed by id (clio-generated ids that have no counterpart on the target, so
 a plain insert is correct).
 
-The run output names the package and reports every delivery gap as a `Skipped:` line — read them;
-each one means the package ships less than you may expect. Deliberate limits:
+The run output names the package and reports every delivery gap as a warning — read them; the
+command still succeeds, but each warning means the package ships less than you may expect.
+Deliberate limits:
 
 - **A setting defined as `SecureText`** is never bound; its value is an encrypted secret and a
   package must not carry a secret off the environment that owns it.
@@ -90,11 +91,16 @@ each one means the package ships less than you may expect. Deliberate limits:
   resolves. If the target created that setting independently the ids differ and the install can add
   a second definition rather than merging; brand one environment and deliver outward.
 - **The `UsePanelIconBackground` off-state** is bound only when the All-Users state row on this
-  environment is confirmed to read `false`. A missing row (the feature was never toggled here), a row
-  that still reads `true` (every apply ran with `--keep-icon-background`, or the toggle failed), and a
-  row whose `FeatureState` is not readable as a Boolean are all reported as skipped, and any binding an
-  earlier run shipped for the slot is dropped. Its `Feature` definition folder follows the same
+  environment is confirmed to read as off. A missing row (the feature was never toggled here), a row
+  that still reads as on (every apply ran with `--keep-icon-background`, or the toggle failed), and a
+  row whose `FeatureState` is no on/off answer at all are all reported as warnings, and any binding
+  an earlier run shipped for the slot is dropped. Its `Feature` definition folder follows the same
   decision, because it exists only to keep the state row's reference resolvable.
+
+  The platform types this one column differently in each of its two projections over the same row:
+  `AdminUnitFeatureState` (the read projection) declares it **Integer**, so a turned-off feature reads
+  back as `0`, while the writable `AppFeatureState` projection declares it Boolean. Both shapes — and
+  their stringified forms — count as a confirmed off-state.
 
 The binding writes package data through the design-time schema-data services, so the target package
 must be editable (unlocked) and the caller needs rights to modify package configuration. When the

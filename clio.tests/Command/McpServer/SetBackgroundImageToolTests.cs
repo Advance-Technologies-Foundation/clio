@@ -282,7 +282,7 @@ public class SetBackgroundImageToolTests {
 		// Assert
 		result.Package.Should().Be(BoundPackageName,
 			because: "the caller must learn which package the background data was bound into");
-		result.Skipped.Should().ContainSingle(entry => entry.Contains("UsePanelIconBackground"),
+		result.Warnings.Should().ContainSingle(entry => entry.Contains("UsePanelIconBackground"),
 			because: "the delivery gaps the reconcile reported must reach the MCP caller for relay to the user");
 		ConsoleLogger.Instance.ClearMessages();
 	}

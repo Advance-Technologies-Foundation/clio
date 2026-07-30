@@ -68,26 +68,30 @@ public sealed record SetLogoResult {
 	/// <summary>The package the logo data was bound into; null when the run failed before binding.</summary>
 	public string Package { get; private init; }
 
-	/// <summary>Delivery gaps reported by the binding reconcile (slots without a value, dropped bindings).</summary>
-	public IReadOnlyList<string> Skipped { get; private init; } = [];
-
-	/// <summary>A non-fatal problem the caller should surface (for example a failed splash-logo toggle).</summary>
-	public string Warning { get; private init; }
+	/// <summary>
+	/// Every non-fatal problem the caller should surface, in the order it arose: an apply-side caveat such as a
+	/// failed splash-logo toggle, then each delivery gap the binding reconcile reported (a slot without a value,
+	/// a slot refused by policy, a dropped binding). One channel rather than two, because a caveat and a gap are
+	/// the same thing to the caller — the run succeeded but delivers less than it looks like it did.
+	/// </summary>
+	public IReadOnlyList<string> Warnings { get; private init; } = [];
 
 	/// <summary>The failure message; null on success.</summary>
 	public string Error { get; private init; }
 
-	/// <summary>Creates a success result carrying what was applied, bound, and skipped.</summary>
+	/// <summary>Creates a success result carrying what was applied, the target package, and any warnings.</summary>
 	public static SetLogoResult Successful(IReadOnlyList<string> applied, string package,
-		IReadOnlyList<string> skipped, string warning = null) =>
-		new() { Success = true, Applied = applied, Package = package, Skipped = skipped, Warning = warning };
+		IReadOnlyList<string> warnings) =>
+		new() { Success = true, Applied = applied, Package = package, Warnings = warnings ?? [] };
 
 	/// <summary>
 	/// Creates a failure result. <paramref name="applied"/> carries the slots that were already written
-	/// before the failure, so the caller can see the partial state instead of assuming nothing changed.
+	/// before the failure, so the caller can see the partial state instead of assuming nothing changed;
+	/// <paramref name="warnings"/> carries the caveats raised before it, which the failure must not swallow.
 	/// </summary>
-	public static SetLogoResult Failure(string error, IReadOnlyList<string> applied = null) =>
-		new() { Success = false, Error = error, Applied = applied ?? [] };
+	public static SetLogoResult Failure(string error, IReadOnlyList<string> applied = null,
+		IReadOnlyList<string> warnings = null) =>
+		new() { Success = false, Error = error, Applied = applied ?? [], Warnings = warnings ?? [] };
 }
 
 /// <summary>
@@ -144,7 +148,7 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 	/// does not exist yet, updating it when it does). At least one logo option is required.
 	/// </summary>
 	/// <param name="options">Command options carrying the per-slot files, target package, and connection settings.</param>
-	/// <returns>The outcome, carrying the applied slots, the bound package, and any delivery gaps.</returns>
+	/// <returns>The outcome, carrying the applied slots, the bound package, and any warnings.</returns>
 	public virtual SetLogoResult ApplyLogos(SetLogoOptions options) {
 		IReadOnlyList<LogoSlot> slots = CollectRequestedSlots(options);
 		if (slots.Count == 0) {
@@ -169,24 +173,25 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 			appliedCodes.Add(slot.Code);
 		}
 
-		string warning = null;
+		List<string> warnings = [];
 		SysSettingUpdateResult splash = _sysSettingsCommand.TryUpdateSysSetting(
 			new UpdateSysSettingArgs(options.Environment ?? string.Empty, HideSplashLogoCode, Value: "true"));
 		if (splash.Success) {
 			appliedCodes.Add(HideSplashLogoCode);
 		} else {
-			warning = $"The logos were applied, but setting {HideSplashLogoCode} failed, so the stock splash " +
-				$"logo may still flash during load: {splash.Error}";
+			warnings.Add($"The logos were applied, but setting {HideSplashLogoCode} failed, so the stock splash " +
+				$"logo may still flash during load: {splash.Error}");
 		}
 
 		try {
 			BrandingScopeReport report = _brandingBindingService.BindLogos(options.PackageName, appliedCodes);
-			return SetLogoResult.Successful(applied, report.Package, report.Skipped, warning);
+			warnings.AddRange(report.Warnings);
+			return SetLogoResult.Successful(applied, report.Package, warnings);
 		} catch (Exception exception) {
 			return SetLogoResult.Failure(
 				$"The logos were applied, but binding them into " +
 				$"{BrandingBindingService.DescribeTargetPackage(options.PackageName)} failed: {exception.Message} " +
-				"Re-run the command to retry the binding.", applied);
+				"Re-run the command to retry the binding.", applied, warnings);
 		}
 	}
 
@@ -196,17 +201,23 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 		if (result.Applied.Count > 0) {
 			Logger.WriteInfo($"Applied: {string.Join(", ", result.Applied)}. Users see the new logos after a page refresh.");
 		}
-		if (!string.IsNullOrWhiteSpace(result.Warning)) {
-			Logger.WriteWarning(result.Warning);
-		}
 		if (!result.Success) {
+			WriteWarnings(result.Warnings);
 			CommandSuccess = false;
 			Logger.WriteError(result.Error);
 			return;
 		}
 		Logger.WriteInfo($"Logo data bound into package '{result.Package}'.");
-		foreach (string skipped in result.Skipped) {
-			Logger.WriteInfo($"Skipped: {skipped}.");
+		WriteWarnings(result.Warnings);
+	}
+
+	/// <summary>
+	/// Writes every non-fatal problem at warning level. Written after the package line on success so each gap
+	/// reads against the package it applies to, and before the error on failure so the failure stays last.
+	/// </summary>
+	private void WriteWarnings(IReadOnlyList<string> warnings) {
+		foreach (string warning in warnings) {
+			Logger.WriteWarning(warning);
 		}
 	}
 

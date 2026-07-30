@@ -161,4 +161,28 @@ public sealed class SetLogoToolE2ETests : McpContractFixtureBase {
 		result.Error.Should().Contain("'login_logo' -> 'login-logo'",
 			because: "login-logo brands the login page alone while logo brands every slot, so the caller must be pointed at the exact field rather than left to guess that logo is the same thing");
 	}
+
+	[Test]
+	[AllureTag(SetLogoTool.ToolName)]
+	[AllureName("set-logo omits the warnings field entirely when a validation failure raised none")]
+	[AllureDescription("Calls set-logo through the real clio MCP server with an empty args object and verifies the structured result carries no warnings field — the delivery-gap channel must be absent rather than an empty array, so an agent never reads an empty list as a gap it has to relay.")]
+	[Description("Calls set-logo through the real clio MCP server with an empty args object and verifies the structured result carries no warnings field — the delivery-gap channel must be absent rather than an empty array, so an agent never reads an empty list as a gap it has to relay.")]
+	public async Task SetLogo_Should_Omit_Warnings_When_The_Failure_Raised_None() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetLogoTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?>()
+			},
+			context.CancellationTokenSource.Token);
+		SetLogoToolResult result =
+			EntitySchemaStructuredResultParser.Extract<SetLogoToolResult>(callResult);
+
+		// Assert
+		result.Warnings.Should().BeNull(
+			because: "warnings is the only delivery-gap channel the agent is told to relay, so a run that produced none must omit the field over the wire instead of emitting an empty array the agent has to special-case");
+	}
 }

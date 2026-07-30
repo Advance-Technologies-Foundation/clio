@@ -150,7 +150,7 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The branding guide carries the package-delivery contract of the apply tools: both take a package argument, fall back to the environment's CurrentPackageId when it is omitted, and their skipped entries are the delivery-gap channel to relay.")]
+	[Description("The branding guide carries the package-delivery contract of the apply tools: both take a package argument, fall back to the environment's CurrentPackageId when it is omitted, and their warnings are the delivery-gap channel to relay.")]
 	public void BrandingGuidanceResource_Should_Describe_Package_Delivery_Through_The_Apply_Tools() {
 		// Arrange
 		BrandingGuidanceResource resource = new();
@@ -166,8 +166,8 @@ public sealed class BrandingGuidanceResourceTests {
 			because: "omitting the package delivers into the environment's current package, and an agent that does not know that cannot tell the user where the branding will land");
 		article.Text.Should().NotContain("bind-branding",
 			because: "the standalone bind step no longer exists; naming it would send the agent to a tool that is not there");
-		article.Text.Should().Contain("skipped",
-			because: "the skipped entries are the only place a delivery gap is reported, and the guide must direct the agent to relay them");
+		article.Text.Should().Contain("`warnings`",
+			because: "the warnings are the only place a delivery gap is reported, and the guide must name the exact result field so the agent relays it instead of hunting for a channel called something else");
 	}
 
 	[Test]

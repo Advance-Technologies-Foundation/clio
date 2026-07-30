@@ -25,7 +25,9 @@ DESCRIPTION
     change refreshes what the package carries.
 
     Read the run output: every gap between what was applied and what the
-    package will actually deliver is reported as a Skipped line.
+    package will actually deliver is reported as a warning. The command
+    still succeeds — a warning means the package ships less than expected,
+    not that the apply failed.
 
 SYNOPSIS
     clio set-background-image [<image-id>] [options]

@@ -192,6 +192,41 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Carries the failed splash toggle on the result's warnings, not only in the log, so a non-CLI caller such as the MCP tool sees the caveat too.")]
+	public void ApplyLogos_ShouldCarryTheSplashFailure_OnTheResultWarnings() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.HideSplashLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Warnings.Should().Contain(warning => warning.Contains(SetLogoCommand.HideSplashLogoCode),
+			because: "the logger is only the CLI surface; a caveat that lives nowhere but the log is invisible to the MCP caller, which is exactly how a delivery gap goes unnoticed");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Keeps the warnings raised before a binding failure on the failure result, so a caveat is not swallowed by the later error.")]
+	public void ApplyLogos_ShouldKeepEarlierWarnings_WhenTheBindingFails() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.HideSplashLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		_brandingBindingService
+			.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
+			.Throws(new InvalidOperationException("SaveSchema rejected the binding"));
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Warnings.Should().Contain(warning => warning.Contains(SetLogoCommand.HideSplashLogoCode),
+			because: "the splash toggle failed before the binding did, and the run already changed the environment — reporting only the binding error would hide the other thing the user has to fix");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Fails naming the slot when applying one of the logo settings fails, and never reaches the binding.")]
 	public void Execute_ShouldFailNamingTheSlot_WhenApplyingASettingFails() {
 		// Arrange
@@ -371,8 +406,8 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Relays the binding reconcile's skipped entries in the run output, because they are the only place a delivery gap is reported.")]
-	public void Execute_ShouldRelayTheSkippedEntries_FromTheBindingReport() {
+	[Description("Relays the binding reconcile's warnings in the run output at warning level, because they are the only place a delivery gap is reported and info level would give a gap the same weight as a success line.")]
+	public void Execute_ShouldRelayTheBindingWarnings_AtWarningLevel() {
 		// Arrange
 		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
 			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, ["LogoImage"],
@@ -383,8 +418,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("Skipped:") && message.Contains("MenuLogoImage")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("MenuLogoImage")));
 	}
 
 	[Test, Category("Unit")]

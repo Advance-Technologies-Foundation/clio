@@ -433,6 +433,26 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	}
 
 	[Test, Category("Unit")]
+	[Description("Carries a failed feature turn-off on the result's warnings, not only in the log, so a non-CLI caller such as the MCP tool learns the panel may still hide the background.")]
+	public void SetBackground_ShouldCarryTheFeatureTurnOffFailure_OnTheResultWarnings() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		_panelIconBackgroundFeature.When(feature => feature.DisableForAllUsers())
+			.Do(_ => throw new InvalidOperationException("feature service unavailable"));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		SetBackgroundResult result = _command.SetBackground(options);
+
+		// Assert
+		result.Warnings.Should().Contain(warning => warning.Contains(PanelIconBackgroundFeatureManager.FeatureCode),
+			because: "this caveat used to be logged straight out, so an MCP caller was told the background was applied with no hint that the panel can still hide it — the result is the only channel both surfaces read");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Leaves the UsePanelIconBackground feature untouched when keep-icon-background is passed, so the caller can opt out of the turn-off.")]
 	public void Execute_ShouldNotDisablePanelIconBackground_WhenKeepIconBackgroundIsPassed() {
 		// Arrange
@@ -546,8 +566,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	}
 
 	[Test, Category("Unit")]
-	[Description("Relays the binding reconcile's skipped entries in the run output, because they are the only place a delivery gap is reported.")]
-	public void Execute_ShouldRelayTheSkippedEntries_FromTheBindingReport() {
+	[Description("Relays the binding reconcile's warnings in the run output at warning level, because they are the only place a delivery gap is reported and info level would give a gap the same weight as a success line.")]
+	public void Execute_ShouldRelayTheBindingWarnings_AtWarningLevel() {
 		// Arrange
 		ArrangeImageExists();
 		ArrangeGalleryState(alreadyRegistered: true);
@@ -562,7 +582,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_command.Execute(options);
 
 		// Assert
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("Skipped:") && message.Contains("UsePanelIconBackground")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("UsePanelIconBackground")));
 	}
 }

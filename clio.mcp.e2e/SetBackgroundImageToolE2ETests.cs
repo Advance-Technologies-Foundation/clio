@@ -132,4 +132,28 @@ public sealed class SetBackgroundImageToolE2ETests : McpContractFixtureBase {
 		result.Error.Should().Contain("'imageId' -> 'image-id'",
 			because: "the failure must tell the caller the exact rename that fixes the call");
 	}
+
+	[Test]
+	[AllureTag(SetBackgroundImageTool.ToolName)]
+	[AllureName("set-background-image omits the warnings field entirely when a validation failure raised none")]
+	[AllureDescription("Calls set-background-image through the real clio MCP server with an empty args object and verifies the structured result carries no warnings field — the delivery-gap channel must be absent rather than an empty array, so an agent never reads an empty list as a gap it has to relay.")]
+	[Description("Calls set-background-image through the real clio MCP server with an empty args object and verifies the structured result carries no warnings field — the delivery-gap channel must be absent rather than an empty array, so an agent never reads an empty list as a gap it has to relay.")]
+	public async Task SetBackgroundImage_Should_Omit_Warnings_When_The_Failure_Raised_None() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetBackgroundImageTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?>()
+			},
+			context.CancellationTokenSource.Token);
+		SetBackgroundImageResult result =
+			EntitySchemaStructuredResultParser.Extract<SetBackgroundImageResult>(callResult);
+
+		// Assert
+		result.Warnings.Should().BeNull(
+			because: "warnings is the only delivery-gap channel the agent is told to relay, so a run that produced none must omit the field over the wire instead of emitting an empty array the agent has to special-case");
+	}
 }

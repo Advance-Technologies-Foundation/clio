@@ -302,7 +302,7 @@ public sealed class BrandingBindingServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Reports an applied logo setting that has no All-Users value row as skipped rather than binding a stock value that would overwrite the target's own branding.")]
-	public void BindLogos_Should_Report_Setting_Without_AllUsers_Value_As_Skipped() {
+	public void BindLogos_Should_Report_Setting_Without_AllUsers_Value_As_A_Warning() {
 		// Arrange
 		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
 		environment.RemoveAllUsersValue("MenuLogoImage");
@@ -312,7 +312,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindLogos(PackageName, AllLogoCodes);
 
 		// Assert
-		report.Skipped.Should().ContainSingle(entry => entry.StartsWith("MenuLogoImage:", StringComparison.Ordinal),
+		report.Warnings.Should().ContainSingle(entry => entry.StartsWith("MenuLogoImage:", StringComparison.Ordinal),
 			because: "a setting with no All-Users row has nothing deliverable, and the report must say so rather than staying silent about the slot");
 	}
 
@@ -537,7 +537,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should().Contain(entry => entry.Contains("UsePanelIconBackground", StringComparison.Ordinal),
+		report.Warnings.Should().Contain(entry => entry.Contains("UsePanelIconBackground", StringComparison.Ordinal),
 			because: "a feature with no All-Users state row was never turned off here, and the report must say so rather than silently shipping nothing for it");
 	}
 
@@ -605,17 +605,17 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should().Contain(entry => entry.Contains("still on", StringComparison.Ordinal),
+		report.Warnings.Should().Contain(entry => entry.Contains("still on", StringComparison.Ordinal),
 			because: "the skipped list is the only channel that reports a delivery gap on both the CLI and the MCP surface, so it must name why the off-state was not shipped");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Does not bind the panel-icon feature state when FeatureState cannot be read as a Boolean, because an unverifiable state is not a confirmed off-state.")]
+	[Description("Does not bind the panel-icon feature state when FeatureState is no on/off answer at all, because an unverifiable state is not a confirmed off-state.")]
 	public void BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_It_Is_Unreadable() {
 		// Arrange
 		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
-		environment.MakePanelIconFeatureStateUnreadable();
+		environment.AnswerPanelIconFeatureStateWith("\"maybe\"");
 		IBrandingBindingService sut = environment.CreateService();
 
 		// Act
@@ -623,7 +623,98 @@ public sealed class BrandingBindingServiceTests {
 
 		// Assert
 		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeature",
-			because: "an unreadable FeatureState must be treated exactly like a still-on one — the binding force-updates the column, so only a value confirmed false may be delivered");
+			because: "an unreadable FeatureState must be treated exactly like a still-on one — the binding force-updates the column, so only a value confirmed off may be delivered");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Binds the panel-icon feature state when the off-state arrives as the integer 0, which is the shape the AdminUnitFeatureState read projection actually delivers.")]
+	public void BindBackground_Should_Bind_Panel_Icon_Feature_State_When_The_Off_State_Is_The_Integer_Zero() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.AnswerPanelIconFeatureStateWith("0");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().Contain("ClioBranding_PanelIconFeature",
+			because: "AdminUnitFeatureState declares FeatureState as Integer (dataValueType 4), so a real environment answers a turned-off feature with the number 0 — reading only the Boolean form left the off-state unbound on every environment");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not bind the panel-icon feature state when the on-state arrives as the integer 1, so the numeric shape is read as an on/off value rather than merely accepted.")]
+	public void BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_The_On_State_Is_The_Integer_One() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.AnswerPanelIconFeatureStateWith("1");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeature",
+			because: "accepting numbers must not degrade into accepting any number: 1 is the numeric on-state, and shipping it would force the panel icon background back on for the target");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Binds the panel-icon feature state when the off-state arrives as the Boolean false, so an environment whose projection types the column as Boolean is still supported.")]
+	public void BindBackground_Should_Bind_Panel_Icon_Feature_State_When_The_Off_State_Is_The_Boolean_False() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.AnswerPanelIconFeatureStateWith("false");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().Contain("ClioBranding_PanelIconFeature",
+			because: "the platform types the same FeatureState column as Boolean in its writable AppFeatureState projection, so the Boolean off-state must keep binding alongside the numeric one");
+	}
+
+	[Test]
+	[Description("Binds the panel-icon feature state when the off-state arrives stringified, so a proxied endpoint that quotes scalars does not silently cost the off-state.")]
+	[Category("Unit")]
+	[TestCase("\"0\"", TestName = "BindBackground_Should_Bind_Panel_Icon_Feature_State_When_The_Off_State_Is_The_String_Zero")]
+	[TestCase("\"false\"", TestName = "BindBackground_Should_Bind_Panel_Icon_Feature_State_When_The_Off_State_Is_The_String_False")]
+	public void BindBackground_Should_Bind_Panel_Icon_Feature_State_When_The_Off_State_Is_Stringified(
+		string featureStateJson) {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.AnswerPanelIconFeatureStateWith(featureStateJson);
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().Contain("ClioBranding_PanelIconFeature",
+			because: "a stringified scalar carries the same off-state as its unquoted form, so it must be read the same way instead of falling through to the not-confirmed-off refusal");
+	}
+
+	[Test]
+	[Description("Does not bind the panel-icon feature state when the on-state arrives stringified, so the string form is interpreted rather than treated as any non-empty value.")]
+	[Category("Unit")]
+	[TestCase("\"1\"", TestName = "BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_The_On_State_Is_The_String_One")]
+	[TestCase("\"true\"", TestName = "BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_The_On_State_Is_The_String_True")]
+	public void BindBackground_Should_Not_Bind_Panel_Icon_Feature_State_When_The_On_State_Is_Stringified(
+		string featureStateJson) {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.AnswerPanelIconFeatureStateWith(featureStateJson);
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeature",
+			because: "a stringified on-state is still an on-state, so it must be refused exactly like its unquoted form");
 	}
 
 	[Test]
@@ -701,7 +792,7 @@ public sealed class BrandingBindingServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Reports an unreadable background configuration value as an explicit skip so a corrupted config cannot look like a deliberate switch to a colour background.")]
-	public void BindBackground_Should_Report_Unreadable_Background_Config_As_Skipped() {
+	public void BindBackground_Should_Report_Unreadable_Background_Config_As_A_Warning() {
 		// Arrange
 		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
 		environment.BackgroundConfigJson = "{ this is not valid json";
@@ -711,7 +802,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should().Contain(entry => entry.Contains("not readable", StringComparison.Ordinal),
+		report.Warnings.Should().Contain(entry => entry.Contains("not readable", StringComparison.Ordinal),
 			because: "a parse failure and a colour background both yield no image id, but only the parse failure means the packaged background may be silently wrong");
 	}
 
@@ -728,7 +819,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should().Contain(entry => entry.Contains("is a colour", StringComparison.Ordinal),
+		report.Warnings.Should().Contain(entry => entry.Contains("is a colour", StringComparison.Ordinal),
 			because: "a colour background legitimately has no image, and the report must say so rather than staying silent about the image folders");
 	}
 
@@ -746,7 +837,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should()
+		report.Warnings.Should()
 			.Contain(entry => entry.Contains("ClioBranding_BackgroundImage", StringComparison.Ordinal)
 				&& entry.Contains("removed", StringComparison.Ordinal),
 				because: "removing a previously shipped binding changes what the package delivers and must appear in the report");
@@ -865,7 +956,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should().Contain(entry => entry.Contains("customized id"),
+		report.Warnings.Should().Contain(entry => entry.Contains("customized id"),
 			because: "a delivery gap that only surfaces on install must be an explicit report entry, not silent behaviour");
 	}
 
@@ -907,7 +998,7 @@ public sealed class BrandingBindingServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Reports the SecureText setting as skipped so the operator sees why that logo did not ship.")]
-	public void BindLogos_Should_Report_A_SecureText_Setting_As_Skipped() {
+	public void BindLogos_Should_Report_A_SecureText_Setting_As_A_Warning() {
 		// Arrange
 		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
 		environment.SetSettingValueType("LogoImage", "SecureText");
@@ -917,7 +1008,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindLogos(PackageName, AllLogoCodes);
 
 		// Assert
-		report.Skipped.Should().Contain(entry => entry.Contains("SecureText"),
+		report.Warnings.Should().Contain(entry => entry.Contains("SecureText"),
 			because: "silently omitting one logo would look identical to that logo never having been branded");
 	}
 
@@ -1009,7 +1100,7 @@ public sealed class BrandingBindingServiceTests {
 		BrandingScopeReport report = sut.BindBackground(PackageName);
 
 		// Assert
-		report.Skipped.Should().NotContain(entry => entry.Contains("colour"),
+		report.Warnings.Should().NotContain(entry => entry.Contains("colour"),
 			because: "an environment that never had a background must not be reported as having chosen a colour one");
 	}
 
@@ -1040,9 +1131,12 @@ public sealed class BrandingBindingServiceTests {
 
 		/// <summary>
 		/// The raw JSON token the AdminUnitFeatureState query answers for <c>FeatureState</c>. A token rather than
-		/// a <see cref="bool"/> so a test can also model a non-Boolean answer from a customized endpoint.
+		/// a <see cref="bool"/> so a test can model every shape the column is delivered in. Defaults to the numeric
+		/// off-state <c>0</c>, which is what a real environment answers: the read projection declares this column as
+		/// Integer (<c>dataValueType 4</c>), even though the writable AppFeatureState projection over the same row
+		/// declares it Boolean.
 		/// </summary>
-		private string _panelIconFeatureStateJson = "false";
+		private string _panelIconFeatureStateJson = "0";
 		private readonly Dictionary<string, Guid> _existingBindings = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, string> _existingBindingSchemas = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, List<string>> _schemaColumns = new(StringComparer.OrdinalIgnoreCase);
@@ -1113,12 +1207,16 @@ public sealed class BrandingBindingServiceTests {
 
 		/// <summary>
 		/// Models an All-Users state row that is still on — what <c>--keep-icon-background</c> leaves behind, and
-		/// what a swallowed turn-off failure leaves behind too.
+		/// what a swallowed turn-off failure leaves behind too. Uses the numeric on-state a real environment answers.
 		/// </summary>
-		public void LeavePanelIconFeatureOn() => _panelIconFeatureStateJson = "true";
+		public void LeavePanelIconFeatureOn() => _panelIconFeatureStateJson = "1";
 
-		/// <summary>Models an endpoint answering FeatureState with a value that is not a Boolean at all.</summary>
-		public void MakePanelIconFeatureStateUnreadable() => _panelIconFeatureStateJson = "\"maybe\"";
+		/// <summary>
+		/// Overrides the delivered <c>FeatureState</c> token so a test can cover a shape other than the numeric
+		/// default: the Boolean form, a stringified scalar, or a value that is no on/off answer at all.
+		/// </summary>
+		public void AnswerPanelIconFeatureStateWith(string featureStateJson) =>
+			_panelIconFeatureStateJson = featureStateJson;
 
 		/// <summary>Models an environment where the UsePanelIconBackground feature is not defined at all.</summary>
 		public void RemovePanelIconFeature() {

@@ -153,7 +153,7 @@ public class SetLogoToolTests {
 			because: "the caller must learn which slots were actually written");
 		result.Package.Should().Be(BoundPackageName,
 			because: "the caller must learn which package the logo data was bound into");
-		result.Skipped.Should().ContainSingle(entry => entry.Contains("MenuLogoImage"),
+		result.Warnings.Should().ContainSingle(entry => entry.Contains("MenuLogoImage"),
 			because: "the delivery gaps the reconcile reported must reach the MCP caller for relay to the user");
 		ConsoleLogger.Instance.ClearMessages();
 	}

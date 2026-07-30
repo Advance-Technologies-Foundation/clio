@@ -83,9 +83,10 @@ Setting-value bindings are keyed by their natural columns (setting + admin unit)
 the value, so installing the package **merges** onto the target's existing All-Users value instead
 of inserting a duplicate whose id differs per environment.
 
-The run output names the package and reports every delivery gap as a `Skipped:` line — read them;
-each one means the package ships less than you may expect. A setting defined as `SecureText` is
-never bound (a package must not carry a secret off its environment).
+The run output names the package and reports every delivery gap as a warning — read them; the
+command still succeeds, but each warning means the package ships less than you may expect. A
+setting defined as `SecureText` is never bound (a package must not carry a secret off its
+environment).
 
 The binding writes package data through the design-time schema-data services, so the target package
 must be editable (unlocked) and the caller needs rights to modify package configuration. When the

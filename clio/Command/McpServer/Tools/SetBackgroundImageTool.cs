@@ -41,8 +41,8 @@ public class SetBackgroundImageTool(
 		"The background changes for all users after a page refresh, replacing the currently configured " +
 		"one; the panel's own icon background is turned off so the new background is actually visible, " +
 		"unless keep-icon-background is true. When package is omitted, the environment's CurrentPackageId " +
-		"system setting decides where the bindings land. Returns { success, image-id, package, skipped?, " +
-		"error? } — relay the skipped entries, they are the only place a delivery gap is reported. " +
+		"system setting decides where the bindings land. Returns { success, image-id, package, warnings?, " +
+		"error? } — relay the warnings, they are the only place a delivery gap is reported. " +
 		"For the full branding flow (logos, background), read get-guidance branding first.")]
 	public SetBackgroundImageResult SetBackgroundImage(
 		[Description("Parameters: environment-name (required); exactly one of file (local image path) or image-id (id returned by upload-image); package (optional, the environment's CurrentPackageId when omitted); keep-icon-background (optional bool).")]
@@ -81,11 +81,11 @@ public class SetBackgroundImageTool(
 				if (!result.Success) {
 					return SetBackgroundImageResult.Failure(string.IsNullOrWhiteSpace(result.Error)
 						? "SetBackground returned success=false."
-						: SensitiveErrorTextRedactor.Redact(result.Error));
+						: SensitiveErrorTextRedactor.Redact(result.Error), result.Warnings);
 				}
 				return SetBackgroundImageResult.Successful(result);
 			},
-			SetBackgroundImageResult.Failure);
+			error => SetBackgroundImageResult.Failure(error));
 	}
 }
 
@@ -137,10 +137,14 @@ public sealed record SetBackgroundImageResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Package { get; init; }
 
-	/// <summary>Delivery gaps reported by the binding reconcile; relay them to the user. Omitted when empty.</summary>
-	[JsonPropertyName("skipped")]
+	/// <summary>
+	/// Every non-fatal problem: an apply-side caveat such as a failed <c>UsePanelIconBackground</c> turn-off, and
+	/// each gap between what was applied and what the package will deliver. Relay them to the user — a run with
+	/// warnings still succeeded, but delivers less than it looks like it did. Omitted when empty.
+	/// </summary>
+	[JsonPropertyName("warnings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<string> Skipped { get; init; }
+	public IReadOnlyList<string> Warnings { get; init; }
 
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
@@ -153,15 +157,19 @@ public sealed record SetBackgroundImageResult {
 			Success = true,
 			ImageId = result.ImageId.ToString(),
 			Package = result.Package,
-			Skipped = result.Skipped.Count > 0 ? result.Skipped : null
+			Warnings = result.Warnings.Count > 0 ? result.Warnings : null
 		};
 	}
 
-	/// <summary>Creates a failure result carrying the diagnostic message.</summary>
-	public static SetBackgroundImageResult Failure(string error) {
+	/// <summary>
+	/// Creates a failure result carrying the diagnostic message and any warnings raised before the failure — an
+	/// apply-side caveat must not be lost just because binding failed after it.
+	/// </summary>
+	public static SetBackgroundImageResult Failure(string error, IReadOnlyList<string> warnings = null) {
 		return new SetBackgroundImageResult {
 			Success = false,
-			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
+			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error,
+			Warnings = warnings is { Count: > 0 } ? warnings : null
 		};
 	}
 }

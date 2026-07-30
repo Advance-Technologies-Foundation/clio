@@ -59,18 +59,28 @@ public sealed record SetBackgroundResult {
 	/// <summary>The package the background data was bound into; null when the run failed before binding.</summary>
 	public string Package { get; private init; }
 
-	/// <summary>Delivery gaps reported by the binding reconcile (missing rows, dropped bindings).</summary>
-	public IReadOnlyList<string> Skipped { get; private init; } = [];
+	/// <summary>
+	/// Every non-fatal problem the caller should surface, in the order it arose: an apply-side caveat such as a
+	/// failed <c>UsePanelIconBackground</c> turn-off, then each delivery gap the binding reconcile reported
+	/// (a missing row, a row refused by policy, a dropped binding). One channel rather than two, because a
+	/// caveat and a gap are the same thing to the caller — the run succeeded but delivers less than it looks
+	/// like it did.
+	/// </summary>
+	public IReadOnlyList<string> Warnings { get; private init; } = [];
 
 	/// <summary>The failure message; null on success.</summary>
 	public string Error { get; private init; }
 
-	/// <summary>Creates a success result carrying the applied image id, the bound package, and any delivery gaps.</summary>
-	public static SetBackgroundResult Successful(Guid imageId, string package, IReadOnlyList<string> skipped) =>
-		new() { Success = true, ImageId = imageId, Package = package, Skipped = skipped };
+	/// <summary>Creates a success result carrying the applied image id, the bound package, and any warnings.</summary>
+	public static SetBackgroundResult Successful(Guid imageId, string package, IReadOnlyList<string> warnings) =>
+		new() { Success = true, ImageId = imageId, Package = package, Warnings = warnings ?? [] };
 
-	/// <summary>Creates a failure result carrying the diagnostic message.</summary>
-	public static SetBackgroundResult Failure(string error) => new() { Success = false, Error = error };
+	/// <summary>
+	/// Creates a failure result carrying the diagnostic message and the caveats raised before it, which the
+	/// failure must not swallow.
+	/// </summary>
+	public static SetBackgroundResult Failure(string error, IReadOnlyList<string> warnings = null) =>
+		new() { Success = false, Error = error, Warnings = warnings ?? [] };
 }
 
 /// <summary>
@@ -134,13 +144,14 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			return SetBackgroundResult.Failure(
 				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting failed.");
 		}
+		List<string> warnings = [];
 		if (options.KeepIconBackground) {
 			Logger.WriteInfo($"The {PanelIconBackgroundFeatureManager.FeatureCode} feature was left as is " +
 				"(keep-icon-background); while it is on, the panel's icon background can hide the shell background.");
 		} else {
-			DisablePanelIconBackground();
+			DisablePanelIconBackground(warnings);
 		}
-		return BindBackground(imageId, options.PackageName);
+		return BindBackground(imageId, options.PackageName, warnings);
 	}
 
 	/// <summary>
@@ -149,28 +160,31 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// when they do). The apply cannot be rolled back at this point, so a binding failure is reported as a
 	/// failure that names the applied image and asks for a re-run rather than pretending nothing happened.
 	/// </summary>
-	private SetBackgroundResult BindBackground(Guid imageId, string packageName) {
+	private SetBackgroundResult BindBackground(Guid imageId, string packageName, List<string> warnings) {
 		try {
 			BrandingScopeReport report = _brandingBindingService.BindBackground(packageName);
-			return SetBackgroundResult.Successful(imageId, report.Package, report.Skipped);
+			warnings.AddRange(report.Warnings);
+			return SetBackgroundResult.Successful(imageId, report.Package, warnings);
 		} catch (Exception exception) {
 			return SetBackgroundResult.Failure(
 				$"The background was applied (image {imageId}), but binding it into " +
 				$"{BrandingBindingService.DescribeTargetPackage(packageName)} failed: {exception.Message} " +
-				"Re-run the command to retry the binding.");
+				"Re-run the command to retry the binding.", warnings);
 		}
 	}
 
 	/// <summary>
 	/// Turns the <c>UsePanelIconBackground</c> feature off for everyone so the just-applied background image is
 	/// not overridden by the panel's own icon background. Best-effort: the background is already applied and
-	/// cannot be cleanly rolled back, so a failure here is surfaced as a warning rather than failing the apply.
+	/// cannot be cleanly rolled back, so a failure is recorded in <paramref name="warnings"/> rather than failing
+	/// the apply. Recorded on the result rather than logged straight out, so an MCP caller sees it too — the CLI
+	/// is not the only surface that has to know the panel may still hide the background.
 	/// </summary>
-	private void DisablePanelIconBackground() {
+	private void DisablePanelIconBackground(List<string> warnings) {
 		try {
 			_panelIconBackgroundFeature.DisableForAllUsers();
 		} catch (Exception exception) {
-			Logger.WriteWarning(
+			warnings.Add(
 				$"The background image was applied, but turning off the {PanelIconBackgroundFeatureManager.FeatureCode} " +
 				$"feature failed, so the panel may still hide it: {exception.Message}");
 		}
@@ -231,13 +245,22 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			Logger.WriteInfo($"Image {result.ImageId} is set as the shell background. " +
 				"Users see it after a page refresh.");
 			Logger.WriteInfo($"Background data bound into package '{result.Package}'.");
-			foreach (string skipped in result.Skipped) {
-				Logger.WriteInfo($"Skipped: {skipped}.");
-			}
+			WriteWarnings(result.Warnings);
 			return;
 		}
+		WriteWarnings(result.Warnings);
 		CommandSuccess = false;
 		Logger.WriteError(result.Error);
+	}
+
+	/// <summary>
+	/// Writes every non-fatal problem at warning level. Written after the package line on success so each gap
+	/// reads against the package it applies to, and before the error on failure so the failure stays last.
+	/// </summary>
+	private void WriteWarnings(IReadOnlyList<string> warnings) {
+		foreach (string warning in warnings) {
+			Logger.WriteWarning(warning);
+		}
 	}
 
 	/// <summary>

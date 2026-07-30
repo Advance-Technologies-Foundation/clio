@@ -89,7 +89,7 @@ public class SetLogoTool(
 					return SetLogoToolResult.Failure(string.IsNullOrWhiteSpace(result.Error)
 							? "ApplyLogos returned success=false."
 							: SensitiveErrorTextRedactor.Redact(result.Error),
-						result.Applied);
+						result.Applied, result.Warnings);
 				}
 				return SetLogoToolResult.Successful(result);
 			},
@@ -153,15 +153,14 @@ public sealed record SetLogoToolResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Package { get; init; }
 
-	/// <summary>Delivery gaps reported by the binding reconcile; relay them to the user. Omitted when empty.</summary>
-	[JsonPropertyName("skipped")]
+	/// <summary>
+	/// Every non-fatal problem: an apply-side caveat and each gap between what was applied and what the package
+	/// will deliver. Relay them to the user — a run with warnings still succeeded, but delivers less than it
+	/// looks like it did. Omitted when empty.
+	/// </summary>
+	[JsonPropertyName("warnings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<string> Skipped { get; init; }
-
-	/// <summary>A non-fatal problem the caller should surface; omitted when absent.</summary>
-	[JsonPropertyName("warning")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Warning { get; init; }
+	public IReadOnlyList<string> Warnings { get; init; }
 
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
@@ -174,17 +173,21 @@ public sealed record SetLogoToolResult {
 			Success = true,
 			Applied = result.Applied.Count > 0 ? result.Applied : null,
 			Package = result.Package,
-			Skipped = result.Skipped.Count > 0 ? result.Skipped : null,
-			Warning = result.Warning
+			Warnings = result.Warnings.Count > 0 ? result.Warnings : null
 		};
 	}
 
-	/// <summary>Creates a failure result carrying the diagnostic message and any slots already applied.</summary>
-	public static SetLogoToolResult Failure(string error, IReadOnlyList<string> applied = null) {
+	/// <summary>
+	/// Creates a failure result carrying the diagnostic message, any slots already applied, and any warnings
+	/// raised before the failure — an apply-side caveat must not be lost just because binding failed after it.
+	/// </summary>
+	public static SetLogoToolResult Failure(string error, IReadOnlyList<string> applied = null,
+		IReadOnlyList<string> warnings = null) {
 		return new SetLogoToolResult {
 			Success = false,
 			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error,
-			Applied = applied is { Count: > 0 } ? applied : null
+			Applied = applied is { Count: > 0 } ? applied : null,
+			Warnings = warnings is { Count: > 0 } ? warnings : null
 		};
 	}
 }
