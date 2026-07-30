@@ -61,23 +61,6 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 	#region Methods: Private
 
 	/// <summary>
-	/// Warns the interactive user that compilation is a heavy operation and asks whether to proceed now
-	/// or postpone (ENG-93157). Fails <b>open</b>: a non-interactive host (the MCP server, CI, redirected
-	/// stdin) returns <see langword="true"/> without prompting, so the confirmed-compile behavior is
-	/// unchanged for those callers.
-	/// </summary>
-	private bool ConfirmCompilation(CompilePackageOptions options) {
-		// --silent explicitly requests "default behavior without user interaction", so it must skip the
-		// prompt and proceed even on an interactive terminal — otherwise scripted
-		// `clio compile-package ... --silent` runs launched from a TTY would block (review RC-2).
-		if (options.IsSilent || _interactiveConsole.ConfirmOrProceedWhenNonInteractive(PackageCompilationWarning)) {
-			return true;
-		}
-		_logger.WriteInfo(BuildPostponeHint(options));
-		return false;
-	}
-
-	/// <summary>
 	/// Builds the "how to run it later" hint shown when the user postpones the compilation, echoing the
 	/// exact <c>clio compile-package</c> invocation that reproduces the request.
 	/// </summary>
@@ -93,11 +76,11 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 	#region Methods: Public
 
 	public override int Execute(CompilePackageOptions options) {
-		if (!ConfirmCompilation(options)) {
-			// The user chose to postpone: nothing is compiled and this is a deliberate choice, not an
-			// error, so the command exits 0. Only reachable on an interactive terminal — non-interactive
-			// hosts (the MCP server that runs this same command, CI, piped stdin) proceed without asking.
-			return 0;
+		if (!_interactiveConsole.ConfirmHeavyOperation(options.IsSilent, PackageCompilationWarning, _logger, BuildPostponeHint(options))) {
+			// The user chose to postpone: nothing is compiled. Return the distinct DeclinedExitCode (not 0)
+			// so in-process callers and shell chains can tell it apart from a successful build. Only
+			// reachable on an interactive, non-silent terminal.
+			return InteractiveConsoleExtensions.DeclinedExitCode;
 		}
 		try {
 			_packageBuilder.Rebuild(options.PackageNames);

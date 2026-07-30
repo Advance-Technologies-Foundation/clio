@@ -89,8 +89,8 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		int exitCode = command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0,
-			because: "postponing is a deliberate user choice, not an error");
+		exitCode.Should().Be(InteractiveConsoleExtensions.DeclinedExitCode,
+			because: "a declined/postponed compile must return the distinct non-zero DeclinedExitCode so in-process callers (push-package --force-compilation) and shell chains do not read it as a successful compile (RC-10)");
 		// The user must see the exact heavy-operation warning before deciding.
 		_interactiveConsole.Received(1).Prompt(Arg.Is<string>(message =>
 			message == CompileConfigurationCommand.SiteCompilationWarning));

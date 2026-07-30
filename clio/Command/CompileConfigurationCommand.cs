@@ -81,11 +81,11 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		: _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Compile);
 
 	public override int Execute(CompileConfigurationOptions options) {
-		if (!ConfirmCompilation(options)) {
-			// The user chose to postpone: nothing is compiled and this is a deliberate choice, not an
-			// error, so the command exits 0. Only reachable on an interactive terminal — non-interactive
-			// hosts (the MCP server that runs this same command, CI, piped stdin) proceed without asking.
-			return 0;
+		if (!_interactiveConsole.ConfirmHeavyOperation(options.IsSilent, SiteCompilationWarning, _logger, BuildPostponeHint(options))) {
+			// The user chose to postpone: nothing is compiled. Return the distinct DeclinedExitCode (not 0)
+			// so in-process callers (push-package --force-compilation) and shell chains can tell it apart
+			// from a successful compile. Only reachable on an interactive, non-silent terminal.
+			return InteractiveConsoleExtensions.DeclinedExitCode;
 		}
 		CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
 		_compileAll = options.All;
@@ -113,24 +113,6 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			_logger.WriteLine("=================================================================================");
 		}
 		return _isSuccess ? execResult : 1;
-	}
-
-	/// <summary>
-	/// Warns the interactive user that compilation is a heavy operation and asks whether to proceed now
-	/// or postpone (ENG-93157). Fails <b>open</b>: a non-interactive host (the MCP server, CI, redirected
-	/// stdin) returns <see langword="true"/> without prompting, so the confirmed-compile behavior is
-	/// unchanged for those callers. On the interactive CLI a declined prompt returns <see langword="false"/>
-	/// after telling the user how to run the compilation later.
-	/// </summary>
-	private bool ConfirmCompilation(CompileConfigurationOptions options) {
-		// --silent explicitly requests "default behavior without user interaction", so it must skip the
-		// prompt and proceed even on an interactive terminal — otherwise scripted `clio cc --silent` runs
-		// launched from a TTY would block or be postponed (review RC-1).
-		if (options.IsSilent || _interactiveConsole.ConfirmOrProceedWhenNonInteractive(SiteCompilationWarning)) {
-			return true;
-		}
-		_logger.WriteInfo(BuildPostponeHint(options));
-		return false;
 	}
 
 	/// <summary>

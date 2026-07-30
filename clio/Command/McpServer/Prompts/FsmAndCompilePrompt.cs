@@ -60,7 +60,7 @@ public static class FsmAndCompilePrompt
 			? $"""
 			  Compilation is a HEAVY operation that forces a runtime reload affecting every user connected to
 			  `{environmentName}`. First warn the user and ask whether to compile now or postpone (every time, not
-			  once per session — re-ask even if they already asked or you already warned earlier this session); only proceed after they confirm. If they postpone, do NOT compile — tell them it
+			  once per session — a prior request or answer is not standing consent, so re-ask even for an identical repeat); only proceed after they confirm. If they postpone, do NOT compile — tell them it
 			  can be run later (ask you again, or run `clio cc -e {environmentName} --all`).
 			  Once confirmed, use clio mcp server `{Tools.CompileCreatioTool.CompileCreatioToolName}` to run a full compilation for
 			  registered Creatio environment `{environmentName}`.
@@ -71,7 +71,7 @@ public static class FsmAndCompilePrompt
 			: $"""
 			  Compilation is a HEAVY operation that forces a runtime reload affecting every user connected to
 			  `{environmentName}`. First warn the user and ask whether to compile now or postpone (every time, not
-			  once per session — re-ask even if they already asked or you already warned earlier this session); only proceed after they confirm. If they postpone, do NOT compile — tell them it
+			  once per session — a prior request or answer is not standing consent, so re-ask even for an identical repeat); only proceed after they confirm. If they postpone, do NOT compile — tell them it
 			  can be run later.
 			  Once confirmed, use clio mcp server `{Tools.CompileCreatioTool.CompileCreatioToolName}` to compile only package
 			  `{packageName}` for registered Creatio environment `{environmentName}`.

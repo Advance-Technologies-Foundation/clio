@@ -149,6 +149,49 @@ public class ToolCommandResolverTests {
 	}
 
 	[Test]
+	[Description("RC-9: the resolver passes NonInteractiveConsole.Shared into EnvironmentSettings.Fill, so a Safe-flagged environment resolved over an mcp-http host started at a TTY cannot deadlock in Fill on Console.ReadKey. Asserts the exact console captured by a spy Fill, not a proxy that would also hold for a redirected-stdin RealInteractiveConsole.")]
+	[Category("Unit")]
+	public void Resolve_Should_PassNonInteractiveConsole_To_Fill() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"healthy", SettingsRepository.AppSettingsFile, "dev", "dev", 1, [], [], true, true));
+		settingsRepository.IsEnvironmentExists("dev").Returns(true);
+		ConsoleCapturingEnvironmentSettings spy = new() {
+			Uri = "http://localhost", Login = "Supervisor", Password = "Supervisor", Safe = true
+		};
+		settingsRepository.FindEnvironment("dev").Returns(spy);
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			resolver.Resolve<IInteractiveConsole>(options);
+
+			// Assert
+			spy.CapturedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "MCP resolution must pass a non-interactive console to Fill so a Safe-flagged environment fails closed instead of prompting on Console.ReadKey, independent of the host process stdin state");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	/// <summary>Spy that captures the <see cref="IInteractiveConsole"/> the resolver passes to Fill.</summary>
+	private sealed class ConsoleCapturingEnvironmentSettings : EnvironmentSettings {
+		public IInteractiveConsole CapturedConsole { get; private set; }
+
+		public override EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
+			CapturedConsole = interactiveConsole;
+			return this;
+		}
+	}
+
+	[Test]
 	[Description("Keeps environmentless MCP resolution independent from the active configured environment.")]
 	[Category("Unit")]
 	public void ResolveWithoutEnvironment_Should_Not_Read_Default_Environment_When_Name_Is_Missing() {

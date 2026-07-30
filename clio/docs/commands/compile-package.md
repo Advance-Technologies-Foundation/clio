@@ -85,7 +85,7 @@ Rebuilds two packages sequentially in the production environment
 - On an interactive terminal the command first warns that compilation is a heavy
 operation that forces a runtime reload affecting every connected user, and asks
 whether to compile now or postpone. Declining postpones the compilation (nothing is
-compiled, exit code 0) and prints how to run it later. Non-interactive hosts
+compiled, exit code 2) and prints how to run it later. Non-interactive hosts
 (scripts, CI, redirected stdin) and `--silent` proceed without asking.
 - The command performs rebuild, not incremental build
 - Package names are split by comma before execution
@@ -95,6 +95,7 @@ compiled, exit code 0) and prints how to run it later. Non-interactive hosts
 
     0       Package compilation completed successfully
     1       Package compilation failed or an error occurred
+    2       Compilation postponed by the user (declined the interactive confirmation)
 
 ## See Also
 

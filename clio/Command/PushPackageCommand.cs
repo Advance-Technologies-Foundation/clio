@@ -187,6 +187,12 @@
 				}
 				if (options.ForceCompilation && success) {
 					CompileConfigurationOptions compileOptions = CreateFromPushPkgOptions(options);
+					// --force-compilation already expresses the intent to compile, so the internal compile must
+					// run without the interactive heavy-operation prompt (ENG-93157, RC-10). Without this an
+					// interactive `push-package --force-compilation` that declined the prompt would postpone the
+					// compile yet still report success. IsSilent makes the compile proceed unconditionally, so a
+					// non-zero exit here reliably means the compilation itself failed.
+					compileOptions.IsSilent = true;
 					success &= _compileConfigurationCommand.Execute(compileOptions) == 0;
 				}
 				if (success) {

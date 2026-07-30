@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -357,6 +358,37 @@ public sealed class CompileCreatioToolTests
 			because: "the description must gate the call on explicit user confirmation");
 		description.Description.Should().Contain("standing consent",
 			because: "the description must close the repeat-in-session loophole so the agent re-asks even on an identical repeated request (ENG-93157 AC-5)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Cross-channel drift guard (RC-8): the 'standing consent' pre-compile invariant must appear in ALL four guaranteed MCP channels — the core-rules guide, the compile-creatio [Description], both compile prompt branches, and the get-tool-contract precondition — so an edit that drops it from any one channel fails the build.")]
+	public void CompileConsentInvariant_Should_Appear_In_All_Four_Channels()
+	{
+		// Arrange
+		const string invariant = "standing consent";
+		string coreRules = CoreRulesGuidanceResource.Guide.Text;
+		string description = ((System.ComponentModel.DescriptionAttribute)typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Single()).Description;
+		string fullPrompt = FsmAndCompilePrompt.CompileCreatio("sandbox");
+		string packagePrompt = FsmAndCompilePrompt.CompileCreatio("sandbox", "MyPackage");
+		string precondition = string.Join(" ", new ToolContractGetTool()
+			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
+			.Tools!.Single().Preconditions!);
+
+		// Assert
+		coreRules.Should().Contain(invariant,
+			because: "the core-rules guide must carry the anti-loophole invariant");
+		description.Should().Contain(invariant,
+			because: "the compile-creatio [Description] must carry the anti-loophole invariant");
+		fullPrompt.Should().Contain(invariant,
+			because: "the full-compilation prompt branch must carry the anti-loophole invariant");
+		packagePrompt.Should().Contain(invariant,
+			because: "the package-compilation prompt branch must carry the anti-loophole invariant");
+		precondition.Should().Contain(invariant,
+			because: "the get-tool-contract precondition must carry the anti-loophole invariant");
 	}
 
 	[Test]
