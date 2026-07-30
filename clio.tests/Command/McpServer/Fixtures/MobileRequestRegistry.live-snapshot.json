@@ -237,10 +237,10 @@
 				"viewElementName": {
 					"type": "string",
 					"required": true,
-					"description": "Name of the `crt.FileList` view element on the same mobile page that this upload targets, and the only parameter a standard page authors by hand. At page load the platform reads that file list to derive the storage parameters below; unlike web there is no page-defaults fallback - when no matching `crt.FileList` is found, parameter derivation stops with an error and the upload cannot work."
+					"description": "Name of the `crt.FileList` view element on the same mobile page that this upload targets, and the only storage-targeting parameter a standard page authors by hand (optional upload restrictions like `allowedFileTypes` / `maximumAllowedFileSize` / `params.selectFileOptions` may be authored alongside it). At page load the platform reads that file list to derive the storage parameters below; unlike web there is no page-defaults fallback - when no matching `crt.FileList` is found, parameter derivation stops with an error and the upload cannot work."
 				}
 			},
-			"description": "Uploads one or more files and attaches them to a record on a mobile page, targeting the `crt.FileList` named by `viewElementName`. Bound to a `crt.Button` or `crt.MenuItem` `clicked` - the only wiring processed on mobile; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName`. Files are always chosen through the mobile file-source picker.",
+			"description": "Uploads one or more files and attaches them to a record on a mobile page, targeting the `crt.FileList` named by `viewElementName`. Bound to a `crt.Button` or `crt.MenuItem` `clicked` - the only wiring processed on mobile; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName` plus optional upload restrictions. Files are always chosen through the mobile file-source picker.",
 			"references": {
 				"docs": [
 					"mobile-request-docs/mobile-upload-file.request.md"

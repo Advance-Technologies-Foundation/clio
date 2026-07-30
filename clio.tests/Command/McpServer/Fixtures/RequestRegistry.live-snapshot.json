@@ -323,10 +323,10 @@
 				},
 				"viewElementName": {
 					"type": "string",
-					"description": "Name of the `crt.FileList` view element on the same page that this upload targets - the standard page contract, and the only parameter such a page authors by hand. At page load the platform reads that file list to derive the storage parameters below. Either name a `crt.FileList` here, or (advanced, no file list on the page) hand-author `recordId`, `recordColumnName`, and `fileEntitySchemaName` instead; when this parameter is absent or matches no `crt.FileList`, page defaults derived from the primary data source apply (`SysFile` storage, `RecordId` link column, the primary record's Id)."
+					"description": "Name of the `crt.FileList` view element on the same page that this upload targets - the standard page contract, and the only storage-targeting parameter such a page authors by hand (optional upload restrictions like `allowedFileTypes` / `maximumAllowedFileSize` may be authored alongside it). At page load the platform reads that file list to derive the storage parameters below. Either name a `crt.FileList` here, or (advanced, no file list on the page) hand-author `recordId`, `recordColumnName`, and `fileEntitySchemaName` instead; when this parameter is absent or matches no `crt.FileList`, page defaults derived from the primary data source apply (`SysFile` storage, `RecordId` link column, the primary record's Id)."
 				}
 			},
-			"description": "Uploads one or more files and attaches them to a record, targeting the `crt.FileList` named by `viewElementName`. Bound to a button or menu item `clicked`, or to a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName`.",
+			"description": "Uploads one or more files and attaches them to a record, targeting the `crt.FileList` named by `viewElementName`. Bound to a button or menu item `clicked`, or to a `crt.FileList`'s `fileDropped` / `uploadClicked` outputs; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName` plus optional upload restrictions.",
 			"references": {
 				"docs": [
 					"request-docs/upload-file.request.md"
