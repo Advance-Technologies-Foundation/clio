@@ -192,6 +192,17 @@ public sealed class TabAreaLayersRule {
 	[JsonPropertyName("tabComponentType")]
 	public string TabComponentType { get; init; } = "crt.TabContainer";
 
+	/// <summary>
+	/// Mobile component types a tab's top-level child is treated as a DETAIL for (ENG-94188 AC#4,
+	/// e.g. <c>crt.ExpansionPanel</c>): instead of joining the tab's shared Area, such a child gets its
+	/// own synthesized Area card as a SIBLING of the shared Area inside the tab body ("like mobile
+	/// details"). A list so future detail-like types can join without an engine change. Empty or absent
+	/// keeps the pre-detail behavior — every child, panels included, goes into the shared Area — which
+	/// doubles as the safe transitional state while rules files roll out.
+	/// </summary>
+	[JsonPropertyName("detailComponentTypes")]
+	public IReadOnlyList<string> DetailComponentTypes { get; init; } = [];
+
 	/// <summary>The synthesized tab-body grid (layer 2, the tab's direct child).</summary>
 	[JsonPropertyName("mainTabContainer")]
 	public SynthesizedContainerRule MainTabContainer { get; init; }
