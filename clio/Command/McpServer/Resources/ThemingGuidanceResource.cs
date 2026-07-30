@@ -8,8 +8,9 @@ namespace Clio.Command.McpServer.Resources;
 /// Canonical AI-facing guidance for managing custom Creatio themes through clio MCP: guides the palette
 /// conversation via the read-only <c>advise-theme-palette</c> tool (verdict per colour decision), builds the
 /// theme CSS with the native <c>build-theme</c> tool (deterministic palette engine + bundled, version-pinned
-/// template), routes between the workspace/dev and no-code/server delivery flows, applies a theme to the
-/// current user's profile (<c>set-user-theme</c>), and gets/sets the global default theme.
+/// template), routes between the workspace/dev and no-code/server delivery flows, reads an existing theme's
+/// content (<c>get-theme</c>) for the read → edit → update round-trip, applies a theme to the current user's
+/// profile (<c>set-user-theme</c>), and gets/sets the global default theme.
 /// </summary>
 [McpServerResourceType]
 public sealed class ThemingGuidanceResource {
@@ -18,7 +19,7 @@ public sealed class ThemingGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	[McpServerResource(UriTemplate = ResourceUri, Name = "theming-guidance")]
-	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, apply a theme to the current user (or reset it), and get/set the default — and shipping them to a Creatio environment.")]
+	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, read, restyle, delete, list, apply a theme to the current user (or reset it), and get/set the default — and shipping them to a Creatio environment.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -32,6 +33,7 @@ public sealed class ThemingGuidanceResource {
 		       - Choose the brand colours with guidance — see "Choosing the colours".
 		       - Create, restyle, or delete a theme on an environment — see "Which flow".
 		       - List existing themes — see "List themes".
+		       - Read an existing theme's content — see "Read a theme's content".
 		       - Apply a theme to the current user (or reset it) — see "Apply to the current user".
 		       - Get or set the default theme — see "Get / set the default theme".
 
@@ -82,13 +84,20 @@ public sealed class ThemingGuidanceResource {
 		       Prerequisites: the `CanCustomizeBranding` license and the `CanManageThemes` system operation — see "Checking access".
 		       1. Produce the theme CSS first — call `build-theme` (returns the `theme.css` string; see "Building the theme CSS"). It goes into `create-theme` as text in `css-content` (step 2), so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
 		       2. Create with `create-theme`: pass the theme name as `caption` and the CSS as inline `css-content`. `css-class-name` is optional (derived from the caption when omitted — see "Building the theme CSS"). `id` is optional — omit it to get an auto-generated id back; `package-name` is optional — omit it to use the environment's CurrentPackageId system setting. After a successful create, apply it to the current user by default — see "Apply to the current user".
-		       3. Restyle with `update-theme` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed).
+		       3. Restyle with `update-theme` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed). When modifying an EXISTING theme — changing one colour, a font, or any single token — read its current content first with `get-theme` (see "Read a theme's content"), edit the returned CSS, and pass the result back through `update-theme`; regenerating the whole theme from scratch loses manual tweaks.
 		       4. Delete with `delete-theme` (by id; deleting an unknown id is an error). If you delete the theme that is currently the default, see "Get / set the default theme".
 		       5. Confirm the change with `list-themes`.
 
 		       List themes
 		       - List the custom themes on an environment with `list-themes`: it returns each theme's `id`, `caption`, `cssClassName`, and `cssFilePath`. Use it to confirm a theme is available and to find a theme's `id`.
 		       - An empty list means the environment has no custom themes, or the caller lacks the `CanCustomizeBranding` license.
+
+		       Read a theme's content — get-theme
+		       - Read an existing theme by its `id` with `get-theme`: it returns `{ success, id, caption, cssClassName, cssFilePath, cssContent, cssContentLength, error? }` — one call gives you the theme's full current definition.
+		       - The content always reflects the current state: `get-theme` re-reads the theme catalog on every call, so a read right after a write returns the new CSS.
+		       - Pass `output-file` to write the CSS to disk instead of returning it in the result (`cssContentLength` is still reported) — use this to keep a large theme out of the transcript. The path must not already exist and must stay inside the workspace or the OS temp directory.
+		       - An unknown `id` is a clear in-tool error, not a protocol failure: the tool names the id and points at `list-themes`. When the whole catalog is empty the error also names the possible missing `CanCustomizeBranding` license (see "List themes").
+		       - A theme that exists but has empty content returns `success: true` with an empty `cssContent` — treat it as a theme to fill in, not an error.
 
 		       Apply to the current user — set-user-theme
 		       This applies a theme to the profile of the account clio is authenticated as — only that user, not everyone (that is the global default; see "Get / set the default theme"). It overwrites the account's current theme, so `set-user-theme` is a confirmed (destructive-annotated) write: the MCP host prompts to confirm before it runs, and on the lazy tool surface it is re-issued through `clio-run`. It stays safe and reversible — it touches only the caller's own profile, and `reset` restores the default.

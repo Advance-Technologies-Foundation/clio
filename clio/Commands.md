@@ -596,6 +596,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
 <a id="delete-theme"></a>
 - [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
+<a id="get-theme"></a>
+- [`get-theme`](docs/commands/get-theme.md) - Read the content (theme.css) and metadata of a custom Creatio theme (Creatio 10.0.0+)
 <a id="list-themes"></a>
 <a id="get-themes"></a>
 - [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`

@@ -2474,3 +2474,14 @@ stories:
       - story-sync-schemas-verify-resume-1
       - story-sync-schemas-verify-resume-2
     blocks: []
+  - id: story-get-theme-1
+    title: "get-theme: read an existing theme's content (CLI + MCP)"
+    feature: "get-theme"
+    repo: "clio"
+    size: M
+    status: review
+    note: "ENG-93991. Catalog + cssFilePath static-file fetch (spike-verified); closes the read -> edit -> update-theme loop. PR #995. ADR: adr-theming.md Area E."
+    file: spec/stories/story-get-theme-1.md
+    adr: spec/adr/adr-theming.md
+    depends_on: []
+    blocks: []
