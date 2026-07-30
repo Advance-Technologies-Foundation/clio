@@ -20,8 +20,12 @@ internal static class ModelingGuardrails {
 
 	internal static void EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(
 		IEnumerable<CreateEntitySchemaColumnArgs>? columns) {
+		// ResolveName(), not Name: `column-name` is the contract's canonical column identity field, so a
+		// payload that spells the column that way must still hit this guardrail. Reading the raw `Name` let
+		// {"column-name":"Name"} slip through the IsNullOrWhiteSpace filter and reach the remote creator,
+		// which has no create-path equivalent of the modify path's EnsureNameIsUnique (PR #984 review).
 		string[] invalidColumns = columns?
-			.Select(column => column.Name?.Trim())
+			.Select(column => column.ResolveName()?.Trim())
 			.Where(name => !string.IsNullOrWhiteSpace(name))
 			.Where(name => BaseLookupInheritedColumns.Contains(name!, StringComparer.OrdinalIgnoreCase))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
