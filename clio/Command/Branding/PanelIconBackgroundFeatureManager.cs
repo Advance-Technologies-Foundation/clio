@@ -34,8 +34,6 @@ public sealed class PanelIconBackgroundFeatureManager : IPanelIconBackgroundFeat
 	/// <summary>The feature code that gates the panel's own icon background.</summary>
 	internal const string FeatureCode = "UsePanelIconBackground";
 
-	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
-
 	private readonly IDataProvider _dataProvider;
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -57,7 +55,10 @@ public sealed class PanelIconBackgroundFeatureManager : IPanelIconBackgroundFeat
 	public void DisableForAllUsers() {
 		IAppDataContext context = AppDataContextFactory.GetAppDataContext(_dataProvider);
 
-		AppFeature feature = context.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == FeatureCode);
+		// Filter server-side. AppFeature.Code is a mapped [SchemaProperty], so ATF pushes the predicate down the
+		// same way the AdminUnitFeatureState lookup below does; a .ToList() first would fetch and deserialize
+		// every feature row of the environment on every set-background-image run to find one.
+		AppFeature feature = context.Models<AppFeature>().FirstOrDefault(f => f.Code == FeatureCode);
 		if (feature is null || feature.Id == Guid.Empty) {
 			feature = context.CreateModel<AppFeature>();
 			feature.Code = FeatureCode;
@@ -66,11 +67,11 @@ public sealed class PanelIconBackgroundFeatureManager : IPanelIconBackgroundFeat
 		}
 
 		AdminUnitFeatureState existing = context.Models<AdminUnitFeatureState>()
-			.FirstOrDefault(s => s.FeatureId == feature.Id && s.AdminUnitId == AllUsersAdminUnitId);
+			.FirstOrDefault(s => s.FeatureId == feature.Id && s.AdminUnitId == BrandingWellKnownIds.AllUsersAdminUnit);
 		if (existing is null) {
 			AppFeatureState state = context.CreateModel<AppFeatureState>();
 			state.FeatureId = feature.Id;
-			state.AdminUnitId = AllUsersAdminUnitId;
+			state.AdminUnitId = BrandingWellKnownIds.AllUsersAdminUnit;
 			state.FeatureState = false;
 			ThrowIfSaveFailed(context.Save(), $"turning the {FeatureCode} feature off for all users");
 		} else if (existing.FeatureState) {

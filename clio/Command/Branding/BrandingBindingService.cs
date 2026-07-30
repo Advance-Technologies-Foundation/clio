@@ -93,6 +93,13 @@ internal sealed class BrandingBindingService(
 	ILogger logger) : IBrandingBindingService {
 
 	/// <summary>
+	/// Runtime schema projections already fetched, keyed by schema name plus requested column set. The service is
+	/// registered transient and one instance serves one reconcile, so this never outlives a single command run and
+	/// cannot serve a stale projection to the next one.
+	/// </summary>
+	private readonly Dictionary<string, DataBindingDbSchema> _projectedSchemas = new(StringComparer.Ordinal);
+
+	/// <summary>
 	/// The system setting that names the package design-time writes land in when the caller chooses none. The
 	/// platform's own tooling keys off it (and the <c>create-theme</c> server call falls back to it), so branding
 	/// follows the same convention instead of hardcoding a well-known package name.
@@ -108,8 +115,6 @@ internal sealed class BrandingBindingService(
 		string.IsNullOrWhiteSpace(packageName)
 			? $"the environment's current package ({CurrentPackageSettingCode})"
 			: $"package '{packageName}'";
-
-	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
 	private const string SysSettingsValueSchema = "SysSettingsValue";
 	private const string SysSettingsSchema = "SysSettings";
@@ -259,19 +264,20 @@ internal sealed class BrandingBindingService(
 		PackageRef packageRef, string code, string bindingName, List<string> bound, List<string> warnings) {
 		SysSettingsDefinition definition = FindSysSettingsDefinition(code);
 		if (definition is null) {
-			warnings.Add($"{code}: no All-Users value on this environment");
-			return ReportDroppedBinding(packageRef, bindingName, warnings);
-		}
-		if (string.Equals(definition.ValueTypeName, SecureTextValueTypeName, StringComparison.OrdinalIgnoreCase)) {
 			warnings.Add(
-				$"{code}: the setting is defined as {SecureTextValueTypeName} on this environment, and a secret " +
-				"value is never shipped in a package");
-			return ReportDroppedBinding(packageRef, bindingName, warnings);
+				$"{code}: the setting is not defined on this environment, so there is nothing to bind. A value " +
+				"binding references its setting by id, so a target that does not ship this definition could not " +
+				"resolve the row either");
+			return ReportDroppedBinding(packageRef, bindingName, SysSettingsValueSchema, warnings);
+		}
+		if (IsSecretBearing(definition)) {
+			warnings.Add(SecretBearingWarning(code));
+			return ReportDroppedBinding(packageRef, bindingName, SysSettingsValueSchema, warnings);
 		}
 		string valueRowId = FindAllUsersValueRowId(definition.Id);
 		if (valueRowId is null) {
 			warnings.Add($"{code}: no All-Users value on this environment");
-			return ReportDroppedBinding(packageRef, bindingName, warnings);
+			return ReportDroppedBinding(packageRef, bindingName, SysSettingsValueSchema, warnings);
 		}
 		SaveBinding(packageRef, bindingName, SysSettingsValueSchema, SysSettingsValueColumns, [valueRowId],
 			SysSettingsValuePolicy);
@@ -289,18 +295,7 @@ internal sealed class BrandingBindingService(
 		List<string> warnings = [];
 		bool anyDropped = false;
 
-		string configRowId = FindAllUsersValueRowId(SetBackgroundImageCommand.BackgroundConfigCode);
-		if (configRowId is null) {
-			warnings.Add($"{SetBackgroundImageCommand.BackgroundConfigCode}: no background configured on this environment");
-			anyDropped |= ReportDroppedBinding(packageRef, BackgroundConfigBindingName, warnings);
-			anyDropped |= ReportDroppedBinding(packageRef, BackgroundConfigDefBindingName, warnings);
-		} else {
-			SaveBinding(packageRef, BackgroundConfigBindingName, SysSettingsValueSchema, SysSettingsValueColumns,
-				[configRowId], SysSettingsValuePolicy);
-			bound.Add(SetBackgroundImageCommand.BackgroundConfigCode);
-			BindBackgroundConfigDefinition(packageRef, bound, warnings);
-		}
-
+		anyDropped |= ReconcileBackgroundConfig(packageRef, bound, warnings);
 		anyDropped |= BindBackgroundImageAndGallery(packageRef, bound, warnings);
 		anyDropped |= BindPanelIconBackgroundFeature(packageRef, bound, warnings);
 		return new BrandingScopeReport(
@@ -320,12 +315,15 @@ internal sealed class BrandingBindingService(
 	/// </summary>
 	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
 	private bool BindPanelIconBackgroundFeature(PackageRef packageRef, List<string> bound, List<string> warnings) {
+		(string BindingName, string SchemaName)[] featureBindings = [
+			(PanelIconFeatureBindingName, AdminUnitFeatureStateSchema),
+			(PanelIconFeatureDefBindingName, FeatureSchema)
+		];
+
 		Guid? featureId = FindFeatureDefinitionId(PanelIconBackgroundFeatureCode);
 		if (featureId is null) {
 			warnings.Add($"{PanelIconBackgroundFeatureCode}: the feature is not defined on this environment");
-			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, warnings);
-			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, warnings);
-			return droppedState || droppedDef;
+			return ReportDroppedBindings(packageRef, warnings, featureBindings);
 		}
 
 		FeatureStateRow stateRow = FindAllUsersFeatureStateRow(featureId.Value);
@@ -333,9 +331,7 @@ internal sealed class BrandingBindingService(
 			warnings.Add(
 				$"{PanelIconBackgroundFeatureCode}: no All-Users feature state on this environment " +
 				"(the feature was not turned off here)");
-			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, warnings);
-			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, warnings);
-			return droppedState || droppedDef;
+			return ReportDroppedBindings(packageRef, warnings, featureBindings);
 		}
 		if (stateRow.IsOff != true) {
 			warnings.Add(
@@ -343,9 +339,7 @@ internal sealed class BrandingBindingService(
 				$"{(stateRow.IsOff is null ? "not readable as an on/off value" : "still on")}, and only a confirmed " +
 				"off-state is bound — the binding force-updates FeatureState on install, so delivering this row " +
 				"would turn the panel icon background back on for the target and hide the background");
-			bool droppedState = ReportDroppedBinding(packageRef, PanelIconFeatureBindingName, warnings);
-			bool droppedDef = ReportDroppedBinding(packageRef, PanelIconFeatureDefBindingName, warnings);
-			return droppedState || droppedDef;
+			return ReportDroppedBindings(packageRef, warnings, featureBindings);
 		}
 
 		SaveBinding(packageRef, PanelIconFeatureBindingName, AdminUnitFeatureStateSchema, AdminUnitFeatureStateColumns,
@@ -358,20 +352,56 @@ internal sealed class BrandingBindingService(
 	}
 
 	/// <summary>
-	/// Binds the CrtBackgroundConfig SysSettings definition row by Id so the value row's setting reference
-	/// resolves on a target that does not already ship the definition. Keyed by Id (not Code): the definition
-	/// is usually product-shipped with a stable id, and preserving the id keeps the value-row reference intact.
+	/// Reconciles the CrtBackgroundConfig value row together with its SysSettings definition row: the definition is
+	/// bound by Id so the value row's setting reference resolves on a target that does not already ship it, which
+	/// is why the two stand or fall together. The definition is resolved once here and reused, and — exactly as a
+	/// logo slot does — a setting redefined as a secret-bearing type is refused rather than packaged.
 	/// </summary>
-	private void BindBackgroundConfigDefinition(PackageRef packageRef, List<string> bound, List<string> warnings) {
-		SysSettingsDefinition definition = FindSysSettingsDefinition(SetBackgroundImageCommand.BackgroundConfigCode);
+	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
+	private bool ReconcileBackgroundConfig(PackageRef packageRef, List<string> bound, List<string> warnings) {
+		string code = SetBackgroundImageCommand.BackgroundConfigCode;
+		(string BindingName, string SchemaName)[] configBindings = [
+			(BackgroundConfigBindingName, SysSettingsValueSchema),
+			(BackgroundConfigDefBindingName, SysSettingsSchema)
+		];
+
+		SysSettingsDefinition definition = FindSysSettingsDefinition(code);
 		if (definition is null) {
-			warnings.Add($"{SetBackgroundImageCommand.BackgroundConfigCode} definition: not found");
-			return;
+			warnings.Add($"{code}: the setting is not defined on this environment, so no background could be bound");
+			return ReportDroppedBindings(packageRef, warnings, configBindings);
 		}
+		if (IsSecretBearing(definition)) {
+			warnings.Add(SecretBearingWarning(code));
+			return ReportDroppedBindings(packageRef, warnings, configBindings);
+		}
+		string configRowId = FindAllUsersValueRowId(definition.Id);
+		if (configRowId is null) {
+			warnings.Add($"{code}: no background configured on this environment");
+			return ReportDroppedBindings(packageRef, warnings, configBindings);
+		}
+
+		SaveBinding(packageRef, BackgroundConfigBindingName, SysSettingsValueSchema, SysSettingsValueColumns,
+			[configRowId], SysSettingsValuePolicy);
+		bound.Add(code);
+		// Keyed by Id (not Code): the definition is usually product-shipped with a stable id, and preserving the
+		// id keeps the value row's setting reference intact on the target.
 		SaveBinding(packageRef, BackgroundConfigDefBindingName, SysSettingsSchema, SysSettingsColumns,
 			[definition.Id.ToString()], columnPolicy: null);
-		bound.Add($"{SetBackgroundImageCommand.BackgroundConfigCode} definition");
+		bound.Add($"{code} definition");
+		return false;
 	}
+
+	/// <summary>
+	/// True when a setting is declared as a secret-bearing type on this environment. A secret value is never
+	/// shipped in a package, whichever branding slot asked for it.
+	/// </summary>
+	private static bool IsSecretBearing(SysSettingsDefinition definition) =>
+		string.Equals(definition.ValueTypeName, SecureTextValueTypeName, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>The single wording for a refusal caused by <see cref="IsSecretBearing"/>.</summary>
+	private static string SecretBearingWarning(string code) =>
+		$"{code}: the setting is defined as {SecureTextValueTypeName} on this environment, and a secret value is " +
+		"never shipped in a package";
 
 	/// <summary>
 	/// When the background is an image, binds the SysImage row and its gallery membership row by Id; when it is
@@ -380,6 +410,11 @@ internal sealed class BrandingBindingService(
 	/// </summary>
 	/// <returns><see langword="true"/> when a previously shipped binding was dropped.</returns>
 	private bool BindBackgroundImageAndGallery(PackageRef packageRef, List<string> bound, List<string> warnings) {
+		(string BindingName, string SchemaName)[] imageBindings = [
+			(BackgroundImageBindingName, SysImageSchema),
+			(BackgroundGalleryBindingName, SysImageInTagSchema)
+		];
+
 		BackgroundImageResolution resolution = ResolveConfiguredBackgroundImage();
 		if (resolution.ImageId is null) {
 			warnings.Add(resolution.Kind switch {
@@ -390,17 +425,13 @@ internal sealed class BrandingBindingService(
 					"background image: no background is configured on this environment",
 				_ => "background image: the configured background is a colour, not an image"
 			});
-			bool droppedImage = ReportDroppedBinding(packageRef, BackgroundImageBindingName, warnings);
-			bool droppedGallery = ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
-			return droppedImage || droppedGallery;
+			return ReportDroppedBindings(packageRef, warnings, imageBindings);
 		}
 
 		Guid imageId = resolution.ImageId.Value;
 		if (!RowExists(SysImageSchema, imageId)) {
 			warnings.Add($"background image {imageId}: not found on this environment");
-			bool droppedImage = ReportDroppedBinding(packageRef, BackgroundImageBindingName, warnings);
-			bool droppedGallery = ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
-			return droppedImage || droppedGallery;
+			return ReportDroppedBindings(packageRef, warnings, imageBindings);
 		}
 
 		SaveBinding(packageRef, BackgroundImageBindingName, SysImageSchema, SysImageColumns,
@@ -410,13 +441,13 @@ internal sealed class BrandingBindingService(
 		GalleryMembership membership = FindGalleryMembership(imageId);
 		if (membership is null) {
 			warnings.Add("background gallery membership: not found");
-			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
+			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, SysImageInTagSchema, warnings);
 		}
 		if (membership.TagId != SetBackgroundImageCommand.ShellBackgroundTagId) {
 			warnings.Add(
 				$"background gallery membership: this environment's {ShellBackgroundTagName} tag has a customized id " +
 				$"({membership.TagId}) that would not resolve on an install target, so the membership row was not bound");
-			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, warnings);
+			return ReportDroppedBinding(packageRef, BackgroundGalleryBindingName, SysImageInTagSchema, warnings);
 		}
 		SaveBinding(packageRef, BackgroundGalleryBindingName, SysImageInTagSchema, SysImageInTagColumns,
 			[membership.RowId], columnPolicy: null);
@@ -430,12 +461,28 @@ internal sealed class BrandingBindingService(
 	/// the package the user must see in the report, not a silent side effect.
 	/// </summary>
 	/// <returns><see langword="true"/> when a binding was actually deleted.</returns>
-	private bool ReportDroppedBinding(PackageRef packageRef, string bindingName, List<string> warnings) {
-		if (!DeleteBindingIfExists(packageRef, bindingName)) {
+	private bool ReportDroppedBinding(
+		PackageRef packageRef, string bindingName, string schemaName, List<string> warnings) {
+		if (!DeleteBindingIfExists(packageRef, bindingName, schemaName, warnings)) {
 			return false;
 		}
 		warnings.Add($"{bindingName}: previously shipped binding removed, it no longer has a source row");
 		return true;
+	}
+
+	/// <summary>
+	/// Drops a group of bindings that stand or fall together — a value row plus the definition row that makes it
+	/// resolvable, or an image plus its gallery membership. Every member is attempted even when an earlier one was
+	/// refused or absent, so a partially shipped group cannot survive half-dropped.
+	/// </summary>
+	/// <returns><see langword="true"/> when at least one binding was actually deleted.</returns>
+	private bool ReportDroppedBindings(
+		PackageRef packageRef, List<string> warnings, params (string BindingName, string SchemaName)[] bindings) {
+		bool anyDropped = false;
+		foreach ((string bindingName, string schemaName) in bindings) {
+			anyDropped |= ReportDroppedBinding(packageRef, bindingName, schemaName, warnings);
+		}
+		return anyDropped;
 	}
 
 	/// <summary>Why <see cref="ResolveConfiguredBackgroundImage"/> produced no image id.</summary>
@@ -520,6 +567,13 @@ internal sealed class BrandingBindingService(
 	/// are invisible until install, so an absent column is a hard error instead.
 	/// </summary>
 	private DataBindingDbSchema FetchProjectedSchema(string schemaName, IReadOnlyCollection<string> columnNames) {
+		// Keyed on the projection, not just the schema name: one reconcile binds up to five logo slots from the
+		// identical SysSettingsValue projection, and re-fetching the runtime schema for each is five identical
+		// round trips. Including the column set keeps a future caller asking for a different projection correct.
+		string projectionKey = $"{schemaName}({string.Join(",", columnNames)})";
+		if (_projectedSchemas.TryGetValue(projectionKey, out DataBindingDbSchema cached)) {
+			return cached;
+		}
 		DataBindingSchema schema = schemaClient.Fetch(schemaName);
 		HashSet<string> requested = new(columnNames, StringComparer.OrdinalIgnoreCase);
 		List<DataBindingSchemaColumn> projected = schema.Columns
@@ -537,8 +591,10 @@ internal sealed class BrandingBindingService(
 				$"binding: {string.Join(", ", missingColumns)}. Binding a partial projection would ship an " +
 				"incomplete or wildcard-matching binding, so the operation was stopped.");
 		}
-		return new DataBindingDbSchema(
+		DataBindingDbSchema projectedSchema = new(
 			schema.UId, schema.Name, projected.Select(c => c.Name).ToList(), projected);
+		_projectedSchemas[projectionKey] = projectedSchema;
+		return projectedSchema;
 	}
 
 	private PackageRef ResolvePackageRef(string packageName) {
@@ -565,7 +621,7 @@ internal sealed class BrandingBindingService(
 				[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
 				[
 					new SelectQueryHelper.SelectQueryFilterDefinition(SysSettingsColumn, definitionId.ToString(), SelectQueryHelper.GuidDataValueType),
-					new SelectQueryHelper.SelectQueryFilterDefinition(SysAdminUnitColumn, AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
+					new SelectQueryHelper.SelectQueryFilterDefinition(SysAdminUnitColumn, BrandingWellKnownIds.AllUsersAdminUnit.ToString(), SelectQueryHelper.GuidDataValueType)
 				]));
 		return SingleRowId(response,
 			$"All-Users value rows of setting '{definitionId}'");
@@ -609,7 +665,7 @@ internal sealed class BrandingBindingService(
 				],
 				[
 					new SelectQueryHelper.SelectQueryFilterDefinition(FeatureColumn, featureId.ToString(), SelectQueryHelper.GuidDataValueType),
-					new SelectQueryHelper.SelectQueryFilterDefinition(SysAdminUnitColumn, AllUsersAdminUnitId.ToString(), SelectQueryHelper.GuidDataValueType)
+					new SelectQueryHelper.SelectQueryFilterDefinition(SysAdminUnitColumn, BrandingWellKnownIds.AllUsersAdminUnit.ToString(), SelectQueryHelper.GuidDataValueType)
 				]));
 		EnsureAtMostOneRow(response.Rows.Count, $"All-Users feature state of feature '{featureId}'");
 		BrandingFeatureStateDto row = response.Rows.FirstOrDefault();
@@ -731,6 +787,11 @@ internal sealed class BrandingBindingService(
 		return SingleRowId(response, $"row '{rowId}' of '{schemaName}'") is not null;
 	}
 
+	/// <summary>A binding already registered in the target package under a branding name.</summary>
+	/// <param name="UId">The binding's UId, or null when the registration carries no parsable UId.</param>
+	/// <param name="SchemaName">The entity schema the existing binding delivers, as the target reports it.</param>
+	private sealed record ExistingBinding(Guid? UId, string SchemaName);
+
 	/// <summary>
 	/// Resolves the UId of an existing branding binding so a re-save updates it in place. When
 	/// <paramref name="expectedSchemaName"/> is supplied and the existing binding delivers a different entity
@@ -738,6 +799,33 @@ internal sealed class BrandingBindingService(
 	/// re-saving it under the branding schema would destroy whatever it delivered.
 	/// </summary>
 	private Guid? FindExistingBindingUId(Guid packageUId, string bindingName, string expectedSchemaName = null) {
+		ExistingBinding existing = FindExistingBinding(packageUId, bindingName);
+		if (existing is null) {
+			return null;
+		}
+		if (expectedSchemaName is not null && DeliversForeignSchema(existing, expectedSchemaName)) {
+			throw new InvalidOperationException(
+				$"Package data binding '{bindingName}' already exists for schema '{existing.SchemaName}', " +
+				$"but branding delivery needs it for '{expectedSchemaName}'. Rename or remove the existing " +
+				"binding before binding branding into this package.");
+		}
+		return existing.UId;
+	}
+
+	/// <summary>
+	/// True when an existing registration under a branding name delivers some other entity schema — i.e. the name
+	/// collided with a binding branding does not own. A registration whose schema the target did not report is
+	/// deliberately NOT treated as foreign: refusing on missing metadata would strand every reconcile.
+	/// </summary>
+	private static bool DeliversForeignSchema(ExistingBinding existing, string expectedSchemaName) =>
+		!string.IsNullOrWhiteSpace(existing.SchemaName)
+		&& !string.Equals(existing.SchemaName, expectedSchemaName, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Reads the registration of <paramref name="bindingName"/> in the package, with the entity schema it
+	/// delivers, or null when the package has none.
+	/// </summary>
+	private ExistingBinding FindExistingBinding(Guid packageUId, string bindingName) {
 		BrandingBindingUIdResponse response = SelectQueryHelper.ExecuteSelectQuery<BrandingBindingUIdResponse>(
 			applicationClient, serviceUrlBuilder,
 			SelectQueryHelper.BuildSelectQuery(
@@ -758,19 +846,30 @@ internal sealed class BrandingBindingService(
 		if (row is null) {
 			return null;
 		}
-		if (expectedSchemaName is not null
-			&& !string.IsNullOrWhiteSpace(row.EntitySchemaName)
-			&& !string.Equals(row.EntitySchemaName, expectedSchemaName, StringComparison.OrdinalIgnoreCase)) {
-			throw new InvalidOperationException(
-				$"Package data binding '{bindingName}' already exists for schema '{row.EntitySchemaName}', " +
-				$"but branding delivery needs it for '{expectedSchemaName}'. Rename or remove the existing " +
-				"binding before binding branding into this package.");
-		}
-		return Guid.TryParse(row.UId, out Guid parsed) ? parsed : null;
+		Guid? uId = Guid.TryParse(row.UId, out Guid parsed) ? parsed : null;
+		return new ExistingBinding(uId, row.EntitySchemaName);
 	}
 
-	private bool DeleteBindingIfExists(PackageRef packageRef, string bindingName) {
-		if (FindExistingBindingUId(packageRef.UId, bindingName) is null) {
+	/// <summary>
+	/// Deletes the package's registration of <paramref name="bindingName"/>, but only when it actually delivers
+	/// <paramref name="expectedSchemaName"/>. The same-name / foreign-schema case is refused with a warning rather
+	/// than deleted: the branding names are fixed, so a package can carry one that a hand edit, an older clio, or
+	/// third-party tooling created for a different schema, and DeletePackageSchemaData keys on
+	/// (package, name) alone — deleting it would destroy package data this command does not own. That is strictly
+	/// worse than the overwrite <see cref="SaveBinding"/> already refuses, so both paths apply the same guard.
+	/// </summary>
+	/// <returns><see langword="true"/> only when a branding-owned binding was actually deleted.</returns>
+	private bool DeleteBindingIfExists(
+		PackageRef packageRef, string bindingName, string expectedSchemaName, List<string> warnings) {
+		ExistingBinding existing = FindExistingBinding(packageRef.UId, bindingName);
+		if (existing is null) {
+			return false;
+		}
+		if (DeliversForeignSchema(existing, expectedSchemaName)) {
+			warnings.Add(
+				$"{bindingName}: left untouched — the package already carries a binding of this name for schema " +
+				$"'{existing.SchemaName}', which branding does not own. Rename or remove it if branding should " +
+				"manage this name.");
 			return false;
 		}
 		string body = JsonSerializer.Serialize(new { packageUId = packageRef.UId.ToString(), packageSchemaDataName = bindingName });

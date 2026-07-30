@@ -474,6 +474,40 @@ public sealed class BrandingBindingServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Does not bind the background configuration when the setting is defined as SecureText on this environment, matching the refusal a logo slot already applies.")]
+	public void BindBackground_Should_Not_Bind_A_SecureText_Background_Config() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.SetSettingValueType(SetBackgroundImageCommand.BackgroundConfigCode, "SecureText");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindBackground(PackageName);
+
+		// Assert
+		environment.SavedBindingNames().Should().NotContain("ClioBranding_BackgroundConfig",
+			because: "a value the environment declares secret-bearing is never shipped in a package, and which branding slot asked for it makes no difference");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports the SecureText background configuration as a warning so the caller sees the package ships no background rather than assuming it did.")]
+	public void BindBackground_Should_Report_A_SecureText_Background_Config_As_A_Warning() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.SetSettingValueType(SetBackgroundImageCommand.BackgroundConfigCode, "SecureText");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindBackground(PackageName);
+
+		// Assert
+		report.Warnings.Should().Contain(entry => entry.Contains("SecureText"),
+			because: "a delivery gap the caller cannot see is a gap they will not fix");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Keys the AdminUnitFeatureState binding on the natural (Feature, SysAdminUnit) pair so an install merges onto the target's existing All-Users state row.")]
 	public void BindBackground_Should_Key_The_Panel_Icon_Feature_State_On_The_Natural_Key() {
 		// Arrange
@@ -1032,6 +1066,59 @@ public sealed class BrandingBindingServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Names the undefined setting as the cause when a logo slot has no definition on the environment, instead of reporting it as a missing All-Users value.")]
+	public void BindLogos_Should_Report_An_Undefined_Setting_As_Its_Own_Cause() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
+		environment.RemoveSettingDefinition("CrtAppToolbarLogo");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindLogos(PackageName, AllLogoCodes);
+
+		// Assert
+		report.Warnings.Should().Contain(entry => entry.Contains("CrtAppToolbarLogo") && entry.Contains("not defined"),
+			because: "an absent setting and a setting with no All-Users value need different fixes, so reporting both as 'no All-Users value' sends the caller looking in the wrong place");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not delete a same-named binding that delivers a different entity schema when dropping a slot, because DeletePackageSchemaData keys on the package and name alone.")]
+	public void BindLogos_Should_Not_Delete_A_Binding_That_Delivers_A_Different_Schema() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
+		environment.RemoveAllUsersValue("LogoImage");
+		environment.RegisterExistingBinding("ClioBranding_Logo_LogoImage", ExistingBindingUId, "Contact");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		sut.BindLogos(PackageName, AllLogoCodes);
+
+		// Assert
+		environment.DeletedBindingNames().Should().NotContain("ClioBranding_Logo_LogoImage",
+			because: "the delete request carries only the package and the binding name, so deleting a name branding does not own would destroy another owner's package data outright — worse than the overwrite the save path already refuses");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports the untouched foreign-schema binding as a warning so the caller learns the branding name is taken rather than silently getting no delivery.")]
+	public void BindLogos_Should_Warn_When_A_Foreign_Schema_Binding_Blocks_A_Drop() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithBrandedLogos();
+		environment.RemoveAllUsersValue("LogoImage");
+		environment.RegisterExistingBinding("ClioBranding_Logo_LogoImage", ExistingBindingUId, "Contact");
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindLogos(PackageName, AllLogoCodes);
+
+		// Assert
+		report.Warnings.Should().Contain(entry => entry.Contains("Contact"),
+			because: "the caller has to know the branding name is occupied by someone else's binding to be able to rename or remove it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Refuses to bind when a setting code resolves to more than one definition rather than picking an arbitrary one to deliver.")]
 	public void BindLogos_Should_Throw_When_A_Setting_Has_Duplicate_Definitions() {
 		// Arrange
@@ -1131,12 +1218,11 @@ public sealed class BrandingBindingServiceTests {
 
 		/// <summary>
 		/// The raw JSON token the AdminUnitFeatureState query answers for <c>FeatureState</c>. A token rather than
-		/// a <see cref="bool"/> so a test can model every shape the column is delivered in. Defaults to the numeric
-		/// off-state <c>0</c>, which is what a real environment answers: the read projection declares this column as
-		/// Integer (<c>dataValueType 4</c>), even though the writable AppFeatureState projection over the same row
-		/// declares it Boolean.
+		/// a <see cref="bool"/> so a test can model every shape the column is delivered in. Defaults to what a real
+		/// environment answers on THIS access path — see <see cref="BrandingFeatureStateWireShape"/>, which also
+		/// documents the Boolean shape the ATF path sees and must be revisited together with this one.
 		/// </summary>
-		private string _panelIconFeatureStateJson = "0";
+		private string _panelIconFeatureStateJson = BrandingFeatureStateWireShape.OffOverSelectQuery;
 		private readonly Dictionary<string, Guid> _existingBindings = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, string> _existingBindingSchemas = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, List<string>> _schemaColumns = new(StringComparer.OrdinalIgnoreCase);
@@ -1209,7 +1295,8 @@ public sealed class BrandingBindingServiceTests {
 		/// Models an All-Users state row that is still on — what <c>--keep-icon-background</c> leaves behind, and
 		/// what a swallowed turn-off failure leaves behind too. Uses the numeric on-state a real environment answers.
 		/// </summary>
-		public void LeavePanelIconFeatureOn() => _panelIconFeatureStateJson = "1";
+		public void LeavePanelIconFeatureOn() =>
+			_panelIconFeatureStateJson = BrandingFeatureStateWireShape.OnOverSelectQuery;
 
 		/// <summary>
 		/// Overrides the delivered <c>FeatureState</c> token so a test can cover a shape other than the numeric
@@ -1230,6 +1317,15 @@ public sealed class BrandingBindingServiceTests {
 		}
 
 		public void RemoveAllUsersValue(string code) => _allUsersValueRows.Remove(code);
+
+		/// <summary>
+		/// Models an environment where the setting is not defined at all — a different cause from an existing
+		/// setting with no All-Users value, and the two must be reported differently.
+		/// </summary>
+		public void RemoveSettingDefinition(string code) {
+			_settingDefinitions.Remove(code);
+			_allUsersValueRows.Remove(code);
+		}
 
 		public void RemoveAllAllUsersValues() => _allUsersValueRows.Clear();
 

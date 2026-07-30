@@ -74,6 +74,17 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	private static string Rows(bool withRow) =>
 		withRow ? $"{{\"value\":[{{\"Id\":\"{Guid.NewGuid()}\"}}]}}" : "{\"value\":[]}";
 
+	/// <summary>
+	/// Answers the consecutive gallery-membership GETs with one response per element of
+	/// <paramref name="sequence"/>. The command verifies a registration by reading back AFTER the insert POST, so
+	/// the number of elements is the number of membership reads that run — not an arbitrary length.
+	/// </summary>
+	/// <remarks>
+	/// The membership filter must use navigation paths (<c>Entity/Id</c>, <c>Tag/Id</c>): the flat
+	/// <c>EntityId</c>/<c>TagId</c> names fail on the platform in <c>$filter</c> with
+	/// "Column by path ... not found" (verified live), which is why this matcher pins the navigation form.
+	/// </remarks>
+	/// <param name="sequence">Whether each successive membership read answers with a row.</param>
 	private void ArrangeGalleryReads(params bool[] sequence) {
 		string[] responses = System.Linq.Enumerable.ToArray(
 			System.Linq.Enumerable.Select(sequence, withRow => Rows(withRow)));
@@ -83,6 +94,11 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 			.Returns(responses[0], System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Skip(responses, 1)));
 	}
 
+	/// <summary>
+	/// Arranges the gallery reads for the two states the command distinguishes: already registered answers the
+	/// single pre-check with a row, while not-yet-registered answers the pre-check empty and the post-insert
+	/// read-back with the new row.
+	/// </summary>
 	private void ArrangeGalleryState(bool alreadyRegistered) {
 		if (alreadyRegistered) {
 			ArrangeGalleryReads(true);
@@ -301,6 +317,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_applicationClient.ExecutePostRequest("odata/SysImageInTag",
 				Arg.Is<string>(body => body.Contains(CustomTagId.ToString())))
 			.Returns($"{{\"Id\":\"{Guid.NewGuid()}\"}}");
+		// Seeded tag: pre-check empty, read-back still empty (the insert was rejected);
+		// resolved tag: pre-check empty, read-back confirms the row.
 		ArrangeGalleryReads(false, false, false, true);
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
@@ -339,6 +357,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	public void Execute_ShouldFail_WhenPostLooksSuccessfulButReadBackShowsNoRow() {
 		// Arrange
 		ArrangeImageExists();
+		// Pre-check and read-back stay empty for both the seeded and the resolved tag.
 		ArrangeGalleryReads(false, false, false, false);
 		_applicationClient.ExecuteGetRequest(
 				Arg.Is<string>(url => url.StartsWith("odata/SysImageTag?")))

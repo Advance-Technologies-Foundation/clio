@@ -743,32 +743,41 @@ take a single `args` object with kebab-case fields.
 - `set-background-image`
   Set an image as the environment's shell background for all users and bind it into a package —
   pass exactly one of `file` (a local image, uploaded and applied in one call) or `image-id` (an
-  image already uploaded with `upload-image`); `package` names the binding target (default
-  `Custom`), and `keep-icon-background=true` leaves the `UsePanelIconBackground` feature untouched
-  instead of turning it off. A confirmed write (`Destructive=true`: it replaces the currently
-  configured background, so the MCP host prompts before it runs; on the lazy tool surface it is
-  re-issued through `clio-run-destructive`). Idempotent — re-applying the same image converges to
-  the same state and refreshes the packaged snapshot. The `skipped` entries on the result are where
-  delivery gaps (a `SecureText` setting, a customized gallery tag) are surfaced.
+  image already uploaded with `upload-image`); `keep-icon-background=true` leaves the
+  `UsePanelIconBackground` feature untouched instead of turning it off. A confirmed write
+  (`Destructive=true`: it replaces the currently configured background, so the MCP host prompts
+  before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`).
+  Idempotent — re-applying the same image converges to the same state and refreshes the packaged
+  snapshot. The `warnings` entries on the result are where delivery gaps (a `SecureText` setting, a
+  customized gallery tag, a feature state that is not confirmed off) are surfaced.
 - `set-logo`
-  Apply the product logos from local image files and bind them into a package — pass at least one
-  slot: `logo` (login page), `menu-logo` (main menu), `configuration-logo` (configuration page),
-  `dark-logo` (the Freedom UI top panel — a dark surface, pass the white/light variant);
-  `package` names the binding target (default `Custom`).
+  Apply the product logos from local image files and bind them into a package. `logo` brands **every**
+  slot from one file; a slot argument gives that slot its own file and overrides `logo` for it —
+  `login-logo` (login page), `menu-logo` (main menu), `configuration-logo` (configuration page),
+  `dark-logo` (the Freedom UI top panel — a dark surface, pass the white/light variant). At least one
+  of them is required, and passing `logo` alone brands all four slots, not just the login page.
   The stock splash logo is suppressed automatically. A confirmed write (`Destructive=true`: the
   logos change for all users and cannot be automatically reverted; re-issued through
   `clio-run-destructive` on the lazy surface). Idempotent — re-applying the same files converges.
-  Only the slots passed (plus slots shipped by an earlier run) are bound, so an unbranded slot can
-  never overwrite the install target's own logo.
+  Only the slots this run wrote (plus slots an earlier run already shipped) are bound, so a slot
+  nobody branded stays out of the package.
+
+  On both tools `package` names the binding target. There is no default package: when `package` is
+  omitted the bindings land in the package the environment's `CurrentPackageId` system setting names,
+  and when that setting is unset or dangling the tool FAILS with an actionable error rather than
+  falling back to a well-known package. Validate a package the user names against `list-packages`
+  first — binding needs it unlocked.
 
 What an external AI can practically do here:
 
 - apply a shell background in one call: `set-background-image` with the local file (or with the
   `image-id` of an already-uploaded image) — the background data lands in the target package in the
   same call
-- apply the product logos in one call: `set-logo` with a file per branded slot — the logo data
-  lands in the target package in the same call; the slot list and rules live in the `branding`
-  guidance, including the package-notification contract (name the target package to the user)
+- apply the product logos in one call: `set-logo` with `logo` for the whole product, plus a slot
+  argument wherever a slot needs its own file (typically `dark-logo` with the light variant) — the
+  logo data lands in the target package in the same call; the slot list and rules live in the
+  `branding` guidance, including the package-notification contract (name the target package to the
+  user)
 
 Companion surfaces:
 
