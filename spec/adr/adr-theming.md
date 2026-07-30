@@ -382,8 +382,12 @@ it is display/diagnostic only (update-theme never consumes it), mirroring list-t
 (before any network call) + `WriteAtomic` (no-overwrite), omitting `cssContent` from the envelope
 (`cssContentLength` still reported) — keeps large CSS out of MCP transcripts and feeds
 `update-theme --css-content-file` directly. Consequently the MCP tool is `ReadOnly=false,
-Destructive=false, Idempotent=true, OpenWorld=false` (the get-schema RC-28 classification), and
-`get-theme` is consciously added to the `DurableInvocationGateCompletenessTests` reviewed baseline.
+Destructive=false, Idempotent=true, OpenWorld=false` (the get-schema RC-28 classification). Under the
+PR #984 durable-invocation gate (silently-executable = the reviewed `ReadOnly=true` baseline), a
+`ReadOnly=false` tool needs no baseline entry — `get-theme` is confirmation-gated on the durable
+unmatched-name path, exactly like `get-schema`/`get-sql-schema`. *(The original design pre-dated #984
+and added the tool to the then-existing silent-write-capable baseline; that list was superseded by the
+flipped gate.)*
 
 **E-D6 — Version floor: the family floor.** The mechanism only uses `GetAvailableThemes` + a static file,
 so `[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]` (10.0.0) applies unchanged; the tool is

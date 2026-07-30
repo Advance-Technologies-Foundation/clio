@@ -20,11 +20,18 @@ namespace Clio.Command.McpServer;
 /// an opaque "Unknown tool" after the lazy-schema split (PR #743) hid the long tail. It restores the
 /// pre-lazy invocation contract: a real clio tool named directly is resolved (through the
 /// <see cref="IMcpToolCompatibilityCatalog"/> for renamed/deprecated names) and either executed
-/// (non-destructive, reproducing the host's pre-lazy non-prompt behavior) or answered with a structured
-/// <c>confirmation-required</c> retry shape (destructive, reproducing the host's pre-lazy prompt, which
-/// the host can no longer raise for an unadvertised tool). Unresolvable names return structured,
-/// machine-readable errors with did-you-mean suggestions and a discovery hint instead of a dead end.
+/// (read-only) or answered with a structured <c>confirmation-required</c> retry shape (write-capable,
+/// standing in for the host prompt it can no longer raise for an unadvertised tool). Unresolvable names
+/// return structured, machine-readable errors with did-you-mean suggestions and a discovery hint instead
+/// of a dead end.
 /// </summary>
+/// <remarks>
+/// The gate keys on <c>readOnlyHint</c>, not <c>destructiveHint</c> (issue #953). Gating on
+/// destructiveness let additive-only writes — <c>odata-create</c> and friends, correctly annotated
+/// <c>Destructive=false</c> because the MCP contract reserves that flag for updates which can destroy
+/// existing state — insert durable rows into a live environment with no confirmation at all. The tool
+/// annotations were deliberately left spec-conformant; the gate is what changed.
+/// </remarks>
 public interface IMcpDurableCallToolHandler {
 	/// <summary>
 	/// Handles a <c>tools/call</c> whose name missed the advertised tool collection.
@@ -61,9 +68,20 @@ public sealed class McpDurableCallToolHandler(
 	private static readonly Lazy<HashSet<string>> CliVerbNames = new(BuildCliVerbNames);
 
 	/// <inheritdoc />
-	public async ValueTask<CallToolResult> HandleAsync(
+	public ValueTask<CallToolResult> HandleAsync(
 		RequestContext<CallToolRequestParams> request,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken) =>
+		HandleAsync(request, cancellationToken, readDeadline: null);
+
+	// Same handler as the interface method, with an optional read-response deadline override. The
+	// override exists ONLY as a test seam: production always calls the 2-arg interface method (see
+	// BindingsModule's WithCallToolHandler wiring), which passes null so the retry-safe branch uses
+	// McpReadResponseDeadline.DefaultReadDeadline. Tests pass a tiny deadline to exercise the timeout
+	// branch of the durable/raw-name dispatch vector directly, without a 120 s wall-clock wait (ENG-93373).
+	internal async ValueTask<CallToolResult> HandleAsync(
+		RequestContext<CallToolRequestParams> request,
+		CancellationToken cancellationToken,
+		TimeSpan? readDeadline) {
 		// This throw is intentional and does NOT contradict the return-not-thrown invariant below: a null
 		// request is a genuine SDK-contract violation (the SDK never invokes the handler with one), not a
 		// tool OUTCOME. Only expected outcomes are returned as structured results; a broken precondition
@@ -92,18 +110,38 @@ public sealed class McpDurableCallToolHandler(
 			return ClassifyUnresolved(requestedName, canonicalName, viaAlias, aliasEntry, correlationId);
 		}
 
-		// Reproduce the pre-lazy per-tool gate: the host used to read this tool's own Destructive flag
-		// from tools/list and prompt accordingly. For an unadvertised tool the host cannot see the flag,
-		// so the server self-enforces it — non-destructive executes without a prompt (exactly as
-		// pre-lazy), destructive is never silently executed and returns a ready-to-retry
-		// clio-run-destructive shape instead (the advertised, host-gated executor).
-		if (toolRegistry.IsDestructive(canonicalName)) {
-			return ConfirmationRequiredResult(requestedName, canonicalName, request.Params?.Arguments, correlationId);
+		// The gate keys on WRITE-CAPABILITY (readOnlyHint), not on destructiveness. Those answer different
+		// questions: an additive-only write such as odata-create is correctly Destructive=false per the MCP
+		// contract ("false if the tool performs only additive updates"), yet it still inserts durable rows
+		// into a live environment. Gating on Destructive therefore let every additive write run unprompted
+		// on this path (issue #953). The annotations stay spec-conformant and untouched; only the gate
+		// moved, so nothing but this path changed: read-only tools execute silently, every write-capable
+		// tool returns a ready-to-retry executor shape instead (the advertised, host-gated executor).
+		if (!toolRegistry.IsReadOnly(canonicalName)) {
+			return ConfirmationRequiredResult(
+				requestedName,
+				canonicalName,
+				request.Params?.Arguments,
+				toolRegistry.IsDestructive(canonicalName),
+				correlationId);
 		}
 
-		CallToolResult result = await executor
-			.InvokeResolvedAsync(tool, canonicalName, request, cancellationToken)
-			.ConfigureAwait(false);
+		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) long-tail dispatch by
+		// the read-response deadline — the fallback path for a non-resident read invoked by RAW name rather
+		// than via clio-run. Uses the SAME gate (McpReadDeadlineGate, via the registry) so classification
+		// never drifts across paths. Destructive tools never reach here — they returned confirmation-required
+		// above — so a false here is simply a non-read non-destructive tool, intentionally left unbounded.
+		// The abandon-restores-context caveat documented on the clio-run path applies equally here (both go
+		// through DispatchAsync) and is benign under the single-session, fresh-per-request-context model.
+		CallToolResult result = toolRegistry.IsRetrySafe(canonicalName)
+			? await McpReadResponseDeadline.RunAsync(
+				canonicalName,
+				token => executor.InvokeResolvedAsync(tool, canonicalName, request, token),
+				cancellationToken,
+				readDeadline).ConfigureAwait(false)
+			: await executor
+				.InvokeResolvedAsync(tool, canonicalName, request, cancellationToken)
+				.ConfigureAwait(false);
 		return AttachAdvisory(result, requestedName, canonicalName, viaAlias, correlationId);
 	}
 
@@ -183,24 +221,35 @@ public sealed class McpDurableCallToolHandler(
 		string requestedName,
 		string canonicalName,
 		IDictionary<string, JsonElement> nativeArguments,
+		bool isDestructive,
 		string correlationId) {
 		JsonObject retryArguments = new() {
 			["command"] = canonicalName
 		};
+		// The reason is spelled out per-outcome because the two cases are genuinely different and an agent
+		// that cannot tell them apart cannot explain the refusal to a user: a destructive tool may overwrite
+		// or delete existing state, while an additive-only write still creates durable state in the target.
+		string reason = isDestructive
+			? "can overwrite or delete existing state"
+			: "writes durable state to the target (additive)";
 		string text =
-			$"Tool '{canonicalName}' is destructive and was NOT executed: it is not advertised in tools/list, " +
+			$"Tool '{canonicalName}' {reason} and was NOT executed: it is not advertised in tools/list, " +
 			"so the host cannot show its own confirmation prompt. To proceed, call the advertised executor " +
-			$"`clio-run-destructive` with {{\"command\":\"{canonicalName}\",\"args\":{{…}}}} (re-supply your " +
+			$"`{ClioRunTool.ToolName}` with {{\"command\":\"{canonicalName}\",\"args\":{{…}}}} (re-supply your " +
 			"own arguments under `args`) — the host gates that call.";
 		return StructuredOutcome(CodeConfirmationRequired, text, correlationId, payload => {
 			payload[RequestedNameKey] = requestedName;
 			payload["canonical-name"] = canonicalName;
-			payload["destructive"] = true;
+			// Reports the tool's ACTUAL destructiveHint rather than a hardcoded true: since the gate moved to
+			// write-capability this outcome also covers additive-only writes, and flattening both into
+			// "destructive: true" would misreport the annotation the host reads from tools/list.
+			payload["destructive"] = isDestructive;
+			payload["write-capable"] = true;
 			if (nativeArguments is { Count: > 0 }) {
 				payload["argument-names"] = ToJsonArray(nativeArguments.Keys.ToArray());
 			}
 			payload["retry"] = new JsonObject {
-				["tool"] = ClioRunDestructiveTool.ToolName,
+				["tool"] = ClioRunTool.ToolName,
 				["arguments"] = retryArguments
 			};
 		});

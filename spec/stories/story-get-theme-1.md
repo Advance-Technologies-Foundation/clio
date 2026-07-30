@@ -39,5 +39,7 @@ tweaks).
 - [x] Unit tests: `GetThemeCommandTests` (Module=Command), `GetThemeToolTests` (Module=McpServer)
 - [x] MCP E2E: `GetThemeToolE2ETests` (hermetic), `ThemingVersionFloorContractE2ETests` gated list,
       `ThemingSandboxE2ETests` read → edit → update round-trip (live tier)
-- [x] `DurableInvocationGateCompletenessTests` reviewed baseline extended with `get-theme`
+- [x] Durable-invocation gate reviewed: under the PR #984 flipped gate (silently-executable =
+      `ReadOnly=true` baseline) the `ReadOnly=false` `get-theme` needs no baseline entry — it is
+      confirmation-gated on the durable path like `get-schema`
 - [x] ADR amendment (`spec/adr/adr-theming.md` Area E) recording the spike evidence and decisions

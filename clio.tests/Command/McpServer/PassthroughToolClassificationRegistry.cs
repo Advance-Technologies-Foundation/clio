@@ -235,6 +235,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["clio-run"] = PassthroughClassification.NotApplicable,
 			["clio-run-destructive"] = PassthroughClassification.NotApplicable,
 			["compile-creatio"] = PassthroughClassification.NotApplicable,
+			["compile-status"] = PassthroughClassification.NotApplicable,
 			["create-business-process"] = PassthroughClassification.NotApplicable,
 			["create-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["create-data-binding"] = PassthroughClassification.NotApplicable,
@@ -290,6 +291,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-mobile-page-conversion-guide"] = PassthroughClassification.NotApplicable, // ENG-91228 advisory guide tool; resolver-backed (class b), read-only, not part of the ENG-93347 passthrough audit
 			["get-page"] = PassthroughClassification.NotApplicable,
+			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
@@ -331,6 +333,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,
+			["restart-status"] = PassthroughClassification.NotApplicable, // ENG-91315 readiness-wait status poll; reads the in-memory RestartOperationRegistry only (mirrors compile-status), never makes a credential-passthrough Creatio call
 			["restore-db-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
