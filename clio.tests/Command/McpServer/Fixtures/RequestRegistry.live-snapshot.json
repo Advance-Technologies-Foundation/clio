@@ -568,6 +568,37 @@
 					}
 				}
 			},
+			"LookupValue": {
+				"fields": {
+					"dataValueType": {
+						"type": "string"
+					},
+					"displayValue": {
+						"type": "string",
+						"required": true
+					},
+					"index": {
+						"type": "number"
+					},
+					"name": {
+						"type": "string",
+						"required": true
+					},
+					"parentName": {
+						"type": "string"
+					},
+					"primaryImageValue": {
+						"type": "string"
+					},
+					"propertyName": {
+						"type": "string"
+					},
+					"value": {
+						"type": "string",
+						"required": true
+					}
+				}
+			},
 			"MathComparisonFilter": {
 				"fields": {
 					"columnPath": {
