@@ -172,6 +172,21 @@
 			}
 		},
 		{
+			"requestType": "crt.SaveRecordRequest",
+			"parameters": {
+				"preventCardClose": {
+					"type": "boolean",
+					"description": "Keeps the page open after a successful save. When `false` or omitted, a record opened in add or copy mode has its page closed after the save; a record opened in edit mode stays open either way. In both stay-open cases the page switches to the edit state. Distinct from the `preventCardClose` of crt.CreateRecordRequest, which controls whether the saved record is reopened."
+				}
+			},
+			"description": "Saves all data of the current record page - every root data source with pending changes, then the changed items of nested collections - after validating the primary data source. Failed saves are shown in a modal message; there is no success notification on mobile. Bound to the Save button in the Scaffold actions slot on form-page templates. The web-only parameters (showSuccessMessage, messageTextAfterCompletion, reloadSavedRecord) are ignored on mobile.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-save-record.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.UpdateRecordRequest",
 			"parameters": {
 				"entityName": {
@@ -181,7 +196,7 @@
 				"recordId": {
 					"type": "string",
 					"required": true,
-					"description": "Primary-key value (Id) of the record to open; required - the request does nothing (an error is logged) when it is null or empty. Usually an `$Attribute` binding to the row's Id (e.g. \"$NearbyDS_Id\", \"$Participant.Id\"); a literal Id is also accepted. A bound value is resolved to the record's primary key before navigation."
+					"description": "Primary-key value (Id) of the record to open; required - the request does nothing (an error is logged) when it is null or empty. Usually an `$Attribute` binding to the row's Id (e.g. \"$NearbyDS_Id\", \"$Participant.Id\"); a literal Id is also accepted. A bound value is resolved and then reduced to a primary key: a lookup value is unwrapped to its `value`, a data row to its primary value, a plain string is passed through, anything else becomes null. Because of that unwrapping a lookup column of the current page is bound as-is, without extracting `.value` (e.g. \"$PDS_CreatedBy_vmpu5u4\"), same as web; for that case set `entityName` to the schema the lookup REFERENCES, not the entity of the page the button lives on. Unlike web, a `$` expression here is read as a plain attribute name, so the redundant `\"$Attr.value\"` spelling that web tolerates is looked up as an attribute literally named `Attr.value` and does not resolve."
 				}
 			},
 			"description": "Opens an existing record's edit page so the user can view or change it. Bound to list/detail row taps and link cells, and to buttons. The new page is pushed onto the navigation stack; opening a record does not prompt to discard unsaved changes on the current page.",

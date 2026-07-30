@@ -255,6 +255,33 @@
 			}
 		},
 		{
+			"requestType": "crt.SaveRecordRequest",
+			"parameters": {
+				"messageTextAfterCompletion": {
+					"type": "string",
+					"description": "Text of the completion message; the localized default (\"Data saved successfully\") is used when not set. Authored via the Designer's \"Message text\" input, usually as a `#ResourceString(<key>)#` reference to a page resource. Only shown as a notification together with `showSuccessMessage: true`; otherwise it is announced to screen readers only."
+				},
+				"preventCardClose": {
+					"type": "boolean",
+					"description": "Keeps the page open after a successful save. When `false` or omitted, a record page opened in add or copy mode navigates back after the save (an edit-mode page always stays open), and a mini page is closed after any successful save. Authored via the Designer's \"Stay on page after record is created\" checkbox."
+				},
+				"reloadSavedRecord": {
+					"type": "boolean",
+					"description": "Only applies together with `preventCardClose`: after a new (add or copy mode) record is saved and its page stays open, `true` reloads the record from the server so server-side changes (for example legacy autonumbering) appear instantly. Authored via the Designer's \"Reload saved record\" checkbox, shown once \"Stay on page after record is created\" is checked."
+				},
+				"showSuccessMessage": {
+					"type": "boolean",
+					"description": "Whether to show a success message after the record is saved: when `true`, the completion message is displayed as a notification; when `false` or omitted, it is only announced to screen readers. The OOTB page templates set it to `true` on the standard Save button."
+				}
+			},
+			"description": "Saves the current record page: persists every page data source with pending changes, then handles the page-level concerns - the completion notification, the card state, and closing a new record's card (the targeted single-data-source tool underneath it is crt.SaveDataRequest). Bound to Save buttons on record pages and mini pages via the \"Save data\" action of the Designer's event panel.",
+			"references": {
+				"docs": [
+					"request-docs/save-record.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.UpdateRecordRequest",
 			"parameters": {
 				"entityName": {
@@ -268,7 +295,7 @@
 				"recordId": {
 					"type": "string | number",
 					"required": true,
-					"description": "Primary-key value (Id) of the record to open; required - the handler shows a settings error and opens nothing when it is null or an empty string (`0` is a valid Id). Usually an `$Attribute` binding to the row's Id (e.g. \"$Items.PDS_Id\" or \"$GridDetail_h7omalt.<DS>_Id\"), an `@event` value, or a literal Id."
+					"description": "Primary-key value (Id) of the record to open; required - the handler shows a settings error and opens nothing when it is null or an empty string (`0` is a valid Id). Usually an `$Attribute` binding to the row's Id (e.g. \"$Items.PDS_Id\" or \"$GridDetail_h7omalt.<DS>_Id\"), an `@event` value, or a literal Id. Three shapes are accepted and all are reduced to the Id by the navigation layer: a Guid string, a numeric primary key, or a whole `LookupValue` (`{ value, displayValue }`). So a lookup column of the current page is bound as-is, without extracting `.value` (e.g. \"$PDS_CreatedBy_vmpu5u4\"), which is also what the Designer's \"Open existing record\" action emits; for that case set `entityName` to the schema the lookup REFERENCES, not the entity of the page the button lives on."
 				}
 			},
 			"description": "Opens the edit page of an existing record so the user can view or change it. Bound to record links (a list row's primary-column link), row \"Open\" menu actions, and buttons wired to the \"Open existing record\" action of the Designer's event panel. Prompts to discard unsaved changes on the current page before navigating.",
