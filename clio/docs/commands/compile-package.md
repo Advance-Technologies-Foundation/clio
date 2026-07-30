@@ -86,7 +86,7 @@ Rebuilds two packages sequentially in the production environment
 operation that forces a runtime reload affecting every connected user, and asks
 whether to compile now or postpone. Declining postpones the compilation (nothing is
 compiled, exit code 0) and prints how to run it later. Non-interactive hosts
-(scripts, CI, redirected stdin) proceed without asking.
+(scripts, CI, redirected stdin) and `--silent` proceed without asking.
 - The command performs rebuild, not incremental build
 - Package names are split by comma before execution
 - When one package compilation fails, the command exits with code 1

@@ -108,7 +108,7 @@ Compiles with a custom 5-minute timeout (though default is infinite)
 operation that forces a runtime reload affecting every connected user, and asks
 whether to compile now or postpone. Declining postpones the compilation (nothing is
 compiled, exit code 0) and prints how to run it later. Non-interactive hosts
-(scripts, CI, redirected stdin) proceed without asking.
+(scripts, CI, redirected stdin) and `--silent` proceed without asking.
 - The command uses an infinite timeout by default as compilation can take
 significant time depending on configuration size
 - Real-time progress is tracked by monitoring the CompilationHistory table

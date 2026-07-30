@@ -67,7 +67,10 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 	/// unchanged for those callers.
 	/// </summary>
 	private bool ConfirmCompilation(CompilePackageOptions options) {
-		if (_interactiveConsole.ConfirmOrProceedWhenNonInteractive(PackageCompilationWarning)) {
+		// --silent explicitly requests "default behavior without user interaction", so it must skip the
+		// prompt and proceed even on an interactive terminal — otherwise scripted
+		// `clio compile-package ... --silent` runs launched from a TTY would block (review RC-2).
+		if (options.IsSilent || _interactiveConsole.ConfirmOrProceedWhenNonInteractive(PackageCompilationWarning)) {
 			return true;
 		}
 		_logger.WriteInfo(BuildPostponeHint(options));

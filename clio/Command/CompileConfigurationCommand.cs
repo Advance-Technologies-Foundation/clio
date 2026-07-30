@@ -123,7 +123,10 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	/// after telling the user how to run the compilation later.
 	/// </summary>
 	private bool ConfirmCompilation(CompileConfigurationOptions options) {
-		if (_interactiveConsole.ConfirmOrProceedWhenNonInteractive(SiteCompilationWarning)) {
+		// --silent explicitly requests "default behavior without user interaction", so it must skip the
+		// prompt and proceed even on an interactive terminal — otherwise scripted `clio cc --silent` runs
+		// launched from a TTY would block or be postponed (review RC-1).
+		if (options.IsSilent || _interactiveConsole.ConfirmOrProceedWhenNonInteractive(SiteCompilationWarning)) {
 			return true;
 		}
 		_logger.WriteInfo(BuildPostponeHint(options));

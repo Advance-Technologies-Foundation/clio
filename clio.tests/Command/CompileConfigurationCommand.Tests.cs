@@ -150,6 +150,27 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("--silent requests default behavior without user interaction, so compilation proceeds WITHOUT prompting even on an interactive terminal (review RC-1).")]
+	public void Execute_ShouldCompileWithoutPrompting_WhenSilentEvenIfInteractive() {
+		// Arrange
+		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true, IsSilent = true };
+		_interactiveConsole.IsInteractive.Returns(true);
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(SuccessResponse);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "--silent must never block on a prompt and proceeds to compile");
+		_interactiveConsole.DidNotReceive().Prompt(Arg.Any<string>());
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("On a non-interactive host (the MCP server that runs this same command, CI, redirected stdin) the compilation proceeds WITHOUT prompting, so the confirmed-compile behavior is unchanged (ENG-93157 regression guard).")]
 	public void Execute_ShouldCompileWithoutPrompting_WhenNonInteractive() {
 		// Arrange

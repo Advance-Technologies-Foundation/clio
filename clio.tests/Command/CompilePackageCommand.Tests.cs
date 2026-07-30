@@ -85,6 +85,24 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 	}
 
 	[Test]
+	[Description("--silent requests default behavior without user interaction, so the package build proceeds WITHOUT prompting even on an interactive terminal (review RC-2).")]
+	public void Execute_ShouldBuildWithoutPrompting_WhenSilentEvenIfInteractive() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() { PackageName = "UsrPackage", Environment = "dev", IsSilent = true };
+		_interactiveConsole.IsInteractive.Returns(true);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "--silent must never block on a prompt and proceeds to build");
+		_interactiveConsole.DidNotReceive().Prompt(Arg.Any<string>());
+		_packageBuilder.Received(1).Rebuild(Arg.Any<string[]>());
+	}
+
+	[Test]
 	[Description("On a non-interactive host (the MCP server that runs this same command, CI, redirected stdin) the package compilation proceeds WITHOUT prompting, so the confirmed-compile behavior is unchanged (ENG-93157 regression guard).")]
 	public void Execute_ShouldBuildWithoutPrompting_WhenNonInteractive() {
 		// Arrange
