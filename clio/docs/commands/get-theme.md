@@ -26,8 +26,7 @@ tweaks.
 With `--output-file` the CSS is written to the given path instead of being
 printed (`cssContent` is omitted from the envelope; `cssContentLength` is still
 reported). The path must stay inside the workspace or the OS temp directory and
-must not already exist. The written file feeds `update-theme --css-content-file`
-directly.
+must not already exist.
 
 The command requires Creatio 10.0.0 or later on the target environment and the
 `CanCustomizeBranding` license; a caller without the license sees an empty
@@ -81,7 +80,6 @@ clio get-theme --id <id> -e myapp   # confirm the change is reflected
 ## Notes
 
 - Find a theme's id with [`list-themes`](list-themes.md).
-- [`update-theme`](update-theme.md) is a full overwrite; always read the current content with `get-theme` first when modifying an existing theme.
 - The read enforces the same 1 MiB content cap as `create-theme`/`update-theme`; a served file larger than that is refused (it cannot be a clio-managed theme CSS).
 - A response that is an HTML document (for example a login or error page) is reported as an error rather than returned as content; consequently a theme whose CSS deliberately starts with `<!DOCTYPE`/`<html` cannot be read back.
 
