@@ -168,7 +168,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		} catch (Exception exception) {
 			return SetBackgroundResult.Failure(
 				$"The background was applied (image {imageId}), but binding it into " +
-				$"{BrandingBindingService.DescribeTargetPackage(packageName)} failed: {exception.Message} " +
+				$"{BrandingTargetPackage.Describe(packageName)} failed: {exception.Message} " +
 				"Re-run the command to retry the binding.", warnings);
 		}
 	}

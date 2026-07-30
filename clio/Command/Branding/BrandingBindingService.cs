@@ -99,22 +99,7 @@ internal sealed class BrandingBindingService(
 	/// </summary>
 	private readonly Dictionary<string, DataBindingDbSchema> _projectedSchemas = new(StringComparer.Ordinal);
 
-	/// <summary>
-	/// The system setting that names the package design-time writes land in when the caller chooses none. The
-	/// platform's own tooling keys off it (and the <c>create-theme</c> server call falls back to it), so branding
-	/// follows the same convention instead of hardcoding a well-known package name.
-	/// </summary>
-	internal const string CurrentPackageSettingCode = "CurrentPackageId";
-
-	/// <summary>
-	/// Names the binding target in a message written before the package is resolved — either the package the
-	/// caller asked for, or the environment's current one. Used for failure text, where the resolved name may
-	/// not exist yet because resolution is what failed.
-	/// </summary>
-	internal static string DescribeTargetPackage(string packageName) =>
-		string.IsNullOrWhiteSpace(packageName)
-			? $"the environment's current package ({CurrentPackageSettingCode})"
-			: $"package '{packageName}'";
+	private const string CurrentPackageSettingCode = BrandingTargetPackage.CurrentPackageSettingCode;
 
 	private const string SysSettingsValueSchema = "SysSettingsValue";
 	private const string SysSettingsSchema = "SysSettings";
@@ -125,7 +110,9 @@ internal sealed class BrandingBindingService(
 
 	private const string AdminUnitFeatureStateSchema = "AdminUnitFeatureState";
 	private const string FeatureSchema = "Feature";
-	private const string PanelIconBackgroundFeatureCode = "UsePanelIconBackground";
+	// Single-sourced from the manager that WRITES the off-state. Two constants for one platform feature code
+	// would let the delivery side look for a feature the apply side no longer writes.
+	private const string PanelIconBackgroundFeatureCode = PanelIconBackgroundFeatureManager.FeatureCode;
 
 	private const string SecureTextValueTypeName = "SecureText";
 

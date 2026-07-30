@@ -48,4 +48,13 @@ internal static class BrandingFeatureStateWireShape {
 
 	/// <summary>Still ON as ATF.Repository surfaces <c>AppFeatureState.FeatureState</c>: a CLR true.</summary>
 	internal const bool OnOverAtfModel = true;
+
+	/// <summary>
+	/// Tokens that are NO on/off answer at all. They exist because the binding read has a third outcome besides
+	/// on and off: unreadable, which is reported with its own wording ("not readable as an on/off value") because
+	/// "still on" would tell the caller to turn a feature off that may already be off. Only the two shapes above
+	/// are ever expected from a real environment — these model a platform change, a proxy that rewrites scalars,
+	/// or a corrupted row, and every one of them must be refused exactly like a still-on state.
+	/// </summary>
+	internal static readonly string[] UnreadableOverSelectQuery = ["\"maybe\"", "null", "{}"];
 }

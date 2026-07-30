@@ -189,7 +189,7 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 		} catch (Exception exception) {
 			return SetLogoResult.Failure(
 				$"The logos were applied, but binding them into " +
-				$"{BrandingBindingService.DescribeTargetPackage(options.PackageName)} failed: {exception.Message} " +
+				$"{BrandingTargetPackage.Describe(options.PackageName)} failed: {exception.Message} " +
 				"Re-run the command to retry the binding.", applied, warnings);
 		}
 	}

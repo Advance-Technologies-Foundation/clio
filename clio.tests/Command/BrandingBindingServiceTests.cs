@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -131,7 +131,7 @@ public sealed class BrandingBindingServiceTests {
 		const string named = "UsrMyApp";
 
 		// Act
-		string described = BrandingBindingService.DescribeTargetPackage(named);
+		string described = BrandingTargetPackage.Describe(named);
 
 		// Assert
 		described.Should().Contain(named,
@@ -146,7 +146,7 @@ public sealed class BrandingBindingServiceTests {
 		string blankName = "   ";
 
 		// Act
-		string described = BrandingBindingService.DescribeTargetPackage(blankName);
+		string described = BrandingTargetPackage.Describe(blankName);
 
 		// Assert
 		described.Should().Contain("CurrentPackageId",
@@ -658,6 +658,43 @@ public sealed class BrandingBindingServiceTests {
 		// Assert
 		environment.SavedBindingNames().Should().NotContain("ClioBranding_PanelIconFeature",
 			because: "an unreadable FeatureState must be treated exactly like a still-on one — the binding force-updates the column, so only a value confirmed off may be delivered");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("\"maybe\"", TestName = "An unparsable string")]
+	[TestCase("null", TestName = "A JSON null")]
+	[TestCase("{}", TestName = "A JSON object")]
+	[Description("Says the state is not readable rather than that it is still on when FeatureState is no on/off answer at all, because the two need different fixes.")]
+	public void BindBackground_Should_Report_An_Unreadable_Feature_State_As_Unreadable(string featureStateJson) {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.AnswerPanelIconFeatureStateWith(featureStateJson);
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindBackground(PackageName);
+
+		// Assert
+		report.Warnings.Should().Contain(entry => entry.Contains("not readable as an on/off value"),
+			because: "'still on' tells the caller to turn the feature off, which would not help when the platform answered something that is no on/off value at all — the differentiated wording is the whole point of the null branch");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Says the state is still on — not that it is unreadable — when FeatureState is a readable on-value, so the two null-vs-false branches cannot collapse into one message.")]
+	public void BindBackground_Should_Report_A_Readable_On_State_As_Still_On() {
+		// Arrange
+		BrandingEnvironment environment = BrandingEnvironment.WithImageBackground();
+		environment.LeavePanelIconFeatureOn();
+		IBrandingBindingService sut = environment.CreateService();
+
+		// Act
+		BrandingScopeReport report = sut.BindBackground(PackageName);
+
+		// Assert
+		report.Warnings.Should().Contain(entry => entry.Contains("still on"),
+			because: "a readable on-state is actionable — the caller can turn the feature off and re-run — so it must not be reported as an unreadable value");
 	}
 
 	[Test]
