@@ -25,7 +25,6 @@ public class ToolCommandResolverTests {
 		new(
 			settingsRepository,
 			settingsBootstrapService,
-			new NonInteractiveConsole(),
 			// A substitute accessor returns null Current by default → the non-passthrough (existing)
 			// path, matching the stdio host's null-object behavior.
 			credentialContextAccessor ?? Substitute.For<ICredentialContextAccessor>(),
@@ -137,8 +136,12 @@ public class ToolCommandResolverTests {
 			IInteractiveConsole resolvedConsole = resolver.Resolve<IInteractiveConsole>(options);
 
 			// Assert
-			resolvedConsole.IsInteractive.Should().BeFalse(
-				because: "MCP command execution must never prompt; the per-request child container forces a non-interactive console so a warn-and-proceed confirmation fails open instead of blocking on Console.ReadKey on a TTY-attached mcp-http host");
+			// Assert the EXACT injected instance, not IsInteractive: under `dotnet test` stdin is redirected,
+			// so a plain RealInteractiveConsole would ALSO report IsInteractive==false — that proxy would pass
+			// even if ForceNonInteractiveConsole were removed (review RC-4). Only BeSameAs proves the child
+			// container actually swapped in the non-interactive console.
+			resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "the per-request MCP child container must force the shared NonInteractiveConsole so a warn-and-proceed confirmation fails open instead of blocking on Console.ReadKey on a TTY-attached mcp-http host, independent of the test host's stdin redirection");
 		}
 		finally {
 			SettingsRepository.FileSystem = originalFileSystem;

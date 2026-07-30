@@ -56,7 +56,6 @@ public interface IToolCommandResolver {
 public class ToolCommandResolver(
 	ISettingsRepository settingsRepository,
 	ISettingsBootstrapService settingsBootstrapService,
-	IInteractiveConsole interactiveConsole,
 	ICredentialContextAccessor credentialContextAccessor,
 	ITargetUrlValidator targetUrlValidator,
 	ISessionContainerCache sessionContainerCache) : IToolCommandResolver {
@@ -131,8 +130,10 @@ public class ToolCommandResolver(
 	// warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) must therefore NOT depend on
 	// Console.IsInputRedirected — on an mcp-http host launched in a terminal that probe returns
 	// interactive and Console.ReadKey() would hang the request thread. Forcing NonInteractiveConsole into
-	// every per-request child container makes such confirmations fail OPEN (proceed) by construction,
-	// closing that deadlock hole regardless of how the host process was started.
+	// every per-request child container makes such confirmations fail OPEN (proceed) by construction.
+	// This covers the RESOLVED COMMAND's console only; the resolver's own settings.Fill(...) calls pass
+	// NonInteractiveConsole.Shared directly (review RC-5) so the Safe-environment prompt cannot deadlock
+	// either — together they close the mcp-http-at-a-TTY hole regardless of how the host was started.
 	private static void ForceNonInteractiveConsole(IServiceCollection services) =>
 		services.AddSingleton<IInteractiveConsole>(NonInteractiveConsole.Shared);
 
@@ -177,10 +178,15 @@ public class ToolCommandResolver(
 			}
 			settings = settingsRepository.FindEnvironment(options.Environment)
 				?? throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
-			settings = settings.Fill(options, interactiveConsole);
+			// MCP command resolution is NEVER interactive (see ForceNonInteractiveConsole): Fill must use a
+		// non-interactive console too, or a Safe-flagged environment resolved over an mcp-http host started
+		// at a TTY would still deadlock on Console.ReadKey inside Fill (review RC-5). NonInteractiveConsole
+		// fails closed, so a Safe environment surfaces SafeEnvironmentConfirmationRequiredException instead.
+		settings = settings.Fill(options, NonInteractiveConsole.Shared);
 		}
 		else {
-			settings = new EnvironmentSettings().Fill(options, interactiveConsole);
+			// Non-interactive for the same reason as the other Fill sites (review RC-5).
+			settings = new EnvironmentSettings().Fill(options, NonInteractiveConsole.Shared);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new EnvironmentResolutionException(
@@ -343,7 +349,11 @@ public class ToolCommandResolver(
 				?? new EnvironmentSettings {
 					Login = DefaultIdentifier
 				};
-		settings = settings.Fill(options, interactiveConsole);
+		// MCP command resolution is NEVER interactive (see ForceNonInteractiveConsole): Fill must use a
+		// non-interactive console too, or a Safe-flagged environment resolved over an mcp-http host started
+		// at a TTY would still deadlock on Console.ReadKey inside Fill (review RC-5). NonInteractiveConsole
+		// fails closed, so a Safe environment surfaces SafeEnvironmentConfirmationRequiredException instead.
+		settings = settings.Fill(options, NonInteractiveConsole.Shared);
 		IServiceProvider container = new BindingsModule().Register(settings, ForceNonInteractiveConsole);
 		return container.GetRequiredService<TCommand>();
 	}
