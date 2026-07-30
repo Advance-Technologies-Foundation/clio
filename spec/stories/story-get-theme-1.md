@@ -37,7 +37,9 @@ tweaks).
 - [x] Guidance: `ThemingGuidanceResource` ("Read a theme's content" section + read-before-update in the
       no-code flow), `GuidanceCatalog` + `RoutingGuidanceResource` descriptions, `docs/McpCapabilityMap.md`
 - [x] Unit tests: `GetThemeCommandTests` (Module=Command), `GetThemeToolTests` (Module=McpServer)
-- [x] MCP E2E: `GetThemeToolE2ETests` (hermetic), `ThemingVersionFloorContractE2ETests` gated list,
+- [x] MCP E2E: `GetThemeToolE2ETests` (hermetic discovery + arg validation),
+      `GetThemeHappyPathE2ETests` (hermetic happy path — stubbed catalog + theme.css, runs in CI),
+      `ThemingVersionFloorContractE2ETests` gated list,
       `ThemingSandboxE2ETests` read → edit → update round-trip (live tier)
 - [x] Durable-invocation gate reviewed: under the PR #984 flipped gate (silently-executable =
       `ReadOnly=true` baseline) the `ReadOnly=false` `get-theme` needs no baseline entry — it is
