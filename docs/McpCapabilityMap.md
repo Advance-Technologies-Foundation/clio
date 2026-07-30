@@ -181,6 +181,14 @@ enabled") rather than silently honored:
   be resolved, the result carries a non-fatal `warnings` entry naming the environment and the
   newest-version fallback (the resolution catch is scoped to `EnvironmentResolutionException`, so
   an unexpected fault surfaces as a real error rather than a silent newest-version build).
+  The same version-resolution probe also runs server-side inside `create-theme` brand mode (it
+  composes the build into its single call; an explicit `version` argument skips the probe): the
+  probe resolves through the same per-request resolver as the create call itself, so the build and
+  the theme write always target the same tenant. `create-theme` hard-requires `environment-name`,
+  however, so it rejects a passthrough request before any probe runs — a missing
+  `environment-name` fails the tool's own validation, and a supplied one trips the uniform
+  explicit-environment rejection above; the header-tenant probe behaviour applies to `build-theme`
+  only.
 
 **Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
 alternative (register the target environment and use the stdio path, or a non-passthrough
@@ -671,7 +679,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
-  Create a theme on the environment from inline `css-content` plus a caption.
+  Create a theme on the environment from inline `css-content` plus a caption, or — brand mode — from brand colours and fonts (`primary`, plus optional secondary/accent/success/error, fonts, and font weights), with the CSS built server-side in the same call so it never enters the agent context. Exactly one of the two CSS sources per call.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`
@@ -687,7 +695,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 
 What an external AI can practically do here:
 
-- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push; or skip the offline build and pass the palette straight to `create-theme` (brand mode), which builds the CSS and creates the theme server-side in one call
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)

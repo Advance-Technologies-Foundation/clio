@@ -7,9 +7,10 @@ namespace Clio.Command.McpServer.Resources;
 /// <summary>
 /// Canonical AI-facing guidance for managing custom Creatio themes through clio MCP: guides the palette
 /// conversation via the read-only <c>advise-theme-palette</c> tool (verdict per colour decision), builds the
-/// theme CSS with the native <c>build-theme</c> tool (deterministic palette engine + bundled, version-pinned
-/// template), routes between the workspace/dev and no-code/server delivery flows, applies a theme to the
-/// current user's profile (<c>set-user-theme</c>), and gets/sets the global default theme.
+/// theme CSS with the deterministic palette engine (bundled, version-pinned template) — server-side inside
+/// <c>create-theme</c> (brand mode) in the no-code flow, or via the native <c>build-theme</c> tool in the
+/// workspace flow — routes between the workspace/dev and no-code/server delivery flows, applies a theme to
+/// the current user's profile (<c>set-user-theme</c>), and gets/sets the global default theme.
 /// </summary>
 [McpServerResourceType]
 public sealed class ThemingGuidanceResource {
@@ -50,13 +51,14 @@ public sealed class ThemingGuidanceResource {
 		       4. Accent. Its role is highlighting active elements, not large fills. Evaluate spare colours with `operation=accent-evaluate-stored`, or generate options with `operation=accent-suggest`; offer only what the tool marks recommended/valid (or its best pick), and validate a hand-typed accent with `operation=accent-validate-manual`. Use the primary as the accent only when the tool says the fallback is available.
 		       5. System colours. Success and error keep the platform defaults unless the user's brand differs; validate any override with `operation=validate-color`.
 		       6. Preview. Call `operation=preview` to review the base -500 colour of each role together with the system colours — the full palette stops only if the user asks (`full-stops=true`). This is a checkpoint, not an approval gate. Preview readability is for UI colours (non-text); text contrast is finalized during the build.
-		       Once the colours are settled, pass their -500 values to `build-theme`.
+		       Once the colours are settled, pass their -500 values to the build step of your flow: straight to `create-theme` (brand mode) in the no-code flow, or to `build-theme` in the workspace flow.
 
 		       Building the theme CSS — build-theme
 		       - Build the `theme.css` with the native `build-theme` tool: give it brand colors (and optional fonts) and it returns the full CSS, computed by a deterministic OKLCH palette engine over a bundled, version-pinned template — no hand-computed color math and no external package.
 		       - Required: a primary colour and a theme name — pass the name as `caption`; `css-class-name` is derived from it (lowercased and hyphenated) when omitted, or pass `css-class-name` explicitly. secondary/accent/success/error and fonts are optional. At least one of `caption` or `css-class-name` is required.
 		       - Font weights: build-theme loads a standard set of weights for any custom font by default (see the `font-weights` parameter). When a custom Google Font is chosen, confirm the family actually ships those weights — a family that offers only one weight will render the heavier ones as the nearest available fallback.
 		       - The `--crt-*` design-token catalog and advanced hand-authoring beyond the generated palette are out of scope here. Do not invent token names or descriptor rules; stay within the generated palette and the clio tools.
+		       - In the no-code / server flow you normally do NOT call this tool to create a theme: `create-theme`'s brand mode runs the very same engine server-side inside the create call — see "No-code / server flow".
 
 		       Which flow
 		       - Workspace / dev flow — use it when you have a clio workspace/package — see "Workspace / dev flow".
@@ -78,13 +80,13 @@ public sealed class ThemingGuidanceResource {
 		       Note: a push refreshes the theme registry on its own; `clear-themes-cache` is only for the rare case of theme files changed on the environment outside a clio install.
 
 		       No-code / server flow
-		       Use it when you have only a registered environment (no clio workspace/package); the theme is created and edited directly on the environment via the native ThemeService — no files and no push.
+		       Use it when you have only a registered environment (no clio workspace/package); the theme is created and edited directly on the environment via the native ThemeService — no files and no push. The theme CSS reaches the environment as text, so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
 		       Prerequisites: the `CanCustomizeBranding` license and the `CanManageThemes` system operation — see "Checking access".
-		       1. Produce the theme CSS first — call `build-theme` (returns the `theme.css` string; see "Building the theme CSS"). It goes into `create-theme` as text in `css-content` (step 2), so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
-		       2. Create with `create-theme`: pass the theme name as `caption` and the CSS as inline `css-content`. `css-class-name` is optional (derived from the caption when omitted — see "Building the theme CSS"). `id` is optional — omit it to get an auto-generated id back; `package-name` is optional — omit it to use the environment's CurrentPackageId system setting. After a successful create, apply it to the current user by default — see "Apply to the current user".
-		       3. Restyle with `update-theme` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed).
-		       4. Delete with `delete-theme` (by id; deleting an unknown id is an error). If you delete the theme that is currently the default, see "Get / set the default theme".
-		       5. Confirm the change with `list-themes`.
+		       1. Create with `create-theme` in BRAND MODE — this is the DEFAULT and recommended way to create a theme in this flow, and it is a SINGLE call: do not call `build-theme` first and do not put any CSS in the conversation. Pass the confirmed palette hexes (`primary`, plus any settled `secondary`/`accent`/`success`/`error`), the fonts (`heading-font`, `body-font`, `font-weights`), and the theme name as `caption`; the server builds the CSS with the same deterministic engine and creates the theme in that one call. `css-class-name` is optional (derived from the caption when omitted — see "Building the theme CSS"); `package-name` is optional — omit it to use the environment's CurrentPackageId system setting. Pass an explicit `id` so a retry after a transport failure cannot create a duplicate; after a timeout, confirm with `list-themes` before retrying rather than calling again blindly. After a successful create, apply it to the current user by default — see "Apply to the current user".
+		          Exception — hand-authored or hand-edited CSS ONLY: when the user brings their own CSS, or you must edit the generated CSS by hand first, build it with `build-theme` (see "Building the theme CSS") and pass the result to `create-theme` as inline `css-content` instead of the brand colours (the clio CLI also accepts `--css-content-file`). Provide exactly one of the two CSS sources per call — brand inputs or `css-content`, never both. If nobody handed you CSS to edit, use the brand mode above.
+		       2. Restyle with `update-theme` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed). `update-theme` takes CSS only, so rebuild the `theme.css` with `build-theme` and pass it as inline `css-content`.
+		       3. Delete with `delete-theme` (by id; deleting an unknown id is an error). If you delete the theme that is currently the default, see "Get / set the default theme".
+		       4. Confirm the change with `list-themes`.
 
 		       List themes
 		       - List the custom themes on an environment with `list-themes`: it returns each theme's `id`, `caption`, `cssClassName`, and `cssFilePath`. Use it to confirm a theme is available and to find a theme's `id`.

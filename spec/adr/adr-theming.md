@@ -154,6 +154,22 @@ instance), taking **inline `cssContent` only** (no file variant). They fall thro
 - Safety flags (`OpenWorld=false` on all): create `false/false/false`; update `false/false/true`; delete
   `false/**true**/false`. Auto-discovered via `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
 
+_Amended (ENG-93989, 2026-07-30):_ the `create-theme` **MCP tool** gains a **brand mode** alongside
+inline `cssContent`: the caller passes the brand inputs (`primary` plus optional
+secondary/accent/success/error, fonts, font weights, and an optional template `version`) and the tool
+builds the CSS server-side in the same call by composing the shared
+`BuildThemeCommand.TryBuildTheme(options, resolvedSettings, …)` overload — exactly one of the two CSS
+sources per call. Rationale: in the no-code flow the theme CSS no longer crosses the model boundary in
+either direction (the C-D1 token-cost concern, extended to create), and output identity with
+`build-theme` is guaranteed because both surfaces share `TryBuildTheme` + `ThemeParameterValidator` —
+no second engine. This is **MCP-only, with no CLI parity** — the precedent is `advise-theme-palette`
+(an MCP surface with no CLI verb); the CLI already covers the non-inline need via `--css-content-file`.
+Deliberately **not** added: a `css-content-file` argument on this MCP tool — it would knot a
+three-way XOR (`css-content` × file × brand inputs); do not add it without revisiting this amendment
+(a separate tool if the need ever materializes). The create call stays non-idempotent (B-D3's
+no-pre-check decision stands), so the theming guidance now instructs agents to pass an explicit `id`
+as an idempotency key and to confirm with `list-themes` before retrying after a transport timeout.
+
 **B-D6 — Guidance edit.** Flip the "No-code / server flow" section in `ThemingGuidanceResource` from "not
 yet available" to available; add a body section covering create/update/delete; keep the shared sections
 and the thin token-catalog pointer (no restatement).

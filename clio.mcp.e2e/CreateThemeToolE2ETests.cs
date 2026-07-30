@@ -95,4 +95,69 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 		result.Error.Should().Contain("environment-name is required",
 			because: "the failure must name the exact kebab-case field the caller has to add");
 	}
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("create-theme rejects css-content combined with the brand parameters over the wire")]
+	[Description("Calls create-theme through the real clio MCP server with css-content AND the brand parameters (including the typed font-weights int array) and verifies the structured theme-css-source-conflict failure — proving the brand-mode args bind through the real MCP serializer, without a live Creatio environment (ENG-93989).")]
+	public async Task CreateTheme_Should_Return_SourceConflict_When_CssContentAndBrandParametersArePassedOverTheWire() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			CreateThemeTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "docker_fix2",
+					["css-content"] = ".ocean-theme{color:#003366}",
+					["primary"] = "#004fd6",
+					["heading-font"] = "Poppins",
+					["font-weights"] = new[] { 400, 600 }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		CreateThemeResult result = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
+		result.Success.Should().BeFalse(
+			because: "css-content and the brand parameters are mutually exclusive CSS sources");
+		result.Error.Should().Contain("theme-css-source-conflict",
+			because: "the stable kebab-case error code must travel in the message so the caller can branch on it");
+	}
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("create-theme without any CSS source names both sources in the structured failure over the wire")]
+	[Description("Calls create-theme through the real clio MCP server with an environment name but neither css-content nor primary and verifies the structured theme-css-source-missing failure names both accepted CSS sources — the wire-level contract of the brand mode's exactly-one-source rule (ENG-93989).")]
+	public async Task CreateTheme_Should_Return_SourceMissing_When_NoCssSourceIsPassedOverTheWire() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			CreateThemeTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "docker_fix2",
+					["caption"] = "Ocean"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		CreateThemeResult result = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
+		result.Success.Should().BeFalse(
+			because: "a create request needs exactly one CSS source");
+		result.Error.Should().Contain("theme-css-source-missing",
+			because: "the stable kebab-case error code must travel in the message so the caller can branch on it");
+		result.Error.Should().Contain("css-content",
+			because: "the failure must name the inline source the caller can provide");
+		result.Error.Should().Contain("primary",
+			because: "the failure must name the brand-mode source the caller can provide");
+	}
 }

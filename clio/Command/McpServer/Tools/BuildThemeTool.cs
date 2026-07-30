@@ -79,6 +79,8 @@ public sealed class BuildThemeTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
 		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
+		"In the no-code flow prefer create-theme's brand mode instead: pass the brand colours and fonts " +
+		"straight to create-theme and it builds this same CSS server-side and creates the theme in one call. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
 		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical. " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
