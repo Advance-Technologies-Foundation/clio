@@ -74,8 +74,9 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(
-			EnvironmentName: "docker_fix2", Id: "ocean-theme") { OutputFile = "out/theme.css" });
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
+			EnvironmentName = "docker_fix2", Id = "ocean-theme", OutputFile = "out/theme.css"
+		});
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a successful read must report success");
@@ -103,7 +104,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(Id: "ocean-theme"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = "ocean-theme" });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a read request without an environment name is invalid");
@@ -132,7 +133,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, passthroughGuard);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(Id: "ocean-theme"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = "ocean-theme" });
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -153,7 +154,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, passthroughGuard);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(Id: "ocean-theme"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = "ocean-theme" });
 
 		// Assert
 		result.Error.Should().Contain("environment-name",
@@ -172,7 +173,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(EnvironmentName: "docker_fix2"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { EnvironmentName = "docker_fix2" });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a read request without a theme id is invalid");
@@ -191,7 +192,8 @@ public class GetThemeToolTests {
 		FakeGetThemeCommand defaultCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
-		GetThemeArgs args = new(Id: "ocean-theme") {
+		GetThemeArgs args = new() {
+			Id = "ocean-theme",
 			ExtensionData = new Dictionary<string, JsonElement> {
 				["environmentName"] = JsonSerializer.SerializeToElement("docker_fix2"),
 				["outputFile"] = JsonSerializer.SerializeToElement("out/theme.css")
@@ -259,8 +261,9 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(
-			EnvironmentName: "docker_fix2", Id: "ocean-theme"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
+			EnvironmentName = "docker_fix2", Id = "ocean-theme"
+		});
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -290,8 +293,9 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(
-			EnvironmentName: "docker_fix2", Id: "ocean-theme"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
+			EnvironmentName = "docker_fix2", Id = "ocean-theme"
+		});
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the command's failure must surface as a tool failure");
@@ -324,8 +328,9 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs(
-			EnvironmentName: "docker_fix2", Id: "ocean-theme"));
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
+			EnvironmentName = "docker_fix2", Id = "ocean-theme"
+		});
 
 		// Assert
 		result.CssContent.Should().Be(cssWithTabsAndNewlines,

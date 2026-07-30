@@ -296,6 +296,46 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Detects an HTML error page served with leading whitespace and newlines before the markup, which a BOM-only strip would let through as theme CSS.")]
+	public void TryGetTheme_ShouldFail_WhenCssFetchReturnsHtmlAfterLeadingWhitespace() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss("\r\n   \t\n<!DOCTYPE html><html><body>Session expired.</body></html>");
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "whitespace must be trimmed before the markup sniff, so a blank-line-prefixed error page cannot pass as CSS");
+		response.Error.Should().Contain("HTML",
+			because: "the error must explain that an HTML page came back instead of the CSS file");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Emits terminal escape sequences arriving from the server in the caption and the CSS as escaped JSON literals rather than raw control bytes: get-theme deliberately skips SanitizeForDisplay to keep the content byte-exact, so the JSON writer is the control-character barrier on the print path.")]
+	public void Execute_ShouldEscapeServerControlCharacters_WhenPrintingTheEnvelope() {
+		// Arrange
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand\\u001BDark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"" + CssFilePath + "\"}]}");
+		ArrangeCss(".brand-dark { --crt-test: \u001B[31mred\u001B[0m; }");
+		string printed = null;
+		_logger.When(logger => logger.WriteInfo(Arg.Any<string>()))
+			.Do(call => printed = call.Arg<string>());
+
+		// Act
+		int exitCode = _command.Execute(new GetThemeOptions { Id = ThemeId });
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a control character in the server response is escaped on output, not treated as a failed read");
+		printed.Should().NotContain("\u001B",
+			because: "a raw ESC byte reaching stdout or an MCP transcript would let an untrusted theme inject a terminal escape sequence");
+		printed.Should().ContainEquivalentOf("\\u001b",
+			because: "the JSON writer must carry the control character through as an escaped literal so the content stays round-trip-exact for update-theme");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Refuses a fetched body larger than the 1 MiB cssContent cap — anything bigger cannot be a clio-managed theme CSS, and returning it would flood an MCP transcript.")]
 	public void TryGetTheme_ShouldFail_WhenCssContentExceedsSizeCap() {
 		// Arrange

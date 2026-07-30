@@ -72,16 +72,16 @@ public class GetThemeTool(
 /// <summary>
 /// MCP arguments for the <c>get-theme</c> tool.
 /// </summary>
-public sealed record GetThemeArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name.")]
-	[property: Required]
-	string? EnvironmentName = null,
-	[property: JsonPropertyName("id")]
-	[property: Description("Id of the theme to read (see list-themes).")]
-	[property: Required]
-	string? Id = null
-) {
+public sealed record GetThemeArgs {
+	[JsonPropertyName("environment-name")]
+	[Description("Registered clio environment name.")]
+	[Required]
+	public string? EnvironmentName { get; init; }
+	[JsonPropertyName("id")]
+	[Description("Id of the theme to read (see list-themes).")]
+	[Required]
+	public string? Id { get; init; }
+
 	/// <summary>Optional path to write the theme CSS to; when set, <c>cssContent</c> is omitted from the result.</summary>
 	[JsonPropertyName("output-file")]
 	[Description("Optional path to write the theme CSS to; when set, cssContent is omitted from the result.")]
