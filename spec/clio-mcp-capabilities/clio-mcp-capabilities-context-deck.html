@@ -438,6 +438,29 @@
   .nm .good .sum { color: var(--cyan); }
   @media (max-width: 700px) { .nm { grid-template-columns: 1fr; } }
 
+  /* ---------- sequence diagram, svg ---------- */
+  .seqd { width: 100%; height: auto; display: block; margin: 4px 0 0; }
+  .seqd .hd { fill: var(--ink-3); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  .seqd .ll { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 4; }
+  .seqd .ar { stroke: var(--ink-3); stroke-width: 1.2; }
+  .seqd .arr { stroke: var(--rust); stroke-width: 1.4; fill: none; }
+  .seqd .ah { fill: var(--ink-3); }
+  .seqd .ahr { fill: var(--rust); }
+  .seqd .lb { fill: var(--ink-2); font-family: var(--font-body); font-size: 12.5px; }
+  .seqd .lb.em { fill: var(--ink); }
+  .seqd .lbr { fill: var(--ink); font-family: var(--font-body); font-size: 12.5px; }
+  .seqd .lbr.b { font-weight: 600; fill: var(--rust); }
+  .seqd .crux { fill: var(--rust-fill); }
+  /* Під SVG-схему потрібна ширина; на вузькому екрані текст у ній стає нечитабельним,
+     тому там показуємо той самий крок-за-кроком списком. */
+  /* Специфічність двома класами: інакше пізніше оголошений `.seq { display: flex }`
+     переможе і покаже обидва варіанти одночасно. */
+  .seq.seq-fallback { display: none; }
+  @media (max-width: 820px) {
+    .seqd { display: none; }
+    .seq.seq-fallback { display: flex; }
+  }
+
   /* ---------- sequence diagram (host <-> server) ---------- */
   .seq { display: flex; flex-direction: column; }
   .seq .head {
@@ -587,8 +610,8 @@
     <div class="hero-bg" aria-hidden="true"></div>
     <div class="inner">
       <div class="eyebrow"><span class="b">clio mcp</span><span>speaking corner · внутрішня тех-аудиторія</span></div>
-      <h1>Агенту — 120 інструментів.<br>Показуємо&nbsp;18.</h1>
-      <p class="lead">Обгорнути CLI в MCP-інструменти — просто. Зробити так, щоб модель <strong>реально</strong> ними користувалася — надійно, з мінімальним контекстом і з правильною версією платформи — оце інженерна задача.</p>
+      <h1>Досвід оптимізації MCP</h1>
+      <p class="lead">Обгорнути CLI в MCP-інструменти — просто. Зробити так, щоб модель <strong>реально</strong> ними користувалася — надійно, з мінімальним контекстом і з правильною версією платформи — оце інженерна задача. У clio таких інструментів <strong>понад 160</strong>, а модель бачить <strong>18</strong>.</p>
       <div class="chips" style="margin-bottom:30px">
         <span class="chip cyan">1 · контекстна економія</span>
         <span class="chip brass">2 · версіонування каталогу компонентів</span>
@@ -671,44 +694,54 @@
     <div class="inner">
       <div class="eyebrow"><span class="num"></span><span>основи</span></div>
       <h2>Як виглядає один виклик</h2>
-      <p class="lead">Тут важлива одна деталь, з якої виростає весь дек. Модель не «підключена» до сервера — вона взагалі не знає, що той існує. Вона просто бачить у своєму запиті <strong>список доступних дій</strong> і може попросити виконати одну з них.</p>
+      <p class="lead">Тут одна деталь, з якої виростає вся доповідь. Модель не «підключена» до сервера — вона взагалі не знає, що той існує. Вона просто бачить у своєму запиті <strong>список доступних дій</strong> і може попросити виконати одну з них.</p>
 
-      <div class="seq" style="margin-bottom:22px">
-        <div class="head">
-          <span class="l">клієнт і модель</span>
-          <span></span>
-          <span>сервер (clio)</span>
-        </div>
-        <div class="step">
-          <span class="a">Клієнт запускає процес сервера й питає, яку версію протоколу той розуміє</span>
-          <span class="dir">→</span>
-          <span class="b">Називає свою версію й погоджує спільну</span>
-        </div>
-        <div class="step">
-          <span class="a">«Перелічи все, що ти вмієш»</span>
-          <span class="dir">→</span>
-          <span class="b">Віддає список дій — <strong>з повним описом і схемою кожної</strong></span>
-        </div>
-        <div class="step crux">
-          <span class="a">Клієнт вкладає цей список у запит до моделі — <strong>і робить це щоразу</strong></span>
-          <span class="dir">не йде<br>на сервер</span>
-          <span class="b">—</span>
-        </div>
-        <div class="step">
-          <span class="a">Модель обирає дію й повертає її назву та аргументи</span>
-          <span class="dir">→</span>
-          <span class="b">Виконує й повертає результат</span>
-        </div>
-        <div class="step">
-          <span class="a">Результат іде в модель як частина діалогу</span>
-          <span class="dir">←</span>
-          <span class="b">—</span>
-        </div>
+      <svg class="seqd" viewBox="0 0 760 320" role="img" aria-label="Послідовність: клієнт запускає сервер, отримує список дій, вкладає його в запит до моделі, викликає обрану дію, повертає результат">
+        <defs>
+          <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="ah"/>
+          </marker>
+          <marker id="arwr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="ahr"/>
+          </marker>
+        </defs>
+
+        <text class="hd" x="130" y="14" text-anchor="middle">клієнт і модель</text>
+        <text class="hd" x="620" y="14" text-anchor="middle">сервер</text>
+        <line class="ll" x1="130" y1="26" x2="130" y2="308"/>
+        <line class="ll" x1="620" y1="26" x2="620" y2="308"/>
+
+        <text class="lb" x="375" y="50" text-anchor="middle">запускає процес, узгоджує версію протоколу</text>
+        <line class="ar" x1="130" y1="60" x2="614" y2="60" marker-end="url(#arw)"/>
+
+        <text class="lb" x="375" y="92" text-anchor="middle">«перелічи все, що ти вмієш»</text>
+        <line class="ar" x1="130" y1="102" x2="614" y2="102" marker-end="url(#arw)"/>
+
+        <text class="lb em" x="375" y="134" text-anchor="middle">список дій — з повним описом і схемою кожної</text>
+        <line class="ar" x1="620" y1="144" x2="136" y2="144" marker-end="url(#arw)"/>
+
+        <rect class="crux" x="14" y="162" width="732" height="58" rx="3"/>
+        <path class="arr" d="M130 180 h74 v22 h-62" marker-end="url(#arwr)"/>
+        <text class="lbr" x="224" y="184">вкладає цей список у запит до моделі —</text>
+        <text class="lbr b" x="224" y="203">і робить це щоразу. На сервер не йде.</text>
+
+        <text class="lb" x="375" y="246" text-anchor="middle">модель обрала дію → клієнт її викликає</text>
+        <line class="ar" x1="130" y1="256" x2="614" y2="256" marker-end="url(#arw)"/>
+
+        <text class="lb" x="375" y="288" text-anchor="middle">результат іде в модель як частина діалогу</text>
+        <line class="ar" x1="620" y1="298" x2="136" y2="298" marker-end="url(#arw)"/>
+      </svg>
+
+      <div class="seq seq-fallback">
+        <div class="step"><span class="a">Запускає процес, узгоджує версію протоколу</span><span class="dir">→</span><span class="b">сервер</span></div>
+        <div class="step"><span class="a">«Перелічи все, що ти вмієш»</span><span class="dir">→</span><span class="b">віддає список із повними схемами</span></div>
+        <div class="step crux"><span class="a">Вкладає цей список у запит до моделі — <strong>і робить це щоразу</strong></span><span class="dir">не йде<br>на сервер</span><span class="b">—</span></div>
+        <div class="step"><span class="a">Модель обрала дію → клієнт її викликає</span><span class="dir">→</span><span class="b">виконує, повертає результат</span></div>
       </div>
 
-      <div class="panel rust">
-        <h3>Виділений рядок — це і є тема доповіді</h3>
-        <p style="margin:0">Список дій не запитується «коли потрібно». Він <strong>постійно присутній у контексті моделі</strong>, бо інакше модель не знала б, що взагалі можна викликати. Тому кожна дія, яку сервер оголошує, коштує контексту в <em>кожному</em> запиті — незалежно від того, чи скористаються нею хоч раз.</p>
+      <div class="panel rust" style="margin-top:20px">
+        <h3>Підсвічений рядок — це і є тема доповіді</h3>
+        <p style="margin:0">Список дій не запитується «коли потрібно». Він <strong>постійно присутній у контексті моделі</strong>, бо інакше вона не знала б, що можна викликати. Тому кожна оголошена дія коштує контексту в <em>кожному</em> запиті — навіть якщо нею не скористаються ні разу.</p>
       </div>
     </div>
   </section>
@@ -760,12 +793,27 @@
       <p class="fine" style="margin-top:18px">Три теми — це не три історії, а три місця, де цей сценарій міг зламатися: контекст переповнений і модель не добирає інструмент · каталог компонентів не той, що на стенді · правила є, але агент їх не прочитав.</p>
     </div>
   </section>
-  <!-- problem -->
+  <!-- host limit: opens block 1 -->
   <section class="slide">
     <div class="inner">
-      <div class="eyebrow"><span class="num"></span><span>вступ</span></div>
-      <h2>Кожен інструмент їде в контекст щоразу</h2>
-      <p class="lead">У протоколі немає ні пагінації, ні лінивого завантаження. Сервер віддає повний опис і схему <strong>кожного</strong> інструмента, а клієнт підмішує цей список у <strong>кожен</strong> запит до моделі.</p>
+      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>межа клієнта</span></div>
+      <h2>У клієнта є стеля — і ми в неї вперлися</h2>
+      <p class="lead">Клієнт на кшталт Claude Code не може тримати скільки завгодно інструментів. Обмежень два, і вони різні за природою.</p>
+
+      <div class="cols two" style="margin-bottom:26px">
+        <div class="panel rust">
+          <h3>Жорстке — на кількість</h3>
+          <p style="margin:0 0 10px">Хост просто не візьме більше певної кількості інструментів. У нашому випадку стеля була <strong>128</strong>.</p>
+          <p style="margin:0" class="fine">clio оголошував ~124 — тобто ми впритул, і кожен новий інструмент був за рахунок іншого.</p>
+        </div>
+        <div class="panel brass">
+          <h3>Мʼяке — на контекст</h3>
+          <p style="margin:0 0 10px">Навіть якщо влізли за кількістю, кожен інструмент з’їдає контекст, у якому модель мала б думати про задачу.</p>
+          <p style="margin:0" class="fine">Це обмеження гірше: воно не дає помилки, воно просто <strong>тихо знижує якість</strong>.</p>
+        </div>
+      </div>
+
+      <p class="lead" style="margin:0 0 14px">І платиться цей контекст не за виклик, а за <strong>саму присутність</strong> інструмента в списку:</p>
 
       <div class="reqs">
         <div class="rq"><span class="rl">запит 1</span><span class="rb"><span class="cat">каталог інструментів</span><span class="usr">запит</span></span></div>
@@ -773,15 +821,10 @@
         <div class="rq"><span class="rl">запит 3</span><span class="rb"><span class="cat">каталог інструментів</span><span class="usr">запит</span></span></div>
         <div class="rq"><span class="rl">…</span><span class="rb"><span class="cat">і так до кінця сесії</span><span class="usr">запит</span></span></div>
       </div>
-      <p class="fine" style="margin:12px 0 24px">Той самий блок тексту — знову й знову. Інструменти платяться не за виклик, а за <strong>саму присутність</strong>.</p>
 
-      <div class="def">
-        <span class="term">схема</span>
-        <span class="body">Машинний опис аргументів інструмента: які поля, якого типу, які обовʼязкові. Саме схеми — найважча частина каталогу: в середньому <strong>~1,8 КБ на інструмент</strong>.</span>
-      </div>
-      <div class="def" style="margin-top:12px">
-        <span class="term">скільки їх зараз</span>
-        <span class="body">clio оголошує <strong>~162</strong> інструменти, у список до моделі йде <strong>18</strong>. Історичний замір червня 2026, коли поверхню ще не скорочували: <strong>124</strong> інструменти — <span class="mono">226 640</span> байтів, приблизно <span class="mono">57 000</span> токенів у кожному запиті.</span>
+      <div class="def" style="margin-top:22px">
+        <span class="term">цифри</span>
+        <span class="body">Замір червня 2026, коли поверхню ще не скорочували: <strong>124</strong> інструменти — <span class="mono">226 640</span> байтів, приблизно <span class="mono">57 000</span> токенів у <em>кожному</em> запиті. Сьогодні clio оголошує <strong>~162</strong>, а в список до моделі йде <strong>18</strong>.</span>
       </div>
     </div>
   </section>
@@ -1364,7 +1407,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [5, 9, 12, 17]; // блоки 1/2/3 + початок appendix // блоки 1/2/3 + початок appendix // де починаються блоки 1/2/3 та фінал (0-based)
+  var boundaries = [4, 9, 12, 17]; // блоки 1/2/3 + перший слайд appendix
   var i = 0;
 
   // budget rail
