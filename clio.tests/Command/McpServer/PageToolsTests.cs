@@ -3895,6 +3895,69 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page append: a valid diff-form incoming fragment against a full-config CURRENT server body fails through the public TryUpdatePage path with the server-side message, without the misdirecting 'Append merge failed'/'marker pairs' wrapper text (ENG-94422)")]
+	public void TryUpdatePage_AppendMode_Should_ReportServerSideMessage_WhenCurrentBodyIsFullConfig() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrFcp_FormPage", PackageUId = designPkg, PackageName = "UsrFcp" }
+		});
+		// A full-config (generated) FormPage current body: carries the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
+		// full markers instead of the *_DIFF markers — exactly what create-app-section produces.
+		string currentBody = "define(\"UsrFcp_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrFcp_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		// Incoming fragment is valid diff form — the caller did nothing wrong; the blocker is the server body.
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrFcp_FormPage",
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "append cannot merge into a full-config server body, so the save must not proceed");
+		response.Success.Should().BeFalse(because: "the response must report the rejection");
+		response.Error.Should().StartWith(PageBodyMerger.WebCurrentFullConfigNotSupportedMessage,
+			because: "the caller must see the server-side message verbatim (it names the server body and points at replace mode), not a body they authored correctly (ENG-94422)");
+		response.Error.Should().NotContain("Append merge failed:",
+			because: "the redundant 'Append merge failed:' prefix is dropped for a full-config rejection whose message is already a complete sentence (ENG-94422)");
+		response.Error.Should().NotContain("must contain valid marker pairs",
+			because: "the generic marker-pairs hint misdirects for a full-config body, which HAS valid markers and is simply the wrong form (ENG-94422)");
+	}
+
+	[Test]
 	[Description("PageBodyMerger handlers dedupe: when incoming declares the same request as current, incoming wins")]
 	public void PageBodyMerger_Should_Dedupe_Handlers_By_Request() {
 		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
