@@ -382,14 +382,17 @@ public sealed class ApplicationSectionCreateService(
 		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
 		int readbackTimeoutMs = ResolveReadbackTimeout(readbackTimeoutMsOverride);
 
-		// Serialize ONLY each destructive insert (the ExecutePostRequest that actually writes the section)
-		// per environment + application so concurrent create-app-section calls in one process cannot contend
-		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). Everything else — the
-		// read-only contention-verify, the fixed backoff between the two inserts, the retry-decision
-		// orchestration, and the success readback — runs OUTSIDE the guard: those steps read strictly by the
-		// section id generated for THIS call, so they are safe unserialized, and holding them under the guard
-		// would inflate the held span past the bounded wait cap and starve a second concurrent same-app
-		// caller into timing out and inserting unserialized. The wait is bounded and degrades to best-effort
+		// Serialize each destructive insert (the ExecutePostRequest that actually writes the section) per
+		// environment + application so concurrent create-app-section calls in one process cannot contend
+		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). One read-only step runs
+		// INSIDE the guard by construction: the timeout-recovery verify poll, which lives in TryCommitAttempt
+		// (via RecoverFromInsertTimeout) and so is covered by the same Run() span — the guarded worst case on
+		// the timeout path is therefore the insert budget PLUS the bounded recovery poll (ENG-94419), not the
+		// insert HTTP call alone. Everything else — the detail-less contention-verify, the fixed backoff
+		// between the two inserts, the retry-decision orchestration, and the success readback — runs OUTSIDE
+		// the guard: those steps read strictly by the section id generated for THIS call, so they are safe
+		// unserialized, and holding them under the guard would inflate the held span past the bounded wait cap
+		// and starve a second concurrent same-app caller into timing out and inserting unserialized. The wait is bounded and degrades to best-effort
 		// on timeout, so it never introduces a new failure mode — any residual contention (including the
 		// cross-process case the in-process guard cannot cover) is recovered by the reclassify/verify/retry
 		// path in CommitSectionWithContentionRecovery (Option B). The preparation reads above stay OUTSIDE the
