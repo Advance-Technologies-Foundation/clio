@@ -427,6 +427,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="get-page-hierarchy"></a>
+<a id="page-hierarchy-get"></a>
+- [`get-page-hierarchy`](docs/commands/get-page-hierarchy.md) - Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, `page-hierarchy-get`
 <a id="list-entity-client-schemas"></a>
 <a id="migration-unit-resolve"></a>
 - [`list-entity-client-schemas`](docs/commands/list-entity-client-schemas.md) - Resolve the Classic page-role graph (sections, edit pages, mini pages) of an entity, `migration-unit-resolve`
@@ -552,7 +555,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
 <a id="restart-web-app"></a>
 <a id="restart"></a>
-- [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart`
+- [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)
 <a id="set-fsm-config"></a>
 <a id="fsmc"></a>
 <a id="sfsmc"></a>

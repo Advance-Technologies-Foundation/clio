@@ -472,11 +472,18 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 	}
 
+	// The two failures are reported separately on purpose. Collapsing them into one message that ends with
+	// "Supported types: …" made a MISSING COLUMN CODE read as a rejected TYPE: a caller whose column code was
+	// dropped upstream spent the debugging effort on the type token instead (issue #947).
 	private static void ValidateSupportedColumnValues(string columnSpec, string name, string type) {
-		if (string.IsNullOrWhiteSpace(name)
-			|| !EntitySchemaDesignerSupport.TryResolveDataValueType(type, out _)) {
+		if (string.IsNullOrWhiteSpace(name)) {
 			throw new InvalidOperationException(
-				$"Column '{columnSpec}' has unsupported values. Supported types: {GetSupportedTypesList()}.");
+				$"Column '{columnSpec}' is missing its column code. Provide a non-empty column name.");
+		}
+		if (!EntitySchemaDesignerSupport.TryResolveDataValueType(type, out _)) {
+			throw new InvalidOperationException(
+				$"Column '{columnSpec}' has an unsupported type '{type}'. Supported types: {GetSupportedTypesList()}. " +
+				"Type names are case-insensitive.");
 		}
 	}
 
