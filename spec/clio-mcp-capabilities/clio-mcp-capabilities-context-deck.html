@@ -905,6 +905,54 @@
       <p class="lead" style="margin:0">Тому агент завжди має <strong>повний список назв</strong> — і просить докладний опис лише того інструмента, який справді збирається викликати.</p>
     </div>
   </section>
+  <!-- does the agent cope -->
+  <section class="slide">
+    <div class="inner">
+      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>чи агент дає з цим раду</span></div>
+      <h2>А модель узагалі впорається з таким непрямим викликом?</h2>
+      <p class="lead">Це головне питання до всієї схеми. Ми змусили агента ходити до частини інструментів «через посередника» — і мусили переконатися, що він це витримує.</p>
+
+      <div class="cols two" style="margin-bottom:22px">
+        <div>
+          <h3>1 · йому це сказано прямо</h3>
+          <p style="margin:0 0 10px;font-size:14.5px">Не в документації, а в правилах, які він читає перед роботою:</p>
+          <pre style="margin:0;font-size:12.5px">Resident tools are called natively;
+every other tool is invoked via
+<span class="kw">clio-run &lt;command&gt;</span>.
+<span class="bad">Never wrap a resident tool in clio-run.</span></pre>
+        </div>
+        <div>
+          <h3>2 · так виглядає сам виклик</h3>
+          <p style="margin:0 0 10px;font-size:14.5px">Замість <code>sync-schemas</code> напряму:</p>
+          <pre style="margin:0;font-size:12.5px">{
+  <span class="kw">"command"</span>: "sync-schemas",
+  <span class="kw">"args"</span>: { "environment-name": "dev" }
+}</pre>
+        </div>
+      </div>
+
+      <h3>3 · і три послаблення, бо він усе одно помиляється</h3>
+      <div class="routes">
+        <div class="r ok">
+          <span class="cond">Вкладає аргументи «на рівень глибше», ніж треба — звичка з інших інструментів</span>
+          <span class="go">→</span>
+          <span class="out">приймаємо обидві форми</span>
+        </div>
+        <div class="r ok">
+          <span class="cond">Друкує імʼя команди з помилкою</span>
+          <span class="go">→</span>
+          <span class="out">віддаємо список схожих<br>і підказку, де взяти повний</span>
+        </div>
+        <div class="r ok">
+          <span class="cond">Забуває про посередника й кличе приховану команду прямо</span>
+          <span class="go">→</span>
+          <span class="out">для читання просто виконуємо,<br>ще й підказуємо на майбутнє</span>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:18px">Висновок з практики: модель справляється — але <strong>лише тому, що поверхня прощає</strong>. Кожне з цих трьох послаблень зʼявилося після реального збою, а не з обережності.</p>
+    </div>
+  </section>
   <!-- primitives -->
   <section class="slide">
     <div class="inner">
@@ -979,16 +1027,6 @@
       <p class="lead">Ось де ціна цього рішення. Прибравши інструмент зі списку, ми <strong>зламали кожного, хто вже кликав його за іменем</strong>. А кликали: у clio є багаторічна політика зворотної сумісності для аргументів командного рядка — і не було жодної для імен MCP-інструментів. Тому сервер тепер мусить розумно відповісти на будь-який зі способів виклику, а не лише на нинішній правильний.</p>
 
       <div class="routes" style="margin-bottom:26px">
-        <div class="r ok">
-          <span class="cond">Кличе один із 18 видимих інструментів</span>
-          <span class="go">→</span>
-          <span class="out">виконуємо</span>
-        </div>
-        <div class="r ok">
-          <span class="cond">Кличе приховану команду через <code>clio-run</code></span>
-          <span class="go">→</span>
-          <span class="out">виконуємо</span>
-        </div>
         <div class="r ok sub">
           <span class="cond">Кличе приховану команду просто за іменем, і це <strong>читання</strong></span>
           <span class="go">→</span>
@@ -1456,7 +1494,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 10, 13, 18]; // блоки 1/2/3 + перший слайд appendix
+  var boundaries = [4, 11, 14, 19]; // блоки 1/2/3 + перший слайд appendix
   var i = 0;
 
   // budget rail
