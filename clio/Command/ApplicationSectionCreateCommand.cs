@@ -170,9 +170,11 @@ public sealed class ApplicationSectionCreateService(
 	// The progress heartbeat (ENG-91274) does not rescue this: clients such as GitHub Copilot CLI
 	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
 	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
-	// call (90 s) and the post-timeout recovery readback (30 s) — the dominant slow span on the
-	// not-visible timeout path that is the actual repro — so clio answers well under the observed 180 s
-	// ceiling there. They do NOT bound the end-to-end response: the preparation reads before the insert
+	// call (90 s) and each post-timeout recovery readback HTTP call (30 s). The recovery readback is POLLED
+	// with a bounded backoff (~30 s total across TimeoutRecoveryVerifyAttempts attempts) rather than a single
+	// immediate check, so a section that commits shortly after the insert budget expired is recovered as a
+	// success instead of a spurious failure (ENG-94419); the bounded poll window keeps clio well under the
+	// observed 180 s ceiling. They do NOT bound the end-to-end response: the preparation reads before the insert
 	// and the 15-attempt poll loop have no cumulative deadline. The background/MCP path additionally
 	// bounds each success-path readback HTTP call (readbackTimeoutMsOverride) so a wedged readback cannot
 	// hold a thread + connection for the life of the long-lived server process (ENG-91316); the
@@ -1003,11 +1005,20 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <summary>
 	/// Handles a timed-out ApplicationSection insert INSIDE the guard: returns <c>true</c> (committed) when
-	/// the section created by this call is already visible despite the timeout, otherwise throws the
+	/// the section created by this call is (or becomes) visible despite the timeout, otherwise throws the
 	/// classified timeout failure. It only VERIFIES visibility — the read-only success readback runs outside
-	/// the guard. The single-shot verify is deliberate: unlike the contention path, a false-negative here
-	/// does not trigger a destructive retry, so no settle+poll is needed. The spinner is left running on the
-	/// <c>true</c> return (the caller ends it once) and ended on the throw.
+	/// the guard.
+	/// <para>
+	/// When the insert budget expires the section transaction may still be committing server-side, so a single
+	/// immediate readback frequently reports the section absent even though it commits moments later. The verify
+	/// is therefore POLLED with backoff (<see cref="TimeoutRecoveryVerifyAttempts"/> attempts, a doubling delay
+	/// capped at <see cref="TimeoutRecoveryMaxBackoff"/>) before the timeout failure is surfaced, so a section
+	/// that commits shortly after the budget expired is recovered as a success instead of a spurious failure
+	/// (ENG-94419). The poll matches strictly by the id generated for THIS call, so it can never be recovered by
+	/// a pre-existing section, and its bounded window keeps the post-timeout wall-clock under the MCP client
+	/// request ceiling. The seam <see cref="_delay"/> makes the backoff instant under test.
+	/// </para>
+	/// The spinner is left running on the <c>true</c> return (the caller ends it once) and ended on the throw.
 	/// </summary>
 	private bool RecoverFromInsertTimeout(
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
@@ -1015,11 +1026,16 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings,
 		int insertTimeoutMs,
 		Exception cause) {
-		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
+		bool? sectionVisible = TryVerifySectionExistsPolling(
+			client,
+			environmentSettings,
+			resolvedRequest,
+			TimeoutRecoveryVerifyAttempts,
+			TimeoutRecoveryBackoff);
 		if (sectionVisible == true) {
 			logger.WriteInfo(
 				$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
-				+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
+				+ $"'{resolvedRequest.SectionCode}' is now visible — continuing with readback.");
 			return true;
 		}
 
@@ -1034,11 +1050,45 @@ public sealed class ApplicationSectionCreateService(
 	// NO attempt produced a definitive answer (every attempt errored — genuinely unknown state).
 	private const int ContentionVerifyAttempts = 3;
 
+	// Bounded backoff poll for the TIMEOUT-RECOVERY verify (ENG-94419): when the insert budget expires the
+	// section transaction may still be committing, so a single immediate readback frequently reports the
+	// section absent even though it commits moments later. The id-matched verify is polled with a doubling
+	// backoff (2s, 4s, 8s, capped) so a section that commits shortly after the budget expired is recovered as
+	// success. The attempt count x capped backoff bounds the extra post-timeout wall-clock (~30 s here) so the
+	// whole call stays under the MCP client request ceiling; the no-op delay seam makes it instant under test.
+	private const int TimeoutRecoveryVerifyAttempts = 6;
+	private static readonly TimeSpan TimeoutRecoveryInitialBackoff = TimeSpan.FromSeconds(2);
+	private static readonly TimeSpan TimeoutRecoveryMaxBackoff = TimeSpan.FromSeconds(8);
+
+	// Doubling backoff (2s, 4s, 8s, 8s, ...) capped at TimeoutRecoveryMaxBackoff; attempt is 1-based.
+	private static TimeSpan TimeoutRecoveryBackoff(int attempt) {
+		double seconds = TimeoutRecoveryInitialBackoff.TotalSeconds * Math.Pow(2, attempt - 1);
+		return TimeSpan.FromSeconds(Math.Min(seconds, TimeoutRecoveryMaxBackoff.TotalSeconds));
+	}
+
 	/// <summary>
 	/// Runs the id-matched <see cref="TryVerifySectionExists"/> up to <see cref="ContentionVerifyAttempts"/>
-	/// times with <see cref="PollDelay"/> between attempts, so a committed-but-not-yet-visible section is not
-	/// misread as absent before the destructive contention retry.
+	/// times with a fixed <see cref="PollDelay"/> between attempts, so a committed-but-not-yet-visible section
+	/// is not misread as absent before the destructive contention retry. Thin wrapper over
+	/// <see cref="TryVerifySectionExistsPolling"/> that fixes the contention-path attempt count and delay; see
+	/// that method for the tri-state return contract (ENG-93089 #3595964299).
 	/// </summary>
+	private bool? TryVerifySectionExistsWithSettle(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		ResolvedApplicationSectionCreateRequest request) =>
+		TryVerifySectionExistsPolling(client, environmentSettings, request, ContentionVerifyAttempts, static _ => PollDelay);
+
+	/// <summary>
+	/// Polls the id-matched <see cref="TryVerifySectionExists"/> up to <paramref name="attempts"/> times,
+	/// sleeping <paramref name="backoffForAttempt"/>(attempt) between attempts. Shared by the contention settle
+	/// (fixed delay) and the timeout-recovery poll (backoff, ENG-94419).
+	/// </summary>
+	/// <param name="client">Environment-scoped application client used for the readback query.</param>
+	/// <param name="environmentSettings">Resolved environment settings for the target environment.</param>
+	/// <param name="request">Resolved section-create request carrying the generated section id to match by.</param>
+	/// <param name="attempts">Maximum number of verify attempts (>= 1).</param>
+	/// <param name="backoffForAttempt">Delay to sleep after attempt N (1-based) before attempt N+1.</param>
 	/// <returns>
 	/// Returns the MOST-INFORMATIVE outcome across all attempts (not merely the last): <c>true</c> as soon as
 	/// any attempt finds the section visible; <c>false</c> when ANY attempt definitively proved the section
@@ -1048,12 +1098,14 @@ public sealed class ApplicationSectionCreateService(
 	/// caller's id-matched auto-retry is not suppressed under the heavy same-app load this path exists to
 	/// recover from (ENG-93089 #3595964299).
 	/// </returns>
-	private bool? TryVerifySectionExistsWithSettle(
+	private bool? TryVerifySectionExistsPolling(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
-		ResolvedApplicationSectionCreateRequest request) {
+		ResolvedApplicationSectionCreateRequest request,
+		int attempts,
+		Func<int, TimeSpan> backoffForAttempt) {
 		bool sawDefinitiveAbsent = false;
-		for (int attempt = 1; attempt <= ContentionVerifyAttempts; attempt++) {
+		for (int attempt = 1; attempt <= attempts; attempt++) {
 			bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, request);
 			if (sectionVisible == true) {
 				return true;
@@ -1063,8 +1115,8 @@ public sealed class ApplicationSectionCreateService(
 				sawDefinitiveAbsent = true;
 			}
 
-			if (attempt < ContentionVerifyAttempts) {
-				_delay(PollDelay);
+			if (attempt < attempts) {
+				_delay(backoffForAttempt(attempt));
 			}
 		}
 

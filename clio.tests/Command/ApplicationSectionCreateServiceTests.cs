@@ -1546,6 +1546,68 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "an unknown section state makes a blind retry the most dangerous option");
 	}
 
+	[Test]
+	[Description("ENG-94419: when the insert budget expires but the section commits moments later, the post-timeout verification poll (retry with backoff) finds it on a later attempt and recovers it as a success instead of reporting a spurious failure — the 'succeeded after the budget expired' shape.")]
+	public void CreateSection_Should_Recover_When_Insert_Times_Out_And_Section_Becomes_Visible_On_Later_Readback() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		// The first two post-timeout verification reads see nothing (the transaction is still committing);
+		// the third — and the subsequent success readback — see the section created by THIS call (matched by id).
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		// Icon-background persistence after recovery (distinct matcher: columnValues + IconBackground + filters).
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a section that becomes visible on a later post-timeout readback attempt must be recovered as a success, not reported as a spurious timeout failure (ENG-94419)");
+	}
+
+	[Test]
+	[Description("ENG-94419: the post-timeout verification is retried more than once before the timeout failure is surfaced, so a still-committing section is not prematurely declared absent after a single immediate check.")]
+	public void CreateSection_Should_Retry_PostTimeout_Verification_Before_Declaring_Section_Absent() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		int verifyCalls = 0;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				verifyCalls++;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "a section that never becomes visible after the insert timed out is still a classified timeout failure");
+		verifyCalls.Should().BeGreaterThan(1,
+			because: "the post-timeout verification must retry with backoff rather than give up after a single immediate check (ENG-94419)");
+	}
+
 	private static IEnumerable<TestCaseData> InsertFailureClassificationCases() {
 		yield return new TestCaseData(
 				new TaskCanceledException("A task was canceled."),

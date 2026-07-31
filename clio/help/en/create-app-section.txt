@@ -102,12 +102,16 @@ TIMEOUT AND FAILURE DIAGNOSTICS
                       retrying is safe once the environment is reachable.
 
     creatio-timeout   The request was sent but Creatio produced no response
-                      within the budget. clio automatically checks whether
-                      the section appeared anyway: if it did, the command
-                      continues and succeeds; if not, do NOT retry blindly -
-                      the server may still be processing the insert. Wait a
-                      few minutes, run "clio list-app-sections", and retry
-                      only if the section is still absent.
+                      within the budget. clio automatically re-checks whether
+                      the section appeared anyway - because the transaction can
+                      still be committing when the budget expires, this check is
+                      retried with backoff (not a single immediate read) so a
+                      section that commits just after the budget expired is
+                      reported as success, not a spurious failure (ENG-94419).
+                      If it still does not appear, do NOT retry blindly - the
+                      server may still be processing the insert. Wait a few
+                      minutes, run "clio list-app-sections", and retry only if
+                      the section is still absent.
 
     contention        The insert was aborted without a detailed reason. The
                       server gives no detail, so this may be parallel creation
