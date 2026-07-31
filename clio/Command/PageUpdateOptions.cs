@@ -359,7 +359,15 @@ namespace Clio.Command {
 				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
 				return true;
 			} catch (Exception ex) {
-				response = new PageUpdateResponse { Success = false, Error = $"Append merge failed: {ex.Message} [hint: the incoming body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]" };
+				// A full-config rejection message is already self-contained and actionable (it names the
+				// offending body — incoming vs the server's — and points at replace mode), so appending the
+				// generic marker-pairs hint would misdirect: a full-config body HAS valid markers, it is just
+				// the wrong form. Keep that hint only for genuine marker-shape merge failures, and phrase it
+				// role-agnostically so it never blames the incoming body for a server-side blocker (ENG-94422).
+				string hint = PageBodyMerger.IsFullConfigRejectionMessage(ex.Message)
+					? " [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
+					: " [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
+				response = new PageUpdateResponse { Success = false, Error = $"Append merge failed: {ex.Message}{hint}" };
 				return false;
 			}
 		}

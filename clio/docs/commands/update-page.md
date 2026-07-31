@@ -130,6 +130,16 @@ while merging, and the MCP `update-page` tool detects it up front, before any se
 round-trip. Note the `--body` value is always a raw string with `/**MARKER*/` pairs, never a
 structured object.
 
+The rejection message names **which** body is full-config, because the fix differs:
+
+- **Your incoming body is full-config** — you authored it, so convert it to the diff form
+  (`*_DIFF` markers) or use `--mode replace`.
+- **The current page on the server is full-config** — every page `create-app-section`
+  generates is stored this way. You did not author that body and cannot convert it, so
+  append is **not supported** against it by design (merging diff-form operations into a
+  full-config body would produce an unloadable mixed form). `--mode replace` is the only
+  path for such a page.
+
 ## Synopsis
 
 ```bash
