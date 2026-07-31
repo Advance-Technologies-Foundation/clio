@@ -874,7 +874,14 @@
         </div>
       </div>
 
-      <p class="fine" style="margin-top:20px">Наступні слайди — про те, чому кожне з цих рішень виявилося складнішим, ніж звучить, і що воно зламало.</p>
+      <h3 style="margin-top:24px">І ось увесь механізм — один рядок на реєстрації</h3>
+      <pre style="max-width:680px"><span style="color:var(--ink-3)">// що взагалі потрапляє у список для моделі</span>
+<span class="kw">SelectToolTypes</span>(enabled) =
+    enabled ∩ (<span class="ok">CoreToolTypes</span> ∪ <span class="ok">AlwaysOnLazyToolTypes</span>)
+                <span style="color:var(--ink-3)">↑ часте        ↑ clio-run + список назв</span>
+
+        → SDK.<span class="kw">WithTools</span>(…)   <span style="color:var(--ink-3)">// решту просто не реєструємо</span></pre>
+      <p class="fine" style="margin-top:12px">Решта інструментів існує, працює й доступна — вона лише <strong>не оголошена</strong>. Наступні слайди — про те, чому кожне з цих трьох рішень виявилося складнішим, ніж звучить, і що воно зламало.</p>
     </div>
   </section>
   <!-- index -->
