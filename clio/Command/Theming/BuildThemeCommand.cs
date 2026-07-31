@@ -278,8 +278,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// CSS server-side in the same call; each tool resolves settings itself via
 	/// <see cref="Clio.Command.McpServer.Tools.IToolCommandResolver"/> so the version probe reaches the correct
 	/// (possibly header-derived, credential-passthrough) tenant; the CLI never calls this overload and its
-	/// by-name <see cref="ResolveVersion(BuildThemeOptions)"/> path stays unchanged. Virtual so the composing
-	/// tool's tests can substitute the build phase.
+	/// by-name <see cref="ResolveVersion(BuildThemeOptions)"/> path stays unchanged.
 	/// </summary>
 	/// <param name="options">The brand inputs and template-version selectors.</param>
 	/// <param name="resolvedSettings">
@@ -292,7 +291,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
 	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
 	/// <returns><c>true</c> when the artifacts were built; <c>false</c> when an input or template error is reported in <paramref name="error"/>.</returns>
-	public virtual bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error) {
+	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error) {
 		css = null;
 		descriptor = null;
 		warnings = [];

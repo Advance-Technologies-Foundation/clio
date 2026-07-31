@@ -99,6 +99,10 @@ public sealed class ThemingVersionFloorBrandModeE2ETests : McpContractFixtureBas
 	private const string EnvironmentName = "pre10-theming-stub";
 	private const string StubCoreVersion = "9.0.0.100";
 
+	// Suppressed: the stub must start inside ConfigureMcpServerSettings (its URI goes into the child
+	// process appsettings before the shared server starts), which the analyzer cannot track; it IS
+	// disposed in the [OneTimeTearDown] StopPre10StubAsync below.
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method")]
 	private Pre10CreatioApplicationStub? _stub;
 
 	/// <inheritdoc />

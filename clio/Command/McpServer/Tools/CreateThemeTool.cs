@@ -10,6 +10,11 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>
+/// MCP tool that creates a custom Creatio theme on a target environment via the native <c>ThemeService</c>,
+/// returning a structured result with the theme id. The CSS is either supplied inline or, in the brand mode,
+/// built server-side from the brand colours and fonts in the same call.
+/// </summary>
 public class CreateThemeTool(
 	CreateThemeCommand command,
 	ILogger logger,
@@ -35,14 +40,14 @@ public class CreateThemeTool(
 			["font_weights"] = "font-weights"
 		};
 
+	/// <summary>Creates the theme on the target environment and returns a structured result carrying the effective theme id.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, id, warnings?, error? } where id is the created theme's id, auto-generated when omitted. " +
 		"The theme CSS is supplied inline via css-content, OR built server-side from brand colours and fonts " +
 		"(primary, secondary, accent, success, error, heading-font, body-font, font-weights, version) and created " +
-		"in one call — provide exactly one of css-content / primary; to supply CSS from a file, use the clio CLI " +
-		"(--css-content-file) instead. " +
+		"in one call — provide exactly one of css-content / primary. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (inline mode) or primary (brand mode) — exactly one of the two, " +
@@ -68,7 +73,7 @@ public class CreateThemeTool(
 		}
 		if (!hasCssContent && !brandMode) {
 			return CreateThemeResult.Failure(HasAnyBrandParameter(args)
-				? "theme-css-source-missing: primary is required for the brand mode — the other brand parameters " +
+				? "theme-brand-primary-missing: primary is required for the brand mode — the other brand parameters " +
 					"only refine the palette derived from it. Pass primary, or provide css-content instead."
 				: "theme-css-source-missing: provide either css-content (inline CSS) or primary (brand colours; " +
 					"clio builds the theme CSS server-side and creates the theme in one call).");
@@ -81,27 +86,30 @@ public class CreateThemeTool(
 			Id = args.Id,
 			PackageName = args.PackageName
 		};
-		return Execute(options, args, brandMode);
+		return Execute(options, brandMode ? args : null);
 	}
 
-	private CreateThemeResult Execute(CreateThemeOptions options, CreateThemeArgs args, bool brandMode) {
+	private CreateThemeResult Execute(CreateThemeOptions options, CreateThemeArgs brandArgs) {
+		IReadOnlyList<string> buildWarnings = null;
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
 			resolvedCommand => {
-				IReadOnlyList<string> buildWarnings = null;
-				if (brandMode) {
-					if (!TryBuildBrandCss(args, out string css, out buildWarnings, out string buildError)) {
-						return CreateThemeResult.Failure($"theme-build-failed: {buildError}");
+				if (brandArgs is not null) {
+					if (!TryBuildBrandCss(brandArgs, out string css, out buildWarnings, out string buildError)) {
+						return CreateThemeResult.Failure(
+							$"theme-build-failed: {SensitiveErrorTextRedactor.Redact(buildError)}", buildWarnings);
 					}
 					options.CssContent = css;
 				}
 				if (!resolvedCommand.TryCreateTheme(options, out string createdId, out string errorMessage)) {
-					return CreateThemeResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
-						? "CreateTheme returned success=false."
-						: SensitiveErrorTextRedactor.Redact(errorMessage));
+					return CreateThemeResult.Failure(
+						string.IsNullOrWhiteSpace(errorMessage)
+							? "CreateTheme returned success=false."
+							: SensitiveErrorTextRedactor.Redact(errorMessage),
+						buildWarnings);
 				}
 				return CreateThemeResult.Successful(createdId, buildWarnings);
 			},
-			CreateThemeResult.Failure);
+			error => CreateThemeResult.Failure(error, buildWarnings));
 	}
 
 	private static bool HasAnyBrandParameter(CreateThemeArgs args) {
@@ -142,6 +150,9 @@ public class CreateThemeTool(
 	}
 }
 
+/// <summary>
+/// MCP arguments for the <c>create-theme</c> tool.
+/// </summary>
 public sealed record CreateThemeArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name.")]
@@ -172,58 +183,39 @@ public sealed record CreateThemeArgs(
 	[property: Description("Brand primary colour (#rrggbb, #rgb, rgb(), hsl(), or a named colour); enables the brand mode — clio builds the theme CSS server-side and creates it in one call, so the CSS never enters the agent context. Mutually exclusive with css-content.")]
 	string? Primary = null,
 
-	[property: JsonPropertyName("secondary")]
-	[property: Description("Secondary colour (brand mode); derived from the primary when omitted.")]
-	string? Secondary = null,
-
-	[property: JsonPropertyName("accent")]
-	[property: Description("Accent colour (brand mode); chosen from the primary when omitted.")]
-	string? Accent = null,
-
-	[property: JsonPropertyName("success")]
-	[property: Description("Success colour (brand mode); the platform default when omitted.")]
-	string? Success = null,
-
-	[property: JsonPropertyName("error")]
-	[property: Description("Error colour (brand mode); the platform default when omitted.")]
-	string? Error = null,
-
-	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family (brand mode); Montserrat when omitted.")]
-	string? HeadingFont = null,
-
-	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family (brand mode); Montserrat when omitted.")]
-	string? BodyFont = null,
-
-	[property: JsonPropertyName("font-weights")]
-	[property: Description("Font weights to load (e.g. [400,500,600]) (brand mode); ignored without a custom heading/body font; defaults to 400,500,600.")]
-	int[]? FontWeights = null,
-
 	[property: JsonPropertyName("version")]
-	[property: Description("Creatio version the built CSS targets (brand mode, e.g. 10.0); the target environment's version is used when omitted, falling back to the newest supported template when it cannot be determined.")]
+	[property: Description("Creatio version the built CSS targets (brand mode, e.g. 10.0); the target environment's version is used when omitted, falling back to the newest supported template when it cannot be determined. Selects the build template, so it counts as a brand parameter and cannot be combined with css-content.")]
 	string? Version = null
-) {
+) : ThemeBrandArgs {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
+/// <summary>
+/// Structured result of the <c>create-theme</c> MCP tool.
+/// </summary>
 public sealed record CreateThemeResult {
+	/// <summary>Whether the theme was created.</summary>
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
 
+	/// <summary>The effective theme id (supplied or auto-generated); omitted on failure.</summary>
 	[JsonPropertyName("id")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Id { get; init; }
 
+	/// <summary>Non-fatal advisories raised while building the CSS in the brand mode; omitted when there are none.</summary>
 	[JsonPropertyName("warnings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; init; }
 
+	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
+	/// <summary>Creates a success result carrying the effective theme id and any non-fatal build advisories.</summary>
 	public static CreateThemeResult Successful(string id, IReadOnlyList<string> warnings = null) {
 		return new CreateThemeResult {
 			Success = true,
@@ -232,10 +224,16 @@ public sealed record CreateThemeResult {
 		};
 	}
 
-	public static CreateThemeResult Failure(string error) {
+	/// <summary>
+	/// Creates a failure result carrying the diagnostic message and any non-fatal advisories already raised —
+	/// a brand-mode build can succeed (emitting advisories) and the subsequent create still fail, and the
+	/// advisories are the caller's only signal about the CSS that was built.
+	/// </summary>
+	public static CreateThemeResult Failure(string error, IReadOnlyList<string> warnings = null) {
 		return new CreateThemeResult {
 			Success = false,
-			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
+			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error,
+			Warnings = warnings is { Count: > 0 } ? warnings : null
 		};
 	}
 }

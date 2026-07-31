@@ -79,8 +79,6 @@ public sealed class BuildThemeTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
 		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
-		"In the no-code flow prefer create-theme's brand mode instead: pass the brand colours and fonts " +
-		"straight to create-theme and it builds this same CSS server-side and creates the theme in one call. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
 		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical. " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
@@ -227,34 +225,6 @@ public sealed record BuildThemeArgs(
 	[property: Description("Theme id for theme.json; an auto-generated UUID when omitted.")]
 	string? Id = null,
 
-	[property: JsonPropertyName("secondary")]
-	[property: Description("Secondary colour; derived from the primary when omitted.")]
-	string? Secondary = null,
-
-	[property: JsonPropertyName("accent")]
-	[property: Description("Accent colour; chosen from the primary when omitted.")]
-	string? Accent = null,
-
-	[property: JsonPropertyName("success")]
-	[property: Description("Success colour; the platform default when omitted.")]
-	string? Success = null,
-
-	[property: JsonPropertyName("error")]
-	[property: Description("Error colour; the platform default when omitted.")]
-	string? Error = null,
-
-	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family; Montserrat when omitted.")]
-	string? HeadingFont = null,
-
-	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family; Montserrat when omitted.")]
-	string? BodyFont = null,
-
-	[property: JsonPropertyName("font-weights")]
-	[property: Description("Font weights to load (e.g. [400,500,600]); ignored without a custom heading/body font; defaults to 400,500,600.")]
-	int[]? FontWeights = null,
-
 	[property: JsonPropertyName("version")]
 	[property: Description("Creatio version the theme targets (e.g. 10.0); the newest supported version is used when omitted; mutually exclusive with environment-name.")]
 	string? Version = null,
@@ -273,7 +243,7 @@ public sealed record BuildThemeArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Package inside the workspace to write theme.css + theme.json into, under Files/themes/<css-class-name>/; provide together with workspace-directory.")]
 	string? PackageName = null
-) {
+) : ThemeBrandArgs {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -40,6 +41,45 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 		// Assert
 		toolNames.Should().Contain(CreateThemeTool.ToolName,
 			because: "the create-theme MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
+	}
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("create-theme and build-theme advertise the full brand-parameter surface over the wire")]
+	[Description("Fetches the create-theme and build-theme contracts from the real clio MCP server and asserts the advertised parameter set — every brand property (including the seven now declared on the shared ThemeBrandArgs base record) reaches the schema the model actually sees, css-content is no longer schema-required on create-theme, and each tool keeps its own required set. Guards the ThemeBrandArgs extraction: a base-record property that the schema generator failed to walk would silently disappear from the advertised contract while every in-process unit test still passed.")]
+	public async Task ThemeTools_Should_Advertise_All_Brand_Parameters_Over_The_Wire() {
+		// Arrange
+		string[] brandParameters = [
+			"primary", "secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights", "version"
+		];
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractDefinition createContract = await GetToolContractAsync(context, CreateThemeTool.ToolName);
+		ToolContractDefinition buildContract = await GetToolContractAsync(context, BuildThemeTool.ToolName);
+
+		// Assert
+		string[] createParameters = createContract.InputSchema.Properties.Select(field => field.Name).ToArray();
+		string[] buildParameters = buildContract.InputSchema.Properties.Select(field => field.Name).ToArray();
+		createParameters.Should().Contain(brandParameters,
+			because: "every brand parameter — including the seven inherited from ThemeBrandArgs — must reach the advertised create-theme schema");
+		createParameters.Should().Contain("css-content",
+			because: "the inline CSS source stays advertised alongside the brand mode");
+		createContract.InputSchema.Required.Should().BeEquivalentTo(["environment-name"],
+			because: "css-content must not be schema-required once the brand mode is an alternative CSS source");
+		buildParameters.Should().Contain(brandParameters,
+			because: "build-theme inherits the same shared brand properties and must keep advertising them");
+		buildContract.InputSchema.Required.Should().BeEquivalentTo(["primary"],
+			because: "build-theme keeps its own required set — the shared base record must not change it");
+		string[] sharedBrandParameters = ["secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights"];
+		foreach (string shared in sharedBrandParameters) {
+			string createDescription = createContract.InputSchema.Properties.Single(field => field.Name == shared).Description;
+			string buildDescription = buildContract.InputSchema.Properties.Single(field => field.Name == shared).Description;
+			createDescription.Should().NotBeNullOrWhiteSpace(
+				because: $"the inherited '{shared}' parameter must keep its [Description] in the advertised contract");
+			buildDescription.Should().Be(createDescription,
+				because: $"'{shared}' is declared once on ThemeBrandArgs, so both tools must advertise the identical description — a divergence means the shared declaration stopped flowing through");
+		}
 	}
 
 	[Test]
@@ -159,5 +199,19 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 			because: "the failure must name the inline source the caller can provide");
 		result.Error.Should().Contain("primary",
 			because: "the failure must name the brand-mode source the caller can provide");
+	}
+
+	private static async Task<ToolContractDefinition> GetToolContractAsync(ArrangeContext context, string toolName) {
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { toolName } }
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse response = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(result);
+		response.Success.Should().BeTrue(
+			because: $"the {toolName} contract fetch must succeed before its schema can be asserted (error: {response.Error?.Message})");
+		return response.Tools.Should().ContainSingle(
+			because: "one requested tool name must expand to exactly one contract").Subject;
 	}
 }

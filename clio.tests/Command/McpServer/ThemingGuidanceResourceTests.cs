@@ -48,6 +48,42 @@ public sealed class ThemingGuidanceResourceTests {
 	}
 
 	[Test]
+	[Description("The no-code flow leads with create-theme's brand mode as a single call and tells the agent not to build the CSS first — the whole point of ENG-93989 is that the stylesheet never crosses the model boundary, and a future rewrite must not quietly reinstate the two-call pipe.")]
+	public void ThemingGuidanceResource_Should_Lead_NoCode_Flow_With_SingleCall_BrandMode() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("1. Create with `create-theme` in brand mode — one call",
+			because: "the brand mode must be step 1 of the no-code flow, stated as a single call");
+		article.Text.Should().Contain("do not call `build-theme` first and do not put CSS in the conversation",
+			because: "the instruction that keeps the CSS out of the agent context is the load-bearing sentence of this change");
+		article.Text.Should().Contain("the server builds the CSS and creates the theme in that same call",
+			because: "the agent must understand the build happens server-side inside the create call");
+	}
+
+	[Test]
+	[Description("The 'Building the theme CSS' section names both entry points, so an agent reading it in isolation learns that create-theme builds server-side and does not fall back to the build-theme pipe by default.")]
+	public void ThemingGuidanceResource_Should_Describe_Both_Build_Entry_Points() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("It has two entry points",
+			because: "the section must present create-theme and build-theme as the two ways into the same engine");
+		article.Text.Should().Contain("`create-theme` builds it server-side inside the create call",
+			because: "the no-code entry point must be named explicitly where an agent looks up how the CSS is produced");
+	}
+
+	[Test]
 	[Description("The theming guide keeps the global DefaultTheme change confirmation-gated and distinct from the per-user apply, so auto-apply never silently changes the theme for everyone.")]
 	public void ThemingGuidanceResource_Should_Keep_DefaultTheme_Change_ConfirmationGated() {
 		// Arrange

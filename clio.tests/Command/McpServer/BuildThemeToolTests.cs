@@ -118,9 +118,10 @@ public sealed class BuildThemeToolTests
 	public void BuildTheme_ShouldForwardAllBrandAndFontFields_WhenAllOptionalInputsSupplied() {
 		// Act
 		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(
-			Primary: "#004fd6", CssClassName: "MyTheme", Secondary: "#0d2e4e", Accent: "#f94e11",
-			Success: "#0b8500", Error: "#d2310d", HeadingFont: "Inter", BodyFont: "Roboto",
-			FontWeights: new[] { 400, 700 }));
+			Primary: "#004fd6", CssClassName: "MyTheme") {
+			Secondary = "#0d2e4e", Accent = "#f94e11", Success = "#0b8500", Error = "#d2310d",
+			HeadingFont = "Inter", BodyFont = "Roboto", FontWeights = [400, 700]
+		});
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a fully-specified build request is valid");
@@ -142,8 +143,9 @@ public sealed class BuildThemeToolTests
 	[Description("Returns a non-fatal warning (but still succeeds) when font-weights is given without a heading or body font.")]
 	public void BuildTheme_ShouldReturnWarning_WhenFontWeightsWithoutFamily() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			FontWeights: new[] { 400, 700 }));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") {
+			FontWeights = [400, 700]
+		});
 
 		// Assert
 		result.Success.Should().BeTrue(because: "font weights without a family is non-fatal");
