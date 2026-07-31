@@ -186,8 +186,6 @@
 						packageInstallOptions, options.ReportPath, createBackup);
 				}
 				if (options.ForceCompilation && success) {
-					// CreateFromPushPkgOptions sets IsSilent so the forced compile never prompts (RC-10/RC-16);
-					// a non-zero exit here therefore reliably means the compilation itself failed.
 					CompileConfigurationOptions compileOptions = CreateFromPushPkgOptions(options);
 					success &= _compileConfigurationCommand.Execute(compileOptions) == 0;
 				}
