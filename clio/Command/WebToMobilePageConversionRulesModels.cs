@@ -44,6 +44,18 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("tabAreaLayers")]
 	public TabAreaLayersRule TabAreaLayers { get; init; }
 
+	/// <summary>
+	/// Group: per-mobile-type property overrides stamped onto EVERY element the converter INSERTS
+	/// (ENG-91228 spacing normalization). Mobile pages follow the mobile spacing standard, so a listed
+	/// property is SET to the rule's value — replacing whatever the web page carried (any shape: token,
+	/// px number, CSS string, per-axis object) and added even when the web page carried none, so the
+	/// converted body is self-describing instead of leaning on client defaults. Applies to converted AND
+	/// synthesized inserts alike; merge twins the mobile template provides are never touched. Empty or
+	/// absent switches the pass off (the feature is data-driven, like <see cref="TabAreaLayers"/>).
+	/// </summary>
+	[JsonPropertyName("insertValueOverrides")]
+	public IReadOnlyList<InsertValueOverrideRule> InsertValueOverrides { get; init; } = [];
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -197,6 +209,24 @@ public sealed class SynthesizedContainerRule {
 	/// <summary>Property name → value the synthesized element carries as its mobile values.</summary>
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// One per-mobile-type value override applied to every INSERTED element of that type (ENG-91228).
+/// The element identity keys (<c>name</c>/<c>type</c>) can never be overridden — a rules file listing
+/// them is ignored for those keys.
+/// </summary>
+public sealed class InsertValueOverrideRule {
+	/// <summary>Mobile component type the override applies to (e.g. "crt.GridContainer").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
 }
 
 /// <summary>

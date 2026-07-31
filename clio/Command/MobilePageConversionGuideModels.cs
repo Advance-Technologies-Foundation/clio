@@ -476,6 +476,21 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<TabAreaLayerGroup> TabAreaLayers { get; init; }
 
+	// ── Spacing normalized on inserted containers ──────────────────────
+	/// <summary>
+	/// Spacing normalization applied by the converter (ENG-91228): mobile pages follow the mobile spacing
+	/// standard, so the WEB page's container spacing is deliberately IGNORED (discarded, not translated) —
+	/// every <c>crt.GridContainer</c> / <c>crt.FlexContainer</c> the converter INSERTS (converted from web
+	/// and synthesized tab-body / Area layers alike) already carries gap Medium on all axes in
+	/// <c>elementMap[].mobileValues</c>, so there is nothing separate to apply. Merge twins the mobile
+	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
+	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
+	/// restore the web spacing. Null when nothing was normalized.
+	/// </summary>
+	[JsonPropertyName("spacingNormalization")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SpacingNormalizationInfo SpacingNormalization { get; init; }
+
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
 	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted mobileValues
@@ -756,6 +771,36 @@ public sealed class TabDetailAreaGroup {
 	/// <summary>The row the detail Area occupies in the tab-body grid (the shared Area, when present, is row 1).</summary>
 	[JsonPropertyName("row")]
 	public int Row { get; init; }
+}
+
+/// <summary>
+/// Advisory summary of the spacing normalization (ENG-91228): which inserted containers had their
+/// spacing stamped with the mobile-standard values (gap Medium). The actionable result is already
+/// baked into <c>elementMap[].mobileValues</c>; this section only feeds the plan / final-report line.
+/// </summary>
+public sealed class SpacingNormalizationInfo {
+	/// <summary>Why the web spacing is ignored and how to report the normalization.</summary>
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+
+	/// <summary>One entry per normalized inserted container.</summary>
+	[JsonPropertyName("normalized")]
+	public IReadOnlyList<SpacingNormalizationEntry> Normalized { get; init; } = [];
+}
+
+/// <summary>One inserted container whose spacing was normalized to the mobile standard.</summary>
+public sealed class SpacingNormalizationEntry {
+	/// <summary>The container's mobile element name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The container's mobile component type (e.g. "crt.GridContainer").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>The property names stamped onto the container's mobileValues (e.g. ["gap"]).</summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
 }
 
 /// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>

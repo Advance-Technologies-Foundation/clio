@@ -80,6 +80,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    it at the gate so the user knows what the tab bodies look like, but never offer to skip or
 			    replace it. Null when the converter creates no tab, or every converted tab is empty (an empty tab
 			    gets no layers, so an empty Area is never created in the first place).
+			  - spacingNormalization — the containers whose spacing the converter NORMALIZED to the mobile
+			    standard: every inserted crt.GridContainer / crt.FlexContainer (converted from web AND the
+			    synthesized tab-body / Area layers) carries gap Medium on all axes in its mobileValues; the web
+			    page's own spacing is deliberately IGNORED (discarded, not translated), even a web container with
+			    no gap gets the explicit Medium value. Merge twins the mobile template provides are untouched.
+			    SILENT — never a gate question: state it in the plan and the final report as ONE aggregated line
+			    ("spacing of N containers normalized to Medium; web spacing ignored"). Never restore the web gap.
+			    Null when nothing was normalized.
 			  - resourceStrings — every localized string the converted body references (top-level captions AND
 			    nested tokens like config.title / text.template), keyed by resource name and resolved to its
 			    en-US text. Register this whole map via update-page `resources` so every #ResourceString token renders.
@@ -322,6 +330,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  layers, so an empty Area never appears.
 			  Unlike adaptiveLayout, tabAreaLayers is NOT a proposal: the tab body + Area cards are the REQUIRED
 			  mobile structure for a converted tab — report it at the gate, never put it up for the user's approval.
+			- SPACING IS NORMALIZED, NOT CONVERTED: mobile follows the mobile spacing standard, so the web page's
+			  container spacing is deliberately IGNORED — every inserted crt.GridContainer / crt.FlexContainer
+			  (converted and synthesized alike) already carries gap Medium on all axes in its mobileValues
+			  (grid: { "columnGap": "medium", "rowGap": "medium" }; flex: "medium"), even when the web container
+			  had no gap or had gap none/0. Do NOT restore or translate the web gap, and do NOT treat the
+			  difference from the web page as a defect. Merge twins keep the template's own spacing untouched.
+			  Like tabAreaLayers this is NOT a proposal — SILENT, never a gate question: state it as ONE
+			  aggregated line in the plan and the final report (guide.spacingNormalization lists the containers).
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
 			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
 			  registry), the field's `control` binding included — paste it verbatim. Fields bind via `control`
