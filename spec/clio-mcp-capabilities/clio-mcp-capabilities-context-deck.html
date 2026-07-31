@@ -365,6 +365,23 @@
   .divider { text-align: left; }
   .divider h2 { margin-bottom: 18px; }
 
+  /* ---------- real screenshot ---------- */
+  .shot { margin: 0; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; max-width: 560px; background: #1B1F27; }
+  .shot img { display: block; width: 100%; height: auto; }
+
+  /* ---------- three numbered decisions ---------- */
+  .howto { display: flex; flex-direction: column; }
+  .howto .hs { display: grid; grid-template-columns: 34px 1fr; gap: 16px; padding: 15px 0; border-top: 1px solid var(--rule-soft); }
+  .howto .hs:last-child { border-bottom: 1px solid var(--rule-soft); }
+  .howto .hn {
+    font-family: var(--font-mono); font-size: 13px; color: var(--cyan);
+    border: 1px solid var(--cyan-soft); border-radius: 2px; text-align: center; padding: 3px 0;
+    align-self: start; line-height: 1.3;
+  }
+  .howto .hb { display: block; }
+  .howto .hh { display: block; font-size: 16px; }
+  .howto .hd { display: block; font-size: 14px; color: var(--ink-3); margin-top: 5px; max-width: 78ch; }
+
   /* ---------- repeated requests, each carrying the same catalog ---------- */
   .reqs { display: flex; flex-direction: column; gap: 7px; max-width: 760px; }
   .reqs .rq { display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: center; }
@@ -611,7 +628,7 @@
     <div class="inner">
       <div class="eyebrow"><span class="b">clio mcp</span><span>speaking corner · внутрішня тех-аудиторія</span></div>
       <h1>Досвід оптимізації MCP</h1>
-      <p class="lead">Обгорнути CLI в MCP-інструменти — просто. Зробити так, щоб модель <strong>реально</strong> ними користувалася — надійно, з мінімальним контекстом і з правильною версією платформи — оце інженерна задача. У clio таких інструментів <strong>понад 160</strong>, а модель бачить <strong>18</strong>.</p>
+      <p class="lead">Обгорнути CLI в MCP-інструменти — просто. Зробити так, щоб модель <strong>реально</strong> ними користувалася — надійно, з мінімальним контекстом і з правильною версією платформи — оце інженерна задача.</p>
       <div class="chips" style="margin-bottom:30px">
         <span class="chip cyan">1 · контекстна економія</span>
         <span class="chip brass">2 · версіонування каталогу компонентів</span>
@@ -644,7 +661,7 @@
         <div class="role">
           <div class="rt">сервер</div>
           <div class="rd">Звичайний процес, який оголошує, що він уміє, і виконує запити. Про модель не знає нічого.</div>
-          <div class="rex">clio — і будь-який інший MCP-сервер</div>
+          <div class="rex"><strong>clio mcp</strong> — сервер, за яким стоїть Creatio</div>
         </div>
       </div>
 
@@ -665,6 +682,7 @@
             <text class="lbl" x="146" y="113">системи</text>
           </svg>
           <div class="sum">3 × 3 = 9 інтеграцій</div>
+          <div class="rex">Claude Code, Copilot, Cursor × Creatio, Jira, GitHub</div>
         </figure>
         <figure class="good">
           <figcaption>зі стандартом</figcaption>
@@ -683,6 +701,7 @@
             <text class="lbl" x="86" y="38">MCP</text>
           </svg>
           <div class="sum">3 + 3 = 6 реалізацій протоколу</div>
+          <div class="rex">кожна система пише свій сервер один раз — Creatio написала <strong>clio mcp</strong></div>
         </figure>
       </div>
 
@@ -707,7 +726,7 @@
         </defs>
 
         <text class="hd" x="130" y="14" text-anchor="middle">клієнт і модель</text>
-        <text class="hd" x="620" y="14" text-anchor="middle">сервер</text>
+        <text class="hd" x="620" y="14" text-anchor="middle">clio mcp</text>
         <line class="ll" x1="130" y1="26" x2="130" y2="308"/>
         <line class="ll" x1="620" y1="26" x2="620" y2="308"/>
 
@@ -733,7 +752,7 @@
       </svg>
 
       <div class="seq seq-fallback">
-        <div class="step"><span class="a">Запускає процес, узгоджує версію протоколу</span><span class="dir">→</span><span class="b">сервер</span></div>
+        <div class="step"><span class="a">Запускає процес, узгоджує версію протоколу</span><span class="dir">→</span><span class="b">clio mcp</span></div>
         <div class="step"><span class="a">«Перелічи все, що ти вмієш»</span><span class="dir">→</span><span class="b">віддає список із повними схемами</span></div>
         <div class="step crux"><span class="a">Вкладає цей список у запит до моделі — <strong>і робить це щоразу</strong></span><span class="dir">не йде<br>на сервер</span><span class="b">—</span></div>
         <div class="step"><span class="a">Модель обрала дію → клієнт її викликає</span><span class="dir">→</span><span class="b">виконує, повертає результат</span></div>
@@ -793,66 +812,69 @@
       <p class="fine" style="margin-top:18px">Три теми — це не три історії, а три місця, де цей сценарій міг зламатися: контекст переповнений і модель не добирає інструмент · каталог компонентів не той, що на стенді · правила є, але агент їх не прочитав.</p>
     </div>
   </section>
-  <!-- host limit: opens block 1 -->
+  <!-- host limit -->
   <section class="slide">
     <div class="inner">
       <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>межа клієнта</span></div>
       <h2>У клієнта є стеля — і ми в неї вперлися</h2>
-      <p class="lead">Клієнт на кшталт Claude Code не може тримати скільки завгодно інструментів. Обмежень два, і вони різні за природою.</p>
+      <p class="lead">Це не теорія. Це те, що бачить користувач, коли інструментів стало більше, ніж клієнт готовий узяти:</p>
 
-      <div class="cols two" style="margin-bottom:26px">
+      <figure class="shot">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgIAAACgCAYAAAB+DgQAAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAACAqADAAQAAAABAAAAoAAAAADiKxvfAABAAElEQVR4Ae2dB3wcxb3Hf1elO0mn3psty5Z7xQX3AjbYphobTEIe1bRACo88yCMJBPLIS17ohAAhjVBMNxjbuPeKXOQuW5YsyVbv9XRl38ydTto73d3eSmdZPv3HH/n2dmb+8/9/Z2bnvzOze4rEpBQhzBAO19BQX+d6ir4TASJABIgAESACAUZAGWD2kDlEgAgQASJABIiADALkCMiARUmJABEgAkSACAQaAXIEAq1GyR4iQASIABEgAjIIkCMgAxYlJQJEgAgQASIQaATIEQi0GiV7iAARIAJEgAjIIECOgAxYlJQIEAEiQASIQKARIEcg0GqU7CECRIAIEAEiIIMAOQIyYFFSIkAEiAARIAKBRoAcgUCrUbKHCBABIkAEiIAMAuQIyIBFSYkAESACRIAIBBoBcgQCrUbJHiJABIgAESACMgiQIyADFiUlAkSACBABIhBoBMgRCLQaJXuIABEgAkSACMggQI6ADFiUlAgQASJABIhAoBEgRyDQapTsIQJEgAgQASIggwA5AjJgUVIiQASIABEgAoFGgByBQKtRsocIEAEiQASIgAwC5AjIgEVJiQARIAJEgAgEGgFyBAKtRskeIkAEiAARIAIyCJAjIAMWJSUCRIAIEAEiEGgEyBEItBole4gAESACRIAIyCBAjoAMWJSUCBABIkAEiECgESBHINBqlOwhAkSACBABIiCDADkCMmBRUiJABIgAESACgUaAHIFAq1GyhwgQASJABIiADALkCMiARUmJABEgAkSACAQaAXIEAq1GyR4iQASIABEgAjIIkCMgAxYlJQJEgAgQASIQaATIEQi0GiV7iAARIAJEgAjIIECOgAxYlJQIEAEiQASIQKARIEcg0GqU7CECRIAIEAEiIIMAOQIyYFFSIkAEiAARIAKBRoAcgUCrUbKHCBABIkAEiIAMAuQIyIBFSYkAESACRIAIBBoBcgQCrUbJHiJABIgAESACMgiQIyADFiUlAkSACBABIhBoBMgRCLQaJXuIABEgAkSACMgg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" alt="Повідомлення в клієнті: You may not include more than 128 tools in your request. Запит зупинено.">
+      </figure>
+
+      <div class="cols two" style="margin:24px 0 0">
         <div class="panel rust">
-          <h3>Жорстке — на кількість</h3>
-          <p style="margin:0 0 10px">Хост просто не візьме більше певної кількості інструментів. У нашому випадку стеля була <strong>128</strong>.</p>
-          <p style="margin:0" class="fine">clio оголошував ~124 — тобто ми впритул, і кожен новий інструмент був за рахунок іншого.</p>
+          <h3>Жорстке обмеження — на кількість</h3>
+          <p style="margin:0">Стеля <strong>128</strong> інструментів на запит. clio оголошував ~124 — впритул.</p>
         </div>
         <div class="panel brass">
           <h3>Мʼяке — на контекст</h3>
-          <p style="margin:0 0 10px">Навіть якщо влізли за кількістю, кожен інструмент з’їдає контекст, у якому модель мала б думати про задачу.</p>
-          <p style="margin:0" class="fine">Це обмеження гірше: воно не дає помилки, воно просто <strong>тихо знижує якість</strong>.</p>
+          <p style="margin:0">Кожен інструмент зʼїдає контекст, у якому модель мала б думати про задачу. Помилки не дає — <strong>тихо знижує якість</strong>.</p>
         </div>
       </div>
 
-      <p class="lead" style="margin:0 0 14px">І платиться цей контекст не за виклик, а за <strong>саму присутність</strong> інструмента в списку:</p>
+      <p class="lead" style="margin:22px 0 12px">І платиться це не за виклик, а за <strong>саму присутність</strong> у списку:</p>
 
       <div class="reqs">
         <div class="rq"><span class="rl">запит 1</span><span class="rb"><span class="cat">каталог інструментів</span><span class="usr">запит</span></span></div>
         <div class="rq"><span class="rl">запит 2</span><span class="rb"><span class="cat">каталог інструментів</span><span class="usr">запит</span></span></div>
-        <div class="rq"><span class="rl">запит 3</span><span class="rb"><span class="cat">каталог інструментів</span><span class="usr">запит</span></span></div>
         <div class="rq"><span class="rl">…</span><span class="rb"><span class="cat">і так до кінця сесії</span><span class="usr">запит</span></span></div>
-      </div>
-
-      <div class="def" style="margin-top:22px">
-        <span class="term">цифри</span>
-        <span class="body">Замір червня 2026, коли поверхню ще не скорочували: <strong>124</strong> інструменти — <span class="mono">226 640</span> байтів, приблизно <span class="mono">57 000</span> токенів у <em>кожному</em> запиті. Сьогодні clio оголошує <strong>~162</strong>, а в список до моделі йде <strong>18</strong>.</span>
       </div>
     </div>
   </section>
-  <!-- surface -->
+  <!-- how it was implemented -->
   <section class="slide">
     <div class="inner">
-      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>архітектура поверхні</span></div>
-      <h2>Показуємо 18, вміємо 162</h2>
-      <p class="lead">Сьогодні clio оголошує близько <strong>175</strong> інструментів, з яких <strong>~162</strong> увімкнені за замовчуванням. У списку, що йде в модель, хост бачить <strong>18</strong>.</p>
+      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>як це зробили</span></div>
+      <h2>Три рішення, і всі три прості</h2>
+      <p class="lead">Жодної магії тут немає. Уся ідея — <strong>перестати оголошувати те, що потрібно рідко</strong>, і залишити два способи до нього дотягнутися.</p>
 
-      <div class="catalog" id="catalog" aria-hidden="true"></div>
-      <div class="legend" style="margin-bottom:28px">
-        <span><b style="background:var(--cyan)"></b> 18 видимих — модель кличе прямо за іменем</span>
-        <span><b style="background:var(--rule)"></b> ~144 приховані — досяжні, але не оголошені</span>
+      <div class="howto">
+        <div class="hs">
+          <span class="hn">1</span>
+          <span class="hb">
+            <span class="hh">Оголошуємо лише часте</span>
+            <span class="hd">У списку залишається невеликий набір інструментів, якими агент користується постійно: подивитися застосунок, сторінку, схему сутності, каталог компонентів.</span>
+          </span>
+        </div>
+        <div class="hs">
+          <span class="hn">2</span>
+          <span class="hb">
+            <span class="hh">Решту викликаємо через одного виконавця</span>
+            <span class="hd">Замість 140 оголошених інструментів — один <code>clio-run</code>, якому передають імʼя команди та її аргументи. Інструменти нікуди не зникли, вони просто не займають місце в списку.</span>
+          </span>
+        </div>
+        <div class="hs">
+          <span class="hn">3</span>
+          <span class="hb">
+            <span class="hh">Щоб про них можна було дізнатися — короткий список назв</span>
+            <span class="hd">Окремий інструмент віддає перелік <em>усіх</em> команд: імʼя й одне речення призначення. Без схем — тому він дешевий.</span>
+          </span>
+        </div>
       </div>
 
-      <div class="cols two">
-        <div class="panel cyan">
-          <h3>Що не дає поверхні відрости назад</h3>
-          <p style="margin:0">Розмір видимого набору зафіксований у тесті — і кількістю, і байтами. Додати інструмент «непомітно» не вийде: тест червоніє, і рішення треба обґрунтувати.</p>
-        </div>
-        <div class="panel brass">
-          <h3>Ціна дешевої реалізації</h3>
-          <p style="margin:0">Видимість визначається на рівні <em>класу</em>, а не окремого методу — так простіше й надійніше. Але один клас із восьми методів для роботи з базою коштував <strong>~19 % обсягу</strong> в <em>кожній</em> сесії, навіть коли базу не торкали. Довелось виносити його цілим класом.</p>
-        </div>
-      </div>
-
-      <p class="fine" style="margin-top:20px">Числа з різних епох не складати: <span class="mono">124</span> зі слайда про наївний шлях — це замір червневого прототипу, а не сьогоднішній повний каталог (<span class="mono">~162</span>).</p>
+      <p class="fine" style="margin-top:20px">Наступні слайди — про те, чому кожне з цих рішень виявилося складнішим, ніж звучить, і що воно зламало.</p>
     </div>
   </section>
   <!-- index -->
@@ -920,6 +942,33 @@
         <h3>Відповідь на очевидне питання: агент не вирішує</h3>
         <p style="margin:0">Ресурс читає <strong>не модель, а застосунок</strong> — коли користувач щось прикріпив або коли клієнт сам так налаштований. Модель не може піти й прочитати ресурс з власної ініціативи, і навіть не може розраховувати, що взагалі бачить їхній перелік: у різних клієнтах це по-різному. Тому все, на що агент <em>мусить</em> спертися сам, у clio віддається інструментом, а не ресурсом.</p>
       </div>
+    </div>
+  </section>
+  <!-- surface -->
+  <section class="slide">
+    <div class="inner">
+      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>результат</span></div>
+      <h2>Показуємо 18, вміємо 162</h2>
+      <p class="lead">Сьогодні clio оголошує близько <strong>175</strong> інструментів, з яких <strong>~162</strong> увімкнені за замовчуванням. У списку, що йде в модель, хост бачить <strong>18</strong>.</p>
+
+      <div class="catalog" id="catalog" aria-hidden="true"></div>
+      <div class="legend" style="margin-bottom:28px">
+        <span><b style="background:var(--cyan)"></b> 18 видимих — модель кличе прямо за іменем</span>
+        <span><b style="background:var(--rule)"></b> ~144 приховані — досяжні, але не оголошені</span>
+      </div>
+
+      <div class="cols two">
+        <div class="panel cyan">
+          <h3>Що не дає поверхні відрости назад</h3>
+          <p style="margin:0">Розмір видимого набору зафіксований у тесті — і кількістю, і байтами. Додати інструмент «непомітно» не вийде: тест червоніє, і рішення треба обґрунтувати.</p>
+        </div>
+        <div class="panel brass">
+          <h3>Ціна дешевої реалізації</h3>
+          <p style="margin:0">Видимість визначається на рівні <em>класу</em>, а не окремого методу — так простіше й надійніше. Але один клас із восьми методів для роботи з базою коштував <strong>~19 % обсягу</strong> в <em>кожній</em> сесії, навіть коли базу не торкали. Довелось виносити його цілим класом.</p>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:20px">Числа з різних епох не складати: <span class="mono">124</span> зі слайда про наївний шлях — це замір червневого прототипу, а не сьогоднішній повний каталог (<span class="mono">~162</span>).</p>
     </div>
   </section>
   <!-- 7 -->
@@ -1407,7 +1456,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 9, 12, 17]; // блоки 1/2/3 + перший слайд appendix
+  var boundaries = [4, 10, 13, 18]; // блоки 1/2/3 + перший слайд appendix
   var i = 0;
 
   // budget rail
