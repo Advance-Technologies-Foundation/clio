@@ -849,6 +849,10 @@ public class CreateThemeToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(because: "build advisories are non-fatal");
+		result.Id.Should().Be("generated-id",
+			because: "a build that only raised advisories must still create the theme and surface its id");
+		resolvedCommand.CapturedOptions.CssContent.Should().Be("built-css",
+			because: "the advisory path must still hand the built CSS to the create call");
 		result.Warnings.Should().ContainSingle(w => w.Contains("font weights"),
 			because: "build advisories must reach the MCP caller or they are silently lost");
 		ConsoleLogger.Instance.ClearMessages();
@@ -933,6 +937,48 @@ public class CreateThemeToolTests {
 		args.Version.Should().Be("10.0", because: "the advertised version field must bind");
 		(args.ExtensionData is null || args.ExtensionData.Count == 0).Should().BeTrue(
 			because: "every brand kebab field binds to a declared parameter, so nothing overflows");
+	}
+
+	[Test]
+	[Description("Pins the font-family injection guarantee at the create-theme brand entry point (real engine, no build substitutes): a malformed heading-font must be rejected by the shared TryBuildTheme overload before any CSS is generated, and the rejection message must be redacted — so the brand mode cannot become a bypass around the validation the build-theme path already had.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldRejectMalformedFontBeforeCssGeneration_WhenBrandModeRunsRealEngine() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string malformedFont = "Poppins; } body { background: url(https://evil.example/x.png) }";
+		string template = File.ReadAllText(
+			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
+		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
+		templateProvider.GetCssTemplate("10.0").Returns(template);
+		BuildThemeCommand realBuildCommand = new(new ThemeCssBuilder(), templateProvider,
+			Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>(),
+			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(realBuildCommand);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", Caption: "Ocean",
+			Primary: "#004fd6", Version: "10.0") { HeadingFont = malformedFont });
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a font family outside the allowed character set must be rejected, not interpolated into the CSS");
+		result.Error.Should().StartWith("theme-build-failed: ",
+			because: "the rejection happens in the build phase, before any HTTP call");
+		result.Error.Should().Contain("INVALID_FONT_FAMILY",
+			because: "the engine's family validation is what must reject it, naming the offending input");
+		result.Error.Should().NotContain("evil.example",
+			because: "the rejection echoes the caller's own input, so the redactor must still strip any URI before it crosses the MCP boundary");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "no theme may be created from inputs the engine refused — the create call must never be reached");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[Test]
