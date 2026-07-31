@@ -199,7 +199,8 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			("tpl/ui-project/AGENTS.md", TemplatePath("ui-project", "AGENTS.md")),
 			("tpl/ui-project-Empty/AGENTS.md", TemplatePath("ui-project-Empty", "AGENTS.md"))
 		];
-		IReadOnlySet<string> curatedNames = CuratedKnowledgeNames();
+		IReadOnlySet<string> curatedNames = CuratedKnowledgeNames("availableNames");
+		IReadOnlySet<string> featureGatedNames = CuratedKnowledgeNames("featureGatedNames");
 
 		// Act
 		Dictionary<string, HashSet<string>> referencesByTemplate = new(StringComparer.OrdinalIgnoreCase);
@@ -215,7 +216,9 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 				foreach (Match match in GuidanceNameReference.Matches(line)) {
 					string guidanceName = match.Groups[1].Value;
 					references.Add(guidanceName);
-					if (!curatedNames.Contains(guidanceName)) {
+					if (featureGatedNames.Contains(guidanceName)) {
+						unresolved.Add($"{name}: '{guidanceName}' (feature-gated)");
+					} else if (!curatedNames.Contains(guidanceName)) {
 						unresolved.Add($"{name}: '{guidanceName}'");
 					}
 				}
@@ -229,24 +232,30 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 				"configuration web-service implementation and tests to their canonical live articles");
 		unresolved.Should().BeEmpty(
 			because: "shipped templates are frozen into user workspaces, so every guidance name they use must " +
-				"exist in the curated knowledge catalog that clio activates on startup");
+				"resolve in the curated knowledge catalog with the default feature-toggle state — a name that " +
+				"is feature-gated dead-ends the agent on every environment where the feature is off");
 	}
 
 	/// <summary>
-	/// Names the curated knowledge library publishes: item IDs, topic IDs, and legacy
-	/// <c>docs://mcp/guides/</c> aliases, any of which <c>get-guidance</c> accepts.
+	/// Guidance names the curated knowledge library publishes, read from the named fixture array:
+	/// <c>availableNames</c> resolve with the default feature-toggle state, <c>featureGatedNames</c>
+	/// resolve only where their <c>requiredFeatures</c> are enabled.
 	/// </summary>
 	/// <remarks>
+	/// Each array holds item IDs, topic IDs, and legacy <c>docs://mcp/guides/</c> aliases for
+	/// guidance-role articles only — <see cref="Clio.Command.McpServer.Knowledge.KnowledgeResolver"/>
+	/// resolves a bare name against that role alone, so reference articles are reachable by URI only.
 	/// Guidance content lives in clio-knowledge, so this fixture — not a compiled catalog — is what a
-	/// unit test can check shipped templates against without network access. Refresh it from that
-	/// repository's <c>bundle-source.json</c> whenever the curated library publishes a new generation.
+	/// unit test can check shipped templates against without network access. Regenerate it from that
+	/// repository's <c>bundle-source.json</c> (currently tracking clio-knowledge#32) whenever the
+	/// curated library publishes a new generation.
 	/// </remarks>
-	private static IReadOnlySet<string> CuratedKnowledgeNames() {
+	private static IReadOnlySet<string> CuratedKnowledgeNames(string arrayProperty) {
 		string path = Path.Combine(
 			TestContext.CurrentContext.TestDirectory,
 			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(path));
-		return document.RootElement.GetProperty("names")
+		return document.RootElement.GetProperty(arrayProperty)
 			.EnumerateArray()
 			.Select(name => name.GetString()!)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);

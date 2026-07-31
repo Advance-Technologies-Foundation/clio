@@ -544,7 +544,11 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		StringBuilder realtimeLine = new();
 		long maximum = options.MaximumCapturedOutputCharacters!.Value;
 		while (true) {
-			int read = await reader.ReadAsync(buffer.AsMemory());
+			// Deliberately uncancellable: the caller awaits both reader tasks after the process has
+			// exited or been killed, and relies on them draining what the child already wrote. Passing
+			// options.CancellationToken here would fault Task.WhenAll on cancellation and lose the
+			// partial output the timeout/cancel result is built from. The closed stream ends the loop.
+			int read = await reader.ReadAsync(buffer.AsMemory(), CancellationToken.None);
 			if (read == 0) {
 				break;
 			}
