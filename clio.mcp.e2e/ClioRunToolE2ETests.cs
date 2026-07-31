@@ -26,7 +26,14 @@ namespace Clio.Mcp.E2E;
 public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 
 	private const string SyntheticMissingName = "synthetic-missing-guide";
-	private const string NotFoundCode = "guidance-not-found";
+
+	// Either typed outcome proves the dispatch reached get-guidance with the forwarded name:
+	// "guidance-not-found" when a knowledge bundle is active and the synthetic name is absent from
+	// it, "guidance-unavailable" when the host has no active bundle at all (the ordinary state on a
+	// CI agent, where the curated Git source cannot be reached inside the startup deadline).
+	// Asserting only the first would couple this argument-forwarding test to knowledge activation,
+	// which is exactly the coupling its summary says it avoids.
+	private static readonly string[] TypedGuidanceOutcomes = ["guidance-not-found", "guidance-unavailable"];
 
 	[Test]
 	[Category("E2E")]
@@ -51,8 +58,8 @@ public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a well-formed flat clio-run call must dispatch to the target tool");
-		SerializeResult(callResult).Should().Contain(NotFoundCode,
-			because: "the synthetic name must reach get-guidance and produce its typed not-found result");
+		SerializeResult(callResult).Should().ContainAny(TypedGuidanceOutcomes,
+			because: "the synthetic name must reach get-guidance and produce one of its typed lookup results");
 		SerializeResult(callResult).Should().Contain(SyntheticMissingName,
 			because: "the forwarded value must remain visible in the target diagnostic");
 	}
@@ -84,7 +91,7 @@ public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "the wrapped clio-run shape must be recovered and dispatched to get-guidance over the wire");
-		SerializeResult(callResult).Should().Contain(NotFoundCode,
+		SerializeResult(callResult).Should().ContainAny(TypedGuidanceOutcomes,
 			because: "the wrapped synthetic name must survive binding and reach get-guidance");
 		SerializeResult(callResult).Should().Contain(SyntheticMissingName,
 			because: "the forwarded wrapped value must remain visible in the target diagnostic");
