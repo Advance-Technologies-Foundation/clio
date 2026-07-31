@@ -17,9 +17,11 @@ cache.
 
 By default the command returns as soon as the restart request is sent,
 without waiting for the application to come back up. Pass `--wait-ready`
-to poll the application's health-check endpoint after the restart and
-return only once it answers (or exit non-zero on timeout) — this is the
-signal to rely on before verifying a fix, instead of hand-rolled polling.
+to wait, after the restart, until the application answers an authenticated
+application-layer round-trip — not merely the liveness health-check ping —
+and return only once it is genuinely serving (or exit non-zero on timeout).
+This is the signal to rely on before verifying a fix, instead of hand-rolled
+polling.
 
 ## Synopsis
 
@@ -42,9 +44,11 @@ Name (pos. 0)	Application name
 
 --Maintainer            -m          Maintainer name
 
---wait-ready                        After requesting the restart, poll the application's
-                                     health-check endpoint until it answers before returning.
-                                     Exits non-zero if it does not become ready in time.
+--wait-ready                        After requesting the restart, wait until the application
+                                     answers an authenticated application-layer round-trip
+                                     (a passing liveness ping alone is not treated as ready)
+                                     before returning. Exits non-zero if it does not become
+                                     ready in time.
 
 --ready-timeout                     Max seconds to wait for readiness when --wait-ready is
                                      set (default: 600).
@@ -60,8 +64,8 @@ clio restart-web-app myapp
 restarts web application(website) that registered as a myapp
 
 clio restart-web-app -e myapp --wait-ready
-restarts myapp and waits (up to the default 600s) until it answers its
-health-check before returning
+restarts myapp and waits (up to the default 600s) until it is genuinely
+serving an authenticated application-layer request before returning
 
 clio restart-web-app -e myapp --wait-ready --ready-timeout 900
 same as above, with a 900s readiness budget for a slow-starting instance

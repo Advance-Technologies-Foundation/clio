@@ -31,6 +31,12 @@ OPTIONS
 
     --Environment           -e          Environment name
 
+    --timeout                           Per-probe request timeout in milliseconds. Each probe
+                                        is bounded by this value, so a stalled endpoint (accepts
+                                        the connection but never answers) is reported unhealthy
+                                        within the timeout rather than pinning the ~100s default.
+                                        Only a genuine 2xx response is reported healthy.
+
     --json                              Return results as the unified command envelope
                                         {schemaVersion, ok, command, data, error}. On
                                         success data carries the per-check results

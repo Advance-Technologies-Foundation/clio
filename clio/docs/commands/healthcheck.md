@@ -42,9 +42,20 @@ hc
 
 --Environment           -e          Environment name
 
+--timeout                           Per-probe request timeout in milliseconds. Each probe is
+                                    bounded by this value, so a stalled endpoint (one that accepts
+                                    the connection but never answers) is reported unhealthy within
+                                    the timeout instead of pinning the default ~100s window.
+
 --json                              Emit the unified command envelope
                                     {schemaVersion, ok, command, data, error}
 ```
+
+## Probe classification
+
+Each probe is issued as a bounded HTTP GET. Only a genuine `2xx` response is reported healthy;
+a non-`2xx` status, a transport error, or a connect-but-never-answer stall is reported unhealthy
+(and the probe is aborted at `--timeout` rather than the inherited ~100s default).
 
 ## JSON output (`--json`)
 

@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.Responses;
 using CommandLine;
@@ -59,6 +59,9 @@ namespace Clio.Command
 		/// <summary>Canonical kebab-case command name, emitted in the unified <c>--json</c> envelope.</summary>
 		private const string HealthCheckCommandName = "healthcheck";
 
+		/// <summary>Fallback per-probe timeout (ms) when no <c>--timeout</c> is supplied.</summary>
+		private const int DefaultProbeTimeoutMs = 100_000;
+
 		#endregion
 
 		#region Fields: Private
@@ -74,6 +77,18 @@ namespace Clio.Command
 			_jsonResponseFormater = jsonResponseFormater;
 		}
 
+		/// <summary>
+		/// Test seam that produces the <see cref="HttpMessageHandler"/> backing each probe. A fresh handler is
+		/// created per probe (and disposed with the probe's <see cref="HttpClient"/>). Defaults to a real
+		/// <see cref="HttpClientHandler"/> that trusts the target certificate (health probes routinely hit
+		/// self-signed dev instances); unit tests substitute a stub handler to simulate a healthy 2xx, a
+		/// non-2xx, a transport failure, or a connect-but-never-answer stall.
+		/// </summary>
+		internal Func<HttpMessageHandler> HttpMessageHandlerFactory { get; set; } =
+			() => new HttpClientHandler {
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			};
+
 		private static bool IsEnabled(string value) =>
 			string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
 
@@ -84,45 +99,20 @@ namespace Clio.Command
 
 		// Runs a single probe and returns its structured result. Human-readable progress/outcome lines are
 		// written only in non-JSON mode, so in --json mode stdout carries exactly one JSON object.
+		//
+		// The probe is issued through a clio-owned HttpClient rather than the external creatio.client
+		// (IApplicationClient.ExecuteGetRequest) on purpose (ENG-94417): creatio.client's per-request timeout
+		// is opaque and was not honored for a socket that accepts the connection and then never answers, so a
+		// stalled endpoint pinned the probe for the inherited 100s default and could even be reported OK. A
+		// clio-owned HttpClient makes the probe both BOUNDED (HttpClient.Timeout aborts the whole request at
+		// --timeout, AC3) and STATUS-AWARE (only a genuine 2xx is healthy; a non-2xx / stall is unhealthy, AC2).
 		private HealthCheckEntry Probe(string checkName, string requestUri, bool jsonMode) {
+			if (!jsonMode) Logger.WriteInfo($"Checking {checkName} {requestUri} ...");
 			try
 			{
-				if (!jsonMode) Logger.WriteInfo($"Checking {checkName} {requestUri} ...");
-				ApplicationClient.ExecuteGetRequest(requestUri, RequestTimeout, MaxAttempts, DelaySec);
-				if (!jsonMode) Logger.WriteInfo($"\t{checkName} - OK");
-				return new HealthCheckEntry(checkName, requestUri, true, null);
-			}
-			catch (WebException ex)
-			{
-				if (!jsonMode) Logger.WriteError($"\tError: {ex.Message}");
-				return new HealthCheckEntry(checkName, requestUri, false, ex.Message);
-			}
-			catch (InvalidCastException)
-			{
-				// creatio.client <= 1.0.33 casts WebRequest.Create() to HttpWebRequest, which fails
-				// on macOS/Linux when the runtime returns FileWebRequest for some localhost URLs.
-				return ProbeWithHttpClient(checkName, requestUri, jsonMode);
-			}
-			catch(Exception ex)
-			{
-				if (!jsonMode) Logger.WriteError($"\tUnknown Error: {ex.Message}");
-				return new HealthCheckEntry(checkName, requestUri, false, ex.Message);
-			}
-		}
-
-		private HealthCheckEntry ProbeWithHttpClient(string checkName, string requestUri, bool jsonMode) {
-			if (!jsonMode) {
-				Logger.WriteWarning(
-					$"\t{checkName} - creatio.client returned a non-HTTP request type; retrying via HttpClient.");
-			}
-			try {
-				using HttpClientHandler handler = new() {
-					ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-				};
-				using HttpClient client = new(handler) {
-					Timeout = RequestTimeout > 0
-						? TimeSpan.FromMilliseconds(RequestTimeout)
-						: TimeSpan.FromSeconds(100)
+				using HttpMessageHandler handler = HttpMessageHandlerFactory();
+				using HttpClient client = new(handler, disposeHandler: false) {
+					Timeout = ResolveProbeTimeout()
 				};
 				using HttpResponseMessage response = client.GetAsync(requestUri).GetAwaiter().GetResult();
 				if (!response.IsSuccessStatusCode) {
@@ -133,10 +123,28 @@ namespace Clio.Command
 				if (!jsonMode) Logger.WriteInfo($"\t{checkName} - OK");
 				return new HealthCheckEntry(checkName, requestUri, true, null);
 			}
-			catch (Exception ex) {
-				if (!jsonMode) Logger.WriteError($"\tError: {ex.Message}");
-				return new HealthCheckEntry(checkName, requestUri, false, ex.Message);
+			catch (Exception ex)
+			{
+				string message = DescribeProbeFailure(ex);
+				if (!jsonMode) Logger.WriteError($"\tError: {message}");
+				return new HealthCheckEntry(checkName, requestUri, false, message);
 			}
+		}
+
+		private TimeSpan ResolveProbeTimeout() =>
+			TimeSpan.FromMilliseconds(RequestTimeout > 0 ? RequestTimeout : DefaultProbeTimeoutMs);
+
+		// Turns a probe exception into a human-readable reason. A HttpClient.Timeout abort surfaces as a
+		// TaskCanceledException (no external cancellation is ever passed here), so it is reported as an explicit
+		// timeout — the connect-but-never-answer shape ENG-94417 must classify as unhealthy rather than OK.
+		private string DescribeProbeFailure(Exception exception) {
+			Exception root = exception is AggregateException aggregate
+				? aggregate.Flatten().InnerException ?? aggregate
+				: exception;
+			if (root is TaskCanceledException or OperationCanceledException) {
+				return $"request timed out after {(int)ResolveProbeTimeout().TotalMilliseconds} ms";
+			}
+			return root.Message;
 		}
 
 		public override int Execute(HealthCheckOptions options) {
