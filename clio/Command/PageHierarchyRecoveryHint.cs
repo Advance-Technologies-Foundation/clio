@@ -17,9 +17,10 @@ using System;
 /// <para>
 /// This mirrors the existing save-path <c>PageUpdateCommand.AppendActionableHint</c> pattern: a pure,
 /// additive <c>string → string</c> transform that appends a bracketed <c>[hint: …]</c> only when the error
-/// carries a poisoned-cache signature, leaving every other error untouched. The recovery is worded as
-/// escalating options because the lightest fix that actually clears the server cache is not yet confirmed
-/// on a live stand (open question Q1 / RISK1); <b>Restart Creatio</b> is the one guaranteed fallback.
+/// carries a poisoned-cache signature, leaving every other error untouched. ENG-94418 Q1 verified on a
+/// live .NET Framework stand that flushing Redis does NOT clear this in-process phantom, so the hint
+/// directs to <b>Restart Creatio</b> as the confirmed recovery (a web-farm / Redis-distributed
+/// deployment may differ).
 /// </para>
 /// </remarks>
 internal static class PageHierarchyRecoveryHint {
@@ -37,16 +38,16 @@ internal static class PageHierarchyRecoveryHint {
 
 	/// <summary>
 	/// The recovery hint appended to a poisoned-cache hierarchy-read failure. References the ENG-94418 root
-	/// cause and escalates to a guaranteed Restart Creatio; the lighter recoveries are offered as
-	/// "may help" only, because they are not yet confirmed to clear the server schema-manager phantom.
+	/// cause and directs to Restart Creatio — the confirmed recovery. ENG-94418 Q1 verified on a live
+	/// .NET Framework stand that flushing Redis (<c>clio clear-redis-db</c>) does NOT clear this phantom,
+	/// so the hint no longer suggests it.
 	/// </summary>
 	internal const string Hint =
 		" [hint: the page schema hierarchy could not be resolved. This is often the Creatio schema-manager " +
 		"cache holding a phantom for a section whose concurrent creation was abandoned, which poisons " +
-		"hierarchy reads (ENG-94418). Recover with escalating options — first try (may help) clearing the " +
-		"environment's Redis cache ('clio clear-redis-db'; MCP tool 'clear-redis-db-by-environment') and " +
-		"re-reading; if the read still fails, Restart Creatio to clear the server schema-manager cache (the " +
-		"guaranteed fix). Then verify the schema UId via list-pages.]";
+		"hierarchy reads (ENG-94418). Restart Creatio to clear the server schema-manager cache — the " +
+		"confirmed recovery; flushing the Redis cache alone does NOT clear this phantom. Then verify the " +
+		"schema UId via list-pages.]";
 
 	/// <summary>
 	/// Returns <paramref name="error"/> unchanged unless it carries a poisoned-cache hierarchy-read
