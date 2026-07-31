@@ -369,6 +369,17 @@
   .shot { margin: 0; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; max-width: 560px; background: #1B1F27; }
   .shot img { display: block; width: 100%; height: auto; }
 
+  /* ---------- the resident set, grouped ---------- */
+  .resset { display: flex; flex-direction: column; gap: 5px; }
+  .resset .rg { display: grid; grid-template-columns: 128px 1fr; gap: 14px; align-items: baseline; }
+  .resset .rgl { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); text-align: right; letter-spacing: .04em; }
+  .resset .rgc { display: flex; flex-wrap: wrap; gap: 6px; }
+  .resset .chip { padding: 3px 8px; font-size: 11.5px; }
+  @media (max-width: 700px) {
+    .resset .rg { grid-template-columns: 1fr; gap: 4px; }
+    .resset .rgl { text-align: left; }
+  }
+
   /* ---------- three numbered decisions ---------- */
   .howto { display: flex; flex-direction: column; }
   .howto .hs { display: grid; grid-template-columns: 34px 1fr; gap: 16px; padding: 15px 0; border-top: 1px solid var(--rule-soft); }
@@ -855,33 +866,41 @@
           <span class="hn">1</span>
           <span class="hb">
             <span class="hh">Оголошуємо лише часте</span>
-            <span class="hd">У списку залишається невеликий набір інструментів, якими агент користується постійно: подивитися застосунок, сторінку, схему сутності, каталог компонентів.</span>
+            <span class="hd">У списку лишається невеликий набір, яким агент користується постійно — він увесь показаний нижче.</span>
           </span>
         </div>
         <div class="hs">
           <span class="hn">2</span>
           <span class="hb">
             <span class="hh">Решту викликаємо через одного виконавця</span>
-            <span class="hd">Замість 140 оголошених інструментів — один <code>clio-run</code>, якому передають імʼя команди та її аргументи. Інструменти нікуди не зникли, вони просто не займають місце в списку.</span>
+            <span class="hd">Замість 140 оголошених — один <code>clio-run</code>, якому передають імʼя команди та її аргументи.</span>
           </span>
         </div>
         <div class="hs">
           <span class="hn">3</span>
           <span class="hb">
             <span class="hh">Щоб про них можна було дізнатися — короткий список назв</span>
-            <span class="hd">Окремий інструмент віддає перелік <em>усіх</em> команд: імʼя й одне речення призначення. Без схем — тому він дешевий.</span>
+            <span class="hd">Інструмент <code>get-tool-contract</code>, викликаний без аргументів, віддає перелік <em>усіх</em> команд: імʼя й одне речення призначення. Без схем — тому він дешевий. З аргументом віддає повну схему конкретної команди.</span>
           </span>
         </div>
       </div>
 
-      <h3 style="margin-top:24px">І ось увесь механізм — один рядок на реєстрації</h3>
+      <h3 style="margin-top:24px">Ось цей набір — усі 18, що бачить модель</h3>
+      <div class="resset">
+        <div class="rg"><span class="rgl">застосунки</span><span class="rgc"><span class="chip cyan">list-apps</span><span class="chip cyan">get-app-info</span><span class="chip cyan">find-app</span><span class="chip cyan">list-app-sections</span></span></div>
+        <div class="rg"><span class="rgl">сторінки</span><span class="rgc"><span class="chip cyan">list-pages</span><span class="chip cyan">get-page</span><span class="chip cyan">validate-page</span></span></div>
+        <div class="rg"><span class="rgl">компоненти</span><span class="rgc"><span class="chip cyan">get-component-info</span><span class="chip cyan">get-request-info</span></span></div>
+        <div class="rg"><span class="rgl">схеми сутностей</span><span class="rgc"><span class="chip cyan">find-entity-schema</span><span class="chip cyan">get-entity-schema-properties</span><span class="chip cyan">get-entity-schema-column-properties</span></span></div>
+        <div class="rg"><span class="rgl">пакети, стенди</span><span class="rgc"><span class="chip cyan">list-packages</span><span class="chip cyan">list-environments</span></span></div>
+        <div class="rg"><span class="rgl">службові</span><span class="rgc"><span class="chip brass">get-guidance</span><span class="chip brass">get-tool-contract</span><span class="chip brass">clio-run</span><span class="chip brass">clio-run-destructive</span></span></div>
+      </div>
+      <h3 style="margin-top:22px">І ось увесь механізм — один рядок на реєстрації</h3>
       <pre style="max-width:680px"><span style="color:var(--ink-3)">// що взагалі потрапляє у список для моделі</span>
 <span class="kw">SelectToolTypes</span>(enabled) =
     enabled ∩ (<span class="ok">CoreToolTypes</span> ∪ <span class="ok">AlwaysOnLazyToolTypes</span>)
                 <span style="color:var(--ink-3)">↑ часте        ↑ clio-run + список назв</span>
-
         → SDK.<span class="kw">WithTools</span>(…)   <span style="color:var(--ink-3)">// решту просто не реєструємо</span></pre>
-      <p class="fine" style="margin-top:12px">Решта інструментів існує, працює й доступна — вона лише <strong>не оголошена</strong>. Наступні слайди — про те, чому кожне з цих трьох рішень виявилося складнішим, ніж звучить, і що воно зламало.</p>
+      <p class="fine" style="margin-top:12px">Решта інструментів існує й працює — вона лише <strong>не оголошена</strong>. Далі — чому кожне з трьох рішень виявилося складнішим, ніж звучить.</p>
     </div>
   </section>
   <!-- index -->
