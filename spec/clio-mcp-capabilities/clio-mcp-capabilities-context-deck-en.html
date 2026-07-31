@@ -956,54 +956,6 @@
   </section>
 
 
-  <!-- 9 does the agent cope -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">part 1</span><span class="num"></span><span>does it work in practice</span></div>
-      <h2>Can a model really work through this extra step?</h2>
-      <p class="lead">This is the main question about the whole design. We made the agent reach some tools through a middleman, so we had to check that it can handle that.</p>
-
-      <div class="cols two" style="margin-bottom:22px">
-        <div>
-          <h3>1 · we tell it directly</h3>
-          <p style="margin:0 0 10px;font-size:14.5px">Not in a document, but in the rules it reads before it starts:</p>
-          <pre style="margin:0;font-size:12.5px">Resident tools are called natively;
-every other tool is invoked via
-<span class="kw">clio-run &lt;command&gt;</span>.
-<span class="bad">Never wrap a resident tool in clio-run.</span></pre>
-        </div>
-        <div>
-          <h3>2 · this is the call itself</h3>
-          <p style="margin:0 0 10px;font-size:14.5px">Instead of calling <code>sync-schemas</code> directly:</p>
-          <pre style="margin:0;font-size:12.5px">{
-  <span class="kw">"command"</span>: "sync-schemas",
-  <span class="kw">"args"</span>: { "environment-name": "dev" }
-}</pre>
-        </div>
-      </div>
-
-      <h3>3 · and three places where we forgive mistakes</h3>
-      <div class="routes">
-        <div class="r ok">
-          <span class="cond">It nests the arguments one level too deep — a habit from other tools</span>
-          <span class="go">→</span>
-          <span class="out">we accept both shapes</span>
-        </div>
-        <div class="r ok">
-          <span class="cond">It spells the command name wrong</span>
-          <span class="go">→</span>
-          <span class="out">we return close matches<br>and where to get the full list</span>
-        </div>
-        <div class="r ok">
-          <span class="cond">It forgets the middleman and calls a hidden command directly</span>
-          <span class="go">→</span>
-          <span class="out">for reading we just run it,<br>and add a hint for next time</span>
-        </div>
-      </div>
-
-      <p class="fine" style="margin-top:18px">What we learned in practice: the model manages — but <strong>only because the surface forgives it</strong>. Each of these three came after a real failure, not from caution.</p>
-    </div>
-  </section>
   <!-- 10 primitives -->
   <section class="slide">
     <div class="inner">
@@ -1553,7 +1505,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 11, 14, 19]; // parts 1/2/3 + first appendix slide
+  var boundaries = [4, 10, 13, 18]; // parts 1/2/3 + first appendix slide
   var i = 0;
 
   // budget rail
