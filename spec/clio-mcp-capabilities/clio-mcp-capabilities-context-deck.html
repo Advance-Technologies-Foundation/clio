@@ -141,7 +141,7 @@
 
   /* ---------- type ---------- */
   .eyebrow {
-    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .14em;
+    font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .14em;
     text-transform: uppercase; color: var(--ink-3);
     display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
     margin-bottom: 12px;
@@ -167,7 +167,7 @@
   .lead { font-size: clamp(15.5px, 1.45vw, 17.5px); line-height: 1.5; color: var(--ink-2); max-width: 72ch; margin: 0 0 20px; }
   .lead strong { color: var(--ink); font-weight: 600; }
   p { max-width: 68ch; }
-  .fine { font-size: 13.5px; color: var(--ink-3); max-width: 74ch; }
+  .fine { font-size: 14px; color: var(--ink-3); max-width: 74ch; }
   .fine code, .lead code, p code, li code, td code { font-family: var(--font-mono); font-size: .9em; background: var(--code-bg); padding: .1em .32em; border-radius: 2px; }
   em.q { font-style: normal; font-family: var(--font-display); font-style: italic; color: var(--ink); }
 
@@ -200,7 +200,7 @@
   .fig .v.rust { color: var(--rust); }
   .fig .v.cyan { color: var(--cyan); }
   .fig .v.brass { color: var(--brass); }
-  .fig .k { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .fig .k { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
 
   .tbl-wrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 14.5px; }
@@ -215,7 +215,7 @@
   ul.plain .mk { font-family: var(--font-mono); font-size: 12px; color: var(--brass); flex: none; padding-top: 3px; letter-spacing: .04em; }
 
   pre {
-    font-family: var(--font-mono); font-size: 12.8px; line-height: 1.55;
+    font-family: var(--font-mono); font-size: 13.5px; line-height: 1.55;
     background: var(--code-bg); border: 1px solid var(--rule-soft); border-radius: 3px;
     padding: 13px 15px; overflow-x: auto; margin: 0;
   }
@@ -244,10 +244,10 @@
   .legend b { width: 10px; height: 10px; border-radius: 1px; display: block; }
 
   /* ---------- chain ---------- */
-  .chain { display: flex; flex-direction: column; gap: 0; font-family: var(--font-mono); font-size: 13px; }
+  .chain { display: flex; flex-direction: column; gap: 0; font-family: var(--font-mono); font-size: 13.5px; }
   .chain .step { display: grid; grid-template-columns: 22px 1fr; gap: 11px; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); }
-  .chain .step .i { color: var(--brass); font-size: 11.5px; padding-top: 2px; }
-  .chain .step .d { color: var(--ink-3); font-family: var(--font-body); font-size: 13px; }
+  .chain .step .i { color: var(--brass); font-size: 12.5px; padding-top: 2px; }
+  .chain .step .d { color: var(--ink-3); font-family: var(--font-body); font-size: 13.5px; }
   .chain .step.hit { color: var(--cyan); }
   .chain .step.fail { color: var(--rust); }
 
@@ -255,8 +255,8 @@
   .funnel { display: flex; flex-direction: column; gap: 9px; }
   .funnel .t { border: 1px solid var(--rule); border-left: 3px solid var(--brass); border-radius: 2px; padding: 11px 15px; background: var(--ground-2); }
   .funnel .t .h { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); letter-spacing: .04em; }
-  .funnel .t .s { font-size: 13px; color: var(--ink-3); margin-top: 3px; }
-  .funnel .t .m { font-family: var(--font-mono); font-size: 11.5px; color: var(--brass); float: right; }
+  .funnel .t .s { font-size: 13.5px; color: var(--ink-3); margin-top: 3px; }
+  .funnel .t .m { font-family: var(--font-mono); font-size: 12.5px; color: var(--brass); float: right; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 9px; }
   .chip { font-family: var(--font-mono); font-size: 12px; letter-spacing: .05em; padding: 5px 11px; border: 1px solid var(--rule); border-radius: 2px; color: var(--ink-2); }
@@ -304,14 +304,14 @@
   .ctx { display: flex; height: 52px; border: 1px solid var(--rule); border-radius: 2px; overflow: hidden; }
   .ctx > div {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    font-family: var(--font-mono); font-size: 11.5px; text-align: center; padding: 0 8px;
+    font-family: var(--font-mono); font-size: 12.5px; text-align: center; padding: 0 8px;
     border-right: 1px solid var(--rule);
   }
   .ctx > div:last-child { border-right: none; }
   .ctx .seg-clio { background: var(--rust-fill); color: var(--rust); flex: 0 0 34%; }
   .ctx .seg-other { background: var(--brass-fill); color: var(--brass); flex: 0 0 42%; }
   .ctx .seg-free { background: var(--free-fill); color: var(--ink-3); flex: 1 1 auto; }
-  .ctx b { font-weight: 600; font-size: 13px; }
+  .ctx b { font-weight: 600; font-size: 13.5px; }
   @media (max-width: 620px) { .ctx { height: auto; flex-direction: column; } .ctx > div { padding: 9px; border-right: none; border-bottom: 1px solid var(--rule); flex: none !important; } }
 
   /* ---------- routing table (condition -> outcome) ---------- */
@@ -323,7 +323,7 @@
   .routes .r:last-child { border-bottom: 1px solid var(--rule-soft); }
   .routes .cond { font-size: 15.5px; }
   .routes .go { color: var(--brass); font-family: var(--font-mono); text-align: center; }
-  .routes .out { font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
+  .routes .out { font-family: var(--font-mono); font-size: 13.5px; line-height: 1.5; }
   .routes .r.ok .out { color: var(--cyan); }
   .routes .r.hold .out { color: var(--brass); }
   .routes .r.sub .cond { padding-left: 26px; border-left: 2px solid var(--rule); margin-left: 4px; }
@@ -336,7 +336,7 @@
   /* ---------- lifecycle timeline ---------- */
   .life { display: flex; flex-direction: column; }
   .life .ev { display: grid; grid-template-columns: 92px 1fr; gap: 18px; }
-  .life .when { font-family: var(--font-mono); font-size: 11.5px; color: var(--brass); text-align: right; padding-top: 15px; letter-spacing: .03em; }
+  .life .when { font-family: var(--font-mono); font-size: 12.5px; color: var(--brass); text-align: right; padding-top: 15px; letter-spacing: .03em; }
   .life .what { border-left: 2px solid var(--rule); padding: 10px 0 10px 20px; position: relative; }
   .life .ev:last-child .what { border-left-color: transparent; }
   .life .what::before {
@@ -347,15 +347,57 @@
   .life .ev.manual .what::before { border-color: var(--rust); }
   .life .h { display: block; font-size: 15.5px; }
   .life .h b { font-weight: 600; }
-  .life .s { display: block; font-size: 13px; color: var(--ink-3); margin-top: 5px; max-width: 74ch; }
-  .life .tag { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border: 1px solid var(--rule); border-radius: 2px; margin-left: 8px; white-space: nowrap; }
+  .life .s { display: block; font-size: 13.5px; color: var(--ink-3); margin-top: 5px; max-width: 74ch; }
+  .life .tag { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border: 1px solid var(--rule); border-radius: 2px; margin-left: 8px; white-space: nowrap; }
   .life .ev.manual .tag { border-color: var(--rust); color: var(--rust); }
   @media (max-width: 620px) { .life .ev { grid-template-columns: 62px 1fr; gap: 10px; } }
+
+  /* ---------- appendix marking ---------- */
+  .slide.apx { --brass: var(--ink-3); }
+  .slide.apx .eyebrow .b { color: var(--ink-3); }
+  .apx-badge {
+    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase;
+    border: 1px solid var(--rule); border-radius: 2px; padding: 2px 7px; color: var(--ink-3);
+  }
+  .tick.apx { background: var(--rule-soft); }
+  .tick.apx.filled { background: var(--ink-3); }
+
+  .divider { text-align: left; }
+  .divider h2 { margin-bottom: 18px; }
+
+  /* ---------- end-to-end scenario ---------- */
+  .scen { display: flex; flex-direction: column; }
+  .scen .st {
+    display: grid; grid-template-columns: 30px 1fr auto; gap: 16px; align-items: start;
+    padding: 14px 0; border-top: 1px solid var(--rule-soft);
+  }
+  .scen .st:last-child { border-bottom: 1px solid var(--rule-soft); }
+  .scen .n { font-family: var(--font-mono); font-size: 12.5px; color: var(--brass); padding-top: 2px; }
+  .scen .t { display: block; font-size: 15.5px; }
+  .scen .tool { display: block; font-family: var(--font-mono); font-size: 12.5px; color: var(--cyan); margin-top: 5px; }
+  .scen .blk {
+    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid var(--rule); border-radius: 2px; padding: 3px 8px; color: var(--ink-3); white-space: nowrap;
+  }
+  .scen .st.b1 .blk { border-color: var(--cyan-soft); color: var(--cyan); }
+  .scen .st.b2 .blk { border-color: var(--brass); color: var(--brass); }
+  .scen .st.b3 .blk { border-color: var(--rust); color: var(--rust); }
+  @media (max-width: 780px) {
+    .scen .st { grid-template-columns: 26px 1fr; gap: 10px; }
+    .scen .blk { grid-column: 2; justify-self: start; margin-top: 6px; }
+  }
+
+  /* ---------- glossary ---------- */
+  .gloss { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 26px; }
+  .gloss .g { display: grid; grid-template-columns: 148px 1fr; gap: 12px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--rule-soft); }
+  .gloss .g .w { font-family: var(--font-mono); font-size: 12.5px; color: var(--brass); }
+  .gloss .g .d { font-size: 14px; color: var(--ink-2); }
+  @media (max-width: 900px) { .gloss { grid-template-columns: 1fr; } }
 
   /* ---------- N x M vs N + M svg ---------- */
   .nm { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .nm figure { margin: 0; border: 1px solid var(--rule); border-radius: 3px; padding: 14px 16px; background: var(--ground-2); }
-  .nm figcaption { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .nm figcaption { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
   .nm .bad figcaption { color: var(--rust); }
   .nm .good figcaption { color: var(--cyan); }
   .nm svg { width: 100%; height: auto; display: block; }
@@ -374,7 +416,7 @@
   .seq { display: flex; flex-direction: column; }
   .seq .head {
     display: grid; grid-template-columns: 1fr 116px 1fr; gap: 14px;
-    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .09em;
+    font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .09em;
     text-transform: uppercase; color: var(--ink-3); padding-bottom: 10px;
   }
   .seq .head .l { text-align: right; }
@@ -385,7 +427,7 @@
   .seq .step:last-child { border-bottom: 1px solid var(--rule-soft); }
   .seq .a, .seq .b { font-size: 14.5px; }
   .seq .a { text-align: right; }
-  .seq .dir { font-family: var(--font-mono); font-size: 11px; color: var(--brass); text-align: center; letter-spacing: .04em; line-height: 1.4; }
+  .seq .dir { font-family: var(--font-mono); font-size: 12px; color: var(--brass); text-align: center; letter-spacing: .04em; line-height: 1.4; }
   .seq .step.crux { background: var(--rust-fill); }
   .seq .step.crux .a, .seq .step.crux .b { color: var(--ink); }
   .seq .step.crux .dir { color: var(--rust); }
@@ -404,7 +446,7 @@
   .roles .role .rd { font-size: 14px; color: var(--ink-2); }
   .roles .role .rex { font-size: 12.5px; color: var(--ink-3); margin-top: 8px; }
   .roles .wire { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 92px; }
-  .roles .wire .w { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); letter-spacing: .05em; text-align: center; }
+  .roles .wire .w { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); letter-spacing: .05em; text-align: center; }
   .roles .wire .arrows { color: var(--brass); font-family: var(--font-mono); font-size: 15px; }
   @media (max-width: 780px) { .roles { grid-template-columns: 1fr; } .roles .wire { min-width: 0; padding: 4px 0; } }
 
@@ -423,9 +465,9 @@
   .drill .dstep.last .dnum { border-color: var(--cyan-soft); color: var(--cyan); }
   .drill .dbody { display: block; }
   .drill .dh { display: block; font-size: 15.5px; }
-  .drill .dex { display: block; font-size: 13.5px; color: var(--ink-3); margin-top: 5px; max-width: 70ch; }
+  .drill .dex { display: block; font-size: 14px; color: var(--ink-3); margin-top: 5px; max-width: 70ch; }
   .drill .dsize {
-    font-family: var(--font-mono); font-size: 11px; color: var(--ink-3);
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink-3);
     text-align: right; line-height: 1.5; letter-spacing: .04em; padding-top: 3px;
   }
   /* Indent each step so the drill-down reads as a descent, not a flat list. */
@@ -444,7 +486,7 @@
   .calls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
   .calls .call { display: flex; flex-direction: column; gap: 9px; }
   .calls pre { font-size: 12px; margin: 0; flex: 1; }
-  .calls .res { font-size: 13px; color: var(--ink-3); }
+  .calls .res { font-size: 13.5px; color: var(--ink-3); }
   .calls .res b { font-weight: 600; font-family: var(--font-mono); font-size: 12.5px; }
   .calls .res b.ok { color: var(--cyan); }
   .calls .res b.bad { color: var(--rust); }
@@ -453,7 +495,7 @@
   /* ---------- two lanes converging ---------- */
   .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .lane { border: 1px solid var(--rule); border-radius: 3px; padding: 15px 17px; background: var(--ground-2); }
-  .lane .cap { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 11px; }
+  .lane .cap { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 11px; }
   .lane ol { padding-left: 1.15em; margin: 0; }
   .lane li { font-size: 14px; margin-bottom: 6px; }
   .lane li:last-child { margin-bottom: 0; }
@@ -468,7 +510,7 @@
   .outcome.good .n { color: var(--cyan); }
   .outcome.soft .n { color: var(--brass); }
   .outcome.hard .n { color: var(--rust); }
-  .outcome .d { font-size: 13.5px; color: var(--ink-2); }
+  .outcome .d { font-size: 14px; color: var(--ink-2); }
   @media (max-width: 820px) { .lanes, .outcomes { grid-template-columns: 1fr; } }
 
   /* ---------- inline definition ---------- */
@@ -477,7 +519,7 @@
     display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: baseline;
     max-width: 76ch;
   }
-  .def .term { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--brass); white-space: nowrap; }
+  .def .term { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--brass); white-space: nowrap; }
   .def .body { font-size: 14px; color: var(--ink-2); }
   @media (max-width: 620px) { .def { grid-template-columns: 1fr; gap: 6px; } }
 
@@ -486,7 +528,7 @@
   .idea .top { font-family: var(--font-display); font-size: 21px; line-height: 1.2; }
   .idea .ba { display: flex; flex-direction: column; gap: 9px; }
   .idea .row { display: grid; grid-template-columns: 58px 1fr; gap: 10px; align-items: baseline; }
-  .idea .row .lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
+  .idea .row .lab { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; }
   .idea .row.was .lab { color: var(--rust); }
   .idea .row.now .lab { color: var(--cyan); }
   .idea .row .txt { font-size: 14.5px; }
@@ -532,7 +574,6 @@
       </div>
     </div>
   </section>
-
   <!-- MCP-1 -->
   <section class="slide">
     <div class="inner">
@@ -599,7 +640,6 @@
       <p class="fine">Різниця не в кількості лінійок, а в тому, хто їх малює: без стандарту кожну інтеграцію пише хтось конкретний під конкретну пару. Саме тому clio — це і CLI для людини, і MCP-сервер для агента, з однією й тією ж логікою всередині.</p>
     </div>
   </section>
-
   <!-- MCP-2 -->
   <section class="slide">
     <div class="inner">
@@ -646,6 +686,44 @@
       </div>
     </div>
   </section>
+  <!-- scenario -->
+  <section class="slide">
+    <div class="inner">
+      <div class="eyebrow"><span class="num"></span><span>наскрізний сценарій</span></div>
+      <h2>Один запит — і всі три теми одразу</h2>
+      <p class="lead">Щоб далі не збирати картинку з частин: ось що насправді відбувається, коли користувач просить <strong>«Додай кнопку на сторінку контакта»</strong>. Праворуч позначено, якою темою доповіді закривається кожен крок.</p>
+
+      <div class="scen">
+        <div class="st b3">
+          <span class="n">1</span>
+          <span><span class="t">Агент читає обовʼязкові правила й карту задач</span><span class="tool">get-guidance name=core-rules · name=routing</span></span>
+          <span class="blk">правила</span>
+        </div>
+        <div class="st b3">
+          <span class="n">2</span>
+          <span><span class="t">Карта веде до статті саме про зміну сторінок</span><span class="tool">get-guidance name=page-modification</span></span>
+          <span class="blk">правила</span>
+        </div>
+        <div class="st b2">
+          <span class="n">3</span>
+          <span><span class="t">Дізнається, які компоненти існують <em>на цій версії стенду</em></span><span class="tool">get-component-info component-type=crt.Button environment-name=…</span></span>
+          <span class="blk">версії</span>
+        </div>
+        <div class="st b1">
+          <span class="n">4</span>
+          <span><span class="t">Потрібен інструмент, якого немає у списку — бере його схему й викликає через виконавця</span><span class="tool">get-tool-contract → clio-run</span></span>
+          <span class="blk">контекст</span>
+        </div>
+        <div class="st b3">
+          <span class="n">5</span>
+          <span><span class="t">Змінює сторінку — і тут правила вже перевіряються кодом, а не текстом</span><span class="tool">update-page → валідатор</span></span>
+          <span class="blk">правила</span>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:20px">Три теми доповіді — це не три окремі історії, а три місця, де цей один сценарій міг зламатися: контекст переповнений і модель не добирає інструмент · каталог компонентів не той, що на стенді · правила є, але агент їх не прочитав.</p>
+    </div>
+  </section>
   <!-- 2 -->
   <section class="slide">
     <div class="inner">
@@ -674,71 +752,12 @@
         <div class="seg-other"><b>до ~126k разом</b>+ інші MCP-сервери хоста</div>
         <div class="seg-free">решта — на саму задачу</div>
       </div>
-      <p class="fine" style="margin:0">Токени, виміряні на каталозі зі <strong>124</strong> інструментів: <span class="mono">226 640</span> байтів. Пропорції на смузі — ілюстративні; вікно контексту залежить від моделі.</p>
+      <div class="def" style="margin:0">
+        <span class="term">скільки їх зараз</span>
+        <span class="body">clio оголошує <strong>~162</strong> інструменти, у списку до моделі йде <strong>18</strong>. Цифри на смузі вище — <strong>історичний замір</strong> червня 2026 (124 інструменти, <span class="mono">226 640</span> байтів), коли поверхню ще не скорочували: саме він показав масштаб проблеми. Два набори цифр не складати.</span>
+      </div>
     </div>
   </section>
-
-
-  <!-- 4 -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>контекстна економія</span></div>
-      <h2>Де насправді живе токен</h2>
-      <p class="lead">Спершу спробували інше рішення — і воно виглядало переконливо. Варто розібрати, <strong>чому воно не спрацювало</strong>: саме ця невдача показала, що ми міряли не ту метрику.</p>
-
-      <div class="tbl-wrap" style="margin-bottom:14px">
-        <table>
-          <thead><tr><th style="width:34%">Підхід</th><th class="n" style="width:24%">Інструментів у списку</th><th>Обсягу в контексті</th></tr></thead>
-          <tbody>
-            <tr>
-              <td>Наївно — усе оголошено</td>
-              <td class="n">124</td>
-              <td class="mono">226 640 Б</td>
-            </tr>
-            <tr>
-              <td><span style="color:var(--rust)">Відкинуте рішення</span></td>
-              <td class="n" style="color:var(--cyan)">24 &nbsp;↓ у 5 разів</td>
-              <td class="mono" style="color:var(--rust)">майже без змін →</td>
-            </tr>
-            <tr>
-              <td><span style="color:var(--cyan)">Вибране рішення</span></td>
-              <td class="n" style="color:var(--cyan)">18 &nbsp;↓ у 7 разів</td>
-              <td class="mono" style="color:var(--cyan)">30 233 Б &nbsp;↓ у 7 разів</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="fine" style="margin:0 0 26px"><strong>Ось у чому проблема:</strong> у середньому рядку кількість впала в пʼять разів, а обсяг — практично ні. Схеми не зникли — вони переїхали <em>всередину</em> одного інструмента, і модель усе одно отримує їх усі. Обсяг відкинутого варіанту до кінця не міряли: його забракували на цьому міркуванні, а не на замірі.</p>
-
-      <div class="cols two">
-        <div class="panel rust">
-          <h3>Відкинуте рішення</h3>
-          <p style="margin:0 0 12px">Лишити в каталозі 24 інструменти, а <strong>52 записуючі команди сховати за одним</strong> — <code>clio-run</code>. Його єдиний аргумент описаний як «<strong>одне з</strong> 52 перелічених» (це і є <code>anyOf</code>):</p>
-          <pre style="margin:0"><span class="kw">clio-run</span>.args: anyOf [
-  { …повна схема команди 1… },
-  { …повна схема команди 2… },
-  <span class="bad">… ще 50 повних схем …</span>
-]</pre>
-          <p style="margin:12px 0 0" class="fine">Інструментів у списку — один. Схем у каталозі — усі 52. Вони просто переїхали на рівень глибше.</p>
-        </div>
-        <div class="panel cyan">
-          <h3>Вибране рішення</h3>
-          <p style="margin:0 0 12px">Не ховати схеми глибше, а <strong>не віддавати їх узагалі</strong>, поки агент не спитає саме про цю команду:</p>
-          <pre style="margin:0"><span class="kw">clio-run</span>.args: {
-  command: <span class="ok">string</span>,   <span style="color:var(--ink-3)">// імʼя команди</span>
-  args:    <span class="ok">object</span>    <span style="color:var(--ink-3)">// вільна форма</span>
-}</pre>
-          <p style="margin:12px 0 0" class="fine">Схема самого <code>clio-run</code> — кілька рядків. Схему конкретної команди агент запитує окремо, і лише коли вона йому справді потрібна.</p>
-        </div>
-      </div>
-
-      <blockquote class="quote" style="margin-top:24px">
-        The token cost lives in the schema bodies, not the tool-count wrapper.
-        <cite>ADR — MCP lazy-schema tool surface, 2026-06-19</cite>
-      </blockquote>
-    </div>
-  </section>
-
   <!-- surface -->
   <section class="slide">
     <div class="inner">
@@ -766,47 +785,6 @@
       <p class="fine" style="margin-top:20px">Числа з різних епох не складати: <span class="mono">124</span> зі слайда про наївний шлях — це замір червневого прототипу, а не сьогоднішній повний каталог (<span class="mono">~162</span>).</p>
     </div>
   </section>
-
-  <!-- primitives -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>чому саме інструменти</span></div>
-      <h2>Ховати треба тільки інструменти</h2>
-      <p class="lead">Ресурси й промпти clio оголошує <strong>усі</strong> — і це не недогляд. Три види примітивів різняться не змістом, а тим, <strong>хто вирішує, коли їх прочитати</strong>. Саме це визначає, чи платимо ми за них контекстом.</p>
-
-      <div class="tbl-wrap" style="margin-bottom:22px">
-        <table>
-          <thead><tr><th style="width:17%">Примітив</th><th style="width:20%">Хто вирішує</th><th style="width:33%">Коли потрапляє в контекст</th><th>Ціна на кожен запит</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><strong>Інструменти</strong></td>
-              <td>модель</td>
-              <td><strong>завжди</strong> — інакше модель не знала б, що можна викликати</td>
-              <td style="color:var(--rust)">повний опис кожного</td>
-            </tr>
-            <tr>
-              <td><strong>Ресурси</strong></td>
-              <td>застосунок</td>
-              <td>лише коли застосунок сам вклав вміст у запит</td>
-              <td style="color:var(--cyan)">нуль, поки не прочитали</td>
-            </tr>
-            <tr>
-              <td><strong>Промпти</strong></td>
-              <td>користувач</td>
-              <td>лише коли користувач сам його викликав</td>
-              <td style="color:var(--cyan)">нуль, поки не викликали</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="panel rust">
-        <h3>Відповідь на очевидне питання: агент не вирішує</h3>
-        <p style="margin:0">Ресурс читає <strong>не модель, а застосунок</strong> — коли користувач щось прикріпив або коли клієнт сам так налаштований. Модель не може піти й прочитати ресурс з власної ініціативи, і навіть не може розраховувати, що взагалі бачить їхній перелік: у різних клієнтах це по-різному. Тому все, на що агент <em>мусить</em> спертися сам, у clio віддається інструментом, а не ресурсом.</p>
-      </div>
-    </div>
-  </section>
-
   <!-- 6 -->
   <section class="slide">
     <div class="inner">
@@ -844,8 +822,8 @@
             <p class="fine" style="margin:11px 0 0">Індекс упорядкований <strong>за іменем</strong>, а не за важливістю: незмінний початок відповіді дозволяє клієнтові кешувати префікс промпту.</p>
           </div>
           <div class="panel brass">
-            <h3>Звідки береться схема, коли агент таки спитав</h3>
-            <p style="margin:0">Шукаємо по черзі: <strong>написаний людиною контракт</strong> (таких 72 — з прикладами й типовими помилками), далі <strong>схема з самого інструмента</strong>, і в останню чергу — <strong>приблизна схема з рефлексії</strong>. Остання неповна: бачить лише перший параметр і не розрізняє перелічення від рядка. Тому 72 ручні контракти — не примха.</p>
+            <h3>Схема приходить окремим запитом</h3>
+            <p style="margin:0">Для 72 інструментів контракт написаний руками — з прикладами й типовими помилками. Для решти схема виводиться автоматично.</p>
           </div>
         </div>
       </div>
@@ -856,51 +834,6 @@
       </blockquote>
     </div>
   </section>
-
-  <!-- 7 -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>зворотна сумісність</span></div>
-      <h2>Ховати інструменти — це ломати сумісність</h2>
-      <p class="lead">Ось де ціна цього рішення. Прибравши інструмент зі списку, ми <strong>зламали кожного, хто вже кликав його за іменем</strong>. А кликали: у clio є багаторічна політика зворотної сумісності для аргументів командного рядка — і не було жодної для імен MCP-інструментів. Тому сервер тепер мусить розумно відповісти на будь-який зі способів виклику, а не лише на нинішній правильний.</p>
-
-      <div class="routes" style="margin-bottom:26px">
-        <div class="r ok">
-          <span class="cond">Кличе один із 18 видимих інструментів</span>
-          <span class="go">→</span>
-          <span class="out">виконуємо</span>
-        </div>
-        <div class="r ok">
-          <span class="cond">Кличе приховану команду через <code>clio-run</code></span>
-          <span class="go">→</span>
-          <span class="out">виконуємо</span>
-        </div>
-        <div class="r ok sub">
-          <span class="cond">Кличе приховану команду просто за іменем, і це <strong>читання</strong></span>
-          <span class="go">→</span>
-          <span class="out">виконуємо + підказка,<br>як робити далі</span>
-        </div>
-        <div class="r hold sub">
-          <span class="cond">Те саме, але команда щось <strong>записує</strong></span>
-          <span class="go">→</span>
-          <span class="out">просимо підтвердження<br>і показуємо, як повторити</span>
-        </div>
-      </div>
-
-      <div class="cols two">
-        <div class="panel cyan">
-          <h3>Кого саме зламали</h3>
-          <p style="margin:0 0 10px">clio створює користувачам робочу теку разом із файлом інструкцій для агента. Той файл <strong>заморожений на момент створення</strong> — оновити його ми вже не можемо, він живе в чужих репозиторіях. І він називає команди прямо за іменем.</p>
-          <p style="margin:0" class="fine">Без цих двох рядків кожен такий агент отримував би «невідомий інструмент» і зупинявся — причому в нас це виглядало б як «у користувача щось не працює», а не як наша поламана сумісність. Плюс окремий словник старих імен: якщо інструмент перейменували, старе імʼя далі веде на нове.</p>
-        </div>
-        <div class="panel brass">
-          <h3>Межа поблажливості — читання проти запису</h3>
-          <p style="margin:0">Прочитати — будь ласка. Змінити щось у живому середовищі без явного підтвердження — ні. Показово, що спочатку цю межу провели по «руйнівності», і вона протікала: додавання нового запису формально нічого не руйнує, тому такі команди проходили без підтвердження. Межу перенесли на просте «це читання чи запис».</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- 8 -->
   <section class="slide">
     <div class="inner">
@@ -927,149 +860,34 @@
       <p class="lead" style="margin:0">Тому інструмент <strong>один</strong> — але на кожен виклик він визначає версію конкретного середовища й віддає каталог саме під неї. І окремо повідомляє, коли версію визначити не вдалося.</p>
     </div>
   </section>
-
-  <!-- 9 -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 2</span><span class="num"></span><span>життєвий цикл каталогу</span></div>
-      <h2>Шлях нового компонента до агента</h2>
-      <p class="lead">Каталог не лежить у clio — він збирається з вихідників UI і публікується на CDN. Саме тому <strong>оновлення каталогу не вимагає релізу clio</strong>. Ось що відбувається, коли розробник додає новий компонент.</p>
-
-      <div class="life">
-        <div class="ev">
-          <span class="when">день 0</span>
-          <span class="what">
-            <span class="h"><b>Розробник додає компонент</b> у репозиторій UI</span>
-            <span class="s">Поруч із кодом — теги в коментарях: для чого компонент, коли його брати, коли не брати, синоніми.</span>
-          </span>
-        </div>
-        <div class="ev auto">
-          <span class="when">щоночі</span>
-          <span class="what">
-            <span class="h"><b>Генератор збирає каталог</b><span class="tag">автоматично</span></span>
-            <span class="s">Генератор — це окрема консольна утиліта. Вона не запускає застосунок: вона <strong>читає вихідний код UI як текст</strong>, розбирає його в синтаксичне дерево, знаходить класи компонентів за їхніми анотаціями й витягує звідти назви властивостей, типи, значення за замовчуванням і ті самі теги з коментарів. На виході — один файл каталогу та набір файлів документації.</span>
-          </span>
-        </div>
-        <div class="ev auto">
-          <span class="when">+ хвилини</span>
-          <span class="what">
-            <span class="h"><b>Коміт у репозиторій публікації</b></span>
-            <span class="s">Оновлюється лише тека «найновіше». Звичайний мердж каталог не перепубліковує — лише нічний запуск або запуск руками.</span>
-          </span>
-        </div>
-        <div class="ev auto">
-          <span class="when">+ ~5 хв ×2</span>
-          <span class="what">
-            <span class="h"><b>CDN підхоплює, потім clio оновлює кеш</b></span>
-            <span class="s">CDN — публічне дзеркало репозиторію, без авторизації: clio просто читає файл за URL. Час життя кешу вирівняний із циклом дзеркала, тому затримки не накопичуються.</span>
-          </span>
-        </div>
-        <div class="ev">
-          <span class="when">≈10 хв</span>
-          <span class="what">
-            <span class="h"><b>Агент бачить новий компонент</b></span>
-            <span class="s">Без релізу clio, без оновлення в користувача. Раніше цей шлях означав перезбірку clio й мердж — тобто години.</span>
-          </span>
-        </div>
-        <div class="ev manual">
-          <span class="when">на реліз<br>Creatio</span>
-          <span class="what">
-            <span class="h"><b>Зʼявляється нова версія платформи</b><span class="tag">руками</span></span>
-            <span class="s">Нічна автоматика оновлює <em>тільки</em> теку «найновіше» — теки конкретних версій вона не торкає ніколи. Тому на реліз нової GA-версії каталог під неї генерують окремо: беруть гілку UI, зафіксовану на цій версії, проганяють той самий генератор і кладуть результат у теку з номером версії. Аліас «найновіше» переставляють <strong>лише якщо</strong> нова версія справді найстарша за нумерацією — інакше виправлення, випущене для 8.2.5 після виходу 8.3.0, відкотило б усіх назад.</span>
-          </span>
-        </div>
-      </div>
-
-      <p class="fine" style="margin-top:20px">Тому теки версій — не «архів», а робочий механізм: агент, підключений до стенду на 8.3.0, читає саме каталог 8.3.0, а не найновіший.</p>
-    </div>
-  </section>
-
-  <!-- 10 -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 2</span><span class="num"></span><span>як обирається версія</span></div>
-      <h2>Дві відповіді, які треба порівняти</h2>
-      <p class="lead">«Яку версію просили» і «яку версію змогли дати» — це <strong>два незалежні питання</strong>. Відповіді на них шукають окремо, а потім порівнюють. Саме різниця між ними й стає відповіддю агентові.</p>
-
-      <h3>A · яку версію просили — видно прямо в аргументах виклику</h3>
-      <div class="calls" style="margin-bottom:20px">
-        <div class="call">
-          <pre>{
-  "component-type": "crt.DataGrid",
-  <span class="kw">"environment-name": "dev-stand"</span>
-}</pre>
-          <div class="res">clio питає сам стенд, яка в нього версія → <b class="ok">8.3.0</b></div>
-        </div>
-        <div class="call">
-          <pre>{
-  "component-type": "crt.DataGrid",
-  <span class="kw">"version": "8.3.4"</span>
-}</pre>
-          <div class="res">версію назвали прямо — беремо як є → <b class="ok">8.3.4</b></div>
-        </div>
-        <div class="call">
-          <pre>{
-  "component-type": "crt.DataGrid"
-}</pre>
-          <div class="res">ні версії, ні стенду → <b class="bad">«найновіша»</b> і вимога підтвердити</div>
-        </div>
-      </div>
-      <p class="fine" style="margin:0 0 22px">Версію й середовище одночасно вказати <strong>не можна</strong> — це жорстка помилка, а не «щось із двох переможе».</p>
-
-      <div class="lane" style="margin-bottom:0">
-        <div class="cap">B · яку версію змогли дати</div>
-        <ol>
-          <li>Є свіжий каталог у кеші — віддаємо.</li>
-          <li>Кеш застарів — віддаємо одразу, оновлюємо у фоні.</li>
-          <li>Немає — тягнемо з CDN.</li>
-          <li>Під цю версію теки немає — беремо «найновішу».</li>
-        </ol>
-      </div>
-
-      <div class="converge"><span class="v">↓</span><span>порівнюємо A і B</span><span class="v">↓</span></div>
-
-      <div class="outcomes">
-        <div class="outcome good">
-          <div class="n">A = B</div>
-          <div class="d">Версія відома, каталог точний. Працюємо.</div>
-        </div>
-        <div class="outcome soft">
-          <div class="n">A відома, B = найновіша</div>
-          <div class="d">Каталог ширший за потрібний. Попереджаємо.</div>
-        </div>
-        <div class="outcome hard">
-          <div class="n">A невідома</div>
-          <div class="d">Зупиняємось і питаємо користувача.</div>
-        </div>
-      </div>
-
-      <p class="fine" style="margin-top:22px">Одна деталь, яку легко зробити неправильно: якщо CDN відповів «такої теки немає», повторювати запит <strong>немає сенсу</strong> — це не збій мережі, а факт, що каталог під цю версію ще не опублікували. Повтори лишаються тільки для справжніх помилок звʼязку. Кожен перехід на цій схемі — і падіння на «найновішу», і кожна причина, чому версію не визначили — закріплений окремим тестом.</p>
-    </div>
-  </section>
-
-  <!-- 11 -->
+  <!-- states -->
   <section class="slide">
     <div class="inner">
       <div class="eyebrow"><span class="b">блок 2</span><span class="num"></span><span>чесність відповіді</span></div>
-      <h2>Прозу агент пропускає — прапорець ні</h2>
-      <p class="lead">Найважливіший стан — третій: <strong>версію визначити не вдалося</strong>. Тут замало написати застереження текстом. Агент його цілком може не врахувати.</p>
+      <h2>Три можливі відповіді — і жодної тихої</h2>
+      <p class="lead">Версію стенду не завжди вдається визначити. Найважливіше рішення тут — <strong>ніколи не вдавати, що вдалося</strong>.</p>
 
-      <div class="cols two">
-        <div class="panel rust">
-          <h3>Чому текст не працює</h3>
-          <p style="margin:0">Попередження в тексті відповіді — це прохання. Модель може його прочитати, а може зважити як другорядне й піти далі будувати план на каталозі, який їй не підходить.</p>
+      <div class="outcomes" style="margin-bottom:26px">
+        <div class="outcome good">
+          <div class="n">версія відома, каталог точний</div>
+          <div class="d">Працюємо як звичайно.</div>
         </div>
-        <div class="panel cyan">
-          <h3>Що працює</h3>
-          <p style="margin:0 0 10px">Разом із текстом віддається <strong>окреме машинне поле</strong>: «потрібне підтвердження версії». На нього клієнт може відреагувати кодом, а не тлумаченням.</p>
-          <p style="margin:0" class="fine">Поруч — причина в машинному вигляді: середовище не вказане · не відповіло · не повернуло версію · повернуло щось незрозуміле.</p>
+        <div class="outcome soft">
+          <div class="n">версія відома, каталог ширший</div>
+          <div class="d">Під цю версію каталог ще не опублікували — віддали найновіший. Попереджаємо: у ньому є компоненти, яких на стенді може не бути.</div>
+        </div>
+        <div class="outcome hard">
+          <div class="n">версію визначити не вдалося</div>
+          <div class="d">Зупиняємось і просимо користувача підтвердити, перш ніж щось планувати.</div>
         </div>
       </div>
 
-      <p class="lead" style="margin-top:26px">Це загальне правило для будь-якого MCP-контракту: якщо на щось <strong>обовʼязково</strong> треба зреагувати — це має бути поле у відповіді, а не речення в тексті. Речення адресоване моделі, яка може його зважити й піти далі. Поле адресоване програмі, яка або обробила його, або ні.</p>
+      <div class="panel rust">
+        <h3>І чому третій стан — це поле, а не речення</h3>
+        <p style="margin:0">Попередження в тексті відповіді — це прохання: модель може його прочитати, а може зважити як другорядне. Тому разом із текстом віддається <strong>окреме машинне поле</strong> «потрібне підтвердження версії», на яке клієнт реагує кодом. Загальне правило для будь-якого MCP-контракту: якщо на щось <strong>обовʼязково</strong> треба зреагувати — це має бути поле, а не речення.</p>
+      </div>
     </div>
   </section>
-
   <!-- 13 -->
   <section class="slide">
     <div class="inner">
@@ -1077,7 +895,23 @@
       <h2>Кнопки без інструкції — це пастка</h2>
       <p class="lead">Агент, який має доступ до інструмента, знає <em>як</em> його викликати — але не знає, як прийнято робити в Creatio. І тоді він видає результат, який <strong>виглядає правильно й навіть проходить перевірки, але працює не так</strong>. Це найгірший вид помилки: її ніхто не бачить одразу.</p>
 
-      <p style="margin:0 0 12px;max-width:74ch">Рішення: правила — це <strong>окремі статті з іменами</strong>. Агент просить статтю за іменем так само, як кличе інструмент. Вони їдуть у тому ж пакеті, що й код, тому не можуть розійтися з поведінкою — а в контексті постійно висить лише <strong>один</strong> інструмент, а не 68 текстів.</p>
+      <p style="margin:0 0 16px;max-width:74ch">Рішення: правила — це <strong>окремі статті з іменами</strong>, і дістаються вони звичайним викликом інструмента. Не «десь є документація», а <strong>адресований запит із передбачуваною відповіддю</strong> — тобто API:</p>
+
+      <div class="cols two" style="margin-bottom:22px">
+        <div>
+          <h3>запит</h3>
+          <pre style="margin:0">get-guidance({ <span class="kw">name</span>: <span class="ok">"page-modification"</span> })</pre>
+        </div>
+        <div>
+          <h3>відповідь</h3>
+          <pre style="margin:0">стабільна стаття з правилами
+для зміни сторінок
+
+<span style="color:var(--ink-3)">// невідоме імʼя → перелік усіх доступних</span></pre>
+        </div>
+      </div>
+
+      <p class="fine" style="margin:0 0 22px">Статті їдуть у тому ж пакеті, що й код, тому не можуть розійтися з поведінкою. А в контексті постійно висить лише <strong>один</strong> інструмент, а не 68 текстів.</p>
 
       <div class="figures" style="margin:0 0 26px">
         <div class="fig"><span class="v brass">68</span><span class="k">статей</span></div>
@@ -1121,61 +955,6 @@
       <p class="fine" style="margin-top:12px">Спільне в них лише слово «документація». Перше описує <em>один компонент</em> і належить команді UI. Друге описує <em>як прийнято робити</em> і належить нам. Останній рядок — причина, чому все, що часто змінюється, ми тримаємо в документації компонентів, а не в статтях.</p>
     </div>
   </section>
-
-  <!-- 14 -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 3</span><span class="num"></span><span>як агент знаходить потрібну статтю</span></div>
-      <h2>Від задачі до правила — чотири кроки</h2>
-      <p class="lead">68 статей — це багато. Якщо просто дати агентові список, він візьме не ту. Тому шлях до правила побудований як спуск: кожен крок звужує вибір і сам вказує наступний.</p>
-
-      <div class="drill">
-        <div class="dstep">
-          <span class="dnum">0</span>
-          <span class="dbody">
-            <span class="dh">Задача від користувача</span>
-            <span class="dex">«Додай кнопку на сторінку контакта»</span>
-          </span>
-          <span class="dsize"></span>
-        </div>
-        <div class="dstep">
-          <span class="dnum">1</span>
-          <span class="dbody">
-            <span class="dh">Дві обовʼязкові статті: <code>core-rules</code> + <code>routing</code></span>
-            <span class="dex">незмінні правила + карта «яка задача → яка стаття»</span>
-          </span>
-          <span class="dsize">завжди<br>1,9 КБ</span>
-        </div>
-        <div class="dstep">
-          <span class="dnum">2</span>
-          <span class="dbody">
-            <span class="dh">У карті знаходиться рядок про сторінки</span>
-            <span class="dex">дослівно: <span class="mono">Pages (Freedom UI): create/edit → get-component-info + name=page-modification</span></span>
-          </span>
-          <span class="dsize">на вимогу</span>
-        </div>
-        <div class="dstep">
-          <span class="dnum">3</span>
-          <span class="dbody">
-            <span class="dh"><code>page-modification</code> — і тут теж немає механіки</span>
-            <span class="dex">ця стаття лише розкладає далі на пʼять: <span class="mono">-overview</span> (збереження), <span class="mono">-field-contract</span> (поле з даними), <span class="mono">-containers</span> (куди кладемо), <span class="mono">-components</span> (як складаємо вставку)</span>
-          </span>
-          <span class="dsize">на вимогу</span>
-        </div>
-        <div class="dstep last">
-          <span class="dnum">4</span>
-          <span class="dbody">
-            <span class="dh"><code>page-modification-components</code></span>
-            <span class="dex">дослівний опис цього кроку в статті: <span class="mono">compose a viewConfigDiff insert (button+handler, operation/type/name rules, reading get-component-info)</span> — тобто саме наш випадок</span>
-          </span>
-          <span class="dsize">до 15 КБ</span>
-        </div>
-      </div>
-
-      <p class="fine" style="margin-top:24px">Перші два кроки — єдине, що завантажується завжди. Усе інше агент дістає сам, і лише те, що потрібно під цю задачу. Стаття на третьому кроці свідомо <strong>не містить правил</strong> — вона лише маршрутизує далі, бо інакше виросла б у документ, який не влазить в одну відповідь.</p>
-    </div>
-  </section>
-
   <!-- 15 -->
   <section class="slide">
     <div class="inner">
@@ -1197,7 +976,7 @@ checklist…
 get-guidance with name <span class="kw">page-schema-handlers</span>
 first; if the body changes SCHEMA_VALIDATORS
 call … <span class="kw">page-schema-validators</span> first; …</pre>
-            <p style="margin:10px 0 0" class="fine">Опис <em>відправляє</em> по статтю, але ніколи не переказує її змісту. У сімці інструментів теми взагалі одне й те саме речення: <span class="mono">For the theme workflow, read get-guidance theming first.</span></p>
+            <p style="margin:10px 0 0" class="fine">Опис <em>відправляє</em> по статтю, але ніколи не переказує її змісту.</p>
           </div>
         </div>
         <div class="stack">
@@ -1219,15 +998,12 @@ text property <span class="ok">'placeholder'</span> to the inline
 literal <span class="bad">"name@firm.com"</span> instead of a
 localizable string. Rule: … See the
 <span class="kw">page-schema-resources</span> guide.</pre>
-            <p style="margin:9px 0 0" class="fine">Збереження просто не відбувається. Правило перевіряється на всіх входах, якими можна змінити сторінку, для пʼяти властивостей: <code>label</code>, <code>caption</code>, <code>title</code>, <code>tooltip</code>, <code>placeholder</code>.</p>
+            <p style="margin:9px 0 0" class="fine">Збереження просто не відбувається — на всіх входах, якими можна змінити сторінку.</p>
           </div>
         </div>
       </div>
-
-      <p class="fine" style="margin-top:20px"><strong>І одне правило — один власник.</strong> Кожне правило описане рівно в одній статті; решта на неї посилаються, але не переказують. Тримає це не огляд, а ліміт розміру статті: скопіював чуже правило до себе — вийшов за ліміт, тест упав.</p>
     </div>
   </section>
-
   <!-- 3 -->
   <section class="slide">
     <div class="inner">
@@ -1301,6 +1077,384 @@ localizable string. Rule: … See the
       </p>
     </div>
   </section>
+  <!-- appendix divider -->
+  <section class="slide apx">
+    <div class="inner divider">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span></div>
+      <h2>Далі — подробиці на запит</h2>
+      <p class="lead">Основна частина закінчилась. Нижче — матеріал, який не потрібен для розуміння картини, але знадобиться, якщо спитають «а як саме» або «а звідки цифра».</p>
+      <ul class="plain stack tight" style="margin-top:8px">
+        <li><span class="mk">A1</span><span>Словник термінів</span></li>
+        <li><span class="mk">A2</span><span>Відкинуте рішення й історичні заміри</span></li>
+        <li><span class="mk">A3</span><span>Три види примітивів MCP — чому ховаємо лише інструменти</span></li>
+        <li><span class="mk">A4</span><span>Зворотна сумісність: що зламало приховування інструментів</span></li>
+        <li><span class="mk">A5</span><span>Життєвий цикл каталогу компонентів</span></li>
+        <li><span class="mk">A6</span><span>Повний алгоритм вибору версії</span></li>
+        <li><span class="mk">A7</span><span>Реальний ланцюг статей від задачі до правила</span></li>
+        <li><span class="mk">A8</span><span>Де це шукати в коді</span></li>
+      </ul>
+    </div>
+  </section>
+  <!-- glossary -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A1 · словник</span></div>
+      <h2>Словник термінів</h2>
+      <p class="lead">Усе, що в доповіді названо один раз і могло проскочити.</p>
+
+      <div class="gloss">
+        <div class="g"><span class="w">MCP</span><span class="d">Стандарт, за яким застосунок із моделлю отримує доступ до зовнішніх дій і даних.</span></div>
+        <div class="g"><span class="w">інструмент</span><span class="d">Дія, яку модель може попросити виконати. Її опис завжди в контексті.</span></div>
+        <div class="g"><span class="w">схема</span><span class="d">Точний опис аргументів інструмента: поля, типи, обовʼязковість.</span></div>
+        <div class="g"><span class="w">видимий (resident)</span><span class="d">Інструмент, який модель бачить одразу й кличе прямо за іменем.</span></div>
+        <div class="g"><span class="w">прихований</span><span class="d">Інструмент, якого немає у списку; викликається через виконавця <code>clio-run</code>.</span></div>
+        <div class="g"><span class="w">індекс</span><span class="d">Короткий перелік усіх інструментів: імʼя й призначення, без схем.</span></div>
+        <div class="g"><span class="w">контракт</span><span class="d">Докладний опис одного інструмента: схема, формат відповіді й помилки, приклади.</span></div>
+        <div class="g"><span class="w">стаття (guidance)</span><span class="d">Текст із правилами, який агент дістає за іменем через <code>get-guidance</code>.</span></div>
+        <div class="g"><span class="w">каталог компонентів</span><span class="d">Перелік UI-компонентів Creatio з їхніми властивостями, свій на кожну версію.</span></div>
+        <div class="g"><span class="w">CDN</span><span class="d">Публічне дзеркало, з якого clio читає каталог за звичайним URL.</span></div>
+        <div class="g"><span class="w">GA-версія</span><span class="d">Офіційно випущена версія платформи (напр. 8.3.4).</span></div>
+        <div class="g"><span class="w">Freedom UI</span><span class="d">Сучасний конструктор інтерфейсів Creatio, сторінки якого й складає агент.</span></div>
+      </div>
+    </div>
+  </section>
+  <!-- 4 -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A2 · відкинуте рішення</span><span>контекстна економія</span></div>
+      <h2>Де насправді живе токен</h2>
+      <p class="lead">Спершу спробували інше рішення — і воно виглядало переконливо. Варто розібрати, <strong>чому воно не спрацювало</strong>: саме ця невдача показала, що ми міряли не ту метрику.</p>
+
+      <div class="tbl-wrap" style="margin-bottom:14px">
+        <table>
+          <thead><tr><th style="width:34%">Підхід</th><th class="n" style="width:24%">Інструментів у списку</th><th>Обсягу в контексті</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Наївно — усе оголошено</td>
+              <td class="n">124</td>
+              <td class="mono">226 640 Б</td>
+            </tr>
+            <tr>
+              <td><span style="color:var(--rust)">Відкинуте рішення</span></td>
+              <td class="n" style="color:var(--cyan)">24 &nbsp;↓ у 5 разів</td>
+              <td class="mono" style="color:var(--rust)">майже без змін →</td>
+            </tr>
+            <tr>
+              <td><span style="color:var(--cyan)">Вибране рішення</span></td>
+              <td class="n" style="color:var(--cyan)">18 &nbsp;↓ у 7 разів</td>
+              <td class="mono" style="color:var(--cyan)">30 233 Б &nbsp;↓ у 7 разів</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fine" style="margin:0 0 26px"><strong>Ось у чому проблема:</strong> у середньому рядку кількість впала в пʼять разів, а обсяг — практично ні. Схеми не зникли — вони переїхали <em>всередину</em> одного інструмента, і модель усе одно отримує їх усі. Обсяг відкинутого варіанту до кінця не міряли: його забракували на цьому міркуванні, а не на замірі.</p>
+
+      <div class="cols two">
+        <div class="panel rust">
+          <h3>Відкинуте рішення</h3>
+          <p style="margin:0 0 12px">Лишити в каталозі 24 інструменти, а <strong>52 записуючі команди сховати за одним</strong> — <code>clio-run</code>. Його єдиний аргумент описаний як «<strong>одне з</strong> 52 перелічених» (це і є <code>anyOf</code>):</p>
+          <pre style="margin:0"><span class="kw">clio-run</span>.args: anyOf [
+  { …повна схема команди 1… },
+  { …повна схема команди 2… },
+  <span class="bad">… ще 50 повних схем …</span>
+]</pre>
+          <p style="margin:12px 0 0" class="fine">Інструментів у списку — один. Схем у каталозі — усі 52. Вони просто переїхали на рівень глибше.</p>
+        </div>
+        <div class="panel cyan">
+          <h3>Вибране рішення</h3>
+          <p style="margin:0 0 12px">Не ховати схеми глибше, а <strong>не віддавати їх узагалі</strong>, поки агент не спитає саме про цю команду:</p>
+          <pre style="margin:0"><span class="kw">clio-run</span>.args: {
+  command: <span class="ok">string</span>,   <span style="color:var(--ink-3)">// імʼя команди</span>
+  args:    <span class="ok">object</span>    <span style="color:var(--ink-3)">// вільна форма</span>
+}</pre>
+          <p style="margin:12px 0 0" class="fine">Схема самого <code>clio-run</code> — кілька рядків. Схему конкретної команди агент запитує окремо, і лише коли вона йому справді потрібна.</p>
+        </div>
+      </div>
+
+      <blockquote class="quote" style="margin-top:24px">
+        The token cost lives in the schema bodies, not the tool-count wrapper.
+        <cite>ADR — MCP lazy-schema tool surface, 2026-06-19</cite>
+      </blockquote>
+    </div>
+  </section>
+  <!-- primitives -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A3 · примітиви MCP</span><span>чому саме інструменти</span></div>
+      <h2>Ховати треба тільки інструменти</h2>
+      <p class="lead">Ресурси й промпти clio оголошує <strong>усі</strong> — і це не недогляд. Три види примітивів різняться не змістом, а тим, <strong>хто вирішує, коли їх прочитати</strong>. Саме це визначає, чи платимо ми за них контекстом.</p>
+
+      <div class="tbl-wrap" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th style="width:17%">Примітив</th><th style="width:20%">Хто вирішує</th><th style="width:33%">Коли потрапляє в контекст</th><th>Ціна на кожен запит</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Інструменти</strong></td>
+              <td>модель</td>
+              <td><strong>завжди</strong> — інакше модель не знала б, що можна викликати</td>
+              <td style="color:var(--rust)">повний опис кожного</td>
+            </tr>
+            <tr>
+              <td><strong>Ресурси</strong></td>
+              <td>застосунок</td>
+              <td>лише коли застосунок сам вклав вміст у запит</td>
+              <td style="color:var(--cyan)">нуль, поки не прочитали</td>
+            </tr>
+            <tr>
+              <td><strong>Промпти</strong></td>
+              <td>користувач</td>
+              <td>лише коли користувач сам його викликав</td>
+              <td style="color:var(--cyan)">нуль, поки не викликали</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel rust">
+        <h3>Відповідь на очевидне питання: агент не вирішує</h3>
+        <p style="margin:0">Ресурс читає <strong>не модель, а застосунок</strong> — коли користувач щось прикріпив або коли клієнт сам так налаштований. Модель не може піти й прочитати ресурс з власної ініціативи, і навіть не може розраховувати, що взагалі бачить їхній перелік: у різних клієнтах це по-різному. Тому все, на що агент <em>мусить</em> спертися сам, у clio віддається інструментом, а не ресурсом.</p>
+      </div>
+    </div>
+  </section>
+  <!-- 7 -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A4 · зворотна сумісність</span><span>зворотна сумісність</span></div>
+      <h2>Ховати інструменти — це ломати сумісність</h2>
+      <p class="lead">Ось де ціна цього рішення. Прибравши інструмент зі списку, ми <strong>зламали кожного, хто вже кликав його за іменем</strong>. А кликали: у clio є багаторічна політика зворотної сумісності для аргументів командного рядка — і не було жодної для імен MCP-інструментів. Тому сервер тепер мусить розумно відповісти на будь-який зі способів виклику, а не лише на нинішній правильний.</p>
+
+      <div class="routes" style="margin-bottom:26px">
+        <div class="r ok">
+          <span class="cond">Кличе один із 18 видимих інструментів</span>
+          <span class="go">→</span>
+          <span class="out">виконуємо</span>
+        </div>
+        <div class="r ok">
+          <span class="cond">Кличе приховану команду через <code>clio-run</code></span>
+          <span class="go">→</span>
+          <span class="out">виконуємо</span>
+        </div>
+        <div class="r ok sub">
+          <span class="cond">Кличе приховану команду просто за іменем, і це <strong>читання</strong></span>
+          <span class="go">→</span>
+          <span class="out">виконуємо + підказка,<br>як робити далі</span>
+        </div>
+        <div class="r hold sub">
+          <span class="cond">Те саме, але команда щось <strong>записує</strong></span>
+          <span class="go">→</span>
+          <span class="out">просимо підтвердження<br>і показуємо, як повторити</span>
+        </div>
+      </div>
+
+      <div class="cols two">
+        <div class="panel cyan">
+          <h3>Кого саме зламали</h3>
+          <p style="margin:0 0 10px">clio створює користувачам робочу теку разом із файлом інструкцій для агента. Той файл <strong>заморожений на момент створення</strong> — оновити його ми вже не можемо, він живе в чужих репозиторіях. І він називає команди прямо за іменем.</p>
+          <p style="margin:0" class="fine">Без цих двох рядків кожен такий агент отримував би «невідомий інструмент» і зупинявся — причому в нас це виглядало б як «у користувача щось не працює», а не як наша поламана сумісність. Плюс окремий словник старих імен: якщо інструмент перейменували, старе імʼя далі веде на нове.</p>
+        </div>
+        <div class="panel brass">
+          <h3>Межа поблажливості — читання проти запису</h3>
+          <p style="margin:0">Прочитати — будь ласка. Змінити щось у живому середовищі без явного підтвердження — ні. Показово, що спочатку цю межу провели по «руйнівності», і вона протікала: додавання нового запису формально нічого не руйнує, тому такі команди проходили без підтвердження. Межу перенесли на просте «це читання чи запис».</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- 9 -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A5 · життєвий цикл каталогу</span><span>життєвий цикл каталогу</span></div>
+      <h2>Шлях нового компонента до агента</h2>
+      <p class="lead">Каталог не лежить у clio — він збирається з вихідників UI і публікується на CDN. Саме тому <strong>оновлення каталогу не вимагає релізу clio</strong>. Ось що відбувається, коли розробник додає новий компонент.</p>
+
+      <div class="life">
+        <div class="ev">
+          <span class="when">день 0</span>
+          <span class="what">
+            <span class="h"><b>Розробник додає компонент</b> у репозиторій UI</span>
+            <span class="s">Поруч із кодом — теги в коментарях: для чого компонент, коли його брати, коли не брати, синоніми.</span>
+          </span>
+        </div>
+        <div class="ev auto">
+          <span class="when">щоночі</span>
+          <span class="what">
+            <span class="h"><b>Генератор збирає каталог</b><span class="tag">автоматично</span></span>
+            <span class="s">Генератор — це окрема консольна утиліта. Вона не запускає застосунок: вона <strong>читає вихідний код UI як текст</strong>, розбирає його в синтаксичне дерево, знаходить класи компонентів за їхніми анотаціями й витягує звідти назви властивостей, типи, значення за замовчуванням і ті самі теги з коментарів. На виході — один файл каталогу та набір файлів документації.</span>
+          </span>
+        </div>
+        <div class="ev auto">
+          <span class="when">+ хвилини</span>
+          <span class="what">
+            <span class="h"><b>Коміт у репозиторій публікації</b></span>
+            <span class="s">Оновлюється лише тека «найновіше». Звичайний мердж каталог не перепубліковує — лише нічний запуск або запуск руками.</span>
+          </span>
+        </div>
+        <div class="ev auto">
+          <span class="when">+ ~5 хв ×2</span>
+          <span class="what">
+            <span class="h"><b>CDN підхоплює, потім clio оновлює кеш</b></span>
+            <span class="s">CDN — публічне дзеркало репозиторію, без авторизації: clio просто читає файл за URL. Час життя кешу вирівняний із циклом дзеркала, тому затримки не накопичуються.</span>
+          </span>
+        </div>
+        <div class="ev">
+          <span class="when">≈10 хв</span>
+          <span class="what">
+            <span class="h"><b>Агент бачить новий компонент</b></span>
+            <span class="s">Без релізу clio, без оновлення в користувача. Раніше цей шлях означав перезбірку clio й мердж — тобто години.</span>
+          </span>
+        </div>
+        <div class="ev manual">
+          <span class="when">на реліз<br>Creatio</span>
+          <span class="what">
+            <span class="h"><b>Зʼявляється нова версія платформи</b><span class="tag">руками</span></span>
+            <span class="s">Нічна автоматика оновлює <em>тільки</em> теку «найновіше» — теки конкретних версій вона не торкає ніколи. Тому на реліз нової GA-версії каталог під неї генерують окремо: беруть гілку UI, зафіксовану на цій версії, проганяють той самий генератор і кладуть результат у теку з номером версії. Аліас «найновіше» переставляють <strong>лише якщо</strong> нова версія справді найстарша за нумерацією — інакше виправлення, випущене для 8.2.5 після виходу 8.3.0, відкотило б усіх назад.</span>
+          </span>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:20px">Тому теки версій — не «архів», а робочий механізм: агент, підключений до стенду на 8.3.0, читає саме каталог 8.3.0, а не найновіший.</p>
+    </div>
+  </section>
+  <!-- 10 -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A6 · алгоритм вибору версії</span><span>як обирається версія</span></div>
+      <h2>Дві відповіді, які треба порівняти</h2>
+      <p class="lead">«Яку версію просили» і «яку версію змогли дати» — це <strong>два незалежні питання</strong>. Відповіді на них шукають окремо, а потім порівнюють. Саме різниця між ними й стає відповіддю агентові.</p>
+
+      <h3>A · яку версію просили — видно прямо в аргументах виклику</h3>
+      <div class="calls" style="margin-bottom:20px">
+        <div class="call">
+          <pre>{
+  "component-type": "crt.DataGrid",
+  <span class="kw">"environment-name": "dev-stand"</span>
+}</pre>
+          <div class="res">clio питає сам стенд, яка в нього версія → <b class="ok">8.3.0</b></div>
+        </div>
+        <div class="call">
+          <pre>{
+  "component-type": "crt.DataGrid",
+  <span class="kw">"version": "8.3.4"</span>
+}</pre>
+          <div class="res">версію назвали прямо — беремо як є → <b class="ok">8.3.4</b></div>
+        </div>
+        <div class="call">
+          <pre>{
+  "component-type": "crt.DataGrid"
+}</pre>
+          <div class="res">ні версії, ні стенду → <b class="bad">«найновіша»</b> і вимога підтвердити</div>
+        </div>
+      </div>
+      <p class="fine" style="margin:0 0 22px">Версію й середовище одночасно вказати <strong>не можна</strong> — це жорстка помилка, а не «щось із двох переможе».</p>
+
+      <div class="lane" style="margin-bottom:0">
+        <div class="cap">B · яку версію змогли дати</div>
+        <ol>
+          <li>Є свіжий каталог у кеші — віддаємо.</li>
+          <li>Кеш застарів — віддаємо одразу, оновлюємо у фоні.</li>
+          <li>Немає — тягнемо з CDN.</li>
+          <li>Під цю версію теки немає — беремо «найновішу».</li>
+        </ol>
+      </div>
+
+      <div class="converge"><span class="v">↓</span><span>порівнюємо A і B</span><span class="v">↓</span></div>
+
+      <div class="outcomes">
+        <div class="outcome good">
+          <div class="n">A = B</div>
+          <div class="d">Версія відома, каталог точний. Працюємо.</div>
+        </div>
+        <div class="outcome soft">
+          <div class="n">A відома, B = найновіша</div>
+          <div class="d">Каталог ширший за потрібний. Попереджаємо.</div>
+        </div>
+        <div class="outcome hard">
+          <div class="n">A невідома</div>
+          <div class="d">Зупиняємось і питаємо користувача.</div>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:22px">Одна деталь, яку легко зробити неправильно: якщо CDN відповів «такої теки немає», повторювати запит <strong>немає сенсу</strong> — це не збій мережі, а факт, що каталог під цю версію ще не опублікували. Повтори лишаються тільки для справжніх помилок звʼязку. Кожен перехід на цій схемі — і падіння на «найновішу», і кожна причина, чому версію не визначили — закріплений окремим тестом.</p>
+    </div>
+  </section>
+  <!-- 14 -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A7 · ланцюг статей</span><span>як агент знаходить потрібну статтю</span></div>
+      <h2>Від задачі до правила — чотири кроки</h2>
+      <p class="lead">68 статей — це багато. Якщо просто дати агентові список, він візьме не ту. Тому шлях до правила побудований як спуск: кожен крок звужує вибір і сам вказує наступний.</p>
+
+      <div class="drill">
+        <div class="dstep">
+          <span class="dnum" style="border-style:dashed;color:var(--ink-3)">•</span>
+          <span class="dbody">
+            <span class="dh">Задача від користувача</span>
+            <span class="dex">«Додай кнопку на сторінку контакта»</span>
+          </span>
+          <span class="dsize"></span>
+        </div>
+        <div class="dstep">
+          <span class="dnum">1</span>
+          <span class="dbody">
+            <span class="dh">Дві обовʼязкові статті: <code>core-rules</code> + <code>routing</code></span>
+            <span class="dex">незмінні правила + карта «яка задача → яка стаття»</span>
+          </span>
+          <span class="dsize">завжди<br>1,9 КБ</span>
+        </div>
+        <div class="dstep">
+          <span class="dnum">2</span>
+          <span class="dbody">
+            <span class="dh">У карті знаходиться рядок про сторінки</span>
+            <span class="dex">дослівно: <span class="mono">Pages (Freedom UI): create/edit → get-component-info + name=page-modification</span></span>
+          </span>
+          <span class="dsize">на вимогу</span>
+        </div>
+        <div class="dstep">
+          <span class="dnum">3</span>
+          <span class="dbody">
+            <span class="dh"><code>page-modification</code> — і тут теж немає механіки</span>
+            <span class="dex">ця стаття лише розкладає далі на пʼять: <span class="mono">-overview</span> (збереження), <span class="mono">-field-contract</span> (поле з даними), <span class="mono">-containers</span> (куди кладемо), <span class="mono">-components</span> (як складаємо вставку)</span>
+          </span>
+          <span class="dsize">на вимогу</span>
+        </div>
+        <div class="dstep last">
+          <span class="dnum">4</span>
+          <span class="dbody">
+            <span class="dh"><code>page-modification-components</code></span>
+            <span class="dex">дослівний опис цього кроку в статті: <span class="mono">compose a viewConfigDiff insert (button+handler, operation/type/name rules, reading get-component-info)</span> — тобто саме наш випадок</span>
+          </span>
+          <span class="dsize">до 15 КБ</span>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:24px">Перші два кроки — єдине, що завантажується завжди. Усе інше агент дістає сам, і лише те, що потрібно під цю задачу. Стаття на третьому кроці свідомо <strong>не містить правил</strong> — вона лише маршрутизує далі, бо інакше виросла б у документ, який не влазить в одну відповідь.</p>
+    </div>
+  </section>
+  <!-- where in code -->
+  <section class="slide apx">
+    <div class="inner">
+      <div class="eyebrow"><span class="apx-badge">appendix</span><span class="num"></span><span>A8 · де шукати</span></div>
+      <h2>Де це шукати в коді</h2>
+      <p class="lead">Кожна цифра з доповіді або має запускну команду, або лежить за конкретним шляхом. Числа зняті з <span class="mono">origin/master</span> 2026-07-30 і швидко старіють — перевіряйте, а не цитуйте.</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th style="width:34%">Що</th><th>Де</th></tr></thead>
+          <tbody>
+            <tr><td>Розмір видимої поверхні (кількість і байти)</td><td class="mono" style="font-size:12.5px">dotnet test clio.tests --filter "FullyQualifiedName~McpProfileGating"</td></tr>
+            <tr><td>Склад видимого набору</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/McpCoreToolProfile.cs</td></tr>
+            <tr><td>Індекс і 72 контракти</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/Tools/ToolContractGetTool.cs</td></tr>
+            <tr><td>Виконавець прихованих інструментів</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/Tools/ClioRunTool.cs</td></tr>
+            <tr><td>68 статей із правилами</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/Resources/GuidanceCatalog.cs</td></tr>
+            <tr><td>Карта задача → стаття</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/Resources/RoutingGuidanceResource.cs</td></tr>
+            <tr><td>Вибір версії каталогу</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/Tools/PlatformVersionResolver.cs</td></tr>
+            <tr><td>Ланцюг фолбеків до CDN</td><td class="mono" style="font-size:12.5px">clio/Command/McpServer/Tools/ComponentRegistryClient.cs</td></tr>
+            <tr><td>Перевірка підписів на локалізованість</td><td class="mono" style="font-size:12.5px">clio/Command/SchemaValidationService.cs</td></tr>
+            <tr><td>Історичний замір «−97 %»</td><td class="mono" style="font-size:12.5px">spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </div>
 
 <div class="hud">
@@ -1313,15 +1467,18 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 9, 13, 16]; // де починаються блоки 1/2/3 та фінал (0-based)
+  var boundaries = [4, 7, 9, 13]; // блоки 1/2/3 + початок appendix // де починаються блоки 1/2/3 та фінал (0-based)
   var i = 0;
 
   // budget rail
   var rail = document.getElementById('rail');
   var ticks = [];
+  var apxStart = boundaries[boundaries.length - 1]; // перший слайд appendix
   for (var t = 0; t < total; t++) {
     var el = document.createElement('span');
-    el.className = 'tick' + (boundaries.indexOf(t) > -1 ? ' boundary' : '');
+    el.className = 'tick'
+      + (boundaries.indexOf(t) > -1 ? ' boundary' : '')
+      + (t >= apxStart ? ' apx' : '');
     rail.appendChild(el);
     ticks.push(el);
   }
@@ -1342,10 +1499,11 @@ localizable string. Rule: … See the
   function pad(n) { return (n < 10 ? '0' : '') + n; }
 
   // Номер слайда рахується з позиції, а не пишеться в розмітці — інакше він
-  // розсинхронізується щоразу, коли слайд додають або прибирають.
+  // розсинхронізується щоразу, коли слайд додають або прибирають. Appendix має
+  // власну нумерацію, щоб «08 / 13» у виступі не перетворювалось на «08 / 22».
   slides.forEach(function (s, k) {
     var num = s.querySelector('.eyebrow .num');
-    if (num) { num.textContent = pad(k + 1); }
+    if (num) { num.textContent = k < apxStart ? pad(k + 1) : (k === apxStart ? '' : 'A' + (k - apxStart)); }
   });
 
   function show(n) {
@@ -1355,7 +1513,9 @@ localizable string. Rule: … See the
       el.classList.toggle('filled', k <= i);
       el.classList.toggle('now', k === i);
     });
-    counter.textContent = pad(i + 1) + ' / ' + total;
+    counter.textContent = i < apxStart
+      ? pad(i + 1) + ' / ' + pad(apxStart)
+      : (i === apxStart ? 'appendix' : 'appendix ' + (i - apxStart) + ' / ' + (total - apxStart - 1));
     window.scrollTo(0, 0);
   }
 
