@@ -985,6 +985,49 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "tool-based retrieval should preserve the executable feature-enablement fallback");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the workplaces article by stable name")]
+	[Description("Verifies the navigation-workplace article resolves through the live MCP surface and carries the invariants an agent needs to avoid a wrong-but-successful workplace change (ENG-88474).")]
+	public async Task GuidanceGet_ShouldReturnWorkplacesGuide_WhenStableNameIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "workplaces"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "workplaces is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/workplaces",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("SysModuleInWorkplace",
+			because: "tool-based retrieval should preserve the section-membership table");
+		response.Article.Text.Should().Contain("SysAdminUnitInWorkplace",
+			because: "tool-based retrieval should preserve the role-visibility table");
+		response.Article.Text.Should().Contain("accepts no `confirm`",
+			because: "tool-based retrieval should preserve the per-tool confirmation-gate split");
+		response.Article.Text.Should().Contain("SysWorkplace/Id",
+			because: "tool-based retrieval should preserve the junction filter path");
+		response.Article.Text.Should().Contain("SysApplicationClientTypeId",
+			because: "tool-based retrieval should preserve the web-vs-mobile client-type requirement");
+		response.Article.Text.Should().Contain("delete children first",
+			because: "tool-based retrieval should preserve the children-before-parent delete order");
+		response.Article.Text.Should().Contain("Ask where things belong before you write",
+			because: "tool-based retrieval should preserve the mandatory placement question");
+		response.Article.Text.Should().Contain("rather than adding a second placement",
+			because: "tool-based retrieval should preserve move-not-add for a new app's section");
+		response.Article.Text.Should().Contain("NO unique constraint",
+			because: "tool-based retrieval should preserve the duplicate-section warning");
+	}
+
 	private static async Task<GuidanceGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

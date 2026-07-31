@@ -55,7 +55,9 @@ public sealed class HomePageGuidanceResource {
 		          via `odata-read` or `execute-esq` — if one path errors, try the other. A workplace has one home
 		          page, so bind each workplace the page should apply to.
 		          - If the user did NOT name a workplace, do not pick one yourself — present the `Name` list (mark
-		            which already have a home page, since binding replaces it) and ask.
+		            which already have a home page, since binding replaces it) and ask. Offer creating a NEW
+		            workplace named for the app as one of the options (recommend it when the page belongs to an
+		            app being scaffolded); `workplaces` owns that creation.
 		          - The workplace(s) where the page's app registers its SECTIONS (`SysModuleInWorkplace` — e.g.
 		            `My applications` or `Studio` for a composable app in development) are NATURAL candidates:
 		            offer and highlight them, but don't silently auto-pick and don't treat any workplace as
@@ -63,10 +65,11 @@ public sealed class HomePageGuidanceResource {
 		          - Reconcile with the requested audience: if the request scopes the page to a role (e.g. "only
 		            Sales Manager"), the target should be a workplace whose audience matches (see Access / roles
 		            below). If the app's own workplace doesn't match that role, surface it and confirm.
-		          - The workplace must ALREADY exist for this flow — if a named one is not found, stop and ask.
-		            To create or otherwise manage a workplace and its sections, see `workplaces` (which also
-		            disambiguates the navigation `SysWorkplace` from clio's `create-workspace` and the dev
-		            `SysWorkspace`). This is the app workplace `SysWorkplace`.
+		          - This step BINDS to an existing workplace row — if a named workplace is not found, do not
+		            invent one silently: ask, and offer to create it. Creating a workplace, managing its sections,
+		            and moving a section between workplaces are owned by `workplaces` (which also disambiguates
+		            the navigation `SysWorkplace` from clio's `create-workspace` and the dev `SysWorkspace`).
+		            This is the app workplace `SysWorkplace`.
 		       6. Point each target workplace at the page and persist it as a package data binding so it ships.
 		          You are UPDATING an existing workplace row (not creating one) and then shipping it:
 		          a. `odata-update` `SysWorkplace` with `id` = the workplace `Id`,

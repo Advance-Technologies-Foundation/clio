@@ -2404,4 +2404,123 @@ public sealed class McpGuidanceResourceTests {
 		routing.Text.Should().Contain("name=virtual-entities",
 			because: "virtual entity object and executor work should route to the dedicated lifecycle guide");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The workplaces guide preserves the lab-verified navigation invariants and the confirmation-gate split, so an agent managing a workplace cannot silently produce a wrong-but-successful result (ENG-88474).")]
+	public void WorkplacesGuidanceResource_Should_Return_Canonical_Workplaces_Guide() {
+		// Arrange
+		WorkplacesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the workplaces guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/workplaces",
+			because: "the resource should expose a stable MCP URI for workplace guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the workplaces guide should be discoverable as plain text");
+
+		// The three tables the model spans; losing any of them breaks the guide's ownership claim.
+		article.Text.Should().Contain("SysWorkplace",
+			because: "the guide owns the navigation workplace table");
+		article.Text.Should().Contain("SysModuleInWorkplace",
+			because: "the guide owns section membership");
+		article.Text.Should().Contain("SysAdminUnitInWorkplace",
+			because: "the guide owns role visibility");
+
+		// Confirmation gates are per tool: odata-create declares no confirm argument, so telling an agent
+		// that every write needs one makes it pass an argument the contract does not accept.
+		article.Text.Should().Contain("accepts no `confirm`",
+			because: "the guide must state that odata-create is ungated rather than gating every write");
+		article.Text.Should().Contain("require `confirm=true`",
+			because: "the guide must still gate the genuinely destructive update/delete/remove-binding calls");
+
+		// Filter shape: the scalar column silently returns nothing on a junction table.
+		article.Text.Should().Contain("SysWorkplace/Id",
+			because: "junction tables must be filtered by the navigation path, not the scalar column");
+
+		// Client type: omitting it yields a successful create that never appears where the user expected.
+		article.Text.Should().Contain("SysApplicationClientTypeId",
+			because: "a workplace belongs to one client type, so the guide must make the caller resolve it");
+
+		// Delete order: after the parent cascades, the child Ids needed by remove-data-binding-row-db are
+		// unreadable, and the binding tools have no list mode to recover them.
+		article.Text.Should().Contain("delete children first",
+			because: "the delete recipe must order children before the parent or it orphans package rows");
+		article.Text.Should().Contain("no list mode",
+			because: "the guide must explain why the child Ids cannot be recovered after the cascade");
+
+		// Placement is the user's decision (ENG-88474 acceptance criteria).
+		article.Text.Should().Contain("Ask where things belong before you write",
+			because: "the guide must require the placement question instead of letting the agent choose");
+
+		// A new app must be MOVED out of My applications, not additionally added to the target.
+		article.Text.Should().Contain("My applications",
+			because: "the guide must name the default workplace a new app lands in");
+		article.Text.Should().Contain("rather than adding a second placement",
+			because: "adding to the target while leaving the source row behind leaves the app in two places");
+
+		// Lab-verified rules that produce silent wrong results when forgotten.
+		article.Text.Should().Contain("NO unique constraint",
+			because: "adding a section already present in the target creates a duplicate");
+		article.Text.Should().Contain("assigned by the server on write",
+			because: "the Position value the caller sends is not honoured, so it must be read back");
+		article.Text.Should().Contain("00000000-0000-0000-0000-000000000000",
+			because: "a zero-GUID junction link inserts and reads back while binding nothing");
+
+		// Mandatory cross-links: each of these concepts is owned by another guide.
+		article.Text.Should().Contain("core-rules",
+			because: "the guide must defer to the core rules rather than restating them");
+		article.Text.Should().Contain("data-bindings",
+			because: "the binding tool contract is owned by the data-bindings guide");
+		article.Text.Should().Contain("home-page",
+			because: "HomePageUId is owned by the home-page guide, not by this one");
+		article.Text.Should().Contain("create-workspace",
+			because: "the guide must disambiguate navigation SysWorkplace from the local workspace command");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog and the routing map expose workplaces as the canonical navigation-workplace guide (ENG-88474).")]
+	public void TryGet_ShouldReturnWorkplacesGuide_WhenWorkplaceManagementIsRouted() {
+		// Arrange
+		RoutingGuidanceResource routingResource = new();
+
+		// Act
+		bool found = GuidanceCatalog.TryGet("workplaces", out GuidanceCatalogEntry entry);
+		TextResourceContents routing = routingResource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "routing guidance should remain a plain-text resource").Subject;
+
+		// Assert
+		found.Should().BeTrue(
+			because: "get-guidance must resolve the workplaces name advertised by routing");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/workplaces",
+			because: "the catalog entry should preserve the stable resource URI");
+		routing.Text.Should().Contain("name=workplaces",
+			because: "navigation workplace management should route to the dedicated workplaces guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Adjacent guides route workplace concerns to the workplaces owner instead of restating the model (ENG-88474 de-duplication).")]
+	public void WorkplaceModel_ShouldHaveExactlyOneOwner_AcrossAdjacentGuides() {
+		// Arrange
+		HomePageGuidanceResource homePageResource = new();
+
+		// Act
+		TextResourceContents homePage = homePageResource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the home-page guide should remain a plain-text resource").Subject;
+
+		// Assert
+		homePage.Text.Should().Contain("`workplaces`",
+			because: "the home-page guide must route workplace creation and section membership to the owner");
+		// The home-page guide owns HomePageUId, so it keeps the unset recipe; it must not re-teach the model.
+		homePage.Text.Should().Contain("HomePageUId",
+			because: "home-page remains the owner of the workplace home-page column");
+		homePage.Text.Should().NotContain("clio has no tool to create one",
+			because: "the stale no-tool claim was superseded when the workplaces guide took ownership");
+	}
 }

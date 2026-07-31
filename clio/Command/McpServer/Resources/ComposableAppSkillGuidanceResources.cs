@@ -2900,6 +2900,10 @@ If access mapping is missing in spec/doc, ask developer before implementing endp
 - `SysModuleEntity`: connect section module to target entity (or app-specific placeholder mapping).
 - `SysModuleInWorkplace`: put section into target workplace.
 
+`get-guidance workplaces` owns the workplace model (the three tables, which workplace to place the
+section in and how to ask, moving a section between workplaces, and the delete order). Read it before
+choosing `WORKPLACE_ID`; this skill covers only the local package-data form of the registration.
+
 4. Data integrity rules:
 - Never store literal string `"null"` in image/icon lookup fields.
 - If old `SysModuleInWorkplace` row has zero GUID links, create a new row with new `Id`.
@@ -3055,6 +3059,7 @@ Requirements:
 Rules:
 - Avoid string literal `"null"` in icon/image fields.
 - If `SysModuleInWorkplace` has zero-GUID links, add new valid row with a new `Id`.
+- `get-guidance workplaces` owns the workplace model; read it before resolving `WORKPLACE_ID`.
 
 ## 3) Build and Deploy
 
