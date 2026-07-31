@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -218,5 +219,25 @@ public sealed class GuidanceGetToolTests {
 			call => call.GetMethodInfo().Name == nameof(IKnowledgeGuidanceSource.FindByName)
 				&& Equals(call.GetArguments()[0], "synthetic-guide"),
 			because: "the compatibility alias must map to one canonical source lookup");
+	}
+
+
+
+
+	[Test]
+	[Category("Unit")]
+	[Description("Attribute lock-in: the converter tool carries [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
+	public void MobilePageConverter_McpTool_CarriesFeatureToggle() {
+		// Arrange & Act
+		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)
+			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
+
+		// Assert
+		toolToggle.Should().NotBeNull(because: "get-mobile-page-conversion-guide must stay gated");
+		toolToggle!.FeatureName.Should().Be("mobile-page-converter",
+			because: "the tool and the published guidance article must name the same feature");
+		// The guidance half of the gate moved out of Clio: the article declares
+		// requiredFeatures: ["mobile-page-converter"] in the knowledge catalog, and
+		// KnowledgeGuidanceSource enforces it (see KnowledgeGuidanceSourceTests).
 	}
 }

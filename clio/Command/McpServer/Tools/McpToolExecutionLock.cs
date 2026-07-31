@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Clio.Command.McpServer;
 
 namespace Clio.Command.McpServer.Tools;
@@ -77,6 +78,19 @@ internal static class McpToolExecutionLock {
 	private static ITenantExecutionLockProvider _lockProvider = TenantExecutionLockProvider.Shared;
 	private static ISessionContainerCache _sessionContainerCache;
 
+	// Per-tenant "compilation in flight" reservation (ENG-91315, review Blocker). Compilation is the one
+	// env-bound MCP operation the Creatio core itself serializes: WorkspaceBuilder rejects a second
+	// concurrent compilation on the node with "AnotherCompilationIsInProgress" (verified in core trunk,
+	// Terrasoft.Core/Packages/WorkspaceBuilder.cs). Editing/saving schemas, data, and other tools are NOT
+	// blocked by a running compile — so serializing them behind it (which the broad per-tenant execution
+	// monitor did) is over-broad. Worse, past the MCP response deadline the compile detaches and keeps
+	// running for minutes; holding the broad monitor across that left every OTHER same-tenant tool silently
+	// blocked past the caller's client ceiling. The compile path now takes only this narrow compile-scoped
+	// reservation instead: a second same-tenant compile fails fast (mirroring the core's own reject), and
+	// non-compile tools are not blocked at all. Process-global by necessity — concurrent MCP calls share the
+	// process, and tool instances do not — matching why the lock provider itself is a static facade.
+	private static readonly ConcurrentDictionary<string, byte> _compileInFlight = new();
+
 	/// <summary>
 	/// Wires the facade to the host's DI-registered lock provider and session cache. Called once at MCP
 	/// host startup (stdio and mcp-http). Passing <see langword="null"/> for either argument leaves the
@@ -127,6 +141,48 @@ internal static class McpToolExecutionLock {
 			_sessionContainerCache?.MarkAvailable(key);
 		}
 	}
+
+	/// <summary>
+	/// Releases ONLY the session-container in-flight marker for <paramref name="cacheKey"/> — the lock-free
+	/// counterpart to <see cref="MarkAvailable"/>. For paths that pinned the session container via
+	/// <see cref="MarkInUse"/> WITHOUT ever taking <see cref="GetLock"/> (e.g. the restart readiness wait,
+	/// which deliberately runs lock-free). It skips <c>_lockProvider.MarkAvailable</c> on purpose: that call
+	/// decrements the lock-provider in-use count which only <see cref="GetLock"/> increments, so calling the
+	/// full <see cref="MarkAvailable"/> from a GetLock-free path would stray-decrement a DIFFERENT in-flight
+	/// holder's count, reopening the eviction/mutual-exclusion window <see cref="TenantExecutionLockProvider"/>
+	/// guarantees against (review Finding 2, ENG-91315).
+	/// </summary>
+	internal static void MarkSessionContainerAvailable(string cacheKey) {
+		string key = Normalize(cacheKey);
+		if (!IsFallback(key)) {
+			_sessionContainerCache?.MarkAvailable(key);
+		}
+	}
+
+	/// <summary>
+	/// Attempts to reserve compilation for <paramref name="cacheKey"/>. Returns <see langword="true"/> when
+	/// no compile is currently in flight for this tenant (the caller may proceed and MUST balance it with
+	/// <see cref="ReleaseCompile"/> when the compile — including its detached, past-deadline continuation —
+	/// finishes), or <see langword="false"/> when one is already running (the caller should fail fast rather
+	/// than start a second compile the Creatio core would reject anyway). Atomic (single-flight) so two
+	/// concurrent same-tenant compiles cannot both win.
+	/// </summary>
+	internal static bool TryReserveCompile(string cacheKey) =>
+		_compileInFlight.TryAdd(Normalize(cacheKey), 0);
+
+	/// <summary>
+	/// Releases the compile reservation taken by <see cref="TryReserveCompile"/>. Must be called from the
+	/// point where the actual compile work completes (its detached continuation past the MCP response
+	/// deadline), not where the tool method returns, so the reservation spans the real compile duration.
+	/// </summary>
+	internal static void ReleaseCompile(string cacheKey) =>
+		_compileInFlight.TryRemove(Normalize(cacheKey), out _);
+
+	// Test-only: clears the process-global compile reservations so a detached compile started by one test
+	// cannot fast-fail a compile in the next (the reservation release runs on the detached continuation,
+	// which may outlive the test method). No production caller.
+	internal static void ResetCompileReservationsForTests() =>
+		_compileInFlight.Clear();
 
 	// Null/blank normalizes to the single shared fallback key so GetLock, MarkInUse, and MarkAvailable
 	// all key the same lock-provider entry for an environment-less / test-double call.

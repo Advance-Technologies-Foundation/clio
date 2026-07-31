@@ -43,6 +43,67 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server, compiles an invalid environment (which fails fast), then polls compile-status for the same environment and verifies the failed operation is queryable.")]
+	[AllureName("Compile Creatio failure is queryable via compile-status")]
+	[Description("A compile-creatio failure is tracked and queryable through compile-status via the real MCP server.")]
+	public async Task CompileCreatio_Should_RecordFailedOperation_QueryableViaCompileStatus()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string invalidEnvironmentName = $"missing-compile-status-env-{Guid.NewGuid():N}";
+
+		// Act
+		await ActAsync(arrangeContext, invalidEnvironmentName);
+		CompileStatusResponse status = await ActStatusAsync(arrangeContext, invalidEnvironmentName);
+
+		// Assert
+		status.Success.Should().BeTrue(
+			because: "looking up a tracked operation's status is itself a successful lookup, regardless of the compile's own outcome");
+		status.Status.Should().Be("failed",
+			because: "the invalid-environment compile-creatio call must have finalized the tracked operation as failed, not left it running");
+		status.EnvironmentName.Should().Be(invalidEnvironmentName,
+			because: "the status response must identify which environment it describes");
+	}
+
+	[Test]
+	[AllureTag(CompileStatusTool.CompileStatusToolName)]
+	[AllureDescription("Starts the real clio MCP server and queries compile-status for an environment that never ran compile-creatio, verifying a not-found (not an error) result.")]
+	[AllureName("Compile Status reports not-found for an untracked environment")]
+	[Description("compile-status reports not-found, not an error, for an environment with no tracked compile-creatio operation.")]
+	public async Task CompileStatus_Should_ReturnNotFound_ForNeverCompiledEnvironment()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string neverCompiledEnvironmentName = $"never-compiled-env-{Guid.NewGuid():N}";
+
+		// Act
+		CompileStatusResponse status = await ActStatusAsync(arrangeContext, neverCompiledEnvironmentName);
+
+		// Assert
+		status.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
+		status.Status.Should().Be("not-found");
+	}
+
+	private static async Task<CompileStatusResponse> ActStatusAsync(
+		ArrangeContext arrangeContext,
+		string environmentName)
+	{
+		return await AllureApi.Step("Act by invoking compile-status through MCP", async () =>
+		{
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				CompileStatusTool.CompileStatusToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			return EntitySchemaStructuredResultParser.Extract<CompileStatusResponse>(callResult);
+		});
+	}
+
 	private static async Task<CompileCreatioActResult> ActAsync(
 		ArrangeContext arrangeContext,
 		string environmentName)

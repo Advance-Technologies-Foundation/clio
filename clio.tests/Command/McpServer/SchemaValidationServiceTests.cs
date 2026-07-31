@@ -2874,6 +2874,358 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A literal tooltip on crt.ImageInput is allowed — the control renders the raw text and never reads a localizable resource, so the mandated resource form would show no tooltip (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "crt.ImageInput.tooltip is literal-only — a localizable binding renders empty at runtime");
+		result.Errors.Should().BeEmpty(because: "the ImageInput tooltip literal must not be flagged");
+	}
+
+	[Test]
+	[Description("The inverse of the exemption: a $Resources.Strings.* binding on crt.ImageInput.tooltip is rejected — the control never reads localizableStrings, so the resource form renders empty at runtime and the literal form must be forced (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceBinding_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "crt.ImageInput.tooltip must be a plain literal — a $Resources.Strings binding renders empty at runtime");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the resource-bound ImageInput tooltip must be reported");
+	}
+
+	[Test]
+	[Description("The inverse rule also rejects the #ResourceString(Key)# macro form on crt.ImageInput.tooltip — it is equally unread by the control at runtime (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceMacro_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"#ResourceString(PhotoTip)#"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the #ResourceString(...)# macro is also unread by crt.ImageInput.tooltip and renders empty");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the macro-bound ImageInput tooltip must be reported");
+	}
+
+	[Test]
+	[Description("The crt.ImageInput tooltip exemption is applied by component type regardless of property order — a body that lists tooltip before type must still validate (EnumerateObject preserves document order).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipBeforeType_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"tooltip":"Upload a photo of the task owner","type":"crt.ImageInput","value":"$UsrPhoto"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the component type is resolved before the property loop, so tooltip-before-type is still exempt");
+		result.Errors.Should().BeEmpty(because: "property ordering must not affect the exemption");
+	}
+
+	[Test]
+	[Description("The tooltip exemption is scoped to the specific component — a literal tooltip on crt.Input (which DOES consume a localizable resource) is still rejected.")]
+	public void ValidateLocalizableTextLiterals_InputTooltipLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","tooltip":"Work email"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only crt.ImageInput.tooltip is exempt; a tooltip literal on a resource-backed component stays rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("EmailField") && e.Contains("tooltip"),
+			because: "the resource-backed tooltip literal must be reported");
+	}
+
+	[Test]
+	[Description("The exemption is scoped to the specific property — a literal label on crt.ImageInput is still rejected because label IS backed by a localizable resource.")]
+	public void ValidateLocalizableTextLiterals_ImageInputLabelLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","label":"Owner photo"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only tooltip is exempt for crt.ImageInput; label stays subject to the localizable-binding rule");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("label"),
+			because: "the ImageInput label literal must be reported");
+	}
+
+	[Test]
+	[Description("Regression lock for the per-node currentType scoping invariant: the crt.ImageInput.tooltip exemption is derived per object and must not bleed to sibling nodes. A body mixing an exempt ImageInput literal tooltip with a sibling non-exempt crt.Input literal placeholder must flag only the non-exempt node (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_MixedExemptAndNonExemptSiblings_FlagsOnlyNonExemptNode() {
+		// Arrange — one body, two sibling nodes: the exempt ImageInput tooltip and a second exempt
+		// ImageInput tooltip (cross-node bleed guard) alongside a non-exempt crt.Input placeholder.
+		// The exemption is resolved from each node's own type, so it must not leak across siblings.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"Upload a photo of the task owner"}},
+				{"operation":"insert","name":"UsrCover","values":{"type":"crt.ImageInput","value":"$UsrCover","tooltip":"Upload a cover image"}},
+				{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","placeholder":"name@firm.com"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the non-exempt crt.Input placeholder literal must still be rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("EmailField"),
+			because: "exactly the non-exempt sibling must be flagged");
+		result.Errors.Should().NotContain(e => e.Contains("UsrPhoto"),
+			because: "the exempt ImageInput tooltip must not be flagged");
+		result.Errors.Should().NotContain(e => e.Contains("UsrCover"),
+			because: "the exemption must not bleed across sibling nodes — the second ImageInput stays exempt");
+	}
+
+	[Test]
+	[Description("update-page's canonical single-property patch — a merge that establishes the type on a sibling insert entry and patches only the tooltip on a merge entry in the SAME body — accepts the literal tooltip: the entry-root type is resolved from the sibling insert for the same name (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipMergeAfterSiblingInsert_ReturnsValid() {
+		// Arrange — the natural update-page editing shape: one insert entry declares the crt.ImageInput type,
+		// a later merge entry patches only the tooltip (no repeated "type"). The merge borrows the type the
+		// sibling insert established for the same name within this body.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto"}},
+				{"operation":"merge","name":"UsrPhoto","values":{"tooltip":"Upload a photo of the task owner"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a tooltip-only merge resolves the crt.ImageInput type from the same-body insert, so the literal is exempt");
+		result.Errors.Should().BeEmpty(because: "the merged literal tooltip on the resolved crt.ImageInput must not be flagged");
+	}
+
+	[Test]
+	[Description("The inverse rule is also reachable through a merge: a $Resources.Strings.* binding merged onto the tooltip of a crt.ImageInput inserted in the SAME body is rejected, because the resolved type makes the exempt-property inverse check fire (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceMergeAfterSiblingInsert_ReturnsInvalid() {
+		// Arrange — sibling insert establishes the type; the merge binds the exempt tooltip to a resource form
+		// that renders empty at runtime, so the resolved type must force the inverse ("literal required") error.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto"}},
+				{"operation":"merge","name":"UsrPhoto","values":{"tooltip":"$Resources.Strings.PhotoTip"}}
+			]
+			""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a resource binding on a merge-patched crt.ImageInput.tooltip still renders empty at runtime");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the type resolved from the sibling insert makes the inverse rule reject the merged resource binding");
+	}
+
+	[Test]
+	[Description("A standalone tooltip-only merge with NO type — and no sibling insert to establish it — cannot resolve the component type (the prior insert lived in a separate update-page call whose schema is not visible here), so the exemption is unreachable and the literal is rejected. Locks the documented requirement: a standalone crt.ImageInput.tooltip merge must repeat \"type\" (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipMergeOnlyNoType_StandaloneRejected() {
+		// Arrange — m-dymytrova's exact reproduction: a merge that patches only the tooltip, no "type" sibling
+		// and no sibling insert. This is the cross-call case (node inserted by a prior separate call); the
+		// validator sees only this body, so it cannot know the node is a crt.ImageInput.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"merge","name":"UsrPhoto","values":{"tooltip":"Upload a photo of the task owner"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "with no resolvable type the exemption cannot apply; the documented requirement is to repeat \"type\" on a standalone tooltip merge");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "an unresolved-type tooltip literal is treated as a plain literal and reported");
+	}
+
+	[Test]
+	[Description("Proves the documented workaround for the cross-call case: a standalone tooltip merge that REPEATS \"type\":\"crt.ImageInput\" resolves the exemption via its own type sibling and accepts the literal (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipMergeWithRepeatedType_ReturnsValid() {
+		// Arrange — the guidance tells agents to repeat "type" on a standalone tooltip merge (the node was
+		// inserted by a prior separate call, so no sibling insert exists here). This must validate.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"merge","name":"UsrPhoto","values":{"type":"crt.ImageInput","tooltip":"Upload a photo of the task owner"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the repeated type sibling resolves the exemption exactly like an insert body does");
+		result.Errors.Should().BeEmpty(because: "the documented type-repeat workaround must accept the literal tooltip");
+	}
+
+	[Test]
+	[Description("Regression lock for the entry-root scoping of the merge type resolution: a nested nameless child object inside a crt.ImageInput insert entry must NOT inherit the entry's resolved type. Its own literal tooltip is still flagged — the exemption is bounded to the entry-root node (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputNestedChildTooltipLiteral_FlagsChild() {
+		// Arrange — the crt.ImageInput entry root is exempt for tooltip, but a nested nameless child object
+		// carries its own literal tooltip. The child has no "type" of its own; if the entry-root type leaked
+		// into the recursion it would wrongly be treated as exempt. It must stay flagged.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","content":{"tooltip":"Nested literal tooltip"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the exemption is scoped to the crt.ImageInput entry-root node and must not bleed into a nested child");
+		result.Errors.Should().ContainSingle(e => e.Contains("tooltip"),
+			because: "the nested child's literal tooltip is not exempt and must be reported");
+	}
+
+	[Test]
+	[Description("A non-resource dynamic binding (e.g. $SomeAttr) on crt.ImageInput.tooltip is accepted — only $Resources.Strings.* / #ResourceString(...)# forms render empty at runtime, so a plain view-model binding is left untouched (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipDynamicBinding_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$SomeAttr"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a plain view-model binding is neither an inline literal nor a localizable-resource reference");
+		result.Errors.Should().BeEmpty(because: "the exempt tooltip only rejects the empty-rendering resource forms");
+	}
+
+	[Test]
+	[Description("A whitespace-only tooltip on crt.ImageInput is accepted — an empty value is neither an inline literal nor a resource reference, so neither branch of the exempt-property rule fires (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipWhitespace_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"   "}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "a whitespace-only value is not a rejectable resource binding");
+		result.Errors.Should().BeEmpty(because: "the exempt-property rule must not flag an empty tooltip");
+	}
+
+	[Test]
+	[Description("The LiteralAllowedTextProperties map lookup is case-insensitive — a lowercase crt.imageinput type still resolves the tooltip exemption, so a resource binding on it is rejected exactly as on the canonically-cased type (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipResourceBinding_CaseInsensitiveType_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.imageinput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the exemption resolves regardless of type casing, so the resource form is still rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("tooltip"),
+			because: "the resource-bound tooltip on a lowercase-typed ImageInput must be reported");
+	}
+
+	[Test]
+	[Description("The >60-char echoed-value truncation branch of BuildLiteralRequiredError is exercised — a long resource key is truncated with an ellipsis so the diagnostic stays bounded (ENG-92940).")]
+	public void ValidateLocalizableTextLiterals_ImageInputTooltipLongResourceBinding_TruncatesDiagnostic() {
+		// Arrange — the resource binding is well over 60 characters, forcing the truncation branch.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.AnExtremelyLongLocalizableResourceKeyThatExceedsSixtyCharactersForTruncation"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the resource form on the exempt tooltip is rejected");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrPhoto") && e.Contains("…"),
+			because: "the over-length resource value must be truncated with an ellipsis in the diagnostic");
+	}
+
+	[Test]
+	[Description("The mobile localizable-text rule shares the same scan engine as the web rule, so the crt.ImageInput.tooltip exemption applies on mobile too. Locks the shared-engine behavior — the mobile ImageInput runtime was not independently verified; the ticket scope is web (ENG-92940).")]
+	public void ValidateMobileLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"Upload a photo"}}]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the mobile rule runs through the same ScanNodeForTextLiterals engine, so the component-scoped exemption applies there by construction");
+		result.Errors.Should().BeEmpty(because: "the shared scan must not flag the ImageInput tooltip literal on mobile");
+	}
+
+	[Test]
+	[Description("The full ENG-92940 reproduction body — a properly bound crt.ImageInput with a literal tooltip inside a FlexContainer — passes every content validator that validate-page/update-page/sync-pages run, so content-ok is true.")]
+	public void ContentValidation_ImageInputWithLiteralTooltip_ReproductionBody_PassesAllContentValidators() {
+		// Arrange — the exact minimal reproduction from the ticket: crt.ImageInput "UsrPhoto" bound to
+		// PDS.UsrPhoto with a literal tooltip, nested in a crt.FlexContainer, with the binding attribute
+		// declared in viewModelConfigDiff in the required path:[]/attributes nesting.
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"OwnerFlex","values":{"type":"crt.FlexContainer","direction":"column"}},
+				{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
+			]
+			""",
+			"""[{"operation":"merge","path":[],"values":{"attributes":{"UsrPhoto":{"modelConfig":{"path":"PDS.UsrPhoto"}}}}}]""");
+
+		// Act — mirror the content validators PageValidateTool runs that could fire on this body.
+		SchemaValidationResult localizable = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+		SchemaValidationResult insertedField = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, null);
+		SchemaValidationResult standardField = SchemaValidationService.ValidateStandardFieldBindings(body, null);
+
+		// Assert
+		localizable.IsValid.Should().BeTrue(because: "the ImageInput tooltip literal is exempt (ENG-92940)");
+		insertedField.IsValid.Should().BeTrue(
+			because: "the ImageInput binding attribute UsrPhoto is declared with the required nesting and no label is set");
+		standardField.IsValid.Should().BeTrue(
+			because: "no other content validator fires, so validate-page reports content-ok:true for the reproduction body");
+	}
+
+	[Test]
 	[Description("The mobile variant reads viewConfigDiff from the plain-JSON root and rejects an inline placeholder literal the same way the web variant does.")]
 	public void ValidateMobileLocalizableTextLiterals_PlaceholderInlineLiteral_ReturnsInvalid() {
 		// Arrange
@@ -2887,6 +3239,190 @@ public sealed class SchemaValidationServiceTests
 			because: "the mobile localizable-text rule mirrors the web rule");
 		result.Errors.Should().ContainSingle(error => error.Contains("EmailField") && error.Contains("placeholder"),
 			because: "the mobile diagnostic must name the node and the placeholder property");
+	}
+
+	private const string MetricInsertWithMacroTitle = """
+		[
+			{
+				"operation":"insert",
+				"name":"IndicatorWidget_CriticalRequests",
+				"parentName":"Main",
+				"values":{
+					"type":"crt.IndicatorWidget",
+					"config":{
+						"title":"#ResourceString(IndicatorWidget_CriticalRequests_title)#",
+						"text":{"template":"{0}","metricMacros":"{0}"}
+					}
+				}
+			}
+		]
+	""";
+
+	[Test]
+	[Description("Inserted metric widget whose #ResourceString title key is neither registered, DS-bound, nor Usr-derivable and is not passed in resources is rejected (ENG-93098) — the binding would render raw $Resources.Strings.<key>.")]
+	public void ValidateInsertedWidgetCaptionResources_MetricTitleMacroUnregistered_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the widget title key IndicatorWidget_CriticalRequests_title is not registered and cannot be auto-provided, so the binding renders raw");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("IndicatorWidget_CriticalRequests_title") && error.Contains("render raw"),
+			because: "the diagnostic must name the unresolved key and explain the raw-render failure");
+	}
+
+	[Test]
+	[Description("Inserted metric widget title macro whose key IS passed in the resources parameter is accepted — clio registers it, so the binding resolves.")]
+	public void ValidateInsertedWidgetCaptionResources_MetricTitleMacroInResources_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var resources = new Dictionary<string, string> { ["IndicatorWidget_CriticalRequests_title"] = "Critical Requests" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, resources);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the title key is explicitly registered through the resources parameter");
+		result.Errors.Should().BeEmpty(because: "no caption binding is unresolvable");
+	}
+
+	[Test]
+	[Description("Inserted widget title in the $Resources.Strings binding form (not the macro form) with an unregistered key is rejected — both reference forms are checked.")]
+	public void ValidateInsertedWidgetCaptionResources_DollarBindingTitleUnregistered_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"IndicatorWidget_CriticalRequests",
+					"values":{
+						"type":"crt.IndicatorWidget",
+						"config":{"title":"$Resources.Strings.IndicatorWidget_CriticalRequests_title"}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the $Resources.Strings binding form is subject to the same resolvability rule as the macro form");
+		result.Errors.Should().ContainSingle(error => error.Contains("IndicatorWidget_CriticalRequests_title"),
+			because: "the diagnostic must name the unresolved key regardless of reference form");
+	}
+
+	[Test]
+	[Description("Inserted widget title bound to a Usr-prefixed key is accepted without resources — clio auto-derives a caption for Usr* keys.")]
+	public void ValidateInsertedWidgetCaptionResources_UsrTitleKey_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"IndicatorWidget_Usr",
+					"values":{
+						"type":"crt.IndicatorWidget",
+						"config":{"title":"#ResourceString(UsrCriticalRequests_title)#"}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a Usr-prefixed key is auto-derived by clio and therefore resolves at runtime");
+		result.Errors.Should().BeEmpty(because: "the Usr* title key needs no explicit resource");
+	}
+
+	[Test]
+	[Description("A merge (not insert) operation carrying an unresolvable title binding is tolerated — a merge may target a widget whose caption resource the parent schema already provides.")]
+	public void ValidateInsertedWidgetCaptionResources_MergeOperation_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"name":"IndicatorWidget_CriticalRequests",
+					"values":{
+						"config":{"title":"#ResourceString(IndicatorWidget_CriticalRequests_title)#"}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the validator only enforces self-containment for inserts, not merges");
+		result.Errors.Should().BeEmpty(because: "a merge may reference a key already registered on the schema");
+	}
+
+	[Test]
+	[Description("Authoritative save-gate check ValidateInsertedWidgetCaptionsRegistered rejects a metric title whose key is absent from the final registered localizableStrings set (first creation without resources).")]
+	public void ValidateInsertedWidgetCaptionsRegistered_TitleKeyNotRegistered_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var registered = new HashSet<string>(StringComparer.Ordinal);
+		var dsBound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(body, registered, dsBound);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the title key is not in the final localizableStrings, so the saved binding would render raw");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("IndicatorWidget_CriticalRequests_title") && e.Contains("render raw"),
+			because: "the diagnostic must name the unresolved key and the raw-render failure");
+	}
+
+	[Test]
+	[Description("Authoritative save-gate check accepts a re-inserted metric title whose key is ALREADY present in the schema's registered localizableStrings even when resources is omitted — the re-save flow the body-only heuristic would false-positive (ENG-93098 review fix).")]
+	public void ValidateInsertedWidgetCaptionsRegistered_TitleKeyAlreadyRegistered_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var registered = new HashSet<string>(StringComparer.Ordinal) { "IndicatorWidget_CriticalRequests_title" };
+		var dsBound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(body, registered, dsBound);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "CleanAndMerge preserves already-registered localizableStrings, so a re-inserted title whose key is registered resolves and must not be rejected");
+		result.Errors.Should().BeEmpty(because: "the pre-existing registration makes the binding resolve");
+	}
+
+	[Test]
+	[Description("Authoritative save-gate check treats a DS-bound caption key as resolvable (the platform auto-provides the caption), so it is not rejected.")]
+	public void ValidateInsertedWidgetCaptionsRegistered_DsBoundKey_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var registered = new HashSet<string>(StringComparer.Ordinal);
+		var dsBound = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "IndicatorWidget_CriticalRequests_title" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(body, registered, dsBound);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a DS-bound attribute caption is auto-provided by the platform and therefore resolves");
+		result.Errors.Should().BeEmpty(because: "DS-bound captions need no localizableStrings entry");
 	}
 
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
@@ -7323,6 +7859,237 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.Should().BeEmpty(because: "attributes without a modelConfig.path are not DS-bound and must not be reported");
+	}
+
+	#endregion
+
+	#region ValidateMobileDataSourceAttributeTypes
+
+	[Test]
+	[Description("A data-source attribute with a related/lookup path (contains '.') but no 'type' is flagged.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenRelatedPathHasNoType_ReturnsError() {
+		string body = """
+		              {
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle" } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("QualifiedContactJobTitle") && e.Contains("no \"type\""));
+	}
+
+	[Test]
+	[Description("A related/lookup-path attribute that declares a 'type' passes.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenRelatedPathHasType_ReturnsValid() {
+		string body = """
+		              {
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle", "type": "ForwardReference" } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("An own column (dot-free path) needs no 'type' and is not flagged.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenOwnColumnHasNoType_ReturnsValid() {
+		string body = """
+		              {
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "LeadName": { "path": "LeadName" } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeTrue(because: "a dot-free path is an own column and needs no related-column type");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A viewModel attribute (modelConfig.path, no direct path) is not mistaken for a data-source attribute.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenViewModelAttribute_NotFlagged() {
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  { "operation": "merge", "path": ["attributes"], "values": {
+		                    "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.QualifiedContactJobTitle" } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeTrue(because: "viewModel attributes bind via modelConfig.path, not a direct data-source path");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A list / viewElement-scoped data source is scanned too, not just the page data source.")]
+	public void ValidateMobileDataSourceAttributeTypes_WhenListScopedDataSource_IsAlsoFlagged() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "ProductsList", "values": {
+		                    "type": "crt.List",
+		                    "modelConfig": { "dataSources": { "ProductsDS": { "config": { "attributes": {
+		                      "OrderOwner": { "path": "Order.Owner" } } } } } } } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileDataSourceAttributeTypes(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("OrderOwner"));
+	}
+
+	[Test]
+	[Description("The check is wired into ValidateMobilePage: a typeless related-path attribute lands in the blocking errors list.")]
+	public void ValidateMobilePage_WhenRelatedPathHasNoType_AddsBlockingError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": [
+		                  { "operation": "merge", "path": [], "values": {
+		                    "dataSources": { "PDS": { "config": { "attributes": {
+		                      "OrderOwner": { "path": "Order.Owner" } } } } } } }
+		                ]
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		errors.Should().Contain(e => e.Contains("OrderOwner") && e.Contains("no \"type\""));
+	}
+
+	#endregion
+
+	#region ValidateMobileInsertedFieldLabels
+
+	[Test]
+	[Description("A field component inserted without a 'label' is flagged (mobile renders the caption only via label).")]
+	public void ValidateMobileInsertedFieldLabels_WhenInsertedFieldHasNoLabel_ReturnsError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("LeadName") && e.Contains("label"));
+	}
+
+	[Test]
+	[Description("A field inserted with a non-empty 'label' passes.")]
+	public void ValidateMobileInsertedFieldLabels_WhenInsertedFieldHasLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName", "label": "$Resources.Strings.LeadName" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A 'merge' (partial update) of a field without a label is allowed — only inserts must carry a label.")]
+	public void ValidateMobileInsertedFieldLabels_WhenMergeFieldHasNoLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "merge", "name": "LeadName",
+		                    "values": { "type": "crt.Input", "visible": false } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "merges are partial updates and may legitimately omit label");
+	}
+
+	[Test]
+	[Description("A non-field component inserted without a label is not flagged.")]
+	public void ValidateMobileInsertedFieldLabels_WhenNonFieldInsertHasNoLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "Tabs", "parentName": "MainContainer",
+		                    "values": { "type": "crt.TabContainer" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "only standard field components require a label");
+	}
+
+	[Test]
+	[Description("A field that explicitly hides its label (labelPosition: hidden) is allowed without a label.")]
+	public void ValidateMobileInsertedFieldLabels_WhenLabelHidden_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName", "labelPosition": "hidden" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "labelPosition 'hidden' intentionally suppresses the label");
+	}
+
+	[Test]
+	[Description("Wiring: a labelless inserted field lands in ValidateMobilePage's blocking errors list.")]
+	public void ValidateMobilePage_WhenInsertedFieldHasNoLabel_AddsBlockingError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName" } }
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		errors.Should().Contain(e => e.Contains("LeadName") && e.Contains("label"));
 	}
 
 	#endregion

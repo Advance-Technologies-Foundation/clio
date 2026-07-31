@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -28,6 +29,7 @@ public static class SchemaValidationService
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
+	private const string PathPropertyName = "path";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -159,13 +161,9 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
-	/// localizable-string bindings (<c>$Resources.Strings.&lt;Key&gt;</c> or the
-	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro), never as inline string literals. Enforced by
+	/// localizable-string bindings, never as inline string literals. Enforced by
 	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
-	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile). The set is deliberately limited to
-	/// properties that are unambiguously rendered to the user; overloaded keys such as <c>description</c>
-	/// (which also names non-display metadata on entity columns, components, and APIs) are intentionally
-	/// excluded from the hard reject and covered by the <c>page-schema-resources</c> guidance only.
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile).
 	/// </summary>
 	internal static readonly HashSet<string> LocalizableTextProperties = new(StringComparer.OrdinalIgnoreCase) {
 		LabelPropertyName,
@@ -176,12 +174,66 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Per-component text properties that are authored as INLINE LITERALS, not localizable-string
+	/// bindings, because the component does not consume or auto-register a localizable resource for
+	/// them — a <c>$Resources.Strings.&lt;Key&gt;</c> binding resolves to empty and renders nothing at
+	/// runtime. Keyed by component type → the property names on that type that are exempt from the
+	/// <see cref="ValidateLocalizableTextLiterals"/> literal rule. Everything not listed here stays
+	/// subject to the rule (<see cref="LocalizableTextLiteralClause"/>), so <c>label</c>/<c>caption</c>/
+	/// <c>title</c>/<c>placeholder</c> and a <c>tooltip</c> on any other component are still rejected.
+	/// <para>
+	/// <c>crt.ImageInput.tooltip</c> — the ImageInput control renders its tooltip straight from the raw
+	/// value and never reads the schema's <c>localizableStrings</c>, so the mandated resource form shows
+	/// no tooltip at all (ENG-92940). This mirrors <c>get-component-info</c>'s own contract for the
+	/// component (image-input.component.md, "Common pitfalls" #8: tooltip must be a literal string).
+	/// </para>
+	/// <para>
+	/// Follow-up (tracked in ENG-92940): the component registry carries no machine-readable literal-vs-resource flag today
+	/// (only the prose <c>.component.md</c> doc and the input <c>description</c> text distinguish them),
+	/// and the validator is a synchronous static path with no registry access. When the producer emits a
+	/// structured signal, derive this map from the same metadata <c>get-component-info</c> uses instead of
+	/// hard-coding it — and revisit sibling cases (e.g. <c>crt.ImageInput.placeholder</c> is an icon /
+	/// abbreviation seed, not localizable text either).
+	/// </para>
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, HashSet<string>> LiteralAllowedTextProperties =
+		new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ImageInput"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "tooltip" }
+		};
+
+	/// <summary>
+	/// User-visible caption properties on inserted view nodes whose localizable-string bindings are
+	/// checked for resolvability by the widget-caption validators. Deliberately EXCLUDES <c>label</c>:
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/> already resolvability-checks <c>label</c> for
+	/// STANDARD FIELD components (<see cref="StandardFieldComponentTypes"/>), so re-checking it here would
+	/// double-report on those. The residual seam — a <c>label</c> bound to an unresolvable key on a
+	/// NON-standard inserted node (a widget/container/custom component) — is not resolvability-checked by
+	/// either validator (only its inline-literal form is, by <see cref="ValidateLocalizableTextLiterals"/>);
+	/// that is accepted because a non-field node carrying a bound <c>label</c> is rare, whereas this set owns
+	/// the common widget/container caption surface (most importantly a metric or chart widget's <c>title</c>).
+	/// </summary>
+	private static readonly HashSet<string> InsertedWidgetCaptionProperties = new(StringComparer.OrdinalIgnoreCase) {
+		"title",
+		"caption",
+		"tooltip",
+		"placeholder"
+	};
+
+	/// <summary>
+	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
+	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
+	/// </summary>
+	internal const string InsertedWidgetCaptionClause =
+		"a user-visible caption on a freshly inserted widget/container (title, caption, tooltip, placeholder) " +
+		"bound via $Resources.Strings.<Key> or #ResourceString(<Key>)# must resolve: register <Key> with its " +
+		"default-language value through the 'resources' parameter (e.g. resources: '{\"<Key>\": \"<text>\"}'), " +
+		"unless it is a DS-bound attribute the platform auto-provides or a Usr* key clio auto-derives. A metric " +
+		"or chart widget title (e.g. IndicatorWidget_<slug>_title) is NONE of these, so it MUST be registered — " +
+		"otherwise the binding renders raw (e.g. \"$Resources.Strings.IndicatorWidget_<slug>_title\") instead of the title";
+
+	/// <summary>
 	/// Canonical clause describing the localizable-text rule enforced by
-	/// <see cref="ValidateLocalizableTextLiterals"/>. Authored ONCE here and reused by the per-occurrence
-	/// diagnostic (<see cref="BuildTextLiteralError"/>) and surfaced verbatim to MCP agents through the
-	/// update-page / sync-pages / validate-page tool descriptions and the <c>page-schema-resources</c>
-	/// guidance, so the rule the validator rejects on is stated in identical words everywhere. Kept
-	/// <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time constants only).
+	/// <see cref="ValidateLocalizableTextLiterals"/>.
 	/// </summary>
 	internal const string LocalizableTextLiteralClause =
 		"user-visible text on a view node (label, caption, title, tooltip, placeholder) must be a " +
@@ -189,6 +241,18 @@ public static class SchemaValidationService
 		"register the key with its default-language value through the 'resources' parameter " +
 		"(e.g. resources: '{\"<Key>\": \"<text>\"}'), or use the #ResourceString(<Key>)# macro form for " +
 		"data-grid column captions and validator messages";
+
+	/// <summary>
+	/// Canonical clause describing the inverse of <see cref="LocalizableTextLiteralClause"/>: the few
+	/// (component, property) pairs listed in <see cref="LiteralAllowedTextProperties"/> render the text
+	/// straight from its raw value and never read <c>localizableStrings</c>, so they MUST carry a plain
+	/// literal — a resource binding resolves to empty at runtime (ENG-92940).
+	/// </summary>
+	internal const string LiteralRequiredTextClause =
+		"a few components render a text property straight from its raw value and never read the schema's " +
+		"localizableStrings (e.g. crt.ImageInput.tooltip), so for those the property MUST NOT be a " +
+		"$Resources.Strings.<Key> or #ResourceString(<Key>)# binding (it resolves to empty and renders nothing " +
+		"at runtime); a plain inline literal or a dynamic view-model binding is fine";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -217,6 +281,12 @@ public static class SchemaValidationService
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
+
+		SchemaValidationResult dsAttrTypeResult = ValidateMobileDataSourceAttributeTypes(body);
+		if (!dsAttrTypeResult.IsValid) errors.AddRange(dsAttrTypeResult.Errors);
+
+		SchemaValidationResult insertedLabelResult = ValidateMobileInsertedFieldLabels(body);
+		if (!insertedLabelResult.IsValid) errors.AddRange(insertedLabelResult.Errors);
 
 		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
 		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
@@ -543,6 +613,153 @@ public static class SchemaValidationService
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Validates data-source attributes in a mobile body: a related/lookup-path attribute (its <c>path</c>
+	/// contains a dot, e.g. <c>QualifiedContact.JobTitle</c>) MUST declare a <c>type</c> (e.g.
+	/// <c>ForwardReference</c>). Without it the design-time data schema never registers the attribute and its
+	/// binding resolves to nothing in Mobile Designer (<c>Item with the path … not found</c>). Scans the whole
+	/// body so it also covers list / viewElement-scoped data sources, not just the page data source.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when a lookup-path attribute has no type.</returns>
+	public static SchemaValidationResult ValidateMobileDataSourceAttributeTypes(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			ScanDataSourceAttributeTypes(document.RootElement, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Recursively finds every <c>attributes</c> map and flags any attribute whose direct <c>path</c> is a
+	/// related/lookup path (contains a dot) but is missing <c>type</c>. Attribute maps in viewModelConfig use
+	/// <c>modelConfig.path</c> (no direct <c>path</c>) and own columns have a dot-free path — neither is flagged.
+	/// </summary>
+	private static void ScanDataSourceAttributeTypes(JsonElement element, SchemaValidationResult result) {
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					if (string.Equals(property.Name, AttributesPropertyName, StringComparison.OrdinalIgnoreCase) &&
+						property.Value.ValueKind == JsonValueKind.Object) {
+						CheckDataSourceAttributes(property.Value, result);
+					}
+					ScanDataSourceAttributeTypes(property.Value, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					ScanDataSourceAttributeTypes(item, result);
+				}
+				break;
+		}
+	}
+
+	private static void CheckDataSourceAttributes(JsonElement attributes, SchemaValidationResult result) {
+		foreach (JsonProperty attr in attributes.EnumerateObject()) {
+			if (attr.Value.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!attr.Value.TryGetProperty(PathPropertyName, out JsonElement pathEl) ||
+				pathEl.ValueKind != JsonValueKind.String) {
+				continue; // not a data-source attribute (a viewModel attribute uses modelConfig.path)
+			}
+			string? path = pathEl.GetString();
+			if (string.IsNullOrEmpty(path) || !path.Contains('.')) {
+				continue; // own column (dot-free path) — no related-column type required
+			}
+			if (attr.Value.TryGetProperty(TypePropertyName, out _)) {
+				continue; // type present — OK
+			}
+			result.Errors.Add(
+				$"\"{attr.Name}\" has a related path \"{path}\" but no \"type\" (expected \"ForwardReference\" " +
+				"or other valid related-column type). The binding may resolve to nothing in Mobile Designer " +
+				"(\"Item with the path … not found\").");
+		}
+	}
+
+	/// <summary>
+	/// Validates that every standard FIELD component INSERTED into a mobile page (a top-level
+	/// <c>viewConfigDiff</c> entry with <c>operation: "insert"</c> whose type is in
+	/// <see cref="StandardFieldComponentTypes"/>) declares a non-empty <c>label</c>. A mobile field renders
+	/// its caption ONLY via <c>label</c>; an inserted field without one renders blank. Only top-level inserts
+	/// are checked, so fields nested inside a list's <c>itemLayout.body</c> (which legitimately omit labels)
+	/// are not flagged, and <c>merge</c> entries (partial updates) are skipped. A field that explicitly hides
+	/// its label (<c>labelPosition: "hidden"</c>) is allowed.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when an inserted field has no label.</returns>
+	[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "A single-pass walk over the diff that only flags labelless top-level field inserts; splitting the guard conditions would obscure the exact rule.")]
+	public static SchemaValidationResult ValidateMobileInsertedFieldLabels(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object ||
+				!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff) ||
+				viewConfigDiff.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				if (!TryGetStringProperty(entry, "operation", out string operation) ||
+					!string.Equals(operation, "insert", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				string? type = GetMobileEntryType(entry);
+				if (type is null || !StandardFieldComponentTypes.Contains(type)) {
+					continue;
+				}
+				JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v) && v.ValueKind == JsonValueKind.Object
+					? v
+					: entry;
+				if (TryGetStringProperty(values, "label", out _)) {
+					continue; // label present
+				}
+				if (TryGetStringProperty(values, "labelPosition", out string labelPosition) &&
+					string.Equals(labelPosition, "hidden", StringComparison.OrdinalIgnoreCase)) {
+					continue; // label intentionally hidden
+				}
+				string fieldName = GetMobileEntryName(entry, values);
+				result.Errors.Add(
+					$"Field '{fieldName}' (type {type}) is inserted without a 'label'. Mobile fields render their " +
+					$"caption only via 'label' — set values.label (e.g. \"$Resources.Strings.{fieldName}\").");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static string GetMobileEntryName(JsonElement entry, JsonElement values) {
+		if (TryGetStringProperty(entry, "name", out string name)) {
+			return name;
+		}
+		return TryGetStringProperty(values, "name", out string valuesName) ? valuesName : "(unnamed)";
 	}
 
 	/// <summary>
@@ -1472,6 +1689,146 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
+	/// Validates that captions on inserted widgets reference resolvable localizable resource keys.
+	/// </summary>
+	/// <remarks>
+	/// Pre-flight check based only on the body and <paramref name="explicitResources"/>.
+	/// Use <see cref="ValidateInsertedWidgetCaptionsRegistered"/> for the authoritative save-time validation.
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when an inserted widget caption uses an unresolvable localizable key.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionResources(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return new SchemaValidationResult { IsValid = true };
+		}
+		var dsBoundKeys = CollectViewModelPaths(jsBody).Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		return ScanInsertedWidgetCaptions(
+			jsBody, key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys));
+	}
+
+	/// <summary>
+	/// Validates that captions on inserted widgets use resource keys present in the final saved registration set.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body being saved (the merged body in append mode).</param>
+	/// <param name="registeredNames">Names present in the final <c>localizableStrings</c> to be saved.</param>
+	/// <param name="dsBoundKeys">View-model attribute names bound to a data source.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when a saved inserted widget caption uses an unresolved resource key.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionsRegistered(
+		string jsBody,
+		IReadOnlySet<string> registeredNames,
+		IReadOnlySet<string> dsBoundKeys) =>
+		ScanInsertedWidgetCaptions(
+			jsBody,
+			key => (registeredNames != null && registeredNames.Contains(key)) ||
+			       (dsBoundKeys != null && dsBoundKeys.Contains(key)));
+
+	// Shared engine for both the body-only (pre-flight) and the registered-set (save-gate) checks: walks
+	// every operation:"insert" entry's values subtree and flags a widget caption (title/caption/tooltip/
+	// placeholder) whose localizable key does not satisfy <paramref name="resolves"/>. Merges are skipped
+	// (a merge may target a caption a parent schema already provides). Fail-open on empty/missing marker/
+	// unparseable body, matching the sibling content validators.
+	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object || !IsInsertOperation(entry)) {
+					continue;
+				}
+				if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				    values.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
+				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanNodeForUnresolvedCaptionBindings(
+		JsonElement node,
+		string ownerName,
+		Func<string, bool> resolves,
+		SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (property.Value.ValueKind == JsonValueKind.String &&
+					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
+						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
+					}
+					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, result);
+				}
+				break;
+		}
+	}
+
+	private static void CheckCaptionBinding(
+		string ownerName,
+		string property,
+		string value,
+		Func<string, bool> resolves,
+		SchemaValidationResult result) {
+		// ExtractKeys returns the keys referenced by both binding forms ($Resources.Strings.K and
+		// #ResourceString(K)#). A literal (no resource reference) yields no keys and is left to
+		// ValidateLocalizableTextLiterals; a non-resource binding ($SomeAttr) also yields no keys.
+		// Fail-open on a regex timeout (mirrors ValidateContextAccessAwait): an advisory/gate heuristic
+		// must never surface a pathological body as an unhandled crash.
+		HashSet<string> keys;
+		try {
+			keys = ResourceStringHelper.ExtractKeys(value);
+		} catch (RegexMatchTimeoutException) {
+			return;
+		}
+		foreach (string key in keys) {
+			if (!resolves(key)) {
+				result.Errors.Add(BuildUnresolvedCaptionError(ownerName, property, key));
+			}
+		}
+	}
+
+	private static string BuildUnresolvedCaptionError(string ownerName, string property, string key) {
+		// Cap the echoed body-supplied values (mirrors BuildTextLiteralError): the key comes from an
+		// unbounded #ResourceString([^)]+)# / $Resources.Strings.<...> match and is echoed into the MCP
+		// transcript and the update-page log, so truncate it to keep the diagnostic bounded and avoid
+		// newline/oversize log noise.
+		string shownOwner = Truncate(ownerName);
+		string shownKey = Truncate(key);
+		string node = string.IsNullOrWhiteSpace(shownOwner) ? "a view node" : $"'{shownOwner}'";
+		return $"View node {node} binds user-visible text property '{property}' to localizable key '{shownKey}', " +
+			"but that key will not be registered and the binding will render raw " +
+			$"(e.g. \"{ResourceBindingPrefix}{shownKey}\") instead of the localized text. Rule: {InsertedWidgetCaptionClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
+	private static string Truncate(string value) =>
+		string.IsNullOrEmpty(value) || value.Length <= 60 ? value : value[..60] + "…";
+
+	/// <summary>
 	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>
 	/// directly from the plain-JSON mobile page root instead of a marker-delimited section; the literal
 	/// rule is identical.
@@ -1506,6 +1863,13 @@ public static class SchemaValidationService
 		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
 			return;
 		}
+		// The exempt-property rule is keyed on the component type, which normally sits in an entry's own
+		// "values":{"type":...}. A merge entry that patches only a text property (e.g. tooltip) of an
+		// already-inserted node in the SAME body carries no "type", so borrow the type an insert entry
+		// established for the same name. Scope is one body / one validate-page call: a node inserted by a
+		// PRIOR separate update-page call is NOT visible here (no saved schema), so a standalone tooltip-only
+		// merge still cannot resolve a type and must repeat "type" (documented requirement, ENG-92940).
+		Dictionary<string, string> entryNameToType = BuildEntryNameToTypeMap(viewConfigDiff);
 		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
 			if (entry.ValueKind != JsonValueKind.Object) {
 				continue;
@@ -1515,28 +1879,101 @@ public static class SchemaValidationService
 				continue;
 			}
 			string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
-			ScanNodeForTextLiterals(values, ownerName, result);
+			// Resolve the entry-root component type: its own "type" sibling, else a same-name sibling
+			// insert's type. Bounded to the entry-root object — nested child nodes still resolve type ONLY
+			// from their own "type" sibling (entryRootType is not threaded into the recursion), so the
+			// exemption never bleeds into a nested non-exempt node.
+			string entryRootType = ResolveEntryRootType(values, ownerName, entryNameToType);
+			ScanNodeForTextLiterals(values, ownerName, entryRootType, result);
 		}
 	}
 
-	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, SchemaValidationResult result) {
+	// Resolves an entry-root component type: its own "type" sibling wins, else the type a same-name sibling
+	// insert established within this body. Extracted from the caller so the two-level fallback reads as a
+	// sequence of decisions rather than a nested ternary (Sonar S3358).
+	private static string ResolveEntryRootType(
+		JsonElement values, string ownerName, Dictionary<string, string> entryNameToType) {
+		if (TryGetComponentType(values, out string ownType)) {
+			return ownType;
+		}
+		if (!string.IsNullOrEmpty(ownerName) && entryNameToType.TryGetValue(ownerName, out string mappedType)) {
+			return mappedType;
+		}
+		return string.Empty;
+	}
+
+	// Maps each entry's declared name to the component type carried on its own "values":{"type":...} sibling,
+	// so a later merge entry that patches a text property without repeating "type" can resolve the type an
+	// insert established for the SAME name within this body. Only entries that declare a type participate and
+	// the first declaration wins (an insert precedes its merges). Names are matched exactly (ordinal).
+	private static Dictionary<string, string> BuildEntryNameToTypeMap(JsonElement viewConfigDiff) {
+		Dictionary<string, string> map = new(StringComparer.Ordinal);
+		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!TryGetNodeName(entry, out string entryName)) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+			    values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (TryGetComponentType(values, out string type) && !map.ContainsKey(entryName)) {
+				map[entryName] = type;
+			}
+		}
+		return map;
+	}
+
+	// entryRootType carries the type resolved for the entry-root object (its own "type" sibling, or a
+	// same-name sibling insert's type for a bare merge). It is applied ONLY when this object has no "type" of
+	// its own AND is the entry root; nested children are recursed with an empty entryRootType so a nested
+	// non-exempt node can never inherit an ancestor's exemption.
+	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType, SchemaValidationResult result) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				// The component type sits as a sibling of the text properties on the same object
+				// (e.g. { "type":"crt.ImageInput", "tooltip":"..." }). Derive it up-front, BEFORE the
+				// property loop — EnumerateObject yields in document order, so a body that lists a text
+				// property ahead of "type" must still see the type to apply LiteralAllowedTextProperties.
+				// When the object carries no "type" of its own, fall back to entryRootType (non-empty only
+				// for the entry root — see the entryRootType note above).
+				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					if (property.Value.ValueKind == JsonValueKind.String &&
-					    LocalizableTextProperties.Contains(property.Name) &&
-					    IsInlineUserVisibleTextLiteral(property.Value.GetString())) {
-						result.Errors.Add(BuildTextLiteralError(currentName, property.Name, property.Value.GetString()!));
-					}
-					ScanNodeForTextLiterals(property.Value, currentName, result);
+					ScanTextPropertyForLiterals(currentName, currentType, property, result);
+					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
 				}
 				break;
 			case JsonValueKind.Array:
 				foreach (JsonElement item in node.EnumerateArray()) {
-					ScanNodeForTextLiterals(item, ownerName, result);
+					ScanNodeForTextLiterals(item, ownerName, string.Empty, result);
 				}
 				break;
+		}
+	}
+
+	// Flags a single object property when it is a user-visible text property carrying a disallowed value:
+	// for an exempt (component, property) pair a localizable-resource binding is rejected (it renders empty),
+	// and everywhere else an inline user-visible literal is rejected (it should be a localizable binding).
+	private static void ScanTextPropertyForLiterals(
+		string currentName, string currentType, JsonProperty property, SchemaValidationResult result) {
+		if (property.Value.ValueKind != JsonValueKind.String ||
+		    !LocalizableTextProperties.Contains(property.Name)) {
+			return;
+		}
+		string? textValue = property.Value.GetString();
+		if (IsLiteralAllowedTextProperty(currentType, property.Name)) {
+			// The exempt component renders this property from its raw value and never reads
+			// localizableStrings, so a $Resources.Strings.<Key> / #ResourceString(<Key>)# binding
+			// resolves to empty at runtime. Reject the resource form and force the working literal —
+			// the mirror of the inline-literal rule applied to everything else (ENG-92940).
+			if (IsLocalizableResourceReference(textValue)) {
+				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue));
+			}
+		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
+			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue));
 		}
 	}
 
@@ -1550,6 +1987,35 @@ public static class SchemaValidationService
 		}
 		return false;
 	}
+
+	// Reads a view node's raw component type (the "type" sibling of its text properties). Unlike
+	// TryGetFieldType this does NOT filter to StandardFieldComponentTypes — LiteralAllowedTextProperties
+	// is keyed on the raw type so a future non-standard-field exemption keeps working.
+	private static bool TryGetComponentType(JsonElement element, out string type) {
+		type = string.Empty;
+		if (element.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
+		    typeElement.ValueKind == JsonValueKind.String &&
+		    !string.IsNullOrWhiteSpace(typeElement.GetString())) {
+			type = typeElement.GetString();
+			return true;
+		}
+		return false;
+	}
+
+	// True when an inline literal is legitimately allowed for (componentType, property) — the component
+	// does not consume a localizable resource for that property (see LiteralAllowedTextProperties).
+	private static bool IsLiteralAllowedTextProperty(string componentType, string property) =>
+		!string.IsNullOrEmpty(componentType) &&
+		LiteralAllowedTextProperties.TryGetValue(componentType, out HashSet<string>? properties) &&
+		properties.Contains(property);
+
+	// True when the value is a localizable-string binding that flows through localizableStrings — either a
+	// $Resources.Strings.<Key> binding or a #ResourceString(Key)# macro (bare, concatenated, or wrapped).
+	// These are exactly the forms that render empty on a LiteralAllowedTextProperties component.
+	private static bool IsLocalizableResourceReference(string? value) =>
+		!string.IsNullOrWhiteSpace(value) &&
+		(value.StartsWith(ResourceBindingPrefix, StringComparison.OrdinalIgnoreCase) ||
+		 ResourceStringReferencePattern.IsMatch(value));
 
 	private static bool IsInlineUserVisibleTextLiteral(string? value) {
 		if (string.IsNullOrWhiteSpace(value)) {
@@ -1574,11 +2040,26 @@ public static class SchemaValidationService
 	private static bool IsBindingExpression(string value) =>
 		value.Length >= 2 && value[0] == '$' && (char.IsLetter(value[1]) || value[1] == '_');
 
+	// Shared owner-node label idiom: an unnamed node reads as "a view node", a named one is quoted.
+	// Keeps BuildTextLiteralError / BuildLiteralRequiredError from drifting on the fallback wording.
+	private static string FormatOwnerNode(string ownerName) =>
+		string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+
 	private static string BuildTextLiteralError(string ownerName, string property, string value) {
-		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
-		string shown = value.Length > 60 ? value[..60] + "…" : value;
+		string node = FormatOwnerNode(ownerName);
+		string shown = Truncate(value);
 		return $"View node {node} sets user-visible text property '{property}' to the inline literal " +
 			$"\"{shown}\" instead of a localizable string. Rule: {LocalizableTextLiteralClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
+	private static string BuildLiteralRequiredError(string ownerName, string componentType, string property, string value) {
+		string node = FormatOwnerNode(ownerName);
+		string owner = string.IsNullOrEmpty(componentType) ? node : $"{node} ({componentType})";
+		string shown = Truncate(value);
+		return $"View node {owner} binds text property '{property}' to the localizable resource " +
+			$"\"{shown}\", but this property must not be a localizable-resource binding (a plain literal or a " +
+			$"dynamic $-binding is fine). Rule: {LiteralRequiredTextClause}. " +
 			"See the page-schema-resources guide.";
 	}
 

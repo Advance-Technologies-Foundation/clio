@@ -1846,8 +1846,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.",
-				because: "each condition operand must be one of the three supported expression kinds, on either side");
+			.WithMessage("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.",
+				because: "each condition operand must be one of the supported expression kinds, on either side");
 	}
 
 	[TestCase(11, "Enum")]
@@ -1889,7 +1889,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.",
 				because: "the validator should only allow the supported right-hand operand kinds");
 	}
 
@@ -1967,6 +1967,224 @@ public sealed class BusinessRuleValidatorTests {
 			actions ?? [
 				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a SysSetting condition operand compared against a matching-typed constant when the setting is resolved.")]
+	public void Validate_Should_Accept_Resolved_SysSetting_Operand() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["DisableEquipmentDelivery"] = new("DisableEquipmentDelivery", "Boolean", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "DisableEquipmentDelivery"),
+			"equal",
+			new BusinessRuleExpression("Const", null, Json("true")));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a resolved Boolean setting compared to a boolean constant is a valid condition");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a SysSetting operand whose sysSettingName is missing.")]
+	public void Validate_Should_Reject_SysSetting_Without_Name() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting"),
+			"equal",
+			new BusinessRuleExpression("Const", null, Json("true")));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*sysSettingName is required*",
+				because: "a SysSetting operand must carry the setting code");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a SysSetting operand that was not resolved into the sys-setting map.")]
+	public void Validate_Should_Reject_Unresolved_SysSetting_Operand() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "Missing"),
+			"equal",
+			new BusinessRuleExpression("Const", null, Json("true")));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*does not exist*",
+				because: "an unresolved setting cannot be typed and must be rejected");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects comparing a Boolean SysSetting operand to a text attribute (incompatible data value types).")]
+	public void Validate_Should_Reject_SysSetting_Type_Mismatch() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["Notes"] = new("Notes", "Text", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["Flag"] = new("Flag", "Boolean", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "Flag"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "Notes"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*same data value type*",
+				because: "a Boolean setting cannot be compared to a text attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts two same-typed SysSetting operands compared to each other (setting == setting).")]
+	public void Validate_Should_Accept_SysSetting_Vs_SysSetting_SameType() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["ModeA"] = new("ModeA", "Text", null),
+				["ModeB"] = new("ModeB", "Text", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "ModeA"),
+			"equal",
+			new BusinessRuleExpression("SysSetting", sysSettingName: "ModeB"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "two Text settings compared for equality is a valid setting-vs-setting condition");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects comparing a Lookup SysSetting to a Lookup attribute that references a different schema.")]
+	public void Validate_Should_Reject_SysSetting_Lookup_Schema_Mismatch() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["Owner"] = new("Owner", "Lookup", "Contact")
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["DefaultCountry"] = new("DefaultCountry", "Lookup", "Country")
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "DefaultCountry"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "Owner"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*same schema*",
+				because: "lookup operands must reference the same schema, even when one side is a Lookup setting");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts comparing a Text system setting to a text-subtype attribute (ShortText): the text family is compatible even though the exact type names differ.")]
+	public void Validate_Should_Accept_Text_Setting_Vs_Text_Subtype_Attribute() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["City"] = new("City", "ShortText", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["Mode"] = new("Mode", "Text", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "Mode"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "City"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a Text setting and a ShortText attribute belong to the same text family, which the platform accepts");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts comparing an Integer system setting to a numeric-subtype attribute (Money): the numeric family is compatible.")]
+	public void Validate_Should_Accept_Numeric_Setting_Vs_Numeric_Subtype_Attribute() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["Amount"] = new("Amount", "Money", null)
+			};
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap =
+			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
+				["Limit"] = new("Limit", "Integer", null)
+			};
+		BusinessRule rule = SysSettingRule(
+			new BusinessRuleExpression("SysSetting", sysSettingName: "Limit"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "Amount"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, attributeMap, sysSettingMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "Integer and Money both belong to the numeric family, which is a valid comparison");
+	}
+
+	private static BusinessRule SysSettingRule(
+		BusinessRuleExpression left,
+		string comparisonType,
+		BusinessRuleExpression right) =>
+		new(
+			"SysSetting rule",
+			new BusinessRuleConditionGroup("AND", [new BusinessRuleCondition(left, comparisonType, right)]),
+			[new MakeReadOnlyBusinessRuleAction(["Status"])]);
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
 		Dictionary<string, EntitySchemaColumnDto> result = new(StringComparer.Ordinal);

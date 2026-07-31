@@ -3,11 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using CommandLine;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -50,6 +54,10 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	private static readonly Regex BacktickedKebabToken = new(
 		@"`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`",
 		RegexOptions.Compiled);
+
+	private static readonly Regex GuidanceNameReference = new(
+		@"name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
+		RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
 	// `do\W{1,4}not` tolerates markdown emphasis between the words ("Do **NOT** use").
 	private static readonly Regex NegationMarker = new(
@@ -178,7 +186,70 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		// Assert
 		violations.Should().BeEmpty(
 			because: "shipped static guidance is frozen in every user/partner repo; a long-tail tool named " +
-				"imperatively without the discovery bridge dead-ends the agent (the PR #743 regression)");
+			"imperatively without the discovery bridge dead-ends the agent (the PR #743 regression)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every get-guidance article named in a SHIPPED template resolves against the curated knowledge catalog.")]
+	public void ShippedTemplates_ShouldReferenceRegisteredGuidance_WhenNamingGuidanceArticles() {
+		// Arrange
+		(string Name, string Path)[] templates = [
+			("tpl/workspace/AGENTS.md", TemplatePath("workspace", "AGENTS.md")),
+			("tpl/ui-project/AGENTS.md", TemplatePath("ui-project", "AGENTS.md")),
+			("tpl/ui-project-Empty/AGENTS.md", TemplatePath("ui-project-Empty", "AGENTS.md"))
+		];
+		IReadOnlySet<string> curatedNames = CuratedKnowledgeNames();
+
+		// Act
+		Dictionary<string, HashSet<string>> referencesByTemplate = new(StringComparer.OrdinalIgnoreCase);
+		List<string> unresolved = [];
+		foreach ((string name, string path) in templates) {
+			string text = File.ReadAllText(path);
+			HashSet<string> references = new(StringComparer.OrdinalIgnoreCase);
+			referencesByTemplate[name] = references;
+			foreach (string line in text.Split('\n')) {
+				if (!line.Contains("get-guidance", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				foreach (Match match in GuidanceNameReference.Matches(line)) {
+					string guidanceName = match.Groups[1].Value;
+					references.Add(guidanceName);
+					if (!curatedNames.Contains(guidanceName)) {
+						unresolved.Add($"{name}: '{guidanceName}'");
+					}
+				}
+			}
+		}
+
+		// Assert
+		referencesByTemplate["tpl/workspace/AGENTS.md"].Should().Contain(
+			["core-rules", "routing", "configuration-webservice", "configuration-webservice-tests"],
+			because: "the workspace template must retain its mandatory core/routing guidance and route " +
+				"configuration web-service implementation and tests to their canonical live articles");
+		unresolved.Should().BeEmpty(
+			because: "shipped templates are frozen into user workspaces, so every guidance name they use must " +
+				"exist in the curated knowledge catalog that clio activates on startup");
+	}
+
+	/// <summary>
+	/// Names the curated knowledge library publishes: item IDs, topic IDs, and legacy
+	/// <c>docs://mcp/guides/</c> aliases, any of which <c>get-guidance</c> accepts.
+	/// </summary>
+	/// <remarks>
+	/// Guidance content lives in clio-knowledge, so this fixture — not a compiled catalog — is what a
+	/// unit test can check shipped templates against without network access. Refresh it from that
+	/// repository's <c>bundle-source.json</c> whenever the curated library publishes a new generation.
+	/// </remarks>
+	private static IReadOnlySet<string> CuratedKnowledgeNames() {
+		string path = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(path));
+		return document.RootElement.GetProperty("names")
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 
 	[Test]

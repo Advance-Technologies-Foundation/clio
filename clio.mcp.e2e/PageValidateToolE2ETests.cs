@@ -350,6 +350,44 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid: true when an inserted crt.ImageInput carries an inline literal tooltip — the ImageInput control renders the raw tooltip and never reads a localizable resource, so the localizable-text rule must NOT reject it (ENG-92940). Proves the component-scoped exemption reaches through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts inline tooltip literal on crt.ImageInput")]
+	[AllureDescription("Sends a page body whose inserted crt.ImageInput (bound to a declared DS attribute) sets tooltip to a plain string literal, and verifies validate-page accepts it — the control shows the raw tooltip and a $Resources.Strings binding would render empty, so the literal is the only working form.")]
+	public async Task PageValidateTool_Should_Accept_Inline_Tooltip_Literal_On_ImageInput() {
+		// Arrange
+		string bodyWithImageInputTooltip = ValidPageBody
+			.Replace(
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+					"{\"operation\":\"insert\",\"name\":\"UsrPhoto\",\"values\":{\"type\":\"crt.ImageInput\"," +
+					"\"value\":\"$UsrPhoto\",\"size\":\"large\",\"tooltip\":\"Upload a photo of the task owner\"}}" +
+					"]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
+					"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"UsrPhoto\":{\"modelConfig\":{\"path\":\"PDS.UsrPhoto\"}}}}}" +
+					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithImageInputTooltip);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "crt.ImageInput.tooltip is literal-only — a localizable binding renders empty, so the literal must be accepted (ENG-92940)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "no content-level validator, including the localizable-text rule, should reject the ImageInput tooltip literal");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the ImageInput tooltip literal is a valid, working authoring form and must not produce an error");
+	}
+
+	[Test]
 	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects inline placeholder literal")]
@@ -382,6 +420,78 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("EmailField") && e.Contains("placeholder") && e.Contains("page-schema-resources"),
 			because: "the diagnostic must name the node, the offending property, and point to the localization guide");
+	}
+
+	[Test]
+	[Description("Returns a WARNING (not a hard content failure) when an inserted crt.IndicatorWidget title binds a #ResourceString key that is not passed in resources and is not Usr-derivable — validate-page has no schema context to confirm a prior registration, so it advises rather than blocks (ENG-93098). The authoritative hard reject runs on the save path.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about inserted metric widget title with unregistered resource key")]
+	[AllureDescription("Sends a page body whose inserted crt.IndicatorWidget sets config.title to #ResourceString(IndicatorWidget_CriticalRequests_title)# with no resources payload, and verifies validate-page surfaces an advisory WARNING naming the widget and the unresolved key while keeping valid=true.")]
+	public async Task PageValidateTool_Should_Warn_On_Metric_Widget_Title_Without_Resource() {
+		// Arrange
+		string bodyWithUnregisteredMetricTitle = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+				"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
+				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithUnregisteredMetricTitle);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the body-only widget-caption check is advisory on validate-page (no schema context to confirm a prior registration), so it warns rather than failing content validation");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a widget-caption warning must not demote content-ok — the authoritative hard reject is on the save path");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must still flag the unregistered widget title as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("IndicatorWidget_CriticalRequests") && e.Contains("IndicatorWidget_CriticalRequests_title") && e.Contains("render raw"),
+			because: "the advisory must name the widget, the unresolved key, and the raw-render failure");
+	}
+
+	[Test]
+	[Description("Returns valid: true when the same inserted crt.IndicatorWidget title key IS supplied through the resources parameter — proves the resources payload flows end-to-end and satisfies the widget-title resolvability check.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts inserted metric widget title when the resource key is registered")]
+	[AllureDescription("Sends the same crt.IndicatorWidget insert but with resources supplying IndicatorWidget_CriticalRequests_title, and verifies validate-page accepts the payload.")]
+	public async Task PageValidateTool_Should_Accept_Metric_Widget_Title_With_Resource() {
+		// Arrange
+		string bodyWithMetricTitle = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+				"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
+				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithMetricTitle,
+			"{\"IndicatorWidget_CriticalRequests_title\": \"Critical Requests\"}");
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "registering the title key through the resources parameter makes the binding resolve, which is the fixed happy path for ENG-93098");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "every content-level validator should accept the metric title once its resource is registered");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported once the widget title key is registered");
 	}
 
 	[Test]
@@ -454,13 +564,18 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
-		string body) {
+		string body,
+		string? resources = null) {
+		var args = new Dictionary<string, object?> {
+			["body"] = body
+		};
+		if (resources != null) {
+			args["resources"] = resources;
+		}
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["body"] = body
-				}
+				["args"] = args
 			},
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(
@@ -492,6 +607,42 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "a well-formed mobile JSON body with no disallowed keys should pass validation");
 		response.Validation.ContentOk.Should().BeTrue(
 			because: "mobile body with allowed sections only should pass content validation");
+	}
+
+	[Test]
+	[Description("Returns valid=false for a mobile JSON body whose viewConfigDiff trips the Creatio differ: a child insert targets a parent slot (itemLayout) the in-diff parent does not declare, so the differ raises the not-a-container error via MobileDiffApplyValidator.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile body that trips the differ (not a container)")]
+	[AllureDescription("Sends a mobile JSON body whose viewConfigDiff inserts a crt.ListItem into an itemLayout slot the parent crt.List never declares, and verifies validate-page surfaces the server-faithful 'is not a container for other items' differ error end-to-end.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Body_That_Trips_The_Differ() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithBadDiff = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "ProductsList", "parentName": "ProductsListContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$ProductsList" } },
+			    { "operation": "insert", "name": "ProductsList_ListItem", "parentName": "ProductsList", "propertyName": "itemLayout",
+			      "values": { "type": "crt.ListItem", "title": "$PDS_Name" } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithBadDiff);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the parent crt.List does not declare an 'itemLayout' slot, so the Creatio differ rejects the child insert");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().NotBeNullOrEmpty(
+			because: "the differ failure must be surfaced as an actionable validation error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
+			because: "validate-page must surface the server-faithful differ exception so the agent fixes the diff before writing");
 	}
 
 	[Test]

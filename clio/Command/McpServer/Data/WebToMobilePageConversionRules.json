@@ -1,0 +1,127 @@
+{
+  "version": "latest",
+  "templates": [
+    {
+      "web": "ListPageV3Template",
+      "mobile": "BaseMobileListTemplate",
+      "note": "Section / list page.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "LeftFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
+        { "web": "ListContainer", "mobile": "ListContainer", "note": "List area; web crt.DataTable maps to mobile crt.List." }
+      ],
+      "components": [
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        {
+          "web": "FolderTree",
+          "mobile": "FolderTreeActions",
+          "mobileType": "crt.FolderTreeActions",
+          "carryProperties": ["sourceSchemaName", "rootSchemaName"],
+          "note": "Folder tree. The mobile template (BaseMobileListTemplate) already provides the FolderTreeActions element; carry the web folder-schema binding (sourceSchemaName + rootSchemaName) onto it by merge-by-name so the mobile folder tree resolves the section entity. Without this the web crt.FolderTree node (inherited template chrome) is pruned and rootSchemaName is lost."
+        }
+      ]
+    },
+    {
+      "web": "PageWithTabsFreedomTemplate",
+      "mobile": "MobilePageWithTabsFreedomTemplate",
+      "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
+      "containers": [
+        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they must stay LAST. Insert every converted web tab BEFORE them (after the general tab), so tab order is: general tab, converted web tabs, Feed, Attachments." },
+        { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
+        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
+        { "web": "CardToggleTabPanel", "mobile": "Tabs", "note": "All tabs except Feed and Attachments should be moved to Tabs"},
+        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer", "note": "Web card-content wrapper; its non-tab content (side/profile) fills the mobile general tab's grid." },
+        { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
+        { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
+      ]
+    },
+    {
+      "web": "BasePageFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "note": "Base record page (non-tabbed). Web BasePageFreedomTemplate maps to the mobile base record page.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "CardContentWrapper", "mobile": "MainContainer" }
+      ]
+    },
+    {
+      "web": "BlankPageTemplate",
+      "mobile": "BlankMobilePageTemplate",
+      "note": "Blank page. Mobile blank exposes only the Scaffold root.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" }
+      ]
+    },
+    {
+      "web": "BasePageTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "note": "Base page template; maps to the mobile base record page. Universal fallback container is MainContainer.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" }
+      ]
+    },
+    {
+      "web": "BaseTemplate",
+      "mobile": "BaseMobileTemplate",
+      "note": "Base web template root; maps to the mobile structural root. Universal fallback container is MainContainer.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "web": ["crt.Checkbox"],
+      "mobile": ["crt.Toggle"],
+      "category": "AlternativeAvailable",
+      "note": "Boolean fields on mobile use crt.Toggle instead of the web crt.Checkbox."
+    },
+    {
+      "web": ["crt.HtmlEditor"],
+      "mobile": ["crt.RichTextEditor"],
+      "category": "AlternativeAvailable",
+      "note": "Rich text on mobile uses crt.RichTextEditor instead of the web crt.HtmlEditor."
+    },
+    {
+      "web": ["crt.DataGrid", "crt.DataTable"],
+      "mobile": ["crt.List", "crt.ListItem"],
+      "category": "AlternativeAvailable",
+      "note": "Web grid → mobile crt.List + crt.ListItem. The crt.ListItem must be added INTO the crt.List's `itemLayout` — it defines the row layout (`title` + `body`). Map each grid column's `code` to a `$<code>` binding: the first column becomes the ListItem `title`, the remaining columns become its `body` rows (`{ \"value\": \"$<code>\" }`); the grid `items` binding carries over to the list `items`. A column's `code` is its bound attribute name. Note: if the mobile template already provides the `List`/`ListItem` elements, configure them by merge-by-name (the row goes on the `ListItem` element) rather than inserting new ones."
+    },
+    {
+      "web": ["crt.FolderTree", "crt.FolderTreeActions"],
+      "mobile": ["crt.FolderTreeActions"],
+      "category": "AlternativeAvailable",
+      "primaryWeb": "crt.FolderTree",
+      "note": "Many->one: mobile FolderTreeActions is produced from web crt.FolderTree (primary); web crt.FolderTreeActions is consumed. Values are reconciled against the mobile component's registry contract."
+    }
+  ],
+  "requests": [
+    { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.UpdateRecordRequest", "mobile": "crt.UpdateRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.DeleteRecordRequest", "mobile": "crt.DeleteRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.CopyRecordRequest", "mobile": "crt.CopyRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.CancelRecordChangesRequest", "mobile": "crt.CancelRecordChangesRequest", "category": "DirectMapping" },
+    { "web": "crt.ClosePageRequest", "mobile": "crt.ClosePageRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenPageRequest", "mobile": "crt.OpenPageRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenLookupPageRequest", "mobile": "crt.OpenLookupPageRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenCustomWebViewPageRequest", "mobile": "crt.OpenCustomWebViewPageRequest", "category": "DirectMapping" },
+    { "web": "crt.ShowDialogRequest", "mobile": "crt.ShowDialogRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenAddressOnMapRequest", "mobile": "crt.OpenAddressOnMapRequest", "category": "DirectMapping" },
+    { "web": "crt.LoadDataRequest", "mobile": "crt.LoadDataRequest", "category": "DirectMapping" },
+    { "web": "crt.QuickFilterRequest", "mobile": "crt.QuickFilterRequest", "category": "DirectMapping" },
+    { "web": "crt.ExecuteExpressionRequest", "mobile": "crt.ExecuteExpressionRequest", "category": "DirectMapping" },
+    { "web": "crt.RunBusinessProcessRequest", "mobile": "crt.RunBusinessProcessRequest", "category": "DirectMapping" },
+    { "web": "crt.CreateListItemRequest", "mobile": "crt.CreateListItemRequest", "category": "DirectMapping" },
+    { "web": "crt.UpdateListItemRequest", "mobile": "crt.UpdateListItemRequest", "category": "DirectMapping" },
+    { "web": "crt.DeleteListItemRequest", "mobile": "crt.DeleteListItemRequest", "category": "DirectMapping" },
+    { "web": "crt.UploadFileRequest", "mobile": "crt.UploadFileRequest", "category": "DirectMapping" },
+    { "web": "crt.DeleteFileRequest", "mobile": "crt.DeleteFileRequest", "category": "DirectMapping" },
+    { "web": "crt.AddCommunicationOptionsRequest", "mobile": "crt.AddCommunicationOptionsRequest", "category": "DirectMapping" },
+    { "web": "crt.CreateCommunicationOptionRequest", "mobile": "crt.CreateCommunicationOptionRequest", "category": "DirectMapping" },
+    { "web": "crt.RemoveCommunicationOptionRequest", "mobile": "crt.RemoveCommunicationOptionRequest", "category": "DirectMapping" },
+    { "web": "crt.SetAttributeFromBarcodeRequest", "mobile": "crt.SetAttributeFromBarcodeRequest", "category": "DirectMapping" }
+  ]
+}

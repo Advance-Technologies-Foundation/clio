@@ -26,6 +26,9 @@ public sealed class PageValidateTool(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
+		// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
+		// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
+		// insert) to the caller for analysis — no heuristic body normalization.
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
@@ -132,6 +135,8 @@ public sealed class PageValidateTool(
 				() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)),
 			InsertSelfConsistency: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
+			WidgetCaption: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources)),
 			LocalizableText: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateLocalizableTextLiterals(body)),
 			Binding: RunContentValidation(contentResult,
@@ -164,6 +169,12 @@ public sealed class PageValidateTool(
 		warnings.AddRange(content.Field.Warnings);
 		if (!content.Binding.IsValid) {
 			warnings.AddRange(content.Binding.Errors);
+		}
+		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (validate-page has no schema
+		// context, so it cannot see keys a prior save already registered). Surface it as a warning; the
+		// authoritative hard gate runs on the save path (PageUpdateCommand) against the final merged set.
+		if (!content.WidgetCaption.IsValid) {
+			warnings.AddRange(content.WidgetCaption.Errors);
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
 		warnings.AddRange(content.ContextAwait.Warnings);
@@ -215,6 +226,7 @@ public sealed class PageValidateTool(
 	private sealed record ContentValidationResults(
 		SchemaValidationResult Field,
 		SchemaValidationResult InsertSelfConsistency,
+		SchemaValidationResult WidgetCaption,
 		SchemaValidationResult LocalizableText,
 		SchemaValidationResult Binding,
 		SchemaValidationResult ConverterDecl,

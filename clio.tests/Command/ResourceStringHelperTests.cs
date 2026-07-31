@@ -227,6 +227,49 @@ public sealed class ResourceStringHelperTests {
 	}
 
 	[Test]
+	[Description("WillResolve returns false for a widget-title key that is not in resources, not DS-bound, and not Usr-prefixed (the ENG-93098 dangling-binding case).")]
+	public void WillResolve_WhenWidgetTitleKeyUnregistered_ReturnsFalse() {
+		// Arrange
+		const string key = "IndicatorWidget_CriticalRequests_title";
+
+		// Act
+		bool resolves = ResourceStringHelper.WillResolve(key, null, null);
+
+		// Assert
+		resolves.Should().BeFalse(
+			because: "a non-Usr, non-DS-bound key absent from resources is never registered and renders raw");
+	}
+
+	[Test]
+	[Description("WillResolve returns true when the key is passed explicitly through resources.")]
+	public void WillResolve_WhenKeyInResources_ReturnsTrue() {
+		// Arrange
+		const string key = "IndicatorWidget_CriticalRequests_title";
+		var resources = new Dictionary<string, string> { [key] = "Critical Requests" };
+
+		// Act
+		bool resolves = ResourceStringHelper.WillResolve(key, resources, null);
+
+		// Assert
+		resolves.Should().BeTrue(because: "clio registers keys passed explicitly through the resources parameter");
+	}
+
+	[Test]
+	[Description("WillResolve returns true for a Usr-prefixed key (clio auto-derives a caption) and for a DS-bound key (platform auto-provides the caption).")]
+	public void WillResolve_WhenUsrPrefixedOrDsBound_ReturnsTrue() {
+		// Arrange
+		var dsBoundKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PDS_UsrStatus" };
+
+		// Act
+		bool usrResolves = ResourceStringHelper.WillResolve("UsrCustomTitle", null, null);
+		bool dsResolves = ResourceStringHelper.WillResolve("PDS_UsrStatus", null, dsBoundKeys);
+
+		// Assert
+		usrResolves.Should().BeTrue(because: "Usr-prefixed keys are auto-derived by clio");
+		dsResolves.Should().BeTrue(because: "DS-bound attribute captions are auto-provided by the platform");
+	}
+
+	[Test]
 	[Description("CleanAndMerge with null dsBoundKeys behaves the same as before (backward compatible)")]
 	public void CleanAndMerge_WhenDsBoundKeysIsNull_AutoDerivesAllUsrKeys() {
 		// Arrange

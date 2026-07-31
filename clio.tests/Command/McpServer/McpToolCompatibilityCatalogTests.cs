@@ -63,6 +63,25 @@ public sealed class McpToolCompatibilityCatalogTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Resolves the deprecated get-classic-migration-bundle name to its renamed canonical tool get-classic-page-sources, so guidance/agents using the legacy name keep working after the ENG-94218 rename.")]
+	public void TryResolveAlias_ShouldReturnCanonical_WhenNameIsRenamedClassicPageSourcesAlias() {
+		// Arrange
+		IMcpToolCompatibilityCatalog catalog = new McpToolCompatibilityCatalog();
+
+		// Act
+		bool resolved = catalog.TryResolveAlias(
+			"get-classic-migration-bundle", out string canonical, out McpToolCompatibilityEntry entry);
+
+		// Assert
+		resolved.Should().BeTrue(because: "get-classic-migration-bundle is a declared deprecated alias after the rename");
+		canonical.Should().Be("get-classic-page-sources",
+			because: "the legacy bundle name must resolve to the current canonical tool name");
+		entry.Kind.Should().Be(McpToolCompatibilityKind.DeprecatedAlias,
+			because: "the renamed tool is exposed as a deprecated-alias mapping");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Alias resolution is case-insensitive, matching the invoker registry's OrdinalIgnoreCase lookup.")]
 	public void TryResolveAlias_ShouldBeCaseInsensitive_WhenAliasCasingDiffers() {
 		// Arrange

@@ -535,6 +535,17 @@ internal sealed class DataBindingDbService(
 				Dictionary<string, string?> skippedValues = row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString());
 				skippedValues["Id"] = existingId;
 				skippedRows.Add(new DataBindingCreatedRow(existingId, skippedValues));
+			} else if (RowExistsInTable(schemaName, rowId)) {
+				// Row already exists in the table (matched by Id): register the binding for it without
+				// rewriting the row. Lets a row with no Name column (e.g. SysSchemaAdminUnitRight) be bound
+				// by Id, the same way a Named row is adopted above, instead of inserting a duplicate.
+				if (rowName is not null) {
+					existingNameToId[rowName] = rowId;
+				}
+				AddToBoundIds(boundRecordIds, rowId);
+				skippedRows.Add(new DataBindingCreatedRow(
+					rowId,
+					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 			} else {
 				InsertEntityRow(schemaName, row, schema.SchemaColumns);
 				if (rowName is not null) {
@@ -570,10 +581,14 @@ internal sealed class DataBindingDbService(
 		List<string> existingIds = ExtractBoundRecordIds(existingBoundRows);
 		bool rowAlreadyBound = existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase);
 
-		if (rowAlreadyBound) {
+		if (rowAlreadyBound || RowExistsInTable(entitySchemaName, rowId)) {
+			// Update whether the row is already bound to this package OR exists in the table but is not yet
+			// bound: only a row that exists in neither place is a genuine insert.
 			UpdateEntityRow(entitySchemaName, rowId, values, schema.SchemaColumns);
 		} else {
 			InsertEntityRow(entitySchemaName, values, schema.SchemaColumns);
+		}
+		if (!rowAlreadyBound) {
 			existingIds.Add(rowId);
 		}
 			DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, SingleRowSet(values));
@@ -1136,6 +1151,32 @@ internal sealed class DataBindingDbService(
 		return result;
 	}
 
+	/// <summary>
+	/// Returns whether a row with the given primary-key <paramref name="rowId"/> already exists in the target
+	/// entity table, so an upsert of a live-but-not-yet-bound row updates that row instead of attempting an
+	/// insert that would fail on required columns or a primary-key conflict. A genuine "not found" is a
+	/// successful empty result; a failed probe (e.g. a permission or read error) is propagated so the caller
+	/// surfaces the real cause instead of silently attempting an insert that would fail with a misleading error.
+	/// </summary>
+	private bool RowExistsInTable(string schemaName, string rowId) {
+		if (!Guid.TryParse(rowId, out _)) {
+			return false;
+		}
+		EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(
+			applicationClient,
+			serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQuery(
+				schemaName,
+				[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+				[
+					new SelectQueryHelper.SelectQueryFilterDefinition(
+						"Id",
+						rowId,
+						SelectQueryHelper.GuidDataValueType)
+				]));
+		return response.Rows.Any(row => !string.IsNullOrWhiteSpace(row.Id));
+	}
+
 	private void DeletePackageSchemaData(Guid packageUId, string bindingName) {
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeletePackageSchemaData),
@@ -1163,12 +1204,43 @@ internal sealed class DataBindingDbService(
 				}
 
 				throw new InvalidOperationException(
-					$"{operationName} failed: {errorMessage}");
+					$"{operationName} failed: {errorMessage}{BuildProtectedObjectGuidance(errorMessage)}");
 			}
 		}
 		catch (JsonException) {
 			// Response is not JSON — nothing to validate
 		}
+	}
+
+	/// <summary>
+	/// Turns Creatio's bare object-permission denial into actionable guidance. The DB-first binding path
+	/// applies rows through the DataService <c>InsertQuery</c>/<c>UpdateQuery</c>, which enforces object
+	/// permissions, so a protected security schema such as <c>SysEntitySchemaOperationRight</c> is refused even
+	/// for Supervisor. Without this, the caller only saw "Current user does not have permissions for the X
+	/// object" and had no way to tell an authorization mistake from a schema clio simply cannot reach on this
+	/// path (issue #954).
+	/// </summary>
+	/// <param name="errorMessage">The <c>errorInfo.message</c> Creatio returned.</param>
+	/// <returns>A guidance suffix, or an empty string when the failure is not a permission denial.</returns>
+	private static string BuildProtectedObjectGuidance(string errorMessage) {
+		// Matched on the platform's own denial wording rather than a hardcoded schema list: the set of
+		// permission-protected objects is owned by Creatio and differs per installation, so any list clio
+		// invented here would be both incomplete and stale.
+		if (errorMessage is null
+			|| !errorMessage.Contains("does not have permissions for the", StringComparison.OrdinalIgnoreCase)) {
+			return string.Empty;
+		}
+
+		return " This is an object-permission refusal, not a bad request: DB-first bindings apply rows through "
+			+ "the DataService, which enforces object permissions, so a protected system object is refused "
+			+ "regardless of the authenticated user's administrative rights. Bindings for ordinary schemas are "
+			+ "unaffected. For record-level access rights use the set-record-rights tool (it goes through the "
+			+ "native RightsService instead). Object-operation rights (SysEntitySchemaOperationRight) have no "
+			+ "administration-capable path in clio yet — deploy them through Creatio's own Object permissions "
+			// Deliberately no issue number in the user-visible text: the tracker reference belongs in the doc
+			// comment above (which stays accurate for maintainers), not in a runtime message that outlives the
+			// issue and would still point callers at a closed ticket (PR #984 review).
+			+ "administration or a package installation script.";
 	}
 
 	private static List<Dictionary<string, JsonNode?>>? ParseRowsJson(string? json) {

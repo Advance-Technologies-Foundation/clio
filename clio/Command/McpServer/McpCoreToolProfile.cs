@@ -66,16 +66,24 @@ public static class McpCoreToolProfile {
 		typeof(GetEntitySchemaPropertiesTool),     // get-entity-schema-properties
 		typeof(GetEntitySchemaColumnPropertiesTool), // get-entity-schema-column-properties
 
-		// Data Forge discovery (dataforge-find-tables / dataforge-find-lookups / dataforge-status)
-		typeof(DataForgeTool),
+		// NOTE: DataForgeTool was moved OUT of the resident profile (ENG-92761). Data Forge is a
+		// niche path — the whole 8-method class cost ~19% of the tools/list payload (~1.5k tokens)
+		// on every session, resident-per-TYPE, even sessions that never touch the database. Its
+		// read-only discovery tools stay reachable+discoverable via the get-tool-contract curated
+		// index (CanonicalToolNames) and clio-run; on the stdio host a direct call also still works
+		// through the durable unmatched-name handler (ENG-93370). No canonical name changed, so no
+		// McpToolCompatibilityCatalog entry is needed.
 
 		// guidance index + lazy-schema describe tool
 		typeof(GuidanceGetTool),                   // get-guidance
 		typeof(ToolContractGetTool),               // get-tool-contract
 
-		// system-setting read / discovery
-		typeof(SysSettingGetTool),                 // get-sys-setting
-		typeof(SysSettingsListTool),               // list-sys-settings
+		// NOTE: SysSettingGetTool / SysSettingsListTool were moved OUT of the resident profile. Each is
+		// a single-method class (no destructive ride-along, unlike the DataForgeTool precedent), and
+		// system-setting read/discovery is a niche path relative to app/page/entity discovery. Both
+		// tool names are already in the get-tool-contract curated index (CanonicalToolNames,
+		// independent of residency), so read discovery is unaffected; reachable via clio-run. No
+		// canonical name changed, so no McpToolCompatibilityCatalog entry is needed.
 	};
 
 	/// <summary>
