@@ -126,7 +126,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 			if (initialHierarchy.Count == 0) {
 				response = new PageGetResponse {
 					Success = false,
-					Error = $"Schema '{options.SchemaName}' hierarchy is empty"
+					Error = PageHierarchyRecoveryHint.Append($"Schema '{options.SchemaName}' hierarchy is empty")
 				};
 				return false;
 			}
@@ -211,7 +211,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 		catch (Exception ex) {
 			response = new PageGetResponse {
 				Success = false,
-				Error = ex.Message
+				Error = PageHierarchyRecoveryHint.Append(ex.Message)
 			};
 			return false;
 		}
