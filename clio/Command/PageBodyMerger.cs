@@ -35,6 +35,23 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
+	/// Thrown by <see cref="Merge"/> when an append merge is rejected because one of the two bodies uses the
+	/// full-config form rather than the diff form. Carrying a dedicated type (rather than a bare
+	/// <see cref="InvalidOperationException"/>) lets a caller that wraps the failure classify it by TYPE instead
+	/// of re-parsing <see cref="Exception.Message"/> against the four rejection constants: the CLI wrapper uses
+	/// this to suppress the generic "body must contain valid marker pairs" hint, which does not apply to a
+	/// full-config body — it HAS valid markers, it is simply the wrong form (ENG-94422). Derives from
+	/// <see cref="InvalidOperationException"/> so existing <c>catch (InvalidOperationException)</c> sites are
+	/// unaffected. The <see cref="Exception.Message"/> is still one of the four full-config rejection constants.
+	/// </summary>
+	internal sealed class FullConfigAppendNotSupportedException : InvalidOperationException {
+
+		/// <summary>Creates the exception with one of the four full-config rejection messages.</summary>
+		/// <param name="message">The role- and surface-specific full-config rejection message.</param>
+		public FullConfigAppendNotSupportedException(string message) : base(message) { }
+	}
+
+	/// <summary>
 	/// Actionable message emitted when the caller's <em>incoming</em> WEB body uses the full-config form
 	/// (<c>SCHEMA_VIEW_MODEL_CONFIG</c> / <c>SCHEMA_MODEL_CONFIG</c> markers) that append merge cannot process.
 	/// The caller authored this body, so converting it to the diff form is a valid corrective action.
@@ -149,21 +166,6 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
-	/// True when <paramref name="message"/> is one of the four full-config append-rejection messages emitted by
-	/// <see cref="UsesUnsupportedFullConfigForm(string, PageBodyRole, out string)"/> / thrown by <see cref="Merge"/>.
-	/// Lets a caller that wraps a <see cref="Merge"/> failure suppress the generic "body must contain valid marker
-	/// pairs" hint, which does not apply to a full-config body — it HAS valid markers, it is simply the wrong form,
-	/// and the rejection message already names the offending body and points at replace mode (ENG-94422).
-	/// </summary>
-	/// <param name="message">An exception message caught from <see cref="Merge"/>.</param>
-	/// <returns><see langword="true"/> when the message is a full-config rejection; otherwise <see langword="false"/>.</returns>
-	public static bool IsFullConfigRejectionMessage(string message) =>
-		message == WebIncomingFullConfigNotSupportedMessage ||
-		message == WebCurrentFullConfigNotSupportedMessage ||
-		message == MobileIncomingFullConfigNotSupportedMessage ||
-		message == MobileCurrentFullConfigNotSupportedMessage;
-
-	/// <summary>
 	/// A top-level mobile full-config key counts as "present" when it exists and is not JSON null,
 	/// regardless of whether the value is an object, array, or scalar.
 	/// </summary>
@@ -203,10 +205,10 @@ internal static class PageBodyMerger {
 		//   - CURRENT: append merge supports only a diff-form server body; the full-config form cannot be
 		//     merged without producing a mixed full-config/*Diff output.
 		if (UsesUnsupportedFullConfigForm(incomingBody, PageBodyRole.Incoming, out string incomingFullConfigMessage)) {
-			throw new InvalidOperationException(incomingFullConfigMessage);
+			throw new FullConfigAppendNotSupportedException(incomingFullConfigMessage);
 		}
 		if (UsesUnsupportedFullConfigForm(currentBody, PageBodyRole.Current, out string currentFullConfigMessage)) {
-			throw new InvalidOperationException(currentFullConfigMessage);
+			throw new FullConfigAppendNotSupportedException(currentFullConfigMessage);
 		}
 		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
 			? MergeMobile(currentBody, incomingBody)

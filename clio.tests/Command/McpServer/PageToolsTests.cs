@@ -4811,15 +4811,37 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("IsFullConfigRejectionMessage: recognizes all four full-config rejection messages and rejects an unrelated merge-failure message, so the CLI wrapper suppresses the misdirecting marker-pairs hint only for full-config rejections (ENG-94422)")]
-	public void IsFullConfigRejectionMessage_ShouldMatchOnlyTheFourFullConfigMessages() {
-		// Act & Assert
-		PageBodyMerger.IsFullConfigRejectionMessage(PageBodyMerger.WebIncomingFullConfigNotSupportedMessage).Should().BeTrue(because: "the incoming web message is a full-config rejection");
-		PageBodyMerger.IsFullConfigRejectionMessage(PageBodyMerger.WebCurrentFullConfigNotSupportedMessage).Should().BeTrue(because: "the current web message is a full-config rejection");
-		PageBodyMerger.IsFullConfigRejectionMessage(PageBodyMerger.MobileIncomingFullConfigNotSupportedMessage).Should().BeTrue(because: "the incoming mobile message is a full-config rejection");
-		PageBodyMerger.IsFullConfigRejectionMessage(PageBodyMerger.MobileCurrentFullConfigNotSupportedMessage).Should().BeTrue(because: "the current mobile message is a full-config rejection");
-		PageBodyMerger.IsFullConfigRejectionMessage("Section 'SCHEMA_VIEW_CONFIG_DIFF' is not valid JSON array: bad").Should().BeFalse(because: "a genuine marker-shape merge failure is NOT a full-config rejection and must keep the marker-pairs hint");
-		PageBodyMerger.IsFullConfigRejectionMessage(null).Should().BeFalse(because: "a null message is not a full-config rejection");
+	[Description("PageBodyMerger.Merge: a full-config body is rejected with the dedicated FullConfigAppendNotSupportedException so the CLI wrapper classifies it by TYPE (not by re-parsing the message) and suppresses the misdirecting marker-pairs hint; a genuine marker-shape failure stays a plain InvalidOperationException that keeps the hint (ENG-94422)")]
+	public void Merge_ShouldThrowTypedFullConfigException_OnlyForFullConfigRejections() {
+		// Arrange
+		string diffFormCurrent = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string fullConfigIncoming = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		// A genuine marker-shape failure: SCHEMA_VIEW_CONFIG_DIFF holds invalid JSON (not the full-config form).
+		string malformedIncoming = "/**SCHEMA_VIEW_CONFIG_DIFF*/[not valid json/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		// Act
+		Action fullConfig = () => PageBodyMerger.Merge(diffFormCurrent, fullConfigIncoming);
+		Action markerShape = () => PageBodyMerger.Merge(diffFormCurrent, malformedIncoming);
+
+		// Assert
+		fullConfig.Should().Throw<PageBodyMerger.FullConfigAppendNotSupportedException>(
+			because: "a full-config rejection must carry the dedicated type so the CLI wrapper classifies it without re-parsing the message (ENG-94422)");
+		markerShape.Should().Throw<InvalidOperationException>(
+				because: "a genuine marker-shape merge failure is still an error")
+			.Which.Should().NotBeOfType<PageBodyMerger.FullConfigAppendNotSupportedException>(
+				because: "a marker-shape failure is NOT a full-config rejection, so it keeps the generic marker-pairs hint");
 	}
 
 	[Test]

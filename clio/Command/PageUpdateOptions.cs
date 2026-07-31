@@ -359,13 +359,14 @@ namespace Clio.Command {
 				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
 				return true;
 			} catch (Exception ex) {
-				// A full-config rejection message is already a complete, self-contained sentence (it names the
-				// offending body — incoming vs the server's — and points at replace mode), so it needs neither
-				// the "Append merge failed:" prefix (which double-states the verb) nor the generic marker-pairs
-				// hint (a full-config body HAS valid markers, it is just the wrong form). Keep both only for
-				// genuine marker-shape merge failures, and phrase the hint role-agnostically so it never blames
-				// the incoming body for a server-side blocker (ENG-94422).
-				string error = PageBodyMerger.IsFullConfigRejectionMessage(ex.Message)
+				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
+				// message) is already a complete, self-contained sentence — it names the offending body
+				// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
+				// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
+				// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
+				// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
+				// a server-side blocker (ENG-94422).
+				string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
 					? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
 					: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
 				response = new PageUpdateResponse { Success = false, Error = error };
