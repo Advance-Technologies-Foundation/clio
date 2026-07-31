@@ -43,10 +43,10 @@ internal static class PageHierarchyRecoveryHint {
 	internal const string Hint =
 		" [hint: the page schema hierarchy could not be resolved. This is often the Creatio schema-manager " +
 		"cache holding a phantom for a section whose concurrent creation was abandoned, which poisons " +
-		"hierarchy reads (ENG-94418). Recover with escalating options — first try (may help): " +
-		"clear-redis-db-by-environment, then sync-schemas for the affected app; if the read still fails, " +
-		"Restart Creatio to clear the server schema-manager cache (the guaranteed fix). Then verify the " +
-		"schema UId via list-pages.]";
+		"hierarchy reads (ENG-94418). Recover with escalating options — first try (may help) clearing the " +
+		"environment's Redis cache ('clio clear-redis-db'; MCP tool 'clear-redis-db-by-environment') and " +
+		"re-reading; if the read still fails, Restart Creatio to clear the server schema-manager cache (the " +
+		"guaranteed fix). Then verify the schema UId via list-pages.]";
 
 	/// <summary>
 	/// Returns <paramref name="error"/> unchanged unless it carries a poisoned-cache hierarchy-read
