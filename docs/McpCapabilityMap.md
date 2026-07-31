@@ -680,6 +680,12 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
   Create a theme on the environment from inline `css-content` plus a caption, or — brand mode — from brand colours and fonts (`primary`, plus optional secondary/accent/success/error, fonts, and font weights), with the CSS built server-side in the same call so it never enters the agent context. Exactly one of the two CSS sources per call.
+  Stable error codes travelling in the `error` message, on top of the version-gate codes above:
+  `theme-css-source-conflict` (both CSS sources supplied), `theme-css-source-missing` (neither supplied),
+  `theme-brand-primary-missing` (brand parameters without `primary`, which is what enables the brand mode),
+  and `theme-build-failed: <engine message>` (the server-side build rejected the brand inputs — raised before
+  any HTTP write, so nothing was created). Non-fatal build advisories travel in `warnings` on both the success
+  and the failure paths; `error` and `warnings` are redacted before they leave the tool.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`

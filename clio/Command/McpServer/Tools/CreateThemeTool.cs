@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -94,7 +95,9 @@ public class CreateThemeTool(
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
 			resolvedCommand => {
 				if (brandArgs is not null) {
-					if (!TryBuildBrandCss(brandArgs, out string css, out buildWarnings, out string buildError)) {
+					bool built = TryBuildBrandCss(brandArgs, out string css, out IReadOnlyList<string> rawWarnings, out string buildError);
+					buildWarnings = RedactWarnings(rawWarnings);
+					if (!built) {
 						return CreateThemeResult.Failure(
 							$"theme-build-failed: {SensitiveErrorTextRedactor.Redact(buildError)}", buildWarnings);
 					}
@@ -122,6 +125,12 @@ public class CreateThemeTool(
 			|| !string.IsNullOrWhiteSpace(args.BodyFont)
 			|| args.FontWeights is { Length: > 0 }
 			|| !string.IsNullOrWhiteSpace(args.Version);
+	}
+
+	private static IReadOnlyList<string> RedactWarnings(IReadOnlyList<string> warnings) {
+		return warnings is { Count: > 0 }
+			? warnings.Select(SensitiveErrorTextRedactor.Redact).ToList()
+			: warnings;
 	}
 
 	private bool TryBuildBrandCss(CreateThemeArgs args, out string css,
