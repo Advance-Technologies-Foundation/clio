@@ -171,10 +171,12 @@ public sealed class ApplicationSectionCreateService(
 	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
 	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
 	// call (90 s) and each post-timeout recovery readback HTTP call (30 s). The recovery readback is POLLED
-	// with a bounded backoff (~30 s total across TimeoutRecoveryVerifyAttempts attempts) rather than a single
-	// immediate check, so a section that commits shortly after the insert budget expired is recovered as a
-	// success instead of a spurious failure (ENG-94419); the bounded poll window keeps clio well under the
-	// observed 180 s ceiling. They do NOT bound the end-to-end response: the preparation reads before the insert
+	// with a bounded backoff (~30 s of inter-attempt sleeps across TimeoutRecoveryVerifyAttempts attempts)
+	// rather than a single immediate check, so a section that commits shortly after the insert budget expired is
+	// recovered as a success instead of a spurious failure (ENG-94419); under normal (sub-second) verify latency
+	// this keeps clio under the observed 180 s ceiling on the CLI/no-override path (the MCP path passes a large
+	// insert override, so it returns its in-progress envelope on the response deadline long before this recovery
+	// poll runs). They do NOT bound the end-to-end response: the preparation reads before the insert
 	// and the 15-attempt poll loop have no cumulative deadline. The background/MCP path additionally
 	// bounds each success-path readback HTTP call (readbackTimeoutMsOverride) so a wedged readback cannot
 	// hold a thread + connection for the life of the long-lived server process (ENG-91316); the
@@ -1054,8 +1056,9 @@ public sealed class ApplicationSectionCreateService(
 	// section transaction may still be committing, so a single immediate readback frequently reports the
 	// section absent even though it commits moments later. The id-matched verify is polled with a doubling
 	// backoff (2s, 4s, 8s, capped) so a section that commits shortly after the budget expired is recovered as
-	// success. The attempt count x capped backoff bounds the extra post-timeout wall-clock (~30 s here) so the
-	// whole call stays under the MCP client request ceiling; the no-op delay seam makes it instant under test.
+	// success. Across 6 attempts the five inter-attempt sleeps sum to ~30 s (2+4+8+8+8); each verify is itself
+	// a cheap read-only select bounded by VerificationTimeoutMs, so under normal (sub-second) verify latency the
+	// added post-timeout span is ~30 s. The no-op delay seam makes it instant under test.
 	private const int TimeoutRecoveryVerifyAttempts = 6;
 	private static readonly TimeSpan TimeoutRecoveryInitialBackoff = TimeSpan.FromSeconds(2);
 	private static readonly TimeSpan TimeoutRecoveryMaxBackoff = TimeSpan.FromSeconds(8);
