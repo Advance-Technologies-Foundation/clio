@@ -1067,8 +1067,18 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		var serviceUrlBuilder = ActivatorUtilities.CreateInstance<ServiceUrlBuilder>(_serviceProvider, settings);
 		var command = ActivatorUtilities.CreateInstance<CompileConfigurationCommand>(_serviceProvider,
 			_applicationClientFactory.CreateClient(settings), settings, serviceUrlBuilder);
-		return command.Execute(new CompileConfigurationOptions { Environment = envName });
+		return command.Execute(BuildEnvUiCompileOptions(envName));
 	}
+
+	/// <summary>
+	/// Builds the compile options for the interactive env-ui "Compile configuration" action. <c>IsSilent</c>
+	/// is set because selecting the action from the menu is itself the explicit compile intent, so the
+	/// shared heavy-operation prompt must not fire again inside the already-interactive menu (ENG-93157,
+	/// RC-12). Without it a declined prompt would return the declined exit code (2), which
+	/// <c>ExecuteEnvironmentAction</c> renders as a misleading red "failed" banner.
+	/// </summary>
+	internal static CompileConfigurationOptions BuildEnvUiCompileOptions(string envName) =>
+		new() { Environment = envName, IsSilent = true };
 
 	private static EnvironmentSettings CloneEnvironmentSettings(EnvironmentSettings environmentSettings, bool forceNetCore = false)
 	{

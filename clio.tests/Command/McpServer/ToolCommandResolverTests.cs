@@ -181,6 +181,64 @@ public class ToolCommandResolverTests {
 		}
 	}
 
+	[Test]
+	[Description("RC-14: the credential-passthrough resolve path also forces NonInteractiveConsole into its per-request child container, so the mcp-http multi-tenant edge cannot deadlock on Console.ReadKey.")]
+	[Category("Unit")]
+	public void Resolve_Should_ForceNonInteractiveConsole_InPassthroughChildContainer() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		ICredentialContextAccessor accessor = Substitute.For<ICredentialContextAccessor>();
+		accessor.Current.Returns(new CredentialContext(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			false,
+			McpTransport.Http,
+			true));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService, accessor);
+
+		try {
+			// Act
+			IInteractiveConsole resolvedConsole = resolver.Resolve<IInteractiveConsole>(new EnvironmentOptions());
+
+			// Assert
+			resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "the credential-passthrough child container must force the non-interactive console too, or the multi-tenant mcp-http edge could reopen the Console.ReadKey deadlock");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("RC-14: ResolveWithoutEnvironment also forces NonInteractiveConsole into its per-request child container.")]
+	[Category("Unit")]
+	public void ResolveWithoutEnvironment_Should_ForceNonInteractiveConsole_InChildContainer() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+
+		try {
+			// Act
+			IInteractiveConsole resolvedConsole =
+				resolver.ResolveWithoutEnvironment<IInteractiveConsole>(new EnvironmentOptions());
+
+			// Assert
+			resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "the environmentless child container must force the non-interactive console so its resolved commands never prompt");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
 	/// <summary>Spy that captures the <see cref="IInteractiveConsole"/> the resolver passes to Fill.</summary>
 	private sealed class ConsoleCapturingEnvironmentSettings : EnvironmentSettings {
 		public IInteractiveConsole CapturedConsole { get; private set; }

@@ -53,6 +53,24 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 
 	#endregion
 
+	#region Tests: Compile action
+
+	[Test]
+	[Description("RC-12: the env-ui 'Compile configuration' action runs the compile silently, so the shared heavy-operation prompt does not fire inside the interactive menu and a declined prompt cannot be rendered as a misleading 'failed' banner.")]
+	public void BuildEnvUiCompileOptions_ShouldBeSilent_ForEnvUiCompileAction()
+	{
+		// Act
+		CompileConfigurationOptions options = EnvManageUiCommand.BuildEnvUiCompileOptions("dev");
+
+		// Assert
+		options.IsSilent.Should().BeTrue(
+			because: "selecting Compile from the env-ui menu is the explicit compile intent, so it must not re-prompt and cannot postpone into a misleading failure banner (RC-12)");
+		options.Environment.Should().Be("dev",
+			because: "the compile must target the environment the user selected in the menu");
+	}
+
+	#endregion
+
 	#region Tests: Constructor
 
 	[Test]

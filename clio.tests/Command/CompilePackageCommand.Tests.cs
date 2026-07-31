@@ -32,6 +32,16 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 		containerBuilder.AddSingleton(_logger);
 	}
 
+	[SetUp]
+	public override void Setup() {
+		base.Setup();
+		// Reset the interaction stub to the production default (non-interactive) each test so a prior
+		// test's IsInteractive=true/Prompt stub cannot leak into a later test via the reused fixture
+		// instance (ClearReceivedCalls resets only call history, not stubs — review RC-13). Tests that
+		// need an interactive terminal re-stub IsInteractive=true explicitly.
+		_interactiveConsole.IsInteractive.Returns(false);
+	}
+
 	[TearDown]
 	public override void TearDown() {
 		_packageBuilder.ClearReceivedCalls();

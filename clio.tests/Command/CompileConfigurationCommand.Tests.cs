@@ -41,6 +41,13 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		base.Setup();
 		_serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
 			.Returns("http://test/ServiceModel/CompilationService.svc/Compile");
+		// Reset the interaction stub to the production default (non-interactive) each test. The fixture
+		// instance and its substitutes are reused across tests by NUnit; ClearReceivedCalls in TearDown
+		// resets only call history, not configured .Returns stubs, so without this a prior test that
+		// stubbed IsInteractive=true/Prompt=false could leak into a later test and silently short-circuit
+		// the confirmation gate (order-dependent false negative, review RC-13). Tests that need an
+		// interactive terminal re-stub IsInteractive=true explicitly.
+		_interactiveConsole.IsInteractive.Returns(false);
 	}
 
 	[TearDown]
