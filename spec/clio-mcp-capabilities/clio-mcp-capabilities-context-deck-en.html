@@ -945,9 +945,9 @@
           <span class="out">a rare path next to<br>apps and pages</span>
         </div>
         <div class="r hold">
-          <span class="cond">The page tree — we wanted to add it</span>
+          <span class="cond">A new tool <code>get-page-hierarchy</code> — reads a page's replacing chain</span>
           <span class="go">→</span>
-          <span class="out">we did not: <b>+2.2 KB</b><br>broke the budget</span>
+          <span class="out">shipped hidden from the start:<br>in the visible set it would cost <b>+2.2 KB</b></span>
         </div>
       </div>
 
@@ -955,34 +955,6 @@
     </div>
   </section>
 
-  <!-- 8 index -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">part 1</span><span class="num"></span><span>finding hidden tools</span></div>
-      <h2>How the agent learns about what it cannot see</h2>
-      <p class="lead">You can only remove a tool from the list if there is still a way to learn that it exists. Otherwise “hidden” just means “broken”.</p>
-
-      <div class="cols two" style="margin-bottom:24px">
-        <div class="panel rust">
-          <h3>A full description is expensive</h3>
-          <p style="margin:0 0 10px">One tool with everything — all arguments, types, examples — is about <strong>1.8 KB</strong>.</p>
-          <p style="margin:0" class="fine">For 162 tools, that is the same big list we were trying to escape.</p>
-        </div>
-        <div class="panel cyan">
-          <h3>A name is cheap</h3>
-          <p style="margin:0 0 10px">One row is about <strong>0.2 KB</strong>: the name, one sentence, and whether it can be called directly.</p>
-          <p style="margin:0" class="fine">All 162 rows cost about the same as full descriptions for twenty tools.</p>
-        </div>
-      </div>
-
-      <div class="stack tight" style="max-width:660px;margin-bottom:20px">
-        <div class="bar-row"><span class="lbl">full description</span><span class="bar"><span class="rust" style="width:100%"></span></span><span class="val">~1.8 KB</span></div>
-        <div class="bar-row"><span class="lbl">one list row</span><span class="bar"><span class="cyan" style="width:11%"></span></span><span class="val">≈0.2 KB</span></div>
-      </div>
-
-      <p class="lead" style="margin:0">So the agent always has the <strong>full list of names</strong>. It asks for the long description only for the tool it is really going to call.</p>
-    </div>
-  </section>
 
   <!-- 9 does the agent cope -->
   <section class="slide">
@@ -1581,7 +1553,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 12, 15, 20]; // parts 1/2/3 + first appendix slide
+  var boundaries = [4, 11, 14, 19]; // parts 1/2/3 + first appendix slide
   var i = 0;
 
   // budget rail

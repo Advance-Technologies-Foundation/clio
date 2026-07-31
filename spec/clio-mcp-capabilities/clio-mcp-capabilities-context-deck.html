@@ -939,41 +939,13 @@
           <span class="out">нішевий шлях порівняно<br>з застосунками й сторінками</span>
         </div>
         <div class="r hold">
-          <span class="cond">Дерево сторінок — хотіли додати</span>
+          <span class="cond">Новий інструмент <code>get-page-hierarchy</code> — читає ланцюг заміщення сторінки</span>
           <span class="go">→</span>
-          <span class="out">не пустили: <b>+2,2 КБ</b><br>рвали бюджет</span>
+          <span class="out">одразу випустили схованим:<br>у видимому наборі це <b>+2,2 КБ</b></span>
         </div>
       </div>
 
       <p class="fine" style="margin-top:18px">Останній рядок — найпоказовіший. Бюджет тут не звітність, а ворота: рішення «не додаємо» ухвалене числом, а не смаком.</p>
-    </div>
-  </section>
-  <!-- index -->
-  <section class="slide">
-    <div class="inner">
-      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>як знайти приховане</span></div>
-      <h2>Як агент дізнається про те, чого не бачить</h2>
-      <p class="lead">Прибрати інструмент зі списку можна лише тоді, коли лишається спосіб про нього дізнатися. Інакше «сховали» означає просто «зламали».</p>
-
-      <div class="cols two" style="margin-bottom:24px">
-        <div class="panel rust">
-          <h3>Повний каталог — дорого</h3>
-          <p style="margin:0 0 10px">Повний опис одного інструмента — <strong>~1,8 КБ</strong>: усі аргументи, типи, приклади.</p>
-          <p style="margin:0" class="fine">На 162 інструменти це той самий каталог, від якого ми тікали.</p>
-        </div>
-        <div class="panel cyan">
-          <h3>Список назв — дешево</h3>
-          <p style="margin:0 0 10px">Один рядок — <strong>≈0,2 КБ</strong>: імʼя, одне речення призначення, і чи можна кликати прямо.</p>
-          <p style="margin:0" class="fine">На всі 162 виходить приблизно як повний каталог на два десятки.</p>
-        </div>
-      </div>
-
-      <div class="stack tight" style="max-width:660px;margin-bottom:20px">
-        <div class="bar-row"><span class="lbl">повний опис</span><span class="bar"><span class="rust" style="width:100%"></span></span><span class="val">~1,8 КБ</span></div>
-        <div class="bar-row"><span class="lbl">рядок списку</span><span class="bar"><span class="cyan" style="width:11%"></span></span><span class="val">≈0,2 КБ</span></div>
-      </div>
-
-      <p class="lead" style="margin:0">Тому агент завжди має <strong>повний список назв</strong> — і просить докладний опис лише того інструмента, який справді збирається викликати.</p>
     </div>
   </section>
   <!-- does the agent cope -->
@@ -1561,7 +1533,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 12, 15, 20]; // блоки 1/2/3 + перший слайд appendix
+  var boundaries = [4, 11, 14, 19]; // блоки 1/2/3 + перший слайд appendix
   var i = 0;
 
   // budget rail
