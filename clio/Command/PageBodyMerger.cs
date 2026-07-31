@@ -20,7 +20,10 @@ internal static class PageBodyMerger {
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
 	/// correct actor. The corrective advice differs by role: the caller can convert an <see cref="Incoming"/>
 	/// body they authored, but a <see cref="Current"/> (server-side) body is not theirs to convert — for that
-	/// one the only path is <c>--mode replace</c> (ENG-94422).
+	/// one the only path is <c>--mode replace</c> (ENG-94422). Append is not supported against a full-config
+	/// current body by design: a <c>*_DIFF</c> is a list of operations relative to a base and cannot be
+	/// losslessly derived from an already-resolved full-config body without that base — the same reason
+	/// ENG-93090 rejected auto-converting a full-config body on append.
 	/// </summary>
 	internal enum PageBodyRole {
 

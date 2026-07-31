@@ -136,9 +136,10 @@ The rejection message names **which** body is full-config, because the fix diffe
   (`*_DIFF` markers) or use `--mode replace`.
 - **The current page on the server is full-config** — every page `create-app-section`
   generates is stored this way. You did not author that body and cannot convert it, so
-  append is **not supported** against it by design (merging diff-form operations into a
-  full-config body would produce an unloadable mixed form). `--mode replace` is the only
-  path for such a page.
+  append is **not supported** against it by design: a `*_DIFF` is a list of operations
+  relative to a base and cannot be losslessly derived from an already-resolved full-config
+  body without that base (see ENG-93090), and merging diff-form operations into a full-config
+  body would produce an unloadable mixed form. `--mode replace` is the only path for such a page.
 
 ## Synopsis
 
