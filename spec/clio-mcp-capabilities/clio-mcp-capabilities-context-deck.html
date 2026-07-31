@@ -903,6 +903,51 @@
       <p class="fine" style="margin-top:12px">Решта інструментів існує й працює — вона лише <strong>не оголошена</strong>. Далі — чому кожне з трьох рішень виявилося складнішим, ніж звучить.</p>
     </div>
   </section>
+  <!-- why exactly these -->
+  <section class="slide">
+    <div class="inner">
+      <div class="eyebrow"><span class="b">блок 1</span><span class="num"></span><span>критерій відбору</span></div>
+      <h2>Чому саме ці — і чому не сховали всі</h2>
+      <p class="lead">Спокуса сховати геть усе була. Вона не працює, і причина проста: <strong>приховування не безкоштовне</strong>.</p>
+
+      <div class="cols two" style="margin-bottom:24px">
+        <div class="panel rust">
+          <h3>Чому не всі</h3>
+          <p style="margin:0 0 10px">Кожен схований інструмент коштує <strong>додатковий раунд</strong>: спершу спитати схему, потім викликати. Для того, що агент робить у кожній задачі, це постійний податок на кожен крок.</p>
+          <p style="margin:0" class="fine">А два виконавці й доступ до правил мусять бути видимі за визначенням — інакше сховане не викликати, а правил не прочитати.</p>
+        </div>
+        <div class="panel cyan">
+          <h3>Критерій</h3>
+          <p style="margin:0 0 10px">Ділимо не за важливістю, а за <strong>частотою × ціною схеми</strong>.</p>
+          <p style="margin:0" class="fine">Часто й дешево — на видноті. Рідко — сховане, навіть якщо корисне. «Корисне» тут узагалі не критерій: корисні всі 162.</p>
+        </div>
+      </div>
+
+      <h3>На видноті — те, з чого починається майже кожна задача</h3>
+      <p style="margin:0 0 22px;max-width:74ch">Подивитися застосунок · відкрити сторінку · глянути схему сутності · дізнатися, які є компоненти. Це читання, воно потрібне на першому кроці, і без нього агент не може навіть спланувати роботу. У коді біля пошуку компонентів так і написано — <span class="mono">hot path</span>.</p>
+
+      <h3>А ось що звідти прибрали — і чому</h3>
+      <div class="routes">
+        <div class="r hold">
+          <span class="cond">Вісім інструментів для роботи з базою даних</span>
+          <span class="go">→</span>
+          <span class="out">коштували <b>~19 %</b> обсягу<br>в <i>кожній</i> сесії — навіть коли БД не торкались</span>
+        </div>
+        <div class="r hold">
+          <span class="cond">Читання системних налаштувань</span>
+          <span class="go">→</span>
+          <span class="out">нішевий шлях порівняно<br>з застосунками й сторінками</span>
+        </div>
+        <div class="r hold">
+          <span class="cond">Дерево сторінок — хотіли додати</span>
+          <span class="go">→</span>
+          <span class="out">не пустили: <b>+2,2 КБ</b><br>рвали бюджет</span>
+        </div>
+      </div>
+
+      <p class="fine" style="margin-top:18px">Останній рядок — найпоказовіший. Бюджет тут не звітність, а ворота: рішення «не додаємо» ухвалене числом, а не смаком.</p>
+    </div>
+  </section>
   <!-- index -->
   <section class="slide">
     <div class="inner">
@@ -1031,14 +1076,10 @@ every other tool is invoked via
         <span><b style="background:var(--rule)"></b> ~144 приховані — досяжні, але не оголошені</span>
       </div>
 
-      <div class="cols two">
+      <div class="cols two" style="grid-template-columns:1fr">
         <div class="panel cyan">
           <h3>Що не дає поверхні відрости назад</h3>
           <p style="margin:0">Розмір видимого набору зафіксований у тесті — і кількістю, і байтами. Додати інструмент «непомітно» не вийде: тест червоніє, і рішення треба обґрунтувати.</p>
-        </div>
-        <div class="panel brass">
-          <h3>Ціна дешевої реалізації</h3>
-          <p style="margin:0">Видимість визначається на рівні <em>класу</em>, а не окремого методу — так простіше й надійніше. Але один клас із восьми методів для роботи з базою коштував <strong>~19 % обсягу</strong> в <em>кожній</em> сесії, навіть коли базу не торкали. Довелось виносити його цілим класом.</p>
         </div>
       </div>
 
@@ -1520,7 +1561,7 @@ localizable string. Rule: … See the
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var total = slides.length;
-  var boundaries = [4, 11, 14, 19]; // блоки 1/2/3 + перший слайд appendix
+  var boundaries = [4, 12, 15, 20]; // блоки 1/2/3 + перший слайд appendix
   var i = 0;
 
   // budget rail
