@@ -48,4 +48,19 @@ public sealed class PushPackageCommandForceCompilationTests {
 		capturedCompileOptions!.IsSilent.Should().BeTrue(
 			because: "the forced compile must run silently so a heavy-operation prompt can never postpone it and leave push-package falsely reporting success");
 	}
+
+	[Test]
+	[Description("RC-16 drift guard: every in-process CompileConfigurationOptions construction helper sets IsSilent=true, so a future in-process caller that forgets to compile silently fails CI instead of reopening the prompt-hang / false-success class (RC-10/RC-12/RC-15). Add new helpers here.")]
+	public void InProcessCompileOptionBuilders_ShouldAllBeSilent() {
+		// Act — the known in-process helpers that build compile options for a programmatic compile.
+		CompileConfigurationOptions pushForceOptions =
+			PushPackageCommand.CreateFromPushPkgOptions(new PushPkgOptions { Environment = "dev" });
+		CompileConfigurationOptions envUiOptions = EnvManageUiCommand.BuildEnvUiCompileOptions("dev");
+
+		// Assert
+		pushForceOptions.IsSilent.Should().BeTrue(
+			because: "push-package --force-compilation compiles in-process and must not prompt (RC-10)");
+		envUiOptions.IsSilent.Should().BeTrue(
+			because: "the env-ui compile menu action compiles in-process and must not prompt (RC-12)");
+	}
 }

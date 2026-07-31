@@ -51,7 +51,7 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 	}
 
 	[Test]
-	[Description("On an interactive terminal, when the user declines the heavy-operation warning the package compilation is postponed: the package builder is never invoked and the command exits 0 (ENG-93157).")]
+	[Description("On an interactive terminal, when the user declines the heavy-operation warning the package compilation is postponed: the package builder is never invoked and the command returns the distinct DeclinedExitCode (2) rather than 0, so postpone cannot be mistaken for success (ENG-93157, RC-10).")]
 	public void Execute_ShouldPostponeAndNotBuild_WhenInteractiveUserDeclines() {
 		// Arrange
 		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();

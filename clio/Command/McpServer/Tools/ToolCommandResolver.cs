@@ -121,21 +121,9 @@ public class ToolCommandResolver(
 		(EnvironmentSettings settings, string cacheKey) = ResolveSettingsAndKey(options);
 		_lastResolvedTenantKey.Value = cacheKey;
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings, ForceNonInteractiveConsole));
+			() => new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer));
 		return container.GetRequiredService<TCommand>();
 	}
-
-	// MCP command execution is NEVER interactive, whatever the transport: the stdio host has piped
-	// stdin, but the mcp-http host's process console can be a real TTY. A resolved command that runs a
-	// warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) must therefore NOT depend on
-	// Console.IsInputRedirected — on an mcp-http host launched in a terminal that probe returns
-	// interactive and Console.ReadKey() would hang the request thread. Forcing NonInteractiveConsole into
-	// every per-request child container makes such confirmations fail OPEN (proceed) by construction.
-	// This covers the RESOLVED COMMAND's console only; the resolver's own settings.Fill(...) calls pass
-	// NonInteractiveConsole.Shared directly (review RC-5) so the Safe-environment prompt cannot deadlock
-	// either — together they close the mcp-http-at-a-TTY hole regardless of how the host was started.
-	private static void ForceNonInteractiveConsole(IServiceCollection services) =>
-		services.AddSingleton<IInteractiveConsole>(NonInteractiveConsole.Shared);
 
 	/// <inheritdoc />
 	public string GetTenantKey(EnvironmentOptions options) {
@@ -248,7 +236,7 @@ public class ToolCommandResolver(
 		// startup (BindingsModule.ValidateEnvironmentScopedGraph), so re-validating the full ~455-registration
 		// graph on every near-continuous rotating-token cache miss is pure startup-grade cost.
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings, ForceNonInteractiveConsole, validateGraph: false));
+			() => new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer, validateGraph: false));
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -354,7 +342,7 @@ public class ToolCommandResolver(
 		// at a TTY would still deadlock on Console.ReadKey inside Fill (review RC-5). NonInteractiveConsole
 		// fails closed, so a Safe environment surfaces SafeEnvironmentConfirmationRequiredException instead.
 		settings = settings.Fill(options, NonInteractiveConsole.Shared);
-		IServiceProvider container = new BindingsModule().Register(settings, ForceNonInteractiveConsole);
+		IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
 		return container.GetRequiredService<TCommand>();
 	}
 

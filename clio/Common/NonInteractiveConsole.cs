@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Clio.Common;
 
 /// <summary>
@@ -21,6 +23,18 @@ public sealed class NonInteractiveConsole : IInteractiveConsole {
 	public NonInteractiveConsole(ILogger logger = null) {
 		_logger = logger;
 	}
+
+	/// <summary>
+	/// Registers the shared non-interactive console into a child DI container, overriding the default
+	/// <see cref="RealInteractiveConsole"/>. Use it for every automation host that builds its own container
+	/// and resolves commands to run without a human at the console — the per-request MCP child containers
+	/// (<c>ToolCommandResolver</c>) and scenario steps (<c>ScenarioRunnerCommand</c>) — so a command that
+	/// runs a warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) fails OPEN (proceeds) by
+	/// construction instead of blocking on <see cref="System.Console.ReadKey()"/> on an attached TTY.
+	/// </summary>
+	/// <param name="services">The child container's service collection.</param>
+	public static void ForceInContainer(IServiceCollection services) =>
+		services.AddSingleton<IInteractiveConsole>(Shared);
 
 	/// <inheritdoc />
 	public bool IsInteractive => false;

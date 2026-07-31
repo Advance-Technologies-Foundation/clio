@@ -336,20 +336,18 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("The compile-creatio tool description carries the ENG-93157 pre-compilation confirmation trigger so an agent reading the guaranteed tool-description channel warns and offers to postpone before every call.")]
+	[Description("The compile-creatio tool description carries the ENG-93157 pre-compilation confirmation trigger AND the tool-surface metadata (Destructive/Idempotent/OpenWorld) is unchanged — this PR's own regression claim (RC-20).")]
 	public void CompileCreatio_Description_Should_Carry_Confirmation_Trigger()
 	{
 		// Arrange
-		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)typeof(CompileCreatioTool)
-			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
-			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
-			.Single();
-		System.ComponentModel.DescriptionAttribute description =
-			(System.ComponentModel.DescriptionAttribute)typeof(CompileCreatioTool)
-				.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
-				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
-				.Single();
-		_ = toolAttribute;
+		System.Reflection.MethodInfo method = typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!;
+
+		// Act
+		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false).Single();
+		System.ComponentModel.DescriptionAttribute description = (System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single();
 
 		// Assert
 		description.Description.Should().Contain("compile now or postpone",
@@ -358,6 +356,12 @@ public sealed class CompileCreatioToolTests
 			because: "the description must gate the call on explicit user confirmation");
 		description.Description.Should().Contain("standing consent",
 			because: "the description must close the repeat-in-session loophole so the agent re-asks even on an identical repeated request (ENG-93157 AC-5)");
+		toolAttribute.Destructive.Should().BeTrue(
+			because: "compile-creatio forces a runtime reload; this PR must not change its destructive classification (RC-20)");
+		toolAttribute.Idempotent.Should().BeFalse(
+			because: "compilation is not idempotent; this PR must not change that classification (RC-20)");
+		toolAttribute.OpenWorld.Should().BeFalse(
+			because: "compile-creatio is not an open-world tool; this PR must not change that classification (RC-20)");
 	}
 
 	[Test]

@@ -4,6 +4,7 @@ using Clio;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -112,6 +113,22 @@ public sealed class SafeEnvironmentFillTests {
 			because: "redirected stdin (MCP stdio / CI pipe) means no interactive prompt is possible");
 		terminalIsInteractive.Should().BeTrue(
 			because: "a real terminal can prompt the user");
+	}
+
+	[Test]
+	[Description("NonInteractiveConsole.ForceInContainer overrides the default RealInteractiveConsole so any automation host (MCP resolver, scenario runner) that builds a child container resolves the shared non-interactive console — the single mechanism that keeps compile confirmations from blocking on Console.ReadKey (ENG-93157, RC-14/RC-15).")]
+	public void ForceInContainer_ShouldRegisterSharedNonInteractiveConsole() {
+		// Arrange — start from the production default (RealInteractiveConsole), then apply the override.
+		var services = new ServiceCollection();
+		services.AddSingleton<IInteractiveConsole>(RealInteractiveConsole.Shared);
+		NonInteractiveConsole.ForceInContainer(services);
+
+		// Act
+		IInteractiveConsole resolved = services.BuildServiceProvider().GetRequiredService<IInteractiveConsole>();
+
+		// Assert
+		resolved.Should().BeSameAs(NonInteractiveConsole.Shared,
+			because: "ForceInContainer must make the container resolve the shared non-interactive console, overriding the default, so automation-resolved commands never prompt");
 	}
 
 	[Test]

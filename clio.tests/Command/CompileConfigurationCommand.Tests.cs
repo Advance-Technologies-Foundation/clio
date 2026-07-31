@@ -84,7 +84,7 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
-	[Description("On an interactive terminal the user is warned that compilation is heavy and, when they decline, the compilation is postponed: nothing is sent to Creatio, the command exits 0, and a run-later hint is shown (ENG-93157).")]
+	[Description("On an interactive terminal the user is warned that compilation is heavy and, when they decline, the compilation is postponed: nothing is sent to Creatio, the command returns the distinct DeclinedExitCode (2) rather than 0, and a run-later hint is shown (ENG-93157, RC-10).")]
 	public void Execute_ShouldPostponeAndNotCompile_WhenInteractiveUserDeclines() {
 		// Arrange
 		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
