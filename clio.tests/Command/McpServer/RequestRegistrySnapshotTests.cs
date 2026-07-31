@@ -461,10 +461,13 @@ public sealed class RequestRegistrySnapshotTests {
 				.Concat(state.Entries.SelectMany(entry =>
 					entry.References?.TypeDefinitions?.Keys ?? Enumerable.Empty<string>())),
 			System.StringComparer.Ordinal);
-		// `Record` is the TypeScript built-in generic the closure silently drops. `ViewModelContext`
-		// is named only by the platform-injected baseParameters.$context — never authorable, never a
-		// closure seed — so the producer deliberately publishes no schema for it on either flavor.
-		HashSet<string> knownUnpublishedTypeNames = new(System.StringComparer.Ordinal) { "Record", "ViewModelContext" };
+		// `Record` is the TypeScript built-in generic the closure silently drops. `File` is likewise a
+		// platform built-in — the W3C File API interface, named by crt.UploadFileRequest.files (File[]) —
+		// so no Creatio-side schema exists to publish for it (unlike the devkit's own LookupValue, which
+		// the producer DOES publish). `ViewModelContext` is named only by the platform-injected
+		// baseParameters.$context — never authorable, never a closure seed — so the producer
+		// deliberately publishes no schema for it on either flavor.
+		HashSet<string> knownUnpublishedTypeNames = new(System.StringComparer.Ordinal) { "File", "Record", "ViewModelContext" };
 
 		// Act
 		List<string> danglingTypeNames = typeReferences
