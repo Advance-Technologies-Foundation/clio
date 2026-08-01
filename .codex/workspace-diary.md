@@ -7463,3 +7463,30 @@ Decision: Three-way classify every article — snapshot baseline (merge-base 558
 Discovery: (1) The published articles are the C# raw string literal verbatim, minus the closing-delimiter indent — so base==published proves the extractor is lossless for that file, which makes the "safe to port" bucket self-verifying; a lossy parse can only over-report "both edited", never under-report. (2) Guide bodies embed JS containing `};`, so a non-greedy object-initializer regex truncates the text — scan for the raw-literal closing line instead. (3) `OracleCapture` (reflection over the built clio.dll) is the independent check on that extractor: 51 of 68 resources matched byte-for-byte, and every one of the 17 differences was an already-classified producer edit. (4) master retired `run-process-button` into `when-to-use-requests`, and clio-knowledge kept it — a fourth category the classifier did not anticipate. (5) `FreedomToMobileConversionGuidanceResource` carries `[FeatureToggle("mobile-page-converter")]`; publishing the article without `requiredFeatures` would have un-gated it.
 Files: clio/Command/McpServer/{BindingsModule.cs,Command/McpServer/Tools/GuidanceGetTool.cs}, clio.tests/Command/McpServer/{WorkspaceTemplateGuidanceDriftTests.cs,DurableInvocationGateCompletenessTests.cs,GuidanceGetToolTests.cs,Fixtures/curated-knowledge-names.json}; (producer) clio-knowledge PR #32.
 Impact: The template drift gate no longer needs a compiled GuidanceCatalog — it resolves shipped template names against a curated-knowledge name fixture, so the AGENTS.md gate survives the externalization. Any future "delete an embedded catalog" PR should run the same three-way pass before trusting a modify/delete resolution. macOS baseline for this branch: 19 pre-existing master failures + 5 pre-existing branch failures (4 knowledge trust-store, 1 process-env), all path/shell specific and green in CI.
+
+## 2026-08-02 01:20 – Clearing the last SonarCloud issues on PR #927
+Context: PR #927 needed a clean SonarCloud gate; api/issues/search on
+pullRequest=927 with resolved=false listed exactly five open issues, and the
+S107 threshold on this profile is 7 parameters (read from the issue message,
+not assumed from the rule default).
+Decision: fixed four in code (S2325 static GetConfiguration; S2925 TimeProvider
++ OperationDeadline replacing Stopwatch in KnowledgeGitTransport; S107 on
+Publish via a KnowledgeGenerationPublication record; S107 on the activator by
+moving the checkout-existence probe into IKnowledgeSourceInstallationStore.
+GetInstalledGitRepositoryPath). S1075 on `docs://knowledge/` is a false
+positive and needs a SonarCloud transition, which requires Administer Issues
+on the project.
+Discovery: NSubstitute returns "" (not null) for unstubbed string members, so
+introducing a `string?` probe does not automatically expose tests that never
+stub it -- one activation test kept passing on the empty-string default until
+the stub was made an explicit `.Returns((string?)null)`. Also: the activator's
+existence probe (repository root exists) and the management service's probe
+(a `.git` marker exists) are deliberately different predicates and must not be
+merged into one store member.
+Files: clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs,
+KnowledgeSourceInstallationStore.cs, KnowledgeMultiSourceActivator.cs,
+KnowledgeBundleNuGetClient.cs, KnowledgeSourceManagementService.cs,
+clio.tests/Command/McpServer/Knowledge*Tests.cs
+Impact: future Sonar rounds on this stack should query the API for the exact
+authorized parameter count instead of assuming the rule default, and should
+mutate nullable-string stubs explicitly rather than by deletion.
