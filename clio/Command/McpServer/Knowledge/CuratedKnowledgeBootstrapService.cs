@@ -84,7 +84,6 @@ internal sealed class CuratedKnowledgeBootstrapService(
 					StringComparison.OrdinalIgnoreCase));
 			_migrationAliases = new[] { previousAlias, CuratedKnowledgeSourceDefaults.LegacyAlias }
 				.Where(alias => !string.IsNullOrWhiteSpace(alias))
-				.Select(alias => alias!)
 				.Distinct(StringComparer.OrdinalIgnoreCase)
 				.ToArray();
 			foreach (string migrationAlias in _migrationAliases) {

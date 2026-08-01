@@ -16,6 +16,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class KnowledgeReferenceExampleServiceTests {
 	private IKnowledgeBundleActivator _activator = null!;
 	private ServiceProvider _container = null!;
+	private IFeatureToggleService _featureToggles = null!;
 	private IKnowledgeBundleRuntime _runtime = null!;
 	private IKnowledgeReferenceExampleService _service = null!;
 
@@ -23,9 +24,11 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 	public void SetUp() {
 		_activator = Substitute.For<IKnowledgeBundleActivator>();
 		_runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		_featureToggles = Substitute.For<IFeatureToggleService>();
 		ServiceCollection services = new();
 		services.AddSingleton(_activator);
 		services.AddSingleton(_runtime);
+		services.AddSingleton(_featureToggles);
 		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
 		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
 		_container = services.BuildServiceProvider();
@@ -35,6 +38,7 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 	[TearDown]
 	public void TearDown() {
 		_activator.ClearReceivedCalls();
+		_featureToggles.ClearReceivedCalls();
 		_runtime.ClearReceivedCalls();
 		_container.Dispose();
 	}
@@ -187,6 +191,79 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 		result.Examples.Should().BeEmpty(because: "unsafe catalog metadata must never be presented as trusted content");
 		result.Diagnostics.Should().ContainSingle(message => message.Contains("title", StringComparison.Ordinal),
 			because: "the caller should receive a bounded validation diagnostic without rendering the unsafe title");
+	}
+
+	[Test]
+	[Description("Hides a reference example whose required feature toggle is disabled, matching guidance-article gating.")]
+	public void List_ShouldHideCatalogItem_WhenRequiredFeatureIsDisabled() {
+		// Arrange
+		_runtime.GetArticlesByRole(KnowledgeReferenceExampleService.ReferenceExampleRole)
+			.Returns([GatedArticle("process-designer")]);
+
+		// Act
+		KnowledgeReferenceExampleListResult result = _service.List(new(null, null, null, null));
+
+		// Assert
+		result.Examples.Should().BeEmpty(
+			because: "a reference example gated behind a disabled feature must stay invisible exactly as a gated guidance article does");
+		result.Diagnostics.Should().BeEmpty(
+			because: "a gated catalog item must not leak its identity through a diagnostic either");
+		result.Success.Should().BeTrue(
+			because: "hiding a gated example is normal filtering rather than a catalog failure");
+	}
+
+	[Test]
+	[Description("Surfaces a feature-gated reference example once its required feature toggle is enabled.")]
+	public void List_ShouldReturnCatalogItem_WhenRequiredFeatureIsEnabled() {
+		// Arrange
+		_featureToggles.IsFeatureEnabled("process-designer").Returns(true);
+		_runtime.GetArticlesByRole(KnowledgeReferenceExampleService.ReferenceExampleRole)
+			.Returns([GatedArticle("process-designer")]);
+
+		// Act
+		KnowledgeReferenceExampleListResult result = _service.List(new(null, null, null, null));
+
+		// Assert
+		result.Examples.Should().ContainSingle(example => example.Id == "kafka",
+			because: "the gate must only withhold examples whose required features are actually disabled");
+	}
+
+	[TestCase("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "main",
+		"source must contain")]
+	[TestCase("https://github.com/example/kafka", "https://user:secret@github.com/example/kafka",
+		"source must contain")]
+	[TestCase("workspace: workspace", "workspace: ../escape",
+		"entryPoints must contain")]
+	[TestCase("- app-lifecycle", "- esq",
+		"supportingCapabilities must contain")]
+	[Description("Rejects catalog items that violate the revision, credential, path-containment, and uniqueness guards.")]
+	public void List_ShouldRejectCatalogItem_WhenPublisherMetadataViolatesAGuard(
+		string search,
+		string replacement,
+		string expectedDiagnostic) {
+		// Arrange
+		KnowledgeRoleArticle valid = Article("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, "kafka", "Kafka reference", "kafka", "published", "esq", 'a');
+		KnowledgeRoleArticle tampered = RoleArticle("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, "example-kafka",
+			valid.Article.Text.Replace(search, replacement, StringComparison.Ordinal));
+		_runtime.GetArticlesByRole(KnowledgeReferenceExampleService.ReferenceExampleRole).Returns([tampered]);
+
+		// Act
+		KnowledgeReferenceExampleListResult result = _service.List(new(null, null, null, null));
+
+		// Assert
+		result.Examples.Should().BeEmpty(
+			because: "an example that violates a catalog guard must never be surfaced as trusted coordinates");
+		result.Diagnostics.Should().ContainSingle(message =>
+			message.Contains(expectedDiagnostic, StringComparison.Ordinal),
+			because: "the caller must learn which guard rejected the publisher-authored metadata");
+	}
+
+	private static KnowledgeRoleArticle GatedArticle(string requiredFeature) {
+		KnowledgeRoleArticle article = Article("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, "kafka", "Kafka reference", "kafka", "published", "esq", 'a');
+		return article with { Article = article.Article with { RequiredFeatures = [requiredFeature] } };
 	}
 
 	private static KnowledgeRoleArticle Article(

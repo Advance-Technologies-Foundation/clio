@@ -133,89 +133,7 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 		bool completedSnapshot = false;
 		try {
 			try {
-				KnowledgeConfiguration configuration = _configurationProvider.GetCurrent();
-				if (!TopicPinsEqual(_observedTopicPins, configuration.TopicPins)) {
-					_runtime.SetTopicPins(configuration.TopicPins);
-					_observedTopicPins = new Dictionary<string, string>(configuration.TopicPins, StringComparer.Ordinal);
-				}
-				HashSet<string> configuredAliases = new(configuration.Sources.Keys, StringComparer.OrdinalIgnoreCase);
-				foreach (string removedAlias in _observed.Keys.Concat(_failed.Keys)
-						.Where(alias => !configuredAliases.Contains(alias))
-						.Distinct(StringComparer.OrdinalIgnoreCase)
-						.ToArray()) {
-					_runtime.DeactivateLibrary(removedAlias);
-					_observed.Remove(removedAlias);
-					_observedGitConfiguration.Remove(removedAlias);
-					_failed.Remove(removedAlias);
-				}
-				List<string> diagnostics = [];
-				foreach ((string alias, KnowledgeSourceConfiguration source) in configuration.Sources) {
-					if (!source.Enabled) {
-						_runtime.DeactivateLibrary(alias);
-						_observed.Remove(alias);
-						_observedGitConfiguration.Remove(alias);
-						_failed.Remove(alias);
-						continue;
-					}
-					if (_repositoryTransports.TryGetValue(source.Type, out IKnowledgeRepositoryTransport? repositoryTransport)) {
-						ActivateRepository(alias, source, repositoryTransport, diagnostics);
-						continue;
-					}
-					_observedGitConfiguration.Remove(alias);
-					KnowledgeSourceCurrentState? current = _store.ReadCurrent(alias, out string? markerDiagnostic);
-					if (markerDiagnostic is not null) {
-						diagnostics.Add(markerDiagnostic);
-						_runtime.DeactivateLibrary(alias);
-						_observed.Remove(alias);
-						_failed.Remove(alias);
-						continue;
-					}
-					if (current is null) {
-						_runtime.DeactivateLibrary(alias);
-						_observed.Remove(alias);
-						_failed.Remove(alias);
-						continue;
-					}
-					string identity = Identity(current.Active, source);
-					if (_observed.TryGetValue(alias, out string? observed)
-							&& string.Equals(identity, observed, StringComparison.Ordinal)) {
-						continue;
-					}
-					if (_failed.TryGetValue(alias, out FailedActivation? failed)
-							&& string.Equals(identity, failed.Identity, StringComparison.Ordinal)
-							&& Environment.TickCount64 < failed.RetryAfter) {
-						diagnostics.Add(failed.Diagnostic);
-						continue;
-					}
-					if (TryActivate(alias, source, current.Active, out string? diagnostic)) {
-						_observed[alias] = identity;
-						_failed.Remove(alias);
-						continue;
-					}
-					string activeFailure = diagnostic
-						?? $"Knowledge source '{alias}' rejected its current generation.";
-					string? previousDiagnostic = null;
-					if (current.Previous is not null) {
-						string previousIdentity = Identity(current.Previous, source);
-						bool previousAlreadyActive = _observed.TryGetValue(alias, out observed)
-							&& string.Equals(previousIdentity, observed, StringComparison.Ordinal);
-						if (previousAlreadyActive
-								|| TryActivate(alias, source, current.Previous, out previousDiagnostic)) {
-							_observed[alias] = previousIdentity;
-							RecordFailed(alias, identity, activeFailure);
-							diagnostics.Add(activeFailure);
-							continue;
-						}
-					}
-					string failure = previousDiagnostic is null
-						? activeFailure
-						: $"{activeFailure} Previous generation also failed: {previousDiagnostic}";
-					diagnostics.Add(failure);
-					RecordFailed(alias, identity, failure);
-					_runtime.DeactivateLibrary(alias);
-					_observed.Remove(alias);
-				}
-				LastDiagnostic = diagnostics.Count == 0 ? null : string.Join(" ", diagnostics);
+				RefreshConfiguredSources();
 				completedSnapshot = true;
 			} catch (Exception exception) when (exception is IOException
 					or UnauthorizedAccessException
@@ -235,6 +153,127 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 			}
 			Monitor.Exit(_activationLock);
 		}
+	}
+
+	private void RefreshConfiguredSources() {
+		KnowledgeConfiguration configuration = _configurationProvider.GetCurrent();
+		if (!TopicPinsEqual(_observedTopicPins, configuration.TopicPins)) {
+			_runtime.SetTopicPins(configuration.TopicPins);
+			_observedTopicPins = new Dictionary<string, string>(configuration.TopicPins, StringComparer.Ordinal);
+		}
+		ForgetSourcesRemovedFromConfiguration(configuration);
+		List<string> diagnostics = [];
+		foreach ((string alias, KnowledgeSourceConfiguration source) in configuration.Sources) {
+			if (!source.Enabled) {
+				_runtime.DeactivateLibrary(alias);
+				_observed.Remove(alias);
+				_observedGitConfiguration.Remove(alias);
+				_failed.Remove(alias);
+				continue;
+			}
+			if (_repositoryTransports.TryGetValue(source.Type, out IKnowledgeRepositoryTransport? repositoryTransport)) {
+				ActivateRepository(alias, source, repositoryTransport, diagnostics);
+				continue;
+			}
+			ActivateInstalledBundle(alias, source, diagnostics);
+		}
+		LastDiagnostic = diagnostics.Count == 0 ? null : string.Join(" ", diagnostics);
+	}
+
+	private void ForgetSourcesRemovedFromConfiguration(KnowledgeConfiguration configuration) {
+		HashSet<string> configuredAliases = new(configuration.Sources.Keys, StringComparer.OrdinalIgnoreCase);
+		foreach (string removedAlias in _observed.Keys.Concat(_failed.Keys)
+				.Where(alias => !configuredAliases.Contains(alias))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToArray()) {
+			_runtime.DeactivateLibrary(removedAlias);
+			_observed.Remove(removedAlias);
+			_observedGitConfiguration.Remove(removedAlias);
+			_failed.Remove(removedAlias);
+		}
+	}
+
+	private void ActivateInstalledBundle(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		ICollection<string> diagnostics) {
+		_observedGitConfiguration.Remove(alias);
+		KnowledgeSourceCurrentState? current = _store.ReadCurrent(alias, out string? markerDiagnostic);
+		if (markerDiagnostic is not null) {
+			diagnostics.Add(markerDiagnostic);
+			DeactivateInstalledBundle(alias);
+			return;
+		}
+		if (current is null) {
+			DeactivateInstalledBundle(alias);
+			return;
+		}
+		string identity = Identity(current.Active, source);
+		if (IsAlreadyObserved(alias, identity)) {
+			return;
+		}
+		if (TryGetFailureBackoffDiagnostic(alias, identity, out string? backoffDiagnostic)) {
+			diagnostics.Add(backoffDiagnostic);
+			return;
+		}
+		if (TryActivate(alias, source, current.Active, out string? diagnostic)) {
+			_observed[alias] = identity;
+			_failed.Remove(alias);
+			return;
+		}
+		string activeFailure = diagnostic
+			?? $"Knowledge source '{alias}' rejected its current generation.";
+		FallBackToPreviousGeneration(alias, source, current.Previous, identity, activeFailure, diagnostics);
+	}
+
+	// Deliberately leaves _observedGitConfiguration alone: the only caller already cleared it, and the git path
+	// owns that map. Do not merge this with the disabled-source branch, which must clear all four.
+	private void DeactivateInstalledBundle(string alias) {
+		_runtime.DeactivateLibrary(alias);
+		_observed.Remove(alias);
+		_failed.Remove(alias);
+	}
+
+	private void FallBackToPreviousGeneration(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		KnowledgeSourceGenerationPointer? previous,
+		string activeIdentity,
+		string activeFailure,
+		ICollection<string> diagnostics) {
+		string? previousDiagnostic = null;
+		if (previous is not null) {
+			string previousIdentity = Identity(previous, source);
+			if (IsAlreadyObserved(alias, previousIdentity)
+					|| TryActivate(alias, source, previous, out previousDiagnostic)) {
+				_observed[alias] = previousIdentity;
+				RecordFailed(alias, activeIdentity, activeFailure);
+				diagnostics.Add(activeFailure);
+				return;
+			}
+		}
+		string failure = previousDiagnostic is null
+			? activeFailure
+			: $"{activeFailure} Previous generation also failed: {previousDiagnostic}";
+		diagnostics.Add(failure);
+		RecordFailed(alias, activeIdentity, failure);
+		_runtime.DeactivateLibrary(alias);
+		_observed.Remove(alias);
+	}
+
+	private bool IsAlreadyObserved(string alias, string identity) =>
+		_observed.TryGetValue(alias, out string? observed)
+		&& string.Equals(identity, observed, StringComparison.Ordinal);
+
+	private bool TryGetFailureBackoffDiagnostic(string alias, string identity, out string? diagnostic) {
+		if (_failed.TryGetValue(alias, out FailedActivation? failed)
+				&& string.Equals(identity, failed.Identity, StringComparison.Ordinal)
+				&& Environment.TickCount64 < failed.RetryAfter) {
+			diagnostic = failed.Diagnostic;
+			return true;
+		}
+		diagnostic = null;
+		return false;
 	}
 
 	private void ActivateRepository(
@@ -258,49 +297,16 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 				return;
 			}
 			string identity = GitIdentity(source, revision);
-			if (_observed.TryGetValue(alias, out string? observed)
-					&& string.Equals(identity, observed, StringComparison.Ordinal)) {
+			if (IsAlreadyObserved(alias, identity)) {
 				return;
 			}
-			if (_failed.TryGetValue(alias, out FailedActivation? failed)
-					&& string.Equals(identity, failed.Identity, StringComparison.Ordinal)
-					&& Environment.TickCount64 < failed.RetryAfter) {
-				diagnostics.Add(failed.Diagnostic);
+			if (TryGetFailureBackoffDiagnostic(alias, identity, out string? backoffDiagnostic)) {
+				diagnostics.Add(backoffDiagnostic);
 				return;
 			}
-			bool lockAcquired = _store.TryExecuteWithSourceMutationLock(alias, () => {
-				string? lockedRevision = transport.GetCurrentRevision(repositoryPath);
-				if (lockedRevision is null) {
-					HandleGitFailure(alias, source, identity, diagnostics,
-						$"Git knowledge source '{alias}' has no valid current revision.");
-					return;
-				}
-				string lockedIdentity = GitIdentity(source, lockedRevision);
-				if (_observed.TryGetValue(alias, out string? lockedObserved)
-						&& string.Equals(lockedIdentity, lockedObserved, StringComparison.Ordinal)) {
-					return;
-				}
-				transport.ValidateInstalledCheckout(source, repositoryPath);
-				if (!_gitReader.TryRead(repositoryPath, source.LibraryId,
-						out KnowledgeGitRepositorySnapshot? snapshot, out string? diagnostic)) {
-					HandleGitFailure(alias, source, lockedIdentity, diagnostics,
-						diagnostic ?? $"Git knowledge source '{alias}' is invalid.");
-					return;
-				}
-				KnowledgeBundleActivationResult activation = _runtime.ActivateGitRepository(
-					alias,
-					source.Priority,
-					source.Participation,
-					snapshot!);
-				if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
-					HandleGitFailure(alias, source, lockedIdentity, diagnostics,
-						activation.Diagnostic ?? $"Git knowledge source '{alias}' was rejected.");
-					return;
-				}
-				_observed[alias] = lockedIdentity;
-				_observedGitConfiguration[alias] = GitConfigurationIdentity(source);
-				_failed.Remove(alias);
-			});
+			bool lockAcquired = _store.TryExecuteWithSourceMutationLock(
+				alias,
+				() => ActivateRepositoryUnderLock(alias, source, transport, repositoryPath, identity, diagnostics));
 			if (!lockAcquired && !_observed.ContainsKey(alias)) {
 				diagnostics.Add($"Git knowledge source '{alias}' is synchronizing; activation will retry on the next request.");
 			}
@@ -312,6 +318,45 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 			HandleGitFailure(alias, source, $"git:{source.LibraryId}:error", diagnostics,
 				$"Git knowledge source '{alias}' could not be refreshed: {exception.Message}");
 		}
+	}
+
+	private void ActivateRepositoryUnderLock(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		IKnowledgeRepositoryTransport transport,
+		string repositoryPath,
+		string identity,
+		ICollection<string> diagnostics) {
+		string? lockedRevision = transport.GetCurrentRevision(repositoryPath);
+		if (lockedRevision is null) {
+			HandleGitFailure(alias, source, identity, diagnostics,
+				$"Git knowledge source '{alias}' has no valid current revision.");
+			return;
+		}
+		string lockedIdentity = GitIdentity(source, lockedRevision);
+		if (IsAlreadyObserved(alias, lockedIdentity)) {
+			return;
+		}
+		transport.ValidateInstalledCheckout(source, repositoryPath);
+		if (!_gitReader.TryRead(repositoryPath, source.LibraryId,
+				out KnowledgeGitRepositorySnapshot? snapshot, out string? diagnostic)) {
+			HandleGitFailure(alias, source, lockedIdentity, diagnostics,
+				diagnostic ?? $"Git knowledge source '{alias}' is invalid.");
+			return;
+		}
+		KnowledgeBundleActivationResult activation = _runtime.ActivateGitRepository(
+			alias,
+			source.Priority,
+			source.Participation,
+			snapshot);
+		if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
+			HandleGitFailure(alias, source, lockedIdentity, diagnostics,
+				activation.Diagnostic ?? $"Git knowledge source '{alias}' was rejected.");
+			return;
+		}
+		_observed[alias] = lockedIdentity;
+		_observedGitConfiguration[alias] = GitConfigurationIdentity(source);
+		_failed.Remove(alias);
 	}
 
 	private static string GitIdentity(KnowledgeSourceConfiguration source, string revision) =>
@@ -361,7 +406,7 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 				out diagnostic)) {
 			return false;
 		}
-		using MemoryStream stream = new(candidate!.BundleBytes, writable: false);
+		using MemoryStream stream = new(candidate.BundleBytes, writable: false);
 		KnowledgeBundleActivationResult activation = _runtime.ActivateLibrary(
 			alias,
 			source.Priority,
@@ -380,7 +425,7 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 		KnowledgeSourceGenerationPointer pointer,
 		KnowledgeSourceConfiguration source) {
 		string trustFingerprint = _trustFingerprintService.TryGetFingerprint(
-			source.TrustedPublicKeyPath!,
+			source.TrustedPublicKeyPath,
 			out string fingerprint)
 			? fingerprint
 			: "unavailable";

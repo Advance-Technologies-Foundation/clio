@@ -51,7 +51,7 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 		ArgumentNullException.ThrowIfNull(topicPins);
 
 		if (TryParseNamespacedUri(identifier, out string? libraryId, out string? itemId)) {
-			return FindExact(libraryId!, itemId!, libraries);
+			return FindExact(libraryId, itemId, libraries);
 		}
 		KnowledgeArticleLookup legacy = FindLegacyUri(identifier, libraries);
 		if (legacy.Status != KnowledgeArticleLookupStatus.NotFound) {

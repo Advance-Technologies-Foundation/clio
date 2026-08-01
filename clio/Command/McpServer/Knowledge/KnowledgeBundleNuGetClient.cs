@@ -28,6 +28,9 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	private const int MaxPackageCentralDirectoryBytes = 2 * 1024 * 1024;
 	private const uint EndOfCentralDirectorySignature = 0x06054b50;
 
+	// RFC 3986 path separator: fixed by the URI grammar, never the platform file-system separator.
+	private const char UriPathSeparator = '/';
+
 	private static readonly Regex PackageIdPattern = new(
 		"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
 		RegexOptions.CultureInvariant,
@@ -48,7 +51,8 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.TransportDeadlineMilliseconds);
 	}
 
-	public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SourceVariable));
+	public static bool IsConfigured =>
+		!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SourceVariable));
 
 	public KnowledgeSourceType Type => KnowledgeSourceType.NuGet;
 
@@ -100,13 +104,14 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 		return DownloadNext(
 			source,
 			packageId,
-			rejectedPackageVersions,
-			activePackageVersion,
-			highestObservedPackageVersion,
-			fallbackCeilingPackageVersion,
-			catalogFingerprint,
-			transportDeadlineMilliseconds,
-			exactPackageVersion);
+			new PackageSelectionCriteria(
+				rejectedPackageVersions,
+				activePackageVersion,
+				highestObservedPackageVersion,
+				fallbackCeilingPackageVersion,
+				catalogFingerprint,
+				exactPackageVersion),
+			transportDeadlineMilliseconds);
 	}
 
 	public KnowledgeTransportResult Retrieve(KnowledgeTransportRequest request) {
@@ -117,14 +122,15 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 		}
 		KnowledgeBundlePackageDownloadResult result = DownloadNext(
 			new Uri(source.Location, UriKind.Absolute),
-			source.PackageId!,
-			request.RejectedRevisions,
-			request.ActiveRevision,
-			request.HighestObservedRevision,
-			request.FallbackCeilingRevision,
-			request.CatalogFingerprint,
-			request.TransportDeadlineMilliseconds,
-			request.ExactRevision);
+			source.PackageId,
+			new PackageSelectionCriteria(
+				request.RejectedRevisions,
+				request.ActiveRevision,
+				request.HighestObservedRevision,
+				request.FallbackCeilingRevision,
+				request.CatalogFingerprint,
+				request.ExactRevision),
+			request.TransportDeadlineMilliseconds);
 		return new KnowledgeTransportResult(
 			result.Status switch {
 				KnowledgeBundlePackageDownloadStatus.Downloaded => KnowledgeTransportStatus.Downloaded,
@@ -142,13 +148,8 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	private KnowledgeBundlePackageDownloadResult DownloadNext(
 		Uri source,
 		string packageId,
-		IReadOnlySet<string> rejectedPackageVersions,
-		string? activePackageVersion,
-		string? highestObservedPackageVersion,
-		string? fallbackCeilingPackageVersion,
-		string? catalogFingerprint,
-		int? transportDeadlineMilliseconds,
-		string? exactPackageVersion = null) {
+		PackageSelectionCriteria criteria,
+		int? transportDeadlineMilliseconds) {
 		int deadlineMilliseconds = transportDeadlineMilliseconds ?? _options.TransportDeadlineMilliseconds;
 		if (deadlineMilliseconds <= 0) {
 			return NoCandidate();
@@ -173,35 +174,49 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 				or NotSupportedException) {
 			return Failed(exception.Message);
 		}
-		StablePackageVersion? floor = StablePackageVersion.TryParse(
-			activePackageVersion,
-			out StablePackageVersion parsedFloor)
-			? parsedFloor
-			: null;
 		string currentCatalogFingerprint = ComputeCatalogFingerprint(versions);
-		bool catalogChanged = catalogFingerprint is not null
-			&& !string.Equals(catalogFingerprint, currentCatalogFingerprint, StringComparison.Ordinal);
+		bool catalogChanged = criteria.CatalogFingerprint is not null
+			&& !string.Equals(criteria.CatalogFingerprint, currentCatalogFingerprint, StringComparison.Ordinal);
+		StablePackageVersion? selected = SelectCandidateVersion(versions, criteria, catalogChanged);
+		if (selected is null) {
+			return NoCandidate(currentCatalogFingerprint);
+		}
+		return DownloadCandidate(
+			client,
+			packageBaseAddress,
+			packageId,
+			selected.Value.ToString(),
+			currentCatalogFingerprint,
+			deadline.Token);
+	}
+
+	/// <summary>
+	///     Picks the version to download, or <see langword="null" /> when no version in the catalog is acceptable.
+	/// </summary>
+	private static StablePackageVersion? SelectCandidateVersion(
+		IReadOnlyList<StablePackageVersion> versions,
+		PackageSelectionCriteria criteria,
+		bool catalogChanged) {
+		StablePackageVersion? floor = ParseStableVersion(criteria.ActivePackageVersion);
 		IEnumerable<StablePackageVersion> eligible = versions
-			.Where(version => !rejectedPackageVersions.Contains(version.ToString()))
+			.Where(version => !criteria.RejectedPackageVersions.Contains(version.ToString()))
 			.Where(version => floor is null || version.CompareTo(floor.Value) > 0);
+		string? exactPackageVersion = criteria.ExactPackageVersion;
 		if (exactPackageVersion is not null) {
 			if (!StablePackageVersion.TryParse(exactPackageVersion, out StablePackageVersion exact)
 					|| !versions.Contains(exact)
-					|| rejectedPackageVersions.Contains(exact.ToString())) {
-				return NoCandidate(currentCatalogFingerprint);
+					|| criteria.RejectedPackageVersions.Contains(exact.ToString())) {
+				return null;
 			}
 			eligible = versions.Where(version => version.CompareTo(exact) == 0);
 		}
-		StablePackageVersion? highestObserved = StablePackageVersion.TryParse(
-			catalogChanged ? null : highestObservedPackageVersion,
-			out StablePackageVersion parsedHighestObserved)
-			? parsedHighestObserved
-			: null;
-		StablePackageVersion? fallbackCeiling = StablePackageVersion.TryParse(
-			catalogChanged ? null : fallbackCeilingPackageVersion,
-			out StablePackageVersion parsedFallbackCeiling)
-			? parsedFallbackCeiling
-			: null;
+		// A changed catalog invalidates the observed high-water marks, so the walk restarts unbounded.
+		StablePackageVersion? highestObserved = catalogChanged
+			? null
+			: ParseStableVersion(criteria.HighestObservedPackageVersion);
+		StablePackageVersion? fallbackCeiling = catalogChanged
+			? null
+			: ParseStableVersion(criteria.FallbackCeilingPackageVersion);
 		StablePackageVersion? latest = eligible
 			.Where(version => exactPackageVersion is not null
 				|| highestObserved is null
@@ -214,10 +229,16 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 				.Cast<StablePackageVersion?>()
 				.Max();
 		}
-		if (latest is null) {
-			return NoCandidate(currentCatalogFingerprint);
-		}
-		string selectedVersion = latest.Value.ToString();
+		return latest;
+	}
+
+	private static KnowledgeBundlePackageDownloadResult DownloadCandidate(
+		HttpClient client,
+		Uri packageBaseAddress,
+		string packageId,
+		string selectedVersion,
+		string currentCatalogFingerprint,
+		CancellationToken cancellationToken) {
 		byte[] packageBytes;
 		try {
 			packageBytes = DownloadPackage(
@@ -225,7 +246,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 				packageBaseAddress,
 				packageId,
 				selectedVersion,
-				deadline.Token);
+				cancellationToken);
 		} catch (Exception exception) when (exception is HttpRequestException
 				or OperationCanceledException
 				or IOException) {
@@ -247,6 +268,9 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 			return Rejected(selectedVersion, currentCatalogFingerprint);
 		}
 	}
+
+	private static StablePackageVersion? ParseStableVersion(string? value) =>
+		StablePackageVersion.TryParse(value, out StablePackageVersion version) ? version : null;
 
 	private static KnowledgeBundlePackageDownloadResult NoCandidate(string? catalogFingerprint = null) =>
 		new(KnowledgeBundlePackageDownloadStatus.NoCandidate, null, null, catalogFingerprint);
@@ -289,7 +313,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	private static bool TryReadConfiguration(out Uri source, out string packageId) {
 		string? sourceValue = Environment.GetEnvironmentVariable(SourceVariable);
 		packageId = Environment.GetEnvironmentVariable(PackageIdVariable) ?? string.Empty;
-		if (!Uri.TryCreate(sourceValue, UriKind.Absolute, out source!)
+		if (!Uri.TryCreate(sourceValue, UriKind.Absolute, out source)
 				|| !IsAllowedFeedUri(source)
 				|| !string.IsNullOrEmpty(source.UserInfo)
 				|| !string.IsNullOrEmpty(source.Query)
@@ -370,7 +394,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 				? (StablePackageVersion?)version
 				: null)
 			.Where(version => version.HasValue)
-			.Select(version => version!.Value)
+			.Select(version => version.Value)
 			.Distinct()
 			.ToArray();
 	}
@@ -488,7 +512,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	private static Uri EnsureTrailingSlash(Uri uri) =>
 		uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
 			? uri
-			: new Uri(uri.AbsoluteUri + "/", UriKind.Absolute);
+			: new Uri(uri.AbsoluteUri + UriPathSeparator, UriKind.Absolute);
 
 	private static bool IsAllowedFeedUri(Uri uri) =>
 		uri.Scheme == Uri.UriSchemeHttps
@@ -498,6 +522,14 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 		string.Equals(source.Scheme, candidate.Scheme, StringComparison.OrdinalIgnoreCase)
 		&& string.Equals(source.IdnHost, candidate.IdnHost, StringComparison.OrdinalIgnoreCase)
 		&& source.Port == candidate.Port;
+
+	private sealed record PackageSelectionCriteria(
+		IReadOnlySet<string> RejectedPackageVersions,
+		string? ActivePackageVersion,
+		string? HighestObservedPackageVersion,
+		string? FallbackCeilingPackageVersion,
+		string? CatalogFingerprint,
+		string? ExactPackageVersion);
 
 	private readonly record struct StablePackageVersion(int Major, int Minor, int Patch)
 		: IComparable<StablePackageVersion> {

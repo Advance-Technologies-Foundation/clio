@@ -38,9 +38,7 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 	public KnowledgeTransportResult Synchronize(KnowledgeTransportRequest request, string repositoryPath) {
 		ArgumentNullException.ThrowIfNull(request);
 		Stopwatch operation = Stopwatch.StartNew();
-		TimeSpan deadline = TimeSpan.FromMilliseconds(request.TransportDeadlineMilliseconds is > 0
-			? request.TransportDeadlineMilliseconds.Value
-			: DefaultTransportDeadlineMilliseconds);
+		TimeSpan deadline = ResolveDeadline(request);
 		KnowledgeSourceConfiguration source = KnowledgeSourceConfigurationValidator.ValidateAndClone(request.Source);
 		if (source.Type != KnowledgeSourceType.Git) {
 			throw new ArgumentException("Git transport received a non-Git source.", nameof(request));
@@ -55,43 +53,14 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		try {
 			_fileSystem.Directory.CreateDirectory(parent);
 			bool installed = _fileSystem.Directory.Exists(_fileSystem.Path.Combine(fullRepositoryPath, ".git"));
-			string? branch = source.Branch;
-			if (!installed) {
-				Clone(source, fullRepositoryPath, parent, operation, deadline);
-				if (source.Commit is not null) {
-					ExecuteGit(fullRepositoryPath,
-						$"fetch --no-tags --depth=1 origin {Quote(source.Commit)}",
-						GetRemainingTimeout(operation, deadline), monitorDirectory: true);
-					ExecuteGit(fullRepositoryPath, "checkout --detach FETCH_HEAD", GetRemainingTimeout(operation, deadline),
-						monitorDirectory: true);
-				}
-				branch ??= source.Tag is null && source.Commit is null ? ReadCurrentBranch(fullRepositoryPath, operation, deadline) : null;
+			string? branch;
+			if (installed) {
+				branch = UpdateInstalledCheckout(source, fullRepositoryPath, operation, deadline);
 			} else {
-				ValidateCheckoutFileSystem(fullRepositoryPath, operation, deadline);
-				ValidateRepositoryConfiguration(fullRepositoryPath);
-				ValidateOrigin(fullRepositoryPath, source, operation, deadline);
-				ValidateCheckout(fullRepositoryPath, operation, deadline);
-				if (source.Commit is not null) {
-					ExecuteGit(fullRepositoryPath,
-						$"fetch --no-tags --depth=1 origin {Quote(source.Commit)}",
-						GetRemainingTimeout(operation, deadline), monitorDirectory: true);
-					ExecuteGit(fullRepositoryPath, "checkout --detach FETCH_HEAD", GetRemainingTimeout(operation, deadline),
-						monitorDirectory: true);
-				} else if (source.Tag is not null) {
-					ExecuteGit(fullRepositoryPath,
-						$"fetch --no-tags --depth=1 origin {Quote("refs/tags/" + source.Tag)}",
-						GetRemainingTimeout(operation, deadline), monitorDirectory: true);
-					ExecuteGit(fullRepositoryPath, $"checkout --detach {Quote("FETCH_HEAD")}",
-						GetRemainingTimeout(operation, deadline), monitorDirectory: true);
-				} else {
-					branch ??= ReadCurrentBranch(fullRepositoryPath, operation, deadline);
-					ExecuteGit(fullRepositoryPath, $"checkout {Quote(branch)}", GetRemainingTimeout(operation, deadline),
-						monitorDirectory: true);
-					ExecuteGit(fullRepositoryPath, $"pull --ff-only origin {Quote(branch)}",
-						GetRemainingTimeout(operation, deadline), monitorDirectory: true);
-				}
+				branch = CreateCheckout(source, fullRepositoryPath, parent, operation, deadline);
 			}
 
+			// Revalidated after the fetch/checkout/pull above, because those commands mutate the working tree.
 			ValidateCheckout(fullRepositoryPath, operation, deadline);
 			string commit = ExecuteGit(fullRepositoryPath, "rev-parse HEAD",
 				GetRemainingTimeout(operation, deadline)).StandardOutput.Trim();
@@ -125,12 +94,68 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		}
 	}
 
+	// A freshly cloned checkout is trusted as produced by the clone itself, so it intentionally skips the
+	// filesystem, configuration and origin validations that an already installed checkout must pass.
+	private string? CreateCheckout(
+		KnowledgeSourceConfiguration source,
+		string repositoryPath,
+		string parent,
+		Stopwatch operation,
+		TimeSpan deadline) {
+		Clone(source, repositoryPath, parent, operation, deadline);
+		if (source.Commit is not null) {
+			CheckoutCommit(source.Commit, repositoryPath, operation, deadline);
+		}
+		return source.Branch ?? (source.Tag is null && source.Commit is null
+			? ReadCurrentBranch(repositoryPath, operation, deadline)
+			: null);
+	}
+
+	private string? UpdateInstalledCheckout(
+		KnowledgeSourceConfiguration source,
+		string repositoryPath,
+		Stopwatch operation,
+		TimeSpan deadline) {
+		ValidateCheckoutFileSystem(repositoryPath, operation, deadline);
+		ValidateRepositoryConfiguration(repositoryPath);
+		ValidateOrigin(repositoryPath, source, operation, deadline);
+		ValidateCheckout(repositoryPath, operation, deadline);
+		if (source.Commit is not null) {
+			CheckoutCommit(source.Commit, repositoryPath, operation, deadline);
+			return source.Branch;
+		}
+		if (source.Tag is not null) {
+			CheckoutTag(source.Tag, repositoryPath, operation, deadline);
+			return source.Branch;
+		}
+		string branch = source.Branch ?? ReadCurrentBranch(repositoryPath, operation, deadline);
+		ExecuteGit(repositoryPath, $"checkout {Quote(branch)}", GetRemainingTimeout(operation, deadline),
+			monitorDirectory: true);
+		ExecuteGit(repositoryPath, $"pull --ff-only origin {Quote(branch)}",
+			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+		return branch;
+	}
+
+	private void CheckoutCommit(string commit, string repositoryPath, Stopwatch operation, TimeSpan deadline) {
+		ExecuteGit(repositoryPath,
+			$"fetch --no-tags --depth=1 origin {Quote(commit)}",
+			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+		ExecuteGit(repositoryPath, "checkout --detach FETCH_HEAD", GetRemainingTimeout(operation, deadline),
+			monitorDirectory: true);
+	}
+
+	private void CheckoutTag(string tag, string repositoryPath, Stopwatch operation, TimeSpan deadline) {
+		ExecuteGit(repositoryPath,
+			$"fetch --no-tags --depth=1 origin {Quote("refs/tags/" + tag)}",
+			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+		ExecuteGit(repositoryPath, $"checkout --detach {Quote("FETCH_HEAD")}",
+			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+	}
+
 	public KnowledgeTransportResult CheckForUpdates(KnowledgeTransportRequest request, string repositoryPath) {
 		ArgumentNullException.ThrowIfNull(request);
 		Stopwatch operation = Stopwatch.StartNew();
-		TimeSpan deadline = TimeSpan.FromMilliseconds(request.TransportDeadlineMilliseconds is > 0
-			? request.TransportDeadlineMilliseconds.Value
-			: DefaultTransportDeadlineMilliseconds);
+		TimeSpan deadline = ResolveDeadline(request);
 		KnowledgeSourceConfiguration source = KnowledgeSourceConfigurationValidator.ValidateAndClone(request.Source);
 		try {
 			string fullRepositoryPath = RequireInstalledRepository(repositoryPath);
@@ -236,37 +261,51 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 				return null;
 			}
 			string reference = head[prefix.Length..];
-			if (reference.Contains("..", StringComparison.Ordinal) || reference.Contains('\\')) {
+			string? referencePath = ResolveContainedReferencePath(gitDirectory, reference);
+			if (referencePath is null) {
 				return null;
 			}
-			string referencePath = _fileSystem.Path.GetFullPath(_fileSystem.Path.Combine(gitDirectory, reference));
-			string gitPrefix = _fileSystem.Path.GetFullPath(gitDirectory).TrimEnd(
-				_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar)
-				+ _fileSystem.Path.DirectorySeparatorChar;
-			if (!referencePath.StartsWith(gitPrefix, OperatingSystem.IsWindows()
-					? StringComparison.OrdinalIgnoreCase
-					: StringComparison.Ordinal)) {
-				return null;
-			}
-			if (_fileSystem.File.Exists(referencePath)) {
-				string revision = ReadSmallText(referencePath).Trim();
-				return IsCompleteCommit(revision) ? revision.ToLowerInvariant() : null;
-			}
-			string packedRefs = _fileSystem.Path.Combine(gitDirectory, "packed-refs");
-			if (!_fileSystem.File.Exists(packedRefs)) {
-				return null;
-			}
-			string? packed = ReadSmallText(packedRefs).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-				.Where(line => !line.StartsWith('#') && !line.StartsWith('^'))
-				.Select(line => line.Split(' ', 2))
-				.Where(parts => parts.Length == 2 && string.Equals(parts[1], reference, StringComparison.Ordinal))
-				.Select(parts => parts[0])
-				.FirstOrDefault();
-			return packed is not null && IsCompleteCommit(packed) ? packed.ToLowerInvariant() : null;
+			return _fileSystem.File.Exists(referencePath)
+				? NormalizeCommit(ReadSmallText(referencePath).Trim())
+				: ResolvePackedRevision(gitDirectory, reference);
 		} catch (Exception) {
 			return null;
 		}
 	}
+
+	// Returns null when the HEAD symbolic reference would resolve outside the .git directory, so a crafted
+	// checkout cannot make revision reading follow a path traversal out of the repository.
+	private string? ResolveContainedReferencePath(string gitDirectory, string reference) {
+		if (reference.Contains("..", StringComparison.Ordinal) || reference.Contains('\\')) {
+			return null;
+		}
+		string referencePath = _fileSystem.Path.GetFullPath(_fileSystem.Path.Combine(gitDirectory, reference));
+		string gitPrefix = _fileSystem.Path.GetFullPath(gitDirectory).TrimEnd(
+			_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar)
+			+ _fileSystem.Path.DirectorySeparatorChar;
+		return referencePath.StartsWith(gitPrefix, OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal)
+			? referencePath
+			: null;
+	}
+
+	private string? ResolvePackedRevision(string gitDirectory, string reference) {
+		string packedRefs = _fileSystem.Path.Combine(gitDirectory, "packed-refs");
+		if (!_fileSystem.File.Exists(packedRefs)) {
+			return null;
+		}
+		string? packed = ReadSmallText(packedRefs).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+			.Where(line => !line.StartsWith('#') && !line.StartsWith('^'))
+			.Select(line => line.Split(' ', 2))
+			.Where(parts => parts.Length == 2 && string.Equals(parts[1], reference, StringComparison.Ordinal))
+			.Select(parts => parts[0])
+			.FirstOrDefault();
+		return packed is null ? null : NormalizeCommit(packed);
+	}
+
+	private static string? NormalizeCommit(string revision) =>
+		IsCompleteCommit(revision) ? revision.ToLowerInvariant() : null;
 
 	public void Restore(string repositoryPath, string revision) {
 		if (!IsCompleteCommit(revision)) {
@@ -316,7 +355,7 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			reference = $"refs/heads/{branch}";
 			arguments = $"ls-remote --heads {Quote(source.Location)} {Quote(reference)}";
 		}
-		ProcessExecutionResult result = Execute(arguments, _fileSystem.Path.GetDirectoryName(repositoryPath)!,
+		ProcessExecutionResult result = Execute(arguments, _fileSystem.Path.GetDirectoryName(repositoryPath),
 			GetRemainingTimeout(operation, deadline), monitoredDirectory: null);
 		(string Revision, string Reference)[] candidates = result.StandardOutput
 			.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
@@ -324,16 +363,26 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			.Where(parts => parts.Length == 2 && IsCompleteCommit(parts[0]))
 			.Select(parts => (parts[0].ToLowerInvariant(), parts[1]))
 			.ToArray();
-		(string Revision, string Reference)? selected = source.Tag is not null
-			? candidates.FirstOrDefault(candidate => candidate.Reference == reference + "^{}")
-			: candidates.FirstOrDefault(candidate => candidate.Reference == reference);
-		if (selected is null || string.IsNullOrWhiteSpace(selected.Value.Revision)) {
-			selected = candidates.FirstOrDefault(candidate => candidate.Reference == reference);
+		// A tag is preferred through its peeled "^{}" entry so that annotated tags resolve to the commit they
+		// point at, but lightweight tags only advertise the plain reference and must still be accepted.
+		string? selected = source.Tag is not null
+			? SelectRevision(candidates, reference + "^{}")
+			: SelectRevision(candidates, reference);
+		if (string.IsNullOrWhiteSpace(selected)) {
+			selected = SelectRevision(candidates, reference);
 		}
-		return selected is not null && IsCompleteCommit(selected.Value.Revision)
-			? selected.Value.Revision
+		return selected is not null && IsCompleteCommit(selected)
+			? selected
 			: throw new InvalidDataException("Git remote did not expose the configured reference.");
 	}
+
+	// The revision is projected before FirstOrDefault so that "not advertised" is a real null; taking the
+	// default of the tuple itself would instead yield a (null, null) pair that reads as a found candidate.
+	private static string? SelectRevision((string Revision, string Reference)[] candidates, string reference) =>
+		candidates
+			.Where(candidate => candidate.Reference == reference)
+			.Select(candidate => candidate.Revision)
+			.FirstOrDefault();
 
 	private void ValidateCheckout(string repositoryPath, Stopwatch operation, TimeSpan deadline) {
 		string status = ExecuteGit(repositoryPath, "status --porcelain --untracked-files=all",
@@ -387,11 +436,12 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		string section = string.Empty;
 		foreach (string rawLine in ReadSmallText(configPath).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)) {
 			string line = rawLine.Trim();
-			if (line.Length == 0 || line[0] is '#' or ';') {
+			if (IsIgnorableConfigurationLine(line)) {
 				continue;
 			}
-			if (line.StartsWith('[') && line.EndsWith(']')) {
-				section = line[1..^1].Trim().Split([' ', '\t'], 2)[0].ToLowerInvariant();
+			string? declaredSection = TryReadSectionHeader(line);
+			if (declaredSection is not null) {
+				section = declaredSection;
 				if (section is "include" or "includeif") {
 					throw new InvalidDataException("Git knowledge checkout configuration cannot include external configuration.");
 				}
@@ -399,18 +449,28 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			}
 			string key = line.Split(['=', ' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries)[0]
 				.ToLowerInvariant();
-			bool allowed = section switch {
-				"core" => key is "repositoryformatversion" or "filemode" or "bare" or "logallrefupdates"
-					or "symlinks" or "ignorecase" or "precomposeunicode",
-				"remote" => key is "url" or "fetch" or "promisor" or "partialclonefilter" or "tagopt",
-				"branch" => key is "remote" or "merge",
-				_ => false
-			};
-			if (!allowed) {
+			if (!IsAllowedConfigurationSetting(section, key)) {
 				throw new InvalidDataException("Git knowledge checkout configuration contains unsupported settings.");
 			}
 		}
 	}
+
+	private static bool IsIgnorableConfigurationLine(string line) => line.Length == 0 || line[0] is '#' or ';';
+
+	// Returns null for anything that is not a well-formed section header, so a malformed header keeps being
+	// parsed as a key line under the section that preceded it.
+	private static string? TryReadSectionHeader(string line) =>
+		line.StartsWith('[') && line.EndsWith(']')
+			? line[1..^1].Trim().Split([' ', '\t'], 2)[0].ToLowerInvariant()
+			: null;
+
+	private static bool IsAllowedConfigurationSetting(string section, string key) => section switch {
+		"core" => key is "repositoryformatversion" or "filemode" or "bare" or "logallrefupdates"
+			or "symlinks" or "ignorecase" or "precomposeunicode",
+		"remote" => key is "url" or "fetch" or "promisor" or "partialclonefilter" or "tagopt",
+		"branch" => key is "remote" or "merge",
+		_ => false
+	};
 
 	private void RejectReparsePoint(string path) {
 		if ((_fileSystem.File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) {
@@ -475,7 +535,7 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			Location = "https://localhost/repository.git",
 			Branch = branch
 		};
-		return KnowledgeSourceConfigurationValidator.ValidateAndClone(probe).Branch!;
+		return KnowledgeSourceConfigurationValidator.ValidateAndClone(probe).Branch;
 	}
 
 	private ProcessExecutionResult ExecuteGit(
@@ -485,7 +545,7 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		bool monitorDirectory = false) =>
 		Execute(
 			$"-C {Quote(repositoryPath)} -c {Quote("core.hooksPath=" + GetDisabledHooksPath())} " + arguments,
-			_fileSystem.Path.GetDirectoryName(repositoryPath)!,
+			_fileSystem.Path.GetDirectoryName(repositoryPath),
 			timeout,
 			monitorDirectory ? repositoryPath : null);
 
@@ -520,6 +580,11 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		}
 		return result;
 	}
+
+	private static TimeSpan ResolveDeadline(KnowledgeTransportRequest request) =>
+		TimeSpan.FromMilliseconds(request.TransportDeadlineMilliseconds is > 0
+			? request.TransportDeadlineMilliseconds.Value
+			: DefaultTransportDeadlineMilliseconds);
 
 	private static TimeSpan GetRemainingTimeout(Stopwatch operation, TimeSpan deadline) {
 		TimeSpan remaining = deadline - operation.Elapsed;

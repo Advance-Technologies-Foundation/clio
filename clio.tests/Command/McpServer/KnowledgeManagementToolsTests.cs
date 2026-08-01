@@ -94,7 +94,8 @@ public sealed class KnowledgeManagementToolsTests {
 	[Description("Maps Git reference, enablement, priority, participation, and omitted NuGet trust fields into source creation.")]
 	public void Add_ShouldMapGitArgumentsAndDefaults_WhenGitSourceIsProvided() {
 		// Arrange
-		_service.Add(Arg.Any<KnowledgeSourceAddRequest>())
+		KnowledgeSourceAddRequest? forwarded = null;
+		_service.Add(Arg.Do<KnowledgeSourceAddRequest>(request => forwarded = request))
 			.Returns(new KnowledgeSourceCommandResult(true, "added", "creatio"));
 		KnowledgeSourceAddArgs args = new(
 			"creatio",
@@ -111,20 +112,35 @@ public sealed class KnowledgeManagementToolsTests {
 		_tools.Add(args);
 
 		// Assert
-		_service.Received(1).Add(Arg.Is<KnowledgeSourceAddRequest>(request =>
-			request.Alias == "creatio"
-			&& request.LibraryId == "com.creatio.clio"
-			&& request.TransportType == "git"
-			&& request.Location == "https://github.com/example/knowledge.git"
-			&& request.TrustedKeyId == null
-			&& request.TrustedPublicKeyPath == null
-			&& request.PackageId == null
-			&& request.Branch == "main"
-			&& request.Tag == null
-			&& request.Commit == null
-			&& !request.Enabled
-			&& request.Priority == 75
-			&& request.Participation == "authoritative"));
+		_service.Received(1).Add(Arg.Any<KnowledgeSourceAddRequest>());
+		forwarded.Should().NotBeNull(
+			because: "a confirmed add must reach the command layer as exactly one source-creation request");
+		forwarded.Alias.Should().Be("creatio",
+			because: "the alias identifies the source in every later lifecycle operation");
+		forwarded.LibraryId.Should().Be("com.creatio.clio",
+			because: "the library identifier binds the source to the bundle it is allowed to publish");
+		forwarded.TransportType.Should().Be("git",
+			because: "the declared transport selects the retrieval and verification path");
+		forwarded.Location.Should().Be("https://github.com/example/knowledge.git",
+			because: "the clone location must be forwarded verbatim, without normalization");
+		forwarded.Branch.Should().Be("main",
+			because: "the requested Git reference must survive into source creation");
+		forwarded.Tag.Should().BeNull(
+			because: "an omitted tag must not be invented alongside an explicit branch");
+		forwarded.Commit.Should().BeNull(
+			because: "an omitted commit must not be invented alongside an explicit branch");
+		forwarded.TrustedKeyId.Should().BeNull(
+			because: "NuGet signing trust must stay absent for a Git source instead of being defaulted");
+		forwarded.TrustedPublicKeyPath.Should().BeNull(
+			because: "no publisher key may be silently attached to a source that is not signature-verified");
+		forwarded.PackageId.Should().BeNull(
+			because: "a Git source has no NuGet package identity to carry");
+		forwarded.Enabled.Should().BeFalse(
+			because: "an explicitly disabled source must not become active through MCP mapping");
+		forwarded.Priority.Should().Be(75,
+			because: "priority decides which source wins when guidance topics collide");
+		forwarded.Participation.Should().Be("authoritative",
+			because: "participation decides whether the source supplements or overrides existing guidance");
 	}
 
 	[TestCase(nameof(KnowledgeManagementTools.Install), "partner")]
@@ -279,18 +295,25 @@ public sealed class KnowledgeManagementToolsTests {
 	[Description("Preserves omitted optional reference-example filters so the MCP default discovers every catalog item.")]
 	public void ListExamples_ShouldPreserveNullFilters_WhenArgumentsAreOmitted() {
 		// Arrange
-		_referenceExamples.List(Arg.Any<KnowledgeReferenceExampleQuery>())
+		KnowledgeReferenceExampleQuery? forwarded = null;
+		_referenceExamples.List(Arg.Do<KnowledgeReferenceExampleQuery>(query => forwarded = query))
 			.Returns(new KnowledgeReferenceExampleListResult(true, [], []));
 
 		// Act
 		_tools.ListExamples(new KnowledgeReferenceExampleListArgs());
 
 		// Assert
-		_referenceExamples.Received(1).List(Arg.Is<KnowledgeReferenceExampleQuery>(query =>
-			query.SourceAlias == null
-			&& query.SearchText == null
-			&& query.Capability == null
-			&& query.Status == null));
+		_referenceExamples.Received(1).List(Arg.Any<KnowledgeReferenceExampleQuery>());
+		forwarded.Should().NotBeNull(
+			because: "discovery must reach the reference-example service even when every filter is omitted");
+		forwarded.SourceAlias.Should().BeNull(
+			because: "an omitted source filter must discover examples across every active source");
+		forwarded.SearchText.Should().BeNull(
+			because: "an omitted search text must not narrow the catalog to an empty-string match");
+		forwarded.Capability.Should().BeNull(
+			because: "an omitted capability filter must keep every capability in the result");
+		forwarded.Status.Should().BeNull(
+			because: "an omitted status filter must not hide examples that are not yet published");
 	}
 
 	[Test]

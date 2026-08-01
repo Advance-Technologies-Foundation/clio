@@ -96,6 +96,36 @@ internal interface IKnowledgeSourceInstallationStore {
 }
 
 internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstallationStore {
+	// Everything one publication attempt needs. Private on purpose: this is the store's internal calling
+	// convention, not part of IKnowledgeSourceInstallationStore, whose signature is fixed by its callers.
+	private sealed record KnowledgePublicationRequest(
+		string SourceRoot,
+		string SourceAlias,
+		string LibraryId,
+		string LibraryVersion,
+		ulong Sequence,
+		string TransportType,
+		string Location,
+		string ResolvedRevision,
+		byte[] BundleBytes,
+		bool IsUpdate,
+		KnowledgeSourceGenerationPointer? ExpectedActive,
+		bool AllowRepair);
+
+	// Where a single immutable generation lives on disk. Resolved once by the caller so that the
+	// containment-checked generation root is never derived twice from different inputs.
+	private sealed record KnowledgeGenerationLocation(
+		string GenerationsRoot,
+		string GenerationRoot,
+		string Name);
+
+	// What an already-present generation must match before it may be treated as a recoverable duplicate.
+	private sealed record KnowledgeGenerationIdentity(
+		string SourceAlias,
+		string LibraryId,
+		ulong Sequence,
+		string Digest);
+
 	private const int SchemaVersion = 1;
 	private const int MaxMarkerBytes = 64 * 1024;
 	private const int MaxBundleBytes = 40 * 1024 * 1024;
@@ -273,7 +303,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			diagnostic = null;
 			return current;
 		}
-		if (highWater!.Sequence <= current.Active.Sequence) {
+		if (highWater.Sequence <= current.Active.Sequence) {
 			diagnostic = $"Knowledge source '{sourceAlias}' activation marker conflicts with accepted library sequence "
 				+ $"{highWater.Sequence} and cannot be recovered automatically.";
 			return null;
@@ -287,21 +317,22 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 				+ "activation cannot be recovered automatically.";
 			return null;
 		}
+		KnowledgeGenerationLocation location = new(generationsRoot, generationRoot, generationName);
+		KnowledgeGenerationIdentity expected = new(
+			sourceAlias,
+			current.Active.LibraryId,
+			highWater.Sequence,
+			highWater.BundleDigest);
 		if (!TryReadRecoverableGeneration(
-				generationsRoot,
-				generationRoot,
-				generationName,
-				sourceAlias,
-				current.Active.LibraryId,
-				highWater.Sequence,
-				highWater.BundleDigest,
+				location,
+				expected,
 				out KnowledgeSourceInstallMetadata? metadata,
 				out diagnostic)) {
 			return null;
 		}
 
 		KnowledgeSourceGenerationPointer active = new(
-			metadata!.LibraryId,
+			metadata.LibraryId,
 			metadata.LibraryVersion,
 			metadata.Sequence,
 			$"{GenerationsDirectoryName}/{generationName}",
@@ -324,9 +355,16 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	private static bool ConflictsWithHighWater(
 		KnowledgeSourceGenerationPointer pointer,
 		KnowledgeLibraryHighWaterMark? highWater) => highWater is not null
-		&& (pointer.Sequence < highWater.Sequence
-			|| (pointer.Sequence == highWater.Sequence
-				&& !string.Equals(pointer.BundleDigest, highWater.BundleDigest, StringComparison.Ordinal)));
+		&& ConflictsWithAccepted(pointer.Sequence, pointer.BundleDigest, highWater.Sequence, highWater.BundleDigest);
+
+	// A candidate conflicts when it moves the sequence backwards, or replays an already accepted
+	// sequence with different content; the same sequence with the same digest is an idempotent retry.
+	private static bool ConflictsWithAccepted(
+		ulong sequence,
+		string digest,
+		ulong acceptedSequence,
+		string acceptedDigest) => sequence < acceptedSequence
+		|| (sequence == acceptedSequence && !string.Equals(digest, acceptedDigest, StringComparison.Ordinal));
 
 	private static bool IsValidPointer(KnowledgeSourceGenerationPointer pointer) =>
 		!string.IsNullOrWhiteSpace(pointer.LibraryId)
@@ -387,7 +425,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		}
 
 		string sourceRoot = ResolveSourceRoot(sourceAlias, create: true);
-		return WithMutationLock(sourceRoot, () => WithLibraryMutationLock(sourceRoot, libraryId, () => PublishLocked(
+		KnowledgePublicationRequest request = new(
 			sourceRoot,
 			sourceAlias,
 			libraryId,
@@ -399,7 +437,9 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			bundleBytes,
 			isUpdate,
 			expectedActive,
-			allowRepair)));
+			allowRepair);
+		return WithMutationLock(sourceRoot,
+			() => WithLibraryMutationLock(sourceRoot, libraryId, () => PublishLocked(request)));
 	}
 
 	public KnowledgeInstallationResult Delete(string sourceAlias, bool confirmed) {
@@ -438,7 +478,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		}
 		try {
 			KnowledgeSourceInstallMetadata? metadata = JsonSerializer.Deserialize(
-				ReadBoundedFile(ResolveChild(candidate!.ContentRoot, MetadataFileName), MaxMarkerBytes),
+				ReadBoundedFile(ResolveChild(candidate.ContentRoot, MetadataFileName), MaxMarkerBytes),
 				KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceInstallMetadata);
 			if (metadata is null
 					|| metadata.SchemaVersion != SchemaVersion
@@ -456,213 +496,210 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		}
 	}
 
-	private KnowledgeInstallationResult PublishLocked(
-		string sourceRoot,
-		string sourceAlias,
-		string libraryId,
-		string libraryVersion,
-		ulong sequence,
-		string transportType,
-		string location,
-		string resolvedRevision,
-		byte[] bundleBytes,
-		bool isUpdate,
-		KnowledgeSourceGenerationPointer? expectedActive,
-		bool allowRepair) {
-		ValidateSourceRoot(sourceAlias, sourceRoot);
-		KnowledgeSourceCurrentState? current = ReadCurrentMarker(sourceAlias, sourceRoot, out string? diagnostic);
+	private KnowledgeInstallationResult PublishLocked(KnowledgePublicationRequest request) {
+		ValidateSourceRoot(request.SourceAlias, request.SourceRoot);
+		KnowledgeSourceCurrentState? current =
+			ReadCurrentMarker(request.SourceAlias, request.SourceRoot, out string? diagnostic);
 		if (diagnostic is not null) {
 			return Failed(diagnostic);
 		}
-		if (isUpdate && (current is null || expectedActive is null || current.Active != expectedActive)) {
-			return Failed($"Knowledge source '{sourceAlias}' changed while the operation was in progress; retry.");
+		if (request.IsUpdate
+				&& (current is null || request.ExpectedActive is null || current.Active != request.ExpectedActive)) {
+			return Failed(
+				$"Knowledge source '{request.SourceAlias}' changed while the operation was in progress; retry.");
 		}
-		string digest = ComputeDigest(bundleBytes);
-		KnowledgeLibraryHighWaterMark? highWater = ReadHighWater(sourceRoot, libraryId);
-		if (highWater is not null
-				&& (sequence < highWater.Sequence
-					|| (sequence == highWater.Sequence
-						&& !string.Equals(digest, highWater.BundleDigest, StringComparison.Ordinal)))) {
-			return new KnowledgeInstallationResult(
-				KnowledgeInstallationStatus.Rejected,
-				$"Knowledge library '{libraryId}' rejected sequence {sequence}; highest accepted sequence is {highWater.Sequence}.",
-				libraryVersion,
-				GetRootPath());
-		}
-		if (current is not null) {
-			if (sequence < current.Active.Sequence
-					|| (sequence == current.Active.Sequence
-						&& !string.Equals(digest, current.Active.BundleDigest, StringComparison.Ordinal))) {
-				return new KnowledgeInstallationResult(
-					KnowledgeInstallationStatus.Rejected,
-					$"Knowledge source '{sourceAlias}' rejected sequence {sequence}; active sequence is {current.Active.Sequence}.",
-					libraryVersion,
-					GetRootPath());
-			}
-			if (sequence == current.Active.Sequence && !allowRepair) {
-				return new KnowledgeInstallationResult(
-					KnowledgeInstallationStatus.AlreadyInstalled,
-					$"Knowledge source '{sourceAlias}' sequence {sequence} is already installed.",
-					libraryVersion,
-					GetRootPath());
-			}
-			if (!isUpdate) {
-				return Failed($"Knowledge source '{sourceAlias}' is already installed; use update-knowledge.");
-			}
+		string digest = ComputeDigest(request.BundleBytes);
+		KnowledgeInstallationResult? refusal = EvaluateSequenceAcceptance(request, current, digest);
+		if (refusal is not null) {
+			return refusal;
 		}
 
-		string generations = EnsureDirectory(sourceRoot, GenerationsDirectoryName);
-		string staging = EnsureDirectory(sourceRoot, StagingDirectoryName);
-		bool repairingActive = current is not null && sequence == current.Active.Sequence;
+		bool repairingActive = current is not null && request.Sequence == current.Active.Sequence;
 		string generationName = repairingActive
-			? $"{sequence}-{digest[..12]}-repair-{Guid.NewGuid():N}"
-			: $"{sequence}-{digest[..12]}";
-		string finalRoot = ResolveChild(generations, generationName);
-		if (_fileSystem.Directory.Exists(finalRoot)) {
-			if (!TryRemoveRecoverableOrphan(
-					generations,
-					finalRoot,
-					generationName,
-					current,
-					sourceAlias,
-					libraryId,
-					libraryVersion,
-					sequence,
-					transportType,
-					location,
-					resolvedRevision,
-					digest,
-					out string? orphanDiagnostic)) {
-				return Failed(orphanDiagnostic!);
-			}
+			? $"{request.Sequence}-{digest[..12]}-repair-{Guid.NewGuid():N}"
+			: $"{request.Sequence}-{digest[..12]}";
+		string generationsRoot = EnsureDirectory(request.SourceRoot, GenerationsDirectoryName);
+		KnowledgeGenerationLocation location = new(
+			generationsRoot,
+			ResolveChild(generationsRoot, generationName),
+			generationName);
+		if (!TryMaterializeGeneration(request, current, digest, location, out string? materializationDiagnostic)) {
+			return Failed(materializationDiagnostic);
 		}
-		string stagingRoot = ResolveChild(staging, $"{generationName}-{Guid.NewGuid():N}");
+
+		KnowledgeSourceGenerationPointer active = new(
+			request.LibraryId,
+			request.LibraryVersion,
+			request.Sequence,
+			$"{GenerationsDirectoryName}/{generationName}",
+			digest,
+			request.ResolvedRevision,
+			DateTimeOffset.UtcNow);
+		KnowledgeSourceCurrentState next = new(
+			SchemaVersion,
+			request.SourceAlias,
+			active,
+			// A repair replaces the active generation in place, so the rollback target must stay the one
+			// behind it. repairingActive is only ever true when current is not null.
+			repairingActive ? current.Previous : current?.Active);
+		WriteAtomicJson(request.SourceRoot, CurrentFileName, JsonSerializer.SerializeToUtf8Bytes(
+			next, KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceCurrentState));
+		Prune(location.GenerationsRoot, next);
+		return new KnowledgeInstallationResult(
+			request.IsUpdate ? KnowledgeInstallationStatus.Updated : KnowledgeInstallationStatus.Installed,
+			$"Knowledge source '{request.SourceAlias}' sequence {request.Sequence} was installed at {location.GenerationRoot}.",
+			request.LibraryVersion,
+			GetRootPath());
+	}
+
+	// Decides whether the requested sequence may be installed at all. Returns the terminal outcome to
+	// hand back to the caller (replay rejection, idempotent hit, or misuse), or null to keep going.
+	private KnowledgeInstallationResult? EvaluateSequenceAcceptance(
+		KnowledgePublicationRequest request,
+		KnowledgeSourceCurrentState? current,
+		string digest) {
+		KnowledgeLibraryHighWaterMark? highWater = ReadHighWater(request.SourceRoot, request.LibraryId);
+		if (highWater is not null
+				&& ConflictsWithAccepted(request.Sequence, digest, highWater.Sequence, highWater.BundleDigest)) {
+			return new KnowledgeInstallationResult(
+				KnowledgeInstallationStatus.Rejected,
+				$"Knowledge library '{request.LibraryId}' rejected sequence {request.Sequence}; highest accepted sequence is {highWater.Sequence}.",
+				request.LibraryVersion,
+				GetRootPath());
+		}
+		if (current is null) {
+			return null;
+		}
+		if (ConflictsWithAccepted(request.Sequence, digest, current.Active.Sequence, current.Active.BundleDigest)) {
+			return new KnowledgeInstallationResult(
+				KnowledgeInstallationStatus.Rejected,
+				$"Knowledge source '{request.SourceAlias}' rejected sequence {request.Sequence}; active sequence is {current.Active.Sequence}.",
+				request.LibraryVersion,
+				GetRootPath());
+		}
+		if (request.Sequence == current.Active.Sequence && !request.AllowRepair) {
+			return new KnowledgeInstallationResult(
+				KnowledgeInstallationStatus.AlreadyInstalled,
+				$"Knowledge source '{request.SourceAlias}' sequence {request.Sequence} is already installed.",
+				request.LibraryVersion,
+				GetRootPath());
+		}
+		if (!request.IsUpdate) {
+			return Failed($"Knowledge source '{request.SourceAlias}' is already installed; use update-knowledge.");
+		}
+		return null;
+	}
+
+	// Writes the generation into staging and promotes it with a single directory move, so the
+	// generations directory only ever sees a complete generation.
+	private bool TryMaterializeGeneration(
+		KnowledgePublicationRequest request,
+		KnowledgeSourceCurrentState? current,
+		string digest,
+		KnowledgeGenerationLocation location,
+		out string? diagnostic) {
+		string staging = EnsureDirectory(request.SourceRoot, StagingDirectoryName);
+		if (_fileSystem.Directory.Exists(location.GenerationRoot)
+				&& !TryRemoveRecoverableOrphan(location, current, request, digest, out diagnostic)) {
+			return false;
+		}
+		string stagingRoot = ResolveChild(staging, $"{location.Name}-{Guid.NewGuid():N}");
 		_fileSystem.Directory.CreateDirectory(stagingRoot);
 		try {
-			WriteGeneration(stagingRoot, sourceAlias, libraryId, libraryVersion, sequence, transportType,
-				location, resolvedRevision, digest, bundleBytes);
-			WriteHighWater(sourceRoot, new KnowledgeLibraryHighWaterMark(
+			WriteGeneration(stagingRoot, request, digest);
+			// The high-water mark has to be durable before the generation becomes visible: a crash in
+			// that window is what ReconcileInterruptedPublication repairs. The reverse order is not
+			// recoverable, so these three calls must keep this exact sequence.
+			WriteHighWater(request.SourceRoot, new KnowledgeLibraryHighWaterMark(
 				SchemaVersion,
-				libraryId,
-				sequence,
+				request.LibraryId,
+				request.Sequence,
 				digest));
-			_fileSystem.Directory.Move(stagingRoot, finalRoot);
+			_fileSystem.Directory.Move(stagingRoot, location.GenerationRoot);
 		} finally {
 			if (_fileSystem.Directory.Exists(stagingRoot)) {
 				_fileSystem.Directory.Delete(stagingRoot, recursive: true);
 			}
 		}
-
-		KnowledgeSourceGenerationPointer active = new(
-			libraryId,
-			libraryVersion,
-			sequence,
-			$"{GenerationsDirectoryName}/{generationName}",
-			digest,
-			resolvedRevision,
-			DateTimeOffset.UtcNow);
-		KnowledgeSourceCurrentState next = new(
-			SchemaVersion,
-			sourceAlias,
-			active,
-			repairingActive ? current?.Previous : current?.Active);
-		WriteAtomicJson(sourceRoot, CurrentFileName, JsonSerializer.SerializeToUtf8Bytes(
-			next, KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceCurrentState));
-		Prune(generations, next);
-		return new KnowledgeInstallationResult(
-			isUpdate ? KnowledgeInstallationStatus.Updated : KnowledgeInstallationStatus.Installed,
-			$"Knowledge source '{sourceAlias}' sequence {sequence} was installed at {finalRoot}.",
-			libraryVersion,
-			GetRootPath());
+		diagnostic = null;
+		return true;
 	}
 
 	private bool TryRemoveRecoverableOrphan(
-		string generationsRoot,
-		string generationRoot,
-		string generationName,
+		KnowledgeGenerationLocation location,
 		KnowledgeSourceCurrentState? current,
-		string sourceAlias,
-		string libraryId,
-		string libraryVersion,
-		ulong sequence,
-		string transportType,
-		string location,
-		string resolvedRevision,
+		KnowledgePublicationRequest request,
 		string digest,
 		out string? diagnostic) {
-		string relativePath = $"{GenerationsDirectoryName}/{generationName}";
+		string relativePath = $"{GenerationsDirectoryName}/{location.Name}";
 		if (current is not null
 				&& (string.Equals(current.Active.RelativePath, relativePath, StringComparison.Ordinal)
 					|| string.Equals(current.Previous?.RelativePath, relativePath, StringComparison.Ordinal))) {
-			diagnostic = $"Immutable knowledge generation '{generationName}' is already referenced by the activation marker.";
+			diagnostic = $"Immutable knowledge generation '{location.Name}' is already referenced by the activation marker.";
 			return false;
 		}
 		try {
+			KnowledgeGenerationIdentity expected = new(
+				request.SourceAlias,
+				request.LibraryId,
+				request.Sequence,
+				digest);
 			if (!TryReadRecoverableGeneration(
-					generationsRoot,
-					generationRoot,
-					generationName,
-					sourceAlias,
-					libraryId,
-					sequence,
-					digest,
+					location,
+					expected,
 					out KnowledgeSourceInstallMetadata? metadata,
 					out diagnostic)) {
 				return false;
 			}
-			bool exactOrphan = string.Equals(metadata!.LibraryVersion, libraryVersion, StringComparison.Ordinal)
-				&& string.Equals(metadata.TransportType, transportType, StringComparison.Ordinal)
-				&& string.Equals(metadata.Location, location, StringComparison.Ordinal)
-				&& string.Equals(metadata.ResolvedRevision, resolvedRevision, StringComparison.Ordinal);
+			bool exactOrphan =
+				string.Equals(metadata.LibraryVersion, request.LibraryVersion, StringComparison.Ordinal)
+				&& string.Equals(metadata.TransportType, request.TransportType, StringComparison.Ordinal)
+				&& string.Equals(metadata.Location, request.Location, StringComparison.Ordinal)
+				&& string.Equals(metadata.ResolvedRevision, request.ResolvedRevision, StringComparison.Ordinal);
 			if (!exactOrphan) {
-				diagnostic = $"Immutable knowledge generation '{generationName}' already exists with unexpected content.";
+				diagnostic = $"Immutable knowledge generation '{location.Name}' already exists with unexpected content.";
 				return false;
 			}
-			_fileSystem.Directory.Delete(generationRoot, recursive: true);
+			_fileSystem.Directory.Delete(location.GenerationRoot, recursive: true);
 			diagnostic = null;
 			return true;
 		} catch (Exception exception) when (IsStorageException(exception)) {
-			diagnostic = $"Immutable knowledge generation '{generationName}' could not be recovered: {exception.Message}";
+			diagnostic = $"Immutable knowledge generation '{location.Name}' could not be recovered: {exception.Message}";
 			return false;
 		}
 	}
 
 	private bool TryReadRecoverableGeneration(
-		string generationsRoot,
-		string generationRoot,
-		string generationName,
-		string sourceAlias,
-		string libraryId,
-		ulong sequence,
-		string digest,
+		KnowledgeGenerationLocation location,
+		KnowledgeGenerationIdentity expected,
 		out KnowledgeSourceInstallMetadata? metadata,
 		out string? diagnostic) {
 		metadata = null;
 		try {
-			EnsureTreeContainsNoReparsePoints(generationsRoot, generationRoot);
-			byte[] bundle = ReadBoundedFile(ResolveChild(generationRoot, BundleFileName), MaxBundleBytes);
+			EnsureTreeContainsNoReparsePoints(location.GenerationsRoot, location.GenerationRoot);
+			byte[] bundle = ReadBoundedFile(ResolveChild(location.GenerationRoot, BundleFileName), MaxBundleBytes);
 			metadata = JsonSerializer.Deserialize(
-				ReadBoundedFile(ResolveChild(generationRoot, MetadataFileName), MaxMarkerBytes),
+				ReadBoundedFile(ResolveChild(location.GenerationRoot, MetadataFileName), MaxMarkerBytes),
 				KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceInstallMetadata);
-			bool exactGeneration = string.Equals(ComputeDigest(bundle), digest, StringComparison.Ordinal)
+			bool exactGeneration = string.Equals(ComputeDigest(bundle), expected.Digest, StringComparison.Ordinal)
 				&& metadata is not null
 				&& metadata.SchemaVersion == SchemaVersion
-				&& string.Equals(metadata.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(metadata.LibraryId, libraryId, StringComparison.Ordinal)
-				&& metadata.Sequence == sequence
-				&& string.Equals(metadata.BundleDigest, digest, StringComparison.Ordinal)
+				&& string.Equals(metadata.SourceAlias, expected.SourceAlias, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(metadata.LibraryId, expected.LibraryId, StringComparison.Ordinal)
+				&& metadata.Sequence == expected.Sequence
+				&& string.Equals(metadata.BundleDigest, expected.Digest, StringComparison.Ordinal)
 				&& !string.IsNullOrWhiteSpace(metadata.LibraryVersion)
 				&& !string.IsNullOrWhiteSpace(metadata.TransportType)
 				&& !string.IsNullOrWhiteSpace(metadata.Location)
 				&& !string.IsNullOrWhiteSpace(metadata.ResolvedRevision);
 			if (!exactGeneration) {
-				diagnostic = $"Immutable knowledge generation '{generationName}' exists with unexpected content.";
+				diagnostic = $"Immutable knowledge generation '{location.Name}' exists with unexpected content.";
 				return false;
 			}
 			diagnostic = null;
 			return true;
 		} catch (Exception exception) when (IsStorageException(exception)) {
-			diagnostic = $"Immutable knowledge generation '{generationName}' could not be recovered: {exception.Message}";
+			diagnostic = $"Immutable knowledge generation '{location.Name}' could not be recovered: {exception.Message}";
 			return false;
 		}
 	}
@@ -685,19 +722,9 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		}
 	}
 
-	private void WriteGeneration(
-		string stagingRoot,
-		string sourceAlias,
-		string libraryId,
-		string libraryVersion,
-		ulong sequence,
-		string transportType,
-		string location,
-		string resolvedRevision,
-		string digest,
-		byte[] bundleBytes) {
-		_fileSystem.File.WriteAllBytes(ResolveChild(stagingRoot, BundleFileName), bundleBytes);
-		using MemoryStream input = new(bundleBytes, writable: false);
+	private void WriteGeneration(string stagingRoot, KnowledgePublicationRequest request, string digest) {
+		_fileSystem.File.WriteAllBytes(ResolveChild(stagingRoot, BundleFileName), request.BundleBytes);
+		using MemoryStream input = new(request.BundleBytes, writable: false);
 		using ZipArchive archive = new(input, ZipArchiveMode.Read);
 		if (archive.Entries.Count > MaxArchiveEntries) {
 			throw new InvalidDataException("Knowledge archive contains too many entries.");
@@ -726,8 +753,8 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			source.CopyTo(target);
 		}
 		KnowledgeSourceInstallMetadata metadata = new(
-			SchemaVersion, sourceAlias, libraryId, libraryVersion, sequence, transportType, location,
-			resolvedRevision, digest, DateTimeOffset.UtcNow);
+			SchemaVersion, request.SourceAlias, request.LibraryId, request.LibraryVersion, request.Sequence,
+			request.TransportType, request.Location, request.ResolvedRevision, digest, DateTimeOffset.UtcNow);
 		_fileSystem.File.WriteAllBytes(ResolveChild(stagingRoot, MetadataFileName),
 			JsonSerializer.SerializeToUtf8Bytes(
 				metadata, KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceInstallMetadata));
@@ -791,13 +818,15 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	private void Prune(string generationsRoot, KnowledgeSourceCurrentState state) {
 		string[] retained = new[] { state.Active.RelativePath, state.Previous?.RelativePath }
 			.Where(value => value is not null)
-			.Select(value => _fileSystem.Path.GetFileName(value!))
+			.Select(value => _fileSystem.Path.GetFileName(value))
 			.ToArray();
-		foreach (string directory in _fileSystem.Directory.EnumerateDirectories(generationsRoot).ToArray()) {
-			if (!retained.Contains(_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal)) {
-				EnsureNoReparsePoint(generationsRoot, directory);
-				_fileSystem.Directory.Delete(directory, recursive: true);
-			}
+		// Materialize the victims before the first delete so the directory is never mutated mid-enumeration.
+		string[] obsolete = _fileSystem.Directory.EnumerateDirectories(generationsRoot)
+			.Where(directory => !retained.Contains(_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
+			.ToArray();
+		foreach (string directory in obsolete) {
+			EnsureNoReparsePoint(generationsRoot, directory);
+			_fileSystem.Directory.Delete(directory, recursive: true);
 		}
 	}
 
@@ -814,9 +843,13 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		}
 	}
 
+	// Locks and library history live next to the per-source directories, so every one of them is
+	// anchored on the shared "sources" parent rather than on the source root itself.
+	private string ResolveSourcesRoot(string sourceRoot) => _fileSystem.Path.GetDirectoryName(sourceRoot)
+		?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+
 	private T WithMutationLock<T>(string sourceRoot, Func<T> action) {
-		string sourcesRoot = _fileSystem.Path.GetDirectoryName(sourceRoot)
-			?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+		string sourcesRoot = ResolveSourcesRoot(sourceRoot);
 		string locksRoot = EnsureDirectory(sourcesRoot, LocksDirectoryName);
 		string lockPath = ResolveChild(locksRoot, $"{_fileSystem.Path.GetFileName(sourceRoot)}.lock");
 		object processLock = ProcessLocks.GetOrAdd(lockPath, _ => new object());
@@ -844,8 +877,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	}
 
 	private bool TryWithMutationLock(string sourceRoot, Action action) {
-		string sourcesRoot = _fileSystem.Path.GetDirectoryName(sourceRoot)
-			?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+		string sourcesRoot = ResolveSourcesRoot(sourceRoot);
 		string locksRoot = EnsureDirectory(sourcesRoot, LocksDirectoryName);
 		string lockPath = ResolveChild(locksRoot, $"{_fileSystem.Path.GetFileName(sourceRoot)}.lock");
 		object processLock = ProcessLocks.GetOrAdd(lockPath, _ => new object());
@@ -869,8 +901,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	}
 
 	private T WithLibraryMutationLock<T>(string sourceRoot, string libraryId, Func<T> action) {
-		string sourcesRoot = _fileSystem.Path.GetDirectoryName(sourceRoot)
-			?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+		string sourcesRoot = ResolveSourcesRoot(sourceRoot);
 		string locksRoot = EnsureDirectory(sourcesRoot, LocksDirectoryName);
 		string lockPath = ResolveChild(locksRoot, $"library-{SourceKey(libraryId)}.lock");
 		object processLock = ProcessLocks.GetOrAdd(lockPath, _ => new object());
@@ -898,8 +929,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	}
 
 	private KnowledgeLibraryHighWaterMark? ReadHighWater(string sourceRoot, string libraryId) {
-		string sourcesRoot = _fileSystem.Path.GetDirectoryName(sourceRoot)
-			?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+		string sourcesRoot = ResolveSourcesRoot(sourceRoot);
 		string historyRoot = EnsureDirectory(sourcesRoot, HistoryDirectoryName);
 		string path = ResolveChild(historyRoot, $"{SourceKey(libraryId)}.json");
 		if (!_fileSystem.File.Exists(path)) {
@@ -922,8 +952,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	}
 
 	private void WriteHighWater(string sourceRoot, KnowledgeLibraryHighWaterMark mark) {
-		string sourcesRoot = _fileSystem.Path.GetDirectoryName(sourceRoot)
-			?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+		string sourcesRoot = ResolveSourcesRoot(sourceRoot);
 		string historyRoot = EnsureDirectory(sourcesRoot, HistoryDirectoryName);
 		WriteAtomicJson(historyRoot, $"{SourceKey(mark.LibraryId)}.json", JsonSerializer.SerializeToUtf8Bytes(
 			mark,
@@ -960,7 +989,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 					: StringComparison.Ordinal)) {
 				break;
 			}
-			current = _fileSystem.Path.GetDirectoryName(current)!;
+			current = _fileSystem.Path.GetDirectoryName(current);
 		}
 	}
 

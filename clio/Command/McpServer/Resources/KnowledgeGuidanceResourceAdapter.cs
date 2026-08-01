@@ -23,7 +23,7 @@ internal sealed class KnowledgeGuidanceResourceAdapter : IKnowledgeGuidanceResou
 		KnowledgeArticleLookup lookup = _source.FindByUri(uri);
 		return lookup.Status switch {
 			KnowledgeArticleLookupStatus.Active => new TextResourceContents {
-				Uri = lookup.Article!.Uri,
+				Uri = lookup.Article.Uri,
 				MimeType = lookup.Article.MediaType,
 				Text = lookup.Article.Text
 			},

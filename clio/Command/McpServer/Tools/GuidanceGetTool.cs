@@ -74,7 +74,7 @@ internal sealed class GuidanceGetTool {
 					Success = true,
 					Hint = aliasHint,
 					Article = new GuidanceArticle {
-						Name = lookup.Article!.Name,
+						Name = lookup.Article.Name,
 						Uri = lookup.Article.Uri,
 						Text = lookup.Article.Text,
 						LibraryId = lookup.Provenance?.LibraryId,

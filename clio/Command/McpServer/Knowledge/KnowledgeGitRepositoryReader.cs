@@ -95,7 +95,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 			long totalResourceBytes = 0;
 			using IncrementalHash digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 			AppendFramed(digest, manifestBytes);
-			foreach (KnowledgeGitRepositoryResource resource in manifest.Resources!) {
+			foreach (KnowledgeGitRepositoryResource resource in manifest.Resources) {
 				ValidateResourceDescriptor(manifest, resource);
 				string path = ResolveRepositoryPath(root, resource.SourcePath);
 				byte[] content = ReadBounded(root, path, MaxResourceBytes);
@@ -163,7 +163,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 						objectProperties.Pop();
 						break;
 					case JsonTokenType.PropertyName:
-						string propertyName = reader.GetString()!;
+						string propertyName = reader.GetString();
 						if (!objectProperties.Peek().Add(propertyName)) {
 							throw new InvalidDataException(
 								$"Git knowledge manifest contains duplicate JSON property '{propertyName}'.");
@@ -199,7 +199,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	}
 
 	private void ValidateCompatibility(KnowledgeGitRepositoryManifest manifest) {
-		if (manifest.Compatibility!.Clio is null
+		if (manifest.Compatibility.Clio is null
 				|| manifest.Compatibility.McpToolContract is null
 				|| !IsCompatible(manifest.Compatibility.Clio, _capabilities.ClioVersion)
 				|| !IsCompatible(manifest.Compatibility.McpToolContract, _capabilities.McpToolContractVersion)) {
@@ -208,7 +208,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	}
 
 	private void ValidateRequirements(KnowledgeGitRepositoryManifest manifest) {
-		KnowledgeGitRepositoryRequirements requirements = manifest.Requirements!;
+		KnowledgeGitRepositoryRequirements requirements = manifest.Requirements;
 		if (requirements.Tools is null
 				|| requirements.ItemIds is null
 				|| requirements.ResourceUris is null) {
@@ -227,7 +227,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	}
 
 	private static void ValidateResourceSet(KnowledgeGitRepositoryManifest manifest) {
-		IReadOnlyList<KnowledgeGitRepositoryResource> resources = manifest.Resources!;
+		IReadOnlyList<KnowledgeGitRepositoryResource> resources = manifest.Resources;
 		EnsureUnique(resources.Select(resource => resource.ItemId), "resource item id");
 		EnsureUnique(resources.Select(resource => resource.Uri), "resource URI");
 		EnsureUnique(resources.Select(resource => resource.SourcePath), "resource source path");
@@ -238,8 +238,8 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 		HashSet<string> itemIds = resources.Select(resource => resource.ItemId).ToHashSet(StringComparer.Ordinal);
 		HashSet<string> uris = resources.Select(resource => resource.Uri).ToHashSet(StringComparer.Ordinal);
 		HashSet<string> canonicalUris = new(uris, StringComparer.Ordinal);
-		if (!itemIds.SetEquals(manifest.Requirements!.ItemIds!)
-				|| !uris.SetEquals(manifest.Requirements.ResourceUris!)
+		if (!itemIds.SetEquals(manifest.Requirements.ItemIds)
+				|| !uris.SetEquals(manifest.Requirements.ResourceUris)
 				|| legacyUris.Any(canonicalUris.Contains)) {
 			throw new InvalidDataException(
 				"Declared requirements, canonical URIs, legacy URIs, and Git resources are inconsistent.");
@@ -316,7 +316,9 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	private static void EnsureUnique(IEnumerable<string> values, string label) {
 		HashSet<string> unique = new(StringComparer.Ordinal);
 		foreach (string value in values) {
-			if (string.IsNullOrWhiteSpace(value) || !unique.Add(value)) {
+			// unique.Add() mutates as it tests, so it must stay behind the blank check and run exactly once per value.
+			bool acceptedAsFirstNonBlankOccurrence = !string.IsNullOrWhiteSpace(value) && unique.Add(value);
+			if (!acceptedAsFirstNonBlankOccurrence) {
 				throw new InvalidDataException($"Every Git knowledge {label} must be non-empty and unique.");
 			}
 		}
@@ -334,10 +336,10 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	}
 
 	private string ResolveRepositoryPath(string root, string? relativePath) {
-		if (!ValidRepositoryPath(relativePath!)) {
+		if (!ValidRepositoryPath(relativePath)) {
 			throw new InvalidDataException("Git knowledge resource path must be repository relative.");
 		}
-		return ResolveChild(root, relativePath!);
+		return ResolveChild(root, relativePath);
 	}
 
 	private string ResolveChild(string root, string relativePath) {

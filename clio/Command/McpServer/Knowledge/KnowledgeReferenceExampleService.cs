@@ -53,20 +53,23 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 	private readonly IKnowledgeBundleActivator _activator;
 	private readonly IKnowledgeBundleRuntime _runtime;
 	private readonly IKnowledgeReferenceExampleParser _parser;
+	private readonly IFeatureToggleService _featureToggleService;
 
 	public KnowledgeReferenceExampleService(
 		IKnowledgeBundleActivator activator,
 		IKnowledgeBundleRuntime runtime,
-		IKnowledgeReferenceExampleParser parser) {
+		IKnowledgeReferenceExampleParser parser,
+		IFeatureToggleService featureToggleService) {
 		_activator = activator ?? throw new ArgumentNullException(nameof(activator));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 		_parser = parser ?? throw new ArgumentNullException(nameof(parser));
+		_featureToggleService = featureToggleService ?? throw new ArgumentNullException(nameof(featureToggleService));
 	}
 
 	public KnowledgeReferenceExampleListResult List(KnowledgeReferenceExampleQuery query) {
 		ArgumentNullException.ThrowIfNull(query);
 		if (!TryNormalizeQuery(query, out KnowledgeReferenceExampleQuery normalized, out string? queryDiagnostic)) {
-			return new KnowledgeReferenceExampleListResult(false, [], [queryDiagnostic!]);
+			return new KnowledgeReferenceExampleListResult(false, [], [queryDiagnostic]);
 		}
 
 		_activator.EnsureActivated();
@@ -77,6 +80,12 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 			diagnostics.Add(_activator.LastDiagnostic);
 		}
 		foreach (KnowledgeRoleArticle item in articles) {
+			// Reference examples honour requiredFeatures exactly like guidance articles do in
+			// KnowledgeGuidanceSource. The gate runs before parsing so a disabled example cannot leak
+			// its identity through a validation diagnostic either.
+			if (!HasEnabledFeatures(item.Article)) {
+				continue;
+			}
 			if (normalized.SourceAlias is not null
 					&& !string.Equals(item.Provenance.SourceAlias, normalized.SourceAlias, StringComparison.OrdinalIgnoreCase)) {
 				continue;
@@ -90,8 +99,8 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 				diagnostics.Add($"Catalog item '{item.Article.Uri}' is invalid: {validationDiagnostic}");
 				continue;
 			}
-			if (Matches(example!, normalized)) {
-				examples.Add(example!);
+			if (Matches(example, normalized)) {
+				examples.Add(example);
 			}
 		}
 
@@ -102,6 +111,9 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 			.ToArray();
 		return new KnowledgeReferenceExampleListResult(diagnostics.Count == 0, ordered, diagnostics);
 	}
+
+	private bool HasEnabledFeatures(KnowledgeArticle article) =>
+		(article.RequiredFeatures ?? []).All(_featureToggleService.IsFeatureEnabled);
 
 	private static bool TryNormalizeQuery(
 		KnowledgeReferenceExampleQuery query,
@@ -144,21 +156,21 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 			document.Title.Trim(),
 			document.Status.Trim(),
 			new KnowledgeReferenceExampleUseCase(
-				document.PrimaryUseCase!.Id.Trim(),
+				document.PrimaryUseCase.Id.Trim(),
 				document.PrimaryUseCase.Summary.Trim()),
 			new KnowledgeReferenceExampleSource(
-				document.Source!.Repository.Trim(),
+				document.Source.Repository.Trim(),
 				document.Source.Revision.Trim().ToLowerInvariant(),
 				document.Source.DefaultBranch.Trim()),
-			document.EntryPoints!.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+			document.EntryPoints.OrderBy(pair => pair.Key, StringComparer.Ordinal)
 				.ToDictionary(pair => pair.Key.Trim(), pair => pair.Value.Trim(), StringComparer.Ordinal),
-			document.SupportingCapabilities!.Select(value => value.Trim())
+			document.SupportingCapabilities.Select(value => value.Trim())
 				.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
 			new KnowledgeReferenceExampleCompatibility(
-				document.Compatibility!.Status.Trim(),
+				document.Compatibility.Status.Trim(),
 				document.Compatibility.Details.Trim()),
 			new KnowledgeReferenceExampleTrust(
-				document.Trust!.Publisher.Trim(),
+				document.Trust.Publisher.Trim(),
 				document.Trust.Level.Trim()),
 			document.Notes?.Select(value => value.Trim()).ToArray() ?? []);
 		return true;
@@ -177,26 +189,13 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 				|| !SafeText(document.PrimaryUseCase.Summary)) {
 			return "primaryUseCase.id and primaryUseCase.summary are required";
 		}
-		if (document.Source is null
-				|| !TryValidateRepository(document.Source.Repository)
-				|| !SafeText(document.Source.DefaultBranch)
-				|| Blank(document.Source.Revision)
-				|| !ImmutableRevisionPattern.IsMatch(document.Source.Revision.Trim())) {
+		if (!ValidSource(document.Source)) {
 			return "source must contain a credential-free HTTPS repository, default branch, and immutable full commit revision";
 		}
-		if (document.EntryPoints is null || document.EntryPoints.Count == 0
-				|| document.EntryPoints.Count > MaxCollectionCount
-				|| document.EntryPoints.Any(pair => !EntryPointKey(pair.Key) || !IsSafeRepositoryPath(pair.Value))
-				|| document.EntryPoints.Keys.Select(key => key.Trim()).Distinct(StringComparer.Ordinal).Count()
-					!= document.EntryPoints.Count) {
+		if (!ValidEntryPoints(document.EntryPoints)) {
 			return "entryPoints must contain named safe repository-relative paths";
 		}
-		if (document.SupportingCapabilities is null
-				|| document.SupportingCapabilities.Count == 0
-				|| document.SupportingCapabilities.Count > MaxCollectionCount
-				|| document.SupportingCapabilities.Any(value => !Stable(value))
-				|| document.SupportingCapabilities.Select(value => value.Trim()).Distinct(StringComparer.Ordinal).Count()
-					!= document.SupportingCapabilities.Count) {
+		if (!ValidSupportingCapabilities(document.SupportingCapabilities)) {
 			return "supportingCapabilities must contain unique non-empty stable tags";
 		}
 		if (document.Compatibility is null
@@ -215,6 +214,28 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 		}
 		return null;
 	}
+
+	private static bool ValidSource(KnowledgeReferenceExampleSourceDocument? source) =>
+		source is not null
+		&& TryValidateRepository(source.Repository)
+		&& SafeText(source.DefaultBranch)
+		&& !Blank(source.Revision)
+		&& ImmutableRevisionPattern.IsMatch(source.Revision.Trim());
+
+	private static bool ValidEntryPoints(Dictionary<string, string>? entryPoints) =>
+		entryPoints is not null
+		&& entryPoints.Count > 0
+		&& entryPoints.Count <= MaxCollectionCount
+		&& entryPoints.All(pair => EntryPointKey(pair.Key) && IsSafeRepositoryPath(pair.Value))
+		// Trimmed keys must stay pairwise distinct so a mapped entry point cannot silently shadow another.
+		&& entryPoints.Keys.Select(key => key.Trim()).Distinct(StringComparer.Ordinal).Count() == entryPoints.Count;
+
+	private static bool ValidSupportingCapabilities(List<string>? capabilities) =>
+		capabilities is not null
+		&& capabilities.Count > 0
+		&& capabilities.Count <= MaxCollectionCount
+		&& capabilities.All(Stable)
+		&& capabilities.Select(value => value.Trim()).Distinct(StringComparer.Ordinal).Count() == capabilities.Count;
 
 	private static bool Matches(KnowledgeReferenceExample example, KnowledgeReferenceExampleQuery query) {
 		if (query.Capability is not null
@@ -240,7 +261,7 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 
 	private static bool TryValidateRepository(string? value) =>
 		!Blank(value)
-		&& value!.Trim().Length <= MaxRepositoryLength
+		&& value.Trim().Length <= MaxRepositoryLength
 		&& !HasControlCharacters(value)
 		&& Uri.TryCreate(value.Trim(), UriKind.Absolute, out Uri? uri)
 		&& string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
@@ -252,7 +273,7 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 		if (Blank(value)) {
 			return false;
 		}
-		string path = value!.Trim();
+		string path = value.Trim();
 		if (path.Length > MaxPathLength) {
 			return false;
 		}
@@ -270,19 +291,19 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 	private static bool TooLong(string? value) => value?.Trim().Length > MaxTextLength;
 
 	private static bool SafeText(string? value) =>
-		!Blank(value) && !TooLong(value) && !HasControlCharacters(value!);
+		!Blank(value) && !TooLong(value) && !HasControlCharacters(value);
 
 	private static bool HasControlCharacters(string value) => value.Any(char.IsControl);
 
 	private static bool Stable(string? value) =>
-		!Blank(value) && value!.Trim().Length <= 160 && StableIdPattern.IsMatch(value.Trim());
+		!Blank(value) && value.Trim().Length <= 160 && StableIdPattern.IsMatch(value.Trim());
 
 	private static bool EntryPointKey(string? value) =>
-		!Blank(value) && value!.Trim().Length <= 160 && EntryPointKeyPattern.IsMatch(value.Trim());
+		!Blank(value) && value.Trim().Length <= 160 && EntryPointKeyPattern.IsMatch(value.Trim());
 
-	private static string? TrimToNull(string? value) => Blank(value) ? null : value!.Trim();
+	private static string? TrimToNull(string? value) => Blank(value) ? null : value.Trim();
 
-	private static string Safe(string? value) => Blank(value) ? "unknown parsing error" : value!.Trim();
+	private static string Safe(string? value) => Blank(value) ? "unknown parsing error" : value.Trim();
 }
 
 internal sealed class KnowledgeReferenceExampleDocument {

@@ -447,6 +447,9 @@ internal sealed class DeleteKnowledgeCommand(
 /// </summary>
 internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementService service, ILogger logger)
 	: Command<AddKnowledgeSourceOptions> {
+	private const string GitTransportType = "git";
+	private const string NuGetTransportType = "nuget";
+
 	/// <inheritdoc />
 	public override int Execute(AddKnowledgeSourceOptions options) {
 		if (!TryCreateRequest(options, logger, out KnowledgeSourceAddRequest? request)) {
@@ -470,7 +473,7 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			return false;
 		}
 		string transportType = options.Type.Trim().ToLowerInvariant();
-		if (transportType is not ("git" or "nuget")) {
+		if (transportType is not (GitTransportType or NuGetTransportType)) {
 			logger.WriteError("Knowledge source type must be 'git' or 'nuget'.");
 			return false;
 		}
@@ -479,35 +482,10 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			logger.WriteError("Knowledge source participation must be 'isolated', 'supplement', or 'authoritative'.");
 			return false;
 		}
-		if (transportType == "nuget" && string.IsNullOrWhiteSpace(options.PackageId)) {
-			logger.WriteError("--package-id is required when --type is nuget.");
+		if (transportType == NuGetTransportType && !ValidateNuGetOptions(options, logger)) {
 			return false;
 		}
-		if (transportType == "nuget"
-				&& (string.IsNullOrWhiteSpace(options.TrustedKeyId)
-					|| string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath))) {
-			logger.WriteError("--trusted-key-id and --trusted-public-key-path are required when --type is nuget.");
-			return false;
-		}
-		if (transportType == "nuget" && !System.IO.Path.IsPathFullyQualified(options.TrustedPublicKeyPath!.Trim())) {
-			logger.WriteError("--trusted-public-key-path must be an absolute local file path containing public key material.");
-			return false;
-		}
-		bool hasGitOptions = !string.IsNullOrWhiteSpace(options.Branch)
-			|| !string.IsNullOrWhiteSpace(options.Tag)
-			|| !string.IsNullOrWhiteSpace(options.Commit);
-		if (transportType == "nuget" && hasGitOptions) {
-			logger.WriteError("--branch, --tag, and --commit are valid only for Git sources.");
-			return false;
-		}
-		if (transportType == "git" && !string.IsNullOrWhiteSpace(options.PackageId)) {
-			logger.WriteError("--package-id is valid only for NuGet sources.");
-			return false;
-		}
-		if (transportType == "git"
-				&& (!string.IsNullOrWhiteSpace(options.TrustedKeyId)
-					|| !string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath))) {
-			logger.WriteError("--trusted-key-id and --trusted-public-key-path are not used for Git sources.");
+		if (transportType == GitTransportType && !ValidateGitOptions(options, logger)) {
 			return false;
 		}
 		request = new KnowledgeSourceAddRequest(
@@ -516,7 +494,9 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			transportType,
 			options.Location.Trim(),
 			TrimToNull(options.TrustedKeyId),
-			transportType == "nuget" ? System.IO.Path.GetFullPath(options.TrustedPublicKeyPath!.Trim()) : null,
+			transportType == NuGetTransportType
+				? System.IO.Path.GetFullPath(options.TrustedPublicKeyPath.Trim())
+				: null,
 			TrimToNull(options.PackageId),
 			TrimToNull(options.Branch),
 			TrimToNull(options.Tag),
@@ -524,6 +504,47 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			Enabled: !options.Disabled,
 			options.Priority,
 			participation);
+		return true;
+	}
+
+	// A NuGet source is only trustworthy when it names a package and pins the signing key material
+	// the verifier will require, so both are refused up front rather than at install time.
+	private static bool ValidateNuGetOptions(AddKnowledgeSourceOptions options, ILogger logger) {
+		if (string.IsNullOrWhiteSpace(options.PackageId)) {
+			logger.WriteError("--package-id is required when --type is nuget.");
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(options.TrustedKeyId)
+				|| string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath)) {
+			logger.WriteError("--trusted-key-id and --trusted-public-key-path are required when --type is nuget.");
+			return false;
+		}
+		if (!System.IO.Path.IsPathFullyQualified(options.TrustedPublicKeyPath.Trim())) {
+			logger.WriteError("--trusted-public-key-path must be an absolute local file path containing public key material.");
+			return false;
+		}
+		bool hasGitOptions = !string.IsNullOrWhiteSpace(options.Branch)
+			|| !string.IsNullOrWhiteSpace(options.Tag)
+			|| !string.IsNullOrWhiteSpace(options.Commit);
+		if (hasGitOptions) {
+			logger.WriteError("--branch, --tag, and --commit are valid only for Git sources.");
+			return false;
+		}
+		return true;
+	}
+
+	// Git sources are verified by revision rather than by signature, so NuGet-only options are
+	// rejected instead of being silently stored and ignored.
+	private static bool ValidateGitOptions(AddKnowledgeSourceOptions options, ILogger logger) {
+		if (!string.IsNullOrWhiteSpace(options.PackageId)) {
+			logger.WriteError("--package-id is valid only for NuGet sources.");
+			return false;
+		}
+		if (!string.IsNullOrWhiteSpace(options.TrustedKeyId)
+				|| !string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath)) {
+			logger.WriteError("--trusted-key-id and --trusted-public-key-path are not used for Git sources.");
+			return false;
+		}
 		return true;
 	}
 

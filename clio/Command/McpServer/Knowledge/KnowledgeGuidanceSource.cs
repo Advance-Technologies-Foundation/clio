@@ -70,13 +70,13 @@ internal sealed class KnowledgeGuidanceSource : IKnowledgeGuidanceSource {
 	private IEnumerable<KnowledgeArticle> GetGuidanceArticles() => _runtime.GetNames()
 			.Select(_runtime.Find)
 			.Where(lookup => lookup.Status == KnowledgeArticleLookupStatus.Active)
-			.Select(lookup => lookup.Article!)
+			.Select(lookup => lookup.Article)
 			.Where(HasEnabledFeatures)
 			.GroupBy(article => article.Uri, StringComparer.Ordinal)
 			.Select(group => group.First());
 
 	private KnowledgeArticleLookup RequireEnabledFeatures(KnowledgeArticleLookup lookup) =>
-		lookup.Status == KnowledgeArticleLookupStatus.Active && !HasEnabledFeatures(lookup.Article!)
+		lookup.Status == KnowledgeArticleLookupStatus.Active && !HasEnabledFeatures(lookup.Article)
 			? new KnowledgeArticleLookup(
 				KnowledgeArticleLookupStatus.NotFound,
 				null,

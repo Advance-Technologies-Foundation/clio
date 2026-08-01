@@ -375,26 +375,36 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			? [$"{program}.exe"]
 			: [program];
 		foreach (string rawDirectory in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)) {
-			string directory = rawDirectory.Trim().Trim('"');
-			if (!Path.IsPathFullyQualified(directory)) {
-				continue;
-			}
-			foreach (string executableName in executableNames) {
-				string candidate;
-				try {
-					candidate = Path.Combine(directory, executableName);
-				} catch (ArgumentException) {
-					continue;
-				}
-				string resolved = ValidateExecutablePath(candidate);
-				if (resolved is not null) {
-					return resolved;
-				}
+			string resolved = ResolveFromPathDirectory(rawDirectory, executableNames);
+			if (resolved is not null) {
+				return resolved;
 			}
 		}
 		throw new FileNotFoundException(
 			$"Executable '{program}' was not found in any rooted PATH directory.",
 			program);
+	}
+
+	private static string ResolveFromPathDirectory(string rawDirectory, string[] executableNames) {
+		string directory = rawDirectory.Trim().Trim('"');
+		// Relative PATH entries resolve against the current directory and would let a caller-controlled
+		// working directory decide which executable runs, so they are never searched.
+		if (!Path.IsPathFullyQualified(directory)) {
+			return null;
+		}
+		foreach (string executableName in executableNames) {
+			string candidate;
+			try {
+				candidate = Path.Combine(directory, executableName);
+			} catch (ArgumentException) {
+				continue;
+			}
+			string resolved = ValidateExecutablePath(candidate);
+			if (resolved is not null) {
+				return resolved;
+			}
+		}
+		return null;
 	}
 
 	private static string ValidateExecutablePath(string candidate) {
@@ -491,7 +501,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				resourceLimitState.MarkExceeded();
 				TryKillProcess(process);
 			}
-			monitorCts.Cancel();
+			await monitorCts.CancelAsync();
 			await monitorTask;
 			await Task.WhenAll(stdoutTask, stderrTask);
 
@@ -542,7 +552,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process) {
 		char[] buffer = new char[4096];
 		StringBuilder realtimeLine = new();
-		long maximum = options.MaximumCapturedOutputCharacters!.Value;
+		long maximum = options.MaximumCapturedOutputCharacters.Value;
 		while (true) {
 			// Deliberately uncancellable: the caller awaits both reader tasks after the process has
 			// exited or been killed, and relies on them draining what the child already wrote. Passing
@@ -646,31 +656,43 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			} catch (DirectoryNotFoundException) {
 				continue;
 			}
-			foreach (string file in files) {
-				try {
-					FileInfo info = new(file);
-					if ((info.Attributes & FileAttributes.ReparsePoint) == 0) {
-						size = checked(size + info.Length);
-					}
-				} catch (FileNotFoundException) {
-					// Files can disappear while the monitored process atomically replaces them.
-				} catch (DirectoryNotFoundException) {
-					// A parent directory can disappear between enumeration and metadata access.
+			size = checked(size + SumRegularFileSizes(files));
+			PushTraversableDirectories(directories, pending);
+		}
+		return size;
+	}
+
+	private static long SumRegularFileSizes(string[] files) {
+		long size = 0;
+		foreach (string file in files) {
+			try {
+				FileInfo info = new(file);
+				// Reparse points are skipped so a symlink into a large tree cannot inflate the measured size.
+				if ((info.Attributes & FileAttributes.ReparsePoint) == 0) {
+					size = checked(size + info.Length);
 				}
-			}
-			foreach (string child in directories) {
-				try {
-					if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0) {
-						pending.Push(child);
-					}
-				} catch (DirectoryNotFoundException) {
-					// Git routinely renames and removes temporary directories during mutation.
-				} catch (FileNotFoundException) {
-					// The directory entry disappeared before its attributes were read.
-				}
+			} catch (FileNotFoundException) {
+				// Files can disappear while the monitored process atomically replaces them.
+			} catch (DirectoryNotFoundException) {
+				// A parent directory can disappear between enumeration and metadata access.
 			}
 		}
 		return size;
+	}
+
+	private static void PushTraversableDirectories(string[] directories, Stack<string> pending) {
+		foreach (string child in directories) {
+			try {
+				// Reparse points are not followed so traversal cannot escape the monitored directory.
+				if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0) {
+					pending.Push(child);
+				}
+			} catch (DirectoryNotFoundException) {
+				// Git routinely renames and removes temporary directories during mutation.
+			} catch (FileNotFoundException) {
+				// The directory entry disappeared before its attributes were read.
+			}
+		}
 	}
 
 	private static ProcessExecutionResult ResourceLimitFailure(DateTimeOffset startedAt) => new() {
@@ -742,10 +764,12 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		options.Program.CheckArgumentNullOrWhiteSpace(nameof(options.Program));
 		options.Arguments.CheckArgumentNullOrWhiteSpace(nameof(options.Arguments));
 		if (options.MaximumCapturedOutputCharacters is <= 0) {
-			throw new ArgumentOutOfRangeException(nameof(options.MaximumCapturedOutputCharacters));
+			throw new ArgumentOutOfRangeException(nameof(options), options.MaximumCapturedOutputCharacters,
+				$"{nameof(options.MaximumCapturedOutputCharacters)} must be greater than zero when configured.");
 		}
 		if (options.MaximumMonitoredDirectoryBytes is <= 0) {
-			throw new ArgumentOutOfRangeException(nameof(options.MaximumMonitoredDirectoryBytes));
+			throw new ArgumentOutOfRangeException(nameof(options), options.MaximumMonitoredDirectoryBytes,
+				$"{nameof(options.MaximumMonitoredDirectoryBytes)} must be greater than zero when configured.");
 		}
 		if (options.MaximumMonitoredDirectoryBytes.HasValue
 				&& string.IsNullOrWhiteSpace(options.MonitoredDirectory)) {

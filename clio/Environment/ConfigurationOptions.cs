@@ -510,6 +510,7 @@ namespace Clio
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
 		private const int SettingsLockTimeoutSeconds = 30;
+		private const int SettingsUpdateAttemptLimit = 3;
 		private static readonly object SchemaFileLock = new ();
 		private static readonly ConcurrentDictionary<string, object> ProcessSettingsLocks = new();
 		[ThreadStatic]
@@ -817,18 +818,9 @@ namespace Clio
 
 		private void UpdateSettingsIfChanged(Func<Settings, bool> mutation) {
 			ExecuteWithSettingsLock(_fileSystem, () => {
-				for (int attempt = 0; attempt < 3; attempt++) {
-					string expectedContent;
-					try {
-						_settings = LoadLatestSettings(out expectedContent);
-					}
-					catch (Newtonsoft.Json.JsonException) when (attempt < 2) {
-						Thread.Sleep(10);
+				for (int attempt = 0; attempt < SettingsUpdateAttemptLimit; attempt++) {
+					if (!TryReloadSettingsForUpdate(attempt, out string expectedContent)) {
 						continue;
-					}
-					catch (Newtonsoft.Json.JsonException exception) {
-						throw new InvalidOperationException(
-							"Cannot update settings because appsettings.json changed to unreadable content.", exception);
 					}
 					AttachDbServers(_settings);
 					EnsureSettingsCollections();
@@ -837,20 +829,45 @@ namespace Clio
 					if (!changed) {
 						return true;
 					}
-					try {
-						SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+					if (TrySaveMutatedSettings(expectedContent, attempt)) {
 						return true;
 					}
-					catch (SettingsFileChangedException) {
-						if (attempt == 2) {
-							throw new IOException(
-								"appsettings.json kept changing while clio was updating it. Try the command again.");
-						}
-						// An editor changed the file after it was reloaded. Retry the mutation against that version.
-					}
+					// An editor changed the file after it was reloaded. Retry the mutation against that version.
 				}
 				throw new InvalidOperationException("Settings update retry loop ended unexpectedly.");
 			});
+		}
+
+		// Returns false only when the reload is retryable; the final attempt reports unreadable content instead.
+		private bool TryReloadSettingsForUpdate(int attempt, out string expectedContent) {
+			try {
+				_settings = LoadLatestSettings(out expectedContent);
+				return true;
+			}
+			catch (Newtonsoft.Json.JsonException) when (attempt < SettingsUpdateAttemptLimit - 1) {
+				Thread.Sleep(10);
+				expectedContent = null;
+				return false;
+			}
+			catch (Newtonsoft.Json.JsonException exception) {
+				throw new InvalidOperationException(
+					"Cannot update settings because appsettings.json changed to unreadable content.", exception);
+			}
+		}
+
+		// Returns false only when the optimistic-concurrency check failed and another attempt remains.
+		private bool TrySaveMutatedSettings(string expectedContent, int attempt) {
+			try {
+				SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+				return true;
+			}
+			catch (SettingsFileChangedException) {
+				if (attempt == SettingsUpdateAttemptLimit - 1) {
+					throw new IOException(
+						"appsettings.json kept changing while clio was updating it. Try the command again.");
+				}
+				return false;
+			}
 		}
 
 		private Settings LoadLatestSettings(out string expectedContent) {
@@ -1194,11 +1211,14 @@ namespace Clio
 			string resolved = null;
 			UpdateSettings(settings => {
 				settings.Knowledge ??= new KnowledgeConfiguration();
-				string candidate = !string.IsNullOrWhiteSpace(settings.Knowledge.RootPath)
-					? settings.Knowledge.RootPath
-					: !string.IsNullOrWhiteSpace(settings.LegacyKnowledgeRootPath)
-						? settings.LegacyKnowledgeRootPath
-						: normalizedDefault;
+				// Precedence: the current root wins, then the legacy root being migrated, then the caller default.
+				string candidate = settings.Knowledge.RootPath;
+				if (string.IsNullOrWhiteSpace(candidate)) {
+					candidate = settings.LegacyKnowledgeRootPath;
+				}
+				if (string.IsNullOrWhiteSpace(candidate)) {
+					candidate = normalizedDefault;
+				}
 				resolved = NormalizeKnowledgeRootPath(candidate, "knowledge.root-path");
 				settings.Knowledge.RootPath = resolved;
 				settings.LegacyKnowledgeRootPath = null;

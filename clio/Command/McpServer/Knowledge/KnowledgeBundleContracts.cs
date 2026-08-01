@@ -250,7 +250,7 @@ internal sealed class ConfiguredKnowledgeBundleTrustStore : IKnowledgeBundleTrus
 			return source is not null
 				&& string.Equals(source.TrustedKeyId, keyId, StringComparison.Ordinal)
 				&& EnvironmentKnowledgeBundleTrustStore.TryReadPublicKeyFile(
-					source.TrustedPublicKeyPath!,
+					source.TrustedPublicKeyPath,
 					out publicKeyPem);
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException

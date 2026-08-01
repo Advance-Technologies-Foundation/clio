@@ -20,6 +20,8 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class KnowledgeSourceManagementServiceTests {
+	// Generous enough that only a serial fan-out ever waits it out on a thread-starved agent.
+	private static readonly TimeSpan SerialFanOutTimeout = TimeSpan.FromSeconds(10);
 	private ISettingsRepository _settings = null!;
 	private IKnowledgeSourceInstallationStore _store = null!;
 	private IKnowledgeBundleRuntime _runtime = null!;
@@ -973,13 +975,22 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		_settings.GetKnowledgeConfiguration().Returns(Configuration(sources));
 		int active = 0;
 		int maximum = 0;
+		// Each inspection is held inside the store callback until a second one is in flight, so overlap is
+		// observed through a rendezvous instead of a timing window. The bounded wait is a safety valve: a
+		// serial implementation releases the gate and fails the assertion below rather than hanging the suite.
+		using ManualResetEventSlim overlapObserved = new(false);
 		_store.ReadCurrent(Arg.Any<string>(), out Arg.Any<string?>()).Returns(call => {
 			int current = Interlocked.Increment(ref active);
 			int observed;
 			do {
 				observed = Volatile.Read(ref maximum);
 			} while (current > observed && Interlocked.CompareExchange(ref maximum, current, observed) != observed);
-			Thread.Sleep(40);
+			if (current > 1) {
+				overlapObserved.Set();
+			}
+			if (!overlapObserved.Wait(SerialFanOutTimeout)) {
+				overlapObserved.Set();
+			}
 			Interlocked.Decrement(ref active);
 			call[1] = null;
 			return null;

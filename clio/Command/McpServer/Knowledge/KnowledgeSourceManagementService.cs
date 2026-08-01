@@ -16,6 +16,11 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private const int OperationDeadlineMilliseconds = 30_000;
 	private const int BatchDeadlineMilliseconds = 120_000;
 	private const int MaximumConcurrentSourceOperations = 8;
+	// The lifecycle-status and update-availability vocabularies deliberately share these tokens so the
+	// same observed state is spelled identically in lifecycle results and information reports.
+	private const string RejectedState = "rejected";
+	private const string UpToDateState = "up-to-date";
+	private const string UnknownState = "unknown";
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IKnowledgeSourceInstallationStore _store;
 	private readonly IKnowledgeBundleRuntime _runtime;
@@ -67,7 +72,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(operationDeadlineMilliseconds);
 		return ExecuteLifecycle(
 			sourceAlias,
-			includeDisabledWhenExplicit: false,
+			KnowledgeSourceSelection.EnabledOnly,
 			(alias, source, deadlineMilliseconds) => InstallOrUpdate(
 				alias, source, isUpdate: false, deadlineMilliseconds),
 			operationDeadlineMilliseconds,
@@ -76,7 +81,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 
 	public KnowledgeSourceBatchResult Update(string? sourceAlias, CancellationToken cancellationToken = default) => ExecuteLifecycle(
 		sourceAlias,
-		includeDisabledWhenExplicit: false,
+		KnowledgeSourceSelection.EnabledOnly,
 		(alias, source, deadlineMilliseconds) => InstallOrUpdate(
 			alias, source, isUpdate: true, deadlineMilliseconds),
 		OperationDeadlineMilliseconds,
@@ -87,7 +92,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		bool checkUpdates,
 		CancellationToken cancellationToken = default) {
 		KnowledgeConfiguration configuration = _settingsRepository.GetKnowledgeConfiguration();
-		if (!TrySelect(configuration, sourceAlias, includeDisabledWhenExplicit: true,
+		// Information is a report, not a lifecycle operation: a disabled source must stay visible with its
+		// retained cache and its disabled state, exactly as info-knowledge documents.
+		if (!TrySelect(configuration, sourceAlias, KnowledgeSourceSelection.AllConfigured,
 				out IReadOnlyList<KeyValuePair<string, KnowledgeSourceConfiguration>> selected,
 				out string? diagnostic)) {
 			return new KnowledgeSourceInfoResult(
@@ -117,7 +124,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		bool confirmed,
 		CancellationToken cancellationToken = default) => ExecuteLifecycle(
 		sourceAlias,
-		includeDisabledWhenExplicit: true,
+		KnowledgeSourceSelection.ExplicitDisabled,
 		(alias, _, _) => ToOperation(alias, _store.Delete(alias, confirmed)),
 		OperationDeadlineMilliseconds,
 		cancellationToken);
@@ -142,7 +149,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
 			if (validated.Type == KnowledgeSourceType.NuGet
 					&& !EnvironmentKnowledgeBundleTrustStore.TryReadPublicKeyFile(
-						validated.TrustedPublicKeyPath!,
+						validated.TrustedPublicKeyPath,
 						out _)) {
 				return Failed(request.Alias,
 					"Knowledge trusted-public-key-path must identify an existing bounded local regular file "
@@ -227,20 +234,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		if (_repositoryTransports.TryGetValue(source.Type, out IKnowledgeRepositoryTransport? repositoryTransport)) {
 			return InstallOrUpdateRepository(alias, source, isUpdate, deadlineMilliseconds, repositoryTransport);
 		}
-		KnowledgeSourceCurrentState? current = _store.ReadCurrent(alias, out string? diagnostic);
-		if (diagnostic is not null) {
-			return FailedOperation(alias, diagnostic);
-		}
-		if (isUpdate && current is null) {
-			return FailedOperation(alias, $"Knowledge source '{alias}' is not installed; use install-knowledge.");
-		}
-		bool repair = false;
-		if (!isUpdate && current is not null && IsCurrentValid(alias, source, current, out diagnostic)) {
-			return new KnowledgeSourceOperationResult(alias, true, "already-installed",
-				$"Knowledge source '{alias}' sequence {current.Active.Sequence} is already installed.");
-		}
-		if (!isUpdate && current is not null) {
-			repair = true;
+		ArtifactInstallPreflight preflight = InspectArtifactInstallState(alias, source, isUpdate);
+		if (preflight.Completed is not null) {
+			return preflight.Completed;
 		}
 		if (!_artifactTransports.TryGetValue(source.Type, out IKnowledgeArtifactTransport? transport)) {
 			return FailedOperation(alias, $"Knowledge transport '{source.Type}' is not registered.");
@@ -248,103 +244,15 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 
 		string staging = CreateTransportStaging(alias);
 		try {
-			HashSet<string> rejected = new(StringComparer.OrdinalIgnoreCase);
-			string? highestObserved = null;
-			string? fallbackCeiling = null;
-			string? catalogFingerprint = null;
-			string? lastRejectedRevision = null;
-			string? lastDiagnostic = diagnostic;
-			Stopwatch operation = Stopwatch.StartNew();
-			for (int attempt = 0; attempt < MaxCandidateAttempts; attempt++) {
-				int remainingMilliseconds = deadlineMilliseconds - (int)Math.Min(
-					operation.ElapsedMilliseconds,
-					deadlineMilliseconds);
-				if (remainingMilliseconds <= 0) {
-					lastDiagnostic = "The operation-wide knowledge retrieval deadline elapsed.";
-					break;
-				}
-				KnowledgeTransportResult retrieved = transport.Retrieve(new KnowledgeTransportRequest(
-					alias,
-					source,
-					rejected,
-					repair ? null : current?.Active.ResolvedRevision,
-					highestObserved,
-					fallbackCeiling,
-					catalogFingerprint,
-					staging,
-					remainingMilliseconds,
-					ExactRevision: repair ? current?.Active.ResolvedRevision : null));
-				catalogFingerprint = retrieved.CatalogFingerprint ?? catalogFingerprint;
-				if (retrieved.Status == KnowledgeTransportStatus.NoCandidate) {
-					break;
-				}
-				if (retrieved.Status == KnowledgeTransportStatus.Failed) {
-					return FailedOperation(
-						alias,
-						retrieved.Diagnostic ?? $"Knowledge source '{alias}' could not be retrieved.");
-				}
-				if (string.IsNullOrWhiteSpace(retrieved.ResolvedRevision)) {
-					lastDiagnostic = retrieved.Diagnostic ?? $"Knowledge source '{alias}' returned no usable candidate.";
-					break;
-				}
-				string revision = retrieved.ResolvedRevision;
-				if (rejected.Contains(revision)) {
-					lastDiagnostic = retrieved.Diagnostic
-						?? $"Knowledge transport repeated rejected revision '{revision}'.";
-					break;
-				}
-				highestObserved = KnowledgeBundleNuGetClient.GreaterVersion(highestObserved, revision);
-				fallbackCeiling = revision;
-				lastRejectedRevision = revision;
-				if (retrieved.Status != KnowledgeTransportStatus.Downloaded) {
-					lastDiagnostic = retrieved.Diagnostic ?? "The transport rejected the candidate.";
-					if (!rejected.Add(revision)) {
-						break;
-					}
-					continue;
-				}
-				byte[] bytes = ReadCandidate(retrieved);
-				using MemoryStream validationStream = new(bytes, writable: false);
-				KnowledgeBundleValidationResult validation = _runtime.Validate(
-					validationStream,
-					expectedBundleVersion: revision,
-					expectedLibraryId: source.LibraryId);
-				if (validation.Status != KnowledgeBundleActivationStatus.Activated
-						|| validation.CandidateSequence is null
-						|| string.IsNullOrWhiteSpace(validation.CandidateLibraryId)
-						|| string.IsNullOrWhiteSpace(validation.CandidateLibraryVersion)
-						|| !string.Equals(validation.CandidateLibraryId, source.LibraryId, StringComparison.Ordinal)) {
-					lastDiagnostic = validation.Diagnostic ?? "The downloaded knowledge bundle was rejected.";
-					if (!rejected.Add(revision)) {
-						break;
-					}
-					continue;
-				}
-				KnowledgeInstallationResult published = _store.Publish(
-					alias,
-					source.LibraryId,
-					validation.CandidateLibraryVersion,
-					validation.CandidateSequence.Value,
-					source.Type.ToString().ToLowerInvariant(),
-					source.Location,
-					revision,
-					bytes,
-					isUpdate: current is not null,
-					expectedActive: current?.Active,
-					allowRepair: repair);
-				return ToOperation(alias, published);
-			}
-			if (lastRejectedRevision is not null) {
-				return FailedOperation(alias,
-					$"No compatible knowledge candidate was found after rejecting {lastRejectedRevision}: {lastDiagnostic}",
-					status: "rejected");
-			}
-			if (current is not null && !repair) {
-				return new KnowledgeSourceOperationResult(alias, true, "up-to-date",
-					$"Knowledge source '{alias}' is up to date at {current.Active.ResolvedRevision}.");
-			}
-			return FailedOperation(alias,
-				lastDiagnostic ?? $"Knowledge source '{alias}' returned no installable candidate.");
+			return SearchInstallableCandidate(new ArtifactInstallContext(
+				alias,
+				source,
+				preflight.Current,
+				preflight.Repair,
+				transport,
+				staging,
+				deadlineMilliseconds,
+				preflight.Diagnostic));
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException
 				or InvalidOperationException
@@ -354,6 +262,172 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		} finally {
 			DeleteTransportStaging(staging);
 		}
+	}
+
+	/// <summary>
+	/// Decides, before any transport work, whether the caller must stop with an early result, repair an
+	/// installed generation that no longer validates, or continue to candidate retrieval.
+	/// </summary>
+	private ArtifactInstallPreflight InspectArtifactInstallState(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		bool isUpdate) {
+		KnowledgeSourceCurrentState? current = _store.ReadCurrent(alias, out string? diagnostic);
+		if (diagnostic is not null) {
+			return new ArtifactInstallPreflight(FailedOperation(alias, diagnostic), current, false, diagnostic);
+		}
+		if (isUpdate && current is null) {
+			return new ArtifactInstallPreflight(
+				FailedOperation(alias, $"Knowledge source '{alias}' is not installed; use install-knowledge."),
+				current,
+				false,
+				diagnostic);
+		}
+		if (!isUpdate && current is not null && IsCurrentValid(alias, source, current, out diagnostic)) {
+			return new ArtifactInstallPreflight(
+				new KnowledgeSourceOperationResult(alias, true, "already-installed",
+					$"Knowledge source '{alias}' sequence {current.Active.Sequence} is already installed."),
+				current,
+				false,
+				diagnostic);
+		}
+		// An install over a generation that failed validation must republish rather than refuse, while an
+		// update never repairs: it advances from the recorded active generation.
+		return new ArtifactInstallPreflight(null, current, !isUpdate && current is not null, diagnostic);
+	}
+
+	/// <summary>
+	/// Retrieves candidates until one publishes, the transport stops offering candidates, or the
+	/// operation-wide deadline elapses.
+	/// </summary>
+	private KnowledgeSourceOperationResult SearchInstallableCandidate(ArtifactInstallContext context) {
+		ArtifactCandidateSearch search = new() { LastDiagnostic = context.InitialDiagnostic };
+		Stopwatch operation = Stopwatch.StartNew();
+		for (int attempt = 0; attempt < MaxCandidateAttempts; attempt++) {
+			int remainingMilliseconds = context.DeadlineMilliseconds - (int)Math.Min(
+				operation.ElapsedMilliseconds,
+				context.DeadlineMilliseconds);
+			if (remainingMilliseconds <= 0) {
+				search.LastDiagnostic = "The operation-wide knowledge retrieval deadline elapsed.";
+				break;
+			}
+			ArtifactCandidateAttempt attempted = TryInstallNextCandidate(context, search, remainingMilliseconds);
+			if (attempted.Completed is not null) {
+				return attempted.Completed;
+			}
+			if (attempted.StopSearch) {
+				break;
+			}
+		}
+		return CompleteCandidateSearch(context, search);
+	}
+
+	/// <summary>
+	/// Retrieves and evaluates one candidate, publishing it only after the runtime verified it against
+	/// the configured library identity.
+	/// </summary>
+	private ArtifactCandidateAttempt TryInstallNextCandidate(
+		ArtifactInstallContext context,
+		ArtifactCandidateSearch search,
+		int remainingMilliseconds) {
+		KnowledgeTransportResult retrieved = context.Transport.Retrieve(new KnowledgeTransportRequest(
+			context.Alias,
+			context.Source,
+			search.Rejected,
+			context.Repair ? null : context.Current?.Active.ResolvedRevision,
+			search.HighestObservedRevision,
+			search.FallbackCeilingRevision,
+			search.CatalogFingerprint,
+			context.StagingDirectory,
+			remainingMilliseconds,
+			ExactRevision: context.Repair ? context.Current?.Active.ResolvedRevision : null));
+		search.CatalogFingerprint = retrieved.CatalogFingerprint ?? search.CatalogFingerprint;
+		if (retrieved.Status == KnowledgeTransportStatus.NoCandidate) {
+			return new ArtifactCandidateAttempt(null, StopSearch: true);
+		}
+		if (retrieved.Status == KnowledgeTransportStatus.Failed) {
+			return new ArtifactCandidateAttempt(
+				FailedOperation(
+					context.Alias,
+					retrieved.Diagnostic ?? $"Knowledge source '{context.Alias}' could not be retrieved."),
+				StopSearch: true);
+		}
+		if (string.IsNullOrWhiteSpace(retrieved.ResolvedRevision)) {
+			search.LastDiagnostic = retrieved.Diagnostic
+				?? $"Knowledge source '{context.Alias}' returned no usable candidate.";
+			return new ArtifactCandidateAttempt(null, StopSearch: true);
+		}
+		string revision = retrieved.ResolvedRevision;
+		if (search.Rejected.Contains(revision)) {
+			search.LastDiagnostic = retrieved.Diagnostic
+				?? $"Knowledge transport repeated rejected revision '{revision}'.";
+			return new ArtifactCandidateAttempt(null, StopSearch: true);
+		}
+		search.HighestObservedRevision = KnowledgeBundleNuGetClient.GreaterVersion(
+			search.HighestObservedRevision, revision);
+		search.FallbackCeilingRevision = revision;
+		search.LastRejectedRevision = revision;
+		if (retrieved.Status != KnowledgeTransportStatus.Downloaded) {
+			search.LastDiagnostic = retrieved.Diagnostic ?? "The transport rejected the candidate.";
+			return RejectCandidate(search, revision);
+		}
+		byte[] bytes = ReadCandidate(retrieved);
+		using MemoryStream validationStream = new(bytes, writable: false);
+		KnowledgeBundleValidationResult validation = _runtime.Validate(
+			validationStream,
+			expectedBundleVersion: revision,
+			expectedLibraryId: context.Source.LibraryId);
+		if (ShouldRejectCandidate(validation, context.Source.LibraryId)) {
+			search.LastDiagnostic = validation.Diagnostic ?? "The downloaded knowledge bundle was rejected.";
+			return RejectCandidate(search, revision);
+		}
+		KnowledgeInstallationResult published = _store.Publish(
+			context.Alias,
+			context.Source.LibraryId,
+			validation.CandidateLibraryVersion,
+			validation.CandidateSequence.Value,
+			context.Source.Type.ToString().ToLowerInvariant(),
+			context.Source.Location,
+			revision,
+			bytes,
+			isUpdate: context.Current is not null,
+			expectedActive: context.Current?.Active,
+			allowRepair: context.Repair);
+		return new ArtifactCandidateAttempt(ToOperation(context.Alias, published), StopSearch: true);
+	}
+
+	/// <summary>
+	/// Records a refused revision. A revision the search already refused means the transport is
+	/// repeating itself, so the search stops instead of retrying the same candidate.
+	/// </summary>
+	private static ArtifactCandidateAttempt RejectCandidate(ArtifactCandidateSearch search, string revision) =>
+		new(null, StopSearch: !search.Rejected.Add(revision));
+
+	/// <summary>
+	/// Refuses a downloaded candidate that failed verification or that does not carry the configured
+	/// library identity, so an unverified or mislabeled bundle can never be published.
+	/// </summary>
+	private static bool ShouldRejectCandidate(KnowledgeBundleValidationResult validation, string libraryId) =>
+		validation.Status != KnowledgeBundleActivationStatus.Activated
+		|| validation.CandidateSequence is null
+		|| string.IsNullOrWhiteSpace(validation.CandidateLibraryId)
+		|| string.IsNullOrWhiteSpace(validation.CandidateLibraryVersion)
+		|| !string.Equals(validation.CandidateLibraryId, libraryId, StringComparison.Ordinal);
+
+	private static KnowledgeSourceOperationResult CompleteCandidateSearch(
+		ArtifactInstallContext context,
+		ArtifactCandidateSearch search) {
+		if (search.LastRejectedRevision is not null) {
+			return FailedOperation(context.Alias,
+				$"No compatible knowledge candidate was found after rejecting {search.LastRejectedRevision}: {search.LastDiagnostic}",
+				status: RejectedState);
+		}
+		if (context.Current is not null && !context.Repair) {
+			return new KnowledgeSourceOperationResult(context.Alias, true, UpToDateState,
+				$"Knowledge source '{context.Alias}' is up to date at {context.Current.Active.ResolvedRevision}.");
+		}
+		return FailedOperation(context.Alias,
+			search.LastDiagnostic ?? $"Knowledge source '{context.Alias}' returned no installable candidate.");
 	}
 
 	private KnowledgeSourceOperationResult InstallOrUpdateRepository(
@@ -411,7 +485,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
 				$"{result.Diagnostic ?? "Git knowledge synchronization failed."} {rollback}".Trim(),
-				status: result.Status == KnowledgeTransportStatus.Rejected ? "rejected" : "failed");
+				status: ResolveRepositoryStatus(result.Status, isUpdate));
 		}
 		if (!_gitReader.TryRead(repositoryPath, source.LibraryId, out KnowledgeGitRepositorySnapshot? snapshot,
 				out string? diagnostic)) {
@@ -419,27 +493,23 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return FailedOperation(alias,
 				$"{diagnostic ?? "Git knowledge repository is invalid."} {rollback}".Trim());
 		}
-		if (previousSnapshot is not null
-				&& (snapshot!.Sequence < previousSnapshot.Sequence
-					|| (snapshot.Sequence == previousSnapshot.Sequence
-						&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest,
-							StringComparison.Ordinal)))) {
+		if (previousSnapshot is not null && IsSequenceRegression(snapshot, previousSnapshot)) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
 				$"Git knowledge source '{alias}' rejected sequence {snapshot.Sequence}; "
 				+ $"the previously validated sequence is {previousSnapshot.Sequence}. {rollback}",
-				status: "rejected");
+				status: RejectedState);
 		}
 		KnowledgeBundleActivationResult activation = _runtime.ActivateGitRepository(
 			alias,
 			source.Priority,
 			source.Participation,
-			snapshot!);
+			snapshot);
 		if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
 				$"{activation.Diagnostic ?? "Git knowledge repository activation was rejected."} {rollback}".Trim(),
-				status: "rejected");
+				status: RejectedState);
 		}
 		if (source.Branch is null && source.Tag is null && source.Commit is null
 				&& !string.IsNullOrWhiteSpace(result.ResolvedBranch)
@@ -448,15 +518,32 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return FailedOperation(alias,
 				$"Knowledge source '{alias}' changed while its discovered branch was being persisted; retry. {rollback}".Trim());
 		}
-		string status = (result.Status, isUpdate) switch {
-			(KnowledgeTransportStatus.NoCandidate, true) => "up-to-date",
-			(KnowledgeTransportStatus.NoCandidate, false) => "already-installed",
-			(_, true) => "updated",
-			_ => "installed"
-		};
+		string status = ResolveRepositoryStatus(result.Status, isUpdate);
 		return new KnowledgeSourceOperationResult(alias, true, status,
 			$"Git knowledge source '{alias}' is {status} at {result.ResolvedCommit} in {repositoryPath}.");
 	}
+
+	/// <summary>
+	/// Detects a downgrade or rewritten history: a sequence may never move backwards, and the same
+	/// sequence must keep the same content digest.
+	/// </summary>
+	private static bool IsSequenceRegression(
+		KnowledgeGitRepositorySnapshot snapshot,
+		KnowledgeGitRepositorySnapshot previousSnapshot) =>
+		snapshot.Sequence < previousSnapshot.Sequence
+		|| (snapshot.Sequence == previousSnapshot.Sequence
+			&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest, StringComparison.Ordinal));
+
+	/// <summary>
+	/// Maps a Git synchronization outcome to the reported lifecycle status. A refused synchronization
+	/// keeps the rejected/failed distinction; an accepted one distinguishes update from first install.
+	/// </summary>
+	private static string ResolveRepositoryStatus(KnowledgeTransportStatus status, bool isUpdate) => status switch {
+		KnowledgeTransportStatus.Rejected => RejectedState,
+		KnowledgeTransportStatus.Failed => "failed",
+		KnowledgeTransportStatus.NoCandidate => isUpdate ? UpToDateState : "already-installed",
+		_ => isUpdate ? "updated" : "installed"
+	};
 
 	private string RollbackRepository(
 		string alias,
@@ -500,7 +587,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				alias,
 				source.Priority,
 				source.Participation,
-				restored!);
+				restored);
 			if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
 				_runtime.DeactivateLibrary(alias);
 				return $"The previous checkout was restored but could not be reactivated: {activation.Diagnostic}";
@@ -525,16 +612,26 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				out diagnostic)) {
 			return false;
 		}
-		using MemoryStream stream = new(candidate!.BundleBytes, writable: false);
+		using MemoryStream stream = new(candidate.BundleBytes, writable: false);
 		KnowledgeBundleValidationResult validation = _runtime.Validate(
 			stream,
 			current.Active.LibraryVersion,
 			source.LibraryId);
 		diagnostic = validation.Diagnostic;
-		return validation.Status == KnowledgeBundleActivationStatus.Activated
-			&& validation.CandidateSequence == current.Active.Sequence
-			&& string.Equals(validation.CandidateLibraryId, source.LibraryId, StringComparison.Ordinal);
+		return MatchesActiveGeneration(validation, current.Active, source.LibraryId);
 	}
+
+	/// <summary>
+	/// Confirms a validated bundle is exactly the generation recorded as active, so a cache entry that
+	/// was swapped or rewritten under the same version is never reported as valid.
+	/// </summary>
+	private static bool MatchesActiveGeneration(
+		KnowledgeBundleValidationResult validation,
+		KnowledgeSourceGenerationPointer active,
+		string libraryId) =>
+		validation.Status == KnowledgeBundleActivationStatus.Activated
+		&& validation.CandidateSequence == active.Sequence
+		&& string.Equals(validation.CandidateLibraryId, libraryId, StringComparison.Ordinal);
 
 	private KnowledgeSourceInfo BuildInfo(
 		string alias,
@@ -553,55 +650,24 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		if (current is not null
 				&& _store.TryReadCandidate(alias, current.Active, out InstalledKnowledgeSourceCandidate? candidate,
 					out diagnostic)) {
-			using MemoryStream stream = new(candidate!.BundleBytes, writable: false);
+			using MemoryStream stream = new(candidate.BundleBytes, writable: false);
 			KnowledgeBundleValidationResult validation = _runtime.Validate(
 				stream,
 				current.Active.LibraryVersion,
 				source.LibraryId);
-			valid = validation.Status == KnowledgeBundleActivationStatus.Activated
-				&& validation.CandidateSequence == current.Active.Sequence
-				&& string.Equals(validation.CandidateLibraryId, source.LibraryId, StringComparison.Ordinal);
+			valid = MatchesActiveGeneration(validation, current.Active, source.LibraryId);
 			activePath = candidate.ContentRoot;
 			diagnostic ??= validation.Diagnostic;
 		}
-		string update = current is null ? "not-installed" : "unknown";
+		string update = current is null ? "not-installed" : UnknownState;
 		string? resolvedRevision = current?.Active.ResolvedRevision;
+		// A disabled source is reported from its retained local cache only; it never reaches a transport.
 		if (checkUpdates && source.Enabled
 				&& _artifactTransports.TryGetValue(source.Type, out IKnowledgeArtifactTransport? transport)) {
-			string staging = CreateTransportStaging(alias);
-			try {
-				KnowledgeTransportResult remoteCandidate = transport.Retrieve(new KnowledgeTransportRequest(
-					alias, source, new HashSet<string>(), current?.Active.ResolvedRevision, null, null, null, staging,
-					TransportDeadlineMilliseconds: deadlineMilliseconds));
-				if (remoteCandidate.Status == KnowledgeTransportStatus.Downloaded) {
-					byte[] candidateBytes = ReadCandidate(remoteCandidate);
-					using MemoryStream stream = new(candidateBytes, writable: false);
-					KnowledgeBundleValidationResult validation = _runtime.Validate(
-						stream,
-						expectedBundleVersion: remoteCandidate.ResolvedRevision,
-						expectedLibraryId: source.LibraryId);
-					bool trustedCandidate = validation.Status == KnowledgeBundleActivationStatus.Activated
-						&& string.Equals(
-							validation.CandidateLibraryId,
-							source.LibraryId,
-							StringComparison.Ordinal);
-					update = trustedCandidate ? "available" : "rejected";
-					diagnostic ??= trustedCandidate
-						? null
-						: validation.Diagnostic ?? "The remote candidate failed verification.";
-				}
-				else {
-					update = remoteCandidate.Status == KnowledgeTransportStatus.NoCandidate ? "up-to-date" : "unknown";
-					diagnostic ??= remoteCandidate.Status is KnowledgeTransportStatus.Rejected
-						or KnowledgeTransportStatus.Failed
-						? Safe(remoteCandidate.Diagnostic ?? "The remote knowledge source could not be checked.")
-						: null;
-				}
-			} catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException) {
-				diagnostic ??= Safe(exception.Message);
-			} finally {
-				DeleteTransportStaging(staging);
-			}
+			ArtifactUpdateProbe probe = ProbeArtifactUpdate(
+				alias, source, transport, current, deadlineMilliseconds, update);
+			update = probe.Availability;
+			diagnostic ??= probe.Diagnostic;
 		}
 		return new KnowledgeSourceInfo(
 			alias,
@@ -628,6 +694,57 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			diagnostic);
 	}
 
+	/// <summary>
+	/// Contacts the artifact transport once to classify remote update availability. The probe reports
+	/// only: it never publishes or activates a candidate, and an unverified candidate reads as rejected.
+	/// </summary>
+	/// <param name="fallbackAvailability">
+	/// Availability reported when the probe cannot classify the remote at all, so a failed probe never
+	/// overstates what is known about the source.
+	/// </param>
+	private ArtifactUpdateProbe ProbeArtifactUpdate(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		IKnowledgeArtifactTransport transport,
+		KnowledgeSourceCurrentState? current,
+		int deadlineMilliseconds,
+		string fallbackAvailability) {
+		string staging = CreateTransportStaging(alias);
+		try {
+			KnowledgeTransportResult remoteCandidate = transport.Retrieve(new KnowledgeTransportRequest(
+				alias, source, new HashSet<string>(), current?.Active.ResolvedRevision, null, null, null, staging,
+				TransportDeadlineMilliseconds: deadlineMilliseconds));
+			if (remoteCandidate.Status != KnowledgeTransportStatus.Downloaded) {
+				return new ArtifactUpdateProbe(
+					remoteCandidate.Status == KnowledgeTransportStatus.NoCandidate ? UpToDateState : UnknownState,
+					remoteCandidate.Status is KnowledgeTransportStatus.Rejected
+						or KnowledgeTransportStatus.Failed
+						? Safe(remoteCandidate.Diagnostic ?? "The remote knowledge source could not be checked.")
+						: null);
+			}
+			byte[] candidateBytes = ReadCandidate(remoteCandidate);
+			using MemoryStream stream = new(candidateBytes, writable: false);
+			KnowledgeBundleValidationResult validation = _runtime.Validate(
+				stream,
+				expectedBundleVersion: remoteCandidate.ResolvedRevision,
+				expectedLibraryId: source.LibraryId);
+			bool trustedCandidate = validation.Status == KnowledgeBundleActivationStatus.Activated
+				&& string.Equals(
+					validation.CandidateLibraryId,
+					source.LibraryId,
+					StringComparison.Ordinal);
+			return new ArtifactUpdateProbe(
+				trustedCandidate ? "available" : RejectedState,
+				trustedCandidate
+					? null
+					: validation.Diagnostic ?? "The remote candidate failed verification.");
+		} catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException) {
+			return new ArtifactUpdateProbe(fallbackAvailability, Safe(exception.Message));
+		} finally {
+			DeleteTransportStaging(staging);
+		}
+	}
+
 	private KnowledgeSourceInfo BuildRepositoryInfo(
 		string alias,
 		KnowledgeSourceConfiguration source,
@@ -636,52 +753,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		IKnowledgeRepositoryTransport transport) {
 		string repositoryPath = _store.GetGitRepositoryPath(alias, createSourceRoot: false);
 		bool installed = _fileSystem.Directory.Exists(_fileSystem.Path.Combine(repositoryPath, ".git"));
-		KnowledgeGitRepositorySnapshot? snapshot = null;
-		string? diagnostic = null;
-		bool valid = false;
-		string? revision = null;
-		string update = installed ? "unknown" : "not-installed";
-		if (installed) {
-			try {
-				bool acquired = _store.TryExecuteWithSourceMutationLock(alias, () => {
-					transport.ValidateInstalledCheckout(source, repositoryPath);
-					valid = _gitReader.TryRead(repositoryPath, source.LibraryId, out snapshot, out diagnostic);
-					revision = transport.GetCurrentRevision(repositoryPath);
-				});
-				if (!acquired) {
-					update = "synchronizing";
-					diagnostic = $"Git knowledge source '{alias}' is synchronizing; retry the information request.";
-				}
-				else if (checkUpdates && source.Enabled) {
-					KnowledgeTransportResult remote = transport.CheckForUpdates(new KnowledgeTransportRequest(
-						alias,
-						source,
-						new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-						revision,
-						null,
-						null,
-						null,
-						repositoryPath,
-						deadlineMilliseconds), repositoryPath);
-					update = remote.Status switch {
-						KnowledgeTransportStatus.Downloaded => "available",
-						KnowledgeTransportStatus.NoCandidate => "up-to-date",
-						_ => "unknown"
-					};
-					if (remote.Status is KnowledgeTransportStatus.Failed or KnowledgeTransportStatus.Rejected) {
-						diagnostic ??= Safe(remote.Diagnostic
-							?? "The remote Git knowledge source could not be checked.");
-					}
-				}
-			} catch (Exception exception) when (exception is IOException
-					or UnauthorizedAccessException
-					or InvalidOperationException
-					or InvalidDataException
-					or ArgumentException
-					or TimeoutException) {
-				diagnostic = Safe(exception.Message);
-			}
-		}
+		RepositoryInspection inspection = installed
+			? InspectRepositoryCheckout(alias, source, checkUpdates, deadlineMilliseconds, transport, repositoryPath)
+			: new RepositoryInspection(false, "not-installed", null, null, null);
 		return new KnowledgeSourceInfo(
 			alias,
 			source.LibraryId,
@@ -697,28 +771,88 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			source.Tag,
 			source.Commit,
 			installed,
-			valid,
-			valid ? snapshot!.LibraryVersion : null,
-			valid ? snapshot!.Sequence : null,
-			valid ? snapshot!.ContentDigest : null,
-			revision,
+			inspection.Valid,
+			inspection.Valid ? inspection.Snapshot.LibraryVersion : null,
+			inspection.Valid ? inspection.Snapshot.Sequence : null,
+			inspection.Valid ? inspection.Snapshot.ContentDigest : null,
+			inspection.Revision,
 			installed ? repositoryPath : null,
-			update,
-			diagnostic);
+			inspection.Availability,
+			inspection.Diagnostic);
+	}
+
+	/// <summary>
+	/// Reads one installed Git checkout under the source mutation lock and, when requested, probes the
+	/// remote. A checkout already being synchronized is reported as such instead of waiting for the lock.
+	/// </summary>
+	private RepositoryInspection InspectRepositoryCheckout(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		bool checkUpdates,
+		int deadlineMilliseconds,
+		IKnowledgeRepositoryTransport transport,
+		string repositoryPath) {
+		KnowledgeGitRepositorySnapshot? snapshot = null;
+		string? diagnostic = null;
+		bool valid = false;
+		string? revision = null;
+		try {
+			bool acquired = _store.TryExecuteWithSourceMutationLock(alias, () => {
+				transport.ValidateInstalledCheckout(source, repositoryPath);
+				valid = _gitReader.TryRead(repositoryPath, source.LibraryId, out snapshot, out diagnostic);
+				revision = transport.GetCurrentRevision(repositoryPath);
+			});
+			if (!acquired) {
+				return new RepositoryInspection(false, "synchronizing", null, null,
+					$"Git knowledge source '{alias}' is synchronizing; retry the information request.");
+			}
+			string availability = UnknownState;
+			// A disabled source is reported from its retained local checkout only; it never reaches a remote.
+			if (checkUpdates && source.Enabled) {
+				KnowledgeTransportResult remote = transport.CheckForUpdates(new KnowledgeTransportRequest(
+					alias,
+					source,
+					new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+					revision,
+					null,
+					null,
+					null,
+					repositoryPath,
+					deadlineMilliseconds), repositoryPath);
+				availability = remote.Status switch {
+					KnowledgeTransportStatus.Downloaded => "available",
+					KnowledgeTransportStatus.NoCandidate => UpToDateState,
+					_ => UnknownState
+				};
+				if (remote.Status is KnowledgeTransportStatus.Failed or KnowledgeTransportStatus.Rejected) {
+					diagnostic ??= Safe(remote.Diagnostic
+						?? "The remote Git knowledge source could not be checked.");
+				}
+			}
+			return new RepositoryInspection(valid, availability, revision, snapshot, diagnostic);
+		} catch (Exception exception) when (exception is IOException
+				or UnauthorizedAccessException
+				or InvalidOperationException
+				or InvalidDataException
+				or ArgumentException
+				or TimeoutException) {
+			// Whatever the locked read established before the failure stays reported; availability does not.
+			return new RepositoryInspection(valid, UnknownState, revision, snapshot, Safe(exception.Message));
+		}
 	}
 
 	private KnowledgeSourceBatchResult ExecuteLifecycle(
 		string? sourceAlias,
-		bool includeDisabledWhenExplicit,
+		KnowledgeSourceSelection selection,
 		Func<string, KnowledgeSourceConfiguration, int, KnowledgeSourceOperationResult> operation,
 		int operationDeadlineMilliseconds,
 		CancellationToken cancellationToken) {
 		try {
 			KnowledgeConfiguration configuration = _settingsRepository.GetKnowledgeConfiguration();
-			if (!TrySelect(configuration, sourceAlias, includeDisabledWhenExplicit,
+			if (!TrySelect(configuration, sourceAlias, selection,
 					out IReadOnlyList<KeyValuePair<string, KnowledgeSourceConfiguration>> selected,
 					out string? diagnostic)) {
-				return new KnowledgeSourceBatchResult(false, diagnostic!, Array.Empty<KnowledgeSourceOperationResult>());
+				return new KnowledgeSourceBatchResult(false, diagnostic, Array.Empty<KnowledgeSourceOperationResult>());
 			}
 			KnowledgeSourceOperationResult[] results = ExecuteBounded(
 				selected,
@@ -799,7 +933,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		null,
 		null,
 		null,
-		"unknown",
+		UnknownState,
 		diagnostic);
 
 	private static KnowledgeSourceInfo ConfiguredInfo(
@@ -811,7 +945,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private static bool TrySelect(
 		KnowledgeConfiguration configuration,
 		string? sourceAlias,
-		bool includeDisabledWhenExplicit,
+		KnowledgeSourceSelection selection,
 		out IReadOnlyList<KeyValuePair<string, KnowledgeSourceConfiguration>> selected,
 		out string? diagnostic) {
 		if (sourceAlias is not null) {
@@ -820,7 +954,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				diagnostic = $"Knowledge source '{sourceAlias}' is not configured.";
 				return false;
 			}
-			if (!source.Enabled && !includeDisabledWhenExplicit) {
+			if (!source.Enabled && selection == KnowledgeSourceSelection.EnabledOnly) {
 				selected = Array.Empty<KeyValuePair<string, KnowledgeSourceConfiguration>>();
 				diagnostic = $"Knowledge source '{sourceAlias}' is disabled.";
 				return false;
@@ -829,12 +963,15 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			diagnostic = null;
 			return true;
 		}
+		bool includeDisabled = selection == KnowledgeSourceSelection.AllConfigured;
 		selected = configuration.Sources
-			.Where(pair => pair.Value.Enabled)
+			.Where(pair => includeDisabled || pair.Value.Enabled)
 			.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 		if (selected.Count == 0) {
-			diagnostic = "No enabled knowledge sources are configured.";
+			diagnostic = includeDisabled
+				? "No knowledge sources are configured."
+				: "No enabled knowledge sources are configured.";
 			return false;
 		}
 		diagnostic = null;
@@ -923,4 +1060,80 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private static StringComparison PathComparison => OperatingSystem.IsWindows()
 		? StringComparison.OrdinalIgnoreCase
 		: StringComparison.Ordinal;
+
+	/// <summary>
+	/// Controls which configured sources one operation is allowed to act on.
+	/// </summary>
+	private enum KnowledgeSourceSelection {
+		/// <summary>Only enabled sources participate, even when an alias is requested explicitly.</summary>
+		EnabledOnly,
+
+		/// <summary>A disabled source participates only when its alias is requested explicitly.</summary>
+		ExplicitDisabled,
+
+		/// <summary>Disabled sources participate in explicit and all-source selection.</summary>
+		AllConfigured
+	}
+
+	/// <summary>
+	/// Pre-retrieval decision for one artifact source: an early result that ends the operation, the
+	/// installed generation, whether a cache that failed validation must be republished, and the
+	/// diagnostic observed so far.
+	/// </summary>
+	private sealed record ArtifactInstallPreflight(
+		KnowledgeSourceOperationResult? Completed,
+		KnowledgeSourceCurrentState? Current,
+		bool Repair,
+		string? Diagnostic);
+
+	/// <summary>
+	/// Immutable inputs of one bounded candidate search for an artifact source.
+	/// </summary>
+	private sealed record ArtifactInstallContext(
+		string Alias,
+		KnowledgeSourceConfiguration Source,
+		KnowledgeSourceCurrentState? Current,
+		bool Repair,
+		IKnowledgeArtifactTransport Transport,
+		string StagingDirectory,
+		int DeadlineMilliseconds,
+		string? InitialDiagnostic);
+
+	/// <summary>
+	/// Mutable state carried across the retrieval attempts of one candidate search.
+	/// </summary>
+	private sealed record ArtifactCandidateSearch {
+		/// <summary>Revisions this search already refused; the transport must not offer them again.</summary>
+		internal HashSet<string> Rejected { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+		internal string? HighestObservedRevision { get; set; }
+
+		internal string? FallbackCeilingRevision { get; set; }
+
+		internal string? CatalogFingerprint { get; set; }
+
+		internal string? LastRejectedRevision { get; set; }
+
+		internal string? LastDiagnostic { get; set; }
+	}
+
+	/// <summary>
+	/// Outcome of one retrieval attempt: a finished operation, or whether the search must stop.
+	/// </summary>
+	private sealed record ArtifactCandidateAttempt(KnowledgeSourceOperationResult? Completed, bool StopSearch);
+
+	/// <summary>
+	/// Remote update availability observed for one artifact source, with its safe diagnostic.
+	/// </summary>
+	private sealed record ArtifactUpdateProbe(string Availability, string? Diagnostic);
+
+	/// <summary>
+	/// Locally observed state of one installed Git knowledge checkout.
+	/// </summary>
+	private sealed record RepositoryInspection(
+		bool Valid,
+		string Availability,
+		string? Revision,
+		KnowledgeGitRepositorySnapshot? Snapshot,
+		string? Diagnostic);
 }
