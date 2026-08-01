@@ -19,6 +19,12 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	internal const string ReferenceExampleId = "example.synthetic.reference";
 	internal const string ReferenceExampleRepository = "https://github.com/example/synthetic-reference";
 
+	/// <summary>Catalog entry gated behind <see cref="GatedReferenceExampleFeature"/>, which no environment enables.</summary>
+	internal const string GatedReferenceExampleId = "example.synthetic.gated-reference";
+
+	/// <summary>Feature name the gated example requires; deliberately never registered or enabled.</summary>
+	internal const string GatedReferenceExampleFeature = "synthetic-never-enabled-feature";
+
 	private readonly string _root;
 	private readonly ECDsa _signingKey;
 
@@ -133,6 +139,42 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 			"text/yaml",
 			exampleBytes,
 			Convert.ToHexString(SHA256.HashData(exampleBytes)).ToLowerInvariant()));
+		byte[] gatedExampleBytes = new UTF8Encoding(false, true).GetBytes($$"""
+			schemaVersion: 0
+			id: {{GatedReferenceExampleId}}
+			title: Synthetic gated reference example
+			status: published
+			primaryUseCase:
+			  id: synthetic-gated-integration
+			  summary: Demonstrate that a feature-gated catalog entry stays hidden.
+			source:
+			  repository: {{ReferenceExampleRepository}}-gated
+			  revision: {{sourceCommit}}
+			  defaultBranch: main
+			entryPoints:
+			  overview: README.md
+			  package: packages/SyntheticGatedReference
+			supportingCapabilities:
+			  - synthetic-testing
+			compatibility:
+			  status: example-declared
+			  details: Synthetic E2E fixture only.
+			trust:
+			  publisher: Synthetic publisher
+			  level: published
+			notes:
+			  - This entry declares requiredFeatures that no environment enables.
+			""");
+		resources.Add(new SyntheticResource(
+			"reference-example-synthetic-gated",
+			GatedReferenceExampleId,
+			KnowledgeReferenceExampleService.ReferenceExampleRole,
+			$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/reference-example-synthetic-gated",
+			"resources/reference-example-synthetic-gated.yaml",
+			"text/yaml",
+			gatedExampleBytes,
+			Convert.ToHexString(SHA256.HashData(gatedExampleBytes)).ToLowerInvariant(),
+			[GatedReferenceExampleFeature]));
 		byte[] manifest = JsonSerializer.SerializeToUtf8Bytes(new {
 			contractVersion = "1.0.0",
 			bundleSchemaVersion = "1.0.0",
@@ -166,6 +208,7 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 					SelectedReferenceName => new[] { SelectedReferenceLegacyUri },
 					_ => Array.Empty<string>()
 				},
+				requiredFeatures = resource.RequiredFeatures,
 				path = resource.Path,
 				mediaType = resource.MediaType,
 				length = resource.Bytes.LongLength,
@@ -225,7 +268,8 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		string Path,
 		string MediaType,
 		byte[] Bytes,
-		string Digest);
+		string Digest,
+		string[] RequiredFeatures = null);
 }
 
 internal sealed record SyntheticPackageEvidence(

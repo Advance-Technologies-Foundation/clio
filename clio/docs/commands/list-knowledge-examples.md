@@ -81,6 +81,13 @@ The read-only MCP tool `list-knowledge-examples` exposes the same four filters: 
 and its immutable repository revision before deciding whether to pull it. The MCP call is also
 local-only and never clones or contacts the referenced repository.
 
+## Feature Gating
+
+A catalog entry may declare `requiredFeatures`. Such an example is listed only where every one of
+those features is enabled, the same gate that applies to a feature-gated guidance article. Hiding an
+entry is filtering rather than a catalog failure, so the command still exits `0` and reports the
+examples that are available, and a withheld entry is not named in diagnostics.
+
 ## Exit Codes
 
     0   Matching examples were listed, or no examples matched

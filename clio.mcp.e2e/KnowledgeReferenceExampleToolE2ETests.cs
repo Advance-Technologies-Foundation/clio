@@ -96,6 +96,63 @@ public sealed class KnowledgeReferenceExampleToolE2ETests : McpContractFixtureBa
 		AssertResultContains(serialized, _package.ReferenceExampleRevision,
 			"agents need the immutable revision before deciding whether to clone the example");
 		AssertTransportWasNotContacted(completedTransportRequests, _fixture.Feed.CompletedRequests.Count);
+		AssertResultExcludes(serialized, SyntheticKnowledgeNuGetFixture.GatedReferenceExampleId,
+			"an example whose requiredFeatures are not enabled must not reach the agent, the same gate guidance articles get");
+		AssertResultExcludes(serialized, SyntheticKnowledgeNuGetFixture.GatedReferenceExampleFeature,
+			"a hidden example must not leak its gate through diagnostics either");
+	}
+
+	[Test]
+	[AllureTag(KnowledgeManagementTools.ListKnowledgeExamplesToolName)]
+	[AllureName("list-knowledge-examples hides an example whose requiredFeatures are not enabled")]
+	[AllureDescription("Installs a catalog carrying one ungated and one feature-gated example, then verifies an unfiltered listing returns the ungated entry and withholds the gated one.")]
+	[Description("Applies the requiredFeatures gate to reference examples, so a gated catalog entry stays hidden from every caller.")]
+	public async Task ListKnowledgeExamples_ShouldHideGatedExample_WhenRequiredFeatureIsDisabled() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(2));
+		CallToolResult addResult = await context.Session.CallToolAsync(
+			KnowledgeManagementTools.AddKnowledgeSourceToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["alias"] = "synthetic",
+					["libraryId"] = SyntheticKnowledgeNuGetFixture.LibraryId,
+					["type"] = "nuget",
+					["location"] = _fixture.Feed.ServiceIndexUri.AbsoluteUri,
+					["packageId"] = SyntheticKnowledgeNuGetFixture.PackageId,
+					["trustedKeyId"] = _fixture.KeyId,
+					["trustedPublicKeyPath"] = _fixture.PublicKeyPath,
+					["enabled"] = true,
+					["priority"] = 100,
+					["participation"] = "authoritative",
+					["confirmed"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		CallToolResult installResult = await context.Session.CallToolAsync(
+			KnowledgeManagementTools.InstallKnowledgeToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["source"] = "synthetic" }
+			},
+			context.CancellationTokenSource.Token);
+
+		// Act — no capability filter, so only the feature gate can withhold an entry
+		CallToolResult listResult = await context.Session.CallToolAsync(
+			KnowledgeManagementTools.ListKnowledgeExamplesToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
+			context.CancellationTokenSource.Token);
+		string serialized = JsonSerializer.Serialize(listResult);
+
+		// Assert
+		AssertToolSucceeded(addResult,
+			"the generated publisher trust root should be accepted by the real MCP process");
+		AssertToolSucceeded(installResult,
+			"the generated signed catalog should install through the real NuGet transport");
+		AssertToolSucceeded(listResult,
+			$"hiding a gated example is filtering, not a catalog failure: {serialized}");
+		AssertResultContains(serialized, SyntheticKnowledgeNuGetFixture.ReferenceExampleId,
+			"the ungated example proves the listing ran and the assertion below is not vacuous");
+		AssertResultExcludes(serialized, SyntheticKnowledgeNuGetFixture.GatedReferenceExampleId,
+			"an example whose requiredFeatures are not enabled must be withheld");
 	}
 
 	[AllureStep("Assert MCP tool call completed without a protocol error")]
@@ -106,6 +163,11 @@ public sealed class KnowledgeReferenceExampleToolE2ETests : McpContractFixtureBa
 	[AllureStep("Assert structured example result contains '{expected}'")]
 	private static void AssertResultContains(string serialized, string expected, string reason) {
 		serialized.Should().Contain(expected, because: reason);
+	}
+
+	[AllureStep("Assert structured example result does not contain '{unexpected}'")]
+	private static void AssertResultExcludes(string serialized, string unexpected, string reason) {
+		serialized.Should().NotContain(unexpected, because: reason);
 	}
 
 	[AllureStep("Assert example discovery did not contact a transport")]

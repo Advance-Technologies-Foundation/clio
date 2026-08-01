@@ -36,6 +36,12 @@ EXAMPLES
     clio list-knowledge-examples --source creatio --status published
     clio list-knowledge-examples --search pubsub --json
 
+FEATURE GATING
+    A catalog entry may declare requiredFeatures. Such an example is listed only
+    where every one of those features is enabled, exactly as a feature-gated
+    guidance article is. A hidden entry is not an error: the command still exits
+    0 and reports the examples that are available.
+
 EXIT CODES
     0   Matching examples were listed, or no examples matched
     1   A filter or cached catalog entry was invalid
