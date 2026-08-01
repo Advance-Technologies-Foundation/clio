@@ -1,0 +1,62 @@
+name: clio-ring AOT gate
+
+# AGENTS.md requires a Windows x64 NativeAOT publish on every ClioRing change, because JIT success
+# does not prove AOT success: trimming and source-generation break at publish time, not at build
+# time. The release workflow already does that publish, but it also creates a GitHub release, so it
+# cannot be used to verify a pull request. This runs the same two commands and stops there.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "clio-ring/**"
+      - ".github/workflows/clio-ring-aot-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clio-ring-aot-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aot-publish:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RID: win-x64
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test Ring
+        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
+
+      # A fixed placeholder version: this job proves the publish succeeds, it never ships an
+      # artifact, so the real version belongs to the release workflow.
+      - name: Publish NativeAOT
+        shell: pwsh
+        run: |
+          dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
+            -c Release -r $env:RID --self-contained true -p:PublishAot=true `
+            -p:ClioRingVersion=0.0.0-aotgate `
+            -o artifacts/aot-gate
+
+      # IL2026/IL3050 are reported as warnings by default. The gate exists to catch them, so fail
+      # when any appear rather than letting a trim/AOT hazard through on a green tick.
+      - name: Fail on AOT trim warnings
+        shell: pwsh
+        run: |
+          dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
+            -c Release -r $env:RID --self-contained true -p:PublishAot=true `
+            -p:ClioRingVersion=0.0.0-aotgate `
+            -o artifacts/aot-gate-recheck 2>&1 | Tee-Object -Variable output
+          $hazards = $output | Select-String -Pattern 'warning (IL2026|IL3050|IL2104|IL3053)'
+          if ($hazards) {
+            $hazards | ForEach-Object { Write-Host $_.Line }
+            throw "NativeAOT trim/AOT warnings detected; ClioRing must stay AOT-clean."
+          }
+          Write-Host "No IL2026/IL3050/IL2104/IL3053 warnings."
