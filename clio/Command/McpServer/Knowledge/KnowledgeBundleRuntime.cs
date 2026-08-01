@@ -112,7 +112,9 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		Stream candidate,
 		string? expectedBundleVersion = null,
 		string? expectedLibraryId = null,
-		string? localRootPath = null) => ActivateLibraryCore(
+		string? localRootPath = null) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(sourceAlias);
+		return ActivateLibraryCore(
 			new LibraryActivationRequest(
 				SourceAlias: sourceAlias,
 				Priority: priority,
@@ -122,6 +124,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				LocalRootPath: localRootPath,
 				RequireMultiSourceContract: expectedLibraryId is not null),
 			candidate);
+	}
 
 	public KnowledgeBundleActivationResult ActivateGitRepository(
 		string sourceAlias,
@@ -194,12 +197,8 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	private KnowledgeBundleActivationResult ActivateLibraryCore(
 		LibraryActivationRequest request,
 		Stream candidate) {
-		// Thrown explicitly rather than via ThrowIfNullOrWhiteSpace: the helper would infer
-		// "request.SourceAlias" from the call site, but callers of ActivateLibrary pass a plain
-		// sourceAlias and must see that name back.
-		if (string.IsNullOrWhiteSpace(request.SourceAlias)) {
-			throw new ArgumentException("Source alias must be a non-empty value.", "sourceAlias");
-		}
+		// The alias is validated by ActivateLibrary, where the parameter carries that name; the
+		// other caller, Activate, supplies the LegacySourceAlias constant.
 		ArgumentNullException.ThrowIfNull(candidate);
 		lock (_activationLock) {
 			try {
