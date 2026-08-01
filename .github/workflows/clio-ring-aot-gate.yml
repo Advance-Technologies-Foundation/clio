@@ -32,8 +32,12 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # NuGetAudit is disabled because it resolves vulnerability data against the internal Nexus
+      # feed in nuget.config, which a GitHub-hosted runner cannot reach; with TreatWarningsAsErrors
+      # that unreachable endpoint fails the restore (NU1900) before a single test runs. Every Ring
+      # dependency is public on nuget.org, so the restore itself succeeds without the internal feed.
       - name: Test Ring
-        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
+        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release -p:NuGetAudit=false
 
       # A fixed placeholder version: this job proves the publish succeeds, it never ships an
       # artifact, so the real version belongs to the release workflow.
@@ -42,7 +46,7 @@ jobs:
         run: |
           dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
             -c Release -r $env:RID --self-contained true -p:PublishAot=true `
-            -p:ClioRingVersion=0.0.0-aotgate `
+            -p:ClioRingVersion=0.0.0-aotgate -p:NuGetAudit=false `
             -o artifacts/aot-gate
 
       # IL2026/IL3050 are reported as warnings by default. The gate exists to catch them, so fail
@@ -52,7 +56,7 @@ jobs:
         run: |
           dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
             -c Release -r $env:RID --self-contained true -p:PublishAot=true `
-            -p:ClioRingVersion=0.0.0-aotgate `
+            -p:ClioRingVersion=0.0.0-aotgate -p:NuGetAudit=false `
             -o artifacts/aot-gate-recheck 2>&1 | Tee-Object -Variable output
           $hazards = $output | Select-String -Pattern 'warning (IL2026|IL3050|IL2104|IL3053)'
           if ($hazards) {
