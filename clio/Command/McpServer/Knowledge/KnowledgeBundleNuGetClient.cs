@@ -56,7 +56,9 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 
 	public KnowledgeSourceType Type => KnowledgeSourceType.NuGet;
 
-	public KnowledgeBundlePackageConfiguration? GetConfiguration() =>
+	// Static: it reads only environment variables and is not part of IKnowledgeArtifactTransport,
+	// so no instance state is involved and nothing mocks it through the interface.
+	public static KnowledgeBundlePackageConfiguration? GetConfiguration() =>
 		TryReadConfiguration(out Uri source, out string packageId)
 			? new KnowledgeBundlePackageConfiguration(source.AbsoluteUri, packageId)
 			: null;

@@ -164,12 +164,8 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		KnowledgeSourceGenerationPointer expected = _store.ReadCurrent("alpha", out _)!.Active;
 
 		// Act
-		KnowledgeInstallationResult rollback = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.0", 9, "nuget", "https://feed.invalid/v3/index.json",
-			"0.9.0", changedBundle, isUpdate: true, expected);
-		KnowledgeInstallationResult digestRewrite = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.1", 10, "nuget", "https://feed.invalid/v3/index.json",
-			"1.0.1", changedBundle, isUpdate: true, expected);
+		KnowledgeInstallationResult rollback = _store.Publish(Update("1.0.0", 9, "0.9.0", changedBundle, expected));
+		KnowledgeInstallationResult digestRewrite = _store.Publish(Update("1.0.1", 10, "1.0.1", changedBundle, expected));
 		KnowledgeSourceCurrentState? current = _store.ReadCurrent("alpha", out string? diagnostic);
 
 		// Assert
@@ -192,15 +188,11 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		byte[] secondBundle = Bundle(("article.md", "second"));
 		Publish("alpha", "com.example.alpha", 1, firstBundle);
 		KnowledgeSourceGenerationPointer first = _store.ReadCurrent("alpha", out _)!.Active;
-		KnowledgeInstallationResult advanced = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.0", 2, "nuget", "https://feed.invalid/v3/index.json",
-			"1.0.2", secondBundle, isUpdate: true, first);
+		KnowledgeInstallationResult advanced = _store.Publish(Update("1.0.0", 2, "1.0.2", secondBundle, first));
 		KnowledgeSourceGenerationPointer second = _store.ReadCurrent("alpha", out _)!.Active;
 
 		// Act
-		KnowledgeInstallationResult repaired = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.0", 2, "nuget", "https://feed.invalid/v3/index.json",
-			"1.0.2", secondBundle, isUpdate: true, second, allowRepair: true);
+		KnowledgeInstallationResult repaired = _store.Publish(Update("1.0.0", 2, "1.0.2", secondBundle, second, allowRepair: true));
 		KnowledgeSourceCurrentState? current = _store.ReadCurrent("alpha", out string? diagnostic);
 
 		// Assert
@@ -293,9 +285,7 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		File.WriteAllBytes(activeBundlePath, [0x00]);
 
 		// Act
-		KnowledgeInstallationResult repaired = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.0", 10, "nuget", "https://feed.invalid/v3/index.json",
-			"1.0.10", bundle, isUpdate: true, before.Active, allowRepair: true);
+		KnowledgeInstallationResult repaired = _store.Publish(Update("1.0.0", 10, "1.0.10", bundle, before.Active, allowRepair: true));
 		KnowledgeSourceCurrentState after = _store.ReadCurrent("alpha", out string? afterDiagnostic)!;
 		bool readable = _store.TryReadCandidate(
 			"alpha", after.Active, out InstalledKnowledgeSourceCandidate? candidate, out string? readDiagnostic);
@@ -359,9 +349,7 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		byte[] currentBundle = Bundle(("article.md", "current"));
 		Publish("alpha", "com.example.alpha", 9, previousBundle);
 		KnowledgeSourceCurrentState previous = _store.ReadCurrent("alpha", out string? previousDiagnostic)!;
-		KnowledgeInstallationResult advanced = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.0", 10, "nuget", "https://feed.invalid/v3/index.json",
-			"1.0.10", currentBundle, isUpdate: true, previous.Active);
+		KnowledgeInstallationResult advanced = _store.Publish(Update("1.0.0", 10, "1.0.10", currentBundle, previous.Active));
 		KnowledgeSourceCurrentState accepted = _store.ReadCurrent("alpha", out string? acceptedDiagnostic)!;
 		File.WriteAllBytes(
 			GetCurrentMarkerPath(),
@@ -412,9 +400,7 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		byte[] currentBundle = Bundle(("article.md", "current"));
 		Publish("alpha", "com.example.alpha", 9, previousBundle);
 		KnowledgeSourceCurrentState previous = _store.ReadCurrent("alpha", out string? previousDiagnostic)!;
-		KnowledgeInstallationResult advanced = _store.Publish(
-			"alpha", "com.example.alpha", "1.0.0", 10, "nuget", "https://feed.invalid/v3/index.json",
-			"1.0.10", currentBundle, isUpdate: true, previous.Active);
+		KnowledgeInstallationResult advanced = _store.Publish(Update("1.0.0", 10, "1.0.10", currentBundle, previous.Active));
 		KnowledgeSourceCurrentState accepted = _store.ReadCurrent("alpha", out string? acceptedDiagnostic)!;
 		bool candidateRead = _store.TryReadCandidate(
 			"alpha", accepted.Active, out InstalledKnowledgeSourceCandidate? candidate, out string? candidateDiagnostic);
@@ -510,17 +496,39 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		string alias,
 		string libraryId,
 		ulong sequence,
-		byte[] bundle) => _store.Publish(
-		alias,
-		libraryId,
-		"1.0.0",
-		sequence,
-		"nuget",
-		"https://feed.invalid/v3/index.json",
-		$"1.0.{sequence}",
-		bundle,
-		isUpdate: false,
-		expectedActive: null);
+		byte[] bundle) => _store.Publish(new KnowledgeGenerationPublication {
+			SourceAlias = alias,
+			LibraryId = libraryId,
+			LibraryVersion = "1.0.0",
+			Sequence = sequence,
+			TransportType = "nuget",
+			Location = "https://feed.invalid/v3/index.json",
+			ResolvedRevision = $"1.0.{sequence}",
+			BundleBytes = bundle,
+			IsUpdate = false
+		});
+
+	// Every update in this fixture targets the same alias, library, transport and location; only the
+	// generation, revision, payload and concurrency expectation differ.
+	private static KnowledgeGenerationPublication Update(
+		string libraryVersion,
+		ulong sequence,
+		string revision,
+		byte[] bundle,
+		KnowledgeSourceGenerationPointer? expectedActive,
+		bool allowRepair = false) => new() {
+			SourceAlias = "alpha",
+			LibraryId = "com.example.alpha",
+			LibraryVersion = libraryVersion,
+			Sequence = sequence,
+			TransportType = "nuget",
+			Location = "https://feed.invalid/v3/index.json",
+			ResolvedRevision = revision,
+			BundleBytes = bundle,
+			IsUpdate = true,
+			ExpectedActive = expectedActive,
+			AllowRepair = allowRepair
+		};
 
 	private string GenerationPath(string alias, KnowledgeSourceGenerationPointer pointer) {
 		string sourceRoot = Path.GetDirectoryName(_store.GetGitRepositoryPath(alias, createSourceRoot: false))!;

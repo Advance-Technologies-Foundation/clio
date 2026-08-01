@@ -115,10 +115,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			"com.example.alpha",
 			"1.2.0",
 			"digest"));
-		_store.Publish(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ulong>(), Arg.Any<string>(),
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<bool>(),
-			Arg.Any<KnowledgeSourceGenerationPointer?>()).Returns(new KnowledgeInstallationResult(
+		_store.Publish(Arg.Any<KnowledgeGenerationPublication>()).Returns(new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Installed, "installed"));
 
 		// Act
@@ -137,8 +134,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			because: "transport retrieval must be scoped to the selected source alias");
 		_store.ReceivedCalls().Count(call =>
 			call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.Publish)
-			&& call.GetArguments()[0] as string == "alpha"
-			&& call.GetArguments()[8] is false).Should().Be(1,
+			&& (call.GetArguments()[0] as KnowledgeGenerationPublication) is { SourceAlias: "alpha", IsUpdate: false }).Should().Be(1,
 			because: "the first lifecycle operation must publish as an install for alpha only");
 	}
 
@@ -257,10 +253,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			"com.example.alpha",
 			"1.1.0",
 			"digest-new"));
-		_store.Publish(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ulong>(), Arg.Any<string>(),
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<bool>(),
-			Arg.Any<KnowledgeSourceGenerationPointer?>()).Returns(new KnowledgeInstallationResult(
+		_store.Publish(Arg.Any<KnowledgeGenerationPublication>()).Returns(new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Updated, "updated"));
 
 		// Act
@@ -273,9 +266,8 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			because: "the transport needs the installed revision to return no-candidate when already current");
 		_store.ReceivedCalls().Count(call =>
 			call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.Publish)
-			&& call.GetArguments()[0] as string == "alpha"
-			&& call.GetArguments()[8] is true
-			&& Equals(call.GetArguments()[9], state.Active)).Should().Be(1,
+			&& (call.GetArguments()[0] as KnowledgeGenerationPublication) is { SourceAlias: "alpha", IsUpdate: true } publication
+			&& Equals(publication.ExpectedActive, state.Active)).Should().Be(1,
 			because: "updates must compare-and-swap against the exact pointer observed before download");
 	}
 
@@ -382,8 +374,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "legacy bundles cannot enter configured multi-source storage");
-		_store.DidNotReceiveWithAnyArgs().Publish(
-			default!, default!, default!, default, default!, default!, default!, default!, default, default);
+		_store.DidNotReceiveWithAnyArgs().Publish(default!);
 		object[][] validationArguments = _runtime.ReceivedCalls()
 			.Where(call => call.GetMethodInfo().Name == nameof(IKnowledgeBundleRuntime.Validate))
 			.Select(call => call.GetArguments())
@@ -448,8 +439,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		result.Sources.Should().ContainSingle()
 			.Which.Status.Should().Be("failed",
 				because: "cold no-candidate must remain distinguishable from an installed source being up to date");
-		_store.DidNotReceiveWithAnyArgs().Publish(
-			default!, default!, default!, default, default!, default!, default!, default!, default, default);
+		_store.DidNotReceiveWithAnyArgs().Publish(default!);
 	}
 
 	[Test]
@@ -477,8 +467,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 				because: "retrieval failure must remain distinct from a genuine no-candidate result");
 		result.Sources[0].Message.Should().Contain("timed out",
 			because: "the operator needs the bounded transport diagnostic to retry or repair the source");
-		_store.DidNotReceiveWithAnyArgs().Publish(
-			default!, default!, default!, default, default!, default!, default!, default!, default, default);
+		_store.DidNotReceiveWithAnyArgs().Publish(default!);
 	}
 
 	[Test]
@@ -553,10 +542,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 				"com.example.alpha",
 				"1.9.0",
 				"digest-lower"));
-		_store.Publish(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ulong>(), Arg.Any<string>(),
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<bool>(),
-			Arg.Any<KnowledgeSourceGenerationPointer?>(), Arg.Any<bool>()).Returns(new KnowledgeInstallationResult(
+		_store.Publish(Arg.Any<KnowledgeGenerationPublication>()).Returns(new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Installed, "installed"));
 
 		// Act
@@ -572,10 +558,9 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			because: "the next lookup must remain below the rejected candidate");
 		_store.ReceivedCalls().Count(call =>
 			call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.Publish)
-			&& call.GetArguments()[0] as string == "alpha"
-			&& call.GetArguments()[2] as string == "1.9.0"
-			&& (ulong)call.GetArguments()[3]! == 1
-			&& call.GetArguments()[6] as string == "1.9.0").Should().Be(1,
+			&& (call.GetArguments()[0] as KnowledgeGenerationPublication) is {
+				SourceAlias: "alpha", LibraryVersion: "1.9.0", Sequence: 1, ResolvedRevision: "1.9.0"
+			}).Should().Be(1,
 			because: "only the lower validated fallback candidate may reach immutable publication");
 	}
 
@@ -601,10 +586,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		_runtime.Validate(Arg.Any<Stream>(), Arg.Any<string?>(), "com.example.alpha").Returns(new KnowledgeBundleValidationResult(
 			KnowledgeBundleActivationStatus.Activated, KnowledgeBundleRejectionCode.None, 10, null,
 			"com.example.alpha", "1.0.0", state.Active.BundleDigest));
-		_store.Publish(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ulong>(), Arg.Any<string>(),
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<bool>(),
-			Arg.Any<KnowledgeSourceGenerationPointer?>(), Arg.Any<bool>()).Returns(new KnowledgeInstallationResult(
+		_store.Publish(Arg.Any<KnowledgeGenerationPublication>()).Returns(new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Updated, "repaired"));
 
 		// Act
@@ -618,11 +600,10 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			because: "repair must request the exact immutable revision recorded by the damaged generation");
 		_store.ReceivedCalls().Count(call =>
 			call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.Publish)
-			&& call.GetArguments()[0] as string == "alpha"
-			&& (ulong)call.GetArguments()[3]! == 10
-			&& call.GetArguments()[8] is true
-			&& Equals(call.GetArguments()[9], state.Active)
-			&& call.GetArguments()[10] is true).Should().Be(1,
+			&& (call.GetArguments()[0] as KnowledgeGenerationPublication) is {
+				SourceAlias: "alpha", Sequence: 10, IsUpdate: true, AllowRepair: true
+			} publication
+			&& Equals(publication.ExpectedActive, state.Active)).Should().Be(1,
 			because: "repair publication must carry the observed pointer and explicit equal-sequence repair authority");
 	}
 

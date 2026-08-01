@@ -35,7 +35,7 @@ public sealed class KnowledgeGitTransportTests {
 			}
 			return Task.FromResult(Success());
 		});
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 		KnowledgeSourceConfiguration source = GitSource();
 		string stagingRoot = TestFileSystem.GetRootedPath("clio", "knowledge-staging");
 		KnowledgeTransportRequest request = new(
@@ -110,7 +110,7 @@ public sealed class KnowledgeGitTransportTests {
 			}
 			return Task.FromResult(Success());
 		});
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 		KnowledgeSourceConfiguration source = GitSource();
 		source.Commit = commit;
 		string repositoryPath = TestFileSystem.GetRootedPath("clio", "repair-staging", "repository");
@@ -156,7 +156,7 @@ public sealed class KnowledgeGitTransportTests {
 			}
 			return Task.FromResult(Success());
 		});
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 
 		// Act
 		Action act = () => transport.ValidateInstalledCheckout(source, repositoryPath);
@@ -186,7 +186,7 @@ public sealed class KnowledgeGitTransportTests {
 			}
 			return Task.FromResult(Success());
 		});
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 
 		// Act
 		Action act = () => transport.ValidateInstalledCheckout(source, repositoryPath);
@@ -215,7 +215,7 @@ public sealed class KnowledgeGitTransportTests {
 			}
 			return Task.FromResult(Success());
 		});
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 
 		// Act
 		Action act = () => transport.ValidateInstalledCheckout(source, repositoryPath);
@@ -237,7 +237,7 @@ public sealed class KnowledgeGitTransportTests {
 		string guidancePath = fileSystem.Path.Combine(repositoryPath, "guidance");
 		fileSystem.AddDirectory(guidancePath);
 		fileSystem.File.SetAttributes(guidancePath, FileAttributes.Directory | FileAttributes.ReparsePoint);
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 
 		// Act
 		Action act = () => transport.ValidateCheckoutForSynchronization(GitSource(), repositoryPath);
@@ -257,7 +257,7 @@ public sealed class KnowledgeGitTransportTests {
 		string repositoryPath = TestFileSystem.GetRootedPath("clio", "configured", "repository");
 		AddInstalledRepository(fileSystem, repositoryPath,
 			"[core]\n\trepositoryformatversion = 0\n\tfsmonitor = malicious-command\n");
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
 
 		// Act
 		Action act = () => transport.ValidateCheckoutForSynchronization(GitSource(), repositoryPath);
@@ -274,11 +274,15 @@ public sealed class KnowledgeGitTransportTests {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		// Advance the injected clock instead of sleeping: the point of the test is that elapsed time
+		// is shared across sequential Git commands, not that a real 150 ms passes. A fake clock makes
+		// that deterministic and instant, and it cannot flake under a loaded CI agent.
+		FakeTimeProvider clock = new();
 		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
-			Thread.Sleep(150);
+			clock.Advance(TimeSpan.FromMilliseconds(150));
 			return Task.FromResult(Success("ref: refs/heads/main\tHEAD\n"));
 		});
-		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, clock);
 		KnowledgeTransportRequest request = new(
 			"partner",
 			GitSource(),
@@ -334,5 +338,20 @@ public sealed class KnowledgeGitTransportTests {
 		ExitCode = 0,
 		StandardOutput = output
 	};
+
+
+	/// <summary>
+	/// Clock whose timestamp only moves when a test advances it. Frequency is one tick per
+	/// <see cref="TimeSpan.TicksPerSecond"/> so <c>GetElapsedTime</c> returns exactly what was advanced.
+	/// </summary>
+	private sealed class FakeTimeProvider : TimeProvider {
+		private long _timestamp;
+
+		public override long GetTimestamp() => _timestamp;
+
+		public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+		public void Advance(TimeSpan delta) => _timestamp += delta.Ticks;
+	}
 
 }

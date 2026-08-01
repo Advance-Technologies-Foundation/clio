@@ -225,7 +225,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
-		KnowledgeBundlePackageConfiguration? configuration = client.GetConfiguration();
+		KnowledgeBundlePackageConfiguration? configuration = KnowledgeBundleNuGetClient.GetConfiguration();
 
 		// Assert
 		configuration.Should().BeNull(

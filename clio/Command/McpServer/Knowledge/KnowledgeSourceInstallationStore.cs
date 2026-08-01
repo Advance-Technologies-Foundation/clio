@@ -74,18 +74,7 @@ internal interface IKnowledgeSourceInstallationStore {
 		out InstalledKnowledgeSourceCandidate? candidate,
 		out string? diagnostic);
 
-	KnowledgeInstallationResult Publish(
-		string sourceAlias,
-		string libraryId,
-		string libraryVersion,
-		ulong sequence,
-		string transportType,
-		string location,
-		string resolvedRevision,
-		byte[] bundleBytes,
-		bool isUpdate,
-		KnowledgeSourceGenerationPointer? expectedActive,
-		bool allowRepair = false);
+	KnowledgeInstallationResult Publish(KnowledgeGenerationPublication publication);
 
 	KnowledgeInstallationResult Delete(string sourceAlias, bool confirmed);
 
@@ -401,18 +390,19 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		}
 	}
 
-	public KnowledgeInstallationResult Publish(
-		string sourceAlias,
-		string libraryId,
-		string libraryVersion,
-		ulong sequence,
-		string transportType,
-		string location,
-		string resolvedRevision,
-		byte[] bundleBytes,
-		bool isUpdate,
-		KnowledgeSourceGenerationPointer? expectedActive,
-		bool allowRepair = false) {
+	public KnowledgeInstallationResult Publish(KnowledgeGenerationPublication publication) {
+		ArgumentNullException.ThrowIfNull(publication);
+		string sourceAlias = publication.SourceAlias;
+		string libraryId = publication.LibraryId;
+		string libraryVersion = publication.LibraryVersion;
+		ulong sequence = publication.Sequence;
+		string transportType = publication.TransportType;
+		string location = publication.Location;
+		string resolvedRevision = publication.ResolvedRevision;
+		byte[] bundleBytes = publication.BundleBytes;
+		bool isUpdate = publication.IsUpdate;
+		KnowledgeSourceGenerationPointer? expectedActive = publication.ExpectedActive;
+		bool allowRepair = publication.AllowRepair;
 		ArgumentException.ThrowIfNullOrWhiteSpace(sourceAlias);
 		ArgumentException.ThrowIfNullOrWhiteSpace(libraryId);
 		ArgumentException.ThrowIfNullOrWhiteSpace(libraryVersion);
@@ -1036,3 +1026,42 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 [JsonSerializable(typeof(KnowledgeSourceInstallMetadata))]
 [JsonSerializable(typeof(KnowledgeLibraryHighWaterMark))]
 internal sealed partial class KnowledgeSourceInstallationJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// One generation being written to the local installation store: what is published, and how the
+/// write relates to the generation already installed.
+/// </summary>
+internal sealed record KnowledgeGenerationPublication {
+	/// <summary>Alias of the source the generation belongs to.</summary>
+	internal required string SourceAlias { get; init; }
+
+	/// <summary>Reverse-DNS library identity carried by the bundle.</summary>
+	internal required string LibraryId { get; init; }
+
+	/// <summary>Publisher-facing release label.</summary>
+	internal required string LibraryVersion { get; init; }
+
+	/// <summary>Monotonic generation counter; part of the canonical identity.</summary>
+	internal required ulong Sequence { get; init; }
+
+	/// <summary>Transport that retrieved the bundle, lowercased.</summary>
+	internal required string TransportType { get; init; }
+
+	/// <summary>Configured source location the bundle came from.</summary>
+	internal required string Location { get; init; }
+
+	/// <summary>Immutable revision the transport resolved.</summary>
+	internal required string ResolvedRevision { get; init; }
+
+	/// <summary>Bundle payload to persist.</summary>
+	internal required byte[] BundleBytes { get; init; }
+
+	/// <summary>Whether this replaces an installed generation rather than being a first install.</summary>
+	internal required bool IsUpdate { get; init; }
+
+	/// <summary>Generation expected to be active, used to detect a concurrent write.</summary>
+	internal KnowledgeSourceGenerationPointer? ExpectedActive { get; init; }
+
+	/// <summary>Whether the write may repair a checkout left inconsistent by an earlier failure.</summary>
+	internal bool AllowRepair { get; init; }
+}

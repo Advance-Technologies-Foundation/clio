@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Clio.Common;
@@ -27,18 +26,33 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 
 	private readonly IProcessExecutor _processExecutor;
 	private readonly IFileSystem _fileSystem;
+	private readonly TimeProvider _timeProvider;
 
 	public KnowledgeSourceType Type => KnowledgeSourceType.Git;
 
-	public KnowledgeGitTransport(IProcessExecutor processExecutor, IFileSystem fileSystem) {
+	/// <summary>
+	/// The operation-wide budget shared by every git command in one synchronization, measured
+	/// against an injectable clock so a test can advance time instead of sleeping.
+	/// </summary>
+	private readonly record struct OperationDeadline(TimeProvider Clock, long StartTimestamp, TimeSpan Budget) {
+		/// <summary>Time left, or a timeout when the operation-wide budget is spent.</summary>
+		internal TimeSpan RequireRemaining() {
+			TimeSpan remaining = Budget - Clock.GetElapsedTime(StartTimestamp);
+			return remaining <= TimeSpan.Zero
+				? throw new TimeoutException("The operation-wide Git knowledge synchronization deadline elapsed.")
+				: remaining;
+		}
+	}
+
+	public KnowledgeGitTransport(IProcessExecutor processExecutor, IFileSystem fileSystem, TimeProvider timeProvider) {
 		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 	}
 
 	public KnowledgeTransportResult Synchronize(KnowledgeTransportRequest request, string repositoryPath) {
 		ArgumentNullException.ThrowIfNull(request);
-		Stopwatch operation = Stopwatch.StartNew();
-		TimeSpan deadline = ResolveDeadline(request);
+		OperationDeadline deadline = new(_timeProvider, _timeProvider.GetTimestamp(), ResolveDeadline(request));
 		KnowledgeSourceConfiguration source = KnowledgeSourceConfigurationValidator.ValidateAndClone(request.Source);
 		if (source.Type != KnowledgeSourceType.Git) {
 			throw new ArgumentException("Git transport received a non-Git source.", nameof(request));
@@ -55,15 +69,15 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			bool installed = _fileSystem.Directory.Exists(_fileSystem.Path.Combine(fullRepositoryPath, ".git"));
 			string? branch;
 			if (installed) {
-				branch = UpdateInstalledCheckout(source, fullRepositoryPath, operation, deadline);
+				branch = UpdateInstalledCheckout(source, fullRepositoryPath, deadline);
 			} else {
-				branch = CreateCheckout(source, fullRepositoryPath, parent, operation, deadline);
+				branch = CreateCheckout(source, fullRepositoryPath, parent, deadline);
 			}
 
 			// Revalidated after the fetch/checkout/pull above, because those commands mutate the working tree.
-			ValidateCheckout(fullRepositoryPath, operation, deadline);
+			ValidateCheckout(fullRepositoryPath, deadline);
 			string commit = ExecuteGit(fullRepositoryPath, "rev-parse HEAD",
-				GetRemainingTimeout(operation, deadline)).StandardOutput.Trim();
+				deadline.RequireRemaining()).StandardOutput.Trim();
 			if (!IsCompleteCommit(commit)) {
 				throw new InvalidDataException("Git returned an invalid resolved commit ID.");
 			}
@@ -100,69 +114,66 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		KnowledgeSourceConfiguration source,
 		string repositoryPath,
 		string parent,
-		Stopwatch operation,
-		TimeSpan deadline) {
-		Clone(source, repositoryPath, parent, operation, deadline);
+		OperationDeadline deadline) {
+		Clone(source, repositoryPath, parent, deadline);
 		if (source.Commit is not null) {
-			CheckoutCommit(source.Commit, repositoryPath, operation, deadline);
+			CheckoutCommit(source.Commit, repositoryPath, deadline);
 		}
 		return source.Branch ?? (source.Tag is null && source.Commit is null
-			? ReadCurrentBranch(repositoryPath, operation, deadline)
+			? ReadCurrentBranch(repositoryPath, deadline)
 			: null);
 	}
 
 	private string? UpdateInstalledCheckout(
 		KnowledgeSourceConfiguration source,
 		string repositoryPath,
-		Stopwatch operation,
-		TimeSpan deadline) {
-		ValidateCheckoutFileSystem(repositoryPath, operation, deadline);
+		OperationDeadline deadline) {
+		ValidateCheckoutFileSystem(repositoryPath, deadline);
 		ValidateRepositoryConfiguration(repositoryPath);
-		ValidateOrigin(repositoryPath, source, operation, deadline);
-		ValidateCheckout(repositoryPath, operation, deadline);
+		ValidateOrigin(repositoryPath, source, deadline);
+		ValidateCheckout(repositoryPath, deadline);
 		if (source.Commit is not null) {
-			CheckoutCommit(source.Commit, repositoryPath, operation, deadline);
+			CheckoutCommit(source.Commit, repositoryPath, deadline);
 			return source.Branch;
 		}
 		if (source.Tag is not null) {
-			CheckoutTag(source.Tag, repositoryPath, operation, deadline);
+			CheckoutTag(source.Tag, repositoryPath, deadline);
 			return source.Branch;
 		}
-		string branch = source.Branch ?? ReadCurrentBranch(repositoryPath, operation, deadline);
-		ExecuteGit(repositoryPath, $"checkout {Quote(branch)}", GetRemainingTimeout(operation, deadline),
+		string branch = source.Branch ?? ReadCurrentBranch(repositoryPath, deadline);
+		ExecuteGit(repositoryPath, $"checkout {Quote(branch)}", deadline.RequireRemaining(),
 			monitorDirectory: true);
 		ExecuteGit(repositoryPath, $"pull --ff-only origin {Quote(branch)}",
-			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+			deadline.RequireRemaining(), monitorDirectory: true);
 		return branch;
 	}
 
-	private void CheckoutCommit(string commit, string repositoryPath, Stopwatch operation, TimeSpan deadline) {
+	private void CheckoutCommit(string commit, string repositoryPath, OperationDeadline deadline) {
 		ExecuteGit(repositoryPath,
 			$"fetch --no-tags --depth=1 origin {Quote(commit)}",
-			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
-		ExecuteGit(repositoryPath, "checkout --detach FETCH_HEAD", GetRemainingTimeout(operation, deadline),
+			deadline.RequireRemaining(), monitorDirectory: true);
+		ExecuteGit(repositoryPath, "checkout --detach FETCH_HEAD", deadline.RequireRemaining(),
 			monitorDirectory: true);
 	}
 
-	private void CheckoutTag(string tag, string repositoryPath, Stopwatch operation, TimeSpan deadline) {
+	private void CheckoutTag(string tag, string repositoryPath, OperationDeadline deadline) {
 		ExecuteGit(repositoryPath,
 			$"fetch --no-tags --depth=1 origin {Quote("refs/tags/" + tag)}",
-			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+			deadline.RequireRemaining(), monitorDirectory: true);
 		ExecuteGit(repositoryPath, $"checkout --detach {Quote("FETCH_HEAD")}",
-			GetRemainingTimeout(operation, deadline), monitorDirectory: true);
+			deadline.RequireRemaining(), monitorDirectory: true);
 	}
 
 	public KnowledgeTransportResult CheckForUpdates(KnowledgeTransportRequest request, string repositoryPath) {
 		ArgumentNullException.ThrowIfNull(request);
-		Stopwatch operation = Stopwatch.StartNew();
-		TimeSpan deadline = ResolveDeadline(request);
+		OperationDeadline deadline = new(_timeProvider, _timeProvider.GetTimestamp(), ResolveDeadline(request));
 		KnowledgeSourceConfiguration source = KnowledgeSourceConfigurationValidator.ValidateAndClone(request.Source);
 		try {
 			string fullRepositoryPath = RequireInstalledRepository(repositoryPath);
-			ValidateOrigin(fullRepositoryPath, source, operation, deadline);
+			ValidateOrigin(fullRepositoryPath, source, deadline);
 			string current = GetCurrentRevision(fullRepositoryPath)
 				?? throw new InvalidDataException("Installed Git knowledge checkout has no valid current revision.");
-			string target = ResolveRemoteRevision(source, fullRepositoryPath, operation, deadline);
+			string target = ResolveRemoteRevision(source, fullRepositoryPath, deadline);
 			return new KnowledgeTransportResult(
 				string.Equals(current, target, StringComparison.OrdinalIgnoreCase)
 					? KnowledgeTransportStatus.NoCandidate
@@ -202,24 +213,25 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		if (validated.Type != KnowledgeSourceType.Git) {
 			throw new ArgumentException("Git checkout validation received a non-Git source.", nameof(source));
 		}
-		Stopwatch operation = Stopwatch.StartNew();
-		TimeSpan deadline = TimeSpan.FromMilliseconds(DefaultTransportDeadlineMilliseconds);
+		OperationDeadline deadline = new(
+			_timeProvider,
+			_timeProvider.GetTimestamp(),
+			TimeSpan.FromMilliseconds(DefaultTransportDeadlineMilliseconds));
 		string fullRepositoryPath = RequireInstalledRepository(repositoryPath);
-		ValidateCheckoutFileSystem(fullRepositoryPath, operation, deadline);
+		ValidateCheckoutFileSystem(fullRepositoryPath, deadline);
 		ValidateRepositoryConfiguration(fullRepositoryPath);
-		ValidateOrigin(fullRepositoryPath, validated, operation, deadline);
-		ValidateCheckout(fullRepositoryPath, operation, deadline);
+		ValidateOrigin(fullRepositoryPath, validated, deadline);
+		ValidateCheckout(fullRepositoryPath, deadline);
 		if (enforceConfiguredReference) {
-			ValidateConfiguredReference(fullRepositoryPath, validated, operation, deadline);
+			ValidateConfiguredReference(fullRepositoryPath, validated, deadline);
 		}
 	}
 
 	private void ValidateConfiguredReference(
 		string repositoryPath,
 		KnowledgeSourceConfiguration source,
-		Stopwatch operation,
-		TimeSpan deadline) {
-		string head = ExecuteGit(repositoryPath, "rev-parse HEAD", GetRemainingTimeout(operation, deadline))
+		OperationDeadline deadline) {
+		string head = ExecuteGit(repositoryPath, "rev-parse HEAD", deadline.RequireRemaining())
 			.StandardOutput.Trim();
 		if (!IsCompleteCommit(head)) {
 			throw new InvalidDataException("Installed Git knowledge checkout has no valid current revision.");
@@ -232,13 +244,13 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			string tagCommit = ExecuteGit(
 				repositoryPath,
 				$"rev-parse {Quote($"refs/tags/{source.Tag}^{{commit}}")}",
-				GetRemainingTimeout(operation, deadline)).StandardOutput.Trim();
+				deadline.RequireRemaining()).StandardOutput.Trim();
 			if (!string.Equals(head, tagCommit, StringComparison.OrdinalIgnoreCase)) {
 				throw new InvalidDataException("Installed Git knowledge checkout does not match the configured tag.");
 			}
 		}
 		if (source.Branch is not null) {
-			string branch = ReadCurrentBranch(repositoryPath, operation, deadline);
+			string branch = ReadCurrentBranch(repositoryPath, deadline);
 			if (!string.Equals(branch, source.Branch, StringComparison.Ordinal)) {
 				throw new InvalidDataException("Installed Git knowledge checkout does not match the configured branch.");
 			}
@@ -327,10 +339,9 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 	private void ValidateOrigin(
 		string repositoryPath,
 		KnowledgeSourceConfiguration source,
-		Stopwatch operation,
-		TimeSpan deadline) {
+		OperationDeadline deadline) {
 		string origin = ExecuteGit(repositoryPath, "remote get-url origin",
-			GetRemainingTimeout(operation, deadline)).StandardOutput.Trim();
+			deadline.RequireRemaining()).StandardOutput.Trim();
 		if (!string.Equals(origin.TrimEnd('/'), source.Location.TrimEnd('/'), StringComparison.Ordinal)) {
 			throw new InvalidDataException("Installed Git knowledge checkout origin does not match the configured source.");
 		}
@@ -339,8 +350,7 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 	private string ResolveRemoteRevision(
 		KnowledgeSourceConfiguration source,
 		string repositoryPath,
-		Stopwatch operation,
-		TimeSpan deadline) {
+		OperationDeadline deadline) {
 		if (source.Commit is not null) {
 			return source.Commit.ToLowerInvariant();
 		}
@@ -350,12 +360,12 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			reference = $"refs/tags/{source.Tag}";
 			arguments = $"ls-remote --tags {Quote(source.Location)} {Quote(reference)} {Quote(reference + "^{}")}";
 		} else {
-			string branch = source.Branch ?? ReadCurrentBranch(repositoryPath, operation, deadline);
+			string branch = source.Branch ?? ReadCurrentBranch(repositoryPath, deadline);
 			reference = $"refs/heads/{branch}";
 			arguments = $"ls-remote --heads {Quote(source.Location)} {Quote(reference)}";
 		}
 		ProcessExecutionResult result = Execute(arguments, _fileSystem.Path.GetDirectoryName(repositoryPath),
-			GetRemainingTimeout(operation, deadline), monitoredDirectory: null);
+			deadline.RequireRemaining(), monitoredDirectory: null);
 		(string Revision, string Reference)[] candidates = result.StandardOutput
 			.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
 			.Select(line => line.Split('\t', 2))
@@ -383,14 +393,14 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			.Select(candidate => candidate.Revision)
 			.FirstOrDefault();
 
-	private void ValidateCheckout(string repositoryPath, Stopwatch operation, TimeSpan deadline) {
+	private void ValidateCheckout(string repositoryPath, OperationDeadline deadline) {
 		string status = ExecuteGit(repositoryPath, "status --porcelain --untracked-files=all",
-			GetRemainingTimeout(operation, deadline)).StandardOutput;
+			deadline.RequireRemaining()).StandardOutput;
 		if (!string.IsNullOrWhiteSpace(status)) {
 			throw new InvalidDataException("Git knowledge checkout contains modified or untracked files.");
 		}
 		string index = ExecuteGit(repositoryPath, "ls-files --stage",
-			GetRemainingTimeout(operation, deadline)).StandardOutput;
+			deadline.RequireRemaining()).StandardOutput;
 		foreach (string line in index.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)) {
 			if (line.StartsWith("120000 ", StringComparison.Ordinal)) {
 				throw new InvalidDataException("Git knowledge repositories cannot contain symbolic links.");
@@ -403,13 +413,12 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 
 	private void ValidateCheckoutFileSystem(
 		string repositoryPath,
-		Stopwatch operation,
-		TimeSpan deadline) {
+		OperationDeadline deadline) {
 		Stack<string> pending = new();
 		int entryCount = 0;
 		pending.Push(repositoryPath);
 		while (pending.Count > 0) {
-			_ = GetRemainingTimeout(operation, deadline);
+			_ = deadline.RequireRemaining();
 			string directory = pending.Pop();
 			RejectReparsePoint(directory);
 			foreach (string entry in _fileSystem.Directory.EnumerateFileSystemEntries(directory)) {
@@ -490,8 +499,7 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		KnowledgeSourceConfiguration source,
 		string repositoryPath,
 		string parent,
-		Stopwatch operation,
-		TimeSpan deadline) {
+		OperationDeadline deadline) {
 		string reference = source.Tag ?? source.Branch ?? string.Empty;
 		string referenceArguments = string.IsNullOrEmpty(reference)
 			? string.Empty
@@ -503,13 +511,13 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			$"-c {Quote("core.hooksPath=" + GetDisabledHooksPath())} clone --filter=blob:none --no-recurse-submodules{shallow}{noCheckout}{referenceArguments} "
 			+ $"{Quote(source.Location)} {Quote(repositoryPath)}",
 			parent,
-			GetRemainingTimeout(operation, deadline),
+			deadline.RequireRemaining(),
 			repositoryPath);
 	}
 
-	private string ReadCurrentBranch(string repositoryPath, Stopwatch operation, TimeSpan deadline) {
+	private string ReadCurrentBranch(string repositoryPath, OperationDeadline deadline) {
 		string branch = ExecuteGit(repositoryPath, "branch --show-current",
-			GetRemainingTimeout(operation, deadline)).StandardOutput.Trim();
+			deadline.RequireRemaining()).StandardOutput.Trim();
 		if (string.IsNullOrWhiteSpace(branch)) {
 			throw new InvalidDataException("Git knowledge checkout has no current branch.");
 		}
@@ -585,12 +593,6 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			? request.TransportDeadlineMilliseconds.Value
 			: DefaultTransportDeadlineMilliseconds);
 
-	private static TimeSpan GetRemainingTimeout(Stopwatch operation, TimeSpan deadline) {
-		TimeSpan remaining = deadline - operation.Elapsed;
-		return remaining <= TimeSpan.Zero
-			? throw new TimeoutException("The operation-wide Git knowledge synchronization deadline elapsed.")
-			: remaining;
-	}
 
 	private static bool IsCompleteCommit(string commit) => commit.Length is 40 or 64 && commit.All(Uri.IsHexDigit);
 

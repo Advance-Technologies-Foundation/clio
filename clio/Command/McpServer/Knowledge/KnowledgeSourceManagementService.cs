@@ -381,18 +381,19 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			search.LastDiagnostic = validation.Diagnostic ?? "The downloaded knowledge bundle was rejected.";
 			return RejectCandidate(search, revision);
 		}
-		KnowledgeInstallationResult published = _store.Publish(
-			context.Alias,
-			context.Source.LibraryId,
-			validation.CandidateLibraryVersion,
-			validation.CandidateSequence.Value,
-			context.Source.Type.ToString().ToLowerInvariant(),
-			context.Source.Location,
-			revision,
-			bytes,
-			isUpdate: context.Current is not null,
-			expectedActive: context.Current?.Active,
-			allowRepair: context.Repair);
+		KnowledgeInstallationResult published = _store.Publish(new KnowledgeGenerationPublication {
+			SourceAlias = context.Alias,
+			LibraryId = context.Source.LibraryId,
+			LibraryVersion = validation.CandidateLibraryVersion,
+			Sequence = validation.CandidateSequence.Value,
+			TransportType = context.Source.Type.ToString().ToLowerInvariant(),
+			Location = context.Source.Location,
+			ResolvedRevision = revision,
+			BundleBytes = bytes,
+			IsUpdate = context.Current is not null,
+			ExpectedActive = context.Current?.Active,
+			AllowRepair = context.Repair
+		});
 		return new ArtifactCandidateAttempt(ToOperation(context.Alias, published), StopSearch: true);
 	}
 
