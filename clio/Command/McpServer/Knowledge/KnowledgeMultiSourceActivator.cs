@@ -82,7 +82,6 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 	private readonly IKnowledgeRuntimeConfigurationProvider _configurationProvider;
 	private readonly IKnowledgeGitRepositoryReader _gitReader;
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeRepositoryTransport> _repositoryTransports;
-	private readonly IFileSystem _fileSystem;
 	private readonly IKnowledgeTrustFingerprintService _trustFingerprintService;
 	private readonly KnowledgeBundleActivationOptions _options;
 	private readonly object _activationLock = new();
@@ -99,7 +98,6 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 		IKnowledgeRuntimeConfigurationProvider configurationProvider,
 		IKnowledgeGitRepositoryReader gitReader,
 		IEnumerable<IKnowledgeRepositoryTransport> repositoryTransports,
-		IFileSystem fileSystem,
 		IKnowledgeTrustFingerprintService trustFingerprintService,
 		KnowledgeBundleActivationOptions options) {
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -110,7 +108,6 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 		_repositoryTransports = repositoryTransports.ToDictionary(
 			transport => transport.Type,
 			transport => transport);
-		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_trustFingerprintService = trustFingerprintService
 			?? throw new ArgumentNullException(nameof(trustFingerprintService));
 		_options = options ?? throw new ArgumentNullException(nameof(options));
@@ -293,8 +290,8 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 		KnowledgeSourceConfiguration source,
 		IKnowledgeRepositoryTransport transport,
 		ICollection<string> diagnostics) {
-		string repositoryPath = _store.GetGitRepositoryPath(alias, createSourceRoot: false);
-		if (!_fileSystem.Directory.Exists(repositoryPath)) {
+		string? repositoryPath = _store.GetInstalledGitRepositoryPath(alias);
+		if (repositoryPath is null) {
 			_runtime.DeactivateLibrary(alias);
 			_observed.Remove(alias);
 			_observedGitConfiguration.Remove(alias);

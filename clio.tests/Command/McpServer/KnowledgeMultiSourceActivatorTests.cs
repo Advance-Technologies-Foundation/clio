@@ -273,7 +273,7 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		fileSystem.AddDirectory(repositoryPath);
 		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
 		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
-		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.GetInstalledGitRepositoryPath("partner").Returns(repositoryPath);
 		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
 			call.ArgAt<Action>(1)();
 			return true;
@@ -538,7 +538,7 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		fileSystem.AddDirectory(repositoryPath);
 		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
 		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
-		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.GetInstalledGitRepositoryPath("partner").Returns(repositoryPath);
 		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
 			call.ArgAt<Action>(1)();
 			return true;
@@ -593,7 +593,7 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		fileSystem.AddDirectory(repositoryPath);
 		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
 		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
-		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.GetInstalledGitRepositoryPath("partner").Returns(repositoryPath);
 		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(false);
 		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
 		transport.Type.Returns(KnowledgeSourceType.Git);
@@ -639,7 +639,7 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		fileSystem.AddDirectory(repositoryPath);
 		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
 		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
-		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.GetInstalledGitRepositoryPath("partner").Returns(repositoryPath);
 		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
 			call.ArgAt<Action>(1)();
 			return true;
@@ -708,7 +708,7 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		fileSystem.AddDirectory(repositoryPath);
 		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
 		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
-		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.GetInstalledGitRepositoryPath("partner").Returns(repositoryPath);
 		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
 			call.ArgAt<Action>(1)();
 			return true;

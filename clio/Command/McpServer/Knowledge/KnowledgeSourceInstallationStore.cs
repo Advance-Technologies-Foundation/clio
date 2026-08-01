@@ -58,6 +58,20 @@ internal interface IKnowledgeSourceInstallationStore {
 
 	string GetGitRepositoryPath(string sourceAlias, bool createSourceRoot);
 
+	/// <summary>
+	/// Returns the git repository path for <paramref name="sourceAlias"/> only when that directory
+	/// has already been materialized on disk, and <see langword="null"/> otherwise.
+	/// </summary>
+	/// <remarks>
+	/// This is the "is the checkout there at all" probe used by activation, which must skip a source
+	/// whose directory is absent. It is deliberately weaker than the installation probe in
+	/// <c>KnowledgeSourceManagementService</c>, which additionally requires a <c>.git</c> marker
+	/// before it will treat a checkout as installed.
+	/// </remarks>
+	/// <param name="sourceAlias">The configured knowledge source alias.</param>
+	/// <returns>The repository path when it exists; otherwise <see langword="null"/>.</returns>
+	string? GetInstalledGitRepositoryPath(string sourceAlias);
+
 	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
 
 	bool MigrateGitRepository(string sourceAlias, string targetAlias);
@@ -157,6 +171,11 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			EnsureNoReparsePoint(sourceRoot, repositoryPath);
 		}
 		return repositoryPath;
+	}
+
+	public string? GetInstalledGitRepositoryPath(string sourceAlias) {
+		string repositoryPath = GetGitRepositoryPath(sourceAlias, createSourceRoot: false);
+		return _fileSystem.Directory.Exists(repositoryPath) ? repositoryPath : null;
 	}
 
 	public bool TryMigrateGitRepository(string sourceAlias, string targetAlias) {
