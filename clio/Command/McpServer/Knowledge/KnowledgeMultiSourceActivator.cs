@@ -155,8 +155,20 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 		}
 	}
 
+	// Source-configuration validation rejects a malformed entry with ArgumentException, which the activation
+	// filter must treat as unusable settings rather than let escape every knowledge entry point. Only the
+	// configuration read is wrapped: an argument-validation bug raised anywhere else in the refresh still
+	// propagates instead of being reported as invalid configuration.
+	private KnowledgeConfiguration ReadConfiguration() {
+		try {
+			return _configurationProvider.GetCurrent();
+		} catch (ArgumentException exception) {
+			throw new InvalidDataException(exception.Message, exception);
+		}
+	}
+
 	private void RefreshConfiguredSources() {
-		KnowledgeConfiguration configuration = _configurationProvider.GetCurrent();
+		KnowledgeConfiguration configuration = ReadConfiguration();
 		if (!TopicPinsEqual(_observedTopicPins, configuration.TopicPins)) {
 			_runtime.SetTopicPins(configuration.TopicPins);
 			_observedTopicPins = new Dictionary<string, string>(configuration.TopicPins, StringComparer.Ordinal);
@@ -314,7 +326,11 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 				or UnauthorizedAccessException
 				or InvalidDataException
 				or InvalidOperationException
+				or ArgumentException
 				or TimeoutException) {
+			// ArgumentException is listed because the locked read revalidates the source configuration and the
+			// repository path, so a rejection degrades this one alias instead of the whole refresh. This matches
+			// the filter KnowledgeSourceManagementService.InspectRepositoryCheckout uses over the same calls.
 			HandleGitFailure(alias, source, $"git:{source.LibraryId}:error", diagnostics,
 				$"Git knowledge source '{alias}' could not be refreshed: {exception.Message}");
 		}

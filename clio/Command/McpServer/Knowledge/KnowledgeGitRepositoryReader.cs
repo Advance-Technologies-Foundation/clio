@@ -293,7 +293,16 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 		&& value.Length <= 512
 		&& !value.Contains("..", StringComparison.Ordinal)
 		&& !value.Contains('\\')
-		&& !value.StartsWith("/", StringComparison.Ordinal);
+		&& !value.StartsWith("/", StringComparison.Ordinal)
+		&& HasOnlyNamedSegments(value);
+
+	// A "." or empty segment disappears when the declared path is resolved, so two source paths that
+	// differ only by such a segment pass the uniqueness guard and still open the same repository file.
+	// The uniqueness guard runs before any root is known and therefore cannot normalize; rejecting the
+	// droppable segments here is what keeps the declared string and the resolved file one-to-one.
+	private static bool HasOnlyNamedSegments(string value) =>
+		value.Split('/').All(segment =>
+			segment.Length > 0 && !string.Equals(segment, ".", StringComparison.Ordinal));
 
 	private static bool IsCompatible(KnowledgeGitRepositoryVersionRange range, Version current) {
 		if (!TryParseExactVersion(range.Min, out Version? min)

@@ -185,6 +185,45 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 	}
 
 	[Test]
+	[Description("Repairing the active generation keeps the generation behind it as the rollback target instead of the generation being replaced.")]
+	public void Publish_ShouldKeepPriorGenerationAsRollback_WhenRepairingActiveGeneration() {
+		// Arrange
+		byte[] firstBundle = Bundle(("article.md", "first"));
+		byte[] secondBundle = Bundle(("article.md", "second"));
+		Publish("alpha", "com.example.alpha", 1, firstBundle);
+		KnowledgeSourceGenerationPointer first = _store.ReadCurrent("alpha", out _)!.Active;
+		KnowledgeInstallationResult advanced = _store.Publish(
+			"alpha", "com.example.alpha", "1.0.0", 2, "nuget", "https://feed.invalid/v3/index.json",
+			"1.0.2", secondBundle, isUpdate: true, first);
+		KnowledgeSourceGenerationPointer second = _store.ReadCurrent("alpha", out _)!.Active;
+
+		// Act
+		KnowledgeInstallationResult repaired = _store.Publish(
+			"alpha", "com.example.alpha", "1.0.0", 2, "nuget", "https://feed.invalid/v3/index.json",
+			"1.0.2", secondBundle, isUpdate: true, second, allowRepair: true);
+		KnowledgeSourceCurrentState? current = _store.ReadCurrent("alpha", out string? diagnostic);
+
+		// Assert
+		advanced.Status.Should().Be(KnowledgeInstallationStatus.Updated,
+			because: "the repair must act on a second generation, not on the freshly installed first one");
+		second.RelativePath.Should().NotBe(first.RelativePath,
+			because: "the arranged history needs two distinct generations before a repair can be meaningful");
+		repaired.Status.Should().Be(KnowledgeInstallationStatus.Updated,
+			because: "an explicitly allowed repair must replace the damaged active generation");
+		diagnostic.Should().BeNull(because: "a completed repair must leave a readable activation marker");
+		current!.Active.RelativePath.Should().Contain("-repair-",
+			because: "the scenario must reach the in-place repair branch rather than an ordinary forward update");
+		current.Active.RelativePath.Should().NotBe(second.RelativePath,
+			because: "the repair must materialize fresh content rather than reuse the generation it replaces");
+		current.Previous.Should().Be(first,
+			because: "a repair replaces the active generation in place, so the rollback target must stay the one behind it");
+		Directory.Exists(GenerationPath("alpha", first)).Should().BeTrue(
+			because: "the retained rollback generation must survive pruning after a repair");
+		Directory.Exists(GenerationPath("alpha", second)).Should().BeFalse(
+			because: "the replaced generation is what the repair distrusts and must never become the rollback target");
+	}
+
+	[Test]
 	[Description("Retains the library sequence high-water mark after cache deletion and alias changes so signed rollbacks cannot be reinstalled as fresh content.")]
 	public void Publish_ShouldRejectLibraryRollback_WhenSourceCacheWasDeletedAndAliasChanged() {
 		// Arrange
@@ -482,6 +521,11 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		bundle,
 		isUpdate: false,
 		expectedActive: null);
+
+	private string GenerationPath(string alias, KnowledgeSourceGenerationPointer pointer) {
+		string sourceRoot = Path.GetDirectoryName(_store.GetGitRepositoryPath(alias, createSourceRoot: false))!;
+		return Path.Combine(sourceRoot, pointer.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+	}
 
 	private static byte[] Bundle(params (string Path, string Text)[] entries) {
 		using MemoryStream output = new();

@@ -212,6 +212,37 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 			because: "hiding a gated example is normal filtering rather than a catalog failure");
 	}
 
+	[TestCase("schemaVersion: 0", "schemaVersion: [not valid")]
+	[TestCase("workspace: workspace", "workspace: ../escape")]
+	[Description("Applies the required-feature gate before parsing and validation, so a hidden catalog item never leaks its identity through a diagnostic.")]
+	public void List_ShouldNotDiagnoseCatalogItem_WhenGatedItemIsAlsoInvalid(string search, string replacement) {
+		// Arrange
+		KnowledgeRoleArticle valid = Article("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, "kafka", "Kafka reference", "kafka", "published", "esq", 'a');
+		KnowledgeRoleArticle ungated = RoleArticle("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, "example-kafka",
+			valid.Article.Text.Replace(search, replacement, StringComparison.Ordinal));
+		KnowledgeRoleArticle gated = ungated with {
+			Article = ungated.Article with { RequiredFeatures = ["process-designer"] }
+		};
+
+		// Act
+		_runtime.GetArticlesByRole(KnowledgeReferenceExampleService.ReferenceExampleRole).Returns([ungated]);
+		KnowledgeReferenceExampleListResult control = _service.List(new(null, null, null, null));
+		_runtime.GetArticlesByRole(KnowledgeReferenceExampleService.ReferenceExampleRole).Returns([gated]);
+		KnowledgeReferenceExampleListResult result = _service.List(new(null, null, null, null));
+
+		// Assert
+		control.Diagnostics.Should().ContainSingle(message => message.Contains("example-kafka", StringComparison.Ordinal),
+			because: "the very same content diagnoses itself while ungated, so the gated expectations below cannot pass vacuously");
+		result.Diagnostics.Should().BeEmpty(
+			because: "the required-feature gate runs before parsing and validation, so a hidden item cannot leak its identity through a diagnostic");
+		result.Examples.Should().BeEmpty(
+			because: "a gated catalog item must stay invisible whether or not its content is well formed");
+		result.Success.Should().BeTrue(
+			because: "hiding a gated item is normal filtering and must not report the catalog as degraded");
+	}
+
 	[Test]
 	[Description("Surfaces a feature-gated reference example once its required feature toggle is enabled.")]
 	public void List_ShouldReturnCatalogItem_WhenRequiredFeatureIsEnabled() {

@@ -96,10 +96,9 @@ public sealed class KnowledgeReferenceExampleToolE2ETests : McpContractFixtureBa
 		AssertResultContains(serialized, _package.ReferenceExampleRevision,
 			"agents need the immutable revision before deciding whether to clone the example");
 		AssertTransportWasNotContacted(completedTransportRequests, _fixture.Feed.CompletedRequests.Count);
-		AssertResultExcludes(serialized, SyntheticKnowledgeNuGetFixture.GatedReferenceExampleId,
-			"an example whose requiredFeatures are not enabled must not reach the agent, the same gate guidance articles get");
-		AssertResultExcludes(serialized, SyntheticKnowledgeNuGetFixture.GatedReferenceExampleFeature,
-			"a hidden example must not leak its gate through diagnostics either");
+		// The feature gate is asserted by the test below instead of here: this call filters on
+		// 'native-library-lifecycle', which the gated fixture entry does not declare, so the capability
+		// filter would withhold that entry even with the gate removed.
 	}
 
 	[Test]

@@ -228,6 +228,119 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 	}
 
 	[Test]
+	[Description("A malformed source entry in the live settings file degrades the runtime with a diagnostic instead of throwing out of activation.")]
+	public void EnsureActivated_ShouldDegradeAndReport_WhenLiveConfigurationIsInvalid() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string settingsPath = TestFileSystem.GetRootedPath("clio", "appsettings.json");
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.AppSettingsFilePath.Returns(settingsPath);
+		fileSystem.AddFile(settingsPath, new MockFileData(InvalidLibraryIdSettingsJson()));
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
+		services.AddSingleton(Substitute.For<IKnowledgeSourceInstallationStore>());
+		services.AddSingleton(settingsRepository);
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		Action activation = activator.EnsureActivated;
+
+		// Assert
+		activation.Should().NotThrow(
+			because: "a rejected source entry must degrade the knowledge runtime instead of failing every knowledge entry point");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.Deactivate)).Should().Be(1,
+			because: "configuration that fails validation must fail closed rather than serve an unvalidated source set");
+		activator.LastDiagnostic.Should().Contain("lowercase reverse-DNS",
+			because: "operators need the validator's own reason for the rejected source entry");
+	}
+
+	[Test]
+	[Description("A Git source whose installed checkout validation rejects its configuration degrades only that library while another configured source still activates.")]
+	public void EnsureActivated_ShouldIsolateInvalidGitSource_WhenAnotherSourceIsHealthy() {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		KnowledgeSourceCurrentState betaState = State("beta", "com.example.beta", 2);
+		store.ReadCurrent("beta", out Arg.Any<string?>()).Returns(call => {
+			call[1] = null;
+			return betaState;
+		});
+		store.TryReadCandidate(
+			"beta",
+			betaState.Active,
+			out Arg.Any<InstalledKnowledgeSourceCandidate?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			call[2] = new InstalledKnowledgeSourceCandidate(
+				betaState.Active,
+				Path.Combine(Path.GetTempPath(), "knowledge", "beta"),
+				[1, 2, 3]);
+			call[3] = null;
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		transport
+			.When(instance => instance.ValidateInstalledCheckout(
+				Arg.Any<KnowledgeSourceConfiguration>(),
+				repositoryPath))
+			.Do(_ => KnowledgeSourceConfigurationValidator.ValidateAndClone(UnsafeGitSource()));
+		runtime.ActivateLibrary(
+			"beta", 50, KnowledgeSourceParticipation.Authoritative, Arg.Any<Stream>(), "1.0.0",
+			"com.example.beta", Arg.Any<string?>()).Returns(Activated(2));
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(
+			("partner", GitSource("com.example.partner", 100)),
+			("beta", Source("com.example.beta", priority: 50))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		Action activation = activator.EnsureActivated;
+
+		// Assert
+		activation.Should().NotThrow(
+			because: "a rejected Git source configuration must degrade that source instead of failing the whole refresh");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(1,
+			because: "the rejected Git source must fail closed without changing another library");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateLibrary), "beta").Should().Be(1,
+			because: "a healthy source must remain independently activatable behind a rejected one");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.Deactivate)).Should().Be(0,
+			because: "one source-level configuration rejection must not clear the entire multi-source runtime");
+		activator.LastDiagnostic.Should().Contain("complete SHA-1",
+			because: "the isolated source rejection must stay visible to operators");
+	}
+
+	[Test]
 	[Description("One corrupt source marker deactivates only that library while another configured source still activates.")]
 	public void EnsureActivated_ShouldIsolateMarkerFailure_WhenAnotherSourceIsHealthy() {
 		// Arrange
@@ -712,6 +825,16 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		Participation = KnowledgeSourceParticipation.Authoritative
 	};
 
+	private static KnowledgeSourceConfiguration UnsafeGitSource() => new() {
+		LibraryId = "com.example.partner",
+		Type = KnowledgeSourceType.Git,
+		Location = "https://github.com/example/knowledge.git",
+		Commit = "not-a-complete-object-id",
+		Enabled = true,
+		Priority = 100,
+		Participation = KnowledgeSourceParticipation.Authoritative
+	};
+
 	private static IKnowledgeRepositoryTransport GitTransport() {
 		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
 		transport.Type.Returns(KnowledgeSourceType.Git);
@@ -770,6 +893,30 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		        "trusted-public-key-path": "{{publicKeyPath}}",
 		        "package-id": "Example.Knowledge",
 		        "enabled": {{enabled.ToString().ToLowerInvariant()}},
+		        "priority": 10,
+		        "participation": "supplement"
+		      }
+		    },
+		    "topic-pins": {}
+		  }
+		}
+		""";
+	}
+
+	private static string InvalidLibraryIdSettingsJson() {
+		string publicKeyPath = TestFileSystem.GetRootedPath("keys", "partner-public.pem").Replace('\\', '/');
+		return $$"""
+		{
+		  "knowledge": {
+		    "sources": {
+		      "partner": {
+		        "library-id": "Com.Example.Partner",
+		        "type": "nuget",
+		        "location": "https://feed.invalid/v3/index.json",
+		        "trusted-key-id": "partner-signing-2026",
+		        "trusted-public-key-path": "{{publicKeyPath}}",
+		        "package-id": "Example.Knowledge",
+		        "enabled": true,
 		        "priority": 10,
 		        "participation": "supplement"
 		      }

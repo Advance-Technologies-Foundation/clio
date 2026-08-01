@@ -142,6 +142,99 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			because: "the first lifecycle operation must publish as an install for alpha only");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Install and update refuse an explicitly requested disabled source instead of reviving its kill switch.")]
+	public void Lifecycle_ShouldRefuseDisabledSource_WhenAliasIsRequestedExplicitly(bool update) {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("beta", Source("com.example.beta", enabled: false))));
+		ConfigureCurrent(_ => null);
+		_transport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(new KnowledgeTransportResult(
+			KnowledgeTransportStatus.NoCandidate,
+			null,
+			null,
+			null));
+
+		// Act
+		KnowledgeSourceBatchResult result = update
+			? _service.Update("beta")
+			: _service.Install("beta");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an explicit alias must not override the kill switch for a lifecycle operation");
+		result.Message.Should().Contain("disabled",
+			because: "the operator needs to learn that the source is disabled rather than broken");
+		result.Sources.Should().BeEmpty(
+			because: "a refused selection must not report per-source lifecycle work that never ran");
+		_transport.DidNotReceiveWithAnyArgs().Retrieve(default!);
+	}
+
+	[Test]
+	[Description("Bulk deletion skips a disabled source so its retained cache survives an all-source delete.")]
+	public void Delete_ShouldSkipDisabledSource_WhenAliasIsOmitted() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("alpha", Source("com.example.alpha", enabled: true)),
+			("beta", Source("com.example.beta", enabled: false))));
+		_store.Delete(Arg.Any<string>(), Arg.Any<bool>()).Returns(new KnowledgeInstallationResult(
+			KnowledgeInstallationStatus.Deleted,
+			"deleted"));
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Delete(sourceAlias: null, confirmed: true);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "deleting the enabled source succeeded");
+		result.Sources.Should().ContainSingle(because: "only the enabled source may be processed")
+			.Which.SourceAlias.Should().Be("alpha",
+				because: "an all-source delete acts on enabled sources only");
+		_store.Received(1).Delete("alpha", true);
+		_store.DidNotReceive().Delete("beta", Arg.Any<bool>());
+	}
+
+	[Test]
+	[Description("Deletion of an explicitly requested disabled source still removes its installed cache.")]
+	public void Delete_ShouldRemoveDisabledSource_WhenAliasIsRequestedExplicitly() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("beta", Source("com.example.beta", enabled: false))));
+		_store.Delete(Arg.Any<string>(), Arg.Any<bool>()).Returns(new KnowledgeInstallationResult(
+			KnowledgeInstallationStatus.Deleted,
+			"deleted"));
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Delete("beta", confirmed: true);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "reclaiming the cache of a disabled source is exactly what an explicit delete is for");
+		result.Sources.Should().ContainSingle(because: "exactly the requested source may be processed")
+			.Which.SourceAlias.Should().Be("beta",
+				because: "the explicitly requested disabled source must be the one that was processed");
+		_store.Received(1).Delete("beta", true);
+	}
+
+	[Test]
+	[Description("All-source information reports a disabled source with its disabled state instead of omitting it.")]
+	public void GetInfo_ShouldReportDisabledSource_WhenAliasIsOmitted() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("alpha", Source("com.example.alpha", enabled: true)),
+			("beta", Source("com.example.beta", enabled: false))));
+		ConfigureCurrent(_ => null);
+
+		// Act
+		KnowledgeSourceInfoResult result = _service.GetInfo(sourceAlias: null, checkUpdates: false);
+
+		// Assert
+		result.Sources.Select(source => source.Alias).Should().Equal(["alpha", "beta"],
+			because: "information is a report: a disabled source stays visible with its retained cache");
+		result.Sources.Single(source => source.Alias == "beta").Enabled.Should().BeFalse(
+			because: "the report must state that the visible source is disabled rather than hide it");
+	}
+
 	[Test]
 	[Description("Updating an installed source passes its active revision and pointer through transport and compare-and-swap publication.")]
 	public void Update_ShouldUseActiveRevisionAndExpectedPointer_WhenSourceIsInstalled() {

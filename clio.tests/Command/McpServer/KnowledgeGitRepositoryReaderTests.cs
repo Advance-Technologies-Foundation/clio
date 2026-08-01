@@ -301,6 +301,29 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 		diagnostic.Should().Contain("reparse point", because: "the trust-boundary violation should be explicit");
 	}
 
+	[TestCase("guidance/./sample-0.md")]
+	[TestCase("guidance//sample-0.md")]
+	[Description("Two source paths that differ only by a segment the path resolver drops must not publish one repository file under two identities.")]
+	public void TryRead_ShouldRejectRepository_WhenSourcePathsResolveToTheSameFile(string aliasedSourcePath) {
+		// Arrange
+		JObject manifest = ValidManifest(resourceCount: 2);
+		manifest["resources"]![1]!["sourcePath"] = aliasedSourcePath;
+		WriteResource("guidance/sample-0.md", "shared");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = _sut.TryRead(_repositoryPath, LibraryId, out KnowledgeGitRepositorySnapshot? snapshot,
+			out string? diagnostic);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the declared source path must stay in one-to-one correspondence with the file it opens");
+		snapshot.Should().BeNull(
+			because: "one repository file must never be published under two item identities");
+		diagnostic.Should().Contain("invalid descriptor",
+			because: "a path spelled with a droppable segment is a producer contract violation, not a read failure");
+	}
+
 	private JObject ValidManifest(int resourceCount = 1) {
 		JArray resources = [];
 		JArray itemIds = [];
