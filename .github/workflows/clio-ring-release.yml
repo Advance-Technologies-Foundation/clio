@@ -47,15 +47,19 @@ jobs:
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
+      # nuget.config lists the internal Nexus feed, which a GitHub-hosted runner cannot reach.
+      # With TreatWarningsAsErrors that unreachable vulnerability endpoint fails restore (NU1900)
+      # before anything runs. Every Ring dependency is public on nuget.org, so only the audit
+      # needed the internal feed. Verified on windows-latest by the clio-ring AOT gate workflow.
       - name: Test Ring
-        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
+        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release -p:NuGetAudit=false
 
       - name: Publish NativeAOT
         shell: pwsh
         run: |
           dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
             -c Release -r $env:RID --self-contained true -p:PublishAot=true `
-            -p:ClioRingVersion=${{ steps.version.outputs.value }} `
+            -p:ClioRingVersion=${{ steps.version.outputs.value }} -p:NuGetAudit=false `
             -o artifacts/publish
 
       - name: Package and create manifest
@@ -89,7 +93,16 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             throw "Immutable clio-ring release '$tag' already exists. Choose a new version."
           }
-          gh release create $tag artifacts/*.zip artifacts/*.sha256 artifacts/clio-ring-manifest.json `
+          # PowerShell does not expand wildcards in arguments to native commands, and gh does
+          # not expand them itself, so a literal "artifacts/*.zip" would reach gh as a filename.
+          # Resolve the assets here and fail loudly if packaging produced nothing.
+          $assets = @(Get-ChildItem -Path artifacts -File |
+            Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*.sha256' -or $_.Name -eq 'clio-ring-manifest.json' } |
+            ForEach-Object { $_.FullName })
+          if ($assets.Count -lt 3) {
+            throw "Expected the archive, its checksum and the manifest; found $($assets.Count): $($assets -join ', ')"
+          }
+          gh release create $tag @assets `
             --title "clio-ring ${{ steps.version.outputs.value }}" `
             --notes "Internal preview. No telemetry. This POC may be removed."
 
