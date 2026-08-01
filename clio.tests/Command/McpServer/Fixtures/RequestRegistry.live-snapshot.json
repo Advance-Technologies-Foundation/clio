@@ -71,6 +71,44 @@
 			}
 		},
 		{
+			"requestType": "crt.LoadDataRequest",
+			"parameters": {
+				"config": {
+					"type": "JsonObject",
+					"description": "Load options for the single-source load path (`dataSourceName`) - for example the load type and whether the previous load parameters are reused. Not part of the refresh scenario: when `refreshDataConfig` is present the platform reloads through it and never reads this key. The Designer nevertheless stamps a constant `{ \"loadType\": \"Reload\" }` into every saved refresh binding, so tolerate that key when reading an existing page and do not author it on a new refresh button."
+				},
+				"dataSourceName": {
+					"type": "string",
+					"description": "Name of a single page data source to load, as declared in the page's `modelConfig` - the programmatic/advanced load path. Ignored when `refreshDataConfig` is set; with neither parameter present the request loads nothing."
+				},
+				"parameters": {
+					"type": "array",
+					"items": {
+						"type": "ModelParameterConfig"
+					},
+					"description": "Data-source parameters (record filters, primary-column values) applied to the single-source load selected by `dataSourceName`. Programmatic/advanced - the refresh scenario reloads each data source with its own last load parameters instead."
+				},
+				"primaryDisplayFilterValue": {
+					"type": "string",
+					"description": "Text added to the single-source load as a primary-display-value filter, for search-style loads over `dataSourceName`. Programmatic/advanced; unused by the refresh scenario."
+				},
+				"refreshDataConfig": {
+					"type": "RefreshDataConfig",
+					"description": "Refresh scenario for the page's data sources, and the only parameter a \"Refresh data\" button needs. Its presence makes this request a page refresh: the platform reloads data sources according to `mode`, and the single-source parameters (`dataSourceName`, `config`, `parameters`, `primaryDisplayFilterValue`) no longer apply. The Designer's default is `{ \"mode\": \"RefreshAll\" }`."
+				},
+				"showSuccessMessage": {
+					"type": "boolean",
+					"description": "Whether a \"Data has been refreshed\" message is shown once every requested data source, and the data sources depending on them, have finished loading. NOT opt-in on a button: when a `crt.Button` `clicked` binding carries a `params` object without this key, the platform sets it to `true` at page init, so a refresh button shows the message unless `false` is authored explicitly. Bindings on other view elements (a `crt.MenuItem`, for example) are not defaulted and stay silent when the key is absent."
+				}
+			},
+			"description": "Reloads page data: either refreshes the page's data sources as a group (`refreshDataConfig`) or loads one named data source (`dataSourceName`). Bound to a button or menu item `clicked` wired to the Designer's \"Refresh data\" action, which authors the group refresh; the single-source form is programmatic/advanced and is not what that action produces.",
+			"references": {
+				"docs": [
+					"request-docs/load-data.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.OpenPageRequest",
 			"parameters": {
 				"modelInitConfigs": {
@@ -710,6 +748,33 @@
 						"type": "unknown",
 						"required": true,
 						"description": "Parameter value; for \"primaryColumnValue\", the name of the view-model attribute holding the record Id."
+					}
+				}
+			},
+			"RefreshDataConfig": {
+				"fields": {
+					"excludedDataSourceNames": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Names of data sources to leave untouched by a `RefreshAll` refresh. Ignored when `mode` is `RefreshSpecific`."
+					},
+					"mode": {
+						"type": "string",
+						"values": [
+							"RefreshAll",
+							"RefreshSpecific"
+						],
+						"required": true,
+						"description": "Which data sources the refresh covers. `RefreshAll` reloads every data source of the page that does not depend on another data source - a dependent source is reloaded as a consequence of the source it depends on, never on its own - skipping dynamic data sources and the names listed in `excludedDataSourceNames`. `RefreshSpecific` reloads only the data sources named in `targetDataSourceNames`, which must then hold at least one name - an empty list raises an error and nothing is reloaded."
+					},
+					"targetDataSourceNames": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Names of the data sources to reload when `mode` is `RefreshSpecific`; at least one name is required in that mode, and an empty list raises an error instead of reloading anything. A named data source that depends on another name in the same list is dropped, because reloading the one it depends on already reloads it. Ignored when `mode` is `RefreshAll`."
 					}
 				}
 			},
