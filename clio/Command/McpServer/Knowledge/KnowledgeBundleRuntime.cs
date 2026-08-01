@@ -194,9 +194,12 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	private KnowledgeBundleActivationResult ActivateLibraryCore(
 		LibraryActivationRequest request,
 		Stream candidate) {
-		// Report the public parameter name rather than the inferred "request.SourceAlias", so callers of
-		// ActivateLibrary still see the argument they actually passed.
-		ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceAlias, "sourceAlias");
+		// Thrown explicitly rather than via ThrowIfNullOrWhiteSpace: the helper would infer
+		// "request.SourceAlias" from the call site, but callers of ActivateLibrary pass a plain
+		// sourceAlias and must see that name back.
+		if (string.IsNullOrWhiteSpace(request.SourceAlias)) {
+			throw new ArgumentException("Source alias must be a non-empty value.", "sourceAlias");
+		}
 		ArgumentNullException.ThrowIfNull(candidate);
 		lock (_activationLock) {
 			try {

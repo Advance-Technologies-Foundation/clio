@@ -283,11 +283,10 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 		string gitPrefix = _fileSystem.Path.GetFullPath(gitDirectory).TrimEnd(
 			_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar)
 			+ _fileSystem.Path.DirectorySeparatorChar;
-		return referencePath.StartsWith(gitPrefix, OperatingSystem.IsWindows()
-				? StringComparison.OrdinalIgnoreCase
-				: StringComparison.Ordinal)
-			? referencePath
-			: null;
+		StringComparison pathComparison = OperatingSystem.IsWindows()
+			? StringComparison.OrdinalIgnoreCase
+			: StringComparison.Ordinal;
+		return referencePath.StartsWith(gitPrefix, pathComparison) ? referencePath : null;
 	}
 
 	private string? ResolvePackedRevision(string gitDirectory, string reference) {
