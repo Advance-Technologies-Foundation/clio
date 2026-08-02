@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guidance без релізу — clio MCP</title>
+<style>
+  /* Minimal reset: the deck is authored to sit flush against the viewport. */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #EFF2F1; }
+  @media (prefers-color-scheme: dark) { body { background: #0B1211; } }
+  img, svg { max-width: 100%; }
+</style>
+</head>
+<body>
+
+<style>
+  :root {
+    --paper:      #EFF2F1;
+    --surface:    #F7F9F8;
+    --ink:        #0F1A18;
+    --ink-soft:   #3B4A47;
+    --muted:      #6E7D79;
+    --hair:       #CBD5D1;
+    --accent:     #0D6E63;
+    --accent-dim: #0D6E6314;
+    --rust:       #9E4E24;
+    --rust-dim:   #9E4E2414;
+    --shadow:     0 1px 2px rgba(15,26,24,.06), 0 8px 28px rgba(15,26,24,.06);
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --step--1: clamp(.72rem, .68rem + .18vw, .8rem);
+    --step-0:  clamp(.95rem, .9rem + .25vw, 1.06rem);
+    --step-1:  clamp(1.12rem, 1.02rem + .5vw, 1.35rem);
+    --step-2:  clamp(1.5rem, 1.25rem + 1.1vw, 2.1rem);
+    --step-3:  clamp(2rem, 1.5rem + 2.4vw, 3.4rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:      #0B1211;
+      --surface:    #131E1C;
+      --ink:        #E6EEEB;
+      --ink-soft:   #B3C3BF;
+      --muted:      #7E908C;
+      --hair:       #263533;
+      --accent:     #35A99B;
+      --accent-dim: #35A99B1F;
+      --rust:       #D08248;
+      --rust-dim:   #D082481F;
+      --shadow:     0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0B1211;
+    --surface:    #131E1C;
+    --ink:        #E6EEEB;
+    --ink-soft:   #B3C3BF;
+    --muted:      #7E908C;
+    --hair:       #263533;
+    --accent:     #35A99B;
+    --accent-dim: #35A99B1F;
+    --rust:       #D08248;
+    --rust-dim:   #D082481F;
+    --shadow:     0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  :root[data-theme="light"] {
+    --paper:      #EFF2F1;
+    --surface:    #F7F9F8;
+    --ink:        #0F1A18;
+    --ink-soft:   #3B4A47;
+    --muted:      #6E7D79;
+    --hair:       #CBD5D1;
+    --accent:     #0D6E63;
+    --accent-dim: #0D6E6314;
+    --rust:       #9E4E24;
+    --rust-dim:   #9E4E2414;
+    --shadow:     0 1px 2px rgba(15,26,24,.06), 0 8px 28px rgba(15,26,24,.06);
+  }
+
+  .deck {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .deck *, .deck *::before, .deck *::after { box-sizing: border-box; }
+
+  /* ---------- chrome ---------- */
+
+  .rail {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .7rem clamp(1rem, 4vw, 3.5rem);
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .rail__mark {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .rail__track {
+    flex: 1;
+    height: 2px;
+    background: var(--hair);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rail__fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--accent);
+    width: 0;
+    transition: width .35s cubic-bezier(.4,0,.2,1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rail__fill { transition: none; }
+  }
+
+  .rail__count {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .rail__nav { display: flex; gap: .35rem; }
+
+  .rail__btn {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    line-height: 1;
+    padding: .45rem .6rem;
+    border: 1px solid var(--hair);
+    background: var(--surface);
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+
+  .rail__btn:hover { border-color: var(--accent); color: var(--accent); }
+  .rail__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- slides ---------- */
+
+  .stage {
+    flex: 1;
+    display: grid;
+    padding: clamp(1.5rem, 4vw, 3.5rem);
+    padding-bottom: clamp(3rem, 6vw, 5rem);
+  }
+
+  .slide {
+    grid-area: 1 / 1;
+    max-width: 74rem;
+    width: 100%;
+    margin-inline: auto;
+    align-self: center;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity .3s ease, transform .3s ease, visibility 0s .3s;
+  }
+
+  .slide[data-active="true"] {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    transition: opacity .3s ease, transform .3s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide { transition: none; transform: none; }
+    .slide[data-active="true"] { transition: none; }
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: baseline;
+    gap: .8rem;
+    margin-bottom: 1.1rem;
+  }
+
+  .eyebrow b { color: var(--accent); font-weight: 500; }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: var(--step-3);
+    font-weight: 600;
+    letter-spacing: -.035em;
+    line-height: 1.02;
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    font-weight: 600;
+    letter-spacing: -.025em;
+    line-height: 1.1;
+    margin-bottom: 1.3rem;
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: var(--step-0);
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin-bottom: .35rem;
+  }
+
+  .lede {
+    font-size: var(--step-1);
+    color: var(--ink-soft);
+    max-width: 40ch;
+    line-height: 1.5;
+  }
+
+  p { margin: 0 0 .9rem; max-width: 66ch; }
+  p:last-child { margin-bottom: 0; }
+
+  .cols {
+    display: grid;
+    gap: clamp(1.2rem, 3vw, 2.4rem);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    align-items: start;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: 3px;
+    padding: 1.1rem 1.25rem;
+    box-shadow: var(--shadow);
+  }
+
+  .card p { font-size: var(--step-0); color: var(--ink-soft); }
+
+  /* ---------- code / diff ---------- */
+
+  .code {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    line-height: 1.75;
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: 3px;
+    overflow-x: auto;
+    padding: .9rem 0;
+  }
+
+  .code div {
+    padding: 0 1rem 0 2.2rem;
+    position: relative;
+    white-space: pre;
+  }
+
+  .code div::before {
+    position: absolute;
+    left: .85rem;
+    color: var(--muted);
+  }
+
+  .code .del { background: var(--rust-dim); color: var(--rust); }
+  .code .del::before { content: "−"; }
+  .code .add { background: var(--accent-dim); color: var(--accent); }
+  .code .add::before { content: "+"; }
+  .code .ctx { color: var(--muted); }
+
+  .cmd {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-left: 2px solid var(--accent);
+    border-radius: 2px;
+    padding: .55rem .8rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink);
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: .92em;
+    background: var(--accent-dim);
+    color: var(--accent);
+    padding: .08em .32em;
+    border-radius: 2px;
+  }
+
+  /* ---------- flow diagram ---------- */
+
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: .6rem;
+    align-items: stretch;
+  }
+
+  .flow__node {
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-top: 2px solid var(--accent);
+    border-radius: 3px;
+    padding: .9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+  }
+
+  .flow__node span {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .flow__node strong { font-family: var(--mono); font-weight: 600; letter-spacing: -.01em; }
+  .flow__node p { font-size: var(--step--1); color: var(--ink-soft); margin: 0; }
+
+  /* ---------- data list ---------- */
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    gap: 1px;
+    background: var(--hair);
+    border: 1px solid var(--hair);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .facts > div {
+    background: var(--surface);
+    padding: .9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+  }
+
+  .facts dt, .facts .k {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .facts .v {
+    font-family: var(--mono);
+    font-size: var(--step-1);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    color: var(--accent);
+  }
+
+  /* ---------- qa ---------- */
+
+  .qa { display: grid; gap: 1.1rem; }
+
+  .qa__item {
+    border-left: 2px solid var(--hair);
+    padding-left: 1rem;
+  }
+
+  .qa__item h3 { color: var(--ink); }
+  .qa__item p { color: var(--ink-soft); font-size: var(--step-0); margin: 0; }
+  .qa__item:hover { border-left-color: var(--accent); }
+
+  /* ---------- lists ---------- */
+
+  ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+
+  ul.plain li {
+    padding-left: 1.4rem;
+    position: relative;
+    color: var(--ink-soft);
+    max-width: 64ch;
+  }
+
+  ul.plain li::before {
+    content: "";
+    position: absolute;
+    left: .25rem;
+    top: .62em;
+    width: .42rem;
+    height: .42rem;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  ul.plain li b { color: var(--ink); font-weight: 600; }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: .16em .5em;
+    border-radius: 2px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+
+  .tag--open {
+    background: var(--rust-dim);
+    color: var(--rust);
+    border-color: color-mix(in srgb, var(--rust) 30%, transparent);
+  }
+
+  /* ---------- table ---------- */
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--hair); border-radius: 3px; }
+
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; background: var(--surface); }
+
+  th, td { text-align: left; padding: .65rem .9rem; border-bottom: 1px solid var(--hair); vertical-align: top; }
+
+  th {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  td { font-size: var(--step-0); color: var(--ink-soft); }
+  td:first-child { color: var(--ink); }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  /* ---------- dots ---------- */
+
+  .dots {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: .9rem;
+    display: flex;
+    gap: .35rem;
+    padding: .4rem .6rem;
+    background: color-mix(in srgb, var(--paper) 85%, transparent);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--hair);
+    border-radius: 999px;
+    z-index: 20;
+  }
+
+  .dots button {
+    width: .5rem;
+    height: .5rem;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--muted);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .dots button[aria-current="true"] { background: var(--accent); border-color: var(--accent); }
+  .dots button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .hint {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    color: var(--muted);
+    margin-top: 2rem;
+  }
+
+  .kbd {
+    font-family: var(--mono);
+    border: 1px solid var(--hair);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: .05em .35em;
+    color: var(--ink-soft);
+  }
+</style>
+
+<div class="deck">
+  <header class="rail">
+    <div class="rail__mark">clio · knowledge</div>
+    <div class="rail__track"><div class="rail__fill" id="fill"></div></div>
+    <div class="rail__count"><span id="cur">1</span>/<span id="total">12</span></div>
+    <nav class="rail__nav" aria-label="Навігація слайдами">
+      <button class="rail__btn" id="prev" type="button" aria-label="Попередній слайд">←</button>
+      <button class="rail__btn" id="next" type="button" aria-label="Наступний слайд">→</button>
+    </nav>
+  </header>
+
+  <main class="stage" id="stage">
+
+    <!-- 1 -->
+    <section class="slide" data-active="true" aria-label="Титул">
+      <div class="eyebrow"><b>ENG-94583</b> <span>clio · PR #927</span></div>
+      <h1>Guidance<br>без релізу</h1>
+      <p class="lede" style="margin-top:1.4rem">
+        Статті guidance для clio MCP більше не живуть у C#. Вони переїхали в окремий репозиторій
+        <code>clio-knowledge</code>, звідки clio забирає їх, перевіряє й активує у рантаймі.
+      </p>
+      <div class="facts" style="margin-top:2.2rem">
+        <div><span class="k">Ресурсів перенесено</span><span class="v">114</span></div>
+        <div><span class="k">C#-класів вилучено</span><span class="v">68</span></div>
+        <div><span class="k">Активна генерація</span><span class="v">1.9.0 · 11</span></div>
+        <div><span class="k">Реліз clio для правки</span><span class="v">не&nbsp;потрібен</span></div>
+      </div>
+      <p class="hint">Гортати: <span class="kbd">→</span> <span class="kbd">←</span> або <span class="kbd">Space</span></p>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide" aria-label="Проблема">
+      <div class="eyebrow"><b>01</b> <span>Що було не так</span></div>
+      <h2>Текст був кодом</h2>
+      <div class="cols">
+        <div>
+          <p>
+            Кожна стаття guidance була окремим C#-класом у <code>Command/McpServer/Resources</code>.
+            Змінити один абзац означало пройти повний цикл: PR у clio → рев'ю → мерж → реліз →
+            оновлення clio в усіх користувачів.
+          </p>
+          <p>
+            Наслідок передбачуваний: guidance застаріває швидше, ніж встигає вийти реліз.
+            Текст, який мав вести агента, починав вести його не туди.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Три наслідки</h3>
+          <ul class="plain" style="margin-top:.7rem">
+            <li><b>Затримка.</b> Правка тексту чекала на цикл релізу бінарника.</li>
+            <li><b>Бар'єр.</b> Щоб виправити формулювання, треба було вміти збирати clio.</li>
+            <li><b>Змішування.</b> Тести clio перевіряли контент статей замість механіки доставки.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide" aria-label="Що змінилося">
+      <div class="eyebrow"><b>02</b> <span>Зміна одним рядком diff</span></div>
+      <h2>Код → текст</h2>
+      <div class="code" aria-label="Приклад зміни структури файлів">
+        <div class="ctx">clio/Command/McpServer/Resources/</div>
+        <div class="del">EsqGuidanceResource.cs</div>
+        <div class="del">PageSchemaHandlersResource.cs</div>
+        <div class="del">… ще 66 класів статей</div>
+        <div class="ctx"> </div>
+        <div class="ctx">clio-knowledge/</div>
+        <div class="add">resources/esq.md</div>
+        <div class="add">resources/page-schema-handlers.md</div>
+        <div class="add">bundle-source.json</div>
+      </div>
+      <p style="margin-top:1.3rem">
+        У clio лишилася <b>тільки механіка доставки</b>: транспорти, перевірка, кеш, резолюція імен
+        і публікація ресурсів у MCP. Жодного тексту статей.
+      </p>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide" aria-label="Як це працює">
+      <div class="eyebrow"><b>03</b> <span>Шлях статті до агента</span></div>
+      <h2>Як це працює</h2>
+      <div class="flow">
+        <div class="flow__node">
+          <span>Крок 1</span><strong>clio-knowledge</strong>
+          <p>Markdown + запис у <code>bundle-source.json</code>. Мерж, підйом <code>sequence</code>.</p>
+        </div>
+        <div class="flow__node">
+          <span>Крок 2</span><strong>Транспорт</strong>
+          <p>Git-клон гілки або підписаний NuGet-бандл. Перевірка ref, checkout, меж розміру.</p>
+        </div>
+        <div class="flow__node">
+          <span>Крок 3</span><strong>Перевірка</strong>
+          <p>Ідентичність бібліотеки, дайджест, порядок sequence, захист від replay.</p>
+        </div>
+        <div class="flow__node">
+          <span>Крок 4</span><strong>Активація</strong>
+          <p>Незмінний знімок у пам'яті. Hot reload без рестарту MCP.</p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:1.4rem">
+        <h3>Ідентичність генерації</h3>
+        <p style="margin-top:.4rem">
+          Генерацію визначає трійка <code>libraryId</code> + <code>sequence</code> + <code>bundleDigest</code>.
+          <code>libraryVersion</code> — це лише ярлик видавця, він ні на що не впливає.
+          <b>Один sequence = один незмінний вміст назавжди.</b>
+        </p>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide" aria-label="Вбудоване джерело">
+      <div class="eyebrow"><b>04</b> <span>Що отримує користувач із коробки</span></div>
+      <h2>Вбудоване джерело</h2>
+      <div class="cols">
+        <div>
+          <div class="tablewrap">
+            <table>
+              <tbody>
+                <tr><th scope="row">alias</th><td><code>creatio-curated</code></td></tr>
+                <tr><th scope="row">library</th><td><code>com.creatio.clio</code></td></tr>
+                <tr><th scope="row">транспорт</th><td>git, гілка <code>master</code></td></tr>
+                <tr><th scope="row">пріоритет</th><td>100 · authoritative</td></tr>
+                <tr><th scope="row">бюджет старту</th><td>5 секунд, наскрізний</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <ul class="plain">
+            <li><b>Самовідновлення.</b> Джерело не можна видалити — якщо запис зник із налаштувань, наступний старт його поверне.</li>
+            <li><b>Kill switch.</b> Вимкнення переживає рестарти й апгрейди.</li>
+            <li><b>Обмежений старт.</b> Не вклалися в бюджет — MCP стартує без curated-джерела і каже, як довстановити, замість того щоб висіти.</li>
+          </ul>
+          <div class="cmd" style="margin-top:1rem">clio disable-knowledge-source --alias creatio-curated</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide" aria-label="Кілька джерел">
+      <div class="eyebrow"><b>05</b> <span>Не одне джерело, а набір</span></div>
+      <h2>Multi-source</h2>
+      <p>
+        Партнер, команда чи замовник можуть підключити власну бібліотеку зі своїм
+        <code>libraryId</code>. Коли дві бібліотеки описують один топік, переможець визначається
+        детерміновано.
+      </p>
+      <div class="cols" style="margin-top:1.3rem">
+        <div class="card">
+          <h3>Порядок вирішення</h3>
+          <ul class="plain" style="margin-top:.7rem">
+            <li><b>requiredFeatures</b> — недоступні статті відсіюються першими</li>
+            <li><b>topic pin</b> — явний вибір оператора</li>
+            <li><b>participation</b> — authoritative б'є supplement</li>
+            <li><b>priority</b> — числовий пріоритет</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Чому порядок саме такий</h3>
+          <p style="margin-top:.4rem">
+            Раніше фільтр за прапорцями стояв <b>після</b> вибору: gated-стаття вигравала за
+            пріоритетом і потім перетворювалася на «не знайдено», ховаючи доступну альтернативу.
+            Тепер вона вибуває до вибору й не може створити ні фальшивої нічиї, ні порожньої
+            відповіді.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide" aria-label="Робочий процес">
+      <div class="eyebrow"><b>06</b> <span>Що це означає для вас</span></div>
+      <h2>Новий робочий процес</h2>
+      <div class="cols">
+        <div>
+          <h3 style="margin-bottom:.7rem">Змінити текст статті</h3>
+          <ul class="plain">
+            <li>PR у <code>clio-knowledge</code>: правка <code>.md</code> + підйом <code>sequence</code></li>
+            <li>Мерж — паритет і дайджест перевіряє CI того репозиторію</li>
+            <li>Користувачі бачать зміну на наступному старті MCP або по <code>update-knowledge</code></li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="margin-bottom:.7rem">Змінити команду <em>і</em> її опис</h3>
+          <ul class="plain">
+            <li>Спочатку guidance — додавання зворотно сумісне</li>
+            <li>Потім зміна в clio</li>
+            <li>Якщо треба сховати статтю до релізу — <code>requiredFeatures</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="cmd" style="margin-top:1.4rem">clio update-knowledge --source creatio-curated
+clio get-knowledge-info   # active: com.creatio.clio · sequence 11 · digest 89F42CD6…</div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide" aria-label="Ціна підходу">
+      <div class="eyebrow"><b>07</b> <span>Чесно про компроміси</span></div>
+      <h2>Що ми віддали</h2>
+      <div class="cols">
+        <div class="card">
+          <h3>Немає атомарного мержу</h3>
+          <p style="margin-top:.4rem">
+            Зміна команди та її опису тепер у двох репозиторіях і не може змерджитись однією дією.
+            Лікується порядком і <code>requiredFeatures</code>, але це реальна ціна.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Дисципліна sequence</h3>
+          <p style="margin-top:.4rem">
+            Перевипуск того самого <code>sequence</code> з іншим вмістом змушує споживача відхилити
+            <b>всю</b> бібліотеку. Ми вже раз на це наступили — тепер це ловить тест у CI.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Довіра до upstream</h3>
+          <p style="margin-top:.4rem">
+            Вбудоване джерело — це рухома гілка, а не незмінна ревізія. Компрометація upstream
+            дорівнює ін'єкції guidance в агентів. <span class="tag tag--open">Відкрите питання</span>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide" aria-label="Стан PR">
+      <div class="eyebrow"><b>08</b> <span>Де ми зараз</span></div>
+      <h2>Стан PR #927</h2>
+      <div class="facts" style="margin-bottom:1.4rem">
+        <div><span class="k">CI</span><span class="v">зелений</span></div>
+        <div><span class="k">SonarCloud</span><span class="v">0</span></div>
+        <div><span class="k">Юніт-тестів</span><span class="v">8&nbsp;000</span></div>
+        <div><span class="k">Файлів у diff</span><span class="v">188</span></div>
+      </div>
+      <div class="cols">
+        <div>
+          <h3 style="margin-bottom:.7rem">Закрито за рев'ю</h3>
+          <ul class="plain">
+            <li>Feature-gating перенесено всередину резолюції</li>
+            <li>Каталог ресурсів резолвиться раз на знімок замість щосторінки</li>
+            <li>Наскрізний бюджет старту замість «5 с на кожну фазу»</li>
+            <li>Guard росту каталогу покрито тестом із живим процесом</li>
+            <li>Аудит вразливостей увімкнено назад через <code>&lt;auditSources&gt;</code></li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="margin-bottom:.7rem">Свідомо відкрите</h3>
+          <ul class="plain">
+            <li><b>Довіра до вбудованого джерела</b> — продуктове рішення, не технічне</li>
+            <li><b>Real-process E2E для git-транспорту</b> — потребує нової фікстури, окрема зміна</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide" aria-label="Що тестуємо далі">
+      <div class="eyebrow"><b>09</b> <span>Перед закриттям</span></div>
+      <h2>Що ще перевіряємо</h2>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Сценарій</th><th scope="col">Чому саме він</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Git-транспорт наживо</td>
+              <td>Юніти підміняють запуск процесів — реальні квотинг, refs і активація не перевірені на межі</td>
+            </tr>
+            <tr>
+              <td>Апгрейд зі старої clio</td>
+              <td>На дисках лежить попередній checkout <code>creatio-poc</code>; міграція жодного разу не виконувалась на реальній машині</td>
+            </tr>
+            <tr>
+              <td>Холодний старт без мережі</td>
+              <td>Типізована відповідь «guidance недоступна» в межах бюджету — шлях, який ми щойно змінили</td>
+            </tr>
+            <tr>
+              <td>Кілька MCP на один CLIO_HOME</td>
+              <td>VS Code + CLI одночасно; поведінка під конкуренцією локів змінилася</td>
+            </tr>
+            <tr>
+              <td>Друге реальне джерело</td>
+              <td>Пріоритет, pin і feature-gating ніхто ще не ганяв на двох живих бібліотеках</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide" aria-label="Питання і відповіді, частина 1">
+      <div class="eyebrow"><b>10</b> <span>Питання · 1 з 2</span></div>
+      <h2>Що зазвичай питають</h2>
+      <div class="cols">
+        <div class="qa">
+          <div class="qa__item">
+            <h3>Де тепер редагувати статтю?</h3>
+            <p>У <code>clio-knowledge</code>: сам Markdown і запис у <code>bundle-source.json</code>. C#-класів статей у clio більше немає.</p>
+          </div>
+          <div class="qa__item">
+            <h3>Треба релізити clio, щоб змінити текст?</h3>
+            <p>Ні. Мерж у clio-knowledge, підйом sequence — і зміна доїде сама.</p>
+          </div>
+          <div class="qa__item">
+            <h3>Що замість <code>[FeatureToggle]</code>?</h3>
+            <p>Поле <code>requiredFeatures</code> у маніфесті. Стаття з вимкненим прапорцем не резолвиться і не потрапляє в списки.</p>
+          </div>
+        </div>
+        <div class="qa">
+          <div class="qa__item">
+            <h3>Потрібна мережа?</h3>
+            <p>Лише для першого клону й оновлень. Далі все з диска. Без мережі MCP стартує і чесно каже, що guidance недоступна.</p>
+          </div>
+          <div class="qa__item">
+            <h3>А закритий контур без GitHub?</h3>
+            <p>NuGet-транспорт із підписаними бандлами і довірою за публічним ключем P-256.</p>
+          </div>
+          <div class="qa__item">
+            <h3>Старі посилання <code>docs://mcp/guides/…</code> зламаються?</h3>
+            <p>Ні. Вони збережені як <code>legacyUris</code> — 110 таких маршрутів перевірено на живому стенді.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section class="slide" aria-label="Питання і відповіді, частина 2">
+      <div class="eyebrow"><b>11</b> <span>Питання · 2 з 2</span></div>
+      <h2>І ще шість</h2>
+      <div class="cols">
+        <div class="qa">
+          <div class="qa__item">
+            <h3>Старт MCP став повільнішим?</h3>
+            <p>Верхня межа — 5 секунд, і тепер вона справжня: один бюджет на міграцію, інспекцію та інсталяцію разом, а не на кожну фазу окремо.</p>
+          </div>
+          <div class="qa__item">
+            <h3>Як відкотити погану статтю?</h3>
+            <p>Правкою з <b>новим</b> sequence. Не перевипускайте старий з іншим вмістом — споживач відхилить усю бібліотеку.</p>
+          </div>
+          <div class="qa__item">
+            <h3>Як зрозуміти, що активне саме моє?</h3>
+            <p><code>get-knowledge-info</code> показує libraryId, sequence, digest і шлях кешу.</p>
+          </div>
+        </div>
+        <div class="qa">
+          <div class="qa__item">
+            <h3>Це чіпає документацію компонентів із CDN?</h3>
+            <p>Ні, <code>get-component-info</code> лишився без змін.</p>
+          </div>
+          <div class="qa__item">
+            <h3>Що як видалити джерело з appsettings?</h3>
+            <p>Вбудоване повернеться на наступному старті. Прибрати можна лише вимкненням — воно переживає апгрейди.</p>
+          </div>
+          <div class="qa__item">
+            <h3>У clio лишилися тести на текст статей?</h3>
+            <p>Ні, і навмисно. clio тестує механіку на синтетичних знаннях; твердження про контент живуть у clio-knowledge.</p>
+          </div>
+        </div>
+      </div>
+      <p class="hint">
+        Деталі — стаття «Guidance without a release» у Confluence та PR&nbsp;#927.
+      </p>
+    </section>
+
+  </main>
+
+  <nav class="dots" id="dots" aria-label="Перейти до слайда"></nav>
+</div>
+
+<script>
+  (function () {
+    const stage = document.getElementById('stage');
+    const slides = Array.from(stage.querySelectorAll('.slide'));
+    const dotsHost = document.getElementById('dots');
+    const fill = document.getElementById('fill');
+    const cur = document.getElementById('cur');
+    const total = document.getElementById('total');
+    let index = 0;
+
+    total.textContent = String(slides.length);
+
+    slides.forEach(function (slide, i) {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.setAttribute('aria-label', 'Слайд ' + (i + 1));
+      dot.addEventListener('click', function () { go(i); });
+      dotsHost.appendChild(dot);
+    });
+
+    const dots = Array.from(dotsHost.children);
+
+    function go(next) {
+      index = Math.max(0, Math.min(slides.length - 1, next));
+      slides.forEach(function (slide, i) {
+        const active = i === index;
+        slide.dataset.active = active ? 'true' : 'false';
+        slide.setAttribute('aria-hidden', active ? 'false' : 'true');
+      });
+      dots.forEach(function (dot, i) {
+        dot.setAttribute('aria-current', i === index ? 'true' : 'false');
+      });
+      cur.textContent = String(index + 1);
+      fill.style.width = ((index + 1) / slides.length * 100) + '%';
+    }
+
+    document.getElementById('next').addEventListener('click', function () { go(index + 1); });
+    document.getElementById('prev').addEventListener('click', function () { go(index - 1); });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.metaKey || event.ctrlKey || event.altKey) { return; }
+      const key = event.key;
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ') {
+        event.preventDefault();
+        go(index + 1);
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        event.preventDefault();
+        go(index - 1);
+      } else if (key === 'Home') {
+        event.preventDefault();
+        go(0);
+      } else if (key === 'End') {
+        event.preventDefault();
+        go(slides.length - 1);
+      }
+    });
+
+    go(0);
+  })();
+</script>
+</body>
+</html>
