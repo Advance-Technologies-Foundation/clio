@@ -336,18 +336,20 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		}
 	}
 
-	public KnowledgeArticleLookup Find(string name) {
+	public object SnapshotToken => Volatile.Read(ref _active);
+
+	public KnowledgeArticleLookup Find(string name, Func<KnowledgeArticle, bool>? isEligible = null) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
 		ActiveKnowledgeSet active = Volatile.Read(ref _active);
 		if (active.Libraries.Count == 0) {
 			return new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.Unavailable, null, null);
 		}
-		return _resolver.Find(name, active.Libraries, active.TopicPins);
+		return _resolver.Find(name, active.Libraries, active.TopicPins, isEligible);
 	}
 
-	public IReadOnlyList<string> GetNames() {
+	public IReadOnlyList<string> GetNames(Func<KnowledgeArticle, bool>? isEligible = null) {
 		ActiveKnowledgeSet active = Volatile.Read(ref _active);
-		return _resolver.GetNames(active.Libraries);
+		return _resolver.GetNames(active.Libraries, isEligible);
 	}
 
 	public IReadOnlyList<KnowledgeRoleArticle> GetArticlesByRole(string role) {

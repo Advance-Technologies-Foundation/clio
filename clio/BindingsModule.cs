@@ -590,6 +590,7 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<KnowledgeManagementTools>();
+		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
 		services.AddSingleton<IKnowledgeBundleTrustStore, ConfiguredKnowledgeBundleTrustStore>();
 		services.AddSingleton<IKnowledgeTrustFingerprintService, KnowledgeTrustFingerprintService>();
 		services.AddHttpClient(KnowledgeBundleNuGetClient.HttpClientName)

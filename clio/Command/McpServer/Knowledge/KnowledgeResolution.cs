@@ -31,43 +31,73 @@ internal sealed record KnowledgeLibrarySnapshot(
 	IReadOnlyList<KnowledgeArticle> Articles);
 
 internal interface IKnowledgeResolver {
+	/// <summary>
+	/// Resolves an identifier to a single active article.
+	/// </summary>
+	/// <param name="identifier">A namespaced URI, a legacy URI, a topic id, or an item id.</param>
+	/// <param name="libraries">The currently active libraries.</param>
+	/// <param name="topicPins">The configured topic pins.</param>
+	/// <param name="isEligible">
+	/// An optional caller-supplied eligibility predicate — feature gating, for instance. Ineligible
+	/// articles are discarded <em>before</em> canonical-topic determination, pin selection, priority
+	/// selection, and ambiguity detection, so a gated article can neither win over an eligible
+	/// lower-priority article nor create a false tie. Exact namespaced lookups never fall through:
+	/// an ineligible exact match resolves to not-found rather than to another library's article.
+	/// </param>
+	/// <returns>The lookup outcome.</returns>
 	KnowledgeArticleLookup Find(
 		string identifier,
 		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
-		IReadOnlyDictionary<string, string> topicPins);
+		IReadOnlyDictionary<string, string> topicPins,
+		Func<KnowledgeArticle, bool>? isEligible = null);
 
-	IReadOnlyList<string> GetNames(IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries);
+	/// <summary>
+	/// Lists the resolvable guidance names.
+	/// </summary>
+	/// <param name="libraries">The currently active libraries.</param>
+	/// <param name="isEligible">The optional eligibility predicate; see <see cref="Find"/>.</param>
+	/// <returns>The distinct, ordered set of names.</returns>
+	IReadOnlyList<string> GetNames(
+		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
+		Func<KnowledgeArticle, bool>? isEligible = null);
 }
 
 internal sealed class KnowledgeResolver : IKnowledgeResolver {
 	internal const string NamespacedUriPrefix = "docs://knowledge/";
 
+	/// <summary>Accepts every article; used when the caller supplies no eligibility predicate.</summary>
+	private static readonly Func<KnowledgeArticle, bool> AlwaysEligible = _ => true;
+
 	public KnowledgeArticleLookup Find(
 		string identifier,
 		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
-		IReadOnlyDictionary<string, string> topicPins) {
+		IReadOnlyDictionary<string, string> topicPins,
+		Func<KnowledgeArticle, bool>? isEligible = null) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
 		ArgumentNullException.ThrowIfNull(libraries);
 		ArgumentNullException.ThrowIfNull(topicPins);
+		Func<KnowledgeArticle, bool> eligible = isEligible ?? AlwaysEligible;
 
 		if (TryParseNamespacedUri(identifier, out string? libraryId, out string? itemId)) {
-			return FindExact(libraryId, itemId, libraries);
+			return FindExact(libraryId, itemId, libraries, eligible);
 		}
-		KnowledgeArticleLookup legacy = FindLegacyUri(identifier, libraries);
+		KnowledgeArticleLookup legacy = FindLegacyUri(identifier, libraries, eligible);
 		if (legacy.Status != KnowledgeArticleLookupStatus.NotFound) {
 			return legacy;
 		}
 
-		return FindTopic(identifier, libraries, topicPins);
+		return FindTopic(identifier, libraries, topicPins, eligible);
 	}
 
 	private static KnowledgeArticleLookup FindLegacyUri(
 		string identifier,
-		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries) {
+		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
+		Func<KnowledgeArticle, bool> isEligible) {
 		(KnowledgeLibrarySnapshot Library, KnowledgeArticle Article)[] matches = libraries
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles
-				.Where(article => article.LegacyUris?.Contains(identifier, StringComparer.Ordinal) == true)
+				.Where(article => article.LegacyUris?.Contains(identifier, StringComparer.Ordinal) == true
+					&& isEligible(article))
 				.Select(article => (Library: library, Article: article)))
 			.ToArray();
 		return matches.Length switch {
@@ -82,12 +112,16 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 		};
 	}
 
-	public IReadOnlyList<string> GetNames(IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries) {
+	public IReadOnlyList<string> GetNames(
+		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
+		Func<KnowledgeArticle, bool>? isEligible = null) {
 		ArgumentNullException.ThrowIfNull(libraries);
+		Func<KnowledgeArticle, bool> eligible = isEligible ?? AlwaysEligible;
 		return libraries
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles)
-			.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal))
+			.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal)
+				&& eligible(article))
 			.SelectMany(article => new[] { article.ItemId, article.TopicId })
 			.Where(identifier => !string.IsNullOrWhiteSpace(identifier))
 			.Distinct(StringComparer.Ordinal)
@@ -98,7 +132,8 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 	private static KnowledgeArticleLookup FindExact(
 		string libraryId,
 		string itemId,
-		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries) {
+		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
+		Func<KnowledgeArticle, bool> isEligible) {
 		KnowledgeLibrarySnapshot? library = libraries.SingleOrDefault(candidate =>
 			string.Equals(candidate.LibraryId, libraryId, StringComparison.Ordinal));
 		if (library is null) {
@@ -106,19 +141,23 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 		}
 		KnowledgeArticle? article = library.Articles.SingleOrDefault(candidate =>
 			string.Equals(candidate.ItemId, itemId, StringComparison.Ordinal));
-		return article is null ? NotFound(library.Sequence) : Active(article, library);
+		// An ineligible exact match is not-found, never a fall-through to another library: the
+		// namespaced URI names one article, so substituting a different one would be a lie.
+		return article is null || !isEligible(article) ? NotFound(library.Sequence) : Active(article, library);
 	}
 
 	private static KnowledgeArticleLookup FindTopic(
 		string identifier,
 		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries,
-		IReadOnlyDictionary<string, string> topicPins) {
+		IReadOnlyDictionary<string, string> topicPins,
+		Func<KnowledgeArticle, bool> isEligible) {
 		(KnowledgeLibrarySnapshot Library, KnowledgeArticle Article)[] namedArticles = libraries
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles
 				.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal)
 					&& (string.Equals(article.TopicId, identifier, StringComparison.Ordinal)
-						|| string.Equals(article.ItemId, identifier, StringComparison.Ordinal)))
+						|| string.Equals(article.ItemId, identifier, StringComparison.Ordinal))
+					&& isEligible(article))
 				.Select(article => (library, article)))
 			.ToArray();
 		if (namedArticles.Length == 0) {
@@ -141,7 +180,8 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles
 				.Where(article => string.Equals(article.Role, KnowledgeArticle.DefaultRole, StringComparison.Ordinal)
-					&& string.Equals(article.TopicId, canonicalTopic, StringComparison.Ordinal))
+					&& string.Equals(article.TopicId, canonicalTopic, StringComparison.Ordinal)
+					&& isEligible(article))
 				.Select(article => (library, article)))
 			.ToArray();
 		string[] duplicateLibraries = matches

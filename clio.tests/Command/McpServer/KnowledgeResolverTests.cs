@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.McpServer.Knowledge;
 using FluentAssertions;
 using NUnit.Framework;
@@ -237,6 +238,120 @@ public sealed class KnowledgeResolverTests {
 		result.Diagnostic.Should().Contain("Use a namespaced knowledge URI",
 			because: "the operator needs a deterministic collision escape hatch");
 	}
+
+	[Test]
+	[Description("An eligible lower-priority article wins when the higher-priority candidate is feature-gated.")]
+	public void Find_ShouldSelectEligibleLowerPriorityArticle_WhenHighestPriorityCandidateIsGated() {
+		// Arrange
+		KnowledgeArticle gated = GatedArticle("esq", "partner-esq", "process-designer");
+		KnowledgeLibrarySnapshot partner = Library("partner", "com.example.partner", 500,
+			KnowledgeSourceParticipation.Authoritative, gated);
+		KnowledgeLibrarySnapshot creatio = Library("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, Article("esq", "creatio-esq"));
+
+		// Act
+		KnowledgeArticleLookup result = _resolver.Find("esq", [partner, creatio],
+			new Dictionary<string, string>(), IsEligible);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
+			because: "a gated winner must not collapse the lookup to not-found while an eligible article exists");
+		result.Provenance!.LibraryId.Should().Be("com.creatio.clio",
+			because: "eligibility must be applied before priority selection, not to the already-selected winner");
+	}
+
+	[Test]
+	[Description("A feature-gated candidate does not create an ambiguous tie against an eligible article.")]
+	public void Find_ShouldNotReportAmbiguity_WhenTheCompetingCandidateIsGated() {
+		// Arrange
+		KnowledgeLibrarySnapshot gatedLibrary = Library("partner", "com.example.partner", 100,
+			KnowledgeSourceParticipation.Authoritative, GatedArticle("esq", "partner-esq", "process-designer"));
+		KnowledgeLibrarySnapshot eligibleLibrary = Library("creatio", "com.creatio.clio", 100,
+			KnowledgeSourceParticipation.Authoritative, Article("esq", "creatio-esq"));
+
+		// Act
+		KnowledgeArticleLookup result = _resolver.Find("esq", [gatedLibrary, eligibleLibrary],
+			new Dictionary<string, string>(), IsEligible);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
+			because: "an article the host cannot serve must not make an otherwise unambiguous topic ambiguous");
+		result.Provenance!.LibraryId.Should().Be("com.creatio.clio",
+			because: "the single eligible candidate is the deterministic winner at equal priority");
+	}
+
+	[Test]
+	[Description("A topic pinned to a library whose only article is feature-gated reports the pin as unusable.")]
+	public void Find_ShouldReportUnusablePin_WhenThePinnedLibraryArticleIsGated() {
+		// Arrange
+		KnowledgeLibrarySnapshot gatedLibrary = Library("partner", "com.example.partner", 100,
+			KnowledgeSourceParticipation.Authoritative, GatedArticle("esq", "partner-esq", "process-designer"));
+		KnowledgeLibrarySnapshot eligibleLibrary = Library("creatio", "com.creatio.clio", 10,
+			KnowledgeSourceParticipation.Authoritative, Article("esq", "creatio-esq"));
+		Dictionary<string, string> pins = new() { ["esq"] = "com.example.partner" };
+
+		// Act
+		KnowledgeArticleLookup result = _resolver.Find("esq", [gatedLibrary, eligibleLibrary], pins, IsEligible);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeArticleLookupStatus.Ambiguous,
+			because: "an explicit operator pin to an ineligible library must be reported, not silently redirected");
+		result.Diagnostic.Should().Contain("com.example.partner",
+			because: "the operator needs to know which pin cannot be honoured");
+	}
+
+	[Test]
+	[Description("An exact namespaced route to a feature-gated article resolves to not-found without falling through.")]
+	public void Find_ShouldReturnNotFound_WhenTheExactlyAddressedArticleIsGated() {
+		// Arrange
+		KnowledgeLibrarySnapshot partner = Library("partner", "com.example.partner", 100,
+			KnowledgeSourceParticipation.Authoritative, GatedArticle("esq", "partner-esq", "process-designer"));
+		KnowledgeLibrarySnapshot creatio = Library("creatio", "com.creatio.clio", 500,
+			KnowledgeSourceParticipation.Authoritative, Article("esq", "creatio-esq"));
+
+		// Act
+		KnowledgeArticleLookup result = _resolver.Find(
+			"docs://knowledge/com.example.partner/partner-esq", [partner, creatio],
+			new Dictionary<string, string>(), IsEligible);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound,
+			because: "a namespaced URI names one article, so an ineligible one is absent rather than substituted");
+		result.Provenance.Should().BeNull(
+			because: "exact routes must never fall through to another library's article");
+	}
+
+	[Test]
+	[Description("Feature-gated articles are absent from the resolvable name list.")]
+	public void GetNames_ShouldOmitGatedArticles_WhenAnEligibilityPredicateIsSupplied() {
+		// Arrange
+		KnowledgeLibrarySnapshot library = new("partner", "com.example.partner", 100,
+			KnowledgeSourceParticipation.Authoritative, 7, "synthetic-digest",
+			[Article("esq", "creatio-esq"), GatedArticle("designer", "partner-designer", "process-designer")]);
+
+		// Act
+		IReadOnlyList<string> names = _resolver.GetNames([library], IsEligible);
+
+		// Assert
+		names.Should().Contain("creatio-esq",
+			because: "eligible guidance stays listed");
+		names.Should().NotContain(name => name.Contains("designer"),
+			because: "a name the host cannot serve must not be advertised as resolvable");
+	}
+
+	/// <summary>Treats every article that requires the synthetic disabled feature as ineligible.</summary>
+	private static bool IsEligible(KnowledgeArticle article) =>
+		article.RequiredFeatures?.Contains("process-designer") != true;
+
+	private static KnowledgeArticle GatedArticle(string topicId, string itemId, string requiredFeature) =>
+		new(
+			topicId,
+			$"docs://knowledge/example/{itemId}",
+			$"# {itemId}",
+			ItemId: itemId,
+			TopicId: topicId,
+			LocalPath: $"resources/{itemId}.md",
+			RequiredFeatures: [requiredFeature]);
 
 	private static KnowledgeLibrarySnapshot Library(
 		string alias,

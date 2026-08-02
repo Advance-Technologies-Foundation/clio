@@ -38,13 +38,37 @@ internal interface IKnowledgeBundleRuntime {
 
 	void SetTopicPins(IReadOnlyDictionary<string, string> topicPins);
 
-	KnowledgeArticleLookup Find(string name);
+	/// <summary>
+	/// Resolves a name or URI against the active knowledge set.
+	/// </summary>
+	/// <param name="name">A namespaced URI, a legacy URI, a topic id, or an item id.</param>
+	/// <param name="isEligible">
+	/// An optional eligibility predicate applied before priority, pin, and ambiguity resolution.
+	/// See <see cref="IKnowledgeResolver.Find"/> for the exact ordering guarantee.
+	/// </param>
+	/// <returns>The lookup outcome.</returns>
+	KnowledgeArticleLookup Find(string name, Func<KnowledgeArticle, bool>? isEligible = null);
 
-	IReadOnlyList<string> GetNames();
+	/// <summary>
+	/// Lists the resolvable guidance names.
+	/// </summary>
+	/// <param name="isEligible">The optional eligibility predicate; see <see cref="Find"/>.</param>
+	/// <returns>The distinct, ordered set of names.</returns>
+	IReadOnlyList<string> GetNames(Func<KnowledgeArticle, bool>? isEligible = null);
 
 	IReadOnlyList<KnowledgeRoleArticle> GetArticlesByRole(string role);
 
 	ulong? ActiveSequence { get; }
+
+	/// <summary>
+	/// An opaque token identifying the currently active knowledge set.
+	/// </summary>
+	/// <remarks>
+	/// Callers that cache anything derived from the active set compare this token by reference and
+	/// rebuild when it differs. It is the identity of the active set itself, which every mutation
+	/// replaces wholesale, so a new write path cannot forget to invalidate dependent caches.
+	/// </remarks>
+	object SnapshotToken { get; }
 }
 
 internal sealed record KnowledgeBundleValidationResult(
@@ -63,11 +87,21 @@ internal interface IKnowledgeBundleTrustStore {
 	bool TryGetPublicKeyPem(string libraryId, string keyId, out string publicKeyPem);
 }
 
+/// <summary>
+/// The environment-variable trust store, as its own contract.
+/// </summary>
+/// <remarks>
+/// It is a distinct interface rather than a second <see cref="IKnowledgeBundleTrustStore"/>
+/// registration so that the configured store can depend on the legacy store without the
+/// registration becoming ambiguous, and so that tests can substitute one without the other.
+/// </remarks>
+internal interface IEnvironmentKnowledgeBundleTrustStore : IKnowledgeBundleTrustStore;
+
 internal interface IKnowledgeTrustFingerprintService {
 	bool TryGetFingerprint(string trustedPublicKeyPath, out string fingerprint);
 }
 
-internal sealed class EnvironmentKnowledgeBundleTrustStore : IKnowledgeBundleTrustStore {
+internal sealed class EnvironmentKnowledgeBundleTrustStore : IEnvironmentKnowledgeBundleTrustStore {
 	private const int MaxPublicKeyBytes = 16 * 1024;
 	private const string P256Oid = "1.2.840.10045.3.1.7";
 	internal const string KeyIdVariable = "CLIO_KNOWLEDGE_TRUSTED_KEY_ID";
@@ -229,11 +263,14 @@ internal sealed class KnowledgeTrustFingerprintService : IKnowledgeTrustFingerpr
 
 internal sealed class ConfiguredKnowledgeBundleTrustStore : IKnowledgeBundleTrustStore {
 	private readonly IKnowledgeRuntimeConfigurationProvider _configurationProvider;
-	private readonly EnvironmentKnowledgeBundleTrustStore _legacyTrustStore = new();
+	private readonly IEnvironmentKnowledgeBundleTrustStore _legacyTrustStore;
 
-	public ConfiguredKnowledgeBundleTrustStore(IKnowledgeRuntimeConfigurationProvider configurationProvider) {
+	public ConfiguredKnowledgeBundleTrustStore(
+		IKnowledgeRuntimeConfigurationProvider configurationProvider,
+		IEnvironmentKnowledgeBundleTrustStore legacyTrustStore) {
 		_configurationProvider = configurationProvider
 			?? throw new ArgumentNullException(nameof(configurationProvider));
+		_legacyTrustStore = legacyTrustStore ?? throw new ArgumentNullException(nameof(legacyTrustStore));
 	}
 
 	public bool TryGetPublicKeyPem(string keyId, out string publicKeyPem) =>
@@ -338,13 +375,17 @@ internal sealed class UnavailableKnowledgeBundleRuntime : IKnowledgeBundleRuntim
 	public void SetTopicPins(IReadOnlyDictionary<string, string> topicPins) {
 	}
 
-	public KnowledgeArticleLookup Find(string name) =>
+	public KnowledgeArticleLookup Find(string name, Func<KnowledgeArticle, bool>? isEligible = null) =>
 		new(KnowledgeArticleLookupStatus.Unavailable, null, null);
 
-	public IReadOnlyList<string> GetNames() => Array.Empty<string>();
+	public IReadOnlyList<string> GetNames(Func<KnowledgeArticle, bool>? isEligible = null) =>
+		Array.Empty<string>();
 
 	public IReadOnlyList<KnowledgeRoleArticle> GetArticlesByRole(string role) =>
 		Array.Empty<KnowledgeRoleArticle>();
+
+	// A single shared token: nothing ever activates here, so every caller's cache stays valid.
+	public object SnapshotToken { get; } = new();
 }
 
 internal sealed record KnowledgeBundleClientCapabilities(

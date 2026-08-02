@@ -22,7 +22,7 @@ public sealed class KnowledgeResourceDiscoveryFilterTests {
 	public async Task AppendKnowledgeResources_ShouldExposeActiveCatalog_WhenResourcesAreListed() {
 		// Arrange
 		IKnowledgeGuidanceSource source = Substitute.For<IKnowledgeGuidanceSource>();
-		source.GetCatalog().Returns([
+		source.GetDiscoveryCatalog().Returns([
 			new KnowledgeGuidanceDescriptor(
 				"synthetic-guide",
 				"Synthetic guide",
@@ -67,7 +67,7 @@ public sealed class KnowledgeResourceDiscoveryFilterTests {
 		// Arrange
 		IKnowledgeGuidanceSource source = Substitute.For<IKnowledgeGuidanceSource>();
 		int catalogCalls = 0;
-		source.GetCatalog().Returns(_ => {
+		source.GetDiscoveryCatalog().Returns(_ => {
 			catalogCalls++;
 			return [];
 		});
@@ -98,7 +98,7 @@ public sealed class KnowledgeResourceDiscoveryFilterTests {
 	public async Task AppendKnowledgeResources_ShouldStartDynamicPage_WhenSdkCursorReachesFinalStaticPage() {
 		// Arrange
 		IKnowledgeGuidanceSource source = Substitute.For<IKnowledgeGuidanceSource>();
-		source.GetCatalog().Returns([CreateDescriptor(0)]);
+		source.GetDiscoveryCatalog().Returns([CreateDescriptor(0)]);
 		using ServiceProvider services = new ServiceCollection().AddSingleton(source).BuildServiceProvider();
 		RequestContext<ListResourcesRequestParams> context = CreateContext(services, "sdk-static-page-2");
 		string? observedCursor = null;
@@ -128,10 +128,15 @@ public sealed class KnowledgeResourceDiscoveryFilterTests {
 	public async Task AppendKnowledgeResources_ShouldPageDynamicCatalog_WhenCatalogExceedsPageSize() {
 		// Arrange
 		IKnowledgeGuidanceSource source = Substitute.For<IKnowledgeGuidanceSource>();
-		source.GetCatalog().Returns(Enumerable.Range(0, KnowledgeResourceDiscoveryFilter.DynamicPageSize + 1)
-			.Reverse()
-			.Select(CreateDescriptor)
-			.ToArray());
+		// The catalog arrives already ordered: ordering is resolved once per active snapshot by the
+		// guidance source, so paging must consume that order rather than re-sort it per request.
+		int catalogReads = 0;
+		source.GetDiscoveryCatalog().Returns(_ => {
+			catalogReads++;
+			return Enumerable.Range(0, KnowledgeResourceDiscoveryFilter.DynamicPageSize + 1)
+				.Select(CreateDescriptor)
+				.ToArray();
+		});
 		using ServiceProvider services = new ServiceCollection().AddSingleton(source).BuildServiceProvider();
 		int sdkCalls = 0;
 		McpRequestHandler<ListResourcesRequestParams, ListResourcesResult> next = (_, _) => {
@@ -152,7 +157,7 @@ public sealed class KnowledgeResourceDiscoveryFilterTests {
 			because: "the final static page is followed by one bounded dynamic page");
 		first.Resources.Skip(1).Select(resource => resource.Name).Should().Equal(
 			Enumerable.Range(0, KnowledgeResourceDiscoveryFilter.DynamicPageSize).Select(index => $"guide-{index:D3}"),
-			because: "dynamic resource order must remain deterministic across source enumeration order");
+			because: "dynamic resource order must remain deterministic across pages");
 		first.NextCursor.Should().Be(
 			$"{KnowledgeResourceDiscoveryFilter.DynamicCursorPrefix}{KnowledgeResourceDiscoveryFilter.DynamicPageSize:D10}",
 			because: "Clio emits a fixed-width private cursor containing the next deterministic offset");
@@ -162,6 +167,8 @@ public sealed class KnowledgeResourceDiscoveryFilterTests {
 			because: "the final dynamic page has no continuation");
 		sdkCalls.Should().Be(1,
 			because: "Clio-owned dynamic cursors must not be passed into the SDK static-resource handler");
+		catalogReads.Should().Be(2,
+			because: "each page reads the resolved catalog exactly once instead of rebuilding it per resource");
 	}
 
 	[Test]

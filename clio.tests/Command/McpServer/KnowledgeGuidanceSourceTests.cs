@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using FluentAssertions;
@@ -27,12 +29,22 @@ public sealed class KnowledgeGuidanceSourceTests {
 			Title: "Process modeling",
 			Description: "Models Creatio processes.",
 			RequiredFeatures: ["process-designer"]);
-		runtime.Find(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
-			KnowledgeArticleLookupStatus.Active,
-			article,
-			4));
-		runtime.GetNames().Returns([article.ItemId, article.TopicId]);
-		runtime.GetArticlesByRole("reference").Returns([]);
+		// The substituted runtime honours the eligibility predicate the source supplies, exactly as the
+		// real resolver does. That is the contract under test: the source must push feature gating
+		// into resolution rather than filtering the winner afterwards.
+		Func<KnowledgeArticle, bool>? resolverPredicate = null;
+		runtime.Find(Arg.Any<string>(), Arg.Any<Func<KnowledgeArticle, bool>?>()).Returns(call => {
+			resolverPredicate = call.ArgAt<Func<KnowledgeArticle, bool>?>(1);
+			return resolverPredicate?.Invoke(article) == false
+				? new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.NotFound, null, 4)
+				: new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.Active, article, 4);
+		});
+		runtime.GetNames(Arg.Any<Func<KnowledgeArticle, bool>?>()).Returns(call =>
+			call.ArgAt<Func<KnowledgeArticle, bool>?>(0)?.Invoke(article) == false
+				? []
+				: new[] { article.ItemId, article.TopicId });
+		runtime.GetArticlesByRole(Arg.Any<string>()).Returns([]);
+		runtime.SnapshotToken.Returns(new object());
 		features.IsFeatureEnabled("process-designer").Returns(false);
 		KnowledgeGuidanceSource source = new(activator, runtime, features);
 
@@ -45,6 +57,10 @@ public sealed class KnowledgeGuidanceSourceTests {
 			because: "disabled experimental surfaces must not advertise guidance for tools the host does not expose");
 		catalog.Should().BeEmpty(
 			because: "resources/list must obey the same publisher-declared feature requirement as get-guidance");
+		resolverPredicate.Should().NotBeNull(
+			because: "eligibility must reach the resolver, not be applied to whatever the resolver already picked");
+		resolverPredicate!(article).Should().BeFalse(
+			because: "the predicate the resolver receives must reject the gated article before priority and pin selection");
 		activator.Received(2).EnsureActivated();
 	}
 
@@ -62,7 +78,7 @@ public sealed class KnowledgeGuidanceSourceTests {
 			ItemId: "process-modeling",
 			TopicId: "creatio.process-modeling",
 			RequiredFeatures: ["process-designer"]);
-		runtime.Find(article.ItemId).Returns(new KnowledgeArticleLookup(
+		runtime.Find(article.ItemId, Arg.Any<Func<KnowledgeArticle, bool>?>()).Returns(new KnowledgeArticleLookup(
 			KnowledgeArticleLookupStatus.Active,
 			article,
 			4));
@@ -116,5 +132,59 @@ public sealed class KnowledgeGuidanceSourceTests {
 			because: "reference fragments must be loaded through resource URIs rather than the guide-name surface");
 		catalog.Should().ContainSingle(item => item.Name == article.ItemId,
 			because: "resources/list must still expose detailed publisher references to agents");
+	}
+
+	[Test]
+	[Description("A maximum-sized catalog is resolved once per active snapshot and re-resolved when the snapshot changes.")]
+	public void GetDiscoveryCatalog_ShouldResolveOncePerSnapshot_WhenPagedRepeatedly() {
+		// Arrange
+		const int catalogSize = 1024;
+		const int pagesOverTheCatalog = 11;
+		IKnowledgeBundleActivator activator = Substitute.For<IKnowledgeBundleActivator>();
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IFeatureToggleService features = Substitute.For<IFeatureToggleService>();
+		KnowledgeArticle[] articles = Enumerable.Range(0, catalogSize)
+			.Select(index => new KnowledgeArticle(
+				$"topic-{index:D4}",
+				$"docs://knowledge/com.example.partner/item-{index:D4}",
+				"# body",
+				ItemId: $"item-{index:D4}",
+				TopicId: $"topic-{index:D4}"))
+			.ToArray();
+		Dictionary<string, KnowledgeArticle> byItemId = articles.ToDictionary(article => article.ItemId);
+		int resolveCalls = 0;
+		object firstSnapshot = new();
+		runtime.SnapshotToken.Returns(_ => firstSnapshot);
+		runtime.GetNames(Arg.Any<Func<KnowledgeArticle, bool>?>())
+			.Returns(_ => articles.Select(article => article.ItemId).ToArray());
+		runtime.Find(Arg.Any<string>(), Arg.Any<Func<KnowledgeArticle, bool>?>()).Returns(call => {
+			resolveCalls++;
+			return new KnowledgeArticleLookup(
+				KnowledgeArticleLookupStatus.Active,
+				byItemId[call.ArgAt<string>(0)],
+				7);
+		});
+		runtime.GetArticlesByRole(Arg.Any<string>()).Returns([]);
+		KnowledgeGuidanceSource source = new(activator, runtime, features);
+
+		// Act
+		IReadOnlyList<KnowledgeGuidanceDescriptor> firstPageView = source.GetDiscoveryCatalog();
+		for (int page = 1; page < pagesOverTheCatalog; page++) {
+			source.GetDiscoveryCatalog();
+		}
+		int callsBeforeSnapshotChange = resolveCalls;
+		object secondSnapshot = new();
+		runtime.SnapshotToken.Returns(_ => secondSnapshot);
+		source.GetDiscoveryCatalog();
+
+		// Assert
+		firstPageView.Should().HaveCount(catalogSize,
+			because: "every active article must remain discoverable through resource listing");
+		firstPageView.Select(article => article.Uri).Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "cursor paging is offset-based, so the catalog order must be stable and deterministic");
+		callsBeforeSnapshotChange.Should().Be(catalogSize,
+			because: "enumerating every page must resolve the catalog once, not once per page");
+		resolveCalls.Should().Be(catalogSize * 2,
+			because: "a new active snapshot must invalidate the cached catalog so fresh content is served");
 	}
 }

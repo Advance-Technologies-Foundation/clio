@@ -60,26 +60,24 @@ internal static class KnowledgeResourceDiscoveryFilter {
 		IKnowledgeGuidanceSource source,
 		int offset,
 		IReadOnlySet<string> existingUris) {
-		KnowledgeGuidanceDescriptor[] catalog = source.GetCatalog()
-			.OrderBy(article => article.Uri, StringComparer.Ordinal)
-			.ThenBy(article => article.Name, StringComparer.Ordinal)
-			.DistinctBy(article => article.Uri, StringComparer.Ordinal)
-			.ToArray();
+		// Already ordered and de-duplicated by URI, and resolved once per active snapshot: paging
+		// must not rebuild or re-sort the catalog on every request.
+		IReadOnlyList<KnowledgeGuidanceDescriptor> catalog = source.GetDiscoveryCatalog();
 		List<Resource> resources = [];
-		int index = Math.Min(offset, catalog.Length);
-		while (index < catalog.Length && resources.Count < DynamicPageSize) {
+		int index = Math.Min(offset, catalog.Count);
+		while (index < catalog.Count && resources.Count < DynamicPageSize) {
 			KnowledgeGuidanceDescriptor article = catalog[index++];
 			if (existingUris.Contains(article.Uri)) {
 				continue;
 			}
 			resources.Add(ToResource(article));
 		}
-		while (index < catalog.Length && existingUris.Contains(catalog[index].Uri)) {
+		while (index < catalog.Count && existingUris.Contains(catalog[index].Uri)) {
 			index++;
 		}
 		return new ListResourcesResult {
 			Resources = resources,
-			NextCursor = index < catalog.Length ? CreateDynamicCursor(index) : null
+			NextCursor = index < catalog.Count ? CreateDynamicCursor(index) : null
 		};
 	}
 
