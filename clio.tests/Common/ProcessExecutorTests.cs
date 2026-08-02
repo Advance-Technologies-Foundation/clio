@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -187,6 +188,82 @@ public class ProcessExecutorTests {
 			because: "a resolved process must not depend on child working-directory or PATH lookup order");
 		File.Exists(resolved).Should().BeTrue(
 			because: "the pinned process path must identify an existing executable file");
+	}
+
+	[Test]
+	[Description("Verifies that a running child which grows the monitored directory past its cap is terminated promptly and reported as a resource-limit failure rather than a timeout.")]
+	public async Task ExecuteAndCaptureAsync_ShouldTerminateRunningChild_WhenItGrowsTheMonitoredDirectoryPastTheLimit() {
+		// Arrange
+		// The pre-launch check only covers a directory that is already oversized. This starts well
+		// under the cap and crosses it while the child is alive and still emitting on both streams,
+		// which is the case an untrusted clone actually produces.
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-growth-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(directory);
+		(string program, string arguments) = GetDirectoryGrowthCommand(directory);
+		ProcessExecutionOptions options = new(program, arguments) {
+			MonitoredDirectory = directory,
+			MaximumMonitoredDirectoryBytes = 1024 * 1024,
+			ResourceMonitorInterval = TimeSpan.FromMilliseconds(50),
+			Timeout = TimeSpan.FromSeconds(25)
+		};
+		Stopwatch elapsed = Stopwatch.StartNew();
+
+		try {
+			// Act
+			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+			elapsed.Stop();
+
+			// Assert
+			result.Started.Should().BeTrue(
+				because: "the child must actually launch for the running-process guard to be under test");
+			result.ResourceLimitExceeded.Should().BeTrue(
+				because: "growth past the cap during execution must be reported as a resource-limit failure");
+			result.TimedOut.Should().BeFalse(
+				because: "the guard must terminate the child on its own rather than leaving the timeout to do it");
+			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15),
+				because: "the child idles far longer than this, so returning early proves it was killed rather than waited out");
+			result.StandardOutput.Should().NotBeNullOrWhiteSpace(
+				because: "the stream readers must complete with the output produced before termination, not hang on the killed child");
+		} finally {
+			TryDeleteDirectory(directory);
+		}
+	}
+
+	/// <summary>
+	/// Builds a child that writes fixed-size chunks into <paramref name="directory"/> while emitting
+	/// on both streams, then idles well past the assertion window so that an early return can only
+	/// mean the resource guard terminated it.
+	/// </summary>
+	/// <param name="directory">The monitored directory the child grows.</param>
+	/// <returns>The program and arguments.</returns>
+	private static (string Program, string Arguments) GetDirectoryGrowthCommand(string directory) {
+		// The launcher is OS-specific because there is no portable way to spawn a shell; the
+		// behaviour under test — prompt termination and resource-limit classification — is not.
+		if (OperatingSystem.IsWindows()) {
+			string commandInterpreter = Environment.GetEnvironmentVariable("ComSpec")
+				?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+			return (
+				commandInterpreter,
+				$"/d /c \"for /L %i in (1,1,400) do @(fsutil file createnew \"{directory}\\chunk-%i.bin\" 131072 >nul"
+				+ " & echo out-%i & echo err-%i 1>&2) & ping -n 31 127.0.0.1 >nul\"");
+		}
+		return (
+			"/bin/sh",
+			$"-c \"i=0; while [ $i -lt 400 ]; do dd if=/dev/zero bs=131072 count=1 2>/dev/null "
+			+ $">>'{directory}/growing.bin'; echo out-$i; echo err-$i 1>&2; i=$((i+1)); done; sleep 30\"");
+	}
+
+	/// <summary>Removes a directory a killed child may still be holding entries in.</summary>
+	/// <param name="directory">The directory to remove.</param>
+	private static void TryDeleteDirectory(string directory) {
+		try {
+			Directory.Delete(directory, recursive: true);
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			// A terminated child can leave a handle open briefly on Windows; the temp directory is
+			// disposable, so failing cleanup must not fail the assertion under test.
+		}
 	}
 
 	private static (string Program, string Arguments) GetDotNetCommand(string arguments) {
