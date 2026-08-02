@@ -516,7 +516,7 @@
   <header class="rail">
     <div class="rail__mark">clio · knowledge</div>
     <div class="rail__track"><div class="rail__fill" id="fill"></div></div>
-    <div class="rail__count"><span id="cur">1</span>/<span id="total">12</span></div>
+    <div class="rail__count"><span id="cur">1</span>/<span id="total">10</span></div>
     <nav class="rail__nav" aria-label="Навігація слайдами">
       <button class="rail__btn" id="prev" type="button" aria-label="Попередній слайд">←</button>
       <button class="rail__btn" id="next" type="button" aria-label="Наступний слайд">→</button>
@@ -527,7 +527,7 @@
 
     <!-- 1 -->
     <section class="slide" data-active="true" aria-label="Титул">
-      <div class="eyebrow"><b>ENG-94583</b> <span>clio · PR #927</span></div>
+      <div class="eyebrow"><b>clio MCP</b> <span>доставка guidance</span></div>
       <h1>Guidance<br>без релізу</h1>
       <p class="lede" style="margin-top:1.4rem">
         Статті guidance для clio MCP більше не живуть у C#. Вони переїхали в окремий репозиторій
@@ -535,8 +535,8 @@
         релізом бібліотеки, не бінарника clio.
       </p>
       <div class="facts" style="margin-top:2.2rem">
-        <div><span class="k">Ресурсів перенесено</span><span class="v">114</span></div>
-        <div><span class="k">C#-класів вилучено</span><span class="v">68</span></div>
+        <div><span class="k">Статей у бібліотеці</span><span class="v">114</span></div>
+        <div><span class="k">Джерел за замовчуванням</span><span class="v">1</span></div>
         <div><span class="k">Активна генерація</span><span class="v">1.9.0 · 11</span></div>
         <div><span class="k">Реліз бінарника clio</span><span class="v">не&nbsp;потрібен</span></div>
       </div>
@@ -739,7 +739,8 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
           <h3>Дисципліна sequence</h3>
           <p style="margin-top:.4rem">
             Перевипуск того самого <code>sequence</code> з іншим вмістом змушує споживача відхилити
-            <b>всю</b> бібліотеку. Ми вже раз на це наступили — тепер це ловить тест у CI.
+            <b>всю</b> бібліотеку. Кожна зміна вмісту — новий <code>libraryVersion</code> і новий
+            <code>sequence</code>; це перевіряє CI clio-knowledge перед мержем.
           </p>
         </div>
         <div class="card">
@@ -758,82 +759,8 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
     </section>
 
     <!-- 9 -->
-    <section class="slide" aria-label="Стан PR">
-      <div class="eyebrow"><b>08</b> <span>Де ми зараз</span></div>
-      <h2>Стан PR #927</h2>
-      <div class="facts" style="margin-bottom:1.4rem">
-        <div><span class="k">CI · Sonar</span><span class="v">зелений · 0</span></div>
-        <div><span class="k">Юніт-тестів</span><span class="v">8&nbsp;000</span></div>
-        <div><span class="k">Файлів у diff</span><span class="v">198</span></div>
-        <div><span class="k">clio-knowledge #34</span><span class="v">змерджено</span></div>
-        <div><span class="k">Реліз</span><span class="v">1.9.0</span></div>
-        <div><span class="k">Перевірок наживо</span><span class="v">18 / 18</span></div>
-      </div>
-      <div class="cols">
-        <div>
-          <h3 style="margin-bottom:.7rem">Закрито за рев'ю</h3>
-          <ul class="plain">
-            <li>Feature-gating перенесено всередину резолюції</li>
-            <li>Каталог ресурсів резолвиться раз на знімок замість щосторінки</li>
-            <li>Наскрізний бюджет старту замість «5 с на кожну фазу»</li>
-            <li>Guard росту каталогу покрито тестом із живим процесом</li>
-            <li>Аудит вразливостей увімкнено назад через <code>&lt;auditSources&gt;</code></li>
-            <li><b>Довіра до вбудованого джерела</b> <span class="tag">закрито</span> — підписаний реліз</li>
-            <li><b>Real-process E2E релізного шляху</b> <span class="tag">закрито</span> — живий MCP-процес</li>
-          </ul>
-        </div>
-        <div>
-          <h3 style="margin-bottom:.7rem">Свідомо відкрите</h3>
-          <ul class="plain">
-            <li><b>Real-process E2E для git-транспорту</b> — вбудоване джерело вже не на ньому, а фікстури для партнерських git-джерел немає</li>
-            <li><b>NuGet-транспорт</b> — спроєктований, але не проганявся; ключ підпису там одноразовий тестовий</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- 10 -->
-    <section class="slide" aria-label="Що тестуємо далі">
-      <div class="eyebrow"><b>09</b> <span>Перед закриттям</span></div>
-      <h2>Що ще перевіряємо</h2>
-      <div class="tablewrap">
-        <table>
-          <thead>
-            <tr><th scope="col">Сценарій</th><th scope="col">Чому саме він</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Партнерське git-джерело наживо</td>
-              <td>Юніти підміняють запуск процесів — квотинг, refs і активація не перевірені; транспорт лишився партнерам</td>
-            </tr>
-            <tr>
-              <td>Апгрейд зі старої clio</td>
-              <td>Переписування git-запису на реліз-контракт не виконувалось на реальній машині</td>
-            </tr>
-            <tr>
-              <td>Ні кешу, ні мережі</td>
-              <td>Теплий рестарт офлайн уже покритий e2e; лишається саме цей кейс — типізована відповідь у межах бюджету</td>
-            </tr>
-            <tr>
-              <td>Ротація ключа підпису</td>
-              <td>Порядок лише такий: новий публічний ключ у релізі clio → підпис ним → виведення старого з обігу. Зворотний порядок унеможливлює перевірку нових релізів, поки старий тихо лишається активним</td>
-            </tr>
-            <tr>
-              <td>Спільний CLIO_HOME</td>
-              <td>Кілька MCP одночасно (VS Code + CLI); поведінка під конкуренцією локів змінилася</td>
-            </tr>
-            <tr>
-              <td>Друге реальне джерело</td>
-              <td>Пріоритет, pin і feature-gating ніхто ще не ганяв на двох живих бібліотеках</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- 11 -->
     <section class="slide" aria-label="Питання і відповіді, частина 1">
-      <div class="eyebrow"><b>10</b> <span>Питання · 1 з 2</span></div>
+      <div class="eyebrow"><b>08</b> <span>Питання · 1 з 2</span></div>
       <h2>Що зазвичай питають</h2>
       <div class="cols">
         <div class="qa">
@@ -857,7 +784,7 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
         <div class="qa">
           <div class="qa__item">
             <h3>Потрібна мережа?</h3>
-            <p>Теплий старт — <b>нуль мережевих викликів</b>: перевірений кеш піднімається з диска. У мережу clio йде на першій, холодній установці (наживо 1,10&nbsp;с) і далі — лише на явні <code>install-knowledge</code> / <code>update-knowledge</code>. Без мережі й без кешу MCP стартує і чесно каже, що guidance недоступна.</p>
+            <p>Теплий старт — <b>нуль мережевих викликів</b>: перевірений кеш піднімається з диска. У мережу clio йде на першій, холодній установці (близько 1&nbsp;с) і далі — лише на явні <code>install-knowledge</code> / <code>update-knowledge</code>. Без мережі й без кешу MCP стартує і чесно каже, що guidance недоступна.</p>
           </div>
           <div class="qa__item">
             <h3>А закритий контур без GitHub?</h3>
@@ -867,15 +794,15 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
       </div>
     </section>
 
-    <!-- 12 -->
+    <!-- 10 -->
     <section class="slide" aria-label="Питання і відповіді, частина 2">
-      <div class="eyebrow"><b>11</b> <span>Питання · 2 з 2</span></div>
+      <div class="eyebrow"><b>09</b> <span>Питання · 2 з 2</span></div>
       <h2>І ще шість</h2>
       <div class="cols">
         <div class="qa">
           <div class="qa__item">
             <h3>Старт MCP став повільнішим?</h3>
-            <p>Теплий — ні: маркер генерації, без локів і без HTTP — наживо 0,60&nbsp;с. Межа 5 секунд стосується холодного старту: один наскрізний бюджет, а не 5 с на фазу.</p>
+            <p>Теплий — ні: маркер генерації, без локів і без HTTP, менше секунди. Межа 5 секунд стосується холодного старту: один наскрізний бюджет, а не 5 с на фазу.</p>
           </div>
           <div class="qa__item">
             <h3>Як відкотити погану статтю?</h3>
@@ -902,7 +829,8 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
         </div>
       </div>
       <p class="hint">
-        Деталі — стаття «Guidance without a release» у Confluence та PR&nbsp;#927.
+        Деталі — стаття «Guidance without a release» у Confluence і
+        <code>clio-knowledge/distribution/RELEASING.md</code>.
       </p>
     </section>
 
