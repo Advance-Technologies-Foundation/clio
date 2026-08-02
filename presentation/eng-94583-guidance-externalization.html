@@ -531,8 +531,8 @@
       <h1>Guidance<br>без релізу</h1>
       <p class="lede" style="margin-top:1.4rem">
         Статті guidance для clio MCP більше не живуть у C#. Вони переїхали в окремий репозиторій
-        <code>clio-knowledge</code>, звідки clio забирає їх підписаним GitHub-релізом,
-        перевіряє й активує у рантаймі.
+        <code>clio-knowledge</code>, звідки clio забирає їх підписаним GitHub-релізом —
+        релізом бібліотеки, не бінарника clio.
       </p>
       <div class="facts" style="margin-top:2.2rem">
         <div><span class="k">Ресурсів перенесено</span><span class="v">114</span></div>
@@ -602,15 +602,15 @@
         </div>
         <div class="flow__node">
           <span>Крок 2</span><strong>Реліз</strong>
-          <p>Тег версії або явний <code>workflow_dispatch</code>: контрактні тести → збірка → підпис → чернетка → перевірка → публікація. Будь-який збій лишає чернетку, тож напівопублікованої генерації ніхто не побачить.</p>
+          <p>Тег або <code>workflow_dispatch</code>: контрактні тести → збірка → підпис → чернетка → перевірка → публікація. Збій лишає чернетку — напівопублікованої генерації не буває.</p>
         </div>
         <div class="flow__node">
           <span>Крок 3</span><strong>Транспорт</strong>
-          <p><code>releases/latest</code> з ETag: не draft і не prerelease, тег — точна <code>MAJOR.MINOR.PATCH</code>, рівно один заявлений asset у межах розміру. Редиректи резолвляться вручну по білому списку хостів.</p>
+          <p><code>releases/latest</code> з ETag: не draft і не prerelease, тег — точна <code>MAJOR.MINOR.PATCH</code>, рівно один заявлений asset у межах розміру. Редиректи — вручну, за білим списком хостів.</p>
         </div>
         <div class="flow__node">
           <span>Крок 4</span><strong>Перевірка</strong>
-          <p>Спершу SHA-256 асета проти дайджесту, який опублікував GitHub. Далі підпис видавця P-256, контракт, ресурси, порядок <code>sequence</code>.</p>
+          <p>Спершу SHA-256 самого asset проти дайджесту, який опублікував GitHub. Далі підпис видавця P-256, контракт, ресурси, порядок <code>sequence</code>.</p>
         </div>
         <div class="flow__node">
           <span>Крок 5</span><strong>Активація</strong>
