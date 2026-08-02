@@ -333,15 +333,18 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// takes a cancellation token that startup controls, so the only real bound is not calling
 		// them at all once the source is canonical and its checkout is present.
 		TimeSpan stall = TimeSpan.FromSeconds(30);
+		// A gate that is never opened models a held lock more honestly than a sleep, and keeps the
+		// stub out of Sonar's Thread.Sleep-in-a-test rule.
+		using ManualResetEventSlim neverReleased = new(initialState: false);
 		_settings.When(repository => repository.EnsureKnowledgeSource(
 				Arg.Any<string>(),
 				Arg.Any<KnowledgeSourceConfiguration>()))
-			.Do(_ => Thread.Sleep(stall));
+			.Do(_ => neverReleased.Wait(stall));
 		_management.When(management => management.GetInfo(
 				Arg.Any<string>(),
 				Arg.Any<bool>(),
 				Arg.Any<System.Threading.CancellationToken>()))
-			.Do(_ => Thread.Sleep(stall));
+			.Do(_ => neverReleased.Wait(stall));
 		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		Stopwatch elapsed = Stopwatch.StartNew();
 
