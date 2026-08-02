@@ -34,35 +34,47 @@ DESCRIPTION
 
     External knowledge delivery configuration:
     - appsettings.json knowledge.root-path  Readable local cache root
-    - appsettings.json knowledge.sources  Trusted Git/NuGet sources keyed by alias
+    - appsettings.json knowledge.sources  Trusted GitHub-release/Git/NuGet sources keyed by alias
     - appsettings.json knowledge.topic-pins  Optional topic-to-library overrides
-    - knowledge.sources.<alias>.trusted-key-id  NuGet-only signing-key ID
-    - knowledge.sources.<alias>.trusted-public-key-path  NuGet-only public-key PEM path
+    - knowledge.sources.<alias>.repository-owner  GitHub-release-only repository owner
+    - knowledge.sources.<alias>.repository-name  GitHub-release-only repository name
+    - knowledge.sources.<alias>.asset-name  GitHub-release-only exact asset file name
+    - knowledge.sources.<alias>.trusted-key-id  Signing-key ID; required for NuGet, optional for
+      github-release, unused for Git
+    - knowledge.sources.<alias>.trusted-public-key-path  Public-key PEM path, same applicability
 
-    Before serving requests, both MCP transports ensure a built-in Git source named
-    creatio-curated exists and is installed from
-    https://github.com/Advance-Technologies-Foundation/clio-knowledge.git
-    on branch master. Its library-id is com.creatio.clio, priority is 100, and
-    participation is authoritative. A valid local checkout is reused without a
-    remote call. A missing checkout gets a five-second startup installation budget
-    before the MCP handshake completes, so mandatory first-request guidance is available
-    whenever that bounded bootstrap succeeds. Older
-    aliases for the same library are normalized to creatio-curated and their
-    checkouts are moved rather than cloned again. The built-in source cannot be removed; disable it with
+    Before serving requests, both MCP transports ensure a built-in github-release source
+    named creatio-curated exists and is installed from the latest stable release of
+    Advance-Technologies-Foundation/clio-knowledge, asset clio-knowledge-bundle.zip,
+    discovered through https://api.github.com/. Its library-id is com.creatio.clio,
+    priority is 100, and participation is authoritative. No Git CLI is used and no
+    branch is read. An already-published local generation is activated without any
+    remote call, so a warm start performs no network request at all. A missing
+    generation gets a five-second startup installation budget before the MCP handshake
+    completes, so mandatory first-request guidance is available whenever that bounded
+    bootstrap succeeds. An entry left by an earlier version under a different alias or
+    the former Git transport is migrated in place, preserving an operator's
+    enabled=false kill switch. The built-in source cannot be removed; disable it with
     clio disable-knowledge-source --alias creatio-curated. Disabled state survives
-    updates and MCP restarts. A failed or timed-out initial clone is warned but does not prevent
-    MCP startup; retry with install-knowledge --source creatio-curated.
+    updates and MCP restarts. A failed or timed-out initial install is warned but does not
+    prevent MCP startup; retry with install-knowledge --source creatio-curated.
 
     Public verification keys are not secrets. Never configure a private signing key.
-    NuGet sources require signed v1 bundles. Git sources are cloned directly. This POC
-    supports credential-free public HTTPS Git and NuGet sources only; authenticated private sources are not
-    supported. Signed legacyUris remain exact aliases for their declaring items. No
+    The public key authorized to sign the built-in com.creatio.clio library is pinned inside
+    Clio and is consulted before any configured key material, so a settings entry naming that
+    library cannot substitute its own signing key. GitHub-release and NuGet sources require
+    signed v1 bundles. Git sources are cloned directly and therefore require a Git CLI on the
+    machine. This POC supports credential-free public HTTPS sources only; authenticated private
+    sources are not supported. Signed legacyUris remain exact aliases for their declaring items. No
     implicit v0 source is registered; prototype caches require source configuration
     and reinstall.
 
     The service-index URL must respond directly; redirects are not followed. Its advertised
     PackageBaseAddress/3.0.0 must use the same scheme, host, and port as the configured service index.
 
+    GitHub-release sources are bound to the release tag, the SHA-256 digest GitHub publishes for
+    the asset, and the bundle signature; the tag must equal the signed bundle's library version, and
+    asset downloads follow redirects only to documented GitHub hosts over HTTPS.
     NuGet sources are bound to their package version, verified signature, and digest. Git sources
     are bound to the configured trusted repository URL and exact resolved commit, then validated
     directly from the checkout; Git does not use NuGet bundle-signing keys. Both transports validate

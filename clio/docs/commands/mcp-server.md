@@ -55,37 +55,43 @@ legacy `docs://mcp/guides/...` aliases remain readable during migration.
 
 External knowledge delivery is configured visibly under `knowledge` in Clio's `appsettings.json`.
 The section contains `root-path`, a `sources` map, and optional `topic-pins`. Each trusted source
-declares a stable `library-id`, `type` (`git` or `nuget`), credential-free `location`, `enabled`
-kill switch, numeric `priority`, and `participation` (`isolated`, `supplement`, or `authoritative`).
-NuGet sources also declare `package-id`, `trusted-key-id`, and an absolute local
-`trusted-public-key-path`. Git sources use none of those fields; they may follow a branch/tag/commit
+declares a stable `library-id`, `type` (`github-release`, `git`, or `nuget`), credential-free
+`location`, `enabled` kill switch, numeric `priority`, and `participation` (`isolated`,
+`supplement`, or `authoritative`). GitHub-release sources also declare `repository-owner`,
+`repository-name` and an exact `asset-name`, and may optionally declare `trusted-key-id` plus an
+absolute local `trusted-public-key-path`. NuGet sources declare `package-id` and require both
+signing-trust fields. Git sources use none of those fields; they may follow a branch/tag/commit
 and Clio reads content directly from the repository checkout. When no Git reference is supplied, Clio discovers and persists the remote
 default branch only after a successful install/update, then records the exact complete resolved
 commit for every installed generation. Information and update-availability checks never mutate
 source configuration.
 
 Both MCP hosts bootstrap one built-in source before serving requests: `creatio-curated`
-(`com.creatio.clio`) follows the `master` branch of
-`https://github.com/Advance-Technologies-Foundation/clio-knowledge.git` as an authoritative source
-with priority `100`. When the source is absent, Clio adds it and installs its Git checkout. A valid
-local checkout is reused without contacting Git, so ordinary MCP restarts remain local-only. A
-missing checkout gets a five-second startup installation budget before the MCP protocol handshake
-completes, so mandatory first-request guidance is available whenever that bounded bootstrap succeeds. An
-older alias for the same library is normalized to `creatio-curated` and its checkout is moved to
-the canonical source cache instead of cloned again. The source cannot be removed;
+(`com.creatio.clio`) installs the latest stable release of
+`Advance-Technologies-Foundation/clio-knowledge` — asset `clio-knowledge-bundle.zip`, discovered
+through `https://api.github.com/` — as an authoritative source with priority `100`. **No Git CLI is
+used and no branch is read.** An already-published local generation is activated without any remote
+call, so a warm MCP start performs no network request at all. A missing generation gets a
+five-second startup installation budget before the MCP protocol handshake completes, so mandatory
+first-request guidance is available whenever that bounded bootstrap succeeds. An entry left by an
+earlier Clio under a different alias, or under the former Git transport, is migrated in place and
+keeps an operator's `enabled: false` kill switch. The source cannot be removed;
 set `enabled: false` or run `disable-knowledge-source --alias creatio-curated` to opt out. That
-disabled state survives future Clio updates and MCP starts. A failed or timed-out first clone is
+disabled state survives future Clio updates and MCP starts. A failed or timed-out first install is
 logged as a warning and does not prevent MCP from starting; retry with
 `install-knowledge --source creatio-curated` when connectivity returns.
 
 Signing trust is scoped per source so independent publishers can use different keys. The configured
 path references public ECDSA P-256 SubjectPublicKeyInfo PEM material; it is not a secret and must
-never reference or contain a private signing key.
+never reference or contain a private signing key. The key authorized to sign the built-in
+`com.creatio.clio` library is pinned inside Clio instead and is consulted before any configured
+material, so a settings entry naming that library cannot substitute its own signing key.
 
-NuGet sources require signed version 1 bundles. Git sources instead trust the configured public
-repository URL, resolve an exact commit, and validate the catalog contract directly from the
-checkout; they do not use NuGet bundle-signing keys. The proof of concept supports credential-free
-public HTTPS Git and NuGet sources only; authenticated private sources are not supported. Declared
+GitHub-release and NuGet sources require signed version 1 bundles. Git sources instead trust the
+configured public repository URL, resolve an exact commit, and validate the catalog contract
+directly from the checkout; they do not use bundle-signing keys, and they do require a Git CLI on
+the machine. The proof of concept supports credential-free public HTTPS sources only; authenticated
+private sources are not supported. Declared
 `legacyUris` remain exact aliases for the item that declares them. No implicit version 0
 compatibility source is registered; prototype caches must be reinstalled from configured version 1
 sources.
@@ -94,7 +100,11 @@ The service-index URL must respond directly; redirects are not followed. Its adv
 `PackageBaseAddress/3.0.0` resource must use the same scheme, host, and port as the configured
 service-index URL.
 
-Each transport supplies content and immutable provenance. NuGet candidates are verified by package
+Each transport supplies content and immutable provenance. GitHub-release candidates are verified by
+release tag, the SHA-256 digest GitHub publishes for the selected asset, bundle signature,
+compatibility, identity, monotonic sequence, catalog completeness, paths, and sizes; the tag must
+equal the signed bundle's library version, and asset downloads follow redirects only to documented
+GitHub hosts over HTTPS. NuGet candidates are verified by package
 version, bundle signature, compatibility, identity, monotonic sequence, catalog completeness,
 paths, sizes, and digests. Git checkouts are bound to the configured repository and exact resolved
 commit, then validated for compatibility, identity, catalog completeness, paths, and sizes before
