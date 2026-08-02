@@ -151,15 +151,23 @@ and agents.
 
 ## Transport contract
 
-The two proof-of-concept retrieval paths intentionally have different publication mechanics:
+The retrieval paths intentionally have different publication mechanics:
 
+- `github-release` reads one stable release through the GitHub REST API, downloads exactly the
+  declared asset through a host and scheme allowlist, verifies the SHA-256 digest GitHub publishes
+  for it, and then publishes immutable current/previous generations through the same signed-bundle
+  path as `nuget`. It requires no Git CLI. This is how the built-in `creatio-curated` source is
+  delivered; see
+  [`knowledge-bundle-runtime-github-release-delivery.md`](knowledge-bundle-runtime-github-release-delivery.md)
+  for its full contract, trust model, and migration behavior;
 - `nuget` discovers stable package versions, extracts a bounded signed bundle, verifies its
   configured public-key trust, and publishes immutable current/previous generations;
 - `git` clones or updates a configured branch, tag, or commit in a bounded Clio-owned checkout,
   validates `bundle-source.json` plus its declared files, and activates an immutable in-memory
-  snapshot of those bytes. It does not create or consume a bundle ZIP.
+  snapshot of those bytes. It does not create or consume a bundle ZIP, and it does require a Git CLI
+  on the machine.
 
-Both paths feed the same resolver and provenance surface after validation. A future transport must
+All paths feed the same resolver and provenance surface after validation. A future transport must
 define its trust, storage, and rollback behavior explicitly instead of assuming that the NuGet
 generation model or direct Git checkout model applies automatically.
 

@@ -630,7 +630,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="delete-knowledge"></a>
 - [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete installed knowledge while retaining source configuration
 <a id="add-knowledge-source"></a>
-- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a direct Git checkout or signed NuGet knowledge source
+- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a signed GitHub Release, direct Git checkout, or signed NuGet knowledge source
 <a id="remove-knowledge-source"></a>
 - [`remove-knowledge-source`](docs/commands/remove-knowledge-source.md) - Remove one non-built-in source and best-effort clean its managed cache
 <a id="enable-knowledge-source"></a>

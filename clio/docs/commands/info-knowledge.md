@@ -21,7 +21,7 @@ resolved transport revision, validation state, update availability, and safe dia
 `--source` to inspect every configured source, including disabled sources.
 
 The command is local-only by default: it reads persisted configuration and installed caches without
-contacting Git or NuGet. Pass `--check-updates` to perform bounded checks against eligible source
+contacting GitHub, Git, or NuGet. Pass `--check-updates` to perform bounded checks against eligible source
 transports. An update check reports availability but does not install or activate content, and Git
 default-branch discovery during an information request never changes source configuration. Output
 never includes transport credentials, tokens, authorization headers, or other secrets.

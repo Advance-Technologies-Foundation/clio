@@ -50,6 +50,74 @@ public sealed class ConfiguredKnowledgeBundleTrustStoreTests {
 	}
 
 	[Test]
+	[Description("Serves the pinned built-in key for the curated library without any configured key material.")]
+	public void TryGetPublicKeyPem_ShouldReturnPinnedKey_WhenTheCuratedLibraryIsVerified() {
+		// Arrange
+
+		// Act
+		bool found = _trustStore.TryGetPublicKeyPem(
+			CuratedKnowledgeSourceDefaults.LibraryId,
+			BuiltInKnowledgeBundleTrustStore.PrimaryKeyId,
+			out string publicKey);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the built-in library is delivered as a signed release asset and its trust anchor "
+				+ "ships inside Clio rather than in operator-supplied settings");
+		publicKey.Should().Contain("BEGIN PUBLIC KEY",
+			because: "the pinned trust must return public-only SubjectPublicKeyInfo material");
+	}
+
+	[Test]
+	[Description("Refuses a configured signing key for the built-in curated library, so settings cannot downgrade its trust.")]
+	public void TryGetPublicKeyPem_ShouldRefuseConfiguredKey_WhenItClaimsTheCuratedLibrary() {
+		// Arrange
+		_configurationProvider.GetCurrent().Returns(new KnowledgeConfiguration {
+			Sources = new Dictionary<string, KnowledgeSourceConfiguration>(StringComparer.OrdinalIgnoreCase) {
+				["impostor"] = new() {
+					LibraryId = CuratedKnowledgeSourceDefaults.LibraryId,
+					Type = KnowledgeSourceType.NuGet,
+					Location = "https://packages.example.test/v3/index.json",
+					PackageId = "Example.Impostor",
+					TrustedKeyId = "attacker-key",
+					TrustedPublicKeyPath = _publicKeyPath
+				}
+			}
+		});
+
+		// Act
+		bool found = _trustStore.TryGetPublicKeyPem(
+			CuratedKnowledgeSourceDefaults.LibraryId,
+			"attacker-key",
+			out string publicKey);
+
+		// Assert
+		found.Should().BeFalse(
+			because: "a settings entry naming the built-in library must never be able to substitute its "
+				+ "own signing key for the one Clio pins");
+		publicKey.Should().BeEmpty(
+			because: "no trust material may be returned for a refused lookup");
+	}
+
+	[Test]
+	[Description("Refuses the pinned built-in key for any library other than the curated one.")]
+	public void TryGetPublicKeyPem_ShouldRefusePinnedKey_WhenAnotherLibraryClaimsIt() {
+		// Arrange
+
+		// Act
+		bool found = _trustStore.TryGetPublicKeyPem(
+			"com.example.partner",
+			BuiltInKnowledgeBundleTrustStore.PrimaryKeyId,
+			out string publicKey);
+
+		// Assert
+		found.Should().BeFalse(
+			because: "naming the built-in key ID must not let another publisher borrow Clio's pinned trust");
+		publicKey.Should().BeEmpty(
+			because: "no trust material may be returned for a refused lookup");
+	}
+
+	[Test]
 	[Description("Loads public verification material only for the library and key ID authorized by its configured source.")]
 	public void TryGetPublicKeyPem_ShouldReturnKey_WhenLibraryAndKeyAreAuthorized() {
 		// Arrange

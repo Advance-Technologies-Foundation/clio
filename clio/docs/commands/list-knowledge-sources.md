@@ -18,7 +18,7 @@ clio list-knowledge-sources [--json]
 
 Lists every source under `knowledge.sources`, including disabled sources. Human output shows alias,
 stable library identity, transport, enablement, priority, participation, and a credential-safe
-location. The command reads configuration only and does not contact Git or NuGet.
+location. The command reads configuration only and does not contact GitHub, Git, or NuGet.
 
 Use `info-knowledge` for installed generation, validation, resolved revision, and update state.
 

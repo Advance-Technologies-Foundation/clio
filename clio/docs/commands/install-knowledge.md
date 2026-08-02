@@ -20,12 +20,18 @@ Retrieves, verifies, and atomically installs the current generation for every en
 `--source` to select exactly one configured alias instead. A source failure cannot replace that
 source's last-known-good generation and does not withdraw other installed libraries.
 
-NuGet sources download a bounded stable package and verify its signed version 1 bundle. Git sources
-clone or fast-forward their configured public repository, resolve the configured commit, tag, or
-branch, and validate the catalog contract directly from that checkout without executing repository
-code. Installed content is kept under `knowledge.root-path` in Clio's visible `appsettings.json`.
+GitHub Release sources — including the built-in `creatio-curated` source — read the repository's
+latest stable release through the GitHub REST API, download exactly the declared asset, verify the
+SHA-256 digest GitHub publishes for it, and then verify the signed version 1 bundle. **They require
+no Git CLI and read no branch.** NuGet sources download a bounded stable package and verify its
+signed version 1 bundle. Git sources clone or fast-forward their configured public repository,
+resolve the configured commit, tag, or branch, and validate the catalog contract directly from that
+checkout without executing repository code, so **that transport does require a Git CLI**. Installed
+content is kept under `knowledge.root-path` in Clio's visible `appsettings.json`.
 
-For NuGet, provenance is the verified package version, bundle signature, and digest. For Git,
+For a GitHub Release, provenance is the release tag, the asset digest GitHub published, and the
+bundle signature. For NuGet, provenance is the verified package version, bundle signature, and
+digest. For Git,
 provenance is the configured trusted repository URL and the exact resolved commit after catalog
 validation; Git sources do not use NuGet bundle-signing keys. Public HTTPS Git repositories and
 NuGet feeds are the supported transports in this proof of concept; authenticated private sources

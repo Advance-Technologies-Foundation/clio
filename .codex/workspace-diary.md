@@ -7490,3 +7490,50 @@ clio.tests/Command/McpServer/Knowledge*Tests.cs
 Impact: future Sonar rounds on this stack should query the API for the exact
 authorized parameter count instead of assuming the rule default, and should
 mutate nullable-string stubs explicitly rather than by deletion.
+
+## 2026-08-02 19:30 – Built-in knowledge moves from Git checkout to signed GitHub Release asset
+Context: the built-in `creatio-curated` source required a Git CLI, read a mutable
+`master` at runtime, and carried no publisher signature. All three are unfixable
+inside the Git transport.
+Decision: added a third artifact transport, `github-release`
+(`KnowledgeGitHubReleaseTransport`), alongside `git` and `nuget`, and flipped the
+built-in source onto it. Discovery is `releases/latest`, revision is the release
+tag (kept identical to the bundle's `libraryVersion`, which the runtime already
+enforces), and the bundle runtime does signature/contract/sequence verification
+unchanged. Generic Git and NuGet sources are untouched. Trust for
+`com.creatio.clio` is pinned in the binary (`BuiltInKnowledgeBundleTrustStore`)
+and consulted BEFORE configured material, and the composed store refuses to fall
+through for that library — a settings entry cannot substitute its own key.
+Producer half is `clio-knowledge` branch `feature/github-release-delivery`
+(release workflow + `verify` verb + `ReleaseArtifactTests`).
+Discovery: three traps worth remembering.
+(1) `CuratedKnowledgeBootstrapService` had exactly one no-network fast exit, and
+it was Git-shaped (`IsGitRepositoryInstalled`). Flipping the transport without an
+artifact-shaped probe would have made EVERY warm MCP start call api.github.com
+inside the 5s pre-serve budget, and no unit test would have failed. Added
+`IsBundleGenerationInstalled` (marker existence only — no lock, no parse, no
+network); `ReadCurrent` is NOT usable there because its crash-recovery path can
+take the source mutation lock.
+(2) `HttpMessageHandler` stubs must override the synchronous `Send`, not only
+`SendAsync`: the knowledge transports call `HttpClient.Send`, and the base
+`Send` throws `NotSupportedException`, which the transport catch turns into a
+plain `Failed` — every case "fails correctly" for the wrong reason.
+(3) The knowledge e2e suite was unrunnable on macOS: clio refuses a knowledge
+root or key path with a reparse point in its ancestry, and `Path.GetTempPath()`
+resolves through the `/var` symlink. Fixed in the fixtures with
+`PhysicalPath.Resolve`, not by weakening the production rule.
+Also: `KnowledgeSourceType.ToString()` yields `githubrelease`, which is neither
+the persisted token nor what `--type` accepts — use `KnowledgeSourceTypeNames.Format`.
+Files: clio/Command/McpServer/Knowledge/KnowledgeGitHubReleaseTransport.cs,
+KnowledgeSourceConfiguration.cs, KnowledgeBundleContracts.cs,
+CuratedKnowledgeBootstrapService.cs, KnowledgeSourceInstallationStore.cs,
+KnowledgeSourceManagementService.cs, clio/Command/KnowledgeCommands.cs,
+clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio/BindingsModule.cs,
+clio.tests/Command/McpServer/KnowledgeGitHubReleaseTransportTests.cs,
+clio.mcp.e2e/KnowledgeGuidanceGitHubReleaseE2ETests.cs,
+clio.mcp.e2e/Support/Knowledge/*, clio.mcp.e2e/Support/PhysicalPath.cs,
+spec/knowledge-bundle-runtime/knowledge-bundle-runtime-github-release-delivery.md
+Impact: a future transport can be added by implementing
+`IKnowledgeArtifactTransport` plus a validator branch, a `ParseType` token, a DI
+registration, and a bootstrap probe — but the bootstrap probe is the one that is
+silent when forgotten, so check it first.
