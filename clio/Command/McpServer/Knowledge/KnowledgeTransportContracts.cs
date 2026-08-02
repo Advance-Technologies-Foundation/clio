@@ -40,6 +40,20 @@ internal interface IKnowledgeSourceTransport {
 internal interface IKnowledgeArtifactTransport : IKnowledgeSourceTransport {
 
 	KnowledgeTransportResult Retrieve(KnowledgeTransportRequest request);
+
+	/// <summary>
+	/// Returns whichever of two revisions this transport considers the later one.
+	/// </summary>
+	/// <remarks>
+	/// Revision progression is transport-specific — a NuGet package version orders differently from
+	/// a repository revision — so the orchestrator asks the transport instead of assuming one
+	/// scheme. Either argument may be absent or unparsable; the result is <see langword="null"/>
+	/// only when neither is a revision this transport can order.
+	/// </remarks>
+	/// <param name="left">The first revision, or <see langword="null"/>.</param>
+	/// <param name="right">The second revision, or <see langword="null"/>.</param>
+	/// <returns>The later revision, or <see langword="null"/>.</returns>
+	string? GreaterRevision(string? left, string? right);
 }
 
 internal interface IKnowledgeRepositoryTransport : IKnowledgeSourceTransport {

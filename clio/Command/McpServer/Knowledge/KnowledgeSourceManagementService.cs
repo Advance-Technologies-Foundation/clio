@@ -363,7 +363,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				?? $"Knowledge transport repeated rejected revision '{revision}'.";
 			return new ArtifactCandidateAttempt(null, StopSearch: true);
 		}
-		search.HighestObservedRevision = KnowledgeBundleNuGetClient.GreaterVersion(
+		search.HighestObservedRevision = context.Transport.GreaterRevision(
 			search.HighestObservedRevision, revision);
 		search.FallbackCeilingRevision = revision;
 		search.LastRejectedRevision = revision;

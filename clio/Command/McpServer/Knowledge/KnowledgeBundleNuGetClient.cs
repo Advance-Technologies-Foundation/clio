@@ -295,6 +295,9 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	internal static bool IsStableVersion(string? value) =>
 		StablePackageVersion.TryParse(value, out _);
 
+	/// <inheritdoc/>
+	public string? GreaterRevision(string? left, string? right) => GreaterVersion(left, right);
+
 	internal static string? GreaterVersion(string? left, string? right) {
 		if (!StablePackageVersion.TryParse(left, out StablePackageVersion leftVersion)) {
 			return StablePackageVersion.TryParse(right, out _) ? right : null;

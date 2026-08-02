@@ -47,19 +47,18 @@ jobs:
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
-      # nuget.config lists the internal Nexus feed, which a GitHub-hosted runner cannot reach.
-      # With TreatWarningsAsErrors that unreachable vulnerability endpoint fails restore (NU1900)
-      # before anything runs. Every Ring dependency is public on nuget.org, so only the audit
-      # needed the internal feed. Verified on windows-latest by the clio-ring AOT gate workflow.
+      # Vulnerability auditing stays on: nuget.config scopes <auditSources> to nuget.org, so the
+      # internal Nexus mirror a GitHub-hosted runner cannot reach is never queried for advisory
+      # data and restore no longer fails with NU1900 under TreatWarningsAsErrors.
       - name: Test Ring
-        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release -p:NuGetAudit=false
+        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
 
       - name: Publish NativeAOT
         shell: pwsh
         run: |
           dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
             -c Release -r $env:RID --self-contained true -p:PublishAot=true `
-            -p:ClioRingVersion=${{ steps.version.outputs.value }} -p:NuGetAudit=false `
+            -p:ClioRingVersion=${{ steps.version.outputs.value }} `
             -o artifacts/publish
 
       - name: Package and create manifest
