@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
@@ -191,33 +192,54 @@ public class ProcessExecutorTests {
 	}
 
 	[Test]
-	[Description("Verifies that a running child which grows the monitored directory past its cap is terminated promptly and reported as a resource-limit failure rather than a timeout.")]
-	public async Task ExecuteAndCaptureAsync_ShouldTerminateRunningChild_WhenItGrowsTheMonitoredDirectoryPastTheLimit() {
+	[Description("Verifies that growth of the monitored directory while a child is running terminates it promptly and is reported as a resource-limit failure rather than a timeout.")]
+	public async Task ExecuteAndCaptureAsync_ShouldTerminateRunningChild_WhenTheMonitoredDirectoryGrowsPastTheLimit() {
 		// Arrange
-		// The pre-launch check only covers a directory that is already oversized. This starts well
-		// under the cap and crosses it while the child is alive and still emitting on both streams,
-		// which is the case an untrusted clone actually produces.
+		// The pre-launch check only covers a directory that is already oversized. Here the cap is
+		// crossed while the child is alive, which is what an untrusted clone actually does. The
+		// growth is driven from the first captured output line rather than by the child itself:
+		// the guard polls the directory and does not care who wrote to it, and a portable shell
+		// one-liner that reliably grows a directory on every supported OS does not exist.
 		ILogger logger = Substitute.For<ILogger>();
 		ProcessExecutor sut = new(logger);
 		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-growth-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(directory);
-		(string program, string arguments) = GetDirectoryGrowthCommand(directory);
+		const long capBytes = 1024 * 1024;
+		const string readyMarkerFileName = "ready.txt";
+		string readyMarker = Path.Combine(directory, readyMarkerFileName);
+		(string program, string arguments) = GetIdlingChildCommand(readyMarkerFileName);
 		ProcessExecutionOptions options = new(program, arguments) {
+			WorkingDirectory = directory,
 			MonitoredDirectory = directory,
-			MaximumMonitoredDirectoryBytes = 1024 * 1024,
+			MaximumMonitoredDirectoryBytes = capBytes,
 			ResourceMonitorInterval = TimeSpan.FromMilliseconds(50),
 			Timeout = TimeSpan.FromSeconds(25)
 		};
+		// The child announces itself with a tiny marker well under the cap, so the growth is known
+		// to happen after launch rather than racing the pre-launch check.
+		Task<bool> growth = Task.Run(async () => {
+			for (int attempt = 0; attempt < 200 && !File.Exists(readyMarker); attempt++) {
+				await Task.Delay(50);
+			}
+			if (!File.Exists(readyMarker)) {
+				return false;
+			}
+			await File.WriteAllBytesAsync(Path.Combine(directory, "grown.bin"), new byte[capBytes * 2]);
+			return true;
+		});
 		Stopwatch elapsed = Stopwatch.StartNew();
 
 		try {
 			// Act
 			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
 			elapsed.Stop();
+			bool grown = await growth;
 
 			// Assert
 			result.Started.Should().BeTrue(
 				because: "the child must actually launch for the running-process guard to be under test");
+			grown.Should().BeTrue(
+				because: "the directory must be grown after launch, or the already-oversized pre-launch check would be under test instead");
 			result.ResourceLimitExceeded.Should().BeTrue(
 				because: "growth past the cap during execution must be reported as a resource-limit failure");
 			result.TimedOut.Should().BeFalse(
@@ -232,27 +254,29 @@ public class ProcessExecutorTests {
 	}
 
 	/// <summary>
-	/// Builds a child that writes fixed-size chunks into <paramref name="directory"/> while emitting
-	/// on both streams, then idles well past the assertion window so that an early return can only
-	/// mean the resource guard terminated it.
+	/// Builds a child that writes one line to each stream, signals that it is running, and then
+	/// idles well past the assertion window, so an early return can only mean the resource guard
+	/// terminated it.
 	/// </summary>
-	/// <param name="directory">The monitored directory the child grows.</param>
+	/// <param name="readyMarkerFileName">
+	/// The marker file the child creates once it is running. It is a bare file name, written into
+	/// the child's working directory, so no path has to survive two levels of shell quoting.
+	/// </param>
 	/// <returns>The program and arguments.</returns>
-	private static (string Program, string Arguments) GetDirectoryGrowthCommand(string directory) {
+	private static (string Program, string Arguments) GetIdlingChildCommand(string readyMarkerFileName) {
 		// The launcher is OS-specific because there is no portable way to spawn a shell; the
-		// behaviour under test — prompt termination and resource-limit classification — is not.
+		// behaviour under test - prompt termination and resource-limit classification - is not.
 		if (OperatingSystem.IsWindows()) {
 			string commandInterpreter = Environment.GetEnvironmentVariable("ComSpec")
 				?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
 			return (
 				commandInterpreter,
-				$"/d /c \"for /L %i in (1,1,400) do @(fsutil file createnew \"{directory}\\chunk-%i.bin\" 131072 >nul"
-				+ " & echo out-%i & echo err-%i 1>&2) & ping -n 31 127.0.0.1 >nul\"");
+				$"/d /c \"echo started & echo started 1>&2 & echo ready>{readyMarkerFileName} "
+				+ "& ping -n 31 127.0.0.1 >nul\"");
 		}
 		return (
 			"/bin/sh",
-			$"-c \"i=0; while [ $i -lt 400 ]; do dd if=/dev/zero bs=131072 count=1 2>/dev/null "
-			+ $">>'{directory}/growing.bin'; echo out-$i; echo err-$i 1>&2; i=$((i+1)); done; sleep 30\"");
+			$"-c \"echo started; echo started 1>&2; echo ready > {readyMarkerFileName}; sleep 30\"");
 	}
 
 	/// <summary>Removes a directory a killed child may still be holding entries in.</summary>

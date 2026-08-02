@@ -300,28 +300,33 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				Arg.Any<string>(),
 				CuratedKnowledgeSourceDefaults.Alias))
 			.Do(_ => clock.Advance(TimeSpan.FromMilliseconds(spentMilliseconds / 2)));
+		List<int> observedDeadlines = [];
 		_management.Install(
 			CuratedKnowledgeSourceDefaults.Alias,
 			Arg.Any<int>(),
-			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
-				true,
-				"installed",
-				[new KnowledgeSourceOperationResult(
-					CuratedKnowledgeSourceDefaults.Alias,
+			Arg.Any<System.Threading.CancellationToken>()).Returns(call => {
+				observedDeadlines.Add(call.ArgAt<int>(1));
+				return new KnowledgeSourceBatchResult(
 					true,
 					"installed",
-					"Curated knowledge was installed.")]));
+					[new KnowledgeSourceOperationResult(
+						CuratedKnowledgeSourceDefaults.Alias,
+						true,
+						"installed",
+						"Curated knowledge was installed.")]);
+			});
 
 		// Act
 		service.Bootstrap();
 
 		// Assert
-		_management.Received(1).Install(
-			CuratedKnowledgeSourceDefaults.Alias,
-			Arg.Is<int>(deadline =>
-				deadline > 0
-				&& deadline <= CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds - spentMilliseconds),
-			Arg.Any<System.Threading.CancellationToken>());
+		observedDeadlines.Should().ContainSingle(
+			because: "the prepared source is installed exactly once per bootstrap");
+		observedDeadlines[0].Should().BePositive(
+			because: "an install that still has budget left must be given it rather than being skipped");
+		observedDeadlines[0].Should().BeLessThanOrEqualTo(
+			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds - spentMilliseconds,
+			because: "installation gets what the earlier phases left, not a fresh startup allowance");
 	}
 
 	/// <summary>A manually advanced clock, so budget exhaustion is deterministic rather than timing-dependent.</summary>
