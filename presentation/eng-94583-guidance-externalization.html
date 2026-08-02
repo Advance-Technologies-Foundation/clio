@@ -602,11 +602,11 @@
         </div>
         <div class="flow__node">
           <span>Крок 2</span><strong>Реліз</strong>
-          <p>Тег або <code>workflow_dispatch</code>: контрактні тести → збірка → підпис → чернетка → перевірка → публікація. Збій лишає чернетку — напівопублікованої генерації не буває.</p>
+          <p>Тег або <code>workflow_dispatch</code>: контрактні тести → збірка → підпис → чернетка → перевірка → публікація. Збій лишає чернетку.</p>
         </div>
         <div class="flow__node">
           <span>Крок 3</span><strong>Транспорт</strong>
-          <p><code>releases/latest</code> з ETag: не draft і не prerelease, тег — точна <code>MAJOR.MINOR.PATCH</code>, рівно один заявлений asset у межах розміру. Редиректи — вручну, за білим списком хостів.</p>
+          <p><code>releases/latest</code> з ETag: не draft, не prerelease, тег — точна <code>MAJOR.MINOR.PATCH</code>, один asset у межах розміру. Редиректи — за білим списком хостів.</p>
         </div>
         <div class="flow__node">
           <span>Крок 4</span><strong>Перевірка</strong>
@@ -638,12 +638,9 @@
               <tbody>
                 <tr><th scope="row">alias</th><td><code>creatio-curated</code></td></tr>
                 <tr><th scope="row">library</th><td><code>com.creatio.clio</code></td></tr>
-                <tr><th scope="row">транспорт</th><td><code>github-release</code></td></tr>
-                <tr><th scope="row">location</th><td><code>https://api.github.com/</code></td></tr>
-                <tr><th scope="row">repository-owner</th><td><code>Advance-Technologies-Foundation</code></td></tr>
-                <tr><th scope="row">repository-name</th><td><code>clio-knowledge</code></td></tr>
+                <tr><th scope="row">транспорт</th><td><code>github-release</code> · <code>https://api.github.com/</code></td></tr>
+                <tr><th scope="row">репозиторій</th><td><code>Advance-Technologies-Foundation</code> / <code>clio-knowledge</code></td></tr>
                 <tr><th scope="row">asset-name</th><td><code>clio-knowledge-bundle.zip</code></td></tr>
-                <tr><th scope="row">довіра</th><td>P-256 · <code>clio-knowledge-2026-08</code>, вшитий у clio</td></tr>
                 <tr><th scope="row">пріоритет</th><td>100 · authoritative</td></tr>
                 <tr><th scope="row">бюджет старту</th><td>5 секунд, наскрізний</td></tr>
               </tbody>
@@ -652,10 +649,10 @@
         </div>
         <div>
           <ul class="plain">
-            <li><b>Ні Git, ні довільного URL.</b> Джерело не клонує репозиторій і не читає гілку: воно тягне один підписаний asset, а репозиторій заданий структурно — у налаштуваннях лежить лише origin GitHub API.</li>
-            <li><b>Теплий старт офлайн.</b> Нуль мережевих викликів: clio перевіряє наявність маркера генерації і піднімає перевірений кеш із диска. Без локів, без парсингу, без HTTP.</li>
-            <li><b>Ключ не підмінити.</b> Вбудований trust store читається <em>перед</em> будь-яким налаштованим ключем і для цієї бібліотеки не падає в конфігурацію — запис у settings не може підставити свій ключ підпису.</li>
-            <li><b>Самовідновлення і kill switch.</b> Запис зник із налаштувань — наступний старт його поверне; прибрати можна лише вимкненням, і <code>enabled: false</code> переживає рестарти, апгрейди та міграцію на реліз-контракт.</li>
+            <li><b>Ні Git, ні гілки.</b> Джерело нічого не клонує — воно тягне один підписаний asset, а репозиторій заданий структурно.</li>
+            <li><b>Теплий старт офлайн.</b> clio бачить маркер генерації і піднімає перевірений кеш із диска: без локів, без парсингу, без HTTP.</li>
+            <li><b>Ключ не підмінити.</b> Вшитий у clio trust store (P-256, <code>clio-knowledge-2026-08</code>) читається <em>перед</em> будь-яким налаштованим ключем — запис у settings не підставить свій ключ підпису.</li>
+            <li><b>Самовідновлення і kill switch.</b> Запис зник — старт його поверне; прибрати можна лише вимкненням, і воно переживає апгрейди.</li>
             <li><b>Обмежений старт.</b> Не вклалися в бюджет — MCP стартує без curated-джерела і каже, як довстановити, замість того щоб висіти.</li>
           </ul>
           <div class="cmd" style="margin-top:1rem">clio disable-knowledge-source --alias creatio-curated</div>
@@ -673,11 +670,8 @@
         детерміновано.
       </p>
       <p>
-        Транспорт — той самий вибір: <code>--type github-release|git|nuget</code>. Для власного
-        релізу партнер задає <code>--repository-owner</code>, <code>--repository-name</code>,
-        <code>--asset-name</code> і свій якір довіри (<code>--trusted-key-id</code> +
-        <code>--trusted-public-key-path</code>). Вшитий у бінарник ключ захищає лише вбудовану
-        бібліотеку — чужі джерела приносять довіру з конфігурації.
+        Транспорт на вибір: <code>--type github-release|git|nuget</code>; для власного релізу ще
+        <code>--repository-owner</code>, <code>--repository-name</code>, <code>--asset-name</code>.
       </p>
       <div class="cols" style="margin-top:1.3rem">
         <div class="card">
@@ -711,7 +705,7 @@
           <ul class="plain">
             <li>PR у <code>clio-knowledge</code>: правка <code>.md</code> + підйом <code>sequence</code></li>
             <li>Мерж — паритет і дайджест перевіряє CI того репозиторію. <b>Мерж нічого не публікує.</b></li>
-            <li>Реліз: тег версії або явний <code>workflow_dispatch</code> — і в GitHub Release лягає підписаний asset</li>
+            <li>Реліз: тег версії або явний <code>workflow_dispatch</code> — і в GitHub Release лягає підписаний asset. Збій лишає чернетку, тож напівопублікованої генерації ніхто не побачить</li>
             <li>Користувачі забирають зміну по <code>update-knowledge</code> чи <code>install-knowledge</code>; теплий старт сам у мережу не ходить</li>
           </ul>
         </div>
@@ -751,15 +745,13 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
         <div class="card">
           <h3>Реліз замість мержу</h3>
           <p style="margin-top:.4rem">
-            Мерж у <code>master</code> більше не доставляє нічого. Поки хтось не випустить підписаний
-            реліз — тегом версії або явним <code>workflow_dispatch</code> — зміна не доїде до жодного
-            користувача. Це повільніше і потребує релізної дисципліни.
+            Мерж у <code>master</code> більше нічого не доставляє: без підписаного релізу зміна не
+            доїде ні до кого. Повільніше, з релізною дисципліною.
           </p>
           <p style="margin-top:.6rem">
-            Взамін — іменована, підписана, незмінна й відтворювана генерація, на яку інженер підтримки
-            може послатися і до якої можна відкотитись. Якір довіри переїхав з «хто може пушити в
-            <code>master</code>» на «хто тримає ключ підпису». Сторонні <code>git</code>-джерела
-            підпису як не мали, так і не мають.
+            Взамін — іменована, підписана, незмінна генерація, до якої можна відкотитись. Якір
+            довіри переїхав з «хто пушить у <code>master</code>» на «хто тримає ключ підпису».
+            Сторонні <code>git</code>-джерела підпису як не мали, так і не мають.
           </p>
         </div>
       </div>
@@ -770,19 +762,13 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
       <div class="eyebrow"><b>08</b> <span>Де ми зараз</span></div>
       <h2>Стан PR #927</h2>
       <div class="facts" style="margin-bottom:1.4rem">
-        <div><span class="k">CI</span><span class="v">зелений</span></div>
-        <div><span class="k">SonarCloud</span><span class="v">0</span></div>
+        <div><span class="k">CI · Sonar</span><span class="v">зелений · 0</span></div>
         <div><span class="k">Юніт-тестів</span><span class="v">8&nbsp;000</span></div>
         <div><span class="k">Файлів у diff</span><span class="v">198</span></div>
         <div><span class="k">clio-knowledge #34</span><span class="v">змерджено</span></div>
+        <div><span class="k">Реліз</span><span class="v">1.9.0</span></div>
+        <div><span class="k">Перевірок наживо</span><span class="v">18 / 18</span></div>
       </div>
-      <p style="margin-bottom:1.2rem">
-        Реліз <b>1.9.0</b> опубліковано і позначено <code>immutable</code>: один asset,
-        859&nbsp;840 байтів, дайджест <code>sha256:3c6db3ff…</code>. Перевірено наживо наскрізно на двох стендах (ts1-core-dev04, ts1-infr-web01), 18 перевірок без жодного провалу: холодний профіль — рукостискання 1,10&nbsp;с разом зі скачуванням, теплий рестарт — 0,60&nbsp;с, з недоступним Releases API guidance усе одно віддається з кешу —
-        clio поставив цей реліз із реального <code>api.github.com</code> з канонічною вбудованою
-        конфігурацією і <b>без жодного налаштованого ключа</b>: <code>isValid: true</code>,
-        <code>sequence 11</code>, 114 ресурсів (69 guidance, 43 reference, 2 reference-example).
-      </p>
       <div class="cols">
         <div>
           <h3 style="margin-bottom:.7rem">Закрито за рев'ю</h3>
@@ -792,15 +778,15 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
             <li>Наскрізний бюджет старту замість «5 с на кожну фазу»</li>
             <li>Guard росту каталогу покрито тестом із живим процесом</li>
             <li>Аудит вразливостей увімкнено назад через <code>&lt;auditSources&gt;</code></li>
-            <li><b>Довіра до вбудованого джерела</b> <span class="tag">закрито</span> — підписаний незмінний реліз плюс ключ, вшитий у бінарник clio</li>
-            <li><b>Real-process E2E релізного шляху</b> <span class="tag">закрито</span> — живий MCP-процес проти герметичного Releases API: холодна інсталяція, hot reload, утримання last-known-good, теплий рестарт офлайн</li>
+            <li><b>Довіра до вбудованого джерела</b> <span class="tag">закрито</span> — підписаний реліз</li>
+            <li><b>Real-process E2E релізного шляху</b> <span class="tag">закрито</span> — живий MCP-процес</li>
           </ul>
         </div>
         <div>
           <h3 style="margin-bottom:.7rem">Свідомо відкрите</h3>
           <ul class="plain">
-            <li><b>Real-process E2E для git-транспорту</b> — вбудоване джерело на ньому більше не стоїть, але для партнерських git-джерел фікстури досі немає</li>
-            <li><b>NuGet-транспорт</b> — спроєктований, але не проганявся; єдиний закомічений там ключ підпису — одноразовий тестовий</li>
+            <li><b>Real-process E2E для git-транспорту</b> — вбудоване джерело вже не на ньому, а фікстури для партнерських git-джерел немає</li>
+            <li><b>NuGet-транспорт</b> — спроєктований, але не проганявся; ключ підпису там одноразовий тестовий</li>
           </ul>
         </div>
       </div>
@@ -818,23 +804,23 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
           <tbody>
             <tr>
               <td>Партнерське git-джерело наживо</td>
-              <td>Вбудоване джерело на git більше не спирається, але транспорт лишився для партнерів; юніти підміняють запуск процесів, тож реальні квотинг, refs і активація не перевірені на межі</td>
+              <td>Юніти підміняють запуск процесів — квотинг, refs і активація не перевірені; транспорт лишився партнерам</td>
             </tr>
             <tr>
               <td>Апгрейд зі старої clio</td>
-              <td>На дисках лежить git-checkout <code>creatio-curated</code> (а десь і старий <code>creatio-poc</code>); переписування запису на реліз-контракт жодного разу не виконувалось на реальній машині</td>
+              <td>Переписування git-запису на реліз-контракт не виконувалось на реальній машині</td>
             </tr>
             <tr>
-              <td>Зовсім холодна машина без мережі</td>
-              <td>Теплий рестарт офлайн уже покритий e2e; лишається кейс «немає ні кешу, ні мережі» — типізована відповідь «guidance недоступна» в межах бюджету</td>
+              <td>Ні кешу, ні мережі</td>
+              <td>Теплий рестарт офлайн уже покритий e2e; лишається саме цей кейс — типізована відповідь у межах бюджету</td>
             </tr>
             <tr>
               <td>Ротація ключа підпису</td>
-              <td>Порядок обов'язково споживач-перший: спершу новий публічний ключ у релізі clio, потім підпис ним, і лише потім вивід старого. Зворотний порядок робить кожен новий реліз неперевірюваним, поки старий тихо лишається активним</td>
+              <td>Порядок лише такий: новий публічний ключ у релізі clio → підпис ним → виведення старого з обігу. Зворотний порядок унеможливлює перевірку нових релізів, поки старий тихо лишається активним</td>
             </tr>
             <tr>
-              <td>Кілька MCP на один CLIO_HOME</td>
-              <td>VS Code + CLI одночасно; поведінка під конкуренцією локів змінилася</td>
+              <td>Спільний CLIO_HOME</td>
+              <td>Кілька MCP одночасно (VS Code + CLI); поведінка під конкуренцією локів змінилася</td>
             </tr>
             <tr>
               <td>Друге реальне джерело</td>
@@ -857,25 +843,25 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
           </div>
           <div class="qa__item">
             <h3>Треба релізити clio, щоб змінити текст?</h3>
-            <p>Бінарник clio — ні. Але потрібен реліз <code>clio-knowledge</code>: мерж у master нічого не доставляє, доставляє опублікований підписаний реліз.</p>
+            <p>Бінарник clio — ні. Але потрібен реліз <code>clio-knowledge</code>: мерж у master не доставляє нічого.</p>
           </div>
           <div class="qa__item">
             <h3>Що замість <code>[FeatureToggle]</code>?</h3>
             <p>Поле <code>requiredFeatures</code> у маніфесті. Стаття з вимкненим прапорцем не резолвиться і не потрапляє в списки.</p>
           </div>
+          <div class="qa__item">
+            <h3>Старі посилання <code>docs://mcp/guides/…</code> зламаються?</h3>
+            <p>Ні. Вони збережені як <code>legacyUris</code> і працюють.</p>
+          </div>
         </div>
         <div class="qa">
           <div class="qa__item">
             <h3>Потрібна мережа?</h3>
-            <p>Теплий старт — <b>нуль мережевих викликів</b>: clio бачить маркер генерації і піднімає перевірений кеш із диска. У мережу він іде лише тоді, коли ви явно просите: <code>install-knowledge</code>, <code>update-knowledge</code> (та <code>info-knowledge --check-updates</code>). Без мережі й без кешу MCP стартує і чесно каже, що guidance недоступна.</p>
+            <p>Теплий старт — <b>нуль мережевих викликів</b>: перевірений кеш піднімається з диска. У мережу clio йде на першій, холодній установці (наживо 1,10&nbsp;с) і далі — лише на явні <code>install-knowledge</code> / <code>update-knowledge</code>. Без мережі й без кешу MCP стартує і чесно каже, що guidance недоступна.</p>
           </div>
           <div class="qa__item">
             <h3>А закритий контур без GitHub?</h3>
-            <p>Лишаються <code>git</code>- і <code>nuget</code>-транспорти з власним якорем довіри: <code>--trusted-key-id</code> + <code>--trusted-public-key-path</code>. Механіка підпису й перевірки тепер справжня і обкатана на реліз-шляху; сам NuGet-транспорт поки спроєктований, але не проганявся.</p>
-          </div>
-          <div class="qa__item">
-            <h3>Старі посилання <code>docs://mcp/guides/…</code> зламаються?</h3>
-            <p>Ні. Вони збережені як <code>legacyUris</code> — 110 таких маршрутів перевірено на живому стенді.</p>
+            <p>Це <code>nuget</code>-транспорт: підписаний бандл плюс обов'язкові <code>--trusted-key-id</code> + <code>--trusted-public-key-path</code>. <code>git</code> перевіряється ревізією, а не підписом — ці прапорці для нього відхиляються. Сам NuGet-транспорт поки спроєктований і не проганявся.</p>
           </div>
         </div>
       </div>
@@ -889,11 +875,11 @@ clio info-knowledge   # active: com.creatio.clio · sequence 11 · digest 3C6DB3
         <div class="qa">
           <div class="qa__item">
             <h3>Старт MCP став повільнішим?</h3>
-            <p>Теплий — ні: перевірка існування маркера генерації, без локів, без парсингу, без HTTP. Верхня межа 5 секунд лишилась і стосується холодного старту з інсталяцією — це один наскрізний бюджет, а не 5 с на кожну фазу.</p>
+            <p>Теплий — ні: маркер генерації, без локів і без HTTP — наживо 0,60&nbsp;с. Межа 5 секунд стосується холодного старту: один наскрізний бюджет, а не 5 с на фазу.</p>
           </div>
           <div class="qa__item">
             <h3>Як відкотити погану статтю?</h3>
-            <p>Новим релізом із <b>новим</b> sequence, що несе попередній вміст. Не перевипускайте старий з іншим вмістом — споживач відхилить усю бібліотеку. Погана генерація при цьому лишається точно названою: тег, дайджест і sequence незмінні, тому видно, хто саме що бачить.</p>
+            <p>Новим релізом із <b>новим</b> sequence і попереднім вмістом. Перевипуск старого — і споживач відхилить усю бібліотеку.</p>
           </div>
           <div class="qa__item">
             <h3>Як зрозуміти, що активне саме моє?</h3>
