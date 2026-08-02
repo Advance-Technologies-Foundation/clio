@@ -142,12 +142,18 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 		KnowledgeSourceConfiguration source,
 		CancellationToken cancellationToken) {
 		Uri apiBase = new(source.Location, UriKind.Absolute);
+		// Validation already guarantees these, but reading them through a guard keeps the URI builder
+		// free of null-forgiving operators in a file where nullable warnings are off.
+		string owner = source.RepositoryOwner ?? throw new ArgumentException(
+			"A GitHub release source must declare a repository owner.", nameof(request));
+		string repository = source.RepositoryName ?? throw new ArgumentException(
+			"A GitHub release source must declare a repository name.", nameof(request));
 		HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
 		// A repair asks for one exact previously installed revision; ordinary discovery asks GitHub which
 		// release is current. Neither trusts tag ordering to decide what may be activated.
 		Uri metadataUri = request.ExactRevision is { Length: > 0 } exactRevision
-			? BuildApiUri(apiBase, source, $"releases/tags/{Uri.EscapeDataString(exactRevision)}")
-			: BuildApiUri(apiBase, source, "releases/latest");
+			? BuildApiUri(apiBase, owner, repository, $"releases/tags/{Uri.EscapeDataString(exactRevision)}")
+			: BuildApiUri(apiBase, owner, repository, "releases/latest");
 		bool isDiscovery = request.ExactRevision is not { Length: > 0 };
 		ReleaseMetadataResponse metadata = ReadReleaseMetadata(
 			client,
@@ -193,11 +199,11 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 				: "The release is not marked immutable; its assets could still be replaced upstream.");
 	}
 
-	private static Uri BuildApiUri(Uri apiBase, KnowledgeSourceConfiguration source, string relativePath) =>
+	private static Uri BuildApiUri(Uri apiBase, string owner, string repository, string relativePath) =>
 		new(KnowledgeTransportHttp.EnsureTrailingSlash(apiBase),
-			$"repos/{Uri.EscapeDataString(source.RepositoryOwner!)}/{Uri.EscapeDataString(source.RepositoryName!)}/{relativePath}");
+			$"repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repository)}/{relativePath}");
 
-	private ReleaseMetadataResponse ReadReleaseMetadata(
+	private static ReleaseMetadataResponse ReadReleaseMetadata(
 		HttpClient client,
 		Uri metadataUri,
 		string? entityTag,
@@ -249,6 +255,14 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 			throw new InvalidDataException(
 				"A knowledge release tag must be an exact MAJOR.MINOR.PATCH library version.");
 		}
+		JsonElement selected = SelectDeclaredAsset(release, source);
+		return DescribeAsset(selected, release, tag, apiBase);
+	}
+
+	/// <summary>
+	/// Returns the single asset the source declares, refusing a release that does not expose exactly one.
+	/// </summary>
+	private static JsonElement SelectDeclaredAsset(JsonElement release, KnowledgeSourceConfiguration source) {
 		if (!release.TryGetProperty("assets", out JsonElement assets)
 				|| assets.ValueKind != JsonValueKind.Array
 				|| assets.GetArrayLength() > MaxAssetEntries) {
@@ -262,7 +276,17 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 			throw new InvalidDataException(
 				$"The GitHub release must expose exactly one '{source.AssetName}' asset.");
 		}
-		JsonElement selected = matches[0];
+		return matches[0];
+	}
+
+	/// <summary>
+	/// Validates the selected asset's state, type, size, digest, and download host.
+	/// </summary>
+	private static SelectedReleaseAsset DescribeAsset(
+		JsonElement selected,
+		JsonElement release,
+		string tag,
+		Uri apiBase) {
 		if (!string.Equals(ReadString(selected, "state"), "uploaded", StringComparison.Ordinal)) {
 			throw new InvalidDataException("The selected release asset is not in the uploaded state.");
 		}
