@@ -46,9 +46,9 @@ public sealed class KnowledgeManagementToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(KnowledgeManagementTools.InfoKnowledgeToolName)]
-	[AllureName("MCP startup preserves the curated source kill switch")]
-	[AllureDescription("Starts the real Clio MCP server with a disabled built-in source and verifies bootstrap preserves the canonical configuration without contacting Git or asserting external guidance content.")]
-	[Description("Preserves the disabled curated source through the real MCP startup path.")]
+	[AllureName("MCP startup migrates the curated source to GitHub Release delivery and preserves its kill switch")]
+	[AllureDescription("Starts the real Clio MCP server over a pre-upgrade Git-transport built-in source and verifies bootstrap rewrites it to the GitHub Release contract without contacting any remote and without re-enabling it.")]
+	[Description("Migrates the disabled curated source from Git to GitHub Release delivery through the real MCP startup path.")]
 	public async Task McpStartup_ShouldPreserveCuratedKillSwitch_WhenSourceIsDisabled() {
 		// Arrange
 		await using ArrangeContext context = Arrange();
@@ -81,13 +81,20 @@ public sealed class KnowledgeManagementToolE2ETests : McpContractFixtureBase {
 			because: "the local-only info path must expose the operator's durable bootstrap opt-out");
 		source.GetProperty("library-id").GetString().Should().Be("com.creatio.clio",
 			because: "the built-in source is bound to the stable curated library identity");
-		source.GetProperty("location").GetString().Should().Be(
-			"https://github.com/Advance-Technologies-Foundation/clio-knowledge.git",
-			because: "bootstrap must persist the supported public Git origin rather than an implicit transport");
-		source.GetProperty("branch").GetString().Should().Be("master",
-			because: "the unpinned curated source follows the supported master branch");
+		source.GetProperty("type").GetString().Should().Be("github-release",
+			because: "an upgrade must migrate the pre-upgrade Git built-in source onto release delivery");
+		source.GetProperty("location").GetString().Should().Be("https://api.github.com/",
+			because: "bootstrap must persist the GitHub API origin rather than a Git clone URL");
+		source.GetProperty("repository-owner").GetString().Should().Be("Advance-Technologies-Foundation",
+			because: "the built-in source addresses a fixed repository identity instead of an arbitrary URL");
+		source.GetProperty("repository-name").GetString().Should().Be("clio-knowledge",
+			because: "the built-in source addresses a fixed repository identity instead of an arbitrary URL");
+		source.GetProperty("asset-name").GetString().Should().Be("clio-knowledge-bundle.zip",
+			because: "exactly one declared asset name may be retrieved from a release");
+		source.TryGetProperty("branch", out JsonElement branch).Should().BeFalse(
+			because: $"the migrated entry must carry no Git reference, but found '{branch}'");
 		source.GetProperty("enabled").GetBoolean().Should().BeFalse(
-			because: "MCP bootstrap must never silently re-enable an explicitly disabled built-in source");
+			because: "the kill switch must survive the transport migration; bootstrap may never silently re-enable a disabled built-in source");
 	}
 
 	[Test]

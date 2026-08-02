@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support;
 
 namespace Clio.Mcp.E2E.Support.Knowledge;
 
@@ -46,7 +47,7 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	internal string KeyId => "synthetic-nuget-test-key";
 
 	internal static SyntheticKnowledgeNuGetFixture Create() {
-		string root = Path.Combine(Path.GetTempPath(), $"clio-knowledge-nuget-e2e-{Guid.NewGuid():N}");
+		string root = Path.Combine(PhysicalPath.Resolve(Path.GetTempPath()), $"clio-knowledge-nuget-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(root);
 		ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 		FakeNuGetV3Feed feed = new(PackageId);
