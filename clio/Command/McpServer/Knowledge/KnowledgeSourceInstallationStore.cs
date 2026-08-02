@@ -72,6 +72,19 @@ internal interface IKnowledgeSourceInstallationStore {
 	/// <returns>The repository path when it exists; otherwise <see langword="null"/>.</returns>
 	string? GetInstalledGitRepositoryPath(string sourceAlias);
 
+	/// <summary>
+	/// Reports whether <paramref name="sourceAlias"/> already has a materialized Git checkout.
+	/// </summary>
+	/// <remarks>
+	/// A directory-marker probe only: it spawns no Git process and reads no history, so it is safe
+	/// on a bounded startup path where a full inspection is not. It answers "is there something to
+	/// activate", not "is that checkout valid" — validation belongs to activation, which runs
+	/// without blocking on the source mutation lock and falls back when a checkout is unusable.
+	/// </remarks>
+	/// <param name="sourceAlias">The configured knowledge source alias.</param>
+	/// <returns><see langword="true"/> when a Git checkout is present.</returns>
+	bool IsGitRepositoryInstalled(string sourceAlias);
+
 	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
 
 	bool MigrateGitRepository(string sourceAlias, string targetAlias);
@@ -176,6 +189,11 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	public string? GetInstalledGitRepositoryPath(string sourceAlias) {
 		string repositoryPath = GetGitRepositoryPath(sourceAlias, createSourceRoot: false);
 		return _fileSystem.Directory.Exists(repositoryPath) ? repositoryPath : null;
+	}
+
+	public bool IsGitRepositoryInstalled(string sourceAlias) {
+		string repositoryPath = GetGitRepositoryPath(sourceAlias, createSourceRoot: false);
+		return _fileSystem.Directory.Exists(_fileSystem.Path.Combine(repositoryPath, ".git"));
 	}
 
 	public bool TryMigrateGitRepository(string sourceAlias, string targetAlias) {

@@ -114,9 +114,17 @@ internal sealed class CuratedKnowledgeBootstrapService(
 					migrationAlias,
 					CuratedKnowledgeSourceDefaults.Alias);
 			}
-			KnowledgeSourceConfiguration source = settingsRepository.EnsureKnowledgeSource(
-				CuratedKnowledgeSourceDefaults.Alias,
-				CuratedKnowledgeSourceDefaults.CreateConfiguration());
+			// The settings write lock waits up to thirty seconds on a contended appsettings file and
+			// takes no cancellation token, so it cannot be part of a five-second pre-serve budget.
+			// In the steady state nothing needs writing: read first, and take the lock only on the
+			// first run or when an earlier version left a non-canonical entry behind.
+			KnowledgeSourceConfiguration source =
+				current.Sources.TryGetValue(CuratedKnowledgeSourceDefaults.Alias, out KnowledgeSourceConfiguration? existing)
+				&& IsCanonical(existing)
+					? existing
+					: settingsRepository.EnsureKnowledgeSource(
+						CuratedKnowledgeSourceDefaults.Alias,
+						CuratedKnowledgeSourceDefaults.CreateConfiguration());
 			if (!source.Enabled) {
 				return new CuratedKnowledgeBootstrapResult(
 					true,
@@ -170,19 +178,16 @@ internal sealed class CuratedKnowledgeBootstrapService(
 					false,
 					$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' was disabled before installation; its cache was retained.");
 			}
-			TimeSpan remainingBeforeInspection = Remaining;
-			if (remainingBeforeInspection <= TimeSpan.Zero) {
+			if (Remaining <= TimeSpan.Zero) {
 				return BudgetExhausted();
 			}
-			// Local inspection can run real Git validation, so it is bounded too rather than being
-			// treated as free work that happens before the deadline-aware install.
-			budget.CancelAfter(remainingBeforeInspection);
-			KnowledgeSourceInfoResult info = sourceManagementService.GetInfo(
-				CuratedKnowledgeSourceDefaults.Alias,
-				checkUpdates: false,
-				budget.Token);
-			KnowledgeSourceInfo? installed = info.Sources.SingleOrDefault();
-			if (info.Success && installed is { IsInstalled: true, IsValid: true }) {
+			// A directory-marker probe, not an inspection. GetInfo cannot be used here: for a single
+			// source it bypasses batch bounding and runs with a fixed thirty-second operation
+			// deadline, and the Git validation underneath opens a further thirty-second window of
+			// its own. Whether the checkout is actually usable is decided by activation, which never
+			// blocks on the source mutation lock and falls back when it is not.
+			if (source.Type == KnowledgeSourceType.Git
+					&& installationStore.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias)) {
 				return new CuratedKnowledgeBootstrapResult(
 					true,
 					true,
@@ -230,6 +235,27 @@ internal sealed class CuratedKnowledgeBootstrapService(
 		return !preparation.Success || !preparation.Enabled
 			? preparation
 			: InstallPreparedSource(cancellationToken);
+	}
+
+	/// <summary>
+	/// Reports whether a persisted entry already matches the built-in definition.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="KnowledgeSourceConfiguration.Enabled"/> is deliberately excluded: the kill switch
+	/// is operator-owned and a disabled source is still canonical.
+	/// </remarks>
+	/// <param name="candidate">The persisted entry.</param>
+	/// <returns><see langword="true"/> when nothing has to be written.</returns>
+	private static bool IsCanonical(KnowledgeSourceConfiguration candidate) {
+		KnowledgeSourceConfiguration expected = CuratedKnowledgeSourceDefaults.CreateConfiguration();
+		return string.Equals(candidate.LibraryId, expected.LibraryId, StringComparison.OrdinalIgnoreCase)
+			&& candidate.Type == expected.Type
+			&& string.Equals(candidate.Location, expected.Location, StringComparison.Ordinal)
+			&& string.Equals(candidate.Branch, expected.Branch, StringComparison.Ordinal)
+			&& string.IsNullOrWhiteSpace(candidate.Tag)
+			&& string.IsNullOrWhiteSpace(candidate.Commit)
+			&& candidate.Priority == expected.Priority
+			&& candidate.Participation == expected.Participation;
 	}
 
 	private static CuratedKnowledgeBootstrapResult BudgetExhausted() => new(

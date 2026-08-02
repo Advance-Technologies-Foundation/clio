@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using Clio.UserEnvironment;
@@ -44,6 +46,10 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	[Description("Bootstrap persists the canonical Git source and installs it when no valid local checkout exists.")]
 	public void Bootstrap_ShouldInstallCanonicalSource_WhenLocalCheckoutIsMissing() {
 		// Arrange
+		// First run: nothing is persisted yet, so preparation has to take the settings write lock.
+		_settings.GetKnowledgeConfiguration().Returns(
+			Configuration(),
+			Configuration((CuratedKnowledgeSourceDefaults.Alias, CuratedKnowledgeSourceDefaults.CreateConfiguration())));
 		_management.Install(
 			CuratedKnowledgeSourceDefaults.Alias,
 			Arg.Any<int>(),
@@ -84,24 +90,19 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	[Description("Bootstrap uses a valid local curated checkout without performing a Git update or reinstall.")]
 	public void Bootstrap_ShouldUseLocalCache_WhenInstalledCheckoutIsValid() {
 		// Arrange
-		_management.GetInfo(
-			CuratedKnowledgeSourceDefaults.Alias,
-			checkUpdates: false,
-			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceInfoResult(
-				true,
-				"appsettings.json",
-				"knowledge",
-				[SourceInfo(isInstalled: true, isValid: true)]));
+		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "a valid local checkout is sufficient to serve guidance immediately");
+			because: "a present local checkout is sufficient to serve guidance immediately");
 		result.Message.Should().Contain("local cache",
 			because: "the diagnostic should make clear that startup performed no remote update");
 		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
+		_management.DidNotReceiveWithAnyArgs().GetInfo(default, default, default);
+		_settings.DidNotReceiveWithAnyArgs().EnsureKnowledgeSource(default!, default!);
 	}
 
 	[Test]
@@ -113,14 +114,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			Configuration(("creatio-poc", previous)),
 			Configuration((CuratedKnowledgeSourceDefaults.Alias, CuratedKnowledgeSourceDefaults.CreateConfiguration())));
 		_store.TryMigrateGitRepository("creatio-poc", CuratedKnowledgeSourceDefaults.Alias).Returns(true);
-		_management.GetInfo(
-			CuratedKnowledgeSourceDefaults.Alias,
-			checkUpdates: false,
-			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceInfoResult(
-				true,
-				"appsettings.json",
-				"knowledge",
-				[SourceInfo(isInstalled: true, isValid: true)]));
+		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
@@ -167,9 +161,8 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		KnowledgeSourceConfiguration disabled = CuratedKnowledgeSourceDefaults.CreateConfiguration();
 		disabled.Enabled = false;
-		_settings.EnsureKnowledgeSource(
-			CuratedKnowledgeSourceDefaults.Alias,
-			Arg.Any<KnowledgeSourceConfiguration>()).Returns(disabled);
+		_settings.GetKnowledgeConfiguration().Returns(
+			Configuration((CuratedKnowledgeSourceDefaults.Alias, disabled)));
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
@@ -218,6 +211,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	[Description("Unexpected non-fatal bootstrap exceptions become diagnostics rather than terminating the MCP process.")]
 	public void Bootstrap_ShouldReturnFailure_WhenSettingsBootstrapThrowsUnexpectedException() {
 		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration());
 		_settings.When(repository => repository.EnsureKnowledgeSource(
 			CuratedKnowledgeSourceDefaults.Alias,
 			Arg.Any<KnowledgeSourceConfiguration>())).Do(_ => throw new NullReferenceException("unexpected failure"));
@@ -329,6 +323,40 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			because: "installation gets what the earlier phases left, not a fresh startup allowance");
 	}
 
+	[Test]
+	[Description("A stalled settings write or checkout inspection cannot delay startup, because a prepared source reaches neither.")]
+	public void Bootstrap_ShouldReturnImmediately_WhenSettingsWriteAndInspectionWouldStall() {
+		// Arrange
+		// Wall clock on purpose. Both collaborators block for far longer than the pre-serve budget:
+		// the settings write lock waits on a contended appsettings file, and single-source GetInfo
+		// runs with a fixed thirty-second operation deadline plus Git validation underneath. Neither
+		// takes a cancellation token that startup controls, so the only real bound is not calling
+		// them at all once the source is canonical and its checkout is present.
+		TimeSpan stall = TimeSpan.FromSeconds(30);
+		_settings.When(repository => repository.EnsureKnowledgeSource(
+				Arg.Any<string>(),
+				Arg.Any<KnowledgeSourceConfiguration>()))
+			.Do(_ => Thread.Sleep(stall));
+		_management.When(management => management.GetInfo(
+				Arg.Any<string>(),
+				Arg.Any<bool>(),
+				Arg.Any<System.Threading.CancellationToken>()))
+			.Do(_ => Thread.Sleep(stall));
+		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		Stopwatch elapsed = Stopwatch.StartNew();
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
+		elapsed.Stop();
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a canonical source with a present checkout is ready without touching either blocking path");
+		elapsed.Elapsed.Should().BeLessThan(
+			TimeSpan.FromMilliseconds(CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds),
+			because: "startup must stay inside the advertised pre-serve budget even when both collaborators would block for thirty seconds");
+	}
+
 	/// <summary>A manually advanced clock, so budget exhaustion is deterministic rather than timing-dependent.</summary>
 	private sealed class BootstrapClock : TimeProvider {
 		private long _timestamp;
@@ -341,9 +369,12 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	private static KnowledgeConfiguration Configuration(
-		params (string Alias, KnowledgeSourceConfiguration Source)[] sources) => new() {
-		Sources = new Dictionary<string, KnowledgeSourceConfiguration>(StringComparer.OrdinalIgnoreCase) {
-			[sources[0].Alias] = sources[0].Source
+		params (string Alias, KnowledgeSourceConfiguration Source)[] sources) {
+		Dictionary<string, KnowledgeSourceConfiguration> map =
+			new(StringComparer.OrdinalIgnoreCase);
+		foreach ((string alias, KnowledgeSourceConfiguration source) in sources) {
+			map[alias] = source;
 		}
-	};
+		return new KnowledgeConfiguration { Sources = map };
+	}
 }
