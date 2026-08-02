@@ -85,6 +85,20 @@ internal interface IKnowledgeSourceInstallationStore {
 	/// <returns><see langword="true"/> when a Git checkout is present.</returns>
 	bool IsGitRepositoryInstalled(string sourceAlias);
 
+	/// <summary>
+	/// Reports whether <paramref name="sourceAlias"/> already has a published bundle generation.
+	/// </summary>
+	/// <remarks>
+	/// The artifact-transport counterpart of <see cref="IsGitRepositoryInstalled"/>, and subject to the
+	/// same contract: a marker-existence probe only. It opens no archive, parses no JSON, takes no
+	/// mutation lock, and — decisively — performs no network call, so it is safe on the bounded startup
+	/// path where the full <see cref="ReadCurrent"/> reconciliation is not. It answers "is there
+	/// something to activate", not "is that generation valid".
+	/// </remarks>
+	/// <param name="sourceAlias">The configured knowledge source alias.</param>
+	/// <returns><see langword="true"/> when an activation marker is present.</returns>
+	bool IsBundleGenerationInstalled(string sourceAlias);
+
 	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
 
 	bool MigrateGitRepository(string sourceAlias, string targetAlias);
@@ -194,6 +208,19 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	public bool IsGitRepositoryInstalled(string sourceAlias) {
 		string repositoryPath = GetGitRepositoryPath(sourceAlias, createSourceRoot: false);
 		return _fileSystem.Directory.Exists(_fileSystem.Path.Combine(repositoryPath, ".git"));
+	}
+
+	public bool IsBundleGenerationInstalled(string sourceAlias) {
+		KnowledgeSourceConfigurationValidator.ValidateAlias(sourceAlias);
+		try {
+			string sourceRoot = ResolveSourceRoot(sourceAlias, create: false);
+			return _fileSystem.Directory.Exists(sourceRoot)
+				&& _fileSystem.File.Exists(ResolveChild(sourceRoot, CurrentFileName));
+		} catch (Exception exception) when (IsStorageException(exception)) {
+			// A probe that cannot read the marker reports "nothing to activate" and lets the caller
+			// take the installing path; it must not surface a storage error on the startup budget.
+			return false;
+		}
 	}
 
 	public bool TryMigrateGitRepository(string sourceAlias, string targetAlias) {

@@ -33,6 +33,7 @@ public sealed class ConfiguredKnowledgeBundleTrustStoreTests {
 		ServiceCollection services = new();
 		services.AddSingleton(_configurationProvider);
 		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddSingleton<IBuiltInKnowledgeBundleTrustStore, BuiltInKnowledgeBundleTrustStore>();
 		services.AddSingleton<IKnowledgeBundleTrustStore, ConfiguredKnowledgeBundleTrustStore>();
 		services.AddSingleton<IKnowledgeTrustFingerprintService, KnowledgeTrustFingerprintService>();
 		_container = services.BuildServiceProvider();

@@ -12,21 +12,67 @@ namespace Clio.Command.McpServer.Knowledge;
 internal static class CuratedKnowledgeSourceDefaults {
 	internal const string Alias = "creatio-curated";
 	internal const string LibraryId = "com.creatio.clio";
-	internal const string Location = "https://github.com/Advance-Technologies-Foundation/clio-knowledge.git";
-	internal const string Branch = "master";
+
+	/// <summary>
+	/// The GitHub REST API origin the built-in source is discovered through.
+	/// </summary>
+	/// <remarks>
+	/// Only the API origin is configurable; the repository identity and asset name are fixed below so
+	/// the built-in source can never be pointed at an arbitrary URL. The origin exists as a value
+	/// rather than a literal so the hermetic end-to-end tests can substitute a loopback server.
+	/// </remarks>
+	internal const string Location = "https://api.github.com/";
+
+	/// <summary>The GitHub owner publishing the curated knowledge library.</summary>
+	internal const string RepositoryOwner = "Advance-Technologies-Foundation";
+
+	/// <summary>The GitHub repository publishing the curated knowledge library.</summary>
+	internal const string RepositoryName = "clio-knowledge";
+
+	/// <summary>The fixed release-asset file name carrying the signed bundle.</summary>
+	internal const string AssetName = "clio-knowledge-bundle.zip";
+
+	/// <summary>
+	/// Overrides the built-in source's GitHub API origin.
+	/// </summary>
+	/// <remarks>
+	/// Present so a hermetic test can point the built-in source at a loopback Releases API without a
+	/// second bootstrap code path. It accepts only a loopback HTTPS or HTTP origin: a value naming any
+	/// other host is ignored, so the variable cannot redirect a real installation to a foreign server.
+	/// </remarks>
+	internal const string LocationOverrideVariable = "CLIO_KNOWLEDGE_CURATED_API_BASE_URL";
+
 	internal const string LegacyAlias = "creatio-poc";
 	internal const int Priority = 100;
 	internal const int StartupInstallDeadlineMilliseconds = 5_000;
 
 	internal static KnowledgeSourceConfiguration CreateConfiguration() => new() {
 		LibraryId = LibraryId,
-		Type = KnowledgeSourceType.Git,
-		Location = Location,
-		Branch = Branch,
+		Type = KnowledgeSourceType.GitHubRelease,
+		Location = ResolveLocation(),
+		RepositoryOwner = RepositoryOwner,
+		RepositoryName = RepositoryName,
+		AssetName = AssetName,
 		Enabled = true,
 		Priority = Priority,
 		Participation = KnowledgeSourceParticipation.Authoritative
 	};
+
+	/// <summary>
+	/// Returns the API origin to configure, honoring a loopback-only test override.
+	/// </summary>
+	/// <returns>The canonical GitHub API origin, or a loopback override when one is set.</returns>
+	internal static string ResolveLocation() {
+		string? candidate = Environment.GetEnvironmentVariable(LocationOverrideVariable);
+		return Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri)
+			&& uri.IsLoopback
+			&& (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+			&& string.IsNullOrEmpty(uri.UserInfo)
+			&& string.IsNullOrEmpty(uri.Query)
+			&& string.IsNullOrEmpty(uri.Fragment)
+				? uri.AbsoluteUri
+				: Location;
+	}
 }
 
 /// <summary>
@@ -181,13 +227,16 @@ internal sealed class CuratedKnowledgeBootstrapService(
 			if (Remaining <= TimeSpan.Zero) {
 				return BudgetExhausted();
 			}
-			// A directory-marker probe, not an inspection. GetInfo cannot be used here: for a single
+			// A file-marker probe, not an inspection. GetInfo cannot be used here: for a single
 			// source it bypasses batch bounding and runs with a fixed thirty-second operation
 			// deadline, and the Git validation underneath opens a further thirty-second window of
-			// its own. Whether the checkout is actually usable is decided by activation, which never
-			// blocks on the source mutation lock and falls back when it is not.
-			if (source.Type == KnowledgeSourceType.Git
-					&& installationStore.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias)) {
+			// its own. Whether the cached content is actually usable is decided by activation, which
+			// never blocks on the source mutation lock and falls back when it is not.
+			//
+			// This branch is what keeps a warm start offline. Without an artifact-shaped probe the
+			// bundle transports would fall through to Install below and reach the network on every
+			// single MCP start, inside the five-second pre-serve budget.
+			if (IsLocallyInstalled(source.Type, CuratedKnowledgeSourceDefaults.Alias)) {
 				return new CuratedKnowledgeBootstrapResult(
 					true,
 					true,
@@ -251,12 +300,30 @@ internal sealed class CuratedKnowledgeBootstrapService(
 		return string.Equals(candidate.LibraryId, expected.LibraryId, StringComparison.OrdinalIgnoreCase)
 			&& candidate.Type == expected.Type
 			&& string.Equals(candidate.Location, expected.Location, StringComparison.Ordinal)
-			&& string.Equals(candidate.Branch, expected.Branch, StringComparison.Ordinal)
+			&& string.Equals(candidate.RepositoryOwner, expected.RepositoryOwner, StringComparison.Ordinal)
+			&& string.Equals(candidate.RepositoryName, expected.RepositoryName, StringComparison.Ordinal)
+			&& string.Equals(candidate.AssetName, expected.AssetName, StringComparison.Ordinal)
+			&& string.IsNullOrWhiteSpace(candidate.Branch)
 			&& string.IsNullOrWhiteSpace(candidate.Tag)
 			&& string.IsNullOrWhiteSpace(candidate.Commit)
 			&& candidate.Priority == expected.Priority
 			&& candidate.Participation == expected.Participation;
 	}
+
+	/// <summary>
+	/// Reports whether the alias already has content on disk that activation could serve.
+	/// </summary>
+	/// <remarks>
+	/// Purely local and lock-free by design: it must never contact a transport. A repository transport
+	/// keeps a checkout, every artifact transport keeps published generations behind an activation
+	/// marker, so each shape gets the probe that matches how it stores content.
+	/// </remarks>
+	/// <param name="type">The configured transport type.</param>
+	/// <param name="alias">The configured source alias.</param>
+	/// <returns><see langword="true"/> when local content is present.</returns>
+	private bool IsLocallyInstalled(KnowledgeSourceType type, string alias) => type == KnowledgeSourceType.Git
+		? installationStore.IsGitRepositoryInstalled(alias)
+		: installationStore.IsBundleGenerationInstalled(alias);
 
 	private static CuratedKnowledgeBootstrapResult BudgetExhausted() => new(
 		false,

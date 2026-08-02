@@ -24,7 +24,50 @@ public enum KnowledgeSourceType {
 	/// Synchronizes and reads declarative knowledge directly from a managed Git repository checkout.
 	/// </summary>
 	[EnumMember(Value = "git")]
-	Git
+	Git,
+
+	/// <summary>
+	/// Retrieves a signed bundle published as an immutable GitHub Release asset.
+	/// </summary>
+	/// <remarks>
+	/// This transport never touches a Git checkout and never requires the Git CLI: it reads the
+	/// repository's latest stable release through the GitHub REST API and downloads exactly one
+	/// declared asset.
+	/// </remarks>
+	[EnumMember(Value = "github-release")]
+	GitHubRelease
+}
+
+/// <summary>
+/// Maps <see cref="KnowledgeSourceType"/> onto the stable token used on the wire, in settings, and in
+/// operator-visible output.
+/// </summary>
+/// <remarks>
+/// <c>Enum.ToString()</c> is deliberately not used: it produces <c>githubrelease</c>, which is neither
+/// the persisted token nor the value <c>add-knowledge-source --type</c> accepts.
+/// </remarks>
+internal static class KnowledgeSourceTypeNames {
+
+	/// <summary>The token for a signed bundle published as a GitHub Release asset.</summary>
+	internal const string GitHubRelease = "github-release";
+
+	/// <summary>The token for a managed Git repository checkout.</summary>
+	internal const string Git = "git";
+
+	/// <summary>The token for a signed bundle retrieved from a NuGet v3 feed.</summary>
+	internal const string NuGet = "nuget";
+
+	/// <summary>
+	/// Returns the stable token for <paramref name="type"/>.
+	/// </summary>
+	/// <param name="type">The transport type.</param>
+	/// <returns>The token used in settings and in command output.</returns>
+	internal static string Format(KnowledgeSourceType type) => type switch {
+		KnowledgeSourceType.Git => Git,
+		KnowledgeSourceType.NuGet => NuGet,
+		KnowledgeSourceType.GitHubRelease => GitHubRelease,
+		_ => throw new ArgumentOutOfRangeException(nameof(type), type, "Knowledge source type is not supported.")
+	};
 }
 
 /// <summary>
@@ -97,6 +140,30 @@ public sealed class KnowledgeSourceConfiguration {
 	public string? PackageId { get; set; }
 
 	/// <summary>
+	/// Gets or sets the GitHub repository owner when <see cref="Type"/> is
+	/// <see cref="KnowledgeSourceType.GitHubRelease"/>.
+	/// </summary>
+	[JsonProperty("repository-owner")]
+	public string? RepositoryOwner { get; set; }
+
+	/// <summary>
+	/// Gets or sets the GitHub repository name when <see cref="Type"/> is
+	/// <see cref="KnowledgeSourceType.GitHubRelease"/>.
+	/// </summary>
+	[JsonProperty("repository-name")]
+	public string? RepositoryName { get; set; }
+
+	/// <summary>
+	/// Gets or sets the exact release asset file name to retrieve.
+	/// </summary>
+	/// <remarks>
+	/// The name is matched exactly and the release must expose it exactly once. A release that
+	/// carries no match, or more than one, is refused rather than guessed at.
+	/// </remarks>
+	[JsonProperty("asset-name")]
+	public string? AssetName { get; set; }
+
+	/// <summary>
 	/// Gets or sets the Git branch to follow.
 	/// </summary>
 	[JsonProperty("branch")]
@@ -138,6 +205,9 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 	private static readonly Regex AliasPattern = AliasRegex();
 	private static readonly Regex LibraryIdPattern = LibraryIdRegex();
 	private static readonly Regex PackageIdPattern = PackageIdRegex();
+	private static readonly Regex RepositoryOwnerPattern = RepositoryOwnerRegex();
+	private static readonly Regex RepositoryNamePattern = RepositoryNameRegex();
+	private static readonly Regex AssetNamePattern = AssetNameRegex();
 	private static readonly Regex GitCommitPattern = GitCommitRegex();
 	private static readonly Regex TopicIdPattern = TopicIdRegex();
 
@@ -192,6 +262,7 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 			if (source.Branch is not null || source.Tag is not null || source.Commit is not null) {
 				throw new ArgumentException("Git references are not valid for a NuGet knowledge source.", nameof(source));
 			}
+			RejectGitHubReleaseSettings(source, "NuGet");
 			result.TrustedKeyId = NormalizeTrustedKeyId(source.TrustedKeyId);
 			result.TrustedPublicKeyPath = NormalizeTrustedPublicKeyPath(source.TrustedPublicKeyPath);
 			if (string.IsNullOrWhiteSpace(source.PackageId) || !PackageIdPattern.IsMatch(source.PackageId)) {
@@ -201,10 +272,14 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 			result.PackageId = source.PackageId.Trim();
 			return result;
 		}
+		if (source.Type == KnowledgeSourceType.GitHubRelease) {
+			return CompleteGitHubReleaseSource(source, result);
+		}
 		if (source.Type != KnowledgeSourceType.Git) {
 			throw new ArgumentOutOfRangeException(nameof(source), source.Type,
 				"Knowledge source type is not supported.");
 		}
+		RejectGitHubReleaseSettings(source, "Git");
 		if (source.PackageId is not null
 				|| source.TrustedKeyId is not null
 				|| source.TrustedPublicKeyPath is not null) {
@@ -215,6 +290,70 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 		result.Tag = NormalizeGitReference(source.Tag, "tag");
 		result.Commit = NormalizeCommit(source.Commit);
 		return result;
+	}
+
+	/// <summary>
+	/// Completes validation for a <see cref="KnowledgeSourceType.GitHubRelease"/> entry.
+	/// </summary>
+	/// <remarks>
+	/// The transport addresses a structured repository identity rather than an arbitrary URL, so the
+	/// location carries only the API origin and the owner, repository, and asset name are validated
+	/// separately. Publisher trust is optional here — unlike NuGet — because Clio pins the built-in
+	/// library's key in the binary; a source that carries no key material can only be verified by that
+	/// pinned trust.
+	/// </remarks>
+	/// <param name="source">The caller-supplied entry.</param>
+	/// <param name="result">The partially populated clone to complete.</param>
+	/// <returns>The completed clone.</returns>
+	private static KnowledgeSourceConfiguration CompleteGitHubReleaseSource(
+		KnowledgeSourceConfiguration source,
+		KnowledgeSourceConfiguration result) {
+		if (source.Branch is not null || source.Tag is not null || source.Commit is not null) {
+			throw new ArgumentException("Git references are not valid for a GitHub release knowledge source.",
+				nameof(source));
+		}
+		if (source.PackageId is not null) {
+			throw new ArgumentException("A NuGet package ID is not valid for a GitHub release knowledge source.",
+				nameof(source));
+		}
+		if (string.IsNullOrWhiteSpace(source.RepositoryOwner)
+				|| !RepositoryOwnerPattern.IsMatch(source.RepositoryOwner)) {
+			throw new ArgumentException(
+				"A valid repository-owner is required for a GitHub release knowledge source.", nameof(source));
+		}
+		// The owner, repository, and asset name are interpolated into a REST path and matched against a
+		// release asset name, so a relative segment must never survive validation.
+		if (string.IsNullOrWhiteSpace(source.RepositoryName)
+				|| !RepositoryNamePattern.IsMatch(source.RepositoryName)
+				|| source.RepositoryName.Contains("..", StringComparison.Ordinal)) {
+			throw new ArgumentException(
+				"A valid repository-name is required for a GitHub release knowledge source.", nameof(source));
+		}
+		if (string.IsNullOrWhiteSpace(source.AssetName)
+				|| !AssetNamePattern.IsMatch(source.AssetName)
+				|| source.AssetName.Contains("..", StringComparison.Ordinal)
+				|| !source.AssetName.EndsWith(".zip", StringComparison.Ordinal)) {
+			throw new ArgumentException(
+				"A GitHub release knowledge source must declare an exact '.zip' asset-name.", nameof(source));
+		}
+		result.RepositoryOwner = source.RepositoryOwner.Trim();
+		result.RepositoryName = source.RepositoryName.Trim();
+		result.AssetName = source.AssetName.Trim();
+		if (source.TrustedKeyId is null && source.TrustedPublicKeyPath is null) {
+			return result;
+		}
+		result.TrustedKeyId = NormalizeTrustedKeyId(source.TrustedKeyId);
+		result.TrustedPublicKeyPath = NormalizeTrustedPublicKeyPath(source.TrustedPublicKeyPath);
+		return result;
+	}
+
+	private static void RejectGitHubReleaseSettings(KnowledgeSourceConfiguration source, string transportLabel) {
+		if (source.RepositoryOwner is not null
+				|| source.RepositoryName is not null
+				|| source.AssetName is not null) {
+			throw new ArgumentException(
+				$"GitHub release settings are not valid for a {transportLabel} knowledge source.", nameof(source));
+		}
 	}
 
 	internal static void ValidateAlias(string alias) {
@@ -320,6 +459,15 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 
 	[GeneratedRegex("^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$", RegexOptions.CultureInvariant)]
 	private static partial Regex GitCommitRegex();
+
+	[GeneratedRegex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", RegexOptions.CultureInvariant)]
+	private static partial Regex RepositoryOwnerRegex();
+
+	[GeneratedRegex("^[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9_-])?$", RegexOptions.CultureInvariant)]
+	private static partial Regex RepositoryNameRegex();
+
+	[GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.CultureInvariant)]
+	private static partial Regex AssetNameRegex();
 
 	[GeneratedRegex("^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$", RegexOptions.CultureInvariant)]
 	private static partial Regex TopicIdRegex();

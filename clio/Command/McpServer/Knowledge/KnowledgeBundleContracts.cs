@@ -97,6 +97,71 @@ internal interface IKnowledgeBundleTrustStore {
 /// </remarks>
 internal interface IEnvironmentKnowledgeBundleTrustStore : IKnowledgeBundleTrustStore;
 
+/// <summary>
+/// The publisher trust Clio pins in its own binary for the built-in curated knowledge library.
+/// </summary>
+/// <remarks>
+/// The built-in source has no operator-supplied key file: it is delivered as a signed GitHub Release
+/// asset and its trust anchor ships with Clio. Keeping it behind its own contract lets the composed
+/// store consult it before any configured material, so a settings entry can never substitute a key
+/// for the built-in library.
+/// </remarks>
+internal interface IBuiltInKnowledgeBundleTrustStore : IKnowledgeBundleTrustStore;
+
+/// <summary>
+/// Serves the compiled-in P-256 public keys authorized to sign the built-in curated knowledge library.
+/// </summary>
+internal sealed class BuiltInKnowledgeBundleTrustStore : IBuiltInKnowledgeBundleTrustStore {
+
+	/// <summary>
+	/// The key identifier the producer stamps into the bundle manifest signature block.
+	/// </summary>
+	/// <remarks>
+	/// Rotation is additive: publish the successor key here alongside the incumbent, ship that Clio
+	/// release, and only then start signing with the successor. Removing a key is a separate, later
+	/// change, once no supported Clio still needs to verify a bundle signed with it.
+	/// </remarks>
+	internal const string PrimaryKeyId = "clio-knowledge-2026-08";
+
+	private const string PrimaryPublicKeyPem = """
+		-----BEGIN PUBLIC KEY-----
+		MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEC3j3ZzoiZ8ZwxCnsKt1+ep949n7P
+		1rMyfF0ND3Amxam+UQIvtBbpfy7Q+c1Q+ZG2G4A0AkA3R3ttZ8sDMBI3Ng==
+		-----END PUBLIC KEY-----
+		""";
+
+	private static readonly IReadOnlyDictionary<string, string> TrustedKeys =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			[PrimaryKeyId] = PrimaryPublicKeyPem
+		};
+
+	/// <summary>
+	/// The library whose signatures this pinned trust covers.
+	/// </summary>
+	internal static string TrustedLibraryId => CuratedKnowledgeSourceDefaults.LibraryId;
+
+	/// <summary>
+	/// Always refuses: the library-agnostic overload cannot prove the caller is verifying the built-in
+	/// library, and answering it would let any library reuse the pinned key by naming its key ID.
+	/// </summary>
+	public bool TryGetPublicKeyPem(string keyId, out string publicKeyPem) {
+		publicKeyPem = string.Empty;
+		return false;
+	}
+
+	/// <inheritdoc/>
+	public bool TryGetPublicKeyPem(string libraryId, string keyId, out string publicKeyPem) {
+		publicKeyPem = string.Empty;
+		if (!string.Equals(libraryId, TrustedLibraryId, StringComparison.Ordinal)
+				|| keyId is null
+				|| !TrustedKeys.TryGetValue(keyId, out string? pem)) {
+			return false;
+		}
+		publicKeyPem = pem;
+		return true;
+	}
+}
+
 internal interface IKnowledgeTrustFingerprintService {
 	bool TryGetFingerprint(string trustedPublicKeyPath, out string fingerprint);
 }
@@ -264,19 +329,31 @@ internal sealed class KnowledgeTrustFingerprintService : IKnowledgeTrustFingerpr
 internal sealed class ConfiguredKnowledgeBundleTrustStore : IKnowledgeBundleTrustStore {
 	private readonly IKnowledgeRuntimeConfigurationProvider _configurationProvider;
 	private readonly IEnvironmentKnowledgeBundleTrustStore _legacyTrustStore;
+	private readonly IBuiltInKnowledgeBundleTrustStore _builtInTrustStore;
 
 	public ConfiguredKnowledgeBundleTrustStore(
 		IKnowledgeRuntimeConfigurationProvider configurationProvider,
-		IEnvironmentKnowledgeBundleTrustStore legacyTrustStore) {
+		IEnvironmentKnowledgeBundleTrustStore legacyTrustStore,
+		IBuiltInKnowledgeBundleTrustStore builtInTrustStore) {
 		_configurationProvider = configurationProvider
 			?? throw new ArgumentNullException(nameof(configurationProvider));
 		_legacyTrustStore = legacyTrustStore ?? throw new ArgumentNullException(nameof(legacyTrustStore));
+		_builtInTrustStore = builtInTrustStore ?? throw new ArgumentNullException(nameof(builtInTrustStore));
 	}
 
 	public bool TryGetPublicKeyPem(string keyId, out string publicKeyPem) =>
 		_legacyTrustStore.TryGetPublicKeyPem(keyId, out publicKeyPem);
 
 	public bool TryGetPublicKeyPem(string libraryId, string keyId, out string publicKeyPem) {
+		// Pinned trust is consulted first and is not overridable: a configured entry claiming the
+		// built-in library must not be able to swap in its own signing key.
+		if (_builtInTrustStore.TryGetPublicKeyPem(libraryId, keyId, out publicKeyPem)) {
+			return true;
+		}
+		if (string.Equals(libraryId, BuiltInKnowledgeBundleTrustStore.TrustedLibraryId, StringComparison.Ordinal)) {
+			publicKeyPem = string.Empty;
+			return false;
+		}
 		publicKeyPem = string.Empty;
 		try {
 			KnowledgeSourceConfiguration? source = _configurationProvider.GetCurrent().Sources.Values
@@ -328,6 +405,12 @@ internal sealed record KnowledgeBundlePackageDownloadResult(
 	string? Diagnostic = null);
 
 internal sealed record KnowledgeBundleNuGetOptions(int TransportDeadlineMilliseconds);
+
+/// <summary>
+/// Bounds one GitHub Release retrieval, covering metadata, redirects, download, and verification.
+/// </summary>
+/// <param name="TransportDeadlineMilliseconds">The absolute wall-clock ceiling for one retrieval.</param>
+internal sealed record KnowledgeGitHubReleaseOptions(int TransportDeadlineMilliseconds);
 
 internal sealed record KnowledgeBundleActivationOptions(int FailureRetryMilliseconds);
 

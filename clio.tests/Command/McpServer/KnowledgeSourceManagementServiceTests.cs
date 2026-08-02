@@ -312,6 +312,9 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			null,
 			null,
 			null,
+			null,
+			null,
+			null,
 			true,
 			50,
 			"supplement");
@@ -338,7 +341,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		KnowledgeSourceAddRequest request = new(
 			"partner", "com.example.partner", "nuget",
 			"https://packages.example.test/v3/index.json", "partner-signing-2026", missingPath,
-			"Example.Partner.Knowledge", null, null, null, true, 50, "supplement");
+			"Example.Partner.Knowledge", null, null, null, null, null, null, true, 50, "supplement");
 
 		// Act
 		KnowledgeSourceCommandResult result = _service.Add(request);

@@ -591,6 +591,7 @@ public class BindingsModule {
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<KnowledgeManagementTools>();
 		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddSingleton<IBuiltInKnowledgeBundleTrustStore, BuiltInKnowledgeBundleTrustStore>();
 		services.AddSingleton<IKnowledgeBundleTrustStore, ConfiguredKnowledgeBundleTrustStore>();
 		services.AddSingleton<IKnowledgeTrustFingerprintService, KnowledgeTrustFingerprintService>();
 		services.AddHttpClient(KnowledgeBundleNuGetClient.HttpClientName)
@@ -599,9 +600,19 @@ public class BindingsModule {
 		services.AddSingleton<KnowledgeBundleNuGetClient>();
 		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
 			provider.GetRequiredService<KnowledgeBundleNuGetClient>());
+		services.AddHttpClient(KnowledgeGitHubReleaseTransport.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
+			// Redirects are resolved by the transport so every hop can be checked against the host and
+			// scheme allowlist before it is followed.
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+			.ConfigureHttpClient(client => client.DefaultRequestHeaders.UserAgent.ParseAdd("clio-knowledge-client"));
+		services.AddSingleton<KnowledgeGitHubReleaseTransport>();
+		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
+			provider.GetRequiredService<KnowledgeGitHubReleaseTransport>());
 		services.AddSingleton<KnowledgeGitTransport>();
 		services.AddSingleton<IKnowledgeRepositoryTransport>(provider => provider.GetRequiredService<KnowledgeGitTransport>());
 		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
+		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(

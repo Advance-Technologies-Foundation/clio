@@ -61,7 +61,7 @@ internal sealed class KnowledgeManagementTools {
 		_service.Delete(args.Source, args.Confirmed, cancellationToken);
 
 	[McpServerTool(Name = AddKnowledgeSourceToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
-	[Description("Adds one trusted Git repository or signed NuGet publisher after confirmation.")]
+	[Description("Adds one trusted knowledge publisher after confirmation: a signed GitHub Release asset (github-release, no Git CLI), a Git repository, or a signed NuGet package.")]
 	public KnowledgeSourceCommandResult Add(KnowledgeSourceAddArgs args) => !args.Confirmed
 		? new KnowledgeSourceCommandResult(
 			false,
@@ -75,6 +75,9 @@ internal sealed class KnowledgeManagementTools {
 		args.TrustedKeyId,
 		args.TrustedPublicKeyPath,
 		args.PackageId,
+		args.RepositoryOwner,
+		args.RepositoryName,
+		args.AssetName,
 		args.Branch,
 		args.Tag,
 		args.Commit,
@@ -178,22 +181,31 @@ public sealed record KnowledgeSourceAddArgs(
 	[property: Required]
 	string LibraryId,
 	[property: JsonPropertyName("type")]
-	[property: Description("Transport type: git or nuget.")]
+	[property: Description("Transport type: github-release, git, or nuget.")]
 	[property: Required]
 	string Type,
 	[property: JsonPropertyName("location")]
-	[property: Description("Credential-free Git repository or NuGet v3 service-index URI.")]
+	[property: Description("Credential-free URI: the GitHub REST API origin for github-release, the repository URL for git, or the v3 service index for nuget.")]
 	[property: Required]
 	string Location,
 	[property: JsonPropertyName("trustedKeyId")]
-	[property: Description("NuGet bundle signing-key ID; omit for Git sources.")]
+	[property: Description("Bundle signing-key ID; required for nuget, optional for github-release, omit for git.")]
 	string? TrustedKeyId = null,
 	[property: JsonPropertyName("trustedPublicKeyPath")]
-	[property: Description("Absolute NuGet public verification-key path; omit for Git sources.")]
+	[property: Description("Absolute public verification-key path; required for nuget, optional for github-release, omit for git.")]
 	string? TrustedPublicKeyPath = null,
 	[property: JsonPropertyName("packageId")]
 	[property: Description("Required NuGet package ID for a nuget source.")]
 	string? PackageId = null,
+	[property: JsonPropertyName("repositoryOwner")]
+	[property: Description("Required GitHub repository owner for a github-release source.")]
+	string? RepositoryOwner = null,
+	[property: JsonPropertyName("repositoryName")]
+	[property: Description("Required GitHub repository name for a github-release source.")]
+	string? RepositoryName = null,
+	[property: JsonPropertyName("assetName")]
+	[property: Description("Required exact release asset .zip file name for a github-release source.")]
+	string? AssetName = null,
 	[property: JsonPropertyName("branch")]
 	[property: Description("Git branch to follow; omit all refs to persist the discovered default branch.")]
 	string? Branch = null,

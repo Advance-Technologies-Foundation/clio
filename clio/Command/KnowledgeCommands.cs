@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
 using CommandLine;
 using ConsoleTables;
@@ -118,26 +119,28 @@ public sealed class AddKnowledgeSourceOptions {
 	/// <summary>
 	/// Gets or sets the transport type.
 	/// </summary>
-	[Option("type", Required = true, HelpText = "Source transport: git or nuget")]
+	[Option("type", Required = true, HelpText = "Source transport: github-release, git, or nuget")]
 	public string Type { get; set; } = string.Empty;
 
 	/// <summary>
 	/// Gets or sets the transport location.
 	/// </summary>
-	[Option("location", Required = true, HelpText = "Git repository URL or NuGet v3 service-index URL without credentials")]
+	[Option("location", Required = true,
+		HelpText = "GitHub REST API origin, Git repository URL, or NuGet v3 service-index URL without credentials")]
 	public string Location { get; set; } = string.Empty;
 
 	/// <summary>
 	/// Gets or sets the signature key identifier authorized for this source.
 	/// </summary>
-	[Option("trusted-key-id", Required = false, HelpText = "NuGet bundle signing-key ID; not used for Git sources")]
+	[Option("trusted-key-id", Required = false,
+		HelpText = "Bundle signing-key ID; required for nuget, optional for github-release, unused for git")]
 	public string? TrustedKeyId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the existing bounded local regular-file path to the source's P-256 public key.
 	/// </summary>
 	[Option("trusted-public-key-path", Required = false,
-		HelpText = "NuGet P-256 PUBLIC KEY PEM path; not used for Git sources")]
+		HelpText = "P-256 PUBLIC KEY PEM path; required for nuget, optional for github-release, unused for git")]
 	public string? TrustedPublicKeyPath { get; set; }
 
 	/// <summary>
@@ -145,6 +148,27 @@ public sealed class AddKnowledgeSourceOptions {
 	/// </summary>
 	[Option("package-id", Required = false, HelpText = "NuGet package ID; required when --type nuget")]
 	public string? PackageId { get; set; }
+
+	/// <summary>
+	/// Gets or sets the GitHub repository owner.
+	/// </summary>
+	[Option("repository-owner", Required = false,
+		HelpText = "GitHub repository owner; required when --type github-release")]
+	public string? RepositoryOwner { get; set; }
+
+	/// <summary>
+	/// Gets or sets the GitHub repository name.
+	/// </summary>
+	[Option("repository-name", Required = false,
+		HelpText = "GitHub repository name; required when --type github-release")]
+	public string? RepositoryName { get; set; }
+
+	/// <summary>
+	/// Gets or sets the exact release asset file name to retrieve.
+	/// </summary>
+	[Option("asset-name", Required = false,
+		HelpText = "Exact release asset .zip file name; required when --type github-release")]
+	public string? AssetName { get; set; }
 
 	/// <summary>
 	/// Gets or sets the Git branch to follow.
@@ -447,8 +471,9 @@ internal sealed class DeleteKnowledgeCommand(
 /// </summary>
 internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementService service, ILogger logger)
 	: Command<AddKnowledgeSourceOptions> {
-	private const string GitTransportType = "git";
-	private const string NuGetTransportType = "nuget";
+	private const string GitTransportType = KnowledgeSourceTypeNames.Git;
+	private const string NuGetTransportType = KnowledgeSourceTypeNames.NuGet;
+	private const string GitHubReleaseTransportType = KnowledgeSourceTypeNames.GitHubRelease;
 
 	/// <inheritdoc />
 	public override int Execute(AddKnowledgeSourceOptions options) {
@@ -473,8 +498,8 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			return false;
 		}
 		string transportType = options.Type.Trim().ToLowerInvariant();
-		if (transportType is not (GitTransportType or NuGetTransportType)) {
-			logger.WriteError("Knowledge source type must be 'git' or 'nuget'.");
+		if (transportType is not (GitTransportType or NuGetTransportType or GitHubReleaseTransportType)) {
+			logger.WriteError("Knowledge source type must be 'github-release', 'git', or 'nuget'.");
 			return false;
 		}
 		string participation = options.Participation.Trim().ToLowerInvariant();
@@ -488,16 +513,22 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 		if (transportType == GitTransportType && !ValidateGitOptions(options, logger)) {
 			return false;
 		}
+		if (transportType == GitHubReleaseTransportType && !ValidateGitHubReleaseOptions(options, logger)) {
+			return false;
+		}
 		request = new KnowledgeSourceAddRequest(
 			alias,
 			options.LibraryId.Trim(),
 			transportType,
 			options.Location.Trim(),
 			TrimToNull(options.TrustedKeyId),
-			transportType == NuGetTransportType
-				? System.IO.Path.GetFullPath(options.TrustedPublicKeyPath.Trim())
+			TrimToNull(options.TrustedPublicKeyPath) is { } trustedPublicKeyPath
+				? System.IO.Path.GetFullPath(trustedPublicKeyPath)
 				: null,
 			TrimToNull(options.PackageId),
+			TrimToNull(options.RepositoryOwner),
+			TrimToNull(options.RepositoryName),
+			TrimToNull(options.AssetName),
 			TrimToNull(options.Branch),
 			TrimToNull(options.Tag),
 			TrimToNull(options.Commit),
@@ -530,6 +561,49 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			logger.WriteError("--branch, --tag, and --commit are valid only for Git sources.");
 			return false;
 		}
+		if (!string.IsNullOrWhiteSpace(options.RepositoryOwner)
+				|| !string.IsNullOrWhiteSpace(options.RepositoryName)
+				|| !string.IsNullOrWhiteSpace(options.AssetName)) {
+			logger.WriteError(
+				"--repository-owner, --repository-name, and --asset-name are valid only for GitHub release sources.");
+			return false;
+		}
+		return true;
+	}
+
+	// A GitHub release source addresses a structured repository identity instead of an arbitrary URL,
+	// so the three identity parts are mandatory. Signing-key material is optional: the built-in curated
+	// library is verified against the key Clio pins in its own binary, and a third-party publisher
+	// supplies its own key file.
+	private static bool ValidateGitHubReleaseOptions(AddKnowledgeSourceOptions options, ILogger logger) {
+		if (string.IsNullOrWhiteSpace(options.RepositoryOwner)
+				|| string.IsNullOrWhiteSpace(options.RepositoryName)
+				|| string.IsNullOrWhiteSpace(options.AssetName)) {
+			logger.WriteError(
+				"--repository-owner, --repository-name, and --asset-name are required when --type is github-release.");
+			return false;
+		}
+		if (!string.IsNullOrWhiteSpace(options.PackageId)) {
+			logger.WriteError("--package-id is valid only for NuGet sources.");
+			return false;
+		}
+		bool hasGitOptions = !string.IsNullOrWhiteSpace(options.Branch)
+			|| !string.IsNullOrWhiteSpace(options.Tag)
+			|| !string.IsNullOrWhiteSpace(options.Commit);
+		if (hasGitOptions) {
+			logger.WriteError("--branch, --tag, and --commit are valid only for Git sources.");
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(options.TrustedKeyId) != string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath)) {
+			logger.WriteError(
+				"--trusted-key-id and --trusted-public-key-path must be supplied together, or both omitted to rely on Clio's pinned trust.");
+			return false;
+		}
+		if (!string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath)
+				&& !System.IO.Path.IsPathFullyQualified(options.TrustedPublicKeyPath.Trim())) {
+			logger.WriteError("--trusted-public-key-path must be an absolute local file path containing public key material.");
+			return false;
+		}
 		return true;
 	}
 
@@ -543,6 +617,13 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 		if (!string.IsNullOrWhiteSpace(options.TrustedKeyId)
 				|| !string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath)) {
 			logger.WriteError("--trusted-key-id and --trusted-public-key-path are not used for Git sources.");
+			return false;
+		}
+		if (!string.IsNullOrWhiteSpace(options.RepositoryOwner)
+				|| !string.IsNullOrWhiteSpace(options.RepositoryName)
+				|| !string.IsNullOrWhiteSpace(options.AssetName)) {
+			logger.WriteError(
+				"--repository-owner, --repository-name, and --asset-name are valid only for GitHub release sources.");
 			return false;
 		}
 		return true;

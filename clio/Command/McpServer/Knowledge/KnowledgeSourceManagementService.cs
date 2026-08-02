@@ -139,6 +139,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				TrustedKeyId = request.TrustedKeyId,
 				TrustedPublicKeyPath = request.TrustedPublicKeyPath,
 				PackageId = request.PackageId,
+				RepositoryOwner = request.RepositoryOwner,
+				RepositoryName = request.RepositoryName,
+				AssetName = request.AssetName,
 				Branch = request.Branch,
 				Tag = request.Tag,
 				Commit = request.Commit,
@@ -147,7 +150,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				Participation = ParseParticipation(request.Participation)
 			};
 			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
-			if (validated.Type == KnowledgeSourceType.NuGet
+			// A GitHub release source may omit key material entirely and rely on Clio's pinned built-in
+			// trust; when it does declare a key file, that file is checked exactly as a NuGet one is.
+			if (validated.TrustedPublicKeyPath is not null
 					&& !EnvironmentKnowledgeBundleTrustStore.TryReadPublicKeyFile(
 						validated.TrustedPublicKeyPath,
 						out _)) {
@@ -386,7 +391,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			LibraryId = context.Source.LibraryId,
 			LibraryVersion = validation.CandidateLibraryVersion,
 			Sequence = validation.CandidateSequence.Value,
-			TransportType = context.Source.Type.ToString().ToLowerInvariant(),
+			TransportType = KnowledgeSourceTypeNames.Format(context.Source.Type),
 			Location = context.Source.Location,
 			ResolvedRevision = revision,
 			BundleBytes = bytes,
@@ -673,7 +678,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		return new KnowledgeSourceInfo(
 			alias,
 			source.LibraryId,
-			source.Type.ToString().ToLowerInvariant(),
+			KnowledgeSourceTypeNames.Format(source.Type),
 			source.Location,
 			source.TrustedKeyId,
 			source.TrustedPublicKeyPath,
@@ -681,6 +686,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			source.Priority,
 			source.Participation.ToString().ToLowerInvariant(),
 			source.PackageId,
+			source.RepositoryOwner,
+			source.RepositoryName,
+			source.AssetName,
 			source.Branch,
 			source.Tag,
 			source.Commit,
@@ -767,6 +775,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			source.Enabled,
 			source.Priority,
 			source.Participation.ToString().ToLowerInvariant(),
+			null,
+			null,
+			null,
 			null,
 			source.Branch,
 			source.Tag,
@@ -916,7 +927,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		string diagnostic) => new(
 		alias,
 		source.LibraryId,
-		source.Type.ToString().ToLowerInvariant(),
+		KnowledgeSourceTypeNames.Format(source.Type),
 		source.Location,
 		source.TrustedKeyId,
 		source.TrustedPublicKeyPath,
@@ -924,6 +935,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		source.Priority,
 		source.Participation.ToString().ToLowerInvariant(),
 		source.PackageId,
+		source.RepositoryOwner,
+		source.RepositoryName,
+		source.AssetName,
 		source.Branch,
 		source.Tag,
 		source.Commit,
@@ -1034,7 +1048,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private static KnowledgeSourceType ParseType(string value) => value.ToLowerInvariant() switch {
 		"git" => KnowledgeSourceType.Git,
 		"nuget" => KnowledgeSourceType.NuGet,
-		_ => throw new ArgumentException("Knowledge source type must be 'git' or 'nuget'.", nameof(value))
+		"github-release" => KnowledgeSourceType.GitHubRelease,
+		_ => throw new ArgumentException(
+			"Knowledge source type must be 'github-release', 'git', or 'nuget'.", nameof(value))
 	};
 
 	private static KnowledgeSourceParticipation ParseParticipation(string value) => value.ToLowerInvariant() switch {

@@ -74,9 +74,12 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			CuratedKnowledgeSourceDefaults.Alias,
 			Arg.Is<KnowledgeSourceConfiguration>(source =>
 				source.LibraryId == CuratedKnowledgeSourceDefaults.LibraryId
-				&& source.Type == KnowledgeSourceType.Git
+				&& source.Type == KnowledgeSourceType.GitHubRelease
 				&& source.Location == CuratedKnowledgeSourceDefaults.Location
-				&& source.Branch == CuratedKnowledgeSourceDefaults.Branch
+				&& source.RepositoryOwner == CuratedKnowledgeSourceDefaults.RepositoryOwner
+				&& source.RepositoryName == CuratedKnowledgeSourceDefaults.RepositoryName
+				&& source.AssetName == CuratedKnowledgeSourceDefaults.AssetName
+				&& source.Branch == null
 				&& source.Enabled
 				&& source.Priority == CuratedKnowledgeSourceDefaults.Priority
 				&& source.Participation == KnowledgeSourceParticipation.Authoritative));
@@ -87,17 +90,17 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
-	[Description("Bootstrap uses a valid local curated checkout without performing a Git update or reinstall.")]
+	[Description("Bootstrap serves the locally published curated generation without contacting GitHub.")]
 	public void Bootstrap_ShouldUseLocalCache_WhenInstalledCheckoutIsValid() {
 		// Arrange
-		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "a present local checkout is sufficient to serve guidance immediately");
+			because: "a present local generation is sufficient to serve guidance immediately, with no network call");
 		result.Message.Should().Contain("local cache",
 			because: "the diagnostic should make clear that startup performed no remote update");
 		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
@@ -114,14 +117,14 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			Configuration(("creatio-poc", previous)),
 			Configuration((CuratedKnowledgeSourceDefaults.Alias, CuratedKnowledgeSourceDefaults.CreateConfiguration())));
 		_store.TryMigrateGitRepository("creatio-poc", CuratedKnowledgeSourceDefaults.Alias).Returns(true);
-		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "a valid checkout from the earlier alias should remain usable without network access");
+			because: "a cached generation should remain usable without network access after the alias migration");
 		// Twice: preparation attempts the migration, and installation retries it in case the source
 		// mutation lock was briefly held. Both attempts are non-blocking, so neither can overrun the
 		// startup budget the way the previous lock-waiting migration could.
@@ -234,7 +237,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	private static KnowledgeSourceInfo SourceInfo(bool isInstalled, bool isValid) => new(
 		CuratedKnowledgeSourceDefaults.Alias,
 		CuratedKnowledgeSourceDefaults.LibraryId,
-		"git",
+		KnowledgeSourceTypeNames.GitHubRelease,
 		CuratedKnowledgeSourceDefaults.Location,
 		null,
 		null,
@@ -242,7 +245,10 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		CuratedKnowledgeSourceDefaults.Priority,
 		"authoritative",
 		null,
-		CuratedKnowledgeSourceDefaults.Branch,
+		CuratedKnowledgeSourceDefaults.RepositoryOwner,
+		CuratedKnowledgeSourceDefaults.RepositoryName,
+		CuratedKnowledgeSourceDefaults.AssetName,
+		null,
 		null,
 		null,
 		isInstalled,
@@ -345,7 +351,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				Arg.Any<bool>(),
 				Arg.Any<System.Threading.CancellationToken>()))
 			.Do(_ => neverReleased.Wait(stall));
-		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		Stopwatch elapsed = Stopwatch.StartNew();
 
 		// Act
@@ -354,7 +360,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "a canonical source with a present checkout is ready without touching either blocking path");
+			because: "a canonical source with a present cached generation is ready without touching either blocking path");
 		elapsed.Elapsed.Should().BeLessThan(
 			TimeSpan.FromMilliseconds(CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds),
 			because: "startup must stay inside the advertised pre-serve budget even when both collaborators would block for thirty seconds");

@@ -101,9 +101,11 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			}
 			sources[CuratedKnowledgeSourceDefaults.Alias] = new JsonObject {
 				["library-id"] = CuratedKnowledgeSourceDefaults.LibraryId,
-				["type"] = "git",
+				["type"] = KnowledgeSourceTypeNames.GitHubRelease,
 				["location"] = CuratedKnowledgeSourceDefaults.Location,
-				["branch"] = CuratedKnowledgeSourceDefaults.Branch,
+				["repository-owner"] = CuratedKnowledgeSourceDefaults.RepositoryOwner,
+				["repository-name"] = CuratedKnowledgeSourceDefaults.RepositoryName,
+				["asset-name"] = CuratedKnowledgeSourceDefaults.AssetName,
 				["enabled"] = false,
 				["priority"] = CuratedKnowledgeSourceDefaults.Priority,
 				["participation"] = "authoritative"
