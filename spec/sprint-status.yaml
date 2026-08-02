@@ -2219,3 +2219,16 @@ stories:
     depends_on:
       - story-clio-guidance-development-1
     blocks: []
+  - id: story-google-fonts-availability-1
+    title: "build-theme decides the web-font @import from a Google Fonts availability probe (removes --local-font-families)"
+    feature: "google-fonts-availability"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-93985
+    adr: spec/adr/adr-ENG-93985-google-fonts-availability.md
+    file: spec/stories/story-google-fonts-availability-1.md
+    test_plan: spec/test-plans/tp-google-fonts-availability.md
+    note: "PR #993 rework after review: probe drives suppression (404 -> no @import + warning, unverifiable -> import kept + warning), --local-font-families removed and rejected with a migration hint, OpenWorld=true, probe hoisted out of the shared MCP lock. Paired with toolkit PR #68 (SKILL.md), which must merge only after the clio release."
+    depends_on: []
+    blocks: []

@@ -130,9 +130,9 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("build-theme applies a confirmed local font family through the token without a Google Fonts import")]
-	[Description("Starts the real clio MCP server and invokes build-theme with a heading font also listed in local-font-families; verifies the returned CSS carries the family in its --crt-font-family-heading token and contains no @import, so a font the user confirmed is installed locally is never fetched from Google Fonts.")]
-	public async Task BuildTheme_Should_OmitImport_ForConfirmedLocalFontFamily() {
+	[AllureName("build-theme suppresses the Google Fonts import for a family the live catalogue does not publish")]
+	[Description("Starts the real clio MCP server and invokes build-theme with a family Google Fonts does not host (Verdana); the server probes the live catalogue, applies the family through the --crt-font-family-heading token WITHOUT an @import, and reports the suppression in a warning. Needs outbound network: with fonts.google.com unreachable the probe degrades to unverified and the import is kept, which this test then reports as a failure on the @import assertion.")]
+	public async Task BuildTheme_Should_OmitImportAndWarn_ForFamilyNotInGoogleFonts() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -144,8 +144,7 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 					["primary"] = "#004fd6",
 					["css-class-name"] = "MyTheme",
 					["heading-font"] = "Verdana",
-					["body-font"] = "Verdana",
-					["local-font-families"] = new[] { "Verdana" }
+					["body-font"] = "Verdana"
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -153,12 +152,45 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a confirmed local font family is valid input, not an error");
+			because: "a family outside Google Fonts is advisory, not an error");
 		result.Success.Should().BeTrue(
-			because: "build-theme builds normally when the requested family needs no download");
+			because: "build-theme builds normally and decides the import from its own availability probe");
 		result.Css.Should().NotContain("@import",
-			because: "a family the user confirmed is installed locally must not be fetched, and Google answers 200 with a look-alike substitute for many such names");
+			because: "the live catalogue answers 404 for Verdana, so the import is suppressed — css2 would serve a look-alike substitute that shadows the locally installed font");
 		result.Css.Should().Contain("--crt-font-family-heading: 'Verdana', sans-serif;",
 			because: "the family is still applied through the token so the theme actually restyles");
+		result.Warnings.Should().Contain(w => w.Contains("was not found in Google Fonts"),
+			because: "the suppression is disclosed post factum through the warnings channel");
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("build-theme rejects the removed local-font-families argument with a migration hint")]
+	[Description("Starts the real clio MCP server and invokes build-theme with the removed local-font-families argument; verifies the real JSON binding routes it into the overflow bag and the tool returns a structured failure explaining the argument was removed, instead of silently ignoring it.")]
+	public async Task BuildTheme_Should_RejectRemovedLocalFontFamiliesArgument() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = "MyTheme",
+					["heading-font"] = "Verdana",
+					["local-font-families"] = new[] { "Verdana" }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the removed argument must fail loudly for one release instead of vanishing into the overflow bag");
+		result.Error.Should().Contain("local-font-families was removed",
+			because: "the failure names the removed argument so an agent built against the old contract can self-correct");
+		result.Error.Should().Contain("probed automatically",
+			because: "the failure explains that the availability probe now makes the suppression decision");
 	}
 }

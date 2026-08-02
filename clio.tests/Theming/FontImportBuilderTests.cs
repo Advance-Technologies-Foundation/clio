@@ -65,6 +65,17 @@ public sealed class FontImportBuilderTests {
 	}
 
 	[Test]
+	[Description("ValidateFamily rejects a family longer than 100 characters, bounding the probe URL and the process-lifetime availability cache.")]
+	public void ValidateFamily_ShouldRejectOversizedFamily() {
+		// Act / Assert
+		((Action)(() => FontImportBuilder.ValidateFamily(new string('A', 101))))
+			.Should().Throw<ArgumentException>().WithMessage("INVALID_FONT_FAMILY*",
+				because: "no real Google Fonts family approaches 100 characters, so anything longer is garbage input");
+		((Action)(() => FontImportBuilder.ValidateFamily(new string('A', 100))))
+			.Should().NotThrow(because: "the cap itself is still a valid length");
+	}
+
+	[Test]
 	[Description("BuildUrl/BuildRule reject a family with URL/stylesheet-breaking characters.")]
 	public void Build_ShouldRejectInvalidFamily_WithInvalidFontFamily() {
 		// Act / Assert

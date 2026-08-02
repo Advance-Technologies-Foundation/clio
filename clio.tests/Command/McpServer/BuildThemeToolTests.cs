@@ -24,6 +24,9 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Category("Unit")]
+// The probe-placement canary below holds McpToolExecutionLock's shared fallback monitor while it runs,
+// so this fixture must not execute beside another fixture that takes the same process-wide lock.
+[NonParallelizable]
 [Property("Module", "McpServer")]
 public sealed class BuildThemeToolTests
 {
@@ -49,7 +52,8 @@ public sealed class BuildThemeToolTests
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
 		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>()).Returns("built-css");
 		_googleFontsCatalog = Substitute.For<IGoogleFontsCatalog>();
-		_googleFontsCatalog.Lookup(Arg.Any<string>()).Returns(GoogleFontAvailability.InCatalog);
+		_googleFontsCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
 			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
 		_tool = new BuildThemeTool(command, Substitute.For<ILogger>());
@@ -73,7 +77,7 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Declares the safety flags on the build-theme tool method: a workspace-write that is non-destructive, idempotent, and closed-world.")]
+	[Description("Declares the safety flags on the build-theme tool method: a workspace-write that is non-destructive, idempotent, and open-world (it probes Google Fonts).")]
 	public void BuildThemeTool_Should_DeclareBuildSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = typeof(BuildThemeTool)
@@ -84,7 +88,14 @@ public sealed class BuildThemeToolTests
 		attribute!.ReadOnly.Should().BeFalse(because: "build-theme can write theme.css and theme.json into a workspace package");
 		attribute.Destructive.Should().BeFalse(because: "building writes its own theme artifacts without destroying unrelated state");
 		attribute.Idempotent.Should().BeTrue(because: "re-building with the same inputs yields the same theme artifacts");
-		attribute.OpenWorld.Should().BeFalse(because: "build-theme works offline over a bundled template and never reaches an open set of hosts");
+		attribute.OpenWorld.Should().BeTrue(because: "build-theme probes the Google Fonts catalogue over the network to decide whether each custom family gets an @import");
+		string toolDescription = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+		toolDescription.Should().Contain("Google Fonts",
+			because: "an open-world tool must disclose the host it reaches, not just carry the flag");
+		toolDescription.Should().Contain("can vary with probe outcomes",
+			because: "the emitted CSS is no longer a pure function of the inputs, and the caller has to know that next to the idempotency claim");
 	}
 
 	[Test]
@@ -123,7 +134,7 @@ public sealed class BuildThemeToolTests
 		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(
 			Primary: "#004fd6", CssClassName: "MyTheme", Secondary: "#0d2e4e", Accent: "#f94e11",
 			Success: "#0b8500", Error: "#d2310d", HeadingFont: "Inter", BodyFont: "Roboto",
-			FontWeights: new[] { 400, 700 }, LocalFontFamilies: new[] { "Verdana" }));
+			FontWeights: new[] { 400, 700 }));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a fully-specified build request is valid");
@@ -138,9 +149,7 @@ public sealed class BuildThemeToolTests
 			o.Fonts.Heading == "Inter" &&
 			o.Fonts.Body == "Roboto" &&
 			o.Fonts.Weights != null &&
-			o.Fonts.Weights.SequenceEqual(new[] { 400, 700 }) &&
-			o.Fonts.LocallyInstalledFamilies != null &&
-			o.Fonts.LocallyInstalledFamilies.Contains("Verdana")));
+			o.Fonts.Weights.SequenceEqual(new[] { 400, 700 })));
 	}
 
 	[Test]
@@ -635,6 +644,250 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
+	[Description("Rejects the removed local-font-families argument in any spelling with a hint that availability is now probed automatically, instead of silently ignoring it as unknown overflow.")]
+	[TestCase("local-font-families", TestName = "BuildTheme_ShouldRejectRemovedArg_KebabCase")]
+	[TestCase("localFontFamilies", TestName = "BuildTheme_ShouldRejectRemovedArg_CamelCase")]
+	[TestCase("local_font_families", TestName = "BuildTheme_ShouldRejectRemovedArg_SnakeCase")]
+	public void BuildTheme_ShouldReturnFailure_WhenRemovedLocalFontFamiliesArgSupplied(string wireName) {
+		// Arrange — deserialize through the real MCP serializer so the unknown key lands in ExtensionData,
+		// exactly as the host binds it.
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+		BuildThemeArgs args = JsonSerializer.Deserialize<BuildThemeArgs>(
+			$$"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Verdana","{{wireName}}":["Verdana"]}""",
+			options)!;
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a removed argument must fail loudly for one release, not vanish into the overflow bag");
+		result.Error.Should().Contain("local-font-families was removed",
+			because: "the error explains the argument is gone and what replaced it");
+		result.Error.Should().Contain("probed automatically",
+			because: "the caller learns the probe now makes the suppression decision");
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Surfaces the not-in-Google-Fonts warning in the tool result while still succeeding, so the agent can relay it post factum.")]
+	public void BuildTheme_ShouldReturnSuppressionWarning_WhenFamilyNotInCatalog() {
+		// Arrange
+		_googleFontsCatalog.LookupAsync("Verdana", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Verdana"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an unpublished family is advisory, not fatal");
+		result.Warnings.Should().Contain(w => w.Contains("was not found in Google Fonts"),
+			because: "the warning is the post-factum channel that tells the agent the import was suppressed");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			o => o.Fonts.SuppressedImportFamilies.Contains("Verdana")));
+	}
+
+	[Test]
+	[Description("Surfaces the could-not-verify warning on the MCP warnings channel and keeps the import, which is the only agent-visible signal of a fail-open verdict (the console logger is silenced in MCP mode).")]
+	public void BuildTheme_ShouldReturnUnverifiedWarning_WhenCatalogUnreachable() {
+		// Arrange
+		_googleFontsCatalog.LookupAsync("Roboto", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.Unverified);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Roboto"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an unverifiable family must not fail the build");
+		result.Warnings.Should().Contain(w => w.Contains("could not verify"),
+			because: "the agent branches on this text, and in MCP mode the returned warnings are the only place it appears");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			o => o.Fonts.SuppressedImportFamilies.Count == 0));
+	}
+
+	[Test]
+	[Description("Probes each requested family exactly once per call: the tool runs the probe before taking the shared execution lock and passes the verdicts into the build, so the build must not re-probe inside the lock.")]
+	public void BuildTheme_ShouldProbeEachFamilyOnce_WhenBuilding() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Inter", BodyFont: "Roboto"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "two published families are valid input");
+		_googleFontsCatalog.Received(1).LookupAsync("Inter", Arg.Any<CancellationToken>());
+		_googleFontsCatalog.Received(1).LookupAsync("Roboto", Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Rejects a malformed font family with INVALID_FONT_FAMILY as a structured failure rather than an exception escaping the pre-lock probe step.")]
+	public void BuildTheme_ShouldReturnFailure_WhenFontFamilyIsMalformed() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Evil'; }"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a family that breaks the name contract cannot be applied");
+		result.Error.Should().Contain("INVALID_FONT_FAMILY",
+			because: "the pre-lock probe step surfaces the same validation error the builder would raise");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Normalizes a padded, multi-space family on the MCP path — where the probe runs on RAW options before the lock — so the probe key and the suppression match the same canonical spelling.")]
+	public void BuildTheme_ShouldProbeAndSuppressCanonicalSpelling_WhenFamilyIsPadded() {
+		// Arrange
+		_googleFontsCatalog.LookupAsync("Open Sans", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: " Open   Sans "));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a padded family name is normalized, not rejected");
+		_googleFontsCatalog.Received(1).LookupAsync("Open Sans", Arg.Any<CancellationToken>());
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			o => o.Fonts.SuppressedImportFamilies.Contains("Open Sans")));
+	}
+
+	[Test]
+	[Description("Probes exactly once in workspace-write mode too: that branch must pass the pre-lock verdicts into the build instead of letting it re-probe inside the shared lock.")]
+	public void BuildTheme_ShouldProbeOnce_WhenWritingToWorkspacePackage() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-probe-ws");
+		string packagePath = Path.Combine(workspaceDir, "packages", "UsrTheme");
+		_workspacePathBuilder.IsWorkspace.Returns(true);
+		_workspacePathBuilder.BuildPackagePath("UsrTheme").Returns(packagePath);
+		_fileSystem.ExistsDirectory(packagePath).Returns(true);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Inter", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a valid workspace target with a custom font is a valid write request");
+		_googleFontsCatalog.Received(1).LookupAsync("Inter", Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Validates the request before probing: a malformed css-class-name fails with its own error and costs no outbound request, so a call that cannot build never sends font names to Google.")]
+	public void BuildTheme_ShouldFailWithoutProbing_WhenCssClassNameIsInvalid() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "1Theme {}",
+			HeadingFont: "Inter"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the css class name is validated the same way regardless of the fonts requested");
+		result.Error.Should().Contain("css-class-name must match",
+			because: "the caller must get the css-class-name diagnostic, not a font error, exactly as before the probe was hoisted");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Rejects an ambiguous version source before probing, so a request that can never build sends no font name to Google.")]
+	public void BuildTheme_ShouldFailWithoutProbing_WhenBothVersionAndEnvironmentProvided() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Inter", Version: "10.0", EnvironmentName: "dev"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the version source must be unambiguous");
+		result.Error.Should().Contain("mutually exclusive",
+			because: "the caller gets the version diagnostic rather than a font one");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Returns the availability warnings in workspace-write mode, where css and descriptor are deliberately omitted so the warnings are the only disclosure that the written theme.css carries no @import.")]
+	public void BuildTheme_ShouldReturnSuppressionWarning_WhenWritingToWorkspacePackage() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-warn-ws");
+		string packagePath = Path.Combine(workspaceDir, "packages", "UsrTheme");
+		_workspacePathBuilder.IsWorkspace.Returns(true);
+		_workspacePathBuilder.BuildPackagePath("UsrTheme").Returns(packagePath);
+		_fileSystem.ExistsDirectory(packagePath).Returns(true);
+		_googleFontsCatalog.LookupAsync("Verdana", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Verdana", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an unpublished family is advisory, not fatal, on the write path too");
+		result.Css.Should().BeNull(because: "workspace-write mode omits the CSS payload by design");
+		result.Warnings.Should().Contain(w => w.Contains("was not found in Google Fonts"),
+			because: "with no CSS returned, the warnings are the only signal that the written theme.css has no @import");
+	}
+
+	[Test]
+	[Description("Advertises the family-name contract on both font arguments, so an agent reading the tool schema learns the rule that can fail the build before it sends a name.")]
+	[TestCase("HeadingFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForHeadingFont")]
+	[TestCase("BodyFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForBodyFont")]
+	public void BuildThemeArgs_ShouldDocumentTheFamilyNameContract(string parameterName) {
+		// Arrange & Act
+		// [property: Description(...)] on a positional record parameter lands on the generated property.
+		PropertyInfo property = typeof(BuildThemeArgs).GetProperty(parameterName);
+		string description = property?.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
+
+		// Assert
+		description.Should().NotBeNull(because: "every advertised argument carries a description in the tool schema");
+		description.Should().Contain("100 characters",
+			because: "the cap can fail the build, so it belongs on the surface the agent reads before calling");
+		description.Should().Contain("INVALID_FONT_FAMILY",
+			because: "the agent must be able to tell the one fatal font outcome from the advisory availability ones");
+	}
+
+	[Test]
+	[Description("Documents the ACTUAL pre-probe boundary: only the request's shape is validated first, so a workspace target that is not a clio workspace still probes before failing.")]
+	public void BuildTheme_ShouldStillProbe_WhenWorkspaceIsNotAClioWorkspace() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-probe-notws");
+		_workspacePathBuilder.IsWorkspace.Returns(false);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Inter", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the theme cannot be written outside a clio workspace");
+		_googleFontsCatalog.Received(1).LookupAsync("Inter", Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Probes Google Fonts while the shared MCP execution lock is held by someone else, proving the probe runs BEFORE the tool takes that lock — the count assertions elsewhere would all still pass if the call were moved back inside it.")]
+	public void BuildTheme_ShouldProbe_BeforeTakingTheSharedExecutionLock() {
+		// Arrange
+		using ManualResetEventSlim probeStarted = new(false);
+		using ManualResetEventSlim releaseProbe = new(false);
+		_googleFontsCatalog.LookupAsync("Inter", Arg.Any<CancellationToken>())
+			.Returns(_ => {
+				probeStarted.Set();
+				releaseProbe.Wait(TimeSpan.FromSeconds(10));
+				return Task.FromResult(GoogleFontAvailability.InCatalog);
+			});
+		object sharedLock = McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey);
+
+		// Act
+		Task<BuildThemeResult> build;
+		bool probedWhileLockHeld;
+		lock (sharedLock) {
+			build = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+				HeadingFont: "Inter")));
+			probedWhileLockHeld = probeStarted.Wait(TimeSpan.FromSeconds(10));
+			releaseProbe.Set();
+		}
+		BuildThemeResult result = build.GetAwaiter().GetResult();
+
+		// Assert
+		probedWhileLockHeld.Should().BeTrue(
+			because: "the probe must reach the catalogue while another holder still owns the shared fallback lock — if it ran inside ExecuteWithCleanLog it could not start until the lock was free");
+		result.Success.Should().BeTrue(because: "the build still completes once the lock is released");
+	}
+
+	[Test]
 	[Description("Binds the build-theme argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	public void BuildThemeArgs_ShouldBindKebabAndRouteCamelToExtensionData_WhenDeserializedFromRawJson() {
 		// Arrange
@@ -642,7 +895,7 @@ public sealed class BuildThemeToolTests
 
 		// Act
 		BuildThemeArgs kebab = JsonSerializer.Deserialize<BuildThemeArgs>(
-			"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"local-font-families":["Verdana"],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
+			"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
 			options)!;
 		BuildThemeArgs camel = JsonSerializer.Deserialize<BuildThemeArgs>(
 			"""{"fontWeights":[400,700]}""", options)!;
@@ -654,8 +907,6 @@ public sealed class BuildThemeToolTests
 		kebab.BodyFont.Should().Be("Roboto", because: "the advertised kebab-case body-font field must bind");
 		kebab.FontWeights.Should().BeEquivalentTo(new[] { 400, 700 },
 			because: "the advertised kebab-case font-weights array field must bind");
-		kebab.LocalFontFamilies.Should().BeEquivalentTo(new[] { "Verdana" },
-			because: "the advertised kebab-case local-font-families array field must bind, otherwise a confirmed-local family would silently be downloaded anyway");
 		kebab.EnvironmentName.Should().Be("dev", because: "the advertised kebab-case environment-name field must bind");
 		kebab.WorkspaceDirectory.Should().Be("C:/ws", because: "the advertised kebab-case workspace-directory field must bind");
 		kebab.PackageName.Should().Be("UsrTheme", because: "the advertised kebab-case package-name field must bind");

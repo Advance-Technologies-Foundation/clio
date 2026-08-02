@@ -8,12 +8,17 @@ using PaletteSet = System.Collections.Generic.IReadOnlyDictionary<string, System
 
 namespace Clio.Theming;
 
-/// <summary>Custom heading/body font selection for a theme, with the weights to load.</summary>
+/// <summary>
+/// Custom heading/body font selection for a theme, with the weights to load. Families listed in
+/// <paramref name="SuppressedImportFamilies"/> get no Google Fonts <c>@import</c> — the availability probe
+/// found them unpublished, so an import would only fetch a substitute that shadows the locally installed
+/// font. Matching is ordinal: the catalog is case-sensitive, so each exact spelling carries its own verdict.
+/// </summary>
 public sealed record FontsInput(
 	string Heading = null,
 	string Body = null,
 	IReadOnlyList<int> Weights = null,
-	IReadOnlyCollection<string> LocallyInstalledFamilies = null);
+	IReadOnlyCollection<string> SuppressedImportFamilies = null);
 
 /// <summary>Brand inputs for building a theme's CSS.</summary>
 public sealed record BuildThemeInput {
@@ -64,7 +69,7 @@ public interface IThemeCssBuilder {
 /// </summary>
 internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 
-	private const string DefaultFontFamily = "Montserrat";
+	internal const string DefaultFontFamily = "Montserrat";
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
@@ -168,11 +173,10 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		if (headingFamily == DefaultFontFamily && bodyFamily == DefaultFontFamily) {
 			return css;
 		}
-		if (headingFamily != DefaultFontFamily) {
-			FontImportBuilder.ValidateFamily(headingFamily);
-		}
-		if (bodyFamily != DefaultFontFamily) {
-			FontImportBuilder.ValidateFamily(bodyFamily);
+		foreach (string family in new[] { headingFamily, bodyFamily }
+			.Where(family => family != DefaultFontFamily)
+			.Distinct(StringComparer.Ordinal)) {
+			FontImportBuilder.ValidateFamily(family);
 		}
 		List<FontFamilyEntry> families = new();
 		if (headingFamily != DefaultFontFamily && NeedsImport(fonts, headingFamily)) {
@@ -190,8 +194,8 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 	}
 
 	private static bool NeedsImport(FontsInput fonts, string family) {
-		return fonts?.LocallyInstalledFamilies == null
-			|| !fonts.LocallyInstalledFamilies.Contains(family, StringComparer.OrdinalIgnoreCase);
+		return fonts?.SuppressedImportFamilies == null
+			|| !fonts.SuppressedImportFamilies.Contains(family, StringComparer.Ordinal);
 	}
 
 	private static string ReplaceFontFamily(string css, string which, string family) {

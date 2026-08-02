@@ -52,27 +52,18 @@ Optional. Success colour; the platform default when omitted.
 Optional. Error colour; the platform default when omitted.
 
 --heading-font FAMILY
-Optional. Heading font family; Montserrat (no @import) when omitted.
+Optional. Heading font family; Montserrat (no @import) when omitted. The name is trimmed and its
+internal whitespace runs are collapsed to single spaces first; the normalized name must then match
+`^[A-Za-z0-9][A-Za-z0-9 -]*$` and be at most 100 characters, otherwise the build fails with
+`INVALID_FONT_FAMILY`. So `" Open   Sans "` builds as `Open Sans`, while `Inter'; }` is rejected.
 
 --body-font FAMILY
-Optional. Body font family; Montserrat (no @import) when omitted.
+Optional. Body font family; Montserrat (no @import) when omitted. Same name rules as
+--heading-font.
 
 --font-weights LIST
 Optional. Comma-separated font weights to load (e.g. 400,500,600); ignored with a warning when no
 --heading-font/--body-font is set; defaults to 400,500,600.
-
---local-font-families LIST
-Optional. Comma-separated families that are installed locally on the machines which will use the
-theme. Each family must also be passed as --heading-font or --body-font, which is what applies it;
-this option only suppresses the Google Fonts `@import` for it, so nothing is downloaded and it
-renders only where the font is already installed — elsewhere the text falls back to the template's
-generic face. A family listed here without also being passed as --heading-font/--body-font applies
-nothing and is ignored with a warning.
-
-build-theme checks every requested family against the Google Fonts catalogue and warns when one is
-not found, so use this option only for a family the user confirmed is installed locally. Note that
-Google Fonts family names are case-sensitive: `Roboto` is found, `roboto` is reported missing. When
-the catalogue cannot be reached the warning says so rather than assuming either answer.
 
 --id ID
 Optional. Theme id written to theme.json (directory output); an auto-generated UUID when omitted.
@@ -123,6 +114,15 @@ clio build-theme --primary "#004fd6" --css-class-name MyTheme --heading-font "In
 
 `build-theme` never mutates an environment. A too-old `--version` (older than the lowest
 supported version) and an unregistered `--environment-name` are reported as errors.
+
+Every requested font family is checked against the Google Fonts catalogue over the network
+(a short bounded probe per family). A family the catalogue does not publish gets no
+`@import` — it renders only on machines where the font is already installed, elsewhere the
+text falls back to the template's generic face — and the command warns about it. Family
+names are case-sensitive: `Roboto` is found, `roboto` is reported missing. When the
+catalogue cannot be reached the `@import` is kept, so a Google font keeps working offline,
+and the warning says the family could not be verified; re-run the command once connectivity
+is back if the family is actually a locally installed font.
 
 ## Reporting Bugs
 

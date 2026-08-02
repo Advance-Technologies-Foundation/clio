@@ -45,6 +45,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		_settingsRepository.ClearReceivedCalls();
 		_fileSystem.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		_googleFontsCatalog.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -63,77 +64,236 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		containerBuilder.AddTransient<IFileSystem>(_ => _fileSystem);
 		containerBuilder.AddTransient<ILogger>(_ => _logger);
 		_googleFontsCatalog = Substitute.For<IGoogleFontsCatalog>();
-		_googleFontsCatalog.Lookup(Arg.Any<string>()).Returns(GoogleFontAvailability.InCatalog);
+		_googleFontsCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
 		containerBuilder.AddTransient<IGoogleFontsCatalog>(_ => _googleFontsCatalog);
 	}
 
 	[Test, Category("Unit")]
-	[Description("Warns and still builds when a requested family is absent from the Google Fonts catalogue, so the agent can relay it and ask the user to confirm the font is installed locally.")]
-	public void Execute_ShouldWarn_WhenFamilyNotInGoogleFonts() {
+	[Description("Warns, suppresses the @import, and still builds when a requested family is absent from the Google Fonts catalogue: css2 would serve a look-alike substitute that shadows the locally installed font.")]
+	public void Execute_ShouldWarnAndSuppressImport_WhenFamilyNotInGoogleFonts() {
 		// Arrange
 		BuildThemeOptions options = ValidOptions();
 		options.HeadingFont = "Verdana";
-		_googleFontsCatalog.Lookup("Verdana").Returns(GoogleFontAvailability.NotInCatalog);
+		_googleFontsCatalog.LookupAsync("Verdana", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "a family outside Google Fonts is advisory, not fatal — the user may confirm it is installed locally");
+		exitCode.Should().Be(0, because: "a family outside Google Fonts is advisory, not fatal — it may be installed locally");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Contains("Verdana")));
 		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("was not found in Google Fonts")));
 	}
 
 	[Test, Category("Unit")]
-	[Description("Trims the confirmed-local families and forwards them to the builder, so a list written with spaces after the commas still suppresses the import.")]
-	public void Execute_ShouldTrimAndForwardLocalFontFamilies() {
+	[Description("Suppresses the @import for each unpublished family independently while a published one keeps its import.")]
+	public void Execute_ShouldSuppressOnlyTheUnpublishedFamily_WhenFamiliesMix() {
 		// Arrange
 		BuildThemeOptions options = ValidOptions();
-		options.HeadingFont = "Verdana";
+		options.HeadingFont = "Inter";
 		options.BodyFont = "Calibri";
-		options.LocalFontFamilies = new[] { "Verdana", " Calibri" };
-		_googleFontsCatalog.Lookup(Arg.Any<string>()).Returns(GoogleFontAvailability.NotInCatalog);
+		_googleFontsCatalog.LookupAsync("Inter", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
+		_googleFontsCatalog.LookupAsync("Calibri", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "confirmed-local families are valid input");
+		exitCode.Should().Be(0, because: "an unpublished family is advisory, so the build still succeeds");
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
-			i => i.Fonts.LocallyInstalledFamilies.Contains("Verdana") && i.Fonts.LocallyInstalledFamilies.Contains("Calibri")));
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("not found in Google Fonts")));
+			i => i.Fonts.SuppressedImportFamilies.Contains("Calibri") && !i.Fonts.SuppressedImportFamilies.Contains("Inter")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("\"Calibri\" was not found in Google Fonts")));
 	}
 
 	[Test, Category("Unit")]
-	[Description("Warns that the catalogue could not be reached, rather than reporting the family as missing.")]
-	public void Execute_ShouldWarn_WhenGoogleFontsUnreachable() {
+	[Description("Keeps the @import and warns when the catalogue could not be reached, so a Google font keeps working offline instead of being misclassified as missing.")]
+	public void Execute_ShouldKeepImportAndWarn_WhenGoogleFontsUnreachable() {
 		// Arrange
 		BuildThemeOptions options = ValidOptions();
 		options.HeadingFont = "Roboto";
-		_googleFontsCatalog.Lookup("Roboto").Returns(GoogleFontAvailability.Unverified);
+		_googleFontsCatalog.LookupAsync("Roboto", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.Unverified);
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0, because: "an unreachable catalogue must not fail the build");
-		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not reach Google Fonts")));
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Count == 0));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not verify \"Roboto\"")));
 	}
 
 	[Test, Category("Unit")]
-	[Description("Does not check or warn about a family the user already confirmed is installed locally.")]
-	public void Execute_ShouldNotWarn_ForConfirmedLocalFamily() {
+	[Description("Never probes the catalogue when no custom font is requested — the default theme font ships with the template and needs no import.")]
+	public void Execute_ShouldNotProbe_WhenNoCustomFontRequested() {
 		// Arrange
 		BuildThemeOptions options = ValidOptions();
-		options.HeadingFont = "Verdana";
-		options.LocalFontFamilies = new[] { "Verdana" };
-		_googleFontsCatalog.Lookup("Verdana").Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "a confirmed local family is a valid selection");
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("was not found in Google Fonts")));
+		exitCode.Should().Be(0, because: "the default theme font needs no catalogue verdict to build");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Does not probe the template default family even when it is passed explicitly, because it never gets an @import either way.")]
+	public void Execute_ShouldNotProbe_ForDefaultFontFamily() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = ThemeCssBuilder.DefaultFontFamily;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the template default family builds without any probe");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Probes a family used for both slots once, so the heading and body sharing a font costs one round trip.")]
+	public void Execute_ShouldProbeOnce_WhenHeadingAndBodyShareTheFamily() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Inter";
+		options.BodyFont = "Inter";
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_googleFontsCatalog.Received(1).LookupAsync("Inter", Arg.Any<CancellationToken>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Treats case-variant spellings as distinct families end to end — the endpoint is case-sensitive, so Roboto keeps its import while roboto is suppressed and warned about.")]
+	public void Execute_ShouldTreatCaseVariantsAsDistinctFamilies() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Roboto";
+		options.BodyFont = "roboto";
+		_googleFontsCatalog.LookupAsync("Roboto", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
+		_googleFontsCatalog.LookupAsync("roboto", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "both spellings are valid input; only their import decisions differ");
+		_googleFontsCatalog.Received(1).LookupAsync("Roboto", Arg.Any<CancellationToken>());
+		_googleFontsCatalog.Received(1).LookupAsync("roboto", Arg.Any<CancellationToken>());
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Contains("roboto") && !i.Fonts.SuppressedImportFamilies.Contains("Roboto")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Collapses internal whitespace in a family before probing and building, so a padded Open   Sans resolves as Open Sans everywhere.")]
+	public void Execute_ShouldCollapseWhitespace_InRequestedFamilies() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = " Open   Sans ";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a padded family name is normalized, not rejected");
+		_googleFontsCatalog.Received(1).LookupAsync("Open Sans", Arg.Any<CancellationToken>());
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.Heading == "Open Sans"));
+	}
+
+	[Test, Category("Unit")]
+	[Description("A faulted HEADING probe degrades only the heading family while a published body family keeps its import, covering the mirror image of the sibling-slot isolation case.")]
+	public void Execute_ShouldIsolateFaultedHeadingProbe_WhenBodyVerdictIsPublished() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Calibri";
+		options.BodyFont = "Inter";
+		_googleFontsCatalog.LookupAsync("Calibri", Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<GoogleFontAvailability>(new InvalidOperationException("probe blew up")));
+		_googleFontsCatalog.LookupAsync("Inter", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a faulted probe is advisory and must never fail the build");
+		// An unverified heading keeps its import (fail-open) and the published body family keeps its own.
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Count == 0));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not verify \"Calibri\"")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("\"Inter\"")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Rejects an invalid font family with INVALID_FONT_FAMILY before any availability probe, so unvalidated caller input is never sent to the network.")]
+	public void Execute_ShouldFailWithoutProbing_WhenFamilyIsInvalid() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Evil'; }";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an invalid family is a validation failure, same as the builder would report");
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("INVALID_FONT_FAMILY")));
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("A probe task that faults unexpectedly degrades that family alone to unverified — the import is kept, a warning is emitted, and the build still succeeds.")]
+	public void Execute_ShouldTreatFaultedProbeAsUnverified_AndStillBuild() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Roboto";
+		_googleFontsCatalog.LookupAsync("Roboto", Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<GoogleFontAvailability>(new InvalidOperationException("probe blew up")));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the probe is advisory and must never fail the build");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Count == 0));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not verify \"Roboto\"")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("A faulted probe degrades only its own family to unverified: the sibling family's definitive not-in-catalog verdict still suppresses its @import, so one flaky probe cannot silently drop the suppression.")]
+	public void Execute_ShouldIsolateFaultedProbeToItsFamily_WhenSiblingVerdictIsDefinitive() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Calibri";
+		options.BodyFont = "Roboto";
+		_googleFontsCatalog.LookupAsync("Calibri", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+		_googleFontsCatalog.LookupAsync("Roboto", Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<GoogleFontAvailability>(new InvalidOperationException("probe blew up")));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the probe is advisory and must never fail the build, faulted sibling or not");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Contains("Calibri") && !i.Fonts.SuppressedImportFamilies.Contains("Roboto")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("\"Calibri\" was not found in Google Fonts")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not verify \"Roboto\"")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("could not verify \"Calibri\"")));
 	}
 
 	private static BuildThemeOptions ValidOptions() => new() {
@@ -276,22 +436,6 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Assert
 		exitCode.Should().Be(0, because: "font weights without a family is a non-fatal advisory, not an error");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("font weights")));
-		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
-	}
-
-	[Test, Category("Unit")]
-	[Description("Warns and still builds the theme when --local-font-families is given without a font family, because the family is applied by --heading-font/--body-font and the list alone changes nothing.")]
-	public void Execute_ShouldWarn_WhenLocalFontFamiliesWithoutFamily() {
-		// Arrange
-		BuildThemeOptions options = ValidOptions();
-		options.LocalFontFamilies = new[] { "Verdana" };
-
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(0, because: "local font families without a family is a non-fatal advisory, not an error");
-		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("local font families were ignored")));
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 

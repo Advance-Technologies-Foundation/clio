@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -51,6 +52,13 @@ public sealed class BuildThemeTool(
 
 	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
+	// local-font-families was removed in ENG-93985: availability is probed automatically now.
+	// BuildLegacyAliasError below would already reject the key as an unknown argument; this pre-check runs
+	// first so the caller gets a migration message naming the replacement — pass the family as heading-font
+	// or body-font and read the warnings — instead of a generic unknown-argument list.
+	private static readonly string[] RemovedLocalFontFamiliesKeys =
+		["local-font-families", "localFontFamilies", "local_font_families"];
+
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
 	// an actionable rename hint so a camelCase 'cssClassName' never silently binds to nothing.
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
@@ -62,8 +70,6 @@ public sealed class BuildThemeTool(
 		["body_font"] = "body-font",
 		["fontWeights"] = "font-weights",
 		["font_weights"] = "font-weights",
-		["localFontFamilies"] = "local-font-families",
-		["local_font_families"] = "local-font-families",
 		["environmentName"] = "environment-name",
 		["environment_name"] = "environment-name",
 		["workspaceDirectory"] = "workspace-directory",
@@ -78,20 +84,27 @@ public sealed class BuildThemeTool(
 	/// into that workspace package and returns the written path.
 	/// </summary>
 	/// <returns>A structured result carrying the built CSS (compute mode) or the written path (workspace-write mode), or a failure message.</returns>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
 		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
-		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical. " +
+		"Custom font families are checked against Google Fonts over the network (a short bounded probe): a family the catalog does not publish gets NO @import (it renders only where installed locally) plus a warning, and an unverifiable probe keeps the import plus a warning — so the css can vary with probe outcomes, which the warnings always disclose. " +
+		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical (given the same probe outcomes). " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
 	public BuildThemeResult BuildTheme(
 		[Description("Parameters: primary (required), css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, local-font-families, version, environment-name, workspace-directory, package-name (all optional).")]
+			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name (all optional).")]
 		[Required] BuildThemeArgs args) {
+		if (args.ExtensionData is not null && RemovedLocalFontFamiliesKeys.Any(args.ExtensionData.ContainsKey)) {
+			return BuildThemeResult.Failure(
+				"local-font-families was removed: Google Fonts availability is now probed automatically and the "
+				+ "@import is suppressed for families the catalog does not publish. Pass the family as heading-font "
+				+ "or body-font only, and read the returned warnings.");
+		}
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
 			"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, local-font-families, version, environment-name, workspace-directory, package-name.");
+			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return BuildThemeResult.Failure(aliasError);
 		}
@@ -114,19 +127,31 @@ public sealed class BuildThemeTool(
 			HeadingFont = args.HeadingFont,
 			BodyFont = args.BodyFont,
 			FontWeights = args.FontWeights,
-			LocalFontFamilies = args.LocalFontFamilies,
 			Version = args.Version,
 			EnvironmentName = args.EnvironmentName
 		};
 		EnvironmentSettings resolvedSettings = ResolveVersionSettings(args, out string environmentFallbackWarning);
+		// The Google Fonts probe runs BEFORE the lock. ExecuteWithCleanLog's environment-less overload takes
+		// the SHARED fallback key, so anything slow inside it serializes every other environment-less tool;
+		// the probe can spend its whole ProbeTimeout budget on a firewalled host, and an Unverified verdict is
+		// deliberately never cached, so it would re-pay that cost on every call. The verdicts are passed into
+		// the build, not merely pre-warmed, for exactly that reason. TryResolveFontAvailability runs the
+		// request's SHAPE validation first — css-class-name and the version/environment pair — so error
+		// precedence is unchanged for those. It is not a full pre-flight: colour parsing and the
+		// workspace/package existence checks still happen inside the build, so those requests do probe before
+		// failing. NOT hoisted either: the tenant version probe inside TryBuildTheme (ResolveVersion ->
+		// IPlatformVersionResolver) still runs under the shared lock — pre-existing behaviour, untouched.
+		if (!command.TryResolveFontAvailability(options, out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out string prepareError)) {
+			return BuildThemeResult.Failure(prepareError);
+		}
 		return ExecuteWithCleanLog(() => {
 			if (writeToPackage) {
-				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
+				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError, fontAvailability)) {
 					return BuildThemeResult.Failure(writeError);
 				}
 				return BuildThemeResult.Written(writtenPath, PrependWarning(environmentFallbackWarning, writeWarnings));
 			}
-			if (!command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
+			if (!command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError, fontAvailability)) {
 				return BuildThemeResult.Failure(buildError);
 			}
 			return BuildThemeResult.Successful(css, descriptor, PrependWarning(environmentFallbackWarning, warnings));
@@ -245,20 +270,16 @@ public sealed record BuildThemeArgs(
 	string? Error = null,
 
 	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family; Montserrat when omitted.")]
+	[property: Description("Heading font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs first; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY.")]
 	string? HeadingFont = null,
 
 	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family; Montserrat when omitted.")]
+	[property: Description("Body font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs first; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY.")]
 	string? BodyFont = null,
 
 	[property: JsonPropertyName("font-weights")]
 	[property: Description("Font weights to load (e.g. [400,500,600]); ignored without a custom heading/body font; defaults to 400,500,600.")]
 	int[]? FontWeights = null,
-
-	[property: JsonPropertyName("local-font-families")]
-	[property: Description("Families the user explicitly confirmed are installed on the machines that will use the theme, after build-theme warned they are not in Google Fonts. Each family must ALSO be passed as heading-font or body-font, which is what applies it; this list only suppresses the @import for it, so it renders only where installed. Listing a family here alone applies nothing and is ignored with a warning. Never pass a family here without that confirmation.")]
-	string[]? LocalFontFamilies = null,
 
 	[property: JsonPropertyName("version")]
 	[property: Description("Creatio version the theme targets (e.g. 10.0); the newest supported version is used when omitted; mutually exclusive with environment-name.")]

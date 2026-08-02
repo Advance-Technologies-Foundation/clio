@@ -130,8 +130,8 @@ public sealed class ThemeCssBuilderTests {
 	}
 
 	[Test]
-	[Description("Build applies a locally installed family through the font token without requesting it from Google Fonts.")]
-	public void Build_ShouldSkipImport_ForLocallyInstalledFamily() {
+	[Description("Build applies a suppressed-import family through the font token without requesting it from Google Fonts.")]
+	public void Build_ShouldSkipImport_ForSuppressedFamily() {
 		// Act
 		string css = Builder().Build(
 			Template(),
@@ -143,14 +143,14 @@ public sealed class ThemeCssBuilderTests {
 
 		// Assert
 		css.Should().NotContain("@import",
-			because: "a family the user confirmed is installed locally must not be fetched, and Google answers 200 with a look-alike substitute for many such names");
+			because: "a family the availability probe found unpublished must not be fetched — the css2 endpoint answers 200 with a look-alike substitute for many such names, which would shadow the locally installed font");
 		css.Should().Contain("--crt-font-family-heading: 'Verdana', sans-serif;",
 			because: "the family is still applied through the token so the theme actually restyles");
 	}
 
 	[Test]
-	[Description("Build imports only the downloadable family when a locally installed BODY family is paired with a Google heading font.")]
-	public void Build_ShouldImportOnlyDownloadableFamily_WhenPairedWithLocalFamily() {
+	[Description("Build imports only the downloadable family when a suppressed BODY family is paired with a Google heading font.")]
+	public void Build_ShouldImportOnlyDownloadableFamily_WhenPairedWithSuppressedFamily() {
 		// Act
 		string css = Builder().Build(
 			Template(),
@@ -164,21 +164,21 @@ public sealed class ThemeCssBuilderTests {
 		css.Should().Contain("family=Inter",
 			because: "the Google family still has to be downloaded");
 		css.Should().NotContain("family=Verdana",
-			because: "the locally installed family must never reach the Google Fonts request; the body-side filter is only exercised when the heading family differs");
+			because: "the suppressed family must never reach the Google Fonts request; the body-side filter is only exercised when the heading family differs");
 	}
 
 	[Test]
-	[Description("Build still rejects an invalid font family listed as locally installed, in the heading slot and in the body slot, so marking a family local cannot smuggle CSS into the theme through either.")]
-	[TestCase("Evil'; }", null, TestName = "Build_ShouldRejectInvalidLocalFamily_InHeadingSlot")]
-	[TestCase("Inter", "Evil'; }", TestName = "Build_ShouldRejectInvalidLocalFamily_InBodySlot")]
-	public void Build_ShouldStillReject_InvalidFamilyListedAsLocallyInstalled(string heading, string body) {
+	[Description("Build still rejects an invalid font family whose import is suppressed, in the heading slot and in the body slot, so suppression cannot smuggle CSS into the theme through either.")]
+	[TestCase("Evil'; }", null, TestName = "Build_ShouldRejectInvalidSuppressedFamily_InHeadingSlot")]
+	[TestCase("Inter", "Evil'; }", TestName = "Build_ShouldRejectInvalidSuppressedFamily_InBodySlot")]
+	public void Build_ShouldStillReject_InvalidFamilyWithSuppressedImport(string heading, string body) {
 		// Act / Assert
 		Build(new BuildThemeInput {
 			Primary = "#004fd6",
 			ThemeCssClass = "T",
 			Fonts = new FontsInput(heading, body, null, new[] { "Evil'; }" }),
 		}).Should().Throw<ArgumentException>().WithMessage("INVALID_FONT_FAMILY*",
-			because: "a locally installed family skips the import builder, so each slot needs its own validation call; pinning only the heading slot let the body-side guard be deleted undetected");
+			because: "a suppressed family skips the import builder, so each slot needs its own validation call; pinning only the heading slot let the body-side guard be deleted undetected");
 	}
 
 	[Test]
@@ -197,8 +197,8 @@ public sealed class ThemeCssBuilderTests {
 	}
 
 	[Test]
-	[Description("Locally installed families are matched without regard to casing, so the confirmed name does not have to match the requested one exactly.")]
-	public void Build_ShouldSkipImport_ForLocallyInstalledFamilyInDifferentCase() {
+	[Description("Suppressed families are matched ordinally: a case-variant entry does not suppress the requested spelling, mirroring the case-sensitive Google Fonts catalogue the suppression list is derived from.")]
+	public void Build_ShouldKeepImport_ForCaseVariantSuppressedEntry() {
 		// Act
 		string css = Builder().Build(
 			Template(),
@@ -209,8 +209,8 @@ public sealed class ThemeCssBuilderTests {
 			});
 
 		// Assert
-		css.Should().NotContain("@import",
-			because: "CSS family matching is case-insensitive, so the confirmation should not hinge on exact casing");
+		css.Should().Contain("family=Verdana",
+			because: "the suppression list holds the exact spellings the probe classified, so a case-folded match would suppress a family the catalogue actually publishes under the requested spelling");
 	}
 
 	[Test]

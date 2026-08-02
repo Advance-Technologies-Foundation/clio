@@ -33,13 +33,11 @@ OPTIONS
 
     --error                         Error colour; the platform default when omitted
 
-    --heading-font                  Heading font family; Montserrat (no @import) when omitted
+    --heading-font                  Heading font family; Montserrat (no @import) when omitted. The name is trimmed and internal whitespace runs are collapsed, then it must start with a letter or digit and contain only letters, digits, spaces and hyphens, max 100 characters
 
-    --body-font                     Body font family; Montserrat (no @import) when omitted
+    --body-font                     Body font family; Montserrat (no @import) when omitted. Same name rules as --heading-font
 
     --font-weights                  Font weights to load, comma-separated (e.g. 400,500,600); ignored without a custom heading/body font; defaults to 400,500,600
-
-    --local-font-families           Families confirmed to be installed locally, comma-separated. Each must also be passed as --heading-font or --body-font, which is what applies it; this list only suppresses its Google Fonts @import, so it renders only on machines that already have the font. Listing a family here alone applies nothing and is ignored with a warning. build-theme warns when a requested family is not in Google Fonts
 
     --id                            Theme id for theme.json (directory output); an auto-generated UUID when omitted
 
@@ -63,6 +61,7 @@ EXAMPLE
 
 NOTES
     - build-theme never mutates an environment. A too-old --version (older than the lowest supported version) and an unregistered --environment-name are reported as errors.
+    - Custom font families are checked against the Google Fonts catalogue over the network. A family the catalogue does not publish (names are case-sensitive: Roboto is found, roboto is not) gets no @import — it renders only where already installed — plus a warning. When the catalogue cannot be reached the @import is kept and the warning says the family could not be verified; re-run once connectivity is back if the family is actually a locally installed font.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
