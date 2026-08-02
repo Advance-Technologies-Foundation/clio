@@ -28,9 +28,6 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	private const int MaxPackageCentralDirectoryBytes = 2 * 1024 * 1024;
 	private const uint EndOfCentralDirectorySignature = 0x06054b50;
 
-	// RFC 3986 path separator: fixed by the URI grammar, never the platform file-system separator.
-	private const char UriPathSeparator = '/';
-
 	private static readonly Regex PackageIdPattern = new(
 		"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
 		RegexOptions.CultureInvariant,
@@ -341,7 +338,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 			cancellationToken);
 		response.EnsureSuccessStatusCode();
 		using JsonDocument document = JsonDocument.Parse(
-			ReadBounded(response.Content, MaxServiceIndexBytes, cancellationToken));
+			KnowledgeTransportHttp.ReadBounded(response.Content, MaxServiceIndexBytes, cancellationToken));
 		if (!document.RootElement.TryGetProperty("resources", out JsonElement resources)
 				|| resources.ValueKind != JsonValueKind.Array) {
 			throw new InvalidDataException("NuGet service index has no resources array.");
@@ -356,7 +353,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 					|| !IsSameOrigin(source, baseAddress)) {
 				continue;
 			}
-			return EnsureTrailingSlash(baseAddress);
+			return KnowledgeTransportHttp.EnsureTrailingSlash(baseAddress);
 		}
 		throw new InvalidDataException("NuGet service index has no PackageBaseAddress resource.");
 	}
@@ -384,7 +381,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 			cancellationToken);
 		response.EnsureSuccessStatusCode();
 		using JsonDocument document = JsonDocument.Parse(
-			ReadBounded(response.Content, MaxVersionIndexBytes, cancellationToken));
+			KnowledgeTransportHttp.ReadBounded(response.Content, MaxVersionIndexBytes, cancellationToken));
 		if (!document.RootElement.TryGetProperty("versions", out JsonElement versions)
 				|| versions.ValueKind != JsonValueKind.Array) {
 			throw new InvalidDataException("NuGet flat-container index has no versions array.");
@@ -420,7 +417,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 			HttpCompletionOption.ResponseHeadersRead,
 			cancellationToken);
 		response.EnsureSuccessStatusCode();
-		return ReadBounded(response.Content, MaxPackageBytes, cancellationToken);
+		return KnowledgeTransportHttp.ReadBounded(response.Content, MaxPackageBytes, cancellationToken);
 	}
 
 	private static byte[] ExtractInnerBundle(byte[] packageBytes) {
@@ -480,44 +477,6 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 		}
 		throw new InvalidDataException("NuGet package is missing its central directory.");
 	}
-
-	private static byte[] ReadBounded(
-		HttpContent content,
-		int maximumBytes,
-		CancellationToken cancellationToken) {
-		if (content.Headers.ContentLength is long length && (length < 0 || length > maximumBytes)) {
-			throw new InvalidDataException($"HTTP content exceeds the {maximumBytes}-byte limit.");
-		}
-		using Stream stream = content.ReadAsStream(cancellationToken);
-		int initialCapacity = content.Headers.ContentLength is long contentLength
-			? checked((int)contentLength)
-			: 0;
-		return ReadBounded(stream, maximumBytes, initialCapacity, cancellationToken);
-	}
-
-	private static byte[] ReadBounded(
-		Stream stream,
-		int maximumBytes,
-		int initialCapacity,
-		CancellationToken cancellationToken) {
-		using MemoryStream output = new(initialCapacity);
-		byte[] buffer = new byte[81920];
-		int read;
-		while ((read = stream.ReadAsync(buffer, cancellationToken).AsTask().GetAwaiter().GetResult()) > 0) {
-			if (output.Length + read > maximumBytes) {
-				throw new InvalidDataException($"Content exceeds the {maximumBytes}-byte limit.");
-			}
-			output.Write(buffer, 0, read);
-		}
-		return output.Length == output.Capacity
-			? output.GetBuffer()
-			: output.ToArray();
-	}
-
-	private static Uri EnsureTrailingSlash(Uri uri) =>
-		uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
-			? uri
-			: new Uri(uri.AbsoluteUri + UriPathSeparator, UriKind.Absolute);
 
 	private static bool IsAllowedFeedUri(Uri uri) =>
 		uri.Scheme == Uri.UriSchemeHttps

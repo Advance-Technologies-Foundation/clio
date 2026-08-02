@@ -289,7 +289,7 @@
 		"knowledgeconfiguration": {
 			"type": "object",
 			"additionalProperties": false,
-			"description": "Local cache location, trusted publishers, and optional topic ownership overrides for Clio knowledge. MCP startup ensures the built-in creatio-curated Git source exists; disable it with enabled=false instead of removing it. Manage other sources with the *-knowledge-source commands instead of editing this object by hand when possible.",
+			"description": "Local cache location, trusted publishers, and optional topic ownership overrides for Clio knowledge. MCP startup ensures the built-in creatio-curated source exists and delivers it as a signed GitHub Release asset, so no Git CLI is required; disable it with enabled=false instead of removing it. Manage other sources with the *-knowledge-source commands instead of editing this object by hand when possible.",
 			"properties": {
 				"root-path": {
 					"type": "string",
@@ -330,7 +330,7 @@
 		"knowledgesource": {
 			"type": "object",
 			"additionalProperties": false,
-			"description": "One explicitly trusted knowledge library. Git sources are cloned directly; NuGet sources deliver signed bundles. Priority, participation, and enabled control local resolution policy.",
+			"description": "One explicitly trusted knowledge library. GitHub Release and NuGet sources deliver signed bundles; Git sources are cloned directly and require a Git CLI. Priority, participation, and enabled control local resolution policy.",
 			"properties": {
 				"library-id": {
 					"type": "string",
@@ -341,25 +341,25 @@
 				},
 				"type": {
 					"type": "string",
-					"enum": ["nuget", "git"],
-					"description": "Knowledge transport. nuget reads a signed bundle from a NuGet v3 package; git clones and updates the repository directly."
+					"enum": ["github-release", "nuget", "git"],
+					"description": "Knowledge transport. github-release reads a signed bundle from a GitHub Release asset and needs no Git CLI; nuget reads a signed bundle from a NuGet v3 package; git clones and updates the repository directly and does require a Git CLI."
 				},
 				"location": {
 					"type": "string",
 					"format": "uri",
-					"description": "Credential-free public HTTPS NuGet v3 service-index or Git repository URL. Loopback HTTP is accepted for local testing; user info, query strings, and fragments are rejected.",
-					"examples": ["https://github.com/Advance-Technologies-Foundation/clio-knowledge.git"]
+					"description": "Credential-free public HTTPS location: the GitHub REST API origin for github-release, a NuGet v3 service index, or a Git repository URL. Loopback HTTP is accepted for local testing; user info, query strings, and fragments are rejected.",
+					"examples": ["https://api.github.com/", "https://github.com/Advance-Technologies-Foundation/clio-knowledge.git"]
 				},
 				"trusted-key-id": {
 					"type": "string",
 					"minLength": 1,
 					"maxLength": 255,
-					"description": "NuGet-only manifest signing-key ID authorized for this source. It is not used for Git sources."
+					"description": "Manifest signing-key ID authorized for this source. Required for nuget, optional for github-release (omit it to rely on the public key Clio pins for its built-in library), and not used for git."
 				},
 				"trusted-public-key-path": {
 					"type": "string",
 					"minLength": 1,
-					"description": "NuGet-only absolute local path to exactly one bounded P-256 PUBLIC KEY PEM. It is not used for Git sources.",
+					"description": "Absolute local path to exactly one bounded P-256 PUBLIC KEY PEM. Required for nuget, optional for github-release and supplied together with trusted-key-id, and not used for git.",
 					"examples": ["C:\\Keys\\creatio-public.pem"]
 				},
 				"package-id": {
@@ -367,7 +367,31 @@
 					"minLength": 1,
 					"maxLength": 100,
 					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
-					"description": "NuGet package ID containing the signed knowledge bundle. Required when type is nuget and forbidden for git."
+					"description": "NuGet package ID containing the signed knowledge bundle. Required when type is nuget and forbidden for github-release and git."
+				},
+				"repository-owner": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 39,
+					"pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+					"description": "GitHub repository owner publishing the release. Required when type is github-release and forbidden for nuget and git.",
+					"examples": ["Advance-Technologies-Foundation"]
+				},
+				"repository-name": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 100,
+					"pattern": "^[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9_-])?$",
+					"description": "GitHub repository publishing the release. Required when type is github-release and forbidden for nuget and git.",
+					"examples": ["clio-knowledge"]
+				},
+				"asset-name": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 128,
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+					"description": "Exact release asset file name carrying the signed bundle. The release must expose it exactly once. Required when type is github-release and forbidden for nuget and git.",
+					"examples": ["clio-knowledge-bundle.zip"]
 				},
 				"branch": {
 					"type": "string",
@@ -407,6 +431,23 @@
 			"allOf": [
 				{
 					"if": {
+						"properties": { "type": { "const": "github-release" } },
+						"required": ["type"]
+					},
+					"then": {
+						"required": ["repository-owner", "repository-name", "asset-name"],
+						"not": {
+							"anyOf": [
+								{ "required": ["package-id"] },
+								{ "required": ["branch"] },
+								{ "required": ["tag"] },
+								{ "required": ["commit"] }
+							]
+						}
+					}
+				},
+				{
+					"if": {
 						"properties": { "type": { "const": "nuget" } },
 						"required": ["type"]
 					},
@@ -416,7 +457,10 @@
 							"anyOf": [
 								{ "required": ["branch"] },
 								{ "required": ["tag"] },
-								{ "required": ["commit"] }
+								{ "required": ["commit"] },
+								{ "required": ["repository-owner"] },
+								{ "required": ["repository-name"] },
+								{ "required": ["asset-name"] }
 							]
 						}
 					}
@@ -431,7 +475,10 @@
 							"anyOf": [
 								{ "required": ["package-id"] },
 								{ "required": ["trusted-key-id"] },
-								{ "required": ["trusted-public-key-path"] }
+								{ "required": ["trusted-public-key-path"] },
+								{ "required": ["repository-owner"] },
+								{ "required": ["repository-name"] },
+								{ "required": ["asset-name"] }
 							]
 						}
 					}

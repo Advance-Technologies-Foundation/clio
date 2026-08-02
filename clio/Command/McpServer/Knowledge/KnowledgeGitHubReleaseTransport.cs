@@ -40,9 +40,6 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 	private const string ApiVersion = "2022-11-28";
 	private const string DigestPrefix = "sha256:";
 
-	// RFC 3986 path separator: fixed by the URI grammar, never the platform file-system separator.
-	private const char UriPathSeparator = '/';
-
 	private static readonly Regex Sha256DigestPattern = new(
 		"^[0-9a-f]{64}$",
 		RegexOptions.CultureInvariant,
@@ -197,7 +194,7 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 	}
 
 	private static Uri BuildApiUri(Uri apiBase, KnowledgeSourceConfiguration source, string relativePath) =>
-		new(EnsureTrailingSlash(apiBase),
+		new(KnowledgeTransportHttp.EnsureTrailingSlash(apiBase),
 			$"repos/{Uri.EscapeDataString(source.RepositoryOwner!)}/{Uri.EscapeDataString(source.RepositoryName!)}/{relativePath}");
 
 	private ReleaseMetadataResponse ReadReleaseMetadata(
@@ -226,7 +223,7 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 		}
 		response.EnsureSuccessStatusCode();
 		using JsonDocument document = JsonDocument.Parse(
-			ReadBounded(response.Content, MaxReleaseMetadataBytes, cancellationToken));
+			KnowledgeTransportHttp.ReadBounded(response.Content, MaxReleaseMetadataBytes, cancellationToken));
 		return new ReleaseMetadataResponse(
 			document.RootElement.Clone(),
 			ReadEntityTag(response),
@@ -321,7 +318,7 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 			if (response.Content.Headers.ContentLength is long length && length != selection.Size) {
 				throw new InvalidDataException("The release asset transfer length differs from its published size.");
 			}
-			return ReadBounded(response.Content, (int)selection.Size, cancellationToken);
+			return KnowledgeTransportHttp.ReadBounded(response.Content, (int)selection.Size, cancellationToken);
 		}
 		throw new InvalidDataException("The release asset download exceeded the allowed number of redirects.");
 	}
@@ -402,29 +399,6 @@ internal sealed class KnowledgeGitHubReleaseTransport : IKnowledgeArtifactTransp
 			int.Parse(parts[2], CultureInfo.InvariantCulture));
 		return true;
 	}
-
-	private static byte[] ReadBounded(
-		HttpContent content,
-		int maximumBytes,
-		CancellationToken cancellationToken) {
-		if (content.Headers.ContentLength is long length && (length < 0 || length > maximumBytes)) {
-			throw new InvalidDataException($"HTTP content exceeds the {maximumBytes}-byte limit.");
-		}
-		using Stream stream = content.ReadAsStream(cancellationToken);
-		using MemoryStream output = new(content.Headers.ContentLength is long capacity ? (int)capacity : 0);
-		byte[] buffer = new byte[81920];
-		int read;
-		while ((read = stream.ReadAsync(buffer, cancellationToken).AsTask().GetAwaiter().GetResult()) > 0) {
-			if (output.Length + read > maximumBytes) {
-				throw new InvalidDataException($"Content exceeds the {maximumBytes}-byte limit.");
-			}
-			output.Write(buffer, 0, read);
-		}
-		return output.ToArray();
-	}
-
-	private static Uri EnsureTrailingSlash(Uri uri) =>
-		uri.AbsoluteUri.EndsWith(UriPathSeparator) ? uri : new Uri(uri.AbsoluteUri + UriPathSeparator, UriKind.Absolute);
 
 	private static string Redact(string message) => SensitiveErrorTextRedactor.Redact(message);
 

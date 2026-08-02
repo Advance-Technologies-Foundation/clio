@@ -94,6 +94,45 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
+	[Description("Reports a transport advisory attached to an accepted candidate instead of discarding it on success.")]
+	public void Install_ShouldReportTransportAdvisory_WhenAnAcceptedCandidateCarriesOne() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("alpha", Source("com.example.alpha", enabled: true))));
+		ConfigureCurrent(_ => null);
+		_transport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(new KnowledgeTransportResult(
+			KnowledgeTransportStatus.Downloaded,
+			"1.2.0",
+			[1, 2, 3],
+			null,
+			Diagnostic: "The release is not marked immutable; its assets could still be replaced upstream."));
+		_runtime.Validate(Arg.Any<Stream>(), Arg.Any<string?>(), "com.example.alpha").Returns(
+			new KnowledgeBundleValidationResult(
+				KnowledgeBundleActivationStatus.Activated,
+				KnowledgeBundleRejectionCode.None,
+				12,
+				null,
+				"com.example.alpha",
+				"1.2.0",
+				"digest"));
+		_store.Publish(Arg.Any<KnowledgeGenerationPublication>()).Returns(new KnowledgeInstallationResult(
+			KnowledgeInstallationStatus.Installed, "Knowledge source 'alpha' sequence 12 was installed."));
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Install("alpha");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an advisory describes a condition the operator should know about, not a refusal");
+		result.Sources.Should().ContainSingle().Which.Message.Should()
+			.Contain("sequence 12 was installed",
+				because: "the publication outcome must still be reported in full")
+			.And.Contain("not marked immutable",
+				because: "an advisory attached to an accepted candidate must reach the operator; "
+					+ "dropping it on the success path is what the documented immutability warning depends on");
+	}
+
+	[Test]
 	[Description("Installing all sources selects only enabled sources and publishes the validated result under its own alias.")]
 	public void Install_ShouldSelectOnlyEnabledSources_WhenAliasIsOmitted() {
 		// Arrange

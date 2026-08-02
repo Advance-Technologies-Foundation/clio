@@ -399,8 +399,28 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			ExpectedActive = context.Current?.Active,
 			AllowRepair = context.Repair
 		});
-		return new ArtifactCandidateAttempt(ToOperation(context.Alias, published), StopSearch: true);
+		return new ArtifactCandidateAttempt(
+			WithTransportAdvisory(ToOperation(context.Alias, published), retrieved.Diagnostic),
+			StopSearch: true);
 	}
+
+	/// <summary>
+	/// Carries a transport advisory into a successful lifecycle result.
+	/// </summary>
+	/// <remarks>
+	/// A transport can accept a candidate and still have something the operator must know — a GitHub
+	/// release that is not marked immutable, for instance, whose assets could still be replaced
+	/// upstream. Failure diagnostics already surface on the refusal branches; without this, an
+	/// advisory attached to an accepted candidate would be silently discarded.
+	/// </remarks>
+	/// <param name="operation">The publication outcome.</param>
+	/// <param name="advisory">The transport diagnostic, or <see langword="null"/>.</param>
+	/// <returns>The outcome, with the advisory appended when there is one to report.</returns>
+	private static KnowledgeSourceOperationResult WithTransportAdvisory(
+		KnowledgeSourceOperationResult operation,
+		string? advisory) => operation.Success && !string.IsNullOrWhiteSpace(advisory)
+		? operation with { Message = $"{operation.Message} {Safe(advisory)}" }
+		: operation;
 
 	/// <summary>
 	/// Records a refused revision. A revision the search already refused means the transport is

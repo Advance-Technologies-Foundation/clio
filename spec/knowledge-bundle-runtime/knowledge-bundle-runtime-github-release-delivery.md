@@ -57,7 +57,9 @@ uses the same three fields plus its own `trusted-key-id` and `trusted-public-key
    a size within bounds, and a well-formed `sha256:` digest. Record whether the release is immutable.
 4. Stop with no candidate when the tag is the active revision or one the search already refused.
 5. Download the asset URL, resolving redirects manually against a host and scheme allowlist.
-6. Compare SHA-256 with the digest GitHub published; a mismatch rejects the revision.
+6. Compare SHA-256 with the digest GitHub published; a mismatch rejects the revision. A release that
+   does not report `immutable` is still accepted — its content is signed and digest-checked — but the
+   transport attaches an advisory that the lifecycle result carries through to the operator.
 7. Hand the bytes to the existing bundle runtime, which verifies the publisher signature, the
    contract, the resources, and the sequence — unchanged from the NuGet path.
 
@@ -101,6 +103,17 @@ definition and carries `Enabled` across, so an upgrade migrates a Git entry to t
 while preserving an operator's `enabled: false` kill switch. The alias, library identity, priority,
 and participation are unchanged. An existing Git checkout under the alias is left on disk: it is
 simply no longer read. Unrelated user-configured Git and NuGet sources are untouched.
+
+Upgrading over an active Git checkout does not collide with the sequence-replay guard, even though
+the first release republishes a sequence the user already had active. The high-water record is
+written only by `KnowledgeSourceInstallationStore.Publish`, which only the artifact path calls; the
+Git path activates an in-memory snapshot and never publishes a generation. An upgraded user
+therefore has no high-water mark for `com.creatio.clio`, and the first release install is a clean
+first publication rather than a same-sequence-different-digest rejection.
+
+Because the transport switch happens on the next MCP start, **the producer release must exist before
+the consumer default ships.** Until it does, `releases/latest` answers 404, the migrated source
+cannot install, and the abandoned Git checkout is not a fallback.
 
 ## Consequences
 

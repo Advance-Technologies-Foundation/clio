@@ -68,7 +68,7 @@ public sealed class SettingsRepositoryFeatureTests {
 	}
 
 	[Test]
-	[Description("Documents every knowledge configuration key and the transport-specific NuGet requirement in the generated appsettings schema.")]
+	[Description("Documents every knowledge configuration key and each transport-specific requirement in the generated appsettings schema.")]
 	public void AppSettingsSchema_ShouldDescribeKnowledgeKeys_WhenKnowledgeConfigurationIsAvailable() {
 		// Arrange
 		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
@@ -86,7 +86,9 @@ public sealed class SettingsRepositoryFeatureTests {
 			.Where(property => string.IsNullOrWhiteSpace(property.Value?["description"]?.GetValue<string>()))
 			.Select(property => property.Key)
 			.ToArray();
-		string[] nugetRequired = source["allOf"]![0]!["then"]!["required"]!.AsArray()
+		string[] releaseRequired = RequiredForTransport(source, "github-release");
+		string[] nugetRequired = RequiredForTransport(source, "nuget");
+		string[] transportTypes = source["properties"]!["type"]!["enum"]!.AsArray()
 			.Select(value => value!.GetValue<string>())
 			.ToArray();
 
@@ -95,13 +97,27 @@ public sealed class SettingsRepositoryFeatureTests {
 			because: "the editor schema must expose every persisted knowledge section key");
 		sourceKeys.Should().BeEquivalentTo([
 			"library-id", "type", "location", "trusted-key-id", "trusted-public-key-path", "package-id",
+			"repository-owner", "repository-name", "asset-name",
 			"branch", "tag", "commit", "enabled", "priority", "participation"
 		], because: "the editor schema must expose every trusted-source transport and resolution key");
 		undocumentedSourceKeys.Should().BeEmpty(
 			because: "hover help must explain every unfamiliar trusted-source setting to an operator");
+		transportTypes.Should().BeEquivalentTo(["github-release", "nuget", "git"],
+			because: "an editor must offer exactly the transports the validator accepts");
+		releaseRequired.Should().BeEquivalentTo(["repository-owner", "repository-name", "asset-name"],
+			because: "a GitHub release source is addressed by repository identity rather than an arbitrary URL, "
+				+ "and its signing trust is optional because Clio pins the built-in library's key");
 		nugetRequired.Should().BeEquivalentTo(["package-id", "trusted-key-id", "trusted-public-key-path"],
 			because: "NuGet sources require a package identity and signing trust while Git sources do not");
 	}
+
+	private static string[] RequiredForTransport(JsonObject source, string transportType) => source["allOf"]!
+		.AsArray()
+		.Single(rule => rule!["if"]!["properties"]!["type"]!["const"]!.GetValue<string>() == transportType)!
+		["then"]!["required"]!
+		.AsArray()
+		.Select(value => value!.GetValue<string>())
+		.ToArray();
 
 	[Test]
 	[Description("IsFeatureEnabled returns false when the feature flag is absent from settings.")]
