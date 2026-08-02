@@ -66,11 +66,34 @@ public interface ICuratedKnowledgeBootstrapService {
 internal sealed class CuratedKnowledgeBootstrapService(
 	ISettingsRepository settingsRepository,
 	IKnowledgeSourceInstallationStore installationStore,
-	IKnowledgeSourceManagementService sourceManagementService) : ICuratedKnowledgeBootstrapService {
+	IKnowledgeSourceManagementService sourceManagementService,
+	TimeProvider timeProvider) : ICuratedKnowledgeBootstrapService {
 	private string[] _migrationAliases = [CuratedKnowledgeSourceDefaults.LegacyAlias];
+	private long? _budgetStartedAt;
+	private readonly TimeSpan _budget = TimeSpan.FromMilliseconds(
+		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
+
+	/// <summary>
+	/// The startup budget still available, never negative.
+	/// </summary>
+	/// <remarks>
+	/// The advertised pre-serve bound is only real if every phase spends from one absolute budget.
+	/// Migration, local inspection, and installation each take what is left rather than each
+	/// starting a fresh timer.
+	/// </remarks>
+	private TimeSpan Remaining {
+		get {
+			// A caller that skips Prepare() still gets a bounded phase rather than an already-expired
+			// one: the budget starts the first time it is read.
+			_budgetStartedAt ??= timeProvider.GetTimestamp();
+			TimeSpan remaining = _budget - timeProvider.GetElapsedTime(_budgetStartedAt.Value);
+			return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+		}
+	}
 
 	public CuratedKnowledgeBootstrapResult Prepare() {
 		try {
+			_budgetStartedAt = timeProvider.GetTimestamp();
 			KnowledgeConfiguration current = settingsRepository.GetKnowledgeConfiguration();
 			string? previousAlias = current.Sources
 				.Where(pair => string.Equals(
@@ -112,9 +135,17 @@ internal sealed class CuratedKnowledgeBootstrapService(
 	}
 
 	public CuratedKnowledgeBootstrapResult InstallPreparedSource(CancellationToken cancellationToken = default) {
+		using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		try {
+			// Non-blocking migration: the waiting variant acquires two source mutation locks with the
+			// store's own 30-second timeout each and ignores the token, so on contention it alone can
+			// overrun the whole advertised startup bound. A skipped migration only leaves the cache
+			// under its previous alias, which the next run retries.
 			foreach (string migrationAlias in _migrationAliases) {
-				installationStore.MigrateGitRepository(
+				if (Remaining <= TimeSpan.Zero) {
+					return BudgetExhausted();
+				}
+				installationStore.TryMigrateGitRepository(
 					migrationAlias,
 					CuratedKnowledgeSourceDefaults.Alias);
 			}
@@ -139,10 +170,17 @@ internal sealed class CuratedKnowledgeBootstrapService(
 					false,
 					$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' was disabled before installation; its cache was retained.");
 			}
+			TimeSpan remainingBeforeInspection = Remaining;
+			if (remainingBeforeInspection <= TimeSpan.Zero) {
+				return BudgetExhausted();
+			}
+			// Local inspection can run real Git validation, so it is bounded too rather than being
+			// treated as free work that happens before the deadline-aware install.
+			budget.CancelAfter(remainingBeforeInspection);
 			KnowledgeSourceInfoResult info = sourceManagementService.GetInfo(
 				CuratedKnowledgeSourceDefaults.Alias,
 				checkUpdates: false,
-				cancellationToken);
+				budget.Token);
 			KnowledgeSourceInfo? installed = info.Sources.SingleOrDefault();
 			if (info.Success && installed is { IsInstalled: true, IsValid: true }) {
 				return new CuratedKnowledgeBootstrapResult(
@@ -152,10 +190,14 @@ internal sealed class CuratedKnowledgeBootstrapService(
 					$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' is ready from its local cache.");
 			}
 
+			TimeSpan remainingBeforeInstall = Remaining;
+			if (remainingBeforeInstall <= TimeSpan.Zero) {
+				return BudgetExhausted();
+			}
 			KnowledgeSourceBatchResult installation = sourceManagementService.Install(
 				CuratedKnowledgeSourceDefaults.Alias,
-				CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
-				cancellationToken);
+				(int)remainingBeforeInstall.TotalMilliseconds,
+				budget.Token);
 			KnowledgeSourceOperationResult? operation = installation.Sources.SingleOrDefault();
 			if (installation.Success && operation is { Success: true }) {
 				return new CuratedKnowledgeBootstrapResult(
@@ -182,10 +224,20 @@ internal sealed class CuratedKnowledgeBootstrapService(
 
 	public CuratedKnowledgeBootstrapResult Bootstrap(CancellationToken cancellationToken = default) {
 		CuratedKnowledgeBootstrapResult preparation = Prepare();
+		// Prepare() starts the budget; Bootstrap must not restart it, or the two phases would each
+		// get a full five seconds.
+
 		return !preparation.Success || !preparation.Enabled
 			? preparation
 			: InstallPreparedSource(cancellationToken);
 	}
+
+	private static CuratedKnowledgeBootstrapResult BudgetExhausted() => new(
+		false,
+		true,
+		false,
+		"Built-in curated knowledge bootstrap exceeded its startup budget before the source was installed; "
+		+ $"retry with install-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}.");
 
 	private static CuratedKnowledgeBootstrapResult Failure(Exception exception) => new(
 		false,

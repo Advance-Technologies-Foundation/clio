@@ -37,7 +37,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				"appsettings.json",
 				"knowledge",
 				Array.Empty<KnowledgeSourceInfo>()));
-		_service = new CuratedKnowledgeBootstrapService(_settings, _store, _management);
+		_service = new CuratedKnowledgeBootstrapService(_settings, _store, _management, TimeProvider.System);
 	}
 
 	[Test]
@@ -46,7 +46,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		_management.Install(
 			CuratedKnowledgeSourceDefaults.Alias,
-			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
+			Arg.Any<int>(),
 			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
 				true,
 				"installed",
@@ -76,7 +76,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				&& source.Participation == KnowledgeSourceParticipation.Authoritative));
 		_management.Received(1).Install(
 			CuratedKnowledgeSourceDefaults.Alias,
-			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
+			Arg.Any<int>(),
 			Arg.Any<System.Threading.CancellationToken>());
 	}
 
@@ -128,12 +128,16 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "a valid checkout from the earlier alias should remain usable without network access");
-		_store.Received(1).TryMigrateGitRepository("creatio-poc", CuratedKnowledgeSourceDefaults.Alias);
+		// Twice: preparation attempts the migration, and installation retries it in case the source
+		// mutation lock was briefly held. Both attempts are non-blocking, so neither can overrun the
+		// startup budget the way the previous lock-waiting migration could.
+		_store.Received(2).TryMigrateGitRepository("creatio-poc", CuratedKnowledgeSourceDefaults.Alias);
 		Received.InOrder(() => {
 			_store.TryMigrateGitRepository("creatio-poc", CuratedKnowledgeSourceDefaults.Alias);
 			_settings.EnsureKnowledgeSource(
 				CuratedKnowledgeSourceDefaults.Alias,
 				Arg.Any<KnowledgeSourceConfiguration>());
+			_store.TryMigrateGitRepository("creatio-poc", CuratedKnowledgeSourceDefaults.Alias);
 		});
 		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
 	}
@@ -185,7 +189,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		_management.Install(
 			CuratedKnowledgeSourceDefaults.Alias,
-			CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds,
+			Arg.Any<int>(),
 			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
 				false,
 				"clone failed",
@@ -256,6 +260,80 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		"knowledge",
 		null,
 		null);
+
+	[Test]
+	[Description("The advertised startup budget bounds the whole bootstrap, not each phase, when a step is slow.")]
+	public void Bootstrap_ShouldStopBeforeInstalling_WhenAnEarlierPhaseConsumedTheStartupBudget() {
+		// Arrange
+		BootstrapClock clock = new();
+		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
+			_settings, _store, _management, clock);
+		// A contended source mutation lock is the realistic way an early phase eats the budget: the
+		// migration attempt returns, but only after the whole pre-serve allowance is gone.
+		_store.When(store => store.TryMigrateGitRepository(
+				Arg.Any<string>(),
+				CuratedKnowledgeSourceDefaults.Alias))
+			.Do(_ => clock.Advance(TimeSpan.FromMilliseconds(
+				CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds + 1)));
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = service.Bootstrap();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a bootstrap that ran out of its pre-serve budget has not made curated guidance available");
+		result.Message.Should().Contain("startup budget",
+			because: "the operator needs to see that the bound was hit rather than a transport failure");
+		_management.DidNotReceiveWithAnyArgs().GetInfo(default, default, default);
+		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
+	}
+
+	[Test]
+	[Description("Installation receives only the startup budget left after the earlier phases, not a fresh allowance.")]
+	public void Bootstrap_ShouldPassRemainingBudgetToInstall_WhenEarlierPhasesConsumedPartOfIt() {
+		// Arrange
+		const int spentMilliseconds = 3_000;
+		BootstrapClock clock = new();
+		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
+			_settings, _store, _management, clock);
+		_store.When(store => store.TryMigrateGitRepository(
+				Arg.Any<string>(),
+				CuratedKnowledgeSourceDefaults.Alias))
+			.Do(_ => clock.Advance(TimeSpan.FromMilliseconds(spentMilliseconds / 2)));
+		_management.Install(
+			CuratedKnowledgeSourceDefaults.Alias,
+			Arg.Any<int>(),
+			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
+				true,
+				"installed",
+				[new KnowledgeSourceOperationResult(
+					CuratedKnowledgeSourceDefaults.Alias,
+					true,
+					"installed",
+					"Curated knowledge was installed.")]));
+
+		// Act
+		service.Bootstrap();
+
+		// Assert
+		_management.Received(1).Install(
+			CuratedKnowledgeSourceDefaults.Alias,
+			Arg.Is<int>(deadline =>
+				deadline > 0
+				&& deadline <= CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds - spentMilliseconds),
+			Arg.Any<System.Threading.CancellationToken>());
+	}
+
+	/// <summary>A manually advanced clock, so budget exhaustion is deterministic rather than timing-dependent.</summary>
+	private sealed class BootstrapClock : TimeProvider {
+		private long _timestamp;
+
+		public override long GetTimestamp() => _timestamp;
+
+		public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+		internal void Advance(TimeSpan elapsed) => _timestamp += elapsed.Ticks;
+	}
 
 	private static KnowledgeConfiguration Configuration(
 		params (string Alias, KnowledgeSourceConfiguration Source)[] sources) => new() {
