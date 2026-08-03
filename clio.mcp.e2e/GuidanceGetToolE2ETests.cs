@@ -483,6 +483,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the overview sub-guide owns the canonical home of a named/predefined list-page filter (ENG-90052)");
 		response.Article.Text.Should().Contain("Do NOT reverse-engineer a `SysFolder` row with a `FilterData` blob",
 			because: "the overview sub-guide must steer the agent away from the SysFolder/FilterData DataService dead-end that cost ~11 minutes in ENG-90052");
+		response.Article.Text.Should().Contain("mode:\"replace\"",
+			because: "the UPDATE path (edit the existing Items_PredefinedFilter op in place, save mode:replace) must ship through the real mcp-server to the same bar as the placement/SysFolder facts (ENG-90052 PR #989 review)");
 	}
 
 	[Test]
