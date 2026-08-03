@@ -90,6 +90,9 @@ public sealed class MobilePageConversionGuideTool {
 			"retargeted into the shared Area and every expansion panel carried AS-IS into its OWN detail Area card beside it (detailAreas; a panels-only tab has no shared Area); " +
 			"the synthesized entries have no web counterpart so they carry no webName; apply the inserts in element-map " +
 			"order, never ask whether to apply it, never offer to skip it; tabs the mobile template provides get no layers), " +
+			"plus spacingNormalization (SILENT, not a gate question: every inserted Grid/Flex container — converted and synthesized alike — already carries gap Medium " +
+			"on all axes in its mobileValues; the web page's spacing is deliberately IGNORED, not translated; merge twins keep the template's spacing; " +
+			"report it as ONE aggregated line and never restore the web gap), " +
 			"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]

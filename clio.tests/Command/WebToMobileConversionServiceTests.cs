@@ -3248,4 +3248,171 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	#endregion
+
+	#region Spacing normalization on inserted containers (ENG-91228)
+
+	private static readonly IReadOnlySet<string> SpacingMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.GridContainer", "crt.FlexContainer", "crt.Input", "crt.TabContainer"
+		};
+
+	private static readonly IReadOnlyList<InsertValueOverrideRule> SpacingOverrides = [
+		new InsertValueOverrideRule {
+			Type = "crt.GridContainer",
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+				"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
+		},
+		new InsertValueOverrideRule {
+			Type = "crt.FlexContainer",
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "gap": "medium" }""")
+		}
+	];
+
+	private static WebToMobilePageConversionRules RulesWithSpacingOverrides() => new() {
+		InsertValueOverrides = SpacingOverrides
+	};
+
+	private static MobilePageConversionGuide AnalyzeSpacing(PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, SpacingMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true), ("crt.GridContainer", true), ("crt.Input", false)),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+	[Test]
+	[Description("ENG-91228: a converted grid container's web gap (any value, e.g. the canonical columnGap large / rowGap none) is DISCARDED, not translated — the insert carries the mobile-standard gap Medium on both axes, and the advisory section lists the container.")]
+	public void Analyze_SpacingNormalization_ShouldReplaceWebGridGapWithMedium() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer",
+			    "gap": { "columnGap": "large", "rowGap": "none" },
+			    "items": [ { "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, RulesWithSpacingOverrides());
+
+		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
+		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium",
+			because: "the web spacing is ignored by design — mobile follows the mobile spacing standard");
+		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
+		entry.Type.Should().Be("crt.GridContainer");
+		entry.Properties.Should().Equal("gap");
+	}
+
+	[Test]
+	[Description("ENG-91228: a flex container's web gap of ANY shape (px number, none, CSS string) becomes the Medium token, and a flex container that carried NO gap at all still gets the explicit Medium — the converted body must be self-describing, not lean on client defaults.")]
+	public void Analyze_SpacingNormalization_ShouldStampMediumOnFlex_WhateverTheWebCarried() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "TightRow", "type": "crt.FlexContainer", "gap": 0, "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+			  { "name": "PlainColumn", "type": "crt.FlexContainer", "items": [
+				{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, RulesWithSpacingOverrides());
+
+		Element(guide, "TightRow").MobileValues!["gap"]!.GetValue<string>().Should().Be("medium",
+			because: "a web gap 0/none is deliberately overridden — the known trade-off of the normalization");
+		Element(guide, "PlainColumn").MobileValues!["gap"]!.GetValue<string>().Should().Be("medium",
+			because: "a container without a web gap gets the explicit default added");
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name)
+			.Should().BeEquivalentTo("TightRow", "PlainColumn");
+	}
+
+	[Test]
+	[Description("ENG-91228: the pass runs AFTER the tab-area synthesis, so the synthesized tab-body grid and Area card are normalized by the SAME rule as converted containers — the invariant is 'every inserted Grid/Flex carries gap Medium', whatever its origin.")]
+	public void Analyze_SpacingNormalization_ShouldCoverSynthesizedTabLayers() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules baseRules = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = baseRules.Components,
+			TabAreaLayers = baseRules.TabAreaLayers,
+			InsertValueOverrides = SpacingOverrides
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		(string main, string area) = LayerNames("OverviewTab");
+		foreach (string name in new[] { main, area }) {
+			JsonObject vals = Synthesized(guide, name).MobileValues!.AsObject();
+			vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium", because: $"{name} is an inserted grid like any other");
+			vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium");
+		}
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().Contain(new[] { main, area });
+	}
+
+	[Test]
+	[Description("ENG-91228: a merge twin the mobile template provides is NEVER touched by the normalization — no values are stamped onto it and it is absent from the advisory list.")]
+	public void Analyze_SpacingNormalization_ShouldNeverTouchMergeTwins() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules baseRules = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = baseRules.Components,
+			TabAreaLayers = baseRules.TabAreaLayers,
+			InsertValueOverrides = SpacingOverrides
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		ElementMapEntry tabs = Element(guide, "Tabs");
+		tabs.Operation.Should().Be("merge", because: "the fixture maps Tabs onto the template's own Tabs");
+		tabs.MobileValues.Should().BeNull(because: "a merge twin gets nothing stamped onto it");
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().NotContain("Tabs");
+	}
+
+	[Test]
+	[Description("ENG-91228: the pass is switched by DATA — with no insertValueOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
+	public void Analyze_SpacingNormalization_ShouldBeNoOp_WhenRulesGroupAbsent() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer",
+			    "gap": { "columnGap": "large", "rowGap": "none" },
+			    "items": [ { "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, new WebToMobilePageConversionRules());
+
+		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("large",
+			because: "without the rules group the property-carry behavior is unchanged");
+		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("none");
+		guide.SpacingNormalization.Should().BeNull();
+	}
+
+	[Test]
+	[Description("ENG-91228: a rules file can never override an element's identity — 'type' (and 'name') entries in the override values are ignored, other listed properties still apply.")]
+	public void Analyze_SpacingNormalization_ShouldIgnoreIdentityKeysInOverrides() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			InsertValueOverrides = [
+				new InsertValueOverrideRule {
+					Type = "crt.GridContainer",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "type": "crt.Label", "name": "Hijacked", "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
+				}
+			]
+		};
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, rules);
+
+		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.GridContainer", because: "identity keys are never overridable");
+		vals.ContainsKey("name").Should().BeFalse();
+		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
+		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
+		entry.Properties.Should().Equal("gap");
+	}
+
+	#endregion
 }
