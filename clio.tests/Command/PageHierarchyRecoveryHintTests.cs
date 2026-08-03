@@ -8,15 +8,16 @@ using NSubstitute;
 using NUnit.Framework;
 
 /// <summary>
-/// ENG-94418 (R4): the page-schema-hierarchy READ-failure paths of <c>get-page</c>
+/// ENG-94418 (R4 + review): the page-schema-hierarchy READ-failure paths of <c>get-page</c>
 /// (<see cref="PageGetCommand.TryGetPage"/>) and <c>update-page</c>
 /// (<see cref="PageUpdateCommand"/>'s <c>TryGetHierarchy</c>) surface an actionable phantom-cache
-/// recovery hint when the server error carries the empty-IN() SqlException signature
-/// (<c>Incorrect syntax near ')'</c>) or the hierarchy comes back empty — both are symptoms of the
-/// Creatio schema-manager cache holding a phantom for a section whose concurrent creation was
-/// abandoned. The hint escalates to "Restart Creatio" as the guaranteed recovery. Additive only: a
-/// generic hierarchy failure is unaffected, and the existing save-path AppendActionableHint branches
-/// are unchanged.
+/// recovery hint ONLY when the server error carries the empty-IN() SqlException signature
+/// (<c>Incorrect syntax near ')'</c>) — the confirmed symptom of the Creatio schema-manager cache
+/// holding a phantom for a section whose concurrent creation was abandoned. The hint directs to
+/// "Restart Creatio" as the confirmed recovery. Scoping (ENG-94418 review): an EMPTY hierarchy is NOT
+/// hinted (it has non-phantom causes, F1), and in get-page the hint is scoped to the hierarchy read
+/// only — an exception from any OTHER step of TryGetPage is surfaced without the hint (F2). Additive: a
+/// generic hierarchy failure and the existing save-path AppendActionableHint branches are unchanged.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -29,6 +30,7 @@ public sealed class PageHierarchyRecoveryHintTests {
 	private const string SchemaName = "UsrOrders_FormPage";
 	private const string SchemaUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 	private const string DesignPackageUId = "design-pkg-uid";
+	private const string RootSchemaUId = "cccccccc-dddd-eeee-ffff-000000000000";
 
 	// The empty-IN() SqlException the Creatio server emits when the schema-manager cache holds a phantom
 	// for a section whose concurrent creation was abandoned: the parent set is empty, so the server builds
@@ -83,8 +85,8 @@ public sealed class PageHierarchyRecoveryHintTests {
 	}
 
 	[Test]
-	[Description("update-page surfaces the phantom-cache recovery hint when the hierarchy read returns an empty hierarchy (the other poisoned-cache symptom).")]
-	public void TryUpdatePage_ShouldAppendPhantomCacheRecoveryHint_WhenHierarchyIsEmpty() {
+	[Description("update-page does NOT append the phantom-cache hint on an empty hierarchy (ENG-94418 review F1): an empty hierarchy has non-phantom causes, so it must not trigger a Restart-Creatio recommendation.")]
+	public void TryUpdatePage_ShouldNotAppendHint_WhenHierarchyIsEmpty() {
 		// Arrange
 		StubNameMetadata();
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
@@ -98,8 +100,9 @@ public sealed class PageHierarchyRecoveryHintTests {
 		// Assert
 		result.Should().BeFalse(because: "an empty hierarchy cannot resolve an editable schema, so the update fails");
 		response.Error.Should().Contain("hierarchy is empty",
-			because: "the original empty-hierarchy message must be preserved alongside the appended hint");
-		AssertPhantomCacheHint(response.Error);
+			because: "the original empty-hierarchy message must still be surfaced");
+		response.Error.Should().NotContain("ENG-94418",
+			because: "an empty hierarchy is not a phantom-cache signal (F1) — the recovery hint must not fire");
 	}
 
 	[Test]
@@ -175,8 +178,8 @@ public sealed class PageHierarchyRecoveryHintTests {
 	}
 
 	[Test]
-	[Description("get-page surfaces the phantom-cache recovery hint when the hierarchy read returns an empty hierarchy.")]
-	public void TryGetPage_ShouldAppendPhantomCacheRecoveryHint_WhenHierarchyIsEmpty() {
+	[Description("get-page does NOT append the phantom-cache hint on an empty hierarchy (ENG-94418 review F1).")]
+	public void TryGetPage_ShouldNotAppendHint_WhenHierarchyIsEmpty() {
 		// Arrange
 		StubGetPageMetadata();
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
@@ -190,8 +193,37 @@ public sealed class PageHierarchyRecoveryHintTests {
 		// Assert
 		result.Should().BeFalse(because: "an empty hierarchy cannot be read into a page bundle");
 		response.Error.Should().Contain("hierarchy is empty",
-			because: "the original empty-hierarchy message must be preserved alongside the appended hint");
-		AssertPhantomCacheHint(response.Error);
+			because: "the original empty-hierarchy message must still be surfaced");
+		response.Error.Should().NotContain("ENG-94418",
+			because: "an empty hierarchy is not a phantom-cache signal (F1) — the recovery hint must not fire");
+	}
+
+	[Test]
+	[Description("get-page scopes the hint to the hierarchy READ (ENG-94418 review F2): a signature-bearing exception thrown from a LATER step (ResolveHierarchy's root re-read) reaches the outer catch and is surfaced WITHOUT the phantom-cache hint.")]
+	public void TryGetPage_ShouldNotAppendHint_WhenNonHierarchyReadStepThrowsWithSignature() {
+		// Arrange: the initial hierarchy read succeeds, but its entry (Name == SchemaName) carries a
+		// DIFFERENT UId, so ResolveHierarchy re-reads the root via a SECOND GetParentSchemas call — outside
+		// the narrow hierarchy-read catch. That second call throws an exception whose message even contains
+		// the empty-IN() signature, proving the outer catch does NOT attach the hint to non-read failures.
+		StubGetPageMetadata();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId(SchemaUId).Returns(DesignPackageUId);
+		hierarchyClient.GetParentSchemas(SchemaUId, DesignPackageUId).Returns([
+			new PageDesignerHierarchySchema { UId = RootSchemaUId, Name = SchemaName, PackageUId = DesignPackageUId }
+		]);
+		hierarchyClient.GetParentSchemas(RootSchemaUId, DesignPackageUId)
+			.Returns(_ => throw new InvalidOperationException(EmptyInServerError));
+		PageGetCommand command = CreateGetCommand(hierarchyClient);
+
+		// Act
+		bool result = command.TryGetPage(new PageGetOptions { SchemaName = SchemaName }, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "the root re-read threw, so get-page fails");
+		response.Error.Should().Contain("Incorrect syntax near ')'",
+			because: "the original signature-bearing exception must be surfaced");
+		response.Error.Should().NotContain("ENG-94418",
+			because: "the exception came from a non-hierarchy-read step (outer catch), so the hint must NOT be attached (F2)");
 	}
 
 	// ---- helpers ----

@@ -483,7 +483,9 @@ namespace Clio.Command {
 				return false;
 			}
 			if (hierarchy != null && hierarchy.Count > 0) { response = null; return true; }
-			response = new PageUpdateResponse { Success = false, Error = PageHierarchyRecoveryHint.Append($"Schema '{schemaName}' hierarchy is empty") };
+			// F1 (ENG-94418 review): an empty hierarchy is not a phantom-cache signal (it has non-phantom
+			// causes), so it does not get the recovery hint — only the empty-IN() SqlException does.
+			response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' hierarchy is empty" };
 			return false;
 		}
 

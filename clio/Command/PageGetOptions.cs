@@ -122,11 +122,24 @@ public class PageGetCommand : Command<PageGetOptions> {
 			if (string.IsNullOrWhiteSpace(designPackageUId)) {
 				designPackageUId = packageUId;
 			}
-			var initialHierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
+			IReadOnlyList<PageDesignerHierarchySchema> initialHierarchy;
+			try {
+				initialHierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
+			} catch (Exception hierarchyEx) {
+				// Scope the phantom-cache recovery hint to the hierarchy READ only (mirrors
+				// PageUpdateCommand.TryGetHierarchy). The outer catch must NOT attach it, or an exception
+				// from any other step in this method could wrongly carry the "Restart Creatio" hint
+				// (ENG-94418 review).
+				response = new PageGetResponse {
+					Success = false,
+					Error = PageHierarchyRecoveryHint.Append($"Failed to load hierarchy for '{options.SchemaName}': {hierarchyEx.Message}")
+				};
+				return false;
+			}
 			if (initialHierarchy.Count == 0) {
 				response = new PageGetResponse {
 					Success = false,
-					Error = PageHierarchyRecoveryHint.Append($"Schema '{options.SchemaName}' hierarchy is empty")
+					Error = $"Schema '{options.SchemaName}' hierarchy is empty"
 				};
 				return false;
 			}
@@ -211,7 +224,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 		catch (Exception ex) {
 			response = new PageGetResponse {
 				Success = false,
-				Error = PageHierarchyRecoveryHint.Append(ex.Message)
+				Error = ex.Message
 			};
 			return false;
 		}
