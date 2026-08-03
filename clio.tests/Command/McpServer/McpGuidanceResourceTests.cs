@@ -237,6 +237,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "remove-data-binding-row-db destroys the record itself, so every consumer of the binding tools must be warned here, not only the workplaces guide");
 		article.Text.Should().Contain("accepts NO `confirm` argument",
 			because: "the tool is flagged destructive but has no server-side gate, so the agent must obtain confirmation itself");
+		article.Text.Should().Contain("it cannot pass `binding-name`",
+			because: "seed-data lands the binding under the bare schema name, which silently forks a package that already ships suffixed bindings");
 		article.Text.Should().Contain("install logs or planned payloads",
 			because: "the guide should reject install-log-only verification for remote binding mutations");
 		article.Text.Should().Contain("Seed rows do not implement defaults",
