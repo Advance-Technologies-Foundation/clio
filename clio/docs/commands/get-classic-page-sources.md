@@ -29,8 +29,9 @@ It:
   `columnTitles` from the merged entity schema;
 - gathers the localizable strings merged across the hierarchy into `resources`;
 - best-effort, gathers the related schemas the page references: custom `detailSchemas` (body + title), the
-  `*Section` chain, and each detail's child edit page as a nested `childPageSchemas` manifest. These use
-  conservative heuristics; anything that cannot be resolved is **omitted, never fabricated**.
+  `*Section` chain, and the child pages each detail's entity registers — its edit card **and** its add mini
+  page — each as a nested `childPageSchemas` manifest. These use conservative heuristics; anything that cannot
+  be resolved is **omitted, never fabricated**.
 
 The layer bodies are written to the manifest file, **never returned** in the command output. The response
 carries only the manifest path and a small summary (layer/seed/resource/column counts and the resolved
@@ -95,6 +96,10 @@ logger warning does not reach an MCP caller. It is raised when:
 - no section could be resolved (`sectionLayerCount: 0`) — which empties the List-page side of a migration plan
   and is not the same as "this entity has no section";
 - the section metadata lookup failed and the run fell back to naming conventions;
+- a detail's bound entity could not be determined, so its child pages were never looked up in `SysModuleEdit` —
+  which is not the same as that detail having none;
+- the `SysModuleEdit` child-page lookup itself failed and the run fell back to scanning the detail bodies for an
+  edit-page token, which resolves almost nothing on a stock product;
 - pattern matching over a schema body timed out and that body was skipped, so `detailCount` /
   `sectionLayerCount` may read lower than the page actually has;
 - the parent-template walk stopped early — a parent schema failed to load, or the chain contains a cycle — so
@@ -129,6 +134,25 @@ underlying failure never reaches the caller's context.
   can be renamed or carry a UId/app infix (entity `ASPContractData` -> section `ASPContractDatac145c7efSection`),
   which no name derivation can reach. A failed metadata lookup degrades to the conventions and is reported in
   `warnings`.
+- Child pages are resolved from `SysModuleEdit` metadata: each detail's bound entity is looked up and every page
+  it registers (`CardSchemaUId` = the edit card, `MiniPageSchemaUId` = the add mini page) is nested. The bound
+  entity comes from the page's own `details` config when it overrides one
+  (`Files: { schemaName: "FileDetailV2", entitySchemaName: "AccountFile" }`), otherwise from the detail body.
+  Scanning the detail body for a `getEditPageName` / `editPageName` / `EditPageSchemaName` token is only a
+  **secondary** route, used for a detail the metadata answered nothing for: that token belongs to the pre-V2
+  `*Detail` generation and its measured yield on a stock product is **zero** (0 of 845 page-detail pairs), so it
+  must not be treated as the primary route. Because one entity can register several pages (one per
+  `TypeColumnValue`, plus a mini page), `childPageCount` can exceed `detailCount`; a page a detail resolves back
+  to itself is not nested inside its own manifest.
+- Each `detailSchemas` entry is annotated with the resolved `entity` and `editPage`. This is what makes the
+  nested child pages *consumable*: the engine resolves a detail's child page by
+  `[detail.editPage, detail.entity, detail.entity + "Page"]`, and an explicit value on the entry outranks its
+  own body scan — so a `*PageV2` card (most of the product) is reachable only through the explicit `editPage`.
+  `editPage: false` is written when the metadata established that the entity registers **no** edit card (a
+  verified none, which lets a plan proceed); it is omitted entirely when nothing could be verified, so an
+  unchecked detail never reads as one without a child page. When an entity registers several cards, the one
+  named after the entity is annotated (`OrderPageV2` over `PortalOrderPage`) — a ranking of metadata-resolved
+  candidates only; every registered page is still nested.
 - `--output-file` is confined to the workspace anchor or the OS temp directory. The command is MCP-callable, so
   the output path can be supplied by an agent rather than typed at a shell; writing an unconstrained path
   verbatim would let a `..` traversal, an absolute system path, or a symlink overwrite an arbitrary file.

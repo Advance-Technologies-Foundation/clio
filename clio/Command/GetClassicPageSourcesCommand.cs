@@ -143,8 +143,29 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		TimeSpan.FromSeconds(1));
 
 	// A detail's edit page: getEditPageName / editPageName / EditPageSchemaName -> "SomePage".
+	//
+	// SECONDARY route only (ENG-94401). This token belongs to the pre-V2 `*Detail` generation and its measured yield
+	// on the product is ZERO: 0 of 845 page-detail pairs, 0 of 505 base pages, and — re-measured live on this stand —
+	// 0 of the 24 details AccountPageV2 gathers. Child pages are resolved from `SysModuleEdit` metadata
+	// (IClassicDetailEditPageResolver) instead; this pattern runs only for a detail the metadata answered nothing for,
+	// so a hand-written custom detail that does carry the token still resolves. Do NOT restore it as the primary route.
 	private static readonly Regex EditPageRegex = new(
 		"(?:getEditPageName|editPageName|EditPageSchemaName)[\\s\\S]{0,80}?[\"']([A-Za-z][\\w]+)[\"']",
+		RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
+
+	// A detail reference in a page's `details` config that OVERRIDES the entity the detail binds by default, e.g.
+	// `Files: { schemaName: "FileDetailV2", entitySchemaName: "AccountFile", ... }` — the page binds FileDetailV2 to
+	// AccountFile, not to the entity the detail body declares. The override is what decides which entity's
+	// SysModuleEdit rows apply, so it must be read from the PAGE body; the detail body alone cannot see it. Both key
+	// orders are matched because the config is hand-written. The two keys must be ADJACENT: that is what keeps the
+	// match inside one detail entry (an intervening `}` or `filter: {...}` breaks it), and a non-adjacent override is
+	// simply not seen — the detail then falls back to its own declared entity, which degrades rather than mis-resolves.
+	private static readonly Regex DetailEntityOverrideRegex = new(
+		"(?<![A-Za-z_])schemaName[\"']?\\s*:\\s*[\"'](?<detail>[A-Za-z][\\w]*Detail[\\w]*)[\"']\\s*,\\s*" +
+			"entitySchemaName[\"']?\\s*:\\s*[\"'](?<entity>[A-Za-z_][\\w]*)[\"']" +
+		"|(?<![A-Za-z_])entitySchemaName[\"']?\\s*:\\s*[\"'](?<entity>[A-Za-z_][\\w]*)[\"']\\s*,\\s*" +
+			"schemaName[\"']?\\s*:\\s*[\"'](?<detail>[A-Za-z][\\w]*Detail[\\w]*)[\"']",
 		RegexOptions.Compiled,
 		TimeSpan.FromSeconds(1));
 
@@ -153,6 +174,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
 	private readonly IClassicSectionSchemaResolver _sectionResolver;
+	private readonly IClassicDetailEditPageResolver _childPageResolver;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
@@ -164,6 +186,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	/// <param name="columnManager">Reads remote entity-schema columns for the resolved section entity.</param>
 	/// <param name="hierarchyClient">Fetches the page-designer inheritance hierarchy for a schema.</param>
 	/// <param name="sectionResolver">Resolves a section name to its classic page schema.</param>
+	/// <param name="childPageResolver">
+	/// Resolves the child pages a detail's entity registers in <c>SysModuleEdit</c>. Injected rather than built inline
+	/// from the client this command already holds, so the metadata route is substitutable in tests and so the ESQ
+	/// column set stays next to the other Classic-migration lookups (ENG-94401).
+	/// </param>
 	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
 	/// <param name="logger">Logger for progress and error output.</param>
 	/// <remarks>
@@ -177,6 +204,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		IRemoteEntitySchemaColumnManager columnManager,
 		IPageDesignerHierarchyClient hierarchyClient,
 		IClassicSectionSchemaResolver sectionResolver,
+		IClassicDetailEditPageResolver childPageResolver,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
@@ -184,6 +212,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		_columnManager = columnManager;
 		_hierarchyClient = hierarchyClient;
 		_sectionResolver = sectionResolver;
+		_childPageResolver = childPageResolver;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
@@ -252,13 +281,21 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			// 6b. Enrichers (best-effort, heuristic; omit unresolved, never fabricate). All enricher names are
 			//     primed through ONE batched SelectQuery so the fan-out does not pay a round-trip per name.
 			List<string> detailNames = CollectDetailNames(ctx, schemas, seed);
+			IReadOnlyDictionary<string, string> detailEntityOverrides = CollectDetailEntityOverrides(ctx, schemas, seed);
 			IReadOnlyList<string> sectionCandidates = ResolveSectionCandidates(ctx, options.SchemaName, entity);
 			var enricherNames = new List<string>(detailNames);
 			enricherNames.AddRange(sectionCandidates);
 			PrimeLayerBatch(ctx, enricherNames);
 			JObject detailSchemas = BuildDetailSchemas(ctx, detailNames);
 			JArray section = BuildSection(ctx, sectionCandidates);
-			JObject childPageSchemas = BuildChildPageSchemas(ctx, detailSchemas);
+			JObject childPageSchemas = BuildChildPageSchemas(
+				ctx, detailSchemas, detailEntityOverrides, options.SchemaName,
+				out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo);
+			// The engine keys childPageSchemas by the detail's `editPage` FIRST, and an explicit editPage/entity on the
+			// detail entry WINS over its own body scan — so without these annotations the nested manifests we just
+			// resolved would be keyed by a page name the engine never looks up, and every detail would still read as
+			// "child page NOT verified" (ENG-94401).
+			AnnotateDetailSchemas(detailSchemas, detailChildPageInfo);
 			if (section.Count == 0) {
 				// sectionLayerCount:0 alone cannot be told apart from "this entity has no Classic section", and an
 				// omitted section silently empties the plan's List-page analysis (custom quick filters,
@@ -721,16 +758,57 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private string InferEntity(PageSourcesRunContext ctx, JArray schemas, JArray seed) {
 		// Prefer the page's own layer chain (most specific), then the parent-template seed.
 		foreach (JToken entry in schemas.Concat(seed)) {
+			string entity = InferEntityFromBody(ctx, entry["body"]?.ToString());
+			if (entity != null) {
+				return entity;
+			}
+		}
+		return null;
+	}
+
+	// The entity a single schema body declares as its own bound object, or null when it declares none. Shared by the
+	// page-chain inference above and the per-detail entity resolution the child-page lookup needs.
+	private string InferEntityFromBody(PageSourcesRunContext ctx, string body) {
+		if (string.IsNullOrEmpty(body)) {
+			return null;
+		}
+		Match match = SafeMatch(ctx.Warnings, EntityInferenceRegex, body, "inferring the bound entity");
+		return match.Success ? match.Groups[1].Value : null;
+	}
+
+	// The per-detail entity OVERRIDES the page's `details` config declares (detail schema name -> entity schema name).
+	// Read from the page bodies, not the detail bodies: a page can bind a shared detail to a different entity than the
+	// detail's own default (`Files: { schemaName: "FileDetailV2", entitySchemaName: "AccountFile" }`), and that
+	// override — not the detail's default — decides whose SysModuleEdit rows apply.
+	//
+	// Deliberately a second pass rather than an extra output of CollectDetailNames: that collector is attempt-capped
+	// against hostile bodies and its cap semantics are asserted by tests, so overrides are gathered beside it instead
+	// of reshaping it. Precedence within the pass: the page's own layer chain wins over the parent-template seed
+	// (most specific first), and within either, a later (more derived) layer overrides an earlier one.
+	private IReadOnlyDictionary<string, string> CollectDetailEntityOverrides(
+		PageSourcesRunContext ctx, JArray schemas, JArray seed) {
+		var overrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		CollectDetailEntityOverrides(ctx, seed, overrides);    // least specific first...
+		CollectDetailEntityOverrides(ctx, schemas, overrides); // ...so the page's own layers overwrite the seed
+		return overrides;
+	}
+
+	private void CollectDetailEntityOverrides(
+		PageSourcesRunContext ctx, JArray layers, Dictionary<string, string> overrides) {
+		foreach (JToken entry in layers) {
 			string body = entry["body"]?.ToString();
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			Match match = SafeMatch(ctx.Warnings, EntityInferenceRegex, body, "inferring the bound entity");
-			if (match.Success) {
-				return match.Groups[1].Value;
+			foreach (Match match in SafeMatches(
+				ctx.Warnings, DetailEntityOverrideRegex, body, "reading the details' entity overrides")) {
+				string detailName = match.Groups["detail"].Value;
+				string entityName = match.Groups["entity"].Value;
+				if (!string.IsNullOrWhiteSpace(detailName) && !string.IsNullOrWhiteSpace(entityName)) {
+					overrides[detailName] = entityName;
+				}
 			}
 		}
-		return null;
 	}
 
 	private JObject BuildResources(PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
@@ -955,10 +1033,22 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return null;
 	}
 
-	private JObject BuildChildPageSchemas(PageSourcesRunContext ctx, JObject detailSchemas) {
+	// What the child-page lookup learned about one detail, in the shape the engine's detailSchemas entry reads.
+	// EditPage: the primary edit card's schema name; null when nothing was resolved. VerifiedNoEditPage: the metadata
+	// answered DEFINITIVELY that the detail's entity registers no edit card — the difference between "we checked and
+	// there is none" (which lets the engine's plan proceed) and "we never checked" (which must not read as none).
+	private sealed record DetailChildPageInfo(string Entity, string EditPage, bool VerifiedNoEditPage);
+
+	private JObject BuildChildPageSchemas(
+		PageSourcesRunContext ctx,
+		JObject detailSchemas,
+		IReadOnlyDictionary<string, string> detailEntityOverrides,
+		string pageSchemaName,
+		out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
 		var childPageSchemas = new JObject();
 		// Collect the distinct edit-page names first so the whole set is resolved in one batched enumeration.
-		IReadOnlyList<string> editPageNames = CollectChildPageNames(ctx, detailSchemas);
+		IReadOnlyList<string> editPageNames = CollectChildPageNames(
+			ctx, detailSchemas, detailEntityOverrides, pageSchemaName, out detailChildPageInfo);
 		PrimeLayerBatch(ctx, editPageNames);
 		foreach (string editPageName in editPageNames) {
 			try {
@@ -984,27 +1074,201 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return childPageSchemas;
 	}
 
-	// Every distinct edit-page name named across the detail bodies. Uncapped (ENG-94402): the count is bounded by
-	// the number of gathered details, which is itself no longer capped, so every child edit page a page reaches is
-	// nested. The `seen` set keeps a repeated name from being resolved twice.
-	private List<string> CollectChildPageNames(PageSourcesRunContext ctx, JObject detailSchemas) {
+	// Every distinct child-page name for the gathered details. Uncapped (ENG-94402): the migration unit is collected
+	// whole, and the `seen` set admits each name once so a repeated reference is never resolved twice.
+	//
+	// PRIMARY route: each detail's entity -> its SysModuleEdit registrations (edit card + add mini page), resolved for
+	// every detail entity in ONE batched metadata lookup. This replaces scanning the detail body for a
+	// getEditPageName/editPageName/EditPageSchemaName token, whose measured yield on the product is zero — see the
+	// EditPageRegex comment and ENG-94401. The body scan stays as the SECONDARY route for a detail the metadata
+	// answered nothing for, so a custom detail that does carry the token still resolves.
+	//
+	// One entity can register several pages (one row per TypeColumnValue, plus a mini page), so the child-page count
+	// is not bounded by the detail count either — which is exactly why removing the numeric caps matters here.
+	private List<string> CollectChildPageNames(
+		PageSourcesRunContext ctx,
+		JObject detailSchemas,
+		IReadOnlyDictionary<string, string> detailEntityOverrides,
+		string pageSchemaName,
+		out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
+		IReadOnlyDictionary<string, string> entityByDetail =
+			ResolveDetailEntities(ctx, detailSchemas, detailEntityOverrides);
+		(IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, bool lookupSucceeded) =
+			ResolveChildPagesByEntity(ctx, entityByDetail);
+		var info = new Dictionary<string, DetailChildPageInfo>(StringComparer.OrdinalIgnoreCase);
+		detailChildPageInfo = info;
 		var editPageNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		foreach (JProperty detail in detailSchemas.Properties()) {
-			string detailBody = detail.Value["body"]?.ToString();
-			if (string.IsNullOrEmpty(detailBody)) {
-				continue;
+		// Local so both routes share the dedup and the self-reference guard.
+		void Add(string editPageName) {
+			if (string.IsNullOrWhiteSpace(editPageName)) {
+				return;
 			}
-			Match editPageMatch = SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
-			if (!editPageMatch.Success) {
-				continue; // no edit page named on the detail -> nothing to nest; the engine flags it
+			// A detail bound to the page's OWN entity resolves back to the page itself; nesting a page inside its own
+			// manifest is never what the engine folds.
+			if (string.Equals(editPageName, pageSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				return;
 			}
-			string editPageName = editPageMatch.Groups[1].Value;
 			if (seen.Add(editPageName)) {
 				editPageNames.Add(editPageName);
 			}
 		}
+		foreach (JProperty detail in detailSchemas.Properties()) {
+			entityByDetail.TryGetValue(detail.Name, out string entity);
+			if (entity != null
+				&& pagesByEntity.TryGetValue(entity, out IReadOnlyList<ClassicChildPage> metadataPages)
+				&& metadataPages.Count > 0) {
+				foreach (ClassicChildPage metadataPage in metadataPages) {
+					Add(metadataPage.SchemaName);
+				}
+				// The engine reads ONE editPage per detail: the edit card, not the add mini page (which it keys
+				// separately). The mini pages stay in childPageSchemas so the plan still carries their sources.
+				string card = PickPrimaryCard(metadataPages, entity);
+				info[detail.Name] = new DetailChildPageInfo(entity, card, VerifiedNoEditPage: card == null);
+				continue; // metadata gave a definite answer for this detail; the body scan adds nothing
+			}
+			// No metadata answer for this detail. `verified none` is claimable ONLY when the lookup actually ran AND
+			// the entity was resolved — otherwise we never looked, and saying "none" would license the engine to plan
+			// around a child page that does exist.
+			bool verifiedNone = lookupSucceeded && entity != null;
+			string detailBody = detail.Value["body"]?.ToString();
+			Match editPageMatch = string.IsNullOrEmpty(detailBody)
+				? Match.Empty
+				: SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
+			if (!editPageMatch.Success) {
+				// Neither metadata nor body names a page. Record what we know so the engine can tell a verified
+				// "no edit page exists" apart from an unchecked detail.
+				info[detail.Name] = new DetailChildPageInfo(entity, null, verifiedNone);
+				continue;
+			}
+			string bodyPage = editPageMatch.Groups[1].Value;
+			info[detail.Name] = new DetailChildPageInfo(entity, bodyPage, VerifiedNoEditPage: false);
+			Add(bodyPage);
+		}
 		return editPageNames;
+	}
+
+	// Which of an entity's registered cards to name as THE detail's editPage. Every candidate here already came from
+	// metadata and every one of them is nested in childPageSchemas — this only ranks them for the engine's single
+	// per-detail slot, so it never invents or filters out a page.
+	//
+	// TypeColumnValue cannot make this call: an entity's cards are either all typed (Activity registers
+	// EmailPageV2 + ActivityPageV2 + ActivityPageV2 under three different type values, with no default row) or all
+	// untyped (Order registers PortalOrderPage and OrderPageV2, both with an empty one). So prefer the card whose name
+	// is derived from the entity — which picks ActivityPageV2 over EmailPageV2, OrderPageV2 over PortalOrderPage, and
+	// CasePage over PortalCasePage — and fall back to registration order when no card is named after the entity
+	// (e.g. VwAccountRelationship -> AccountRelationshipDetailPageV2).
+	private static string PickPrimaryCard(IReadOnlyList<ClassicChildPage> registered, string entity) {
+		List<ClassicChildPage> cards = registered.Where(page => !page.IsMiniPage).ToList();
+		if (cards.Count == 0) {
+			return null;
+		}
+		ClassicChildPage namedAfterEntity = string.IsNullOrWhiteSpace(entity)
+			? null
+			: cards.FirstOrDefault(page =>
+				page.SchemaName.StartsWith(entity, StringComparison.OrdinalIgnoreCase));
+		return (namedAfterEntity ?? cards[0]).SchemaName;
+	}
+
+	// Writes what the child-page lookup learned onto the detail entries themselves. The engine resolves a detail's
+	// child page by `[detail.editPage, detail.entity, detail.entity + "Page"]` and an explicit value on the entry WINS
+	// over its own body scan — so a `*PageV2` card (i.e. most of the product) is reachable ONLY through the explicit
+	// `editPage`. `editPage: false` is the engine's "verified: no Classic edit page exists" signal; it is written only
+	// where the metadata actually established that, never as a stand-in for an unchecked detail.
+	private static void AnnotateDetailSchemas(
+		JObject detailSchemas, IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
+		foreach (JProperty detail in detailSchemas.Properties()) {
+			if (!detailChildPageInfo.TryGetValue(detail.Name, out DetailChildPageInfo info)
+				|| detail.Value is not JObject entry) {
+				continue;
+			}
+			if (!string.IsNullOrWhiteSpace(info.Entity)) {
+				entry["entity"] = info.Entity;
+			}
+			if (!string.IsNullOrWhiteSpace(info.EditPage)) {
+				entry["editPage"] = info.EditPage;
+			}
+			else if (info.VerifiedNoEditPage) {
+				entry["editPage"] = false;
+			}
+		}
+	}
+
+	// The entity each gathered detail binds: the page's `details`-config override first (it outranks the detail's own
+	// default), else the entity the detail body itself declares. A detail whose entity cannot be resolved is reported
+	// as a gap — its child pages are simply not lookup-able, which must not read as "it has none".
+	private IReadOnlyDictionary<string, string> ResolveDetailEntities(
+		PageSourcesRunContext ctx, JObject detailSchemas, IReadOnlyDictionary<string, string> detailEntityOverrides) {
+		var entityByDetail = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var unresolved = new List<string>();
+		foreach (JProperty detail in detailSchemas.Properties()) {
+			string entity = detailEntityOverrides.TryGetValue(detail.Name, out string overridden)
+				? overridden
+				: InferEntityFromBody(ctx, detail.Value["body"]?.ToString());
+			if (string.IsNullOrWhiteSpace(entity)) {
+				unresolved.Add(detail.Name);
+			}
+			else {
+				entityByDetail[detail.Name] = entity;
+			}
+		}
+		if (unresolved.Count > 0) {
+			bool single = unresolved.Count == 1;
+			AddWarning(ctx,
+				$"Could not determine the bound entity for {(single ? "detail" : "details")} " +
+				$"{string.Join(", ", unresolved)}, so {(single ? "its" : "their")} child pages were not looked up in " +
+				$"SysModuleEdit. That is NOT the same as '{(single ? "it has" : "they have")} no child page'.");
+		}
+		return entityByDetail;
+	}
+
+	// Entity -> the child pages it registers, from ONE batched SysModuleEdit lookup over every detail entity, plus
+	// whether that lookup actually RAN: only a lookup that ran lets a caller claim "verified: this detail has no edit
+	// page". A lookup failure degrades to the body-scan route for every detail and is surfaced as a response warning,
+	// never fatal — child pages are an enricher, not the sources' payload.
+	private (IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, bool lookupSucceeded)
+		ResolveChildPagesByEntity(PageSourcesRunContext ctx, IReadOnlyDictionary<string, string> entityByDetail) {
+		var pagesByEntity = new Dictionary<string, IReadOnlyList<ClassicChildPage>>(StringComparer.OrdinalIgnoreCase);
+		List<string> entities = entityByDetail.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+		if (entities.Count == 0) {
+			return (pagesByEntity, false);
+		}
+		ClassicChildPageLookup lookup;
+		try {
+			lookup = _childPageResolver.ResolveChildPages(entities);
+		}
+		catch (Exception ex) {
+			// The resolver contract is not to throw, but a substituted or faulty implementation must not fail the whole
+			// assembly: degrade to the body-scan route exactly like a reported error does.
+			ReportChildPageLookupFailure(ctx, ex.Message);
+			return (pagesByEntity, false);
+		}
+		if (lookup.Error != null) {
+			ReportChildPageLookupFailure(ctx, lookup.Error);
+			return (pagesByEntity, false);
+		}
+		foreach (string warning in lookup.Warnings ?? []) {
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
+		}
+		foreach (IGrouping<string, ClassicChildPage> group in (lookup.ChildPages ?? [])
+			.GroupBy(page => page.EntityName, StringComparer.OrdinalIgnoreCase)) {
+			pagesByEntity[group.Key] = group
+				.Where(page => !string.IsNullOrWhiteSpace(page.SchemaName))
+				.GroupBy(page => page.SchemaName, StringComparer.OrdinalIgnoreCase)
+				.Select(byName => byName.First())
+				.ToList();
+		}
+		return (pagesByEntity, true);
+	}
+
+	private void ReportChildPageLookupFailure(PageSourcesRunContext ctx, string error) {
+		string warning =
+			$"Child-page lookup from SysModuleEdit failed ({error}); fell back to scanning the detail bodies for an " +
+			"edit-page token, which resolves almost nothing on a stock product (measured 0 of 845 page-detail pairs). " +
+			"An empty childPageSchemas here does NOT mean the details have no child pages.";
+		_logger.WriteWarning(warning);
+		AddWarning(ctx, warning);
 	}
 
 	// Assembles the CORE nested manifest (schemas + seed + entity) for a child edit page. Bounded to one

@@ -116,8 +116,14 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
 		response.SectionLayerCount.Should().BeGreaterThan(0,
 			because: "the Contact entity has a Classic section bound through SysModule, so the section chain must be gathered");
-		response.Warnings.Should().BeNull(
-			because: "complete page sources carry no warnings; a failed SysModule lookup would degrade to the naming " +
+		// Scoped to section warnings on purpose: a stock product legitimately carries other gaps (a communication
+		// detail declares no bound entity, so its child pages cannot be looked up), and asserting "no warnings at all"
+		// would fail on that unrelated, honest gap instead of on a broken section lookup.
+		string[] sectionWarnings = (response.Warnings ?? [])
+			.Where(warning => warning.Contains("section", StringComparison.OrdinalIgnoreCase))
+			.ToArray();
+		sectionWarnings.Should().BeEmpty(
+			because: "a resolved section reports nothing; a failed SysModule lookup would degrade to the naming " +
 				"conventions and report the reason here");
 
 		// Assert — the manifest carries the section bodies the engine folds into the Freedom List page
@@ -174,6 +180,56 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			warning => warning.Contains("stopped at") || warning.Contains("remainder is omitted")
 				|| warning.Contains("remainder is ignored") || warning.Contains("depth cap"),
 			because: "a complete collection may not report a truncation gap");
+	}
+
+	[Test]
+	[Description("Populates childPageSchemas from live SysModuleEdit metadata for a page with details, so the structural zero the body-scan route produced cannot return.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources populates childPageSchemas from SysModuleEdit")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the child pages each detail's entity registers in SysModuleEdit reached the manifest. Before ENG-94401 child pages were resolved by scanning detail bodies for a getEditPageName token, which matches nothing on a stock product (0 of 845 page-detail pairs), so childPageSchemas was structurally always empty and a migration plan silently omitted every child page.")]
+	public async Task GetPageSources_Should_Populate_ChildPageSchemas_From_SysModuleEdit() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-child-pages");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+
+		// Assert — the page has details, and their entities' registered pages were resolved
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		response.DetailCount.Should().BeGreaterThan(0,
+			because: "ContactPageV2 references details, without which there would be no child page to resolve");
+		response.ChildPageCount.Should().BeGreaterThan(0,
+			because: "the detail entities register edit pages in SysModuleEdit, so a zero here means the metadata " +
+				"route regressed back to the body scan that matches nothing on a stock product");
+
+		// Assert — the child pages are real nested manifests on disk, not just a counter
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		manifest.RootElement.TryGetProperty("childPageSchemas", out JsonElement childPages).Should().BeTrue(
+			because: "resolved child pages must reach the manifest the engine folds, not only the response counter");
+		childPages.EnumerateObject().Count().Should().Be(response.ChildPageCount,
+			because: "the reported child-page count must match what was actually written");
+		foreach (JsonProperty childPage in childPages.EnumerateObject()) {
+			childPage.Value.TryGetProperty("schemas", out JsonElement childSchemas).Should().BeTrue(
+				because: $"child page '{childPage.Name}' must carry its own layer chain for the engine to fold");
+			childSchemas.GetArrayLength().Should().BeGreaterThan(0,
+				because: $"child page '{childPage.Name}' must carry at least one real layer body, never an empty shell");
+		}
 	}
 
 	[Test]
