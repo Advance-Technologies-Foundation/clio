@@ -209,13 +209,6 @@ public static class WebToMobileAnalysisService {
 		// so the order is safe either way — it is fixed here so it stays that way.
 		List<TabAreaLayerGroup> tabAreaLayers = BuildTabAreaLayers(elementMap, rules, sourcePage);
 
-		// Spacing normalization (ENG-91228): mobile follows its own spacing standard, so the web page's
-		// container spacing is deliberately IGNORED — every Grid/Flex container the converter INSERTS gets
-		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
-		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
-		// merge twins the mobile template provides are never touched.
-		List<SpacingNormalizationEntry> spacingNormalization = ApplyInsertValueOverrides(elementMap, rules);
-
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
@@ -274,19 +267,9 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
-			SpacingNormalization = spacingNormalization.Count > 0
-				? new SpacingNormalizationInfo {
-					Note = "Mobile follows the mobile spacing standard: the web page's container spacing was "
-						+ "IGNORED (not translated) and every inserted crt.GridContainer / crt.FlexContainer "
-						+ "carries gap Medium, already baked into elementMap[].mobileValues — nothing separate "
-						+ "to apply. Silent normalization, not a gate decision: report it as ONE aggregated "
-						+ "line and never restore the web spacing.",
-					Normalized = spacingNormalization
-				}
-				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays, tabAreaLayers.Count > 0),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1390,8 +1373,7 @@ public static class WebToMobileAnalysisService {
 	private static List<string> BuildConstraints(
 		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
-		bool mobileTemplateNativesMissingForArrays = false, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false) {
+		bool mobileTemplateNativesMissingForArrays = false, bool hasTabAreaLayers = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1456,21 +1438,10 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
-		if (hasSpacingNormalization) {
-			constraints.Add(
-				"Spacing is NORMALIZED, not converted: mobile follows the mobile spacing standard, so the web " +
-				"page's container spacing was deliberately IGNORED — every inserted crt.GridContainer / " +
-				"crt.FlexContainer (converted and synthesized alike) already carries gap Medium on all axes in " +
-				"its mobileValues. Do NOT restore or translate the web gap, and do NOT treat the difference " +
-				"from the web page as a defect. This is SILENT — never a gate question: state it in the plan " +
-				"and the final report as ONE aggregated line (guide.spacingNormalization lists the containers). " +
-				"Merge twins the mobile template provides keep the template's own spacing untouched.");
-		}
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false) {
+	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1485,9 +1456,6 @@ public static class WebToMobileAnalysisService {
 		}
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area cards) is already baked into the element map for every converter-created tab: the tab's non-panel top-level content is retargeted into the shared Area and stacked in web order, and every expansion panel sits in its OWN detail Area card beside it (shared Area first, then the details in web order; a panels-only tab has no shared Area at all). Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order -> detailAreas per panel).");
-		}
-		if (hasSpacingNormalization) {
-			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
@@ -2679,59 +2647,6 @@ public static class WebToMobileAnalysisService {
 			MobileValues = values,
 			Reason = reason
 		};
-	}
-
-	/// <summary>
-	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT (ENG-91228 spacing
-	/// normalization). For each entry whose <c>mobileType</c> matches an override rule, the listed
-	/// properties are SET on the prebuilt <c>mobileValues</c> — replacing whatever the web page carried
-	/// (any shape: token, px number, CSS string, per-axis object; the web value is discarded, never
-	/// translated) and ADDED when the web page carried none, so the converted body is self-describing
-	/// instead of leaning on the mobile client's defaults. Covers converted and synthesized inserts alike
-	/// (run it after the tab-area pass); merge twins, drops and relocate hints are never touched, and the
-	/// element identity keys (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an
-	/// absent/empty group is a no-op. Returns one advisory entry per normalized element for the guide's
-	/// <c>spacingNormalization</c> report section.
-	/// </summary>
-	private static List<SpacingNormalizationEntry> ApplyInsertValueOverrides(
-		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
-		var normalized = new List<SpacingNormalizationEntry>();
-		IReadOnlyList<InsertValueOverrideRule> overrides = rules?.InsertValueOverrides;
-		if (overrides is not { Count: > 0 }) {
-			return normalized;
-		}
-		var byType = new Dictionary<string, InsertValueOverrideRule>(StringComparer.OrdinalIgnoreCase);
-		foreach (InsertValueOverrideRule rule in overrides) {
-			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
-				byType[rule.Type] = rule;
-			}
-		}
-		if (byType.Count == 0) {
-			return normalized;
-		}
-		foreach (ElementMapEntry entry in elementMap) {
-			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				|| entry.MobileType is not { Length: > 0 }
-				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out InsertValueOverrideRule rule)) {
-				continue;
-			}
-			var properties = new List<string>();
-			foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
-				if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
-					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
-					continue; // element identity is never overridable, whatever the rules file says
-				}
-				values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
-				properties.Add(pair.Key);
-			}
-			if (properties.Count > 0) {
-				normalized.Add(new SpacingNormalizationEntry {
-					Name = entry.MobileName, Type = entry.MobileType, Properties = properties
-				});
-			}
-		}
-		return normalized;
 	}
 
 	/// <summary>Base36 digit alphabet for <see cref="StableSuffix"/> (lowercase, designer-style).</summary>

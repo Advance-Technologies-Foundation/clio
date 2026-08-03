@@ -98,14 +98,14 @@
     }
   ],
   "tabAreaLayers": {
-    "note": "every converter-created tab gets the designer's 2-layer body — a grid 'tab body' (MainTabContainer_<suffix>) holding the tab's Area card(s) (GridContainer_<suffix>). Mirrors TabItemFactory.getMobileTabContainerConfig(). A top-level child whose type is in detailComponentTypes (an expansion panel) does not join the shared Area — it gets its OWN Area card as a sibling ('like mobile details'); the shared Area is synthesized only for the remaining content.",
+    "note": "ENG-94188: every converter-created tab gets the designer's 2-layer body — a grid 'tab body' (MainTabContainer_<suffix>) holding the tab's Area card(s) (GridContainer_<suffix>). Mirrors TabItemFactory.getMobileTabContainerConfig(). A top-level child whose type is in detailComponentTypes (an expansion panel) does not join the shared Area — it gets its OWN Area card as a sibling ('like mobile details'); the shared Area is synthesized only for the remaining content.",
     "tabComponentType": "crt.TabContainer",
     "detailComponentTypes": ["crt.ExpansionPanel"],
     "mainTabContainer": {
       "namePrefix": "MainTabContainer_",
       "values": {
         "type": "crt.GridContainer",
-        "gap": { "rowGap": "medium", "columnGap": "medium" },
+        "gap": { "rowGap": "small", "columnGap": "small" },
         "alignItems": "stretch",
         "padding": { "bottom": "medium" }
       }
@@ -122,18 +122,6 @@
       }
     }
   },
-  "insertValueOverrides": [
-    {
-      "type": "crt.GridContainer",
-      "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } },
-      "note": "ENG-91228 spacing normalization: mobile follows the mobile spacing standard, so the web grid's gap (typically columnGap large / rowGap none) is IGNORED, not translated — every inserted grid container (converted and synthesized alike) gets Medium row/column spacing. Keep in sync with tabAreaLayers container gaps."
-    },
-    {
-      "type": "crt.FlexContainer",
-      "values": { "gap": "medium" },
-      "note": "ENG-91228 spacing normalization: the web flex gap (token, px number or CSS string) is IGNORED, not translated — every inserted flex container gets Medium gap."
-    }
-  ],
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
