@@ -1078,6 +1078,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "tool-based retrieval should preserve the warning that remove-data-binding-row-db destroys the record itself");
 		response.Article.Text.Should().Contain("clio MCP workplaces guide",
 			because: "the canonical article title proves the right guide came back over the wire");
+		response.Article.Text.Should().Contain("its SECTION and its HOME PAGE go in the SAME workplace",
+			because: "tool-based retrieval should preserve the single-decision rule whose absence stranded a section in another workplace");
 	}
 
 	private static async Task<GuidanceGetResponse> CallAsync(

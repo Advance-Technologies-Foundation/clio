@@ -925,6 +925,126 @@ failed with `No such host is known` for every probe path. The identical command 
 succeeded immediately. All stand operations in this addendum therefore ran via PowerShell. Worth
 knowing before concluding "the stand is down" from a Bash-side failure.
 
+---
+
+# Addendum 4 — independent reproduction by an uninvolved agent
+
+The strongest evidence in this report was not produced by a targeted test. A separate Claude Code
+session, in a different working directory, was given only the plain first-block request ("Create
+Verrify1 app…") and ran it to completion against `DevEnv`. It had no knowledge of ENG-88474.
+
+**What it was actually running** — established from its transcript, not from its summary:
+
+- **The toolkit was never loaded.** `Skill` invocations: NONE. The only files it read were
+  `memory/MEMORY.md` and two `.clio-pages/*/body.js`. No `AGENTS.md`, no runbook, no checklist.
+- **clio was the RELEASED build, not this branch.** The toolkit's `.mcp.json` declares
+  `"command": "clio"`, i.e. the global tool (`8.1.0.95`). Probed directly: `get-guidance
+  name=workplaces` → *"Unknown guidance 'workplaces'"*. Its `routing` map has the new `branding` row
+  but no workplaces row, and its `app-modeling` has no placement GATE.
+- It requested 13 guides: `core-rules`, `routing`, `app-modeling`, `home-page`, the page-* set, the
+  widget set, `data-bindings`. Never `workplaces` — the released `home-page` does not reference it.
+
+So the run measured **released clio with no toolkit**. That makes it a clean baseline, and it
+reproduced four findings from this report without being aimed at any of them.
+
+## F17 reproduced — and worse than the original case
+
+The agent bound the `Todo` workplace (`9768e46e-…`) into the `UsrVerrify1` package. Exported and
+inspected:
+
+| Binding | Columns | Contents |
+|---|---|---|
+| `SysWorkplace` (agent-created) | **2** | `Id`, `HomePageUId` |
+| `SysWorkplace_MyApps` (`create-app`-created) | 5 | `Id`, `Position`, `LoaderId`, `SysApplicationClientType`, `Type` |
+
+The agent's binding folder has **no `Localization` subdirectory at all**, so `Name` does not ship
+either. Installing that package elsewhere would insert a workplace with no client type, no type, no
+loader — and no name. The original F17 case shipped 3 columns plus `Name` via localization; this is
+strictly worse.
+
+## F2 reproduced, plus a two-package conflict
+
+The binding landed under the **bare** schema name `SysWorkplace`, not a suffixed one — exactly the
+parallel-binding pitfall. And because `UsrTodo` already shipped `SysWorkplace_Todo` for the SAME row,
+one workplace row ended up bound in **two packages under two different names**. That is the
+"adopting a workplace another package owns" hazard, observed rather than predicted.
+
+## Split placement reproduced — and the guide caused it
+
+Final live state:
+
+| Workplace | Contents |
+|---|---|
+| `Todo` | section `UsrTodo` + home page **`UsrVerrify1HomePage`** |
+| `My applications` | section `UsrVerrify1` |
+
+Verrify1's page and its section were in different workplaces, so no single workplace showed a working
+app. The agent was not careless — it did exactly what it was told: the guide asked only about the home
+page. Worse, `home-page` step 5 in THIS branch still contained
+
+> Choosing the workplace is a separate decision from where the sections live.
+
+which actively instructs the split. That sentence is removed and replaced by a single combined
+question (see Addendum 5). This is the one defect in this area that the branch did **not** previously
+fix, and it was found only because the run was allowed to finish.
+
+`SysWorkplace_MyApps` also appeared in both `UsrTodo` and `UsrVerrify1` — F16, twice over.
+
+## Why the toolkit changes did not participate
+
+The orchestrator skill's trigger is declared as:
+
+> `description: Use when creating Creatio app Business Plans, technical implementation handoffs, or applying the approved plan through clio MCP.`
+
+It is phrased through the toolkit's own artifacts. A request like "Create Verrify1 app. It should
+have…" matches none of those words, so the skill is never selected, and clio's always-on MCP
+instructions ("ALWAYS read core-rules + routing FIRST") take over. Every sibling skill in the same
+toolkit is phrased through user intent instead — `branding-orchestrator` ("Use when **the user wants
+to**…"), `ui-guidelines` and `mobile-page-conversion` (both "**Apply proactively**…"). The one skill
+that must fire first is the only one that cannot match a natural request. Tracked as a toolkit
+change, not a clio one.
+
+## Environment state after the run
+
+The run overwrote `Todo`'s `HomePageUId` (this report's `UsrTodoHomePage`, `c7fce4b7-…`) with
+`UsrVerrify1HomePage`. DevEnv was subsequently cleaned: `UsrVerrify1` deleted, the workplace renamed
+to `Ensure` with `HomePageUId` restored and the full 7-column binding re-applied, `UsrTodo` back to
+its 11 bindings, and the section and role grant verified intact.
+
+Useful side observation from that cleanup: **`delete-app` does NOT cascade to a bound row shared with
+another package.** The workplace bound inside the deleted package survived with every column intact.
+One observation, not a contract — but relevant to any delete recipe.
+
+---
+
+# Addendum 5 — the elicitation is now one question
+
+Two changes follow directly from Addendum 4, both in the guides the released build actually reads:
+
+**`home-page` step 5 — the option set is now prescribed, in order.** Previously it said "present the
+`Name` list … and ask" plus a prose aside about offering a new workplace. The observed run listed only
+existing workplaces and recommended `My applications`. Now the guide fixes the order as the
+recommendation: (1) a NEW workplace named for the app, marked RECOMMENDED when scaffolding, with
+"Never omit this option"; (2) the workplace(s) where the app registers its sections; (3) other
+existing workplaces, each marked for home-page replacement and for foreign-package ownership. And
+`My applications` must be marked administrators-only so it is not offered as a neutral default.
+
+**Section and home page are ONE question.** The sentence that caused the split —
+
+> Choosing the workplace is a separate decision from where the sections live.
+
+— is gone. Both `home-page` and `workplaces` now state that for a scaffolded app the section and the
+home page go in the same workplace, asked once and applied together, with `home-page` owning the page
+half and `workplaces` the section half: "neither is finished alone." Separating them is allowed only
+when the user explicitly asks for it.
+
+**Foreign-package check added** to `home-page` step 5: read `SysPackageSchemaData` filtered by
+`SysSchema.Name = 'SysWorkplace'` before binding a workplace your package does not own, and surface a
+two-package conflict rather than creating one silently.
+
+Test coverage added for all of it, including a `NotContain` guard on the removed "separate decision"
+sentence so it cannot come back.
+
 ## Bottom line
 
 **Phase 1 is directionally right and the guide's core model is sound.** The three-table model,

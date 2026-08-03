@@ -62,14 +62,29 @@ public sealed class HomePageGuidanceResource {
 		       5. Choose and read the target workplace(s): read `SysWorkplace` (select `Id`, `Name`, `HomePageUId`)
 		          via `odata-read` or `execute-esq` — if one path errors, try the other. A workplace has one home
 		          page, so bind each workplace the page should apply to.
-		          - If the user did NOT name a workplace, do not pick one yourself — present the `Name` list (mark
-		            which already have a home page, since binding replaces it) and ask. Offer creating a NEW
-		            workplace named for the app as one of the options (recommend it when the page belongs to an
-		            app being scaffolded); `workplaces` owns that creation.
-		          - The workplace(s) where the page's app registers its SECTIONS (`SysModuleInWorkplace` — e.g.
-		            `My applications` or `Studio` for a composable app in development) are NATURAL candidates:
-		            offer and highlight them, but don't silently auto-pick and don't treat any workplace as
-		            off-limits. Choosing the workplace is a separate decision from where the sections live.
+		          - If the user did NOT name a workplace, do not pick one yourself. Ask ONE question and offer the
+		            options in THIS order — the order is the recommendation, so do not reorder it:
+		            1. a NEW workplace named for the app — mark it RECOMMENDED whenever the page belongs to an app
+		               being scaffolded, because it keeps the app's navigation self-contained (`workplaces` owns
+		               the creation). Never omit this option: without it the user can only pick among workplaces
+		               that already exist, which is not the choice they actually have.
+		            2. the workplace(s) where the app registers its SECTIONS (`SysModuleInWorkplace`), read from
+		               the live rows — a natural candidate because it keeps page and sections together.
+		            3. any other existing workplace, each marked with whether it ALREADY has a home page (binding
+		               replaces it) and whether it is bound in a DIFFERENT package (see the warning below).
+		            Mark `My applications` as visible to `System administrators` only, so the user is not offered
+		            it as a neutral default — see `workplaces`, "New apps start in a default workplace".
+		          - For an app being SCAFFOLDED, the home page and the app's SECTION belong in the SAME workplace,
+		            and that is ONE decision — ask it once, covering both, and then apply both. Splitting them is
+		            a reproduced failure mode, not a theoretical one: a run that asked only about the home page
+		            bound it to one workplace while the section stayed in `My applications`, so no single
+		            workplace showed a working app. Only treat them as separate when the user explicitly asks for
+		            the page and the sections to live apart.
+		          - Before binding a workplace that your package does not own, check who does: `execute-esq` over
+		            `SysPackageSchemaData` (filter `SysSchema.Name = 'SysWorkplace'`; columns `Name`,
+		            `SysPackage.Name`). If the row is already bound in ANOTHER package, binding it into yours
+		            makes two packages ship the same row under two different binding names — reproduced live, and
+		            a transfer conflict. Surface it to the user and prefer a workplace your own package owns.
 		          - Reconcile with the requested audience: if the request scopes the page to a role (e.g. "only
 		            Sales Manager"), the target should be a workplace whose audience matches (see Access / roles
 		            below). If the app's own workplace doesn't match that role, surface it and confirm.

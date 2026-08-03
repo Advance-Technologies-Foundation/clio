@@ -73,6 +73,11 @@ public sealed class WorkplacesGuidanceResource {
 		       - the `My applications` workplace — note it may not exist yet, and leaving the app there restricts
 		         it to administrators (see New apps start in a default workplace);
 		       - an existing workplace the user names (list the available `Name` values so the choice is real).
+		       When the app is being SCAFFOLDED, its SECTION and its HOME PAGE go in the SAME workplace and that is
+		       ONE question — ask it once for both, then apply both. Reproduced failure mode: asking only about the
+		       home page bound it to one workplace while the section stayed in `My applications`, so no single
+		       workplace showed a working app. `home-page` owns the home-page half of the write; this guide owns
+		       the section half; neither is finished alone.
 		       Then ask WHO SHOULD SEE IT, because placement alone does not answer that. A new workplace has no
 		       `SysAdminUnitInWorkplace` row and is invisible to everyone, so choosing one obliges you to grant an
 		       audience — pick the narrowest role that satisfies the request. If the request scopes the app or page

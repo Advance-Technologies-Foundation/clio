@@ -2559,6 +2559,13 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("NARROWEST role",
 			because: "role visibility decides who reaches the data, so the guide must push least privilege instead of a blanket role");
 
+		// Reproduced live: asking only about the home page left the section in My applications, so no single
+		// workplace showed a working app. Section and home page are one decision for a scaffolded app.
+		article.Text.Should().Contain("its SECTION and its HOME PAGE go in the SAME workplace",
+			because: "splitting the two questions produced an app whose page and section lived in different workplaces");
+		article.Text.Should().Contain("neither is finished alone",
+			because: "the guide must say the section half and the home-page half are both required");
+
 		// The junction binding cannot reference a workplace row that is not itself bound in the package.
 		article.Text.Should().Contain("must already have its OWN",
 			because: "moving a section fails at the binding step unless the target workplace is bound first");
@@ -2641,6 +2648,17 @@ public sealed class McpGuidanceResourceTests {
 			because: "duplicating the binding column set in home-page lets the two guides drift into teaching different, silently-broken bindings");
 		homePage.Text.Should().NotContain("`LoaderId`",
 			because: "LoaderId belongs to the workplaces column set, which home-page must cross-link rather than restate");
+		// The elicitation must offer creating a new workplace and must not treat placement as two decisions.
+		homePage.Text.Should().Contain("a NEW workplace named for the app",
+			because: "a run that only listed existing workplaces gave the user a choice that excluded the recommended option");
+		homePage.Text.Should().Contain("Never omit this option",
+			because: "the option set is the whole elicitation, so leaving one out silently narrows the user's decision");
+		homePage.Text.Should().Contain("that is ONE decision",
+			because: "asking about the home page alone stranded the section in a different workplace");
+		homePage.Text.Should().NotContain("a separate decision from where the sections live",
+			because: "that sentence is what produced the split placement and must not come back");
+		homePage.Text.Should().Contain("bound in ANOTHER package",
+			because: "adopting a workplace owned by another package makes two packages ship the same row");
 		appModeling.Text.Should().Contain("name` set to `workplaces",
 			because: "app-modeling must route placement to the owner instead of restating the three-table model");
 		appModeling.Text.Should().NotContain("SysAdminUnitInWorkplace",
