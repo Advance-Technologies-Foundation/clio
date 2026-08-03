@@ -228,6 +228,15 @@ public sealed class McpGuidanceResourceTests {
 			because: "section-specific stable ID sourcing does not belong in the generic binding guide");
 		article.Text.Should().Contain("runtime-only columns are not blockers",
 			because: "the guide should explain the DB-first subset-column projection rule for Account-like schemas");
+		// The projection rule is also the cross-environment transfer contract, and this guide owns it (ENG-88474).
+		article.Text.Should().Contain("package install supplies NO default for it",
+			because: "a column left out of the binding arrives empty on the next environment, which is the defect this rule prevents");
+		article.Text.Should().Contain("IsForceUpdate: false",
+			because: "the caller must know a corrected package cannot repair a row that already exists on the target");
+		article.Text.Should().Contain("DELETES THE LIVE RECORD",
+			because: "remove-data-binding-row-db destroys the record itself, so every consumer of the binding tools must be warned here, not only the workplaces guide");
+		article.Text.Should().Contain("accepts NO `confirm` argument",
+			because: "the tool is flagged destructive but has no server-side gate, so the agent must obtain confirmation itself");
 		article.Text.Should().Contain("install logs or planned payloads",
 			because: "the guide should reject install-log-only verification for remote binding mutations");
 		article.Text.Should().Contain("Seed rows do not implement defaults",
@@ -2533,8 +2542,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "a SysWorkplace binding missing any of these platform-set columns installs a workplace with no client type on the target environment");
 		article.Text.Should().Contain("get them by READ-BACK",
 			because: "the guide demands Type/LoaderId/client-type values, so it must say where an agent obtains them");
-		article.Text.Should().Contain("IsForceUpdate: false",
-			because: "the caller must know a corrected package cannot repair a row that already exists on the target");
+		// The projection rule and its first-install-only consequence are owned by data-bindings; this guide must
+		// route to that owner rather than restate it, so assert the cross-link and not the rule itself.
+		article.Text.Should().Contain("`data-bindings` owns the projection rule",
+			because: "restating the rule here would let the two guides drift; the owner is asserted in the data-bindings test");
 
 		// Navigation is cached: reporting success without telling the user to re-login reads as a false done.
 		article.Text.Should().Contain("log out and back in",

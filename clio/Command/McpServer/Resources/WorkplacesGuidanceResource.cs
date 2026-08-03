@@ -105,16 +105,13 @@ public sealed class WorkplacesGuidanceResource {
 		       binding that already exists. Read `data-bindings` for those tool contracts and for how to inspect a
 		       package's existing bindings first.
 
-		       `remove-data-binding-row-db` is the exception and it is dangerous: it is NOT a package-only
-		       operation. It deletes the LIVE record first and then unbinds it, so it is a delete tool with a
-		       binding side effect, not an unbind tool. There is NO tool that removes a row from a package while
-		       leaving the record in place. Never call it to "tidy up a binding" on a row you still want, and never
-		       call it on a row shared with other apps — see New apps start in a default workplace.
+		       `remove-data-binding-row-db` is the exception and it is dangerous: it DELETES THE LIVE RECORD and
+		       then unbinds it, and it has no `confirm` gate. `data-bindings` owns that contract — read it. What
+		       matters here: there is no way to un-ship a workplace row without deleting the workplace, which is
+		       why New apps start in a default workplace tells you to leave the `My applications` bindings alone.
 
-		       A binding ships ONLY the columns you passed. Its metadata is projected from the primary key plus
-		       the columns referenced by the bound or requested rows, so a column you never sent is absent from
-		       `Data/<Schema>_<Suffix>/data.json`, and package install does NOT supply a default for it. Pass the
-		       full column set on every write:
+		       A binding ships ONLY the columns you passed (`data-bindings` owns the projection rule and the
+		       `IsForceUpdate: false` first-install-only consequence). For the three workplace tables that means:
 		       - `SysWorkplace` — `Id`, `Name`, `Position`, `SysApplicationClientType`, `Type`, `LoaderId`, plus
 		         `HomePageUId` when the workplace has a home page.
 		       - `SysModuleInWorkplace` — `Id`, `SysWorkplace`, `SysModule`. Deliberately no `Position`: the server
@@ -127,11 +124,8 @@ public sealed class WorkplacesGuidanceResource {
 		       (Only FK columns drop the `Id` suffix in binding form; `LoaderId` is the column's real name and
 		       keeps it.) To choose the client type up front instead, `odata-read` `SysApplicationClientType` and
 		       match `Name` — `Web` or `Mobile`.
-		       The FIRST install is the only chance to get this right. Every non-key column in a package data
-		       binding carries `IsForceUpdate: false`, so installing a corrected package does NOT overwrite a row
-		       that already exists on the target, and re-installing an unchanged package version applies no data at
-		       all (verified). Whether bumping the package version would re-apply a corrected row was not tested —
-		       plan on a manual row update on the target environment.
+		       Get this right on the FIRST install: per `data-bindings`, a corrected package cannot overwrite a
+		       workplace row that already exists on the target, so a wrong first install is repaired by hand there.
 
 		       Binding NAMES are suffixed and the suffix differs per table. Two cases, and never leave
 		       `binding-name` unset in either — the default is the bare schema name, which creates a PARALLEL
