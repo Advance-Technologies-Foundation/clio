@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.ComponentModel.DataAnnotations;
+using System.Collections;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.Theming;
@@ -25,6 +27,56 @@ public class CreateThemeTool(
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
 
+	/// <summary>
+	/// Stable, caller-facing error-code prefixes for <c>create-theme</c>. Agents branch on these, and
+	/// <c>docs/McpCapabilityMap.md</c> documents them, so they live here as constants rather than as
+	/// literals repeated at each failure site — a reworded literal would silently desync the wire value
+	/// from the documented contract. <c>CreateThemeToolTests.ErrorCodes_ShouldMatch_TheDocumentedContract</c> pins them against that document.
+	/// </summary>
+	internal static class ErrorCodes {
+		internal const string CssSourceConflict = "theme-css-source-conflict";
+		internal const string CssSourceMissing = "theme-css-source-missing";
+		internal const string BrandPrimaryMissing = "theme-brand-primary-missing";
+		internal const string BuildFailed = "theme-build-failed";
+	}
+
+	// Detects whether the caller supplied ANY brand input. It drives the css-content conflict check and the
+	// primary-missing diagnostic — brand mode itself is triggered by primary alone (see brandMode). The
+	// colour/font half of the surface lives on the shared ThemeBrandArgs base record, so it is derived
+	// reflectively from that type instead of being re-listed here: a property added to the base record would
+	// otherwise have to be mirrored by hand, and a caller could pass css-content plus the new field without
+	// the conflict being detected. Primary and Version are declared on CreateThemeArgs itself (Primary is the
+	// brand mode's required input, Version selects the template), so they stay explicit.
+	// Ordered by metadata token — declaration order in practice — because Type.GetProperties() does not
+	// guarantee an order, and the rendered parameter list below is a caller-facing contract string.
+	private static readonly PropertyInfo[] BrandProperties =
+		typeof(ThemeBrandArgs).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.OrderBy(property => property.MetadataToken)
+			.ToArray();
+
+
+
+	// Built from the same reflective source as the guard, so the message can never list a different set of
+	// parameters than the one that actually raises the conflict. "primary" leads and "version" trails the
+	// reflective names — both are declared on CreateThemeArgs and checked explicitly — and that bracketing
+	// is what reproduces the message text the tool advertised before the list was generated.
+	private static readonly string BrandParameterNames = string.Join(", ",
+		new[] { "primary" }
+			.Concat(BrandProperties.Select(WireNameOf))
+			.Append("version"));
+
+	/// <summary>
+	/// The argument roster returned when a caller sends an unrecognised field name. Only the non-brand prefix
+	/// is hand-listed — the brand half is the generated <see cref="BrandParameterNames"/>, because this is the
+	/// corrective text an agent reads after a rejected call: a brand parameter missing from it is worse than
+	/// stale, it tells the caller a legitimate argument is invalid.
+	/// </summary>
+	internal static readonly string ValidArgumentNames =
+		"Valid: environment-name, css-content, css-class-name, caption, id, package-name, "
+		+ $"{BrandParameterNames}.";
+
+	// NOTE: BrandParameterNames and ValidArgumentNames read BrandProperties in their initializers, and
+	// static field initializers run in TEXTUAL order — keep these three declarations in this sequence.
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
 			["cssContent"] = "css-content",
@@ -55,9 +107,7 @@ public class CreateThemeTool(
 			"css-class-name, caption, id, package-name, secondary, accent, success, error, heading-font, body-font, font-weights, version (all optional).")]
 		[Required] CreateThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, css-content, css-class-name, caption, id, package-name, " +
-			"primary, secondary, accent, success, error, heading-font, body-font, font-weights, version.");
+			args.ExtensionData, LegacyAliases, ".", ValidArgumentNames);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return CreateThemeResult.Failure(aliasError);
 		}
@@ -68,15 +118,14 @@ public class CreateThemeTool(
 		bool brandMode = !string.IsNullOrWhiteSpace(args.Primary);
 		if (hasCssContent && HasAnyBrandParameter(args)) {
 			return CreateThemeResult.Failure(
-				"theme-css-source-conflict: css-content and the brand parameters (primary, secondary, accent, " +
-				"success, error, heading-font, body-font, font-weights, version) are mutually exclusive. " +
-				"Provide inline CSS or brand colours, not both.");
+				$"{ErrorCodes.CssSourceConflict}: css-content and the brand parameters ({BrandParameterNames}) " +
+				"are mutually exclusive. Provide inline CSS or brand colours, not both.");
 		}
 		if (!hasCssContent && !brandMode) {
 			return CreateThemeResult.Failure(HasAnyBrandParameter(args)
-				? "theme-brand-primary-missing: primary is required for the brand mode — the other brand parameters " +
+				? $"{ErrorCodes.BrandPrimaryMissing}: primary is required for the brand mode — the other brand parameters " +
 					"only refine the palette derived from it. Pass primary, or provide css-content instead."
-				: "theme-css-source-missing: provide either css-content (inline CSS) or primary (brand colours; " +
+				: $"{ErrorCodes.CssSourceMissing}: provide either css-content (inline CSS) or primary (brand colours; " +
 					"clio builds the theme CSS server-side and creates the theme in one call).");
 		}
 		CreateThemeOptions options = new() {
@@ -87,50 +136,75 @@ public class CreateThemeTool(
 			Id = args.Id,
 			PackageName = args.PackageName
 		};
-		return Execute(options, brandMode ? args : null);
+		return brandMode ? ExecuteBrandMode(options, args) : Execute(options);
 	}
 
-	private CreateThemeResult Execute(CreateThemeOptions options, CreateThemeArgs brandArgs) {
+	private CreateThemeResult ExecuteBrandMode(CreateThemeOptions options, CreateThemeArgs args) {
 		IReadOnlyList<string> buildWarnings = null;
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
 			resolvedCommand => {
-				if (brandArgs is not null) {
-					bool built = TryBuildBrandCss(brandArgs, out string css, out IReadOnlyList<string> rawWarnings, out string buildError);
-					buildWarnings = RedactWarnings(rawWarnings);
-					if (!built) {
-						return CreateThemeResult.Failure(
-							$"theme-build-failed: {SensitiveErrorTextRedactor.Redact(buildError)}", buildWarnings);
-					}
-					options.CssContent = css;
-				}
-				if (!resolvedCommand.TryCreateTheme(options, out string createdId, out string errorMessage)) {
+				if (!TryBuildBrandCss(args, out string css, out buildWarnings, out string buildError)) {
 					return CreateThemeResult.Failure(
-						string.IsNullOrWhiteSpace(errorMessage)
-							? "CreateTheme returned success=false."
-							: SensitiveErrorTextRedactor.Redact(errorMessage),
-						buildWarnings);
+						$"{ErrorCodes.BuildFailed}: {SensitiveErrorTextRedactor.Redact(buildError)}", buildWarnings);
 				}
-				return CreateThemeResult.Successful(createdId, buildWarnings);
+				options.CssContent = css;
+				return CreateTheme(resolvedCommand, options, buildWarnings);
 			},
 			error => CreateThemeResult.Failure(error, buildWarnings));
 	}
 
-	private static bool HasAnyBrandParameter(CreateThemeArgs args) {
-		return !string.IsNullOrWhiteSpace(args.Primary)
-			|| !string.IsNullOrWhiteSpace(args.Secondary)
-			|| !string.IsNullOrWhiteSpace(args.Accent)
-			|| !string.IsNullOrWhiteSpace(args.Success)
-			|| !string.IsNullOrWhiteSpace(args.Error)
-			|| !string.IsNullOrWhiteSpace(args.HeadingFont)
-			|| !string.IsNullOrWhiteSpace(args.BodyFont)
-			|| args.FontWeights is { Length: > 0 }
-			|| !string.IsNullOrWhiteSpace(args.Version);
+	private CreateThemeResult Execute(CreateThemeOptions options) {
+		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
+			resolvedCommand => CreateTheme(resolvedCommand, options, buildWarnings: null),
+			error => CreateThemeResult.Failure(error));
 	}
 
-	private static IReadOnlyList<string> RedactWarnings(IReadOnlyList<string> warnings) {
-		return warnings is { Count: > 0 }
-			? warnings.Select(SensitiveErrorTextRedactor.Redact).ToList()
-			: warnings;
+	private static CreateThemeResult CreateTheme(CreateThemeCommand command, CreateThemeOptions options,
+		IReadOnlyList<string> buildWarnings) {
+
+		if (!command.TryCreateTheme(options, out string createdId, out string errorMessage)) {
+			return CreateThemeResult.Failure(
+				string.IsNullOrWhiteSpace(errorMessage)
+					? "CreateTheme returned success=false."
+					: SensitiveErrorTextRedactor.Redact(errorMessage),
+				buildWarnings);
+		}
+		return CreateThemeResult.Successful(createdId, buildWarnings);
+	}
+
+	private static bool HasAnyBrandParameter(CreateThemeArgs args) {
+		return !string.IsNullOrWhiteSpace(args.Primary)
+			|| !string.IsNullOrWhiteSpace(args.Version)
+			|| BrandProperties.Any(property => IsSupplied(property, property.GetValue(args)));
+	}
+
+	private static string WireNameOf(PropertyInfo property) {
+		return property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
+	}
+
+	// A property counts as supplied only when it carries a value the caller could have meant.
+	//
+	// Every ThemeBrandArgs property is `string?` or `int[]?` today, so only the null / string / ICollection
+	// arms below actually run: the two value-type arms are FORWARD-LOOKING, kept because the guard is
+	// reflective and the record is expected to grow from the build-theme side. They encode what that growth
+	// must not break:
+	//  - a nullable value type is decided by the DECLARED type, because boxing a Nullable<T> yields a boxed T
+	//    and loses the null-ness — `bool? DarkMode = false` or `int? Contrast = 0` would otherwise compare
+	//    equal to its default, read as not supplied, and let a caller pass css-content plus that field
+	//    straight past the conflict this guard exists to raise;
+	//  - a NON-nullable value type is compared against its default, because boxing makes even the default
+	//    non-null, which would otherwise make every request look like a brand request.
+	private static bool IsSupplied(PropertyInfo property, object value) {
+		if (Nullable.GetUnderlyingType(property.PropertyType) is not null) {
+			return value is not null;
+		}
+		return value switch {
+			null => false,
+			string text => !string.IsNullOrWhiteSpace(text),
+			ICollection collection => collection.Count > 0,
+			ValueType boxed => !Equals(boxed, Activator.CreateInstance(boxed.GetType())),
+			_ => true
+		};
 	}
 
 	private bool TryBuildBrandCss(CreateThemeArgs args, out string css,

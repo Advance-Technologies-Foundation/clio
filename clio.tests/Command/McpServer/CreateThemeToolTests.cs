@@ -84,6 +84,21 @@ public class CreateThemeToolTests {
 		// Assert
 		cssContentRequiredAttributes.Should().BeEmpty(
 			because: "css-content must not be schema-required — the brand mode (primary) is the alternative CSS source, and a Required css-content would fail every brand-mode call at the MCP schema level");
+		PropertyInfo[] sharedBrandProperties = typeof(ThemeBrandArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+		sharedBrandProperties.Should().NotBeEmpty(
+			because: "ThemeBrandArgs carries the shared brand fields; an empty set means this check pins nothing");
+		foreach (PropertyInfo sharedProperty in sharedBrandProperties) {
+			JsonPropertyNameAttribute sharedWireName = sharedProperty.GetCustomAttribute<JsonPropertyNameAttribute>();
+			sharedWireName.Should().NotBeNull(
+				because: $"'{sharedProperty.Name}' feeds the caller-facing parameter roster, so it must declare its wire name instead of falling back to the PascalCase property name");
+			sharedWireName!.Name.Should().MatchRegex("^[a-z0-9]+(-[a-z0-9]+)*$",
+				because: $"'{sharedProperty.Name}' is advertised to agents in kebab-case like every other MCP argument");
+		}
+		sharedBrandProperties.Select(property => property.Name).Should()
+			.BeSubsetOf(brandProperties.Select(entry => entry.PropertyName),
+				because: "a field added to the shared record must also be listed in this snapshot, so its exact wire name is pinned rather than merely well-formed");
+
 		foreach ((string propertyName, string wireName) in brandProperties) {
 			PropertyInfo property = typeof(CreateThemeArgs).GetProperty(propertyName);
 			property.Should().NotBeNull(
@@ -460,6 +475,355 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("Every brand field declared on the shared ThemeBrandArgs record is reported as a css-content source conflict on its own, so a field added to that record cannot silently escape the conflict guard.")]
+	public void CreateTheme_ShouldReportSourceConflict_ForEveryThemeBrandArgsProperty() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		System.Reflection.PropertyInfo[] brandProperties = typeof(ThemeBrandArgs).GetProperties(
+			System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+		brandProperties.Should().NotBeEmpty(
+			because: "ThemeBrandArgs exists to carry the shared brand fields; an empty set means this test pins nothing");
+
+		foreach (System.Reflection.PropertyInfo property in brandProperties) {
+			// Arrange — a request carrying css-content plus exactly this one brand field
+			IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+			CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+			CreateThemeArgs args = new(EnvironmentName: "docker_fix2", CssContent: ".x{}");
+			property.SetValue(args, SampleBrandValueFor(property.PropertyType));
+
+			// Act
+			CreateThemeResult result = tool.CreateTheme(args);
+
+			// Assert
+			result.Success.Should().BeFalse(
+				because: $"'{property.Name}' is a brand field, so supplying it alongside css-content is an ambiguous request");
+			result.Error.Should().Contain(CreateThemeTool.ErrorCodes.CssSourceConflict,
+				because: $"the caller must get the stable source-conflict code for '{property.Name}', not a generic message");
+			commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+		}
+
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("version conflicts with css-content on its own: it is one of the two brand legs still listed by hand (it lives on CreateThemeArgs, not on the shared record), so the reflective drift test cannot cover it.")]
+	public void CreateTheme_ShouldReportSourceConflict_WhenCssContentAndVersionOnlySupplied() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssContent: ".x{}", Version: "10.0"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "version selects the template the brand engine builds against, so it is meaningless alongside inline CSS");
+		result.Error.Should().Contain(CreateThemeTool.ErrorCodes.CssSourceConflict,
+			because: "dropping the hand-written version leg must fail here rather than silently accepting and ignoring the parameter");
+		result.Error.Should().Contain(ExpectedBrandParameterList(),
+			because: "the rendered list is generated from the same reflective source as the guard, so it must name exactly the parameters that raise the conflict");
+		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A brand field declared on CreateThemeArgs itself (not on the shared record) still conflicts with css-content, so a field added to the derived record cannot escape both the reflective guard and the drift test.")]
+	public void CreateTheme_ShouldReportSourceConflict_ForEveryDeclaredBrandFieldOnCreateThemeArgs() {
+		// Arrange — everything on CreateThemeArgs that is NOT a brand input; anything else must conflict.
+		string[] nonBrandProperties = [
+			nameof(CreateThemeArgs.EnvironmentName), nameof(CreateThemeArgs.CssContent),
+			nameof(CreateThemeArgs.CssClassName), nameof(CreateThemeArgs.Caption),
+			nameof(CreateThemeArgs.Id), nameof(CreateThemeArgs.PackageName),
+			nameof(CreateThemeArgs.ExtensionData)
+		];
+		System.Reflection.PropertyInfo[] declaredBrandProperties = typeof(CreateThemeArgs)
+			.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
+				| System.Reflection.BindingFlags.DeclaredOnly)
+			.Where(property => !nonBrandProperties.Contains(property.Name))
+			.ToArray();
+		declaredBrandProperties.Select(property => property.Name).Should()
+			.BeEquivalentTo([nameof(CreateThemeArgs.Primary), nameof(CreateThemeArgs.Version)],
+				because: "primary and version are the only brand inputs declared outside ThemeBrandArgs; a new one here needs a leg in HasAnyBrandParameter");
+
+		foreach (System.Reflection.PropertyInfo property in declaredBrandProperties) {
+			// Arrange
+			ConsoleLogger.Instance.ClearMessages();
+			IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+			CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+			CreateThemeArgs args = new(EnvironmentName: "docker_fix2", CssContent: ".x{}");
+			property.SetValue(args, SampleBrandValueFor(property.PropertyType));
+
+			// Act
+			CreateThemeResult result = tool.CreateTheme(args);
+
+			// Assert
+			result.Error.Should().Contain(CreateThemeTool.ErrorCodes.CssSourceConflict,
+				because: $"'{property.Name}' is brand input, so supplying it alongside css-content is ambiguous");
+		}
+
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A blank brand value is NOT a brand parameter: whitespace-only text and an empty weights array leave a css-content request in the inline mode instead of failing it as a source conflict.")]
+	public void CreateTheme_ShouldStayInInlineMode_WhenBrandFieldsAreBlank() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}") {
+			Secondary = "   ",
+			FontWeights = []
+		});
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "blank values carry no brand intent, so the request stays a plain inline-CSS create");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the inline CSS is forwarded to the create command as usual");
+		resolvedCommand.CapturedOptions!.CssContent.Should().Be(".ocean-theme{}",
+			because: "the caller's CSS must reach the environment unmodified");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("BuildThemeOptions exposes a same-named target for every field on the shared ThemeBrandArgs record, so a brand field cannot be added with nowhere for the brand mode to forward it to.")]
+	public void BuildThemeOptions_ShouldExposeATarget_ForEveryThemeBrandArgsProperty() {
+		// Arrange
+		PropertyInfo[] brandProperties = typeof(ThemeBrandArgs).GetProperties(
+			BindingFlags.Public | BindingFlags.Instance);
+
+		// Act
+		string[] unmapped = brandProperties
+			.Where(property => typeof(BuildThemeOptions).GetProperty(property.Name) is null)
+			.Select(property => property.Name)
+			.ToArray();
+
+		// Assert
+		brandProperties.Should().NotBeEmpty(
+			because: "ThemeBrandArgs carries the shared brand fields; an empty set means this test pins nothing");
+		unmapped.Should().BeEmpty(
+			because: "a brand field with no same-named BuildThemeOptions property could never be forwarded, so the brand mode would silently ignore it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every field on the shared ThemeBrandArgs record actually reaches the CSS engine. The conflict guard grows with that record automatically, but the brand-to-BuildThemeOptions mapping is a hand-written initializer — a forgotten line would reject the new field in inline mode and silently drop it in brand mode.")]
+	public void CreateTheme_ShouldForwardEveryThemeBrandArgsProperty_IntoTheBuildInput() {
+		// Arrange — one distinctive sentinel per brand field, so a dropped field cannot hide behind another's value
+		ConsoleLogger.Instance.ClearMessages();
+		PropertyInfo[] brandProperties = typeof(ThemeBrandArgs).GetProperties(
+			BindingFlags.Public | BindingFlags.Instance);
+		brandProperties.Should().NotBeEmpty(
+			because: "ThemeBrandArgs carries the shared brand fields; an empty set means this test pins no forwarding at all");
+		CreateThemeArgs args = new(
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0");
+		Dictionary<string, string> expectedSentinels = new();
+		foreach (PropertyInfo property in brandProperties) {
+			(object value, string sentinel) = BrandSentinelFor(property);
+			property.SetValue(args, value);
+			expectedSentinels[property.Name] = sentinel;
+		}
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(args);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a fully specified brand request is valid");
+		build.CapturedInput.Should().NotBeNull(because: "the brand mode must reach the CSS engine");
+		// Serialized rather than name-matched: the engine renames as it maps (HeadingFont -> Fonts.Heading),
+		// so the sentinel VALUE is what proves the field travelled.
+		string forwarded = JsonSerializer.Serialize(build.CapturedInput);
+		foreach ((string name, string sentinel) in expectedSentinels) {
+			forwarded.Should().Contain(sentinel,
+				because: $"brand field '{name}' must reach the CSS engine — the mapping into BuildThemeOptions is hand-written, so a forgotten line drops it silently");
+		}
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	private static (object Value, string Sentinel) BrandSentinelFor(PropertyInfo property) {
+		if (property.PropertyType == typeof(string)) {
+			string sentinel = $"sentinel-{property.Name.ToLowerInvariant()}";
+			return (sentinel, sentinel);
+		}
+		if (property.PropertyType == typeof(int[])) {
+			return (new[] { 913 }, "913");
+		}
+		throw new NotSupportedException(
+			$"ThemeBrandArgs gained a '{property.PropertyType.Name}' property — extend this test so the new field's "
+			+ "value is proven to reach BuildThemeInput, and check CreateThemeTool.IsSupplied classifies the type.");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every hand-written brand-parameter roster in the tool — the tool description, the args roster, the css-content property description and the unknown-argument hint — lists the same parameters the conflict guard enforces. Attribute text cannot be generated at compile time, so the copies are pinned here instead.")]
+	public void AdvertisedDescriptions_ShouldListTheSameBrandParameters_AsTheGuard() {
+		// Arrange
+		string expected = ExpectedBrandParameterList();
+
+		// Act
+		string toolDescription = typeof(CreateThemeTool)
+			.GetMethod(nameof(CreateThemeTool.CreateTheme))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+		string argsDescription = typeof(CreateThemeTool)
+			.GetMethod(nameof(CreateThemeTool.CreateTheme))!
+			.GetParameters()[0]
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
+		string cssContentDescription = typeof(CreateThemeArgs)
+			.GetProperty(nameof(CreateThemeArgs.CssContent))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		toolDescription.Should().Contain(expected,
+			because: "an agent picks the mode from the tool description, so it must name the same parameters the guard rejects alongside css-content");
+		argsDescription.Should().NotBeNull(because: "the args wrapper is documented for the caller");
+		// The args roster interleaves the non-brand parameters, so each brand name is checked on its own
+		// rather than as one contiguous run.
+		foreach (string parameter in expected.Split(", ")) {
+			argsDescription.Should().Contain(parameter,
+				because: $"'{parameter}' raises the source conflict, so the roster the caller reads must name it");
+		}
+		cssContentDescription.Should().Contain(expected,
+			because: "the css-content property description ships in the per-property JSON schema — it is where a client renders the mutual-exclusion rule, so it must name the parameters the guard actually rejects");
+		CreateThemeTool.ValidArgumentNames.Should().Contain(expected,
+			because: "the corrective hint an agent reads after a rejected call must name the brand parameters contiguously and in the same order the guard renders them — a substring check would miss a reordered or comma-mangled roster");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every multi-word brand parameter has both camelCase and snake_case rename aliases pointing at the canonical kebab-case name, so an agent that guesses the wrong spelling of a field is steered to the right one instead of being told the argument is unknown — or, worse, being steered to a different argument.")]
+	public void CreateTheme_ShouldReturnRenameHint_ForEveryMultiWordBrandParameterSpelling() {
+		// Arrange
+		string[] multiWord = ExpectedBrandParameterList()
+			.Split(", ")
+			.Where(parameter => parameter.Contains('-'))
+			.ToArray();
+		multiWord.Should().NotBeEmpty(
+			because: "heading-font, body-font and font-weights are multi-word today; an empty set means this test pins nothing");
+
+		foreach (string parameter in multiWord) {
+			string[] words = parameter.Split('-');
+			string camelCase = words[0]
+				+ string.Concat(words.Skip(1).Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
+			foreach (string guess in new[] { camelCase, parameter.Replace('-', '_') }) {
+				// Arrange
+				ConsoleLogger.Instance.ClearMessages();
+				IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+				CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+				CreateThemeArgs args = new(EnvironmentName: "docker_fix2", CssContent: ".x{}") {
+					ExtensionData = new Dictionary<string, JsonElement> {
+						[guess] = JsonSerializer.SerializeToElement("x")
+					}
+				};
+
+				// Act
+				CreateThemeResult result = tool.CreateTheme(args);
+
+				// Assert
+				result.Success.Should().BeFalse(
+					because: $"'{guess}' is not a declared wire name, so the call must be refused rather than silently ignoring the value");
+				result.Error.Should().Contain($"'{guess}' -> '{parameter}'",
+					because: $"the hint must point '{guess}' at the canonical '{parameter}' — an alias mapped to a different argument would actively steer the agent wrong, which is worse than an unknown-argument rejection");
+				commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+			}
+		}
+
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	// The list the conflict guard covers, rebuilt from the same reflective source the tool uses: primary and
+	// version are declared on CreateThemeArgs, the rest on the shared ThemeBrandArgs record.
+	private static string ExpectedBrandParameterList() {
+		string[] shared = typeof(ThemeBrandArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.OrderBy(property => property.MetadataToken)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		return string.Join(", ", new[] { "primary" }.Concat(shared).Append("version"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The stable error codes the tool emits are the ones docs/McpCapabilityMap.md documents, so rewording a literal cannot desync the wire contract from the published one.")]
+	public void ErrorCodes_ShouldMatch_TheDocumentedContract() {
+		// Arrange
+		string repositoryRoot = Path.GetFullPath(
+			Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+		string capabilityMapPath = Path.Combine(repositoryRoot, "docs", "McpCapabilityMap.md");
+		string[] codes = [
+			CreateThemeTool.ErrorCodes.CssSourceConflict,
+			CreateThemeTool.ErrorCodes.CssSourceMissing,
+			CreateThemeTool.ErrorCodes.BrandPrimaryMissing,
+			CreateThemeTool.ErrorCodes.BuildFailed
+		];
+
+		// Act — scope the haystack to the create-theme entry: a code that drifts into another tool's block
+		// must not satisfy this test.
+		string capabilityMap = File.Exists(capabilityMapPath) ? File.ReadAllText(capabilityMapPath) : null;
+		capabilityMap.Should().NotBeNull(
+			because: $"the capability map is the published contract and must be readable at {capabilityMapPath}");
+		int entryStart = capabilityMap!.IndexOf("- `create-theme`", StringComparison.Ordinal);
+		entryStart.Should().BeGreaterThan(-1, because: "the create-theme entry is the section this contract lives in");
+		int entryEnd = capabilityMap.IndexOf("\n- `", entryStart + 1, StringComparison.Ordinal);
+		string createThemeEntry = entryEnd > entryStart
+			? capabilityMap[entryStart..entryEnd]
+			: capabilityMap[entryStart..];
+
+		// Assert — both directions: every emitted code is documented, and every documented theme-* code is emitted
+		foreach (string code in codes) {
+			createThemeEntry.Should().Contain(code,
+				because: $"agents branch on '{code}', so the emitted value and the documented one must stay identical");
+		}
+		string[] documentedCodes = System.Text.RegularExpressions.Regex
+			.Matches(createThemeEntry, @"`(theme-[a-z-]+)")
+			.Select(match => match.Groups[1].Value)
+			.Distinct()
+			.ToArray();
+		documentedCodes.Should().BeSubsetOf(codes,
+			because: "a theme-* code documented in the create-theme entry but no longer emitted would send agents branching on a value they can never receive");
+		typeof(CreateThemeTool.ErrorCodes)
+			.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+				| System.Reflection.BindingFlags.Static)
+			.Where(field => field.IsLiteral)
+			.Should().HaveCount(codes.Length,
+				because: "a code added to ErrorCodes without being listed here would ship undocumented and unasserted");
+	}
+
+	private static object SampleBrandValueFor(Type propertyType) {
+		if (propertyType == typeof(string)) {
+			return "#004fd6";
+		}
+		if (propertyType == typeof(int[])) {
+			return new[] { 400 };
+		}
+		throw new NotSupportedException(
+			$"ThemeBrandArgs gained a '{propertyType.Name}' property — extend this test, and check that "
+			+ "CreateThemeTool.IsSupplied classifies the new type correctly.");
+	}
+
+	[Test]
 	[Description("Returns the theme-css-source-conflict failure when css-content is combined with a non-primary brand parameter (any brand parameter conflicts, not just primary).")]
 	[Category("Unit")]
 	public void CreateTheme_ShouldReturnConflictFailure_WhenCssContentAndNonPrimaryBrandParameterSupplied() {
@@ -747,6 +1111,70 @@ public class CreateThemeToolTests {
 		build.TemplateProvider.Received(1).GetCssTemplate("10.0");
 		build.ResolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
 		commandResolver.DidNotReceive().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An environment that cannot be resolved fails the whole call before the executor body runs: BaseTool resolves the command first, so an unresolvable environment never reaches the brand build at all.")]
+	public void CreateTheme_ShouldFailBeforeTheExecutorBody_WhenEnvironmentCannotBeResolved() {
+		// Arrange — the real resolver raises every failure before its type-dependent step, so a broken
+		// environment fails EVERY Resolve<T> on those options, including the one BaseTool performs first.
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		BuildThemeCommandHarness build = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("environment 'ghost' is not registered"));
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "ghost", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the theme is created ON the environment, so an unresolvable environment cannot be degraded into a successful build");
+		result.Error.Should().Contain("ghost",
+			because: "the caller needs to know which environment failed to resolve");
+		commandResolver.DidNotReceive().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+		commandResolver.DidNotReceive().Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>());
+		build.CssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The version probe inside the brand build does NOT swallow an environment-resolution failure: create-theme must reach the environment to create anything, so — unlike build-theme — it has no soft fallback to the newest template. Re-adding that catch must fail here.")]
+	public void CreateTheme_ShouldNotSoftFallBack_WhenTheVersionProbeFailsInsideTheBrandBuild() {
+		// Arrange — everything the executor body needs resolves; ONLY the version probe fails, so the brand
+		// build is actually entered and the assertion is about that branch rather than about BaseTool.
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("environment 'ghost' is not registered"));
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "ghost", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a swallowed probe failure would build against a different template than the caller asked for and still create the theme");
+		result.Error.Should().Contain("ghost",
+			because: "the caller must learn which environment failed rather than getting a silently different theme");
+		build.CssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "nothing may be created when the version the CSS targets could not be established");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
