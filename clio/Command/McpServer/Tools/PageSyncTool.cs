@@ -46,7 +46,8 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
+	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls. " +
+	             SchemaValidationService.CustomCssPolicySummary)]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required unless an authorized HTTP credential-passthrough header supplies the target tenant); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
