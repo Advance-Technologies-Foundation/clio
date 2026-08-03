@@ -88,6 +88,14 @@ public class BindingsModule {
 
 	#region Constructors: Public
 
+	/// <summary>
+	/// One Google Fonts verdict memo for the whole process. It cannot be a plain <c>AddSingleton</c>: every
+	/// call to <see cref="Register"/> builds a fresh container, and the MCP resolver builds one PER TENANT,
+	/// so a per-container singleton would re-probe for each tenant and lose everything on session eviction.
+	/// </summary>
+	private static readonly Clio.Theming.IGoogleFontsAvailabilityCache SharedGoogleFontsAvailabilityCache =
+		new Clio.Theming.GoogleFontsAvailabilityCache(TimeProvider.System);
+
 	public BindingsModule(IFileSystem fileSystem = null){
 		_fileSystem = fileSystem;
 	}
@@ -238,7 +246,7 @@ public class BindingsModule {
 		services.AddTransient<IRingDistributionService, RingDistributionService>();
 		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
-		services.AddSingleton<Clio.Theming.IGoogleFontsAvailabilityCache, Clio.Theming.GoogleFontsAvailabilityCache>();
+		services.AddSingleton(SharedGoogleFontsAvailabilityCache);
 		services.AddHttpClient<Clio.Theming.IGoogleFontsCatalog, Clio.Theming.GoogleFontsCatalog>()
 			.ConfigureHttpClient(client => {
 				client.Timeout = Clio.Theming.GoogleFontsCatalog.ProbeTimeout;

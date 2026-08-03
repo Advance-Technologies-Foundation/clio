@@ -188,25 +188,64 @@ public sealed class GoogleFontsCatalogTests {
 	}
 
 	[Test]
-	[Description("An unverified verdict is never cached, so a transient outage cannot pin a stale answer in a long-lived MCP server.")]
-	public async Task LookupAsync_ShouldReprobe_AfterUnverifiedVerdict() {
+	[Description("An unverified verdict is held only for a short transient window: a blocked network costs one probe budget per window instead of one per build, and recovery is picked up as soon as the window passes.")]
+	public async Task LookupAsync_ShouldServeFromCacheWithinTheTransientWindow_ThenReprobe_AfterUnverifiedVerdict() {
 		// Arrange
+		FakeTimeProvider clock = new();
 		int calls = 0;
 		GoogleFontsCatalog catalog = CatalogReturning(
 			_ => ++calls == 1 ? new HttpResponseMessage(HttpStatusCode.InternalServerError) : JsonResponse(HttpStatusCode.OK),
-			out StubHandler handler);
+			out StubHandler handler, clock);
 
 		// Act
 		GoogleFontAvailability first = await catalog.LookupAsync("Roboto", CancellationToken.None);
-		GoogleFontAvailability second = await catalog.LookupAsync("Roboto", CancellationToken.None);
+		GoogleFontAvailability withinWindow = await catalog.LookupAsync("Roboto", CancellationToken.None);
+		clock.Advance(TimeSpan.FromSeconds(31));
+		GoogleFontAvailability afterWindow = await catalog.LookupAsync("Roboto", CancellationToken.None);
 
 		// Assert
-		first.Should().Be(GoogleFontAvailability.Unverified,
-			because: "the outage on the first probe yields no definitive answer");
-		second.Should().Be(GoogleFontAvailability.InCatalog,
-			because: "the retry after the outage must see the real answer, not a cached failure");
+		first.Should().Be(GoogleFontAvailability.Unverified);
+		withinWindow.Should().Be(GoogleFontAvailability.Unverified,
+			because: "a second build seconds later must not pay the probe budget again");
 		handler.RequestedUris.Should().HaveCount(2,
-			because: "an Unverified verdict is never cached, so the second lookup must re-probe");
+			because: "one probe for the outage and one after the transient window — not one per lookup");
+		afterWindow.Should().Be(GoogleFontAvailability.InCatalog,
+			because: "the short window is what keeps a recovered network from staying misclassified");
+	}
+
+	[Test]
+	[Description("The capacity bound holds under concurrent stores too, within the tolerance a check-then-act over a concurrent dictionary can give.")]
+	public void Store_ShouldStayNearCapacity_UnderConcurrentStores() {
+		// Arrange
+		GoogleFontsAvailabilityCache cache = new(new FakeTimeProvider());
+
+		// Act
+		System.Threading.Tasks.Parallel.For(0, 2000,
+			index => cache.Store($"Family {index}", GoogleFontAvailability.InCatalog));
+
+		// Assert
+		cache.EntryCount.Should().BeLessThanOrEqualTo(512 + System.Environment.ProcessorCount,
+			because: "the capacity check is a check-then-act over a concurrent dictionary, so concurrent writers may each pass it once — the bound stays tight, not exact");
+	}
+
+	[Test]
+	[Description("A definitive verdict outlives the transient window, so the short window applies only to unverified outcomes.")]
+	public async Task LookupAsync_ShouldKeepDefinitiveVerdict_BeyondTheTransientWindow() {
+		// Arrange
+		FakeTimeProvider clock = new();
+		GoogleFontsCatalog catalog = CatalogReturning(_ => JsonResponse(HttpStatusCode.OK), out StubHandler handler, clock);
+
+		// Act
+		GoogleFontAvailability first = await catalog.LookupAsync("Roboto", CancellationToken.None);
+		clock.Advance(TimeSpan.FromSeconds(31));
+		GoogleFontAvailability afterTransientWindow = await catalog.LookupAsync("Roboto", CancellationToken.None);
+
+		// Assert
+		first.Should().Be(GoogleFontAvailability.InCatalog);
+		afterTransientWindow.Should().Be(GoogleFontAvailability.InCatalog,
+			because: "a published family stays published — the short window exists for unverifiable outcomes only");
+		handler.RequestedUris.Should().HaveCount(1,
+			because: "a definitive verdict keeps its full TTL, so the transient window must not shorten it");
 	}
 
 	[Test]

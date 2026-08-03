@@ -30,7 +30,9 @@ an explicit canary rather than trusted implicitly in CI.
 
 | Invariant | Verified by |
 | --- | --- |
-| Definitive verdicts memoized; Unverified never cached | `LookupAsync_ShouldServeSecondLookupFromCache_ForDefinitiveVerdict`, `LookupAsync_ShouldReprobe_AfterUnverifiedVerdict` |
+| Definitive verdicts memoized for the full TTL; Unverified only for a short transient window | `LookupAsync_ShouldServeSecondLookupFromCache_ForDefinitiveVerdict`, `LookupAsync_ShouldServeFromCacheWithinTheTransientWindow_ThenReprobe_AfterUnverifiedVerdict`, `LookupAsync_ShouldKeepDefinitiveVerdict_BeyondTheTransientWindow` |
+| One process-wide memo across independently built containers | `AvailabilityCache_ShouldBeShared_AcrossIndependentlyBuiltContainers` |
+| Capacity bound holds under concurrent stores | `Store_ShouldStayNearCapacity_UnderConcurrentStores` |
 | TTL expiry re-probes and replaces, never accumulates | `LookupAsync_ShouldReprobeAndReplaceExpiredEntry_OnNextLookup` |
 | Cache is hard-bounded, reclaims by sweeping, still refreshes held keys | `Store_ShouldStopGrowing_AtCapacity`, `Store_ShouldSweepExpiredEntries_WhenAtCapacity`, `Store_ShouldRefreshExistingKey_WhenAtCapacity` |
 | Ordinal (case-sensitive) keys end to end | `LookupAsync_ShouldProbeSeparately_ForCaseVariantFamilies`, `Execute_ShouldTreatCaseVariantsAsDistinctFamilies`, `Build_ShouldKeepImport_ForCaseVariantSuppressedEntry` |

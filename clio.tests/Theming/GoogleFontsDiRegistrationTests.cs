@@ -63,6 +63,34 @@ public sealed class GoogleFontsDiRegistrationTests {
 	}
 
 	[Test]
+	[Description("Two independently built containers share ONE availability memo. The MCP resolver builds a container per tenant and the session cache evicts them, so a per-container singleton would re-probe for every tenant and forget everything on eviction.")]
+	public void AvailabilityCache_ShouldBeShared_AcrossIndependentlyBuiltContainers() {
+		// Arrange
+		IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+
+		try {
+			MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+			SettingsRepository.FileSystem = fileSystem;
+			IServiceCollection first = new ServiceCollection();
+			IServiceCollection second = new ServiceCollection();
+			new BindingsModule(fileSystem).RegisterInto(first);
+			new BindingsModule(fileSystem).RegisterInto(second);
+
+			// Act
+			using ServiceProvider firstProvider = first.BuildServiceProvider();
+			using ServiceProvider secondProvider = second.BuildServiceProvider();
+
+			// Assert
+			secondProvider.GetRequiredService<IGoogleFontsAvailabilityCache>().Should()
+				.BeSameAs(firstProvider.GetRequiredService<IGoogleFontsAvailabilityCache>(),
+					because: "the memo is only worth having if a verdict probed for one tenant is still there for the next container built");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
 	[Description("Resolves the typed probe client and its primary handler from the container and locks the four guards BindingsModule configures on them: the short probe budget, the clio user agent, the refusal to follow redirects, and the refusal to keep cookies.")]
 	public void ProbeClient_Should_CarryProbeBudgetAndUserAgent_AndRefuseRedirectsAndCookies() {
 		// Arrange

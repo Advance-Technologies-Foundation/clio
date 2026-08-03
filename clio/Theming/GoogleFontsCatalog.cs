@@ -21,20 +21,33 @@ public interface IGoogleFontsAvailabilityCache {
 	/// <summary>Returns a still-valid cached verdict for <paramref name="family"/>, if one exists.</summary>
 	bool TryGet(string family, out GoogleFontAvailability availability);
 
-	/// <summary>Stores a verdict for <paramref name="family"/>; unverified verdicts are never stored.</summary>
+	/// <summary>
+	/// Stores a verdict for <paramref name="family"/>. A definitive verdict is held for the full TTL; an
+	/// unverified one only briefly, so a blocked network costs one probe per short window rather than one per
+	/// build, without pinning a wrong answer once connectivity returns.
+	/// </summary>
 	void Store(string family, GoogleFontAvailability availability);
 }
 
 /// <summary>
-/// Singleton availability memo (see the <c>ICurrentUserCultureCache</c> precedent in
-/// <c>BindingsModule</c>): the probing catalog is a transient typed HTTP client, so the memo must live
-/// outside it to survive across CLI/MCP calls in a long-lived server. Only definitive verdicts are
-/// stored — a transient network failure must not pin a stale answer — and keys are ordinal because the
-/// endpoint is case-sensitive.
+/// Process-wide availability memo, registered in <c>BindingsModule</c> as ONE shared instance rather than a
+/// per-container singleton: every container build — and the MCP resolver builds one per tenant — would
+/// otherwise get its own memo and re-probe. The probing catalog itself is a transient typed HTTP client, so
+/// the memo has to live outside it. A definitive verdict is held for the full TTL and an unverified one only
+/// briefly, so a blocked network cannot pin a wrong answer; keys are ordinal because the endpoint is
+/// case-sensitive.
 /// </summary>
 public sealed class GoogleFontsAvailabilityCache(TimeProvider timeProvider) : IGoogleFontsAvailabilityCache {
 
 	private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+
+	/// <summary>
+	/// How long an <see cref="GoogleFontAvailability.Unverified"/> outcome is remembered. Short on purpose:
+	/// long enough that an egress-blocked host pays one probe budget per window instead of one per build,
+	/// short enough that connectivity coming back is picked up almost immediately. Mirrors
+	/// <c>PlatformVersionResolver.TransientCacheTtl</c>.
+	/// </summary>
+	private static readonly TimeSpan TransientCacheTtl = TimeSpan.FromSeconds(30);
 
 	private const int MaxEntries = 512;
 
@@ -59,17 +72,15 @@ public sealed class GoogleFontsAvailabilityCache(TimeProvider timeProvider) : IG
 
 	/// <inheritdoc />
 	public void Store(string family, GoogleFontAvailability availability) {
-		if (availability == GoogleFontAvailability.Unverified) {
-			return;
-		}
 		DateTimeOffset now = _timeProvider.GetUtcNow();
+		TimeSpan ttl = availability == GoogleFontAvailability.Unverified ? TransientCacheTtl : CacheTtl;
 		if (_entries.Count >= MaxEntries && !_entries.ContainsKey(family)) {
 			SweepExpired(now);
 			if (_entries.Count >= MaxEntries) {
 				return;
 			}
 		}
-		_entries[family] = new CacheEntry(availability, now.Add(CacheTtl));
+		_entries[family] = new CacheEntry(availability, now.Add(ttl));
 	}
 
 	private void SweepExpired(DateTimeOffset now) {

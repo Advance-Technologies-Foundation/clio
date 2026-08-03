@@ -72,12 +72,14 @@ Falsified alternatives:
    builder's family matching all compare ordinally, mirroring the endpoint: a case-folded
    match would fabricate an answer the catalogue never gave (`Roboto` published, `roboto`
    not).
-4. **Definitive-only memoization.** `InCatalog`/`NotInCatalog` verdicts are cached per process
-   for 5 minutes; `Unverified` is never cached, so a transient outage cannot pin a stale
-   verdict inside a long-lived MCP server. The memo lives in a **singleton**
-   `IGoogleFontsAvailabilityCache` shared by the transient typed probe clients (the
-   `ICurrentUserCultureCache` shape), because a per-instance memo on a transient service would
-   never produce a hit across calls.
+4. **Tiered memoization.** `InCatalog`/`NotInCatalog` verdicts are cached for 5 minutes.
+   `Unverified` is cached too, but only for a 30-second transient window (mirroring
+   `PlatformVersionResolver.TransientCacheTtl`): without it an egress-blocked host pays the full
+   probe budget on *every* build, and a window that short still lets a recovered network be
+   picked up almost immediately — a transient outage cannot pin a stale verdict. The memo is ONE
+   process-wide instance registered in `BindingsModule`, not a per-container singleton: every
+   container build — and the MCP resolver builds one per tenant — would otherwise get its own
+   memo, re-probe per tenant, and lose everything on session eviction.
 5. **Spelling correction lives in the agent, not clio.** The toolkit skill and the theming
    guidance tell the agent to probe the exact spelling first, retry once with the published
    name it knows from its own knowledge (casing, renames like `Muli` → `Mulish`), and
