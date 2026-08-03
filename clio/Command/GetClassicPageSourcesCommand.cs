@@ -112,6 +112,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private const string ClioMigrationDirectoryName = ".clio-migration";
 	private const string ManifestFileName = "manifest.json";
 	private const string DefaultCulture = "en-US";
+	// The manifest/detail-entry field naming the bound object. One name for the three places that write it (page
+	// manifest, child-page manifest, annotated detail entry) so the engine's contract key is stated once.
+	private const string EntityKey = "entity";
 	// No numeric fan-out caps (ENG-94402): a migration unit is collected WHOLE. A page with 250 details migrates
 	// all 250, and a parent chain deeper than any hand-picked number is walked to its base template. Termination
 	// does not rest on a cap — every unbounded walk is bounded by a visited-set over a finite input: the parent walk
@@ -312,7 +315,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			// 7. Assemble the manifest in the engine's contract shape (omit empty fields, never null-fill).
 			var manifest = new JObject { ["schemas"] = schemas };
 			if (!string.IsNullOrWhiteSpace(entity)) {
-				manifest["entity"] = entity;
+				manifest[EntityKey] = entity;
 			}
 			AddBlock(manifest, "seed", seed);
 			AddBlock(manifest, "entityColumns", entityColumns);
@@ -800,10 +803,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			foreach (Match match in SafeMatches(
-				ctx.Warnings, DetailEntityOverrideRegex, body, "reading the details' entity overrides")) {
-				string detailName = match.Groups["detail"].Value;
-				string entityName = match.Groups["entity"].Value;
+			foreach (GroupCollection groups in SafeMatches(
+					ctx.Warnings, DetailEntityOverrideRegex, body, "reading the details' entity overrides")
+				.Select(match => match.Groups)) {
+				string detailName = groups["detail"].Value;
+				string entityName = groups["entity"].Value;
 				if (!string.IsNullOrWhiteSpace(detailName) && !string.IsNullOrWhiteSpace(entityName)) {
 					overrides[detailName] = entityName;
 				}
@@ -1115,37 +1119,62 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 		foreach (JProperty detail in detailSchemas.Properties()) {
 			entityByDetail.TryGetValue(detail.Name, out string entity);
-			if (entity != null
-				&& pagesByEntity.TryGetValue(entity, out IReadOnlyList<ClassicChildPage> metadataPages)
-				&& metadataPages.Count > 0) {
-				foreach (ClassicChildPage metadataPage in metadataPages) {
-					Add(metadataPage.SchemaName);
-				}
-				// The engine reads ONE editPage per detail: the edit card, not the add mini page (which it keys
-				// separately). The mini pages stay in childPageSchemas so the plan still carries their sources.
-				string card = PickPrimaryCard(metadataPages, entity);
-				info[detail.Name] = new DetailChildPageInfo(entity, card, VerifiedNoEditPage: card == null);
-				continue; // metadata gave a definite answer for this detail; the body scan adds nothing
+			// Metadata first; the body scan runs only for a detail the metadata answered nothing for.
+			if (!TryCollectFromMetadata(detail.Name, entity, pagesByEntity, info, Add)) {
+				CollectFromDetailBody(ctx, detail, entity, lookupSucceeded, info, Add);
 			}
-			// No metadata answer for this detail. `verified none` is claimable ONLY when the lookup actually ran AND
-			// the entity was resolved — otherwise we never looked, and saying "none" would license the engine to plan
-			// around a child page that does exist.
-			bool verifiedNone = lookupSucceeded && entity != null;
-			string detailBody = detail.Value["body"]?.ToString();
-			Match editPageMatch = string.IsNullOrEmpty(detailBody)
-				? Match.Empty
-				: SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
-			if (!editPageMatch.Success) {
-				// Neither metadata nor body names a page. Record what we know so the engine can tell a verified
-				// "no edit page exists" apart from an unchecked detail.
-				info[detail.Name] = new DetailChildPageInfo(entity, null, verifiedNone);
-				continue;
-			}
-			string bodyPage = editPageMatch.Groups[1].Value;
-			info[detail.Name] = new DetailChildPageInfo(entity, bodyPage, VerifiedNoEditPage: false);
-			Add(bodyPage);
 		}
 		return editPageNames;
+	}
+
+	// PRIMARY route for one detail: the pages its entity registers in SysModuleEdit. Returns false when metadata has
+	// no answer for this detail (unresolved entity, or no registrations), which is the caller's cue to fall back to the
+	// body scan; a true return means metadata was definite and the body scan would add nothing.
+	private static bool TryCollectFromMetadata(
+		string detailName,
+		string entity,
+		IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity,
+		IDictionary<string, DetailChildPageInfo> info,
+		Action<string> add) {
+		if (entity == null
+			|| !pagesByEntity.TryGetValue(entity, out IReadOnlyList<ClassicChildPage> metadataPages)
+			|| metadataPages.Count == 0) {
+			return false;
+		}
+		foreach (ClassicChildPage metadataPage in metadataPages) {
+			add(metadataPage.SchemaName);
+		}
+		// The engine reads ONE editPage per detail: the edit card, not the add mini page (which it keys
+		// separately). The mini pages stay in childPageSchemas so the plan still carries their sources.
+		string card = PickPrimaryCard(metadataPages, entity);
+		info[detailName] = new DetailChildPageInfo(entity, card, VerifiedNoEditPage: card == null);
+		return true;
+	}
+
+	// SECONDARY route for one detail: the getEditPageName/editPageName token in its own body. `verified none` is
+	// claimable ONLY when the metadata lookup actually ran AND the entity was resolved — otherwise we never looked,
+	// and saying "none" would license the engine to plan around a child page that does exist.
+	private void CollectFromDetailBody(
+		PageSourcesRunContext ctx,
+		JProperty detail,
+		string entity,
+		bool lookupSucceeded,
+		IDictionary<string, DetailChildPageInfo> info,
+		Action<string> add) {
+		bool verifiedNone = lookupSucceeded && entity != null;
+		string detailBody = detail.Value["body"]?.ToString();
+		Match editPageMatch = string.IsNullOrEmpty(detailBody)
+			? Match.Empty
+			: SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
+		if (!editPageMatch.Success) {
+			// Neither metadata nor body names a page. Record what we know so the engine can tell a verified
+			// "no edit page exists" apart from an unchecked detail.
+			info[detail.Name] = new DetailChildPageInfo(entity, null, verifiedNone);
+			return;
+		}
+		string bodyPage = editPageMatch.Groups[1].Value;
+		info[detail.Name] = new DetailChildPageInfo(entity, bodyPage, VerifiedNoEditPage: false);
+		add(bodyPage);
 	}
 
 	// Which of an entity's registered cards to name as THE detail's editPage. Every candidate here already came from
@@ -1183,7 +1212,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				continue;
 			}
 			if (!string.IsNullOrWhiteSpace(info.Entity)) {
-				entry["entity"] = info.Entity;
+				entry[EntityKey] = info.Entity;
 			}
 			if (!string.IsNullOrWhiteSpace(info.EditPage)) {
 				entry["editPage"] = info.EditPage;
@@ -1296,7 +1325,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		string entity = InferEntity(ctx, schemas, seed);
 		var manifest = new JObject { ["schemas"] = schemas };
 		if (!string.IsNullOrWhiteSpace(entity)) {
-			manifest["entity"] = entity;
+			manifest[EntityKey] = entity;
 		}
 		if (seed.Count > 0) {
 			manifest["seed"] = seed;
