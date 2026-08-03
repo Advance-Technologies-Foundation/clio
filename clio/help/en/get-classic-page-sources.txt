@@ -26,8 +26,17 @@ DESCRIPTION
     The section is resolved from SysModule metadata first and only then by the
     <Entity>Section[V2] / <PagePrefix>Section[V2] naming conventions, so a
     renamed section or one whose name carries a UId infix is still found. When
-    the collected sources are incomplete - no section resolved, or the metadata
-    lookup failed - the response carries a "warnings" list saying so.
+    the collected sources are incomplete - no section resolved, the metadata
+    lookup failed, a schema body could not be loaded, or the parent-template
+    walk stopped early - the response carries a "warnings" list saying so.
+    Read "warnings" before planning from the manifest.
+
+    A migration unit is collected WHOLE: there is no limit on how many details
+    or child edit pages a page may carry, and the parent-template chain is
+    walked to its base template however deep it is. A page with 250 details
+    yields all 250. On a very wide page this costs one designer round-trip per
+    detail, so the run takes proportionally longer - a slow complete unit is
+    preferred over a fast truncated one.
 
 OPTIONS
     --schema-name                      Classic client-unit (page) schema name to collect

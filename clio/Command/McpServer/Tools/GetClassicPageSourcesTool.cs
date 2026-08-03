@@ -33,6 +33,9 @@ public sealed class GetClassicPageSourcesTool(
 		"so they never enter the caller's context. ALWAYS read `warnings` before planning from the manifest: it is " +
 		"present only when the collected sources are incomplete (e.g. no section resolved, so the plan's List-page " +
 		"side would be empty) — that is NOT the same as 'nothing to migrate'. " +
+		"The unit is collected WHOLE - no limit on details, child edit pages, or parent-template depth - so a very " +
+		"wide page costs one round-trip per detail and can take minutes. If the call exceeds your client's request " +
+		"timeout, run the CLI verb for that page rather than reading the timeout as 'the page is too big'. " +
 		"Prefer `environment-name`; keep direct connection args for fallback only.")]
 	public GetClassicPageSourcesResponse GetPageSources(
 		[Description("Parameters: schema-name (required, the classic page); entity (optional); output-file (optional); environment-name preferred.")]

@@ -88,17 +88,40 @@ resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `det
 `childPageSchemas`.
 
 `warnings` is present only when the collected sources are incomplete in a way the caller must weigh, and is
-omitted from a complete collection. It is raised when no section could be resolved (`sectionLayerCount: 0`) —
-which empties the List-page side of a migration plan and is not the same as "this entity has no section" —
-when the section metadata lookup failed and the run fell back to naming conventions, and when pattern matching
-over a schema body timed out and that body was skipped, so `detailCount` / `sectionLayerCount` may read lower
-than the page actually has. Over MCP the warning text is redacted the same way `error` is, so a backend host or
-URI carried in an underlying failure never reaches the caller's context.
+omitted from a complete collection. **Read it before planning from the manifest** — every block that was
+truncated, degraded, or omitted while the command still returned `success: true` is reported here, because a
+logger warning does not reach an MCP caller. It is raised when:
+
+- no section could be resolved (`sectionLayerCount: 0`) — which empties the List-page side of a migration plan
+  and is not the same as "this entity has no section";
+- the section metadata lookup failed and the run fell back to naming conventions;
+- pattern matching over a schema body timed out and that body was skipped, so `detailCount` /
+  `sectionLayerCount` may read lower than the page actually has;
+- the parent-template walk stopped early — a parent schema failed to load, or the chain contains a cycle — so
+  the `seed` is truncated and base containers above that point are missing;
+- an enumerated parent-template layer was dropped from the `seed`, or the template's layers could not be
+  enumerated at all and only the linked layer was seeded;
+- the merged localizable strings, the entity columns, a detail schema, or a child edit page could not be
+  gathered.
+
+Over MCP the warning text is redacted the same way `error` is, so a backend host or URI carried in an
+underlying failure never reaches the caller's context.
 
 ## Notes
 
 - Read-only: the command only reads schema metadata and writes the manifest file; it does not modify the
   Creatio environment and does not invoke the Node engine.
+- **A migration unit is collected whole — there are no fan-out limits.** Every detail a page references is
+  gathered, every child edit page those details name is nested, and the parent-template chain is walked to its
+  base template however deep it is. A page with 250 details yields all 250. Earlier versions capped these at
+  50 details / 50 child pages / 20 parent levels, which silently truncated real units (product `ContactPageV2`
+  already sat at 48 of the old 50-detail cap, so a customer page with three more details crossed the line).
+  Termination does not depend on those numbers: the parent walk follows each schema UId at most once, and
+  detail / child-page collection admits each name once over a finite set of bodies.
+- Cost scales with the unit: gathering a detail or a child page is one designer round-trip each, so a very wide
+  page takes proportionally longer to collect. This is a deliberate trade — a complete unit that takes longer
+  beats a fast one that quietly omits part of the page. When calling over MCP, a very wide page can exceed a
+  client's request timeout; run it from the CLI in that case.
 - A schema name that exists in several packages resolves its layers deterministically by package hierarchy
   level (see also `get-client-unit-schema`).
 - The section is resolved from `SysModule` metadata first (the module bound to the entity), and only then by

@@ -111,10 +111,13 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private const string EmptyGuid = ClassicEntitySchemaQuery.EmptyGuid;
 	private const string ClioMigrationDirectoryName = ".clio-migration";
 	private const string ManifestFileName = "manifest.json";
-	private const int MaxParentDepth = 20;
-	private const int MaxDetails = 50;
-	private const int MaxChildPages = 50;
 	private const string DefaultCulture = "en-US";
+	// No numeric fan-out caps (ENG-94402): a migration unit is collected WHOLE. A page with 250 details migrates
+	// all 250, and a parent chain deeper than any hand-picked number is walked to its base template. Termination
+	// does not rest on a cap — every unbounded walk is bounded by a visited-set over a finite input: the parent walk
+	// by `visitedParentUId` (each UId is followed once), detail/child-page collection by the `seen` name set over
+	// finitely many bodies. Numeric caps only ever truncated real units (ContactPageV2 sat at 48 of the old 50),
+	// which is precisely the silent-incompleteness this command must not produce.
 	// Stand-in reason when the designer answered without an error AND without a schema — an empty success the
 	// walk/enricher paths must report as a gap rather than as a resolved-but-empty layer.
 	private const string NoSchemaReturned = "no schema returned";
@@ -261,7 +264,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				// omitted section silently empties the plan's List-page analysis (custom quick filters,
 				// getSectionActions, hardcoded list columns). Say so in the response — a logger warning would not
 				// reach an MCP caller, whose log buffer is cleared before the result is returned.
-				ctx.Warnings.Add(
+				AddWarning(ctx,
 					"No Classic section resolved for " +
 					(string.IsNullOrWhiteSpace(entity) ? $"page '{options.SchemaName}'" : $"entity '{entity}'") +
 					$" (tried: {string.Join(", ", sectionCandidates)}). The manifest carries no section, so the " +
@@ -387,9 +390,17 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return (layers, error);
 	}
 
-	// Resolves many names in ONE SelectQuery and seeds the enumeration cache — including empty entries for
-	// names that do not exist, so later per-name lookups don't re-query them. A batch failure only logs:
-	// every consumer falls back to the memoized per-name path.
+	// Names per batched SelectQuery. EnumerateSchemaLayersBatch puts every name into ONE `In` filter, so the
+	// name count becomes the query's parameter count — and with the fan-out caps gone (ENG-94402) that count is
+	// driven by the page, not by a constant. Chunking keeps each query far below the DBMS parameter ceiling
+	// (MSSql refuses a parameterized statement past 2100) and below request-size limits, so a very wide page
+	// still resolves in a few batched queries instead of failing the batch and degrading to N per-name lookups.
+	private const int LayerBatchChunkSize = 400;
+
+	// Resolves many names in batched SelectQueries and seeds the enumeration cache — including empty entries for
+	// names that do not exist, so later per-name lookups don't re-query them. A batch failure only logs (no
+	// ctx.Warnings): every consumer falls back to the memoized per-name path, which loses no manifest content,
+	// so this is a slow path rather than an incompleteness gap.
 	private void PrimeLayerBatch(PageSourcesRunContext ctx, IReadOnlyCollection<string> schemaNames) {
 		List<string> missing = schemaNames
 			.Where(name => !string.IsNullOrWhiteSpace(name) && !ctx.LayersByName.ContainsKey(name))
@@ -398,9 +409,18 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		if (missing.Count == 0) {
 			return;
 		}
+		for (int offset = 0; offset < missing.Count; offset += LayerBatchChunkSize) {
+			List<string> chunk = missing.GetRange(offset, Math.Min(LayerBatchChunkSize, missing.Count - offset));
+			// One failing chunk must not abandon the rest: each chunk the batch resolves still spares its names a
+			// per-name round-trip, and the names of a failed chunk simply stay unmemoized for the fallback path.
+			PrimeLayerChunk(ctx, chunk);
+		}
+	}
+
+	private void PrimeLayerChunk(PageSourcesRunContext ctx, IReadOnlyCollection<string> chunk) {
 		try {
 			(IReadOnlyDictionary<string, IReadOnlyList<SchemaLayer>> layersByName, string error) =
-				SchemaDesignerHelper.EnumerateSchemaLayersBatch(_applicationClient, _serviceUrlBuilder, missing, Kind);
+				SchemaDesignerHelper.EnumerateSchemaLayersBatch(_applicationClient, _serviceUrlBuilder, chunk, Kind);
 			if (error != null) {
 				_logger.WriteWarning($"Batched layer enumeration failed; falling back to per-name lookups: {error}");
 				return;
@@ -565,23 +585,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		var seededTemplateNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var seededLayerUIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		JObject current = topSchema;
-		int depth = 0;
 		while (true) {
 			string parentUId = (current?["parent"] as JObject)?["uId"]?.ToString();
 			if (string.IsNullOrWhiteSpace(parentUId) || string.Equals(parentUId, EmptyGuid, StringComparison.OrdinalIgnoreCase)) {
 				break; // reached the base template — a clean, complete walk
-			}
-			if (depth >= MaxParentDepth) {
-				// Depth cap hit with a parent still to follow: the seed is truncated. Say so, or a truncated
-				// seed looks identical to a page that simply has no more parents (parity with the other exits).
-				// Surface to ctx.Warnings too: a logger warning does not reach an MCP caller (log buffer cleared
-				// before the result is returned), so a truncated seed would otherwise read as complete.
-				string warning =
-					$"Parent-template walk stopped at the depth cap ({MaxParentDepth}); the seed may be truncated " +
-					$"(next unwalked parent '{parentUId}').";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				break;
 			}
 			if (!visitedParentUId.Add(parentUId)) {
 				// Cycle on the parent-link walk: stop and say so — silently truncating hides a corrupt chain.
@@ -592,14 +599,19 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			(JObject parentLayer, string error) = LoadSchemaCached(ctx, parentUId, null);
 			if (error != null || parentLayer == null) {
-				// Best-effort: stop the walk and keep what we have — but say so, or a truncated seed looks
-				// identical to a page that simply has no parents.
-				_logger.WriteWarning($"Parent-template walk stopped at '{parentUId}': {error ?? NoSchemaReturned}");
+				// Best-effort: stop the walk and keep what we have — but say so through BOTH channels. The logger
+				// alone does not reach an MCP caller (its buffer is cleared before the result is returned), so a
+				// seed truncated here would read as a page that simply has no more parents (parity with the
+				// cycle exit above).
+				string warning =
+					$"Parent-template walk stopped at '{parentUId}' ({error ?? NoSchemaReturned}); the seed is " +
+					"truncated and the base containers defined above this point are missing from the manifest.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				break;
 			}
 			levels.Add(LoadParentLevelLayers(ctx, parentUId, parentLayer, seededTemplateNames, seededLayerUIds));
 			current = parentLayer; // continue up from the linked layer's own parent
-			depth++;
 		}
 		levels.Reverse(); // base template first, most-derived template last
 		var seed = new JArray();
@@ -626,7 +638,14 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 		(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, parentName);
 		if (enumError != null) {
-			_logger.WriteWarning($"Could not enumerate parent template '{parentName}' layers: {enumError}");
+			// The level degrades to the linked layer alone, so any sibling layer of this template is dropped from
+			// the seed — the engine then reports the containers they define as unresolvedParents. Caller-visible,
+			// not logger-only: an omitted seed layer is exactly as invisible as a truncated one.
+			string warning =
+				$"Could not enumerate parent template '{parentName}' layers ({enumError}); only the linked layer " +
+				"is seeded, so containers defined in a sibling layer of that template are missing from the manifest.";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
 		}
 		if (enumError != null || layers.Count == 0) {
 			return LinkedLayerOnly(parentUId, parentLayer, seededLayerUIds);
@@ -670,7 +689,13 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, parentName);
 			if (loadError != null || layerSchema == null) {
-				_logger.WriteWarning($"Could not load parent-template layer '{parentName}' ({layer.UId}): {loadError ?? NoSchemaReturned}");
+				// One enumerated sibling body is dropped from the seed while the level still succeeds — a partial
+				// level that the response would otherwise report as a complete one.
+				string warning =
+					$"Could not load parent-template layer '{parentName}' ({layer.UId}): {loadError ?? NoSchemaReturned}. " +
+					"That layer's body is missing from the seed.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				continue;
 			}
 			levelEntries.Add(CreateSeedEntry(layerSchema, layer.PackageName));
@@ -713,7 +738,12 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
 			if (error != null || schema == null) {
-				_logger.WriteWarning($"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}");
+				// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
+				// engine then folds captions it has no translation for. Same channel as the catch below.
+				string warning = $"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}. " +
+					"The manifest carries no resources, so localized captions will be missing from the folded page.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				return resources;
 			}
 			foreach (MergedLocalizableString localizableString in SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema)) {
@@ -776,13 +806,13 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return (entityColumns, columnTitles);
 	}
 
-	// Collects distinct detail-schema names referenced across every layer body (page chain + parent seed).
-	// The names come from server-supplied bodies, so collection is capped by ATTEMPTS — not by later successes —
-	// to keep a malformed or hostile response from driving unbounded probing.
+	// Collects EVERY distinct detail-schema name referenced across every layer body (page chain + parent seed).
+	// Uncapped by design (ENG-94402): a page that references 250 details must migrate all 250. Collection is
+	// bounded by the input rather than by a number — the `seen` set admits each name once, over finitely many
+	// bodies, so a malformed or repetitive response cannot drive an unbounded walk.
 	private List<string> CollectDetailNames(PageSourcesRunContext ctx, JArray schemas, JArray seed) {
 		var detailNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		int collectionCap = MaxDetails * 2;
 		foreach (JToken entry in schemas.Concat(seed)) {
 			string body = entry["body"]?.ToString();
 			if (string.IsNullOrEmpty(body)) {
@@ -790,17 +820,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			foreach (Match match in SafeMatches(ctx.Warnings, DetailSchemaNameRegex, body, "collecting detail-schema references")) {
 				string detailName = match.Groups[1].Value;
-				if (!seen.Add(detailName)) {
-					continue;
+				if (seen.Add(detailName)) {
+					detailNames.Add(detailName);
 				}
-				if (detailNames.Count >= collectionCap) {
-					string warning =
-						$"More than {collectionCap} distinct detail-schema references found; the remainder is ignored.";
-					_logger.WriteWarning(warning);
-					AddWarning(ctx, warning);
-					return detailNames;
-				}
-				detailNames.Add(detailName);
 			}
 		}
 		return detailNames;
@@ -808,13 +830,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 
 	private JObject BuildDetailSchemas(PageSourcesRunContext ctx, IReadOnlyList<string> detailNames) {
 		var detailSchemas = new JObject();
+		// Every collected detail is resolved — no cap. Layer enumeration is batch-primed, but the body load is one
+		// designer round-trip per detail, so a very wide page is proportionally slower. That is the accepted trade:
+		// a slow complete unit beats a fast one that silently omits part of the page.
 		foreach (string detailName in detailNames) {
-			if (detailSchemas.Count >= MaxDetails) {
-				string warning = $"Detail gathering stopped at {MaxDetails} resolved schemas; the remainder is omitted.";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				break;
-			}
 			try {
 				(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, detailName);
 				if (enumError != null) {
@@ -862,7 +881,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			ClassicSectionLookup lookup = _sectionResolver.ResolveSectionSchemaNames(entity);
 			if (lookup.Error != null) {
 				_logger.WriteWarning($"Could not resolve the section from SysModule metadata: {lookup.Error}");
-				ctx.Warnings.Add(
+				AddWarning(ctx,
 					$"Section metadata lookup failed ({lookup.Error}); fell back to name conventions, which cannot " +
 					"reach a renamed section or one whose schema name carries a UId infix.");
 			}
@@ -955,14 +974,19 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				}
 			}
 			catch (Exception ex) {
-				_logger.WriteWarning($"Could not assemble child page '{editPageName}': {ex.Message}");
+				// Same channel as the error branch above: a dropped child page leaves childPageCount lower than
+				// the page's real fan-out with nothing in the response to say why.
+				string warning = $"Could not assemble child page '{editPageName}': {ex.Message}";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 			}
 		}
 		return childPageSchemas;
 	}
 
-	// The distinct edit-page names named across the detail bodies, capped at MaxChildPages. The names come from
-	// server-supplied bodies, so the cap bounds the nested-manifest fan-out; hitting it is reported as a gap.
+	// Every distinct edit-page name named across the detail bodies. Uncapped (ENG-94402): the count is bounded by
+	// the number of gathered details, which is itself no longer capped, so every child edit page a page reaches is
+	// nested. The `seen` set keeps a repeated name from being resolved twice.
 	private List<string> CollectChildPageNames(PageSourcesRunContext ctx, JObject detailSchemas) {
 		var editPageNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -976,16 +1000,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				continue; // no edit page named on the detail -> nothing to nest; the engine flags it
 			}
 			string editPageName = editPageMatch.Groups[1].Value;
-			if (!seen.Add(editPageName)) {
-				continue;
+			if (seen.Add(editPageName)) {
+				editPageNames.Add(editPageName);
 			}
-			if (editPageNames.Count >= MaxChildPages) {
-				string warning = $"More than {MaxChildPages} distinct child edit pages referenced; the remainder is omitted.";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				break;
-			}
-			editPageNames.Add(editPageName);
 		}
 		return editPageNames;
 	}

@@ -947,10 +947,12 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources caps detailSchemas at MaxDetails (50) and warns when the page body resolves more than fifty distinct details.")]
-	public void TryAssemblePageSources_ShouldCapDetailSchemasAtMaxDetails_WhenMoreThanFiftyDetailsResolve() {
-		// Arrange — 55 distinct, individually resolvable detail references on one page (55 < collectionCap 100)
-		const int detailReferenceCount = 55;
+	[Description("TryAssemblePageSources gathers EVERY resolvable detail with no numeric cap, so a page far wider than the old fifty-detail limit migrates whole (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldGatherEveryDetail_WhenPageReferencesFarMoreThanTheOldCap() {
+		// Arrange — 250 distinct, individually resolvable detail references on one page. 250 is over BOTH retired
+		// caps (the old MaxDetails=50 gather cap and the old collectionCap=100 name-collection cap), so a surviving
+		// cap of either kind would show up as a short detailSchemas block.
+		const int detailReferenceCount = 250;
 		var detailRefs = new List<string>();
 		for (int i = 0; i < detailReferenceCount; i++) {
 			string detail = "UsrDetail" + i;
@@ -970,21 +972,71 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		response.DetailCount.Should().Be(50,
-			because: "detail gathering is capped at MaxDetails (50) resolved schemas even when more resolve");
+		response.DetailCount.Should().Be(detailReferenceCount,
+			because: "detail gathering is uncapped, so all 250 referenced details resolve into the unit");
 		JObject manifest = JObject.Parse(ReadManifest(response));
-		((JObject)manifest["detailSchemas"]).Count.Should().Be(50,
-			because: "only the first fifty resolvable details are folded into the manifest");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
-		response.Warnings.Should().Contain(w => w.Contains("Detail gathering stopped at 50"),
-			because: "a logger warning does not reach an MCP caller, so the truncation must also surface in response.Warnings");
+		((JObject)manifest["detailSchemas"]).Count.Should().Be(detailReferenceCount,
+			because: "every gathered detail body belongs to the manifest — a migration unit is collected whole");
+		response.Warnings.Should().NotContain(w => w.Contains("stopped at") || w.Contains("remainder"),
+			because: "nothing was truncated, so no truncation gap may be reported");
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources stops collecting detail-schema references at collectionCap (100) and warns when a body names more references than the cap.")]
-	public void TryAssemblePageSources_ShouldStopDetailNameCollection_WhenMoreThanCollectionCapReferences() {
-		// Arrange — 105 distinct references, over collectionCap (MaxDetails * 2 = 100); none need to resolve
-		const int detailReferenceCount = 105;
+	[Description("TryAssemblePageSources splits batched layer enumeration into bounded chunks so an uncapped detail set cannot build one SelectQuery past the DBMS parameter ceiling.")]
+	public void TryAssemblePageSources_ShouldChunkBatchedLayerEnumeration_WhenManyDetailsAreCollected() {
+		// Arrange — 900 distinct resolvable details, i.e. more names than one batched query may carry. Every
+		// layer-enumeration request body is captured so the chunk sizes can be asserted afterwards.
+		const int detailReferenceCount = 900;
+		var batchNameCounts = new List<int>();
+		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => {
+			string body = ci.ArgAt<string>(1);
+			if (body != null && body.Contains("rootSchemaName")) {
+				JObject query = JObject.Parse(body);
+				if (query["filters"]?["items"] is JObject items) {
+					foreach (JProperty item in items.Properties()) {
+						if (item.Value["rightExpressions"] is JArray many && many.Count > 1) {
+							batchNameCounts.Add(many.Count);
+						}
+					}
+				}
+			}
+			return Route(body);
+		});
+		var detailRefs = new List<string>();
+		for (int i = 0; i < detailReferenceCount; i++) {
+			string detail = "UsrDetail" + i;
+			detailRefs.Add("schemaName: \"" + detail + "\"");
+			AddLayer(detail, "uid-" + detail, "UsrApp", 200);
+			AddSchema("uid-" + detail, "define(\"" + detail + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { " +
+			string.Join(", ", detailRefs) + " } }; });",
+			EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert — the unit is still whole, and no single batched query carried every name
+		response.DetailCount.Should().Be(detailReferenceCount,
+			because: "chunking is a transport concern — it may not drop a single detail from the unit");
+		batchNameCounts.Should().NotBeEmpty(because: "the details must be primed through batched enumeration");
+		batchNameCounts.Should().OnlyContain(count => count <= 400,
+			because: "one SelectQuery past the DBMS parameter ceiling would fail the whole batch, so each chunk "
+				+ "must stay bounded no matter how many details the page carries");
+		batchNameCounts.Sum().Should().BeGreaterThanOrEqualTo(detailReferenceCount,
+			because: "every collected name must be primed across the chunks, not just the first chunk's worth");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources collects EVERY distinct detail-schema reference named in a body with no collection cap, and reports no truncation when the referenced details do not exist (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldCollectEveryDetailReference_WithNoCollectionCap() {
+		// Arrange — 250 distinct references, over the retired collectionCap (100); none are registered, so none
+		// resolve. The point is that collection itself no longer stops early and reports no ignored remainder.
+		const int detailReferenceCount = 250;
 		var detailRefs = new List<string>();
 		for (int i = 0; i < detailReferenceCount; i++) {
 			detailRefs.Add("schemaName: \"UsrDetail" + i + "\"");
@@ -1001,17 +1053,20 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "an over-cap reference list truncates collection, it does not fail the collection");
+		ok.Should().BeTrue(because: "a long reference list is collected in full, and unresolved names are not failures");
 		response.DetailCount.Should().Be(0,
 			because: "none of the referenced details were registered, so none resolve into the manifest");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("More than 100 distinct detail-schema references")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("distinct detail-schema references")));
+		response.Warnings.Should().NotContain(w => w.Contains("remainder is ignored"),
+			because: "collection no longer stops at a cap, so there is no ignored remainder to report");
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources bounds childPageSchemas at fifty because child pages come only from the (MaxDetails-capped) detail set, and the detail cap warning is emitted.")]
-	public void TryAssemblePageSources_ShouldCapChildPages_WhenManyDetailsEachReferenceAnEditPage() {
-		// Arrange — 55 distinct details, each naming its own resolvable child edit page
-		const int detailReferenceCount = 55;
+	[Description("TryAssemblePageSources nests a child edit page for EVERY detail that names one, with no fifty-child cap (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldNestEveryChildPage_WhenManyDetailsEachReferenceAnEditPage() {
+		// Arrange — 120 distinct details, each naming its own resolvable child edit page. Over both the old
+		// MaxChildPages=50 and the old MaxDetails=50 that structurally bounded it.
+		const int detailReferenceCount = 120;
 		var detailRefs = new List<string>();
 		for (int i = 0; i < detailReferenceCount; i++) {
 			string detail = "UsrDetail" + i;
@@ -1036,23 +1091,27 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		response.ChildPageCount.Should().Be(50,
-			because: "child pages come only from the fifty resolved details, so the set is bounded at MaxChildPages (50)");
+		response.ChildPageCount.Should().Be(detailReferenceCount,
+			because: "every detail that names an edit page contributes a nested child manifest — no child-page cap");
 		JObject manifest = JObject.Parse(ReadManifest(response));
-		((JObject)manifest["childPageSchemas"]).Count.Should().Be(50,
-			because: "exactly fifty child edit pages are nested into the manifest");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
+		((JObject)manifest["childPageSchemas"]).Count.Should().Be(detailReferenceCount,
+			because: "all 120 child edit pages are nested into the manifest");
+		response.Warnings.Should().NotContain(w => w.Contains("remainder is omitted"),
+			because: "no child page was dropped, so no omission may be reported");
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources warns that the parent-template walk stopped at the depth cap when the chain is deeper than MaxParentDepth (20) with a parent still to follow.")]
-	public void TryAssemblePageSources_ShouldWarnDepthCap_WhenParentWalkExceedsMaxParentDepth() {
-		// Arrange — a page whose parent chain is 21 distinct levels deep (uid-p1 -> ... -> uid-p21)
+	[Description("TryAssemblePageSources walks the parent-template chain to its base template with no depth cap, so a chain deeper than the retired twenty-level limit is seeded whole (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldWalkFullParentChain_WhenDeeperThanTheOldDepthCap() {
+		// Arrange — a page whose parent chain is 30 distinct levels deep and ends cleanly at the base template
+		// (the last level's parent is EmptyGuid), i.e. 10 levels past the retired MaxParentDepth of 20.
+		const int chainDepth = 30;
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
 			"uid-p1", "UsrApp");
-		for (int i = 1; i <= 20; i++) {
-			AddSchema("uid-p" + i, "define(\"Tpl\", [], function() { return {}; });", "uid-p" + (i + 1), "Core");
+		for (int i = 1; i <= chainDepth; i++) {
+			string parent = i == chainDepth ? EmptyGuid : "uid-p" + (i + 1);
+			AddSchema("uid-p" + i, "define(\"Tpl\", [], function() { return {}; });", parent, "Core");
 		}
 		StubEntityColumns();
 		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
@@ -1061,12 +1120,119 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "a truncated seed still produces a usable manifest, it does not fail assembly");
-		response.SeedCount.Should().Be(20,
-			because: "exactly MaxParentDepth (20) parent levels are walked before the cap stops the walk");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
-		response.Warnings.Should().Contain(w => w.Contains("depth cap"),
-			because: "the truncated seed must be visible to an MCP caller via response.Warnings, not only the logger");
+		ok.Should().BeTrue(because: "a full parent walk assembles successfully");
+		response.SeedCount.Should().Be(chainDepth,
+			because: "every parent-template level up to the base template is seeded, with no depth cap truncating it");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
+		response.Warnings.Should().NotContain(w => w.Contains("depth cap"),
+			because: "a walk that reached the base template is complete and must report no truncation");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when the parent-template walk stops because a parent schema cannot be loaded, so a truncated seed is never silent.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenParentWalkStopsOnUnloadableParent() {
+		// Arrange — the page's parent link points at a UId the designer does not return a schema for, so the walk
+		// stops one level in with a parent still ahead. Before ENG-94402 this exit only logged, so a seed missing
+		// every base container read as a page that simply has no more parents.
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-missing-parent", "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a truncated seed still yields a usable manifest, it does not fail assembly");
+		response.SeedCount.Should().Be(0, because: "the unloadable parent contributed no seed level");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Parent-template walk stopped at")));
+		response.Warnings.Should().Contain(
+			w => w.Contains("Parent-template walk stopped at") && w.Contains("uid-missing-parent"),
+			because: "the logger does not reach an MCP caller, so the truncated seed must surface in response.Warnings");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when an enumerated parent-template sibling layer body cannot be loaded and is dropped from the seed.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenParentTemplateSiblingLayerFailsToLoad() {
+		// Arrange — the parent template "BaseTpl" enumerates two layers: the linked one (loadable) and a sibling
+		// whose body the designer does not return. The level still succeeds, so without a response warning the
+		// caller sees a complete-looking seed that is missing that sibling's containers.
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-tpl-linked", "UsrApp");
+		AddLayer("BaseTpl", "uid-tpl-linked", "Core", 100);
+		AddLayer("BaseTpl", "uid-tpl-broken", "UsrApp", 200); // enumerated, but never registered as a schema
+		AddSchema("uid-tpl-linked", "define(\"BaseTpl\", [], function() { return {}; });", EmptyGuid, "Core",
+			name: "BaseTpl");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a dropped sibling layer degrades the seed, it does not fail assembly");
+		response.SeedCount.Should().Be(1, because: "only the loadable linked layer of the level is seeded");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Could not load parent-template layer 'BaseTpl'") && w.Contains("missing from the seed"),
+			because: "an omitted seed layer is as invisible to the caller as a truncated walk unless it is reported");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when the parent template's layers cannot be enumerated and the level degrades to the linked layer alone.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenParentTemplateEnumerationFails() {
+		// Arrange — the layer-enumeration query for the parent template answers with a DataService failure
+		// envelope (routed by the template name appearing in the request body); every other request is served
+		// normally by the fake.
+		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => {
+			string body = ci.ArgAt<string>(1);
+			return body != null && body.Contains("BoomTpl") && body.Contains("rootSchemaName")
+				? """{ "errorInfo": { "errorCode": "AccessDenied", "message": "Access to SysSchema is denied" } }"""
+				: Route(body);
+		});
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-tpl", "UsrApp");
+		AddSchema("uid-tpl", "define(\"BoomTpl\", [], function() { return {}; });", EmptyGuid, "Core", name: "BoomTpl");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a level that degrades to its linked layer still yields a usable manifest");
+		response.SeedCount.Should().Be(1, because: "the linked layer is seeded even when its siblings cannot be enumerated");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Could not enumerate parent template 'BoomTpl' layers")
+				&& w.Contains("missing from the manifest"),
+			because: "the caller must be told that sibling layers of that template may be absent from the seed");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when the merged localizable strings cannot be loaded, so resourceCount:0 is never mistaken for a page without captions.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenResourcesCannotBeLoaded() {
+		// Arrange — the hierarchy path resolves topLayerUId to a layer the designer does not return a schema for,
+		// so the merged-resources load fails on its non-exception error path (the catch below it already warned).
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
+		_hierarchyClient.GetParentSchemas("uid-page", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrPage", "pkgB", "uid-top-unregistered",
+				"define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });")
+		});
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "resources are an enricher — their absence degrades the unit, it does not fail it");
+		response.ResourceCount.Should().Be(0, because: "no merged localizable strings could be loaded");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Could not gather merged localizable strings"),
+			because: "an empty resources block must be distinguishable from a page that declares no captions");
 	}
 
 	[Test]

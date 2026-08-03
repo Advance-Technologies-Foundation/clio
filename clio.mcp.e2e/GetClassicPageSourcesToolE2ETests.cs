@@ -129,6 +129,54 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Collects a real page's details in full with no fan-out cap: the reported count matches the manifest exactly and no truncation gap is reported (ENG-94402).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources collects a page's details without truncating")]
+	[AllureDescription("Live witness that the fan-out caps are gone: the response's detailCount must equal the manifest's detailSchemas size and no cap/truncation warning may be reported. Deliberately product-agnostic — the detail count of a given page differs per installed product (Studio ContactPageV2 gathers 9, a Sales product far more), so this asserts CONSISTENCY and the absence of truncation rather than any specific number.")]
+	public async Task GetPageSources_Should_Collect_Every_Detail_Without_Cap() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-uncapped");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+
+		// Assert — the whole unit was collected. The count itself is product-dependent (Studio gathers far fewer
+		// details for the same page than a Sales product), so the invariant asserted here is that the response
+		// counter and the manifest agree EXACTLY: a cap would have shortened one without the other noticing.
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		int manifestDetailCount = manifest.RootElement.TryGetProperty("detailSchemas", out JsonElement detailSchemas)
+			? detailSchemas.EnumerateObject().Count()
+			: 0; // the block is omitted (never null-filled) when the page resolved no details on this product
+		manifestDetailCount.Should().Be(response.DetailCount,
+			because: "every detail the response counts must be in the manifest — nothing may be dropped in between, "
+				+ "and the block is omitted only when the count is genuinely zero");
+
+		// Assert — no cap truncated the unit. The retired caps were the only source of these messages, so their
+		// absence on the widest product page is the live proof the fan-out is unbounded.
+		(response.Warnings ?? []).Should().NotContain(
+			warning => warning.Contains("stopped at") || warning.Contains("remainder is omitted")
+				|| warning.Contains("remainder is ignored") || warning.Contains("depth cap"),
+			because: "a complete collection may not report a truncation gap");
+	}
+
+	[Test]
 	[Description("Reports a readable failure when get-classic-page-sources is asked for a schema that does not exist.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-page-sources reports a missing-schema failure")]
