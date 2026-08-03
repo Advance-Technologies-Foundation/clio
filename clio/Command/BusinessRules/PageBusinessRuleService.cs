@@ -45,7 +45,8 @@ internal sealed class PageBusinessRuleService(
 	IPageBusinessRuleAttributeProvider attributeProvider,
 	IPageBusinessRuleElementProvider elementProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
-	IPageBusinessRuleValidator pageBusinessRuleValidator)
+	IPageBusinessRuleValidator pageBusinessRuleValidator,
+	ISysSettingConditionOperandResolver sysSettingResolver)
 	: BaseBusinessRuleService(packageResolver, businessRuleAddonService), IPageBusinessRuleService {
 
 	private const string PageSchemaNameField = "page-schema-name";
@@ -61,9 +62,10 @@ internal sealed class PageBusinessRuleService(
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 		BusinessRule rule = request.Rule;
-		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
+		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 
-		BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap);
 		return AddonService.AppendRule(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			rule,
@@ -86,8 +88,9 @@ internal sealed class PageBusinessRuleService(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			request.Rules,
 			rule => {
-				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
-				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule)];
+				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
+				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap)];
 			});
 	}
 
@@ -116,8 +119,9 @@ internal sealed class PageBusinessRuleService(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			request.Rules,
 			(rule, existing) => {
-				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
-				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing)];
+				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
+				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing, sysSettingMap)];
 			});
 	}
 

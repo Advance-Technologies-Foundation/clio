@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Customization commands
+
+NAME
+    upload-image - upload a local image to an environment and print its image id
+
+DESCRIPTION
+    upload-image uploads a local image file to the target environment,
+    verifies it was stored, and prints the created image id.
+
+    Each call stores a new image. Use the printed image id to reference the
+    image, for example with 'clio set-background-image' to make it the shell
+    background.
+
+    Supported formats: png, jpg, jpeg, gif, bmp, webp, svg. The file is capped at
+    10 MB. The environment must have login/password credentials registered;
+    OAuth-only environments are not supported.
+
+SYNOPSIS
+    clio upload-image <file> [options]
+
+OPTIONS
+    <file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio upload-image C:\brand\background.png -e myapp
+        upload the image and print its image id
+
+NOTES
+    - To set an uploaded image as the shell background, run
+      'clio set-background-image <image-id>'.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -88,13 +88,15 @@ Common to both scopes, rule creation must:
 Entity-level rule creation additionally supports:
 
 - conditions
-   - left and right expression types on either side, in any pairing: attribute, constant, system variable
+   - left and right expression types on either side, in any pairing: attribute, constant, system variable (`SysValue`), system setting (`SysSetting`)
    - system variables on either side:
       - `CurrentDate` (Date), `CurrentTime` (Time), `CurrentDateTime` (DateTime)
       - `CurrentUser` (Lookup → `SysAdminUnit`), `CurrentUserContact` (Lookup → `Contact`), `CurrentUserAccount` (Lookup → `Account`), `CurrentUserRoles` (ObjectList of `SysAdminUnit` roles)
       - role-based logic: `CurrentUserRoles` `contain`/`not-contain` a constant `SysAdminUnit` role id
       - both operands must resolve to the same data value type (an `ObjectList` is compared element-wise to a `Lookup`); lookup operands must reference the same schema
       - a constant operand inherits its data value type and reference schema from the operand it is compared against
+   - system settings on either side (`SysSetting`, `sysSettingName` = the setting code): the setting's data value type is resolved from the target environment; `Binary` and `SecureText` settings are rejected (the value is never read, only its type)
+   - operand compatibility is by data value type or the same text/numeric family (a `Text` setting compares against a text-subtype column; `Integer`/`Float`/`Money` are interchangeable); `Date`/`Time`/`DateTime` and `Lookup` stay exact
    - comparison types `contain`/`not-contain` for collection (`ObjectList`) and text operands
    - data value types for attributes and constants: text, number, boolean, GUID, date/time
    - comparison types: equal, not equal, is filled in, is not filled in, greater than, greater than or equal, less than, less than or equal
@@ -132,7 +134,7 @@ for `ClientUnitSchemaManager`, resolves the page schema hierarchy, and validates
 merged page bundle. It additionally supports:
 
 - conditions
-   - left/right expression types on either side, in any pairing: declared page attribute, constant, system variable
+   - left/right expression types on either side, in any pairing: declared page attribute, constant, system variable (`SysValue`), system setting (`SysSetting`, same environment-resolved typing and `Binary`/`SecureText` rejection as entity scope)
    - the same system variables as the entity scope, plus current-user visibility (the no-code alternative to a page handler): `CurrentUser`/`CurrentUserContact`/`CurrentUserAccount` `equal`/`not-equal` a constant id
    - condition attributes only when declared in `bundle.viewModelConfig.attributes` and bound to an entity datasource column through `modelConfig.path`
    - declared page attribute names in payloads (e.g. `PDS_UsrText_r07ym9c`), **not** datasource paths (e.g. `PDS.UsrText`); page attribute data value types are resolved from the datasource entity schema

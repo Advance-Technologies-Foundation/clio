@@ -85,6 +85,13 @@ public sealed class WhenToUseRequestsGuidanceResource {
 		         `requiresVersionConfirmation: true` — tell the user the version is unknown and get
 		         explicit confirmation before authoring against the `latest` superset.
 
+		       Web vs mobile
+		       - Default catalog is the WEB request registry. When wiring a request on a MOBILE page
+		         (a page whose `get-page` metadata reports `schema-type: "mobile"`, i.e. schemaType 10),
+		         pass `schema-type: "mobile"` — the mobile request catalog is a SEPARATE registry, scoped
+		         to the requests available on Freedom UI mobile, and a request's parameters can differ
+		         from desktop. Never author a mobile request's params from the web catalog.
+
 		       Wiring shape (declarative page config)
 		       - `"clicked": { "request": "crt.XxxRequest" }` — add `"params": { ... }` ONLY when the
 		         catalog lists parameters for the request.

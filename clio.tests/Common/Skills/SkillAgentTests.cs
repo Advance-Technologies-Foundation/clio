@@ -174,6 +174,183 @@ public sealed class SkillAgentTests {
 		_toml.Received(1).MergeClioMcpServer(Arg.Any<string>());
 	}
 
+	[Test]
+	[Description("Codex update removes installer-owned directories containing ordinary and nested read-only files.")]
+	public void CodexUpdate_ShouldRemoveLegacyDirectories_WhenFilesAreOrdinaryOrReadOnly() {
+		// Arrange
+		string codexHome = _home.GetAgentHome("codex");
+		string legacyMarketplace = Path.Combine(codexHome, "plugins", "marketplaces",
+			ToolkitDistribution.MarketplaceName);
+		string legacyCache = Path.Combine(codexHome, "plugins", "cache", ToolkitDistribution.MarketplaceName);
+		string readOnlyPack = Path.Combine(legacyCache, ToolkitDistribution.PluginName, "1.4.0", ".git",
+			"objects", "pack", "pack-test.idx");
+		_mockFileSystem.AddFile(Path.Combine(legacyMarketplace, "marketplace.json"), new MockFileData("{}"));
+		_mockFileSystem.AddFile(readOnlyPack, new MockFileData("git index") {
+			Attributes = FileAttributes.ReadOnly
+		});
+		CodexAgent agent = new(_fileSystem, _home, _cli, _toml, _json);
+
+		// Act
+		AgentOutcome outcome = agent.Update(new AgentOperationContext(SkillOperationKind.Update, null));
+
+		// Assert
+		outcome.Status.Should().Be(AgentOutcomeStatus.Succeeded,
+			because: "read-only files in a legacy Codex cache should not prevent the toolkit update");
+		_mockFileSystem.Directory.Exists(legacyMarketplace).Should().BeFalse(
+			because: "an ordinary installer-owned marketplace directory should still be removed");
+		_mockFileSystem.Directory.Exists(legacyCache).Should().BeFalse(
+			because: "the installer-owned legacy cache should be removed before reinstalling the plugin");
+	}
+
+	[Test]
+	[Description("Codex update treats a directory reparse point as a leaf while preparing a legacy cache for deletion.")]
+	public void CodexUpdate_ShouldNotTraverseDirectory_WhenDirectoryIsReparsePoint() {
+		// Arrange
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.Combine(Arg.Any<string[]>())
+			.Returns(call => Path.Combine(call.Arg<string[]>()));
+		string codexHome = _home.GetAgentHome("codex");
+		string legacyCache = Path.Combine(codexHome, "plugins", "cache", ToolkitDistribution.MarketplaceName);
+		string linkedDirectory = Path.Combine(legacyCache, "linked-directory");
+		fileSystem.ExistsDirectory(Arg.Any<string>())
+			.Returns(call => string.Equals(call.Arg<string>(), legacyCache, StringComparison.Ordinal));
+		System.IO.Abstractions.IDirectoryInfo cacheInfo =
+			Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		cacheInfo.Attributes.Returns(FileAttributes.Directory);
+		System.IO.Abstractions.IDirectoryInfo linkInfo =
+			Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		linkInfo.Attributes.Returns(FileAttributes.Directory | FileAttributes.ReparsePoint);
+		fileSystem.GetDirectoryInfo(legacyCache).Returns(cacheInfo);
+		fileSystem.GetDirectoryInfo(linkedDirectory).Returns(linkInfo);
+		fileSystem.GetFilesInfos(legacyCache, "*", SearchOption.TopDirectoryOnly)
+			.Returns([]);
+		fileSystem.GetDirectories(legacyCache).Returns([linkedDirectory]);
+		CodexAgent agent = new(fileSystem, _home, _cli, _toml, _json);
+
+		// Act
+		AgentOutcome outcome = agent.Update(new AgentOperationContext(SkillOperationKind.Update, null));
+
+		// Assert
+		outcome.Status.Should().Be(AgentOutcomeStatus.Succeeded,
+			because: "a linked directory should be unlinked by recursive deletion without traversing its target");
+		fileSystem.DidNotReceive().GetFilesInfos(linkedDirectory, "*", SearchOption.TopDirectoryOnly);
+		fileSystem.DidNotReceive().GetDirectories(linkedDirectory);
+		fileSystem.Received(1).DeleteDirectoryIfExists(legacyCache);
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Codex update tolerates a root or child legacy directory disappearing during read-only preparation.")]
+	public void CodexUpdate_ShouldContinueCleanup_WhenDirectoryDisappearsDuringReadOnlyPreparation(
+		bool rootDisappears) {
+		// Arrange
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.Combine(Arg.Any<string[]>())
+			.Returns(call => Path.Combine(call.Arg<string[]>()));
+		string codexHome = _home.GetAgentHome("codex");
+		string legacyCache = Path.Combine(codexHome, "plugins", "cache", ToolkitDistribution.MarketplaceName);
+		string childDirectory = Path.Combine(legacyCache, "concurrently-removed");
+		fileSystem.ExistsDirectory(Arg.Any<string>())
+			.Returns(call => string.Equals(call.Arg<string>(), legacyCache, StringComparison.Ordinal));
+		System.IO.Abstractions.IDirectoryInfo cacheInfo =
+			Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		cacheInfo.Attributes.Returns(FileAttributes.Directory);
+		fileSystem.GetFilesInfos(legacyCache, "*", SearchOption.TopDirectoryOnly)
+			.Returns([]);
+		if (rootDisappears) {
+			fileSystem.GetDirectoryInfo(legacyCache)
+				.Returns(_ => throw new DirectoryNotFoundException(legacyCache));
+		}
+		else {
+			fileSystem.GetDirectoryInfo(legacyCache).Returns(cacheInfo);
+			fileSystem.GetDirectories(legacyCache).Returns([childDirectory]);
+			fileSystem.GetDirectoryInfo(childDirectory)
+				.Returns(_ => throw new DirectoryNotFoundException(childDirectory));
+		}
+		CodexAgent agent = new(fileSystem, _home, _cli, _toml, _json);
+
+		// Act
+		AgentOutcome outcome = agent.Update(new AgentOperationContext(SkillOperationKind.Update, null));
+
+		// Assert
+		outcome.Status.Should().Be(AgentOutcomeStatus.Succeeded,
+			because: "a legacy directory already removed by another installer process is a successful cleanup");
+		fileSystem.Received(1).DeleteDirectoryIfExists(legacyCache);
+	}
+
+	[Test]
+	[Description("Codex update continues preparing sibling files when one legacy cache file disappears.")]
+	public void CodexUpdate_ShouldContinuePreparingSiblings_WhenFileDisappears() {
+		// Arrange
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.Combine(Arg.Any<string[]>())
+			.Returns(call => Path.Combine(call.Arg<string[]>()));
+		string codexHome = _home.GetAgentHome("codex");
+		string legacyCache = Path.Combine(codexHome, "plugins", "cache", ToolkitDistribution.MarketplaceName);
+		string readOnlyFilePath = Path.Combine(legacyCache, "remaining-read-only.idx");
+		fileSystem.ExistsDirectory(Arg.Any<string>())
+			.Returns(call => string.Equals(call.Arg<string>(), legacyCache, StringComparison.Ordinal));
+		System.IO.Abstractions.IDirectoryInfo cacheInfo =
+			Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		cacheInfo.Attributes.Returns(FileAttributes.Directory);
+		System.IO.Abstractions.IFileInfo disappearedFile =
+			Substitute.For<System.IO.Abstractions.IFileInfo>();
+		disappearedFile.Attributes.Returns(_ => throw new FileNotFoundException());
+		System.IO.Abstractions.IFileInfo readOnlyFile =
+			Substitute.For<System.IO.Abstractions.IFileInfo>();
+		readOnlyFile.Attributes.Returns(FileAttributes.ReadOnly);
+		readOnlyFile.FullName.Returns(readOnlyFilePath);
+		fileSystem.GetDirectoryInfo(legacyCache).Returns(cacheInfo);
+		fileSystem.GetFilesInfos(legacyCache, "*", SearchOption.TopDirectoryOnly)
+			.Returns([disappearedFile, readOnlyFile]);
+		fileSystem.GetDirectories(legacyCache).Returns([]);
+		CodexAgent agent = new(fileSystem, _home, _cli, _toml, _json);
+
+		// Act
+		AgentOutcome outcome = agent.Update(new AgentOperationContext(SkillOperationKind.Update, null));
+
+		// Assert
+		outcome.Status.Should().Be(AgentOutcomeStatus.Succeeded,
+			because: "one concurrently removed file should not prevent cleanup of its remaining siblings");
+		fileSystem.Received(1).ResetFileReadOnlyAttribute(readOnlyFilePath);
+		fileSystem.Received(1).DeleteDirectoryIfExists(legacyCache);
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Codex update tolerates its legacy cache disappearing immediately before recursive deletion.")]
+	public void CodexUpdate_ShouldSucceed_WhenLegacyCacheDisappearsBeforeDelete(bool directoryDisappears) {
+		// Arrange
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.Combine(Arg.Any<string[]>())
+			.Returns(call => Path.Combine(call.Arg<string[]>()));
+		string codexHome = _home.GetAgentHome("codex");
+		string legacyCache = Path.Combine(codexHome, "plugins", "cache", ToolkitDistribution.MarketplaceName);
+		fileSystem.ExistsDirectory(Arg.Any<string>())
+			.Returns(call => string.Equals(call.Arg<string>(), legacyCache, StringComparison.Ordinal));
+		System.IO.Abstractions.IDirectoryInfo cacheInfo =
+			Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		cacheInfo.Attributes.Returns(FileAttributes.Directory);
+		fileSystem.GetDirectoryInfo(legacyCache).Returns(cacheInfo);
+		fileSystem.GetFilesInfos(legacyCache, "*", SearchOption.TopDirectoryOnly)
+			.Returns([]);
+		fileSystem.GetDirectories(legacyCache).Returns([]);
+		Exception disappearance = directoryDisappears
+			? new DirectoryNotFoundException(legacyCache)
+			: new FileNotFoundException(null, legacyCache);
+		fileSystem.When(fs => fs.DeleteDirectoryIfExists(legacyCache))
+			.Do(_ => throw disappearance);
+		CodexAgent agent = new(fileSystem, _home, _cli, _toml, _json);
+
+		// Act
+		AgentOutcome outcome = agent.Update(new AgentOperationContext(SkillOperationKind.Update, null));
+
+		// Assert
+		outcome.Status.Should().Be(AgentOutcomeStatus.Succeeded,
+			because: "a legacy cache already removed before deletion is a successful cleanup");
+		_cli.Received().Run("codex", Arg.Is<string[]>(args => args.Contains("add")));
+	}
+
 	// ---- CursorAgent ----
 
 	[Test]

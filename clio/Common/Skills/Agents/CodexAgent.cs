@@ -1,3 +1,5 @@
+using System.IO;
+using System.IO.Abstractions;
 using Clio.Common.Skills;
 
 namespace Clio.Common.Skills.Agents;
@@ -69,10 +71,10 @@ public sealed class CodexAgent(
 	/// </summary>
 	private void CleanLegacyState() {
 		string marketplace = ToolkitDistribution.MarketplaceName;
-		FileSystem.DeleteDirectoryIfExists(FileSystem.Combine(AgentHome, "plugins", "marketplaces", marketplace));
-		FileSystem.DeleteDirectoryIfExists(FileSystem.Combine(AgentHome, "plugins", "cache", marketplace));
-		FileSystem.DeleteDirectoryIfExists(FileSystem.Combine(HomeProvider.GetAgentsDir(), "plugins", ToolkitDistribution.PluginName));
-		FileSystem.DeleteDirectoryIfExists(FileSystem.Combine(AgentHome, "skills", ToolkitDistribution.SkillName));
+		DeleteLegacyDirectoryIfExists(FileSystem.Combine(AgentHome, "plugins", "marketplaces", marketplace));
+		DeleteLegacyDirectoryIfExists(FileSystem.Combine(AgentHome, "plugins", "cache", marketplace));
+		DeleteLegacyDirectoryIfExists(FileSystem.Combine(HomeProvider.GetAgentsDir(), "plugins", ToolkitDistribution.PluginName));
+		DeleteLegacyDirectoryIfExists(FileSystem.Combine(AgentHome, "skills", ToolkitDistribution.SkillName));
 
 		_jsonConfigEditor.RemovePersonalMarketplacePluginEntry(
 			FileSystem.Combine(HomeProvider.GetAgentsDir(), "plugins", "marketplace.json"),
@@ -84,6 +86,58 @@ public sealed class CodexAgent(
 		_tomlConfigEditor.RemovePluginSection(configPath, ToolkitDistribution.PluginName, marketplace);
 		_tomlConfigEditor.RemoveSkillConfigOverride(configPath,
 			$"{ToolkitDistribution.PluginName}:{ToolkitDistribution.SkillName}");
+	}
+
+	private void DeleteLegacyDirectoryIfExists(string path) {
+		try {
+			if (!FileSystem.ExistsDirectory(path)) {
+				return;
+			}
+
+			ClearReadOnlyAttributes(path);
+			FileSystem.DeleteDirectoryIfExists(path);
+		}
+		catch (DirectoryNotFoundException) {
+			// Another installer process already removed this legacy path.
+		}
+		catch (FileNotFoundException) {
+			// Another installer process already removed an entry from this legacy path.
+		}
+	}
+
+	private void ClearReadOnlyAttributes(string path) {
+		try {
+			IDirectoryInfo directory = FileSystem.GetDirectoryInfo(path);
+			if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) {
+				return;
+			}
+
+			foreach (IFileInfo file in FileSystem.GetFilesInfos(path, "*", SearchOption.TopDirectoryOnly)) {
+				try {
+					if ((file.Attributes & (FileAttributes.ReadOnly | FileAttributes.ReparsePoint))
+						== FileAttributes.ReadOnly) {
+						FileSystem.ResetFileReadOnlyAttribute(file.FullName);
+					}
+				}
+				catch (FileNotFoundException) {
+					// Another installer process removed this file; continue with its siblings.
+				}
+			}
+
+			foreach (string childDirectory in FileSystem.GetDirectories(path)) {
+				ClearReadOnlyAttributes(childDirectory);
+			}
+
+			if ((directory.Attributes & FileAttributes.ReadOnly) != 0) {
+				directory.Attributes &= ~FileAttributes.ReadOnly;
+			}
+		}
+		catch (DirectoryNotFoundException) {
+			// A concurrently running installer already removed this directory.
+		}
+		catch (FileNotFoundException) {
+			// A concurrently running installer already removed an entry from this directory.
+		}
 	}
 
 	private string ConfigPath() => FileSystem.Combine(AgentHome, "config.toml");

@@ -38,8 +38,11 @@ DESCRIPTION
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
+      (Money is accepted as an alias for Currency2 — the normal two-decimal Creatio money column;
+      Decimal is accepted as an alias for Decimal2, same as Float)
     - Boolean
-    - Date, DateTime, Time
+    - DateTime (Date and Time are accepted, but are aliases of DateTime: the column is stored as DateTime
+      and read back as DateTime, so date-only or time-only intent is not preserved)
     - Lookup (requires --reference-schema)
     - Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
 
@@ -122,6 +125,10 @@ NOTES
     - For default-value-config source=Settings:
       value-source can be setting code, setting name, or setting id; values are
       normalized to setting code before save
+    - For default-value-config source=Sequence (text columns only):
+      set the static prefix via sequence-prefix (e.g. LN-) or a value mask
+      ending with {0} (e.g. LN-{0} produces LN-00001), not both; masks with
+      static text after {0} are rejected with a validation error
     - If Settings or SystemValue lookup is ambiguous, the command fails with a
       validation error and requests explicit code/Guid input
     - For a lookup column, a Const value is the GUID of a record in the

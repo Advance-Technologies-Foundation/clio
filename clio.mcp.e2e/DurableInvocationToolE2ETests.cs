@@ -11,10 +11,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the durable (forgiving) unmatched-name invocation path (ENG-93370) over the
 /// real MCP server. After the lazy-schema split (PR #743) hid the long tail from <c>tools/list</c>, a
 /// direct <c>tools/call</c> naming a long-tail tool used to dead-end with an opaque "Unknown tool".
-/// The durable handler restores the pre-lazy contract: a non-destructive tool executes with an
-/// advisory note, a destructive tool returns a structured <c>confirmation-required</c> retry shape
-/// (never silently executed), a deprecated alias resolves to its canonical tool, and an unknown name
-/// returns a machine-readable did-you-mean outcome. All cases here are environment-free: they prove
+/// The durable handler restores the pre-lazy contract: a read-only tool executes with an advisory note,
+/// a write-capable tool returns a structured <c>confirmation-required</c> retry shape (never silently
+/// executed — issue #953 moved that gate from <c>destructiveHint</c> to <c>readOnlyHint</c>, so an
+/// additive-only write is gated too), a deprecated alias resolves to its canonical tool, and an unknown
+/// name returns a machine-readable did-you-mean outcome. All cases here are environment-free: they prove
 /// the invocation contract without needing a live Creatio.
 /// </summary>
 [TestFixture]
@@ -26,17 +27,19 @@ public sealed class DurableInvocationToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("E2E")]
-	[Description("A direct tools/call to a NON-DESTRUCTIVE long-tail tool executes through the forgiving handler and carries the model-visible advisory in Content (ENG-93370: the pre-#743 invocation contract is restored).")]
+	[Description("A direct tools/call to a READ-ONLY long-tail tool executes through the forgiving handler and carries the model-visible advisory in Content (ENG-93370: the pre-#743 invocation contract is restored).")]
 	[AllureTag("durable-invocation")]
-	[AllureName("direct long-tail non-destructive call executes with advisory")]
-	public async Task DirectCall_ShouldExecuteWithAdvisory_WhenLongTailToolIsNonDestructive() {
-		// Arrange — `experimental` (list mode, no args) is a long-tail, non-destructive,
-		// environment-free tool: it reads the local feature flags only.
+	[AllureName("direct long-tail read-only call executes with advisory")]
+	public async Task DirectCall_ShouldExecuteWithAdvisory_WhenLongTailToolIsReadOnly() {
+		// Arrange — `check-settings-health` is a long-tail, READ-ONLY, environment-free tool: it inspects the
+		// local appsettings.json bootstrap state. It replaced `experimental` here when the gate moved to
+		// readOnlyHint (issue #953): `experimental` is ReadOnly=false (it can toggle a persisted feature flag),
+		// so it is now gated rather than executed and can no longer prove the execute path.
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act — call it by BARE NAME, exactly as stale static guidance would.
 		CallToolResult callResult = await context.Session.CallToolRawAsync(
-			"experimental",
+			"check-settings-health",
 			new Dictionary<string, object?>(),
 			context.CancellationTokenSource.Token);
 
@@ -47,13 +50,46 @@ public sealed class DurableInvocationToolE2ETests : McpContractFixtureBase {
 		// Note: quotes inside the serialized JSON are '-escaped, so the marker avoids them.
 		serialized.Should().Contain("[clio] Executed",
 			because: "a forgiving execution must teach the agent the advertised clio-run path via a Content advisory");
-		serialized.Should().Contain("exit-code",
+		serialized.Should().Contain("settings-file-path",
 			because: "the tool's own payload must be returned alongside the advisory (it really executed)");
 	}
 
 	[Test]
 	[Category("E2E")]
-	[Description("A direct tools/call to a DESTRUCTIVE long-tail tool is NOT executed: the handler returns a structured confirmation-required outcome with a ready-to-retry clio-run-destructive shape (ENG-93370).")]
+	[Description("A direct tools/call to an ADDITIVE-ONLY write (odata-create: ReadOnly=false, Destructive=false) is NOT executed but answered with confirmation-required — the exact leak issue #953 reported, now closed by gating on write-capability instead of destructiveness.")]
+	[AllureTag("durable-invocation")]
+	[AllureName("direct additive-only write returns confirmation-required, no execution")]
+	public async Task DirectCall_ShouldReturnConfirmationRequired_WhenToolIsAdditiveOnlyWrite() {
+		// Arrange — odata-create is write-capable but NOT destructive. The gate must refuse BEFORE any
+		// execution attempt, so no live environment is needed to prove it (the environment name below is
+		// deliberately non-existent: reaching it at all would itself be the failure).
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolRawAsync(
+			"odata-create",
+			new Dictionary<string, object?> {
+				["environment-name"] = "e2e-nonexistent-env",
+				["collection"] = "Contact",
+				["records"] = new[] { new Dictionary<string, object?> { ["Name"] = "e2e-should-never-be-created" } }
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: "a write-capable tool must never be silently executed from the forgiving path");
+		string serialized = SerializeResult(callResult);
+		serialized.Should().Contain("confirmation-required",
+			because: "the outcome must be machine-readable so the agent can branch on it");
+		serialized.Should().Contain("write-capable",
+			because: "the payload must name write-capability as the reason the call was gated");
+		serialized.Should().NotContain("e2e-should-never-be-created",
+			because: "the retry shape must never echo caller argument VALUES back into the transcript");
+	}
+
+	[Test]
+	[Category("E2E")]
+	[Description("A direct tools/call to a DESTRUCTIVE long-tail tool is NOT executed: the handler returns a structured confirmation-required outcome with a ready-to-retry clio-run shape (ENG-93370).")]
 	[AllureTag("durable-invocation")]
 	[AllureName("direct destructive call returns confirmation-required, no execution")]
 	public async Task DirectCall_ShouldReturnConfirmationRequired_WhenToolIsDestructive() {
@@ -73,7 +109,9 @@ public sealed class DurableInvocationToolE2ETests : McpContractFixtureBase {
 		string serialized = SerializeResult(callResult);
 		serialized.Should().Contain("confirmation-required",
 			because: "the outcome must be machine-readable so the agent can branch on it");
-		serialized.Should().Contain("clio-run-destructive",
+		serialized.Should().NotContain("clio-run-destructive",
+			because: "the retry shape names the CANONICAL executor, not the deprecated clio-run-destructive alias");
+		serialized.Should().Contain("clio-run",
 			because: "the retry shape routes the call through the advertised, host-gated executor");
 		serialized.Should().Contain("correlation-id",
 			because: "every handler outcome carries a correlation id");
