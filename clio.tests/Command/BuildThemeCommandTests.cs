@@ -230,7 +230,6 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 
 		// Assert
 		exitCode.Should().Be(0, because: "a faulted probe is advisory and must never fail the build");
-		// An unverified heading keeps its import (fail-open) and the published body family keeps its own.
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
 			i => i.Fonts.SuppressedImportFamilies.Count == 0));
 		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("could not verify \"Calibri\"")));

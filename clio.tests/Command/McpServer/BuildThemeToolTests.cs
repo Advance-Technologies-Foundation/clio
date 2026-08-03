@@ -24,8 +24,6 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Category("Unit")]
-// The probe-placement canary below holds McpToolExecutionLock's shared fallback monitor while it runs,
-// so this fixture must not execute beside another fixture that takes the same process-wide lock.
 [NonParallelizable]
 [Property("Module", "McpServer")]
 public sealed class BuildThemeToolTests
@@ -649,8 +647,7 @@ public sealed class BuildThemeToolTests
 	[TestCase("localFontFamilies", TestName = "BuildTheme_ShouldRejectRemovedArg_CamelCase")]
 	[TestCase("local_font_families", TestName = "BuildTheme_ShouldRejectRemovedArg_SnakeCase")]
 	public void BuildTheme_ShouldReturnFailure_WhenRemovedLocalFontFamiliesArgSupplied(string wireName) {
-		// Arrange — deserialize through the real MCP serializer so the unknown key lands in ExtensionData,
-		// exactly as the host binds it.
+		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 		BuildThemeArgs args = JsonSerializer.Deserialize<BuildThemeArgs>(
 			$$"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Verdana","{{wireName}}":["Verdana"]}""",
@@ -828,7 +825,6 @@ public sealed class BuildThemeToolTests
 	[TestCase("BodyFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForBodyFont")]
 	public void BuildThemeArgs_ShouldDocumentTheFamilyNameContract(string parameterName) {
 		// Arrange & Act
-		// [property: Description(...)] on a positional record parameter lands on the generated property.
 		PropertyInfo property = typeof(BuildThemeArgs).GetProperty(parameterName);
 		string description = property?.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
 

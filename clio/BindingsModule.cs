@@ -238,12 +238,6 @@ public class BindingsModule {
 		services.AddTransient<IRingDistributionService, RingDistributionService>();
 		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
-		// Google Fonts availability probe. The short timeout is the whole probe budget: the build-theme MCP
-		// tool runs this probe BEFORE taking the shared execution lock (BaseTool's environment-less
-		// ExecuteWithCleanLog uses McpToolExecutionLock.SharedFallbackKey), so a slow probe delays only its
-		// own call. The explicit User-Agent and disabled redirects keep the undocumented metadata endpoint
-		// honest — a consent-page redirect must surface as a non-JSON answer (Unverified), never as InCatalog. The verdict memo is a singleton so it survives across
-		// CLI/MCP calls (the typed probe client below is transient) — same shape as ICurrentUserCultureCache.
 		services.AddSingleton<Clio.Theming.IGoogleFontsAvailabilityCache, Clio.Theming.GoogleFontsAvailabilityCache>();
 		services.AddHttpClient<Clio.Theming.IGoogleFontsCatalog, Clio.Theming.GoogleFontsCatalog>()
 			.ConfigureHttpClient(client => {
@@ -251,9 +245,6 @@ public class BindingsModule {
 				client.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
 			})
 			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
-				// The factory pools this primary handler, so a consent/NID cookie set by fonts.google.com would
-				// be replayed on every later probe by every caller. The probe reads only the status line and the
-				// content type, so it never needs a cookie jar.
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
@@ -1115,7 +1106,6 @@ public class BindingsModule {
 			}
 		}
 	}
-	
 	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();

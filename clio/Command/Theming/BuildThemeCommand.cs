@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -95,6 +96,8 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	private readonly IGoogleFontsCatalog _googleFontsCatalog;
 
 	/// <summary>Initializes the command with the theme builder, template provider, version resolver, settings repository, workspace path builder, file system, logger, and Google Fonts catalog.</summary>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Command composes its required collaborators (css builder, template provider, version resolver, settings repository, workspace path builder, file system, logger, fonts catalog) via constructor injection; splitting them would add an artificial parameter object without behavioral benefit.")]
 	public BuildThemeCommand(IThemeCssBuilder themeCssBuilder, IThemeTemplateProvider themeTemplateProvider,
 		IPlatformVersionResolverFactory resolverFactory, ISettingsRepository settingsRepository,
 		IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem, ILogger logger,
@@ -232,6 +235,8 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <see langword="null"/> makes this method probe on its own.
 	/// </param>
 	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when validation, build, or write fails.</returns>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Mirrors the by-name workspace-write overload (options, target directory, target package, three outs) and adds the pre-probed font verdicts the MCP tool resolves outside its execution lock; a parameter object would only rename the same inputs.")]
 	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string workspaceDirectory, string packageName,
 		out string outputPath, out IReadOnlyList<string> warnings, out string error,
 		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability = null) {
@@ -434,8 +439,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
 	}
 
-	// Shared by the build and by the pre-build prepare step, so both reject an ambiguous version source at
-	// the same point in the order regardless of which one the caller enters through.
 	private static void RejectAmbiguousVersionSource(BuildThemeOptions options) {
 		if (!string.IsNullOrWhiteSpace(options.Version) && !string.IsNullOrWhiteSpace(options.EnvironmentName)) {
 			throw new ArgumentException(
@@ -502,10 +505,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return true;
 	}
 
-	// One canonical spelling per family: the availability probe, the css2 URL, the CSS font-family token
-	// and the memo cache must all see the same name, so internal whitespace runs collapse here — the
-	// css2 URL builder collapses them anyway, and "Open  Sans" probed verbatim would 404 while the
-	// emitted import serves "Open Sans".
 	private static string NormalizeFamily(string family) {
 		return string.IsNullOrWhiteSpace(family)
 			? family
@@ -534,12 +533,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		};
 	}
 
-	// One probe per ordinal-distinct requested family; the result drives BOTH the import decision
-	// (NotInCatalog suppresses the @import — css2 serves a substitute file even for families the
-	// catalog does not publish, and that substitute shadows the locally installed font) AND the
-	// warning. Probes run concurrently; each is bounded by the typed client's ProbeTimeout, and a
-	// task that still failed unexpectedly degrades that family alone to Unverified — an advisory
-	// probe must never fail the build.
 	/// <summary>
 	/// Probes Google Fonts availability for the families requested in <paramref name="options"/>, keyed by
 	/// their normalized spelling. Families are normalized here too, so raw options are fine — the pre-lock
@@ -554,8 +547,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (families.Length == 0) {
 			return availability;
 		}
-		// Validate BEFORE probing: an invalid family must fail with the same INVALID_FONT_FAMILY error the
-		// builder would raise, without first leaking the raw string into an outbound URL path.
 		foreach (string family in families) {
 			FontImportBuilder.ValidateFamily(family);
 		}
@@ -563,23 +554,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			family => family,
 			family => _googleFontsCatalog.LookupAsync(family, CancellationToken.None),
 			StringComparer.Ordinal);
-		// Settle every probe WITHOUT rethrowing, instead of wrapping the wait in a catch-all: catch (Exception)
-		// here would violate the no-bare-catch rule / S2221 the sibling build-theme MCP tool narrows its own
-		// catch for — an unexpected fault in the component that decides whether a remote font is trusted enough
-		// to @import must not be masked. A catch is unnecessary anyway: the verdict loop below already degrades
-		// every non-successful probe to Unverified, and AddGoogleFontsAvailabilityWarnings reports that on the
-		// returned warnings channel the CLI prints AND the MCP tool returns as warnings[] — where a bare ILogger
-		// advisory would be invisible, since ConsoleLogger suppresses console output in MCP server mode.
-		// ExecuteSynchronously so an already-completed set of probes (every cache hit) settles on this thread
-		// instead of queueing a work item the caller then blocks on.
-		Task.WhenAll(probes.Values).ContinueWith(
-			static settled => {
-				// Reading settled.Exception observes the fault so it never surfaces as an UnobservedTaskException.
-				_ = settled.Exception;
-			},
-			CancellationToken.None,
-			TaskContinuationOptions.ExecuteSynchronously,
-			TaskScheduler.Default).GetAwaiter().GetResult();
+		WaitUntilEveryProbeSettledObservingFaults(probes.Values);
 		foreach (KeyValuePair<string, Task<GoogleFontAvailability>> probe in probes) {
 			availability[probe.Key] = probe.Value.IsCompletedSuccessfully
 				? probe.Value.Result
@@ -588,7 +563,24 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return availability;
 	}
 
-	private IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
+	/// <summary>
+	/// Blocks until every probe has settled, observing any fault so it is neither rethrown here nor raised
+	/// later as an unobserved task exception. A faulted probe is not an error for the caller: the verdict loop
+	/// degrades that family alone to <see cref="GoogleFontAvailability.Unverified"/>, because an advisory probe
+	/// must never fail the build. The continuation runs synchronously so an already-completed set (every cache
+	/// hit) settles on this thread instead of queueing a work item the caller then waits on.
+	/// </summary>
+	private static void WaitUntilEveryProbeSettledObservingFaults(
+		IEnumerable<Task<GoogleFontAvailability>> probes) {
+
+		Task.WhenAll(probes).ContinueWith(
+			static settled => _ = settled.Exception,
+			CancellationToken.None,
+			TaskContinuationOptions.ExecuteSynchronously,
+			TaskScheduler.Default).GetAwaiter().GetResult();
+	}
+
+	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {
 		List<string> warnings = [];
 		if (FontWeightsWithoutFamily(options)) {
@@ -621,8 +613,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		}
 	}
 
-	// Normalizes here as well as in TryNormalizeOptions, so the probe yields the same keys whether it runs
-	// early (MCP tool, outside the lock, on raw options) or inside the build on already-normalized options.
 	private static IEnumerable<string> RequestedFamilies(BuildThemeOptions options) {
 		return new[] { NormalizeFamily(options.HeadingFont), NormalizeFamily(options.BodyFont) }
 			.Where(family => !string.IsNullOrWhiteSpace(family))

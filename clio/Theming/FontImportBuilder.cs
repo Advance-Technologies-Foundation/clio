@@ -16,10 +16,6 @@ internal sealed record FontFamilyEntry(string Family, IReadOnlyList<int> Weights
 /// </summary>
 internal static class FontImportBuilder {
 
-	// Mirrors the css-class-name cap; real Google Fonts family names stay far below it, and the cap
-	// bounds what a caller can push into the probe URL and the process-lifetime availability cache.
-	// GoogleFontsCatalog enforces the same bound at its own public boundary, so the invariant does not
-	// depend on a caller validating first.
 	internal const int MaxFamilyLength = 100;
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);

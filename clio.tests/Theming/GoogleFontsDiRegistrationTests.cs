@@ -27,9 +27,6 @@ namespace Clio.Tests.Theming;
 [Property("Module", "Theming")]
 public sealed class GoogleFontsDiRegistrationTests {
 
-	// [NonParallelizable]: both tests save/restore the process-wide SettingsRepository.FileSystem, and the
-	// assembly runs fixtures in parallel — an interleaved fixture would capture another one's mock as the
-	// "original" and leak it into the rest of the run.
 	[Test]
 	[Description("Resolves ONE availability cache for the whole container (across root and scopes) while each catalog resolution is a fresh transient typed client sharing it.")]
 	public void Container_Should_ShareSingletonAvailabilityCache_AcrossTransientCatalogs() {
@@ -79,7 +76,6 @@ public sealed class GoogleFontsDiRegistrationTests {
 
 			// Act
 			using ServiceProvider provider = services.BuildServiceProvider();
-			// AddHttpClient<TClient, TImplementation> names the typed client after TClient's short name.
 			using HttpClient client = provider.GetRequiredService<IHttpClientFactory>()
 				.CreateClient(nameof(IGoogleFontsCatalog));
 			HttpMessageHandler primaryHandler = PrimaryHandlerOf(provider

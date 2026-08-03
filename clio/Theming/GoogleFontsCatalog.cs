@@ -36,8 +36,6 @@ public sealed class GoogleFontsAvailabilityCache(TimeProvider timeProvider) : IG
 
 	private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-	// Hard bound on the map: family spellings are caller-supplied and every case/whitespace variant is a
-	// distinct ordinal key, so lazy expiry alone would let a long-lived MCP server grow without limit.
 	private const int MaxEntries = 512;
 
 	private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -50,9 +48,6 @@ public sealed class GoogleFontsAvailabilityCache(TimeProvider timeProvider) : IG
 				availability = entry.Availability;
 				return true;
 			}
-			// Lazy eviction: drops this key on an expired read. It bounds re-probing, not map size —
-			// a family probed once and never asked about again would linger, which is what the
-			// MaxEntries sweep in Store handles.
 			_entries.TryRemove(family, out _);
 		}
 		availability = GoogleFontAvailability.Unverified;
@@ -71,8 +66,6 @@ public sealed class GoogleFontsAvailabilityCache(TimeProvider timeProvider) : IG
 		if (_entries.Count >= MaxEntries && !_entries.ContainsKey(family)) {
 			SweepExpired(now);
 			if (_entries.Count >= MaxEntries) {
-				// At capacity with nothing to reclaim: skip memoizing rather than grow. The probe still
-				// answers; only the saved round trip is lost.
 				return;
 			}
 		}
@@ -117,7 +110,12 @@ public sealed class GoogleFontsCatalog(HttpClient httpClient, IGoogleFontsAvaila
 	/// </summary>
 	internal static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(3);
 
-	private const string FamilyMetadataUrl = "https://fonts.google.com/metadata/fonts/";
+	private const string MetadataHost = "fonts.google.com";
+
+	private const string MetadataPath = "metadata/fonts/";
+
+	private static readonly string FamilyMetadataUrl =
+		new UriBuilder(Uri.UriSchemeHttps, MetadataHost) { Path = MetadataPath }.Uri.ToString();
 
 	private readonly HttpClient _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 	private readonly IGoogleFontsAvailabilityCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -127,14 +125,7 @@ public sealed class GoogleFontsCatalog(HttpClient httpClient, IGoogleFontsAvaila
 		if (string.IsNullOrWhiteSpace(family)) {
 			return GoogleFontAvailability.Unverified;
 		}
-		// Self-canonicalizing: the exact-match endpoint 404s an un-collapsed "Open  Sans", so the
-		// probe spelling and the cache key must not depend on callers normalizing first.
 		string key = FontImportBuilder.CollapseWhitespace(family.Trim());
-		// Self-bounding for the same reason: the family grammar and 100-character cap are enforced
-		// here, at the only entry point, so no caller of the public interface can push an arbitrary
-		// string into the outbound probe URL or pin one in the process-lifetime cache — the bound
-		// must not depend on every caller validating first. The probe is advisory, so an invalid
-		// family is Unverified rather than a throw; the builder still rejects it as INVALID_FONT_FAMILY.
 		if (!FontImportBuilder.IsValidFamily(key)) {
 			return GoogleFontAvailability.Unverified;
 		}
@@ -148,8 +139,6 @@ public sealed class GoogleFontsCatalog(HttpClient httpClient, IGoogleFontsAvaila
 
 	private async Task<GoogleFontAvailability> ProbeAsync(string family, CancellationToken cancellationToken) {
 		try {
-			// Headers suffice for the verdict (status + Content-Type); skipping the body download keeps
-			// the probe well inside its 3 s budget on slow links.
 			using HttpResponseMessage response = await _httpClient
 				.GetAsync(FamilyMetadataUrl + Uri.EscapeDataString(family), HttpCompletionOption.ResponseHeadersRead, cancellationToken)
 				.ConfigureAwait(false);
@@ -162,7 +151,6 @@ public sealed class GoogleFontsCatalog(HttpClient httpClient, IGoogleFontsAvaila
 		} catch (HttpRequestException) {
 			return GoogleFontAvailability.Unverified;
 		} catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-			// The client's own ProbeTimeout elapsed — a budget expiry, not a caller cancellation.
 			return GoogleFontAvailability.Unverified;
 		}
 	}

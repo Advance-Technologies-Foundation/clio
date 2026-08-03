@@ -52,10 +52,6 @@ public sealed class BuildThemeTool(
 
 	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
-	// local-font-families was removed in ENG-93985: availability is probed automatically now.
-	// BuildLegacyAliasError below would already reject the key as an unknown argument; this pre-check runs
-	// first so the caller gets a migration message naming the replacement — pass the family as heading-font
-	// or body-font and read the warnings — instead of a generic unknown-argument list.
 	private static readonly string[] RemovedLocalFontFamiliesKeys =
 		["local-font-families", "localFontFamilies", "local_font_families"];
 
@@ -131,16 +127,6 @@ public sealed class BuildThemeTool(
 			EnvironmentName = args.EnvironmentName
 		};
 		EnvironmentSettings resolvedSettings = ResolveVersionSettings(args, out string environmentFallbackWarning);
-		// The Google Fonts probe runs BEFORE the lock. ExecuteWithCleanLog's environment-less overload takes
-		// the SHARED fallback key, so anything slow inside it serializes every other environment-less tool;
-		// the probe can spend its whole ProbeTimeout budget on a firewalled host, and an Unverified verdict is
-		// deliberately never cached, so it would re-pay that cost on every call. The verdicts are passed into
-		// the build, not merely pre-warmed, for exactly that reason. TryResolveFontAvailability runs the
-		// request's SHAPE validation first — css-class-name and the version/environment pair — so error
-		// precedence is unchanged for those. It is not a full pre-flight: colour parsing and the
-		// workspace/package existence checks still happen inside the build, so those requests do probe before
-		// failing. NOT hoisted either: the tenant version probe inside TryBuildTheme (ResolveVersion ->
-		// IPlatformVersionResolver) still runs under the shared lock — pre-existing behaviour, untouched.
 		if (!command.TryResolveFontAvailability(options, out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out string prepareError)) {
 			return BuildThemeResult.Failure(prepareError);
 		}
