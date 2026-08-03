@@ -1520,7 +1520,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionDelete() {
 		return new ToolContractDefinition(
 			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
-			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
+			"Deletes a section from an existing installed application and returns structured readback of the deleted section. Removes the section ITSELF, so it disappears from every workplace it was placed in.",
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
@@ -1575,7 +1575,12 @@ internal static class ToolContractCatalog {
 					],
 					"Use this shorter flow when the target app is already known and inspected.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"delete-app-section to take a section out of ONE workplace",
+					"This deletes the SysModule record and every SysModuleInWorkplace placement, so the section disappears from every workplace. To remove a section from a single workplace, delete only that SysModuleInWorkplace row and update its data binding — call get-guidance with name 'workplaces' first.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationSectionGetList() {

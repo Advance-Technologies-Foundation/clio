@@ -37,10 +37,18 @@ public sealed class HomePageGuidanceResource {
 
 		       ## Flow
 
-		       1. Agree the widget set. When the user's request does not name a concrete set of widgets, propose
-		          widgets that suit the home page's subject and get the user's approval BEFORE calling `create-page`
-		          — no mutation until the set is approved; iterate on the proposal until it is. Skip the proposal
-		          only when the user explicitly delegates the choice.
+		       1. Agree the widget set AND the target workplace, in the same turn, BEFORE any mutation.
+		          - Widgets: when the user's request does not name a concrete set, propose widgets that suit the
+		            home page's subject and get approval; iterate until it is approved. Skip the proposal only when
+		            the user explicitly delegates the choice.
+		          - Placement and audience: a home page nobody can reach is not done, so settle this BEFORE
+		            `create-page` — creating the page first and only then asking means you mutated before the
+		            decision. `odata-read` `SysWorkplace` (`Id`, `Name`, `HomePageUId`); if the user named no
+		            workplace, present the `Name` list marking which already have a home page (binding REPLACES
+		            it), and offer creating a NEW workplace named for the app — recommend that when the page
+		            belongs to an app being scaffolded. Also settle who should see it: the page's audience is the
+		            audience of the workplace you bind it to (see Access / roles). `workplaces` owns workplace
+		            creation and the elicitation script. Step 5 then only applies the answer.
 		       2. `create-page` with `template` = `BaseHomePage`, a `schema-name` (active prefix, e.g.
 		          `UsrMyHomePage`), and the target `package-name`. Capture the returned `schemaUId` — that UId is
 		          the value you bind in step 6. `create-page` assigns the home-page schema group automatically
@@ -75,12 +83,13 @@ public sealed class HomePageGuidanceResource {
 		          a. `odata-update` `SysWorkplace` with `id` = the workplace `Id`,
 		             `data` = `{"HomePageUId":"<page schemaUId from step 2>"}`, `confirm` = true. This updates the
 		             live workplace row (matched by `Id`).
-		          b. `create-data-binding-db` (schema `SysWorkplace`, your `package`) with
-		             `rows` = `[{"values":{"Id":"<workplace-id>","HomePageUId":"<page schemaUId from step 2>"}}]`.
-		             The row already exists, so create ADOPTS it by `Id` into the binding (no duplicate insert; it
-		             does not re-write the row) and the package ships the row with its `HomePageUId`. Include
-		             `HomePageUId` in the row so that column is part of the binding projection. Read `data-bindings`
-		             for the tool contract.
+		          b. Ship the workplace row so `HomePageUId` transfers. Use `upsert-data-binding-row-db` when the
+		             workplace binding already exists (it does if the workplace was created per `workplaces`), and
+		             `create-data-binding-db` only for its FIRST bind. Pass an EXPLICIT `binding-name` (e.g.
+		             `SysWorkplace_Todo`) and the FULL `SysWorkplace` column set including `HomePageUId` — that
+		             column set, why `binding-name` must never be omitted, and why a row carrying only
+		             `Id` + `HomePageUId` breaks on the next environment are all owned by `workplaces` → Ship every
+		             change as a data binding. Read it before writing, and `data-bindings` for the tool contract.
 		       7. Read `SysWorkplace.HomePageUId` back with `odata-read` to confirm the value; do not treat the
 		          install log as proof.
 

@@ -497,7 +497,7 @@ public sealed class ApplicationSectionDeleteTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionDeleteToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Deletes the section ITSELF, so it disappears from EVERY workplace. NOT the tool for taking a section out of one workplace — for that call get-guidance name=workplaces. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
 		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (all required)")]
 		[Required]

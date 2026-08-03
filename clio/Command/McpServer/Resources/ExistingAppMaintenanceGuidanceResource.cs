@@ -25,7 +25,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For section creation in an existing app, prefer `list-apps -> get-app-info -> create-app-section -> get-app-info`.
 			       - For section metadata updates in an existing app, prefer `list-apps -> get-app-info -> update-app-section`.
 			       - For listing sections of an existing app, prefer `list-apps -> get-app-info -> list-app-sections`.
-			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
+			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`. That removes the section ITSELF, from every workplace it was placed in; to take it out of ONE workplace and keep it elsewhere, call `get-guidance` with `name` set to `workplaces` instead.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
 			       - The application tools (`create-app-section`, `update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`) are long-running backend calls that stream `notifications/progress`. Await completion; a progress notification is not a stall, so do not cancel/retry or fall back to raw SQL or manual UI on a perceived client timeout.

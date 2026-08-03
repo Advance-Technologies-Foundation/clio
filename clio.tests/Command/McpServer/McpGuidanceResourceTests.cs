@@ -38,6 +38,13 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain the canonical app-creation entry point");
 		article.Text.Should().Contain("create-app-section",
 			because: "the guide should explain the canonical existing-app section creation entry point");
+		// A scaffolded app lands in a workplace most users cannot see, so placement must be elicited (ENG-88474).
+		article.Text.Should().Contain("GATE — navigation placement and audience",
+			because: "app-modeling is the entry point an agent reads first, so the placement gate has to fire there");
+		article.Text.Should().Contain("STOP after `create-app`",
+			because: "the gate is only real if the agent stops mutating rather than merely mentioning workplaces");
+		article.Text.Should().Contain("does not satisfy this gate",
+			because: "an agent must not be able to discharge the gate by summarising instead of asking");
 		article.Text.Should().Contain("update-app-section",
 			because: "the guide should explain the canonical existing-section metadata update entry point");
 		article.Text.Should().Contain("Canonical new-app entity flow",
@@ -2435,8 +2442,12 @@ public sealed class McpGuidanceResourceTests {
 		// that every write needs one makes it pass an argument the contract does not accept.
 		article.Text.Should().Contain("accepts no `confirm`",
 			because: "the guide must state that odata-create is ungated rather than gating every write");
-		article.Text.Should().Contain("require `confirm=true`",
-			because: "the guide must still gate the genuinely destructive update/delete/remove-binding calls");
+		article.Text.Should().Contain("`odata-update` and `odata-delete` ARE destructive and require `confirm=true`",
+			because: "the guide must gate the two odata tools that actually expose a confirm argument");
+		article.Text.Should().Contain("accepts NO `confirm` argument either",
+			because: "remove-data-binding-row-db has no confirm parameter, so the agent must not expect a server-side gate");
+		article.Text.Should().Contain("DELETES THE LIVE RECORD",
+			because: "remove-data-binding-row-db deletes the record itself, and an agent told only about the binding will destroy data");
 
 		// Filter shape: the scalar column silently returns nothing on a junction table.
 		article.Text.Should().Contain("SysWorkplace/Id",
@@ -2466,10 +2477,52 @@ public sealed class McpGuidanceResourceTests {
 		// Lab-verified rules that produce silent wrong results when forgotten.
 		article.Text.Should().Contain("NO unique constraint",
 			because: "adding a section already present in the target creates a duplicate");
-		article.Text.Should().Contain("assigned by the server on write",
-			because: "the Position value the caller sends is not honoured, so it must be read back");
+		article.Text.Should().Contain("`Position` is unstable on BOTH tables, for different reasons",
+			because: "SysModuleInWorkplace discards the sent value while SysWorkplace keeps it but gets renumbered, and conflating the two teaches a wrong rule");
 		article.Text.Should().Contain("00000000-0000-0000-0000-000000000000",
 			because: "a zero-GUID junction link inserts and reads back while binding nothing");
+		article.Text.Should().Contain("codes are NOT unique",
+			because: "SysModule.Code resolves to more than one row, and a wrong-but-real Id passes the zero-GUID check");
+
+		// A binding ships only the columns that were passed, and install applies no database defaults, so a
+		// workplace bound without its client type installs on the next environment and never renders.
+		article.Text.Should().Contain("A binding ships ONLY the columns you passed",
+			because: "the binding projection rule is the difference between a transferable workplace and a dead one");
+		article.Text.Should().Contain("`Id`, `Name`, `Position`, `SysApplicationClientType`, `Type`, `LoaderId`",
+			because: "a SysWorkplace binding missing any of these platform-set columns installs a workplace with no client type on the target environment");
+		article.Text.Should().Contain("get them by READ-BACK",
+			because: "the guide demands Type/LoaderId/client-type values, so it must say where an agent obtains them");
+		article.Text.Should().Contain("IsForceUpdate: false",
+			because: "the caller must know a corrected package cannot repair a row that already exists on the target");
+
+		// Navigation is cached: reporting success without telling the user to re-login reads as a false done.
+		article.Text.Should().Contain("log out and back in",
+			because: "a signed-in user keeps seeing the old navigation, so the agent must say a re-login is needed");
+		article.Text.Should().Contain("a browser refresh is not enough",
+			because: "a refresh was verified insufficient, so the guide must not let the agent promise it");
+
+		// Audience is a security decision and a new workplace has no grant at all.
+		article.Text.Should().Contain("NARROWEST role",
+			because: "role visibility decides who reaches the data, so the guide must push least privilege instead of a blanket role");
+
+		// The junction binding cannot reference a workplace row that is not itself bound in the package.
+		article.Text.Should().Contain("must already have its OWN",
+			because: "moving a section fails at the binding step unless the target workplace is bound first");
+		article.Text.Should().Contain("Data is not bound for connected object",
+			because: "the guide must carry the opaque SaveSchema error so it can be matched to the cause");
+
+		// Leaving the My applications bindings behind ships an empty workplace to every target environment, but
+		// removing them deletes a workplace shared by every other custom app on that environment.
+		article.Text.Should().Contain("`SysWorkplace_MyApps` and `SysAdminUnitInWorkplace_MyApps`",
+			because: "the guide must name the exact bindings create-app ships instead of a derived example");
+		article.Text.Should().Contain("Do NOT reflexively \"clean that up\"",
+			because: "remove-data-binding-row-db deletes the live My applications row, cascading every other app's placements");
+		article.Text.Should().Contain("`My applications` is SHARED",
+			because: "the blast radius of deleting that workplace is other apps, which the agent cannot see from its own package");
+
+		// remove-data-binding-row-db needs a binding name that only SysPackageSchemaData can supply.
+		article.Text.Should().Contain("`remove-data-binding-row-db` REQUIRES `binding-name`",
+			because: "step 1's SysPackageSchemaData read exists only because the remove tool cannot run without the binding name");
 
 		// Mandatory cross-links: each of these concepts is owned by another guide.
 		article.Text.Should().Contain("core-rules",
@@ -2509,18 +2562,34 @@ public sealed class McpGuidanceResourceTests {
 	public void WorkplaceModel_ShouldHaveExactlyOneOwner_AcrossAdjacentGuides() {
 		// Arrange
 		HomePageGuidanceResource homePageResource = new();
+		WorkplacesGuidanceResource workplacesResource = new();
+		AppModelingGuidanceResource appModelingResource = new();
 
 		// Act
 		TextResourceContents homePage = homePageResource.GetGuide().Should().BeOfType<TextResourceContents>(
 			because: "the home-page guide should remain a plain-text resource").Subject;
+		TextResourceContents workplaces = workplacesResource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the workplaces guide should remain a plain-text resource").Subject;
+		TextResourceContents appModeling = appModelingResource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the app-modeling guide should remain a plain-text resource").Subject;
 
 		// Assert
+		workplaces.Text.Should().Contain("`Id`, `Name`, `Position`, `SysApplicationClientType`, `Type`, `LoaderId`",
+			because: "workplaces is the single owner of the SysWorkplace binding column set");
 		homePage.Text.Should().Contain("`workplaces`",
 			because: "the home-page guide must route workplace creation and section membership to the owner");
 		// The home-page guide owns HomePageUId, so it keeps the unset recipe; it must not re-teach the model.
 		homePage.Text.Should().Contain("HomePageUId",
 			because: "home-page remains the owner of the workplace home-page column");
-		homePage.Text.Should().NotContain("clio has no tool to create one",
-			because: "the stale no-tool claim was superseded when the workplaces guide took ownership");
+		homePage.Text.Should().NotContain("has no tool to",
+			because: "the stale no-tool claims were superseded when the workplaces guide took ownership");
+		homePage.Text.Should().NotContain("\"SysApplicationClientType\":",
+			because: "duplicating the binding column set in home-page lets the two guides drift into teaching different, silently-broken bindings");
+		homePage.Text.Should().NotContain("`LoaderId`",
+			because: "LoaderId belongs to the workplaces column set, which home-page must cross-link rather than restate");
+		appModeling.Text.Should().Contain("name` set to `workplaces",
+			because: "app-modeling must route placement to the owner instead of restating the three-table model");
+		appModeling.Text.Should().NotContain("SysAdminUnitInWorkplace",
+			because: "the app-modeling gate must stay a trigger plus pointer, not a copy of the workplaces model");
 	}
 }

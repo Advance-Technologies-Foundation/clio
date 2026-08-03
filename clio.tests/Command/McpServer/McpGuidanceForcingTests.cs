@@ -38,7 +38,7 @@ public sealed class McpGuidanceForcingTests {
 		"core-rules", "routing", "page-modification",
 		"page-modification-overview", "page-modification-field-contract", "page-modification-containers", "page-modification-components",
 		"business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "dashboard-and-home-page-layout", "indicator-widget",
-		"app-modeling", "esq", "esq-filters", "data-bindings", "desktop-page"
+		"app-modeling", "esq", "esq-filters", "data-bindings", "desktop-page", "workplaces"
 	];
 
 	private static string ToolDescription<TTool>() {
@@ -46,6 +46,23 @@ public sealed class McpGuidanceForcingTests {
 			.GetMethods(BindingFlags.Public | BindingFlags.Instance)
 			.Single(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null);
 		return toolMethod.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("delete-app-section advertises that it removes the section from every workplace and routes single-workplace removal to the workplaces guide (ENG-88474).")]
+	public void SectionDeleteToolDescription_ShouldRouteSingleWorkplaceRemoval_ToWorkplacesGuide() {
+		// Arrange
+		string description = ToolDescription<ApplicationSectionDeleteTool>();
+
+		// Act
+		bool namesEveryWorkplace = description.Contains("EVERY workplace");
+
+		// Assert
+		namesEveryWorkplace.Should().BeTrue(
+			because: "the tool deletes the SysModule plus every placement, so its own description must say the section disappears everywhere");
+		description.Should().Contain("workplaces",
+			because: "an agent asked to remove a section from one workplace must be routed to the workplaces guide instead of this tool");
 	}
 
 	// ---- Pt 1: router ----

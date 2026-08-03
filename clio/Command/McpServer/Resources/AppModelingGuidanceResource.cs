@@ -43,7 +43,7 @@ public sealed class AppModelingGuidanceResource {
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
 			       - For seeding or reading Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
-			       - A newly created app registers its section in the default `My applications` workplace, so it does not appear where users expect until it is moved. For where a section or home page belongs, who sees it, and how to move it, call `get-guidance` with `name` set to `workplaces`.
+			       - GATE — navigation placement and audience. `create-app` registers the section in the `My applications` workplace, which most users cannot see, so the app is not where users expect it. WHERE it belongs and WHO should see it are the USER's decisions, not yours: when the request names neither, STOP after `create-app` and call `get-guidance` with `name` set to `workplaces` for the elicitation script and the binding rules, then ask, before any further navigation write. Mentioning workplaces in a summary does not satisfy this gate; the user has to choose.
 
 			       Discovery before invocation
 			       - Always read the executable contract through `get-tool-contract` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
