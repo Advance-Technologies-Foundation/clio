@@ -6,6 +6,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -60,6 +61,30 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		containerBuilder.AddTransient<ISettingsRepository>(_ => _settingsRepository);
 		containerBuilder.AddTransient<IFileSystem>(_ => _fileSystem);
 		containerBuilder.AddTransient<ILogger>(_ => _logger);
+	}
+
+	[Test, Category("Unit")]
+	[Description("No build advisory contains anything the sensitive-text redactor would rewrite. The advisories travel verbatim onto the create-theme MCP result — the one string channel there that is not redacted — so this must stay true even when every caller-controlled field is filled with redactor-tripping text.")]
+	public void CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite() {
+		// Arrange
+		BuildThemeOptions options = new() {
+			Primary = "#7b1fa2",
+			CssClassName = "MyTheme",
+			Caption = "https://tenant.example/theme?password=hunter2",
+			Id = "https://tenant.example/id",
+			FontWeights = [400, 700],
+			Output = "C:/Users/someone/themes"
+		};
+
+		// Act
+		_command.TryBuildTheme(options, out _, out _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		error.Should().BeNull(because: "the inputs are valid; only the advisories are under test");
+		warnings.Should().NotBeEmpty(
+			because: "the arrangement deliberately triggers the font-weights and auto-accent advisories, or this test would pass vacuously");
+		warnings.Should().OnlyContain(warning => SensitiveErrorTextRedactor.Redact(warning) == warning,
+			because: "an advisory the redactor would rewrite is one carrying a URI, path or credential — and the create-theme result forwards advisories unredacted");
 	}
 
 	private static BuildThemeOptions ValidOptions() => new() {

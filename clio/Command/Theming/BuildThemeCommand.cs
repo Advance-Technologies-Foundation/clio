@@ -441,6 +441,14 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		};
 	}
 
+	/// <summary>
+	/// Collects the non-fatal build advisories. These travel verbatim onto the <c>create-theme</c> MCP result,
+	/// which is the one string channel there that is NOT passed through
+	/// <see cref="Clio.Command.McpServer.SensitiveErrorTextRedactor"/> — the error channel beside it is. Every advisory
+	/// added here must therefore be static text or a locally computed value: never an environment setting, a
+	/// path, a URI, or unvalidated caller input. <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c>
+	/// fails the moment one does.
+	/// </summary>
 	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options) {
 		List<string> warnings = [];
 		if (FontWeightsWithoutFamily(options)) {

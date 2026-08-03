@@ -1108,6 +1108,8 @@ public class CreateThemeToolTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "an explicit version plus an environment-name is a valid brand-mode request — the environment reaches the build only as resolvedSettings, so the command's 'mutually exclusive' guard cannot trip");
+		result.Warnings.Should().BeNull(
+			because: "a build that raised no advisories must omit the warnings key entirely rather than emit an empty array the agent has to interpret");
 		build.TemplateProvider.Received(1).GetCssTemplate("10.0");
 		build.ResolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
 		commandResolver.DidNotReceive().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
@@ -1204,6 +1206,8 @@ public class CreateThemeToolTests {
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a failed build must refuse the create");
+		result.Warnings.Should().BeNull(
+			because: "the build failed before raising any advisory, so the failure must not carry an empty warnings array");
 		result.Error.Should().StartWith("theme-build-failed: COLOR_INVALID:",
 			because: "the build failed locally before any HTTP call, so the code-prefixed message embeds the build error text");
 		result.Error.Should().Contain("[redacted-uri]",
