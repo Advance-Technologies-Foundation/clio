@@ -147,7 +147,8 @@ public sealed class ApplicationSectionCreateService(
 	ILogger logger,
 	ICaptionCultureResolver captionCultureResolver,
 	ISectionCreateSerializationGuard sectionCreateSerializationGuard,
-	Action<TimeSpan>? contentionDelay = null)
+	Action<TimeSpan>? contentionDelay = null,
+	Func<long>? recoveryTimestampProvider = null)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -170,13 +171,14 @@ public sealed class ApplicationSectionCreateService(
 	// The progress heartbeat (ENG-91274) does not rescue this: clients such as GitHub Copilot CLI
 	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
 	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
-	// call (90 s) and each post-timeout recovery readback HTTP call (30 s). The recovery readback is POLLED
-	// with a bounded backoff (~30 s of inter-attempt sleeps across TimeoutRecoveryVerifyAttempts attempts)
-	// rather than a single immediate check, so a section that commits shortly after the insert budget expired is
-	// recovered as a success instead of a spurious failure (ENG-94419); under normal (sub-second) verify latency
-	// this keeps clio under the observed 180 s ceiling on the CLI/no-override path (the MCP path passes a large
-	// insert override, so it returns its in-progress envelope on the response deadline long before this recovery
-	// poll runs). They do NOT bound the end-to-end response: the preparation reads before the insert
+	// call (90 s) and each post-timeout recovery readback HTTP call (30 s). The recovery readback is POLLED with
+	// a bounded backoff (~30 s of inter-attempt sleeps) rather than a single immediate check, so a section that
+	// commits shortly after the insert budget expired is recovered as a success instead of a spurious failure
+	// (ENG-94419). The whole poll is additionally capped by a HARD cumulative wall-clock budget
+	// (TimeoutRecoveryTotalBudget) so that even when the verify readbacks themselves stall to their own 30 s HTTP
+	// budget, the recovery cannot stretch to attempts x 30 s and blow past the 180 s ceiling on the CLI/no-override
+	// path (PR #1002 RC-1); the MCP path passes a large insert override, so it returns its in-progress envelope on
+	// the response deadline long before this recovery poll runs. They do NOT bound the end-to-end response: the preparation reads before the insert
 	// and the 15-attempt poll loop have no cumulative deadline. The background/MCP path additionally
 	// bounds each success-path readback HTTP call (readbackTimeoutMsOverride) so a wedged readback cannot
 	// hold a thread + connection for the life of the long-lived server process (ENG-91316); the
@@ -255,6 +257,13 @@ public sealed class ApplicationSectionCreateService(
 	// parameter) so the contention backoff, the settle/poll verify loop, and the readback poll run at zero
 	// delay — keeping the suite under the smart-regression budget without changing production timing.
 	private readonly Action<TimeSpan> _delay = contentionDelay ?? System.Threading.Thread.Sleep;
+
+	// Monotonic timestamp seam (Stopwatch ticks): production uses the real high-resolution timer; unit tests
+	// inject a fake that advances a controlled amount per read so the cumulative timeout-recovery budget
+	// (TimeoutRecoveryTotalBudget) can be exercised deterministically without real waits. Only the
+	// timeout-recovery poll reads it — the contention settle passes an unbounded budget, so its behavior is
+	// unchanged (ENG-94419, PR #1002 RC-1).
+	private readonly Func<long> _recoveryTimestamp = recoveryTimestampProvider ?? System.Diagnostics.Stopwatch.GetTimestamp;
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
@@ -1017,11 +1026,13 @@ public sealed class ApplicationSectionCreateService(
 	/// When the insert budget expires the section transaction may still be committing server-side, so a single
 	/// immediate readback frequently reports the section absent even though it commits moments later. The verify
 	/// is therefore POLLED with backoff (<see cref="TimeoutRecoveryVerifyAttempts"/> attempts, a doubling delay
-	/// capped at <see cref="TimeoutRecoveryMaxBackoff"/>) before the timeout failure is surfaced, so a section
-	/// that commits shortly after the budget expired is recovered as a success instead of a spurious failure
-	/// (ENG-94419). The poll matches strictly by the id generated for THIS call, so it can never be recovered by
-	/// a pre-existing section, and its bounded window keeps the post-timeout wall-clock under the MCP client
-	/// request ceiling. The seam <see cref="_delay"/> makes the backoff instant under test.
+	/// capped at <see cref="TimeoutRecoveryMaxBackoff"/>, and a hard cumulative wall-clock cap of
+	/// <see cref="TimeoutRecoveryTotalBudget"/>) before the timeout failure is surfaced, so a section that commits
+	/// shortly after the budget expired is recovered as a success instead of a spurious failure (ENG-94419). The
+	/// poll matches strictly by the id generated for THIS call, so it can never be recovered by a pre-existing
+	/// section, and the cumulative cap keeps the post-timeout wall-clock under the MCP client request ceiling even
+	/// when the verify readbacks themselves stall (PR #1002 RC-1). The <see cref="_delay"/> and
+	/// <see cref="_recoveryTimestamp"/> seams make the backoff and the cap instant/deterministic under test.
 	/// </para>
 	/// The spinner is left running on the <c>true</c> return (the caller ends it once) and ended on the throw.
 	/// </summary>
@@ -1036,7 +1047,8 @@ public sealed class ApplicationSectionCreateService(
 			environmentSettings,
 			resolvedRequest,
 			TimeoutRecoveryVerifyAttempts,
-			TimeoutRecoveryBackoff);
+			TimeoutRecoveryBackoff,
+			TimeoutRecoveryTotalBudget);
 		if (sectionVisible == true) {
 			logger.WriteInfo(
 				$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
@@ -1059,12 +1071,19 @@ public sealed class ApplicationSectionCreateService(
 	// section transaction may still be committing, so a single immediate readback frequently reports the
 	// section absent even though it commits moments later. The id-matched verify is polled with a doubling
 	// backoff (2s, 4s, 8s, capped) so a section that commits shortly after the budget expired is recovered as
-	// success. Across 6 attempts the five inter-attempt sleeps sum to ~30 s (2+4+8+8+8); each verify is itself
-	// a cheap read-only select bounded by VerificationTimeoutMs, so under normal (sub-second) verify latency the
-	// added post-timeout span is ~30 s. The no-op delay seam makes it instant under test.
+	// success. Under normal (sub-second) verify latency the five inter-attempt sleeps (2+4+8+8+8) dominate, so
+	// the added post-timeout span is ~30 s. But each verify is an HTTP select independently bounded by
+	// VerificationTimeoutMs (30 s), so a STALLED server (whose verifies each burn the full 30 s) could otherwise
+	// stretch the recovery to attempts x 30 s + sleeps (~210 s) and blow past the ~180 s client ceiling
+	// (PR #1002 RC-1). TimeoutRecoveryTotalBudget is a HARD cumulative cap on the whole poll: once wall-clock
+	// elapsed reaches it, no further verify is started, so the recovery span is bounded to
+	// budget + at most one in-flight verify (~30 s + 30 s) regardless of how many verifies stall. On a
+	// responsive server the cap is not reached before the attempts are exhausted, so the normal 5-6 attempts
+	// still run. The no-op delay seam + injected timestamp seam make both instant/deterministic under test.
 	private const int TimeoutRecoveryVerifyAttempts = 6;
 	private static readonly TimeSpan TimeoutRecoveryInitialBackoff = TimeSpan.FromSeconds(2);
 	private static readonly TimeSpan TimeoutRecoveryMaxBackoff = TimeSpan.FromSeconds(8);
+	private static readonly TimeSpan TimeoutRecoveryTotalBudget = TimeSpan.FromSeconds(30);
 
 	// Doubling backoff (2s, 4s, 8s, 8s, ...) capped at TimeoutRecoveryMaxBackoff; attempt is 1-based.
 	private static TimeSpan TimeoutRecoveryBackoff(int attempt) {
@@ -1083,18 +1102,28 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		ResolvedApplicationSectionCreateRequest request) =>
-		TryVerifySectionExistsPolling(client, environmentSettings, request, ContentionVerifyAttempts, static _ => PollDelay);
+		// The contention settle has no cumulative cap (TimeSpan.MaxValue) — only the fixed 3-attempt count and
+		// PollDelay bound it — so its behavior is byte-identical to before the ENG-94419 refactor.
+		TryVerifySectionExistsPolling(
+			client, environmentSettings, request, ContentionVerifyAttempts, static _ => PollDelay, TimeSpan.MaxValue);
 
 	/// <summary>
 	/// Polls the id-matched <see cref="TryVerifySectionExists"/> up to <paramref name="attempts"/> times,
-	/// sleeping <paramref name="backoffForAttempt"/>(attempt) between attempts. Shared by the contention settle
-	/// (fixed delay) and the timeout-recovery poll (backoff, ENG-94419).
+	/// sleeping <paramref name="backoffForAttempt"/>(attempt) between attempts, and stopping early once the
+	/// cumulative wall-clock elapsed reaches <paramref name="totalBudget"/>. Shared by the contention settle
+	/// (fixed delay, unbounded budget) and the timeout-recovery poll (backoff + hard budget, ENG-94419).
 	/// </summary>
 	/// <param name="client">Environment-scoped application client used for the readback query.</param>
 	/// <param name="environmentSettings">Resolved environment settings for the target environment.</param>
 	/// <param name="request">Resolved section-create request carrying the generated section id to match by.</param>
 	/// <param name="attempts">Maximum number of verify attempts (>= 1).</param>
 	/// <param name="backoffForAttempt">Delay to sleep after attempt N (1-based) before attempt N+1.</param>
+	/// <param name="totalBudget">
+	/// Cumulative wall-clock cap on the whole poll: after the first attempt, no further verify is started once
+	/// elapsed reaches this. Bounds the total span even when individual verifies stall to their own
+	/// <see cref="VerificationTimeoutMs"/> HTTP budget (PR #1002 RC-1). Pass <see cref="TimeSpan.MaxValue"/> for
+	/// no cap (the contention settle, which is bounded by its attempt count alone).
+	/// </param>
 	/// <returns>
 	/// Returns the MOST-INFORMATIVE outcome across all attempts (not merely the last): <c>true</c> as soon as
 	/// any attempt finds the section visible; <c>false</c> when ANY attempt definitively proved the section
@@ -1109,9 +1138,19 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings,
 		ResolvedApplicationSectionCreateRequest request,
 		int attempts,
-		Func<int, TimeSpan> backoffForAttempt) {
+		Func<int, TimeSpan> backoffForAttempt,
+		TimeSpan totalBudget) {
+		long startTimestamp = _recoveryTimestamp();
 		bool sawDefinitiveAbsent = false;
 		for (int attempt = 1; attempt <= attempts; attempt++) {
+			// Cumulative cap: always do at least one verify, but before any subsequent attempt stop if the whole
+			// poll has already run for totalBudget. A stalled server (each verify burning VerificationTimeoutMs)
+			// can therefore add at most one more in-flight verify past the budget instead of attempts x that HTTP
+			// budget (ENG-94419, PR #1002 RC-1).
+			if (attempt > 1 && System.Diagnostics.Stopwatch.GetElapsedTime(startTimestamp, _recoveryTimestamp()) >= totalBudget) {
+				break;
+			}
+
 			bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, request);
 			if (sectionVisible == true) {
 				return true;

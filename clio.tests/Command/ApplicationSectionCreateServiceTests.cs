@@ -594,6 +594,25 @@ public sealed class ApplicationSectionCreateServiceTests {
 			contentionDelay: _ => { });
 	}
 
+	// Mirrors CreateSutWithResolver but injects a fake monotonic timestamp source so a test can drive the
+	// cumulative timeout-recovery budget deterministically (ENG-94419, PR #1002 RC-1). Keeps the no-op delay seam.
+	private ApplicationSectionCreateService CreateSutWithRecoveryClock(Func<long> recoveryTimestampProvider) {
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		return new ApplicationSectionCreateService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_ => _sysSettingsManager,
+			_logger,
+			_captionCultureResolver,
+			new SectionCreateSerializationGuard(_logger),
+			contentionDelay: _ => { },
+			recoveryTimestampProvider: recoveryTimestampProvider);
+	}
+
 	// Builds a SUT whose ILogger (and the guard's ILogger) is a caller-supplied substitute, so a test can
 	// assert spinner lifecycle (BeginSpinner/EndSpinner) and info-line emission. Mirrors CreateSutWithResolver
 	// except it swaps the NullLogger for the injected substitute.
@@ -1606,6 +1625,36 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "a section that never becomes visible after the insert timed out is still a classified timeout failure");
 		verifyCalls.Should().BeGreaterThan(1,
 			because: "the post-timeout verification must retry with backoff rather than give up after a single immediate check (ENG-94419)");
+	}
+
+	[Test]
+	[Description("ENG-94419 / PR #1002 RC-1: the post-timeout verification poll is bounded by a hard cumulative wall-clock budget, so when the verify readbacks themselves stall it stops after the budget instead of running all TimeoutRecoveryVerifyAttempts x VerificationTimeoutMs and blowing past the client ceiling.")]
+	public void CreateSection_Should_Stop_PostTimeout_Verification_When_Cumulative_Budget_Exceeded() {
+		// Arrange — a monotonic clock that jumps an hour on every read, so the first elapsed check (before the
+		// second attempt) already exceeds the recovery budget and no further verify is issued.
+		long freq = System.Diagnostics.Stopwatch.Frequency;
+		int clockReads = 0;
+		ApplicationSectionCreateService sut = CreateSutWithRecoveryClock(() => clockReads++ * 3600L * freq);
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		int verifyCalls = 0;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				verifyCalls++;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "an absent section after the insert timed out is still a classified timeout failure");
+		verifyCalls.Should().Be(1,
+			because: "once the cumulative recovery budget is exceeded the poll must stop issuing verify calls rather than run all TimeoutRecoveryVerifyAttempts (PR #1002 RC-1)");
 	}
 
 	private static IEnumerable<TestCaseData> InsertFailureClassificationCases() {
