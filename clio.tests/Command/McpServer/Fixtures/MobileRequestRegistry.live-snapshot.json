@@ -1,0 +1,374 @@
+{
+	"requests": [
+		{
+			"requestType": "crt.CancelRecordChangesRequest",
+			"parameters": {},
+			"description": "Discards unsaved changes to the current record and reloads its last saved values; the page stays open and the revert shows no confirmation. For a record opened in add or copy mode that was never saved, it closes the page instead of reverting; the close surfaces the built-in discard-changes confirmation when the record has edits. Bound to Cancel buttons on record pages.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-cancel-record-changes.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.ClosePageRequest",
+			"parameters": {},
+			"description": "Closes the currently open page by popping the navigation stack. Bound to back and close buttons; when the page has unsaved changes, a discard-changes confirmation must be accepted before the page is closed.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-close-page.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.CreateRecordRequest",
+			"parameters": {
+				"defaultValues": {
+					"type": "array",
+					"items": {
+						"type": "ModelDefaultValue"
+					},
+					"description": "Column values pre-filled on the new record; each entry is `{ attributeName, value }` where `value` may be a constant, a lookup record Id, or an `$Attribute` binding. Optional. On a binding whose entity resolves to the page's primary object, the platform also injects the page's relation context (e.g. the master record link) as a default value, so a detail's new record is linked automatically."
+				},
+				"entityName": {
+					"type": "string",
+					"description": "Schema name of the entity to create a new record of (e.g. \"Activity\"). When omitted, a page preprocessor fills it with the page's primary data source entity, so set it only for a record that belongs to a different entity - a detail, nested collection, or list of another object. If it is still missing after preprocessing the request does nothing (an error is logged). There is no `itemsAttributeName` resolution on mobile: name the entity explicitly for non-primary collections."
+				},
+				"preventCardClose": {
+					"type": "boolean",
+					"description": "Controls what happens after the new record is saved. When `true` (the default), the saved record is reopened in edit mode - the add page closes and the record's edit page is pushed. When `false`, the flow ends when the add page closes and the record is not reopened. Omit it for the standard add-then-edit behavior."
+				}
+			},
+			"description": "Opens a blank add page to create a new record of an entity, optionally pre-filling column values; by default the saved record is then reopened in edit mode. Bound to list add buttons and row/menu actions. The add page is pushed onto the navigation stack; creating a record does not prompt to discard unsaved changes on the current page.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-create-record.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.OpenPageRequest",
+			"parameters": {
+				"modelInitConfigs": {
+					"type": "array",
+					"items": {
+						"type": "ModelInitConfig"
+					},
+					"description": "Initial model configuration for the opened page: for each entry, which model to seed (`name`), the record to load (`recordId`), the mode (`action`: `edit` / `add` / `copy`), and `defaultValues` to pre-fill. Honored by the mobile runtime and forwarded to the opened page's route."
+				},
+				"parameters": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "unknown",
+					"description": "Page parameters passed to the opened page, keyed by parameter name; values may be constants or `$Attribute` bindings. The opened page reads them through a `crt.PageParametersDataSource` bound as `PageParameters.<key>`. Not declared on the TS request class but honored by the mobile runtime."
+				},
+				"schemaName": {
+					"type": "string",
+					"required": true,
+					"valueSource": {
+						"kind": "environment",
+						"tool": "list-pages"
+					},
+					"description": "Schema name (code) of the mobile Freedom UI page to open, not its display caption. Required: the handler does nothing (no navigation) when it is not set. Usually a literal; an `$Attribute` binding is also accepted."
+				}
+			},
+			"description": "Opens a mobile Freedom UI page by its schema name, pushing it onto the navigation stack, optionally passing page parameters and initial model configuration. Bound to buttons and row/menu actions. Opening a page does not prompt to discard unsaved changes on the current page.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-open-page.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.RunBusinessProcessRequest",
+			"parameters": {
+				"activeRow": {
+					"type": "string",
+					"description": "Identifier of the record used to build a single-record fallback filter when `filters` resolves to no selection, i.e. nothing is checked in the list (`ForTheSelectedRecords` run type). Populated automatically at page load from the data grid whose `selectionState` the `filters` expression references; author it only to override that default."
+				},
+				"activeRowAttributeName": {
+					"type": "string",
+					"description": "Name of the view-model attribute holding the active row; reset together with `selectionStateAttributeName` after the run for the selected records. Populated automatically at page load alongside `activeRow`."
+				},
+				"dataSourceName": {
+					"type": "string",
+					"description": "Data source of the list whose records the process runs for (`ForTheSelectedRecords` run type); required for that run type. This is the data source name from `modelConfigDiff`, not the list's collection attribute. When it is missing or does not resolve on the page, nothing is run and an info message is shown. Its entity schema becomes the entity the process runs against."
+				},
+				"filters": {
+					"type": "string | JsonObject",
+					"description": "Collection-filter binding that limits the run to the records selected in the list (`ForTheSelectedRecords` run type). Canonical list-page shape: \"$<GridItems> | crt.ToCollectionFilters : '<GridItems>' : $<Grid>_SelectionState | crt.SkipIfSelectionEmpty : $<Grid>_SelectionState\" - substitute the page's real collection and selection-state attribute names. When the expression resolves to no selection, the platform falls back to a single-record filter built from `activeRow`; when neither resolves, nothing is run and an info message is shown. Raw JSON objects are forwarded to the service verbatim without translation (the web `FilterGroup` dialect is not parsed on mobile), so prefer the converter pipe."
+				},
+				"notificationText": {
+					"type": "string",
+					"description": "Custom text of the success notification; a localized default is used when not set. Applies when `showNotification` is true. Supports `#ResourceString(...)#` macros."
+				},
+				"parameterMappings": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "string",
+					"description": "Single-entry map { \"<ParameterCODE>\": \"<sourceColumn>\" }: the first key is the code of the process input parameter that receives each matched record (`ForTheSelectedRecords` run type); extra entries and the column values are ignored by the mobile client."
+				},
+				"processName": {
+					"type": "string",
+					"required": true,
+					"valueSource": {
+						"kind": "environment",
+						"tool": "get-process-signature"
+					},
+					"description": "Code (schema name) of the business process to run, not its display caption. The mobile client posts it without validation; a wrong or empty code fails on the server and surfaces the error message."
+				},
+				"processParameters": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "unknown",
+					"description": "Input parameters passed to the process, keyed by process parameter code (not caption); values may be static constants or `$Attribute` view-model bindings and are posted as raw JSON. Not applied to the `ForTheSelectedRecords` run type. A key that does not match a real parameter code is silently dropped by the server."
+				},
+				"processRunType": {
+					"type": "string",
+					"required": true,
+					"values": [
+						"RegardlessOfThePage",
+						"ForTheSelectedPage",
+						"ForTheSelectedRecords"
+					],
+					"description": "How the process is run: `ForTheSelectedRecords` (records selected in a list) switches to the matching-records flow with its own set of parameters; `ForTheSelectedPage` (the current record) and `RegardlessOfThePage` (no record context) result in the same call on mobile - passing the current record's Id is controlled solely by `recordIdProcessParameterName`."
+				},
+				"recordIdProcessParameterName": {
+					"type": "string",
+					"description": "Code of the process parameter that receives the current record's Id, resolved from the page's primary data source. Applied under any run type except `ForTheSelectedRecords`, where process input parameters are not sent; skipped silently when the Id cannot be resolved."
+				},
+				"resultParameterNames": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Codes of the process output parameters to read back after the run (non-`ForTheSelectedRecords` run types). The values are returned to the dispatching code only; nothing is shown to the user or stored on the page."
+				},
+				"saveAtProcessStart": {
+					"type": "boolean",
+					"description": "Whether to save the current record before the process starts; the page stays open after the save. When the save fails, the process is not started."
+				},
+				"selectionStateAttributeName": {
+					"type": "string",
+					"description": "View-model attribute holding the list's selection state; reset after the run request completes (`ForTheSelectedRecords` run type)."
+				},
+				"showNotification": {
+					"type": "boolean",
+					"description": "Whether to show a notification after the run request succeeds. There is no start notification on mobile, and failure messages are always shown regardless of this flag."
+				},
+				"sorting": {
+					"type": "array",
+					"items": {
+						"type": "SortColumnOptions"
+					},
+					"description": "Sort order for the matching records (`ForTheSelectedRecords` run type); each entry is `{ columnName, direction }`."
+				}
+			},
+			"description": "Runs a business process with no record context, for the current record, or for the records selected in a list. Optionally saves the record first and notifies when the run request succeeds. Bound to buttons.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-run-business-process.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.SaveRecordRequest",
+			"parameters": {
+				"preventCardClose": {
+					"type": "boolean",
+					"description": "Keeps the page open after a successful save. When `false` or omitted, a record opened in add or copy mode has its page closed after the save; a record opened in edit mode stays open either way. In both stay-open cases the page switches to the edit state. Distinct from the `preventCardClose` of crt.CreateRecordRequest, which controls whether the saved record is reopened."
+				}
+			},
+			"description": "Saves all data of the current record page - every root data source with pending changes, then the changed items of nested collections - after validating the primary data source. Failed saves are shown in a modal message; there is no success notification on mobile. Bound to the Save button in the Scaffold actions slot on form-page templates. The web-only parameters (showSuccessMessage, messageTextAfterCompletion, reloadSavedRecord) are ignored on mobile.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-save-record.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.UpdateRecordRequest",
+			"parameters": {
+				"entityName": {
+					"type": "string",
+					"description": "Schema name of the entity whose record edit page is opened (e.g. \"Account\"). When omitted, a page preprocessor fills it with the page's primary data source entity, so you only need to set it for a record that belongs to a different entity - a detail, nested collection, or map/list of another object. If it is still missing after preprocessing the request does nothing (an error is logged). Note there is no `itemsAttributeName` resolution on mobile: name the entity explicitly for non-primary collections."
+				},
+				"recordId": {
+					"type": "string",
+					"required": true,
+					"description": "Primary-key value (Id) of the record to open; required - the request does nothing (an error is logged) when it is null or empty. Usually an `$Attribute` binding to the row's Id (e.g. \"$NearbyDS_Id\", \"$Participant.Id\"); a literal Id is also accepted. A bound value is resolved and then reduced to a primary key: a lookup value is unwrapped to its `value`, a data row to its primary value, a plain string is passed through, anything else becomes null. Because of that unwrapping a lookup column of the current page is bound as-is, without extracting `.value` (e.g. \"$PDS_CreatedBy_vmpu5u4\"), same as web; for that case set `entityName` to the schema the lookup REFERENCES, not the entity of the page the button lives on. Unlike web, a `$` expression here is read as a plain attribute name, so the redundant `\"$Attr.value\"` spelling that web tolerates is looked up as an attribute literally named `Attr.value` and does not resolve."
+				}
+			},
+			"description": "Opens an existing record's edit page so the user can view or change it. Bound to list/detail row taps and link cells, and to buttons. The new page is pushed onto the navigation stack; opening a record does not prompt to discard unsaved changes on the current page.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-update-record.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.UploadFileRequest",
+			"parameters": {
+				"allowedFileTypes": {
+					"type": "string",
+					"description": "Comma-separated list of file EXTENSIONS only (MIME patterns are not supported on mobile); matching is case-sensitive against the file's lowercased extension, so author lowercase entries. The list is intersected with the `FileExtensionsAllowList` system setting, which acts as an allow-list; empty or absent means that setting alone constrains the types."
+				},
+				"fileEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema that stores the uploaded file (default `SysFile`); runtime-required and derived by the platform from the target `crt.FileList`'s entity. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"fileGroup": {
+					"type": "string",
+					"description": "Id of the file group the upload is filed under; derived by the platform from the target `crt.FileList` (the OOTB Attachments group is `efbf3a0d-d780-465a-8e4b-8c0765197cfb`). Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"itemsAttributeName": {
+					"type": "string",
+					"description": "View-model attribute backing the target `crt.FileList`'s items collection; derived by the platform from that list. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"maximumAllowedFileSize": {
+					"type": "number",
+					"description": "Maximum size of one uploaded file, in megabytes; the effective limit is the minimum of this value and the `MaxFileSize` system setting, and when unset `MaxFileSize` alone applies."
+				},
+				"params": {
+					"type": "JsonObject",
+					"description": "Optional mobile-only options object. Its documented shape is `{ \"selectFileOptions\": { \"allowCamera\", \"allowGallery\", \"allowFiles\", \"allowMultiple\" } }`, each a boolean defaulting to `true`, controlling the file-source picker; the mobile designer panel exposes only `allowCamera`, `allowGallery`, and `allowFiles`, while `allowMultiple` is honored by the runtime but not surfaced in the panel."
+				},
+				"recordColumnName": {
+					"type": "string",
+					"description": "Column on the file entity that links each file to its parent record (default `RecordId`); runtime-required and derived by the platform from the target `crt.FileList`. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"recordEntitySchemaName": {
+					"type": "string",
+					"description": "Entity schema of the parent record the files attach to. Not derived from the file list on mobile; optional - when absent the runtime falls back to the page's primary model schema. Hand-author only in an advanced scenario."
+				},
+				"recordId": {
+					"type": "string",
+					"description": "Id of the parent record the files attach to; runtime-required and derived by the platform from the target `crt.FileList`'s `masterRecordColumnValue` binding - the file list must carry that property (the Designer's attachments template sets `\"$Id\"`) or the record Id stays unresolved. An unresolved record Id yields a \"Cannot upload files for unsaved records\" error. Hand-author only in an advanced scenario; an authored value overrides the derived one."
+				},
+				"tag": {
+					"type": "string",
+					"description": "Optional tag stamped on the uploaded file records; derived by the platform from the target `crt.FileList` when configured there. Author only in advanced scenarios; an authored value overrides the derived one."
+				},
+				"viewElementName": {
+					"type": "string",
+					"required": true,
+					"description": "Name of the `crt.FileList` view element on the same mobile page that this upload targets, and the only storage-targeting parameter a standard page authors by hand (optional upload restrictions like `allowedFileTypes` / `maximumAllowedFileSize` / `params.selectFileOptions` may be authored alongside it). At page load the platform reads that file list to derive the storage parameters below; unlike web there is no page-defaults fallback - when no matching `crt.FileList` is found, parameter derivation stops with an error and the upload cannot work."
+				}
+			},
+			"description": "Uploads one or more files and attaches them to a record on a mobile page, targeting the `crt.FileList` named by `viewElementName`. Bound to a `crt.Button` or `crt.MenuItem` `clicked` - the only wiring processed on mobile; the platform derives the storage parameters from that file list at page load, so a standard page authors only `viewElementName` plus optional upload restrictions. Files are always chosen through the mobile file-source picker.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-upload-file.request.md"
+				]
+			}
+		}
+	],
+	"references": {
+		"baseParameters": {
+			"$context": {
+				"type": "ViewModelContext",
+				"description": "The view-model context in which the request was triggered. Injected by the platform at dispatch time, never set via the binding's `params`."
+			},
+			"scopes": {
+				"type": "array",
+				"items": {
+					"type": "string"
+				},
+				"description": "The scope chain of the request, resolved by the platform from the emitting execution context (the page schema's template tag chain). Do not set it via the binding's `params`."
+			},
+			"type": {
+				"type": "string",
+				"description": "Request type discriminator, e.g. \"crt.ClosePageRequest\". Set implicitly by the `request` field of the request binding. Do not set it via the binding's `params` - on mobile a `params.type` key would override the request type."
+			}
+		},
+		"typeDefinitions": {
+			"JsonObject": {
+				"type": "object",
+				"description": "Arbitrary JSON object."
+			},
+			"ModelDefaultValue": {
+				"fields": {
+					"attributeName": {
+						"type": "string",
+						"required": true,
+						"description": "Name of the model attribute to seed."
+					},
+					"value": {
+						"type": "unknown",
+						"required": true,
+						"description": "Value to seed the attribute with."
+					}
+				}
+			},
+			"ModelInitConfig": {
+				"fields": {
+					"action": {
+						"type": "string",
+						"values": [
+							"edit",
+							"add",
+							"copy"
+						],
+						"required": true,
+						"description": "Mode the target model is initialized in."
+					},
+					"defaultValues": {
+						"type": "array",
+						"items": {
+							"type": "ModelDefaultValue"
+						},
+						"description": "Attribute values to pre-fill on the model."
+					},
+					"name": {
+						"type": "string",
+						"description": "Name of the model (from the target page's modelConfig) to initialize."
+					},
+					"recordId": {
+						"type": "string",
+						"description": "Primary-key value of the record to load into the model."
+					}
+				}
+			},
+			"RequestBindingConfig": {
+				"fields": {
+					"params": {
+						"type": "Record",
+						"keyType": "string",
+						"valueType": "string | boolean | number | null | RequestParamsBindingConfig | RequestParamBindingConfigValue[]"
+					},
+					"request": {
+						"type": "string",
+						"required": true
+					}
+				}
+			},
+			"RequestParamBindingConfigValue": {
+				"type": "string | boolean | number | null | RequestParamsBindingConfig | RequestParamBindingConfigValue[]"
+			},
+			"RequestParamsBindingConfig": {
+				"type": "Record",
+				"keyType": "string",
+				"valueType": "RequestParamBindingConfigValue"
+			},
+			"SortColumnOptions": {
+				"fields": {
+					"columnName": {
+						"type": "string",
+						"required": true,
+						"description": "Column name."
+					},
+					"direction": {
+						"type": "string",
+						"required": true,
+						"values": [
+							"asc",
+							"desc",
+							"none"
+						],
+						"description": "Sort direction."
+					}
+				}
+			}
+		}
+	}
+}

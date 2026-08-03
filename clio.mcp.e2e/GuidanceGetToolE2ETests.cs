@@ -824,6 +824,50 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the theming guide must reference the theming tools by their single clean names");
 		response.Article.Text.Should().Contain("build-theme",
 			because: "the no-code/server flow's primary path is the native build-theme tool, not hand-computed colors");
+		response.Article.Text.Should().Contain("get-guidance name=branding",
+			because: "the theming guide must route branding-beyond-the-theme (logos, shell background) to the dedicated branding guide");
+		response.Article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the branding mechanics moved to the dedicated branding guide (ENG-92981) and must not be duplicated in the theming guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical branding guide")]
+	[Description("Verifies get-guidance returns the branding article that carries the logo sys-setting slots, routes the shell-background flow through the dedicated upload-image and set-background-image tools, and routes the theme part of branding to the theming guide (ENG-92981).")]
+	public async Task GuidanceGet_Should_Return_Branding_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			session,
+			cancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "branding"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "branding is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/branding",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("get-guidance name=theming",
+			because: "the branding guide must route the theme part of branding to the theming guide instead of restating it");
+		response.Article.Text.Should().Contain("CrtAppToolbarLogo",
+			because: "the logos section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		response.Article.Text.Should().Contain("upload-image",
+			because: "the shell-background upload must route through the dedicated upload-image tool");
+		response.Article.Text.Should().NotContain("ImageAPIService",
+			because: "the raw image-API recipe is owned by the upload-image tool implementation and must not be hand-executed from the guide");
+		response.Article.Text.Should().Contain("set-background-image",
+			because: "the shell-background activation must route through the dedicated set-background-image tool");
+		response.Article.Text.Should().NotContain("CrtBackgroundConfig",
+			because: "the background-configuration mechanics are owned by the set-background-image tool implementation, not hand-executed from the guide");
 	}
 
 	[Test]

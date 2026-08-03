@@ -137,6 +137,7 @@ internal class Program {
 		typeof(CreateLookupOptions),
 		typeof(PageListOptions),
 		typeof(PageGetOptions),
+		typeof(GetPageHierarchyOptions),
 		typeof(PageUpdateOptions),
 		typeof(PageCreateOptions),
 		typeof(CreateRelatedPageAddonOptions),
@@ -148,6 +149,8 @@ internal class Program {
 		typeof(PageTemplatesListOptions),
 		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(GetClientUnitSchemaOptions),
+		typeof(GetClassicPageSourcesOptions),
+		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
 		typeof(SqlSchemaGetOptions),
 		typeof(SqlSchemaUpdateOptions),
@@ -225,7 +228,10 @@ internal class Program {
 		typeof(UpdateThemeOptions),
 		typeof(DeleteThemeOptions),
 		typeof(SetUserThemeOptions),
+		typeof(UploadImageOptions),
+		typeof(SetBackgroundImageOptions),
 		typeof(LastCompilationLogOptions),
+		typeof(WatchCompilationOptions),
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
 		typeof(ConfigOptions),
@@ -421,6 +427,8 @@ internal class Program {
 			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
 			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
 			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
+			UploadImageOptions opts => Resolve<UploadImageCommand>(opts).Execute(opts),
+			SetBackgroundImageOptions opts => Resolve<SetBackgroundImageCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -579,6 +587,7 @@ internal class Program {
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
+			WatchCompilationOptions opts => Resolve<WatchCompilationCommand>(opts).Execute(opts),
 			CustomizeDataProtectionCommandOptions opts => Resolve<CustomizeDataProtectionCommand>(opts).Execute(opts),
 			LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts).Execute(opts),
 			CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts).Execute(opts),
@@ -602,12 +611,15 @@ internal class Program {
 			ClientUnitSchemaCreateOptions opts => Resolve<ClientUnitSchemaCreateCommand>(opts).Execute(opts),
 			ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
 			GetClientUnitSchemaOptions opts => Resolve<GetClientUnitSchemaCommand>(opts).Execute(opts),
+			GetClassicPageSourcesOptions opts => Resolve<GetClassicPageSourcesCommand>(opts).Execute(opts),
+			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
 			SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
 			SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
 			PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
 			PageGetOptions opts => Resolve<PageGetCommand>(opts).Execute(opts),
+			GetPageHierarchyOptions opts => Resolve<GetPageHierarchyCommand>(opts).Execute(opts),
 			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
@@ -1442,6 +1454,12 @@ internal class Program {
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
 	}
 
+	/// <summary>
+	/// The long-form help flag. Recognized in four distinct places (update-check skip, verb help-dispatch,
+	/// token scan, and value classification), so it lives here rather than being re-spelled per site.
+	/// </summary>
+	private const string LongHelpFlag = "--help";
+
 	private static bool ShouldSkipUpdateCheck(string[] args) {
 		if (IsMcpServerMode) return true;
 		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
@@ -1462,7 +1480,7 @@ internal class Program {
 			return true;
 		}
 		return args.Any(arg =>
-			string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
+			string.Equals(arg, LongHelpFlag, StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
 	}
@@ -1514,9 +1532,112 @@ internal class Program {
 			exitCode = 0;
 			return true;
 		}
+		// <verb> --help / <verb> -h: short-circuit before CommandLineSDK's own parser, which silently
+		// produces 0-byte output (exit 0) for a verb whose name is a prefix of another registered verb's
+		// name when the shorter verb has no [Verb] Aliases and its options class inherits
+		// EnvironmentOptions (e.g. create-data-binding vs. -db, create-app vs. -section; ENG-93886).
+		// Reuses the same renderer the `help <verb>` branch above already uses (confirmed byte-identical
+		// to what already-working verbs render via CustomHelpViewer/LocalHelpViewer today), and defers to
+		// the existing parser path unchanged for --WEB/-W (browser docs), for verbs the renderer doesn't
+		// recognize (typo suggestions, disabled feature toggles), and for a help-like token that the
+		// target verb has already claimed as one of its own option names (for instance healthcheck binds
+		// the short h to its web-host option); treating that as a help request would silently replace a
+		// real invocation with a help screen.
+		// The `normalizedArgs[0] == "help"` case is already handled unconditionally by the branch above,
+		// so it can never reach here - no guard needed. The cheap ContainsHelpLikeToken pre-check runs
+		// before the CommandHelpCatalog lookup (which lazily builds a ~200-verb reflection catalog on
+		// first use) so an ordinary, non-help invocation never pays for that catalog build.
+		bool isWebMode = args.Length >= 2 && (args[1] == "--WEB" || args[1] == "-W");
+		if (!isWebMode
+			&& ContainsHelpLikeToken(normalizedArgs)
+			&& serviceProvider.GetRequiredService<CommandHelpCatalog>().TryGetCommand(normalizedArgs[0], out HelpCommandMetadata metadata)
+			&& ArgvRequestsUnclaimedHelp(normalizedArgs, metadata.OptionsType)
+			&& renderer.TryRenderCommandHelp(normalizedArgs[0]) is string verbHelp) {
+			Console.Out.Write(verbHelp);
+			exitCode = 0;
+			return true;
+		}
 		exitCode = 1;
 		return false;
 	}
+
+	// Cheap pre-filter: does argv contain a literal help-like token anywhere? Lets the caller skip the
+	// expensive CommandHelpCatalog lookup for the overwhelmingly common non-help invocation.
+	private static bool ContainsHelpLikeToken(string[] normalizedArgs) =>
+		normalizedArgs.Any(token =>
+			string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(token, LongHelpFlag, StringComparison.OrdinalIgnoreCase));
+
+	// Decides whether argv is a genuine `<verb> --help`/`-h` request rather than a real command whose
+	// arguments merely happen to contain a `-h`/`--help` token. A blind array-wide scan is unsafe: a
+	// `-h`/`--help` can legitimately be the VALUE of a preceding value-taking option (e.g.
+	// `create-data-binding --binding-name -h`), which would otherwise silently swap the real invocation
+	// for a help screen and exit 0. So the scan is positional: it walks the tokens and skips any token
+	// consumed as the value of the value-taking verb option immediately before it, only then treating a
+	// remaining `-h`/`--help` as a help request (and only when the verb has not claimed that name for its
+	// own option - see IsUnclaimedHelpFlagToken). Internal so tests can verify the decision hermetically,
+	// without driving a full command execution that may require a registered environment.
+	internal static bool ArgvRequestsUnclaimedHelp(string[] normalizedArgs, Type optionsType) {
+		(PropertyInfo Property, OptionAttribute Option)[] ownOptions = GetOwnOptionAttributes(optionsType).ToArray();
+		bool previousTokenConsumesValue = false;
+		// Index 0 is the verb name itself; only its arguments can be help tokens.
+		for (int index = 1; index < normalizedArgs.Length; index++) {
+			string token = normalizedArgs[index];
+			if (previousTokenConsumesValue) {
+				// This token is the value of the preceding value-taking option, never a help request.
+				previousTokenConsumesValue = false;
+				continue;
+			}
+			if (IsUnclaimedHelpFlagToken(token, optionsType)) {
+				return true;
+			}
+			previousTokenConsumesValue = IsValueTakingOptionToken(token, ownOptions);
+		}
+		return false;
+	}
+
+	// A token only signals "show help" when the target verb has not already claimed that exact
+	// name for its own [Option] (short 'h' or long "help") - otherwise it is a real argument value
+	// for that verb (e.g. healthcheck/publish-app bind their own -h to a different option).
+	// Internal (not private) so tests can verify the decision hermetically, without needing to
+	// drive a full command execution that may require a registered environment.
+	internal static bool IsUnclaimedHelpFlagToken(string token, Type optionsType) {
+		if (string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)) {
+			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.ShortName, "h", StringComparison.OrdinalIgnoreCase));
+		}
+		if (string.Equals(token, LongHelpFlag, StringComparison.OrdinalIgnoreCase)) {
+			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.LongName, "help", StringComparison.OrdinalIgnoreCase));
+		}
+		return false;
+	}
+
+	// True when `token` names a verb option that consumes the following token as its value. A boolean
+	// (or nullable-boolean) option is a flag and consumes nothing; anything else takes a value. Inline
+	// value forms (`--name=value`) already carry their own value and consume no following token.
+	private static bool IsValueTakingOptionToken(string token, IReadOnlyList<(PropertyInfo Property, OptionAttribute Option)> ownOptions) {
+		if (token.Length < 2 || token[0] != '-' || token.Contains('=')) {
+			return false;
+		}
+		bool isLong = token.StartsWith("--", StringComparison.Ordinal);
+		string name = isLong ? token[2..] : token[1..];
+		foreach ((PropertyInfo property, OptionAttribute option) in ownOptions) {
+			string optionName = isLong ? option.LongName : option.ShortName;
+			if (!string.IsNullOrEmpty(optionName) && string.Equals(optionName, name, StringComparison.Ordinal)) {
+				return !IsFlagOptionType(property.PropertyType);
+			}
+		}
+		return false;
+	}
+
+	// A CommandLineParser flag (takes no value) is a bool or a Nullable<bool>; everything else expects a value.
+	private static bool IsFlagOptionType(Type propertyType) =>
+		propertyType == typeof(bool) || Nullable.GetUnderlyingType(propertyType) == typeof(bool);
+
+	private static IEnumerable<(PropertyInfo Property, OptionAttribute Option)> GetOwnOptionAttributes(Type optionsType) =>
+		optionsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => (Property: property, Option: property.GetCustomAttribute<OptionAttribute>(true)))
+			.Where(pair => pair.Option is not null);
 
 	private static bool TryHandleBuiltInVersion(string[] args, out int exitCode) {
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
@@ -1531,7 +1652,7 @@ internal class Program {
 
 	private static bool IsRootHelpToken(string value) =>
 		string.Equals(value, "help", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(value, "--help", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(value, LongHelpFlag, StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(value, "-h", StringComparison.OrdinalIgnoreCase);
 
 	private static bool IsRootVersionToken(string value) =>

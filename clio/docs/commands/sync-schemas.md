@@ -81,6 +81,19 @@ Applies batch column mutations to an existing entity schema.
 Supply either `update-operations` (for add/modify/remove) **or** `columns` (add-only shorthand). If both
 are present, `update-operations` wins.
 
+#### `seed-data`
+
+Inserts `seed-rows` into an existing schema as a standalone operation (as opposed to the inline
+`seed-rows` that follow a `create-lookup`/`create-entity` in the same operation). This is primarily
+used by the `resume-plan`: when a create succeeds but its inline seeding fails, the resume operation
+is a `seed-data` op so resuming seeds the already-created schema without recreating it.
+
+| Field | Required | Description |
+|---|---|---|
+| `type` | Yes | `"seed-data"` |
+| `schema-name` | Yes | Target schema to seed |
+| `seed-rows` | Yes | Rows to insert (see Seed Rows Format). A `seed-data` operation without rows is rejected. |
+
 ### Seed Rows Format
 
 Each seed row must have a `values` key containing column name-value pairs:
@@ -203,29 +216,205 @@ and when no caption is present the `en-US` value is derived from the column name
 - `masked` maps to schema-level `isValueMasked`.
 - `masked` controls schema-level masking metadata and does not change the storage type.
 
+## Convergent ("ensure") Semantics
+
+`create-lookup` and `update-entity` are **convergent supersets**: each reads the current server
+state first and then applies **only the missing delta**, all server-side inside the single batch
+call. They are still supersets of the old create/update behavior (they create-if-absent), so the
+operation type names are unchanged.
+
+- **`create-lookup` (and the shared `create-entity` create path)** — if the schema is absent it is
+  created and its `Lookups` registration is ensured; if it already exists in the target package only
+  the missing columns are added (never recreated) and the `Lookups` registration is still ensured
+  (idempotent by name).
+- **`update-entity`** — per-column reconcile: a requested column that is absent is added, one that is
+  present but different is modified, one that is present and identical is a no-op, and a `remove` for
+  an already-absent column succeeds as "ensure absent". **Columns you do not name are left
+  untouched** — there is no delete-unlisted full reconcile. Type comparison is by canonical
+  `DataValueType` ordinal (with a case-insensitive string fallback), so a replay whose read-back
+  friendly type name diverges from the request vocabulary (e.g. `phoneNumber`, `text50`, `Float`) is
+  still recognized as satisfied.
+
+**Re-run safety.** Because the ops apply only the delta, **re-submitting the identical batch verbatim
+is the safe recovery path** after an ambiguous failure (the request may have reached the server but
+the response was lost) — **for a schema-only batch**. Already-applied schema operations replay as
+`already-satisfied`/`reconciled` with no duplicate mutation. Do **not** hand-compose a catch-up batch
+of only the operations that failed or did not run. When the batch also carries `seed-data` (inline
+`seed-rows` or a standalone `seed-data` op), a whole-batch replay is **only** safe when every seed row
+is `Name`-keyed (see [Seed Data Replay Contract](#seed-data-replay-contract)); otherwise resubmit
+`resume-plan.operations` instead, because a no-`Name` seed row is not replay-safe.
+
+### `outcome` discriminator
+
+Each per-operation result carries an additive `outcome` field (omitted for `seed-data`):
+
+| `outcome` | Meaning |
+|---|---|
+| `created` | The schema (or column set) did not exist and was created. |
+| `reconciled` | The schema already existed; only the missing/different columns were applied. |
+| `already-satisfied` | The requested shape was already present; no mutation was issued. |
+| `collision` | A durable collision — a same-name schema in another package, an incompatible parent/kind, or an `update-entity` `add` naming a present column of a different type. The op failed (`success: false`). |
+
+`reconciled` and `already-satisfied` are **successes**, not failures.
+
+### Collision failure
+
+A durable collision is detected pre-emptively (before any mutation) and fails that operation with
+`success: false`, `outcome: "collision"`, a user-friendly `error` string, and a `collision-info`
+object naming the owning package. A collision is raised when:
+
+- the requested schema name already exists in a **different** package — **except** a `create-entity`
+  op with `extend-parent: true`, where a same-name schema in another package is the intended
+  replacement target and is classified `created` (not a collision); or
+- a same-package schema exists but its parent/kind is **incompatible** with the request (e.g. a
+  `BaseEntity`-derived entity vs. the requested `BaseLookup`).
+
+`update-entity` also raises a **column collision** when an `add` names a column that is already
+present with a **different** type. The add is never rewritten into a type-changing `modify`: a
+genuine replay of your own add carries the same type and is a no-op, so a type divergence means a
+*different*, pre-existing column already owns that name. This applies to an explicit
+`action: "add"` and to every item of a `columns` add-batch alike. The operation fails with
+`success: false` and `outcome: "collision"`, its `error` names **every** colliding column with its
+existing and requested type, and no mutation is issued (columns that would have been added in the
+same batch are not applied either). There is no `collision-info` — that block names a colliding
+*schema's* package and does not apply here.
+
+Operations inside one `update-entity` are reconciled **in order**, each against the state its
+predecessors leave behind. So an ordered `remove` + `add` of the same column recreates it (the
+re-add correctly sees the column as absent), and a remove-then-re-add at a *different* type is a
+legitimate recreate rather than a collision.
+
+To change a present column's type in place, send an explicit `modify`:
+
+```json
+{"action": "modify", "column-name": "UsrCode", "type": "Text"}
+```
+
+This means a `get-app-info` → edit → `columns` round-trip can add columns and leave matching ones
+untouched, but **cannot** change a type — switch that item to an explicit `modify`.
+
+A per-column type/shape mismatch that the backend rejects on an explicit `modify` is a
+**modify-conflict**, NOT a collision: it fails with `success: false` + `error`, and carries neither
+`collision-info` nor the `collision` outcome.
+
+> Note: the `create-entity` reconcile path still converges a type divergence through its
+> `ColumnsToModify` delta — the collision rule above is scoped to `update-entity` adds.
+
+## Seed Data Replay Contract
+
+Seed-data (`seed-rows`) dedups **by `Name`**. A row is replay-safe only when the target schema has a
+`Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column)
+are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay. Re-running a batch whose
+seed rows carry a `Name` skips the already-present rows and creates no duplicates.
+
 ## Response
 
 ```json
 {
   "success": true,
   "results": [
-    {"type": "create-lookup", "schema-name": "UsrTodoStatus", "success": true},
-    {"type": "seed-data", "schema-name": "UsrTodoStatus", "success": true},
-    {"type": "create-lookup", "schema-name": "UsrTodoPriority", "success": true},
-    {"type": "seed-data", "schema-name": "UsrTodoPriority", "success": true},
-    {"type": "update-entity", "schema-name": "UsrTodoList", "success": true}
+    {"type": "create-lookup", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "operation-index": 0, "outcome": "created"},
+    {"type": "seed-data", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "operation-index": 0},
+    {"type": "create-lookup", "schema-name": "UsrTodoPriority", "success": true, "status": "completed", "operation-index": 1, "outcome": "already-satisfied"},
+    {"type": "seed-data", "schema-name": "UsrTodoPriority", "success": true, "status": "completed", "operation-index": 1},
+    {"type": "update-entity", "schema-name": "UsrTodoList", "success": true, "status": "completed", "operation-index": 2, "outcome": "reconciled"}
   ]
 }
 ```
 
-`type` is the result discriminator for response items. It identifies the executed step, such as `create-lookup`, `update-entity`, or synthetic follow-up steps like `seed-data`.
+Each result carries:
+
+- `type` — the result discriminator: `create-lookup`, `create-entity`, `update-entity`, or `seed-data` (either a standalone seed-data operation or the synthetic follow-up step after a create with inline `seed-rows`).
+- `status` — machine-readable `completed` or `failed`.
+- `operation-index` — the zero-based index of the originating operation in the request `operations` array.
+- `outcome` — additive convergence discriminator (`created` | `reconciled` | `already-satisfied` | `collision`), omitted when null and for `seed-data` — see [Convergent Semantics](#convergent-ensure-semantics).
+- `attempts` — present only when the operation was retried for a transient network fault; the number of attempts made.
+
+Operations that never ran are **not** included in `results` — they are enumerated in the `resume-plan` (see below).
 
 ## Error Handling
 
-Operations execute in order and **stop on first failure**. Subsequent operations may depend
+Operations execute in order and **stop on the first failure**. Subsequent operations may depend
 on earlier ones (e.g., a lookup must exist and be registered before it can be maintained through
-`Lookups` or referenced as a column type). Partial results are returned so the caller knows which
-operations succeeded.
+`Lookups` or referenced as a column type).
+
+### Transient network retry
+
+A transient network-level failure (DNS resolution failure, connection reset/refused, timeout, or a
+gateway `502`/`503`/`504` response) no longer aborts the batch on the first occurrence. Each operation
+is retried up to 3 attempts with a short backoff before it is failed. Durable errors (server-side
+validation, compilation, business, or authorization failures) are **not** retried and fail on the
+first attempt.
+
+### Resume plan
+
+When the batch aborts before completing, the response carries a `resume-plan` so the caller can
+resume from the point of failure without re-running the whole batch:
+
+```json
+{
+  "success": false,
+  "results": [
+    {"type": "create-lookup", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "operation-index": 0},
+    {"type": "create-lookup", "schema-name": "UsrGenre", "success": false, "status": "failed", "operation-index": 1, "attempts": 3, "error": "..."}
+  ],
+  "resume-plan": {
+    "instruction": "Batch aborted before completing. Resubmit ONLY the operations in resume-plan.operations ...",
+    "failed-operation": {"operation-index": 1, "type": "create-lookup", "schema-name": "UsrGenre", "error": "..."},
+    "not-run-operation-indexes": [2, 3],
+    "operations": [
+      {"type": "create-lookup", "schema-name": "UsrGenre", "title-localizations": {"en-US": "Genre"}},
+      {"type": "update-entity", "schema-name": "UsrBooks", "update-operations": [/* ... */]},
+      {"type": "update-entity", "schema-name": "UsrReaders", "update-operations": [/* ... */]}
+    ]
+  }
+}
+```
+
+`resume-plan.operations` contains the failed operation followed by every not-run operation, echoed in
+re-submittable input shape. Resubmit **only** `resume-plan.operations` as a new `sync-schemas` call;
+do not resend the operations already marked `completed`. When a create succeeded but its inline
+seeding failed, the resume operation for that step is a standalone `seed-data` operation (not another
+create), so resuming never recreates the already-created schema.
+
+#### Deferred inline seed (successful batch)
+
+A **fully successful** batch also carries a `resume-plan` in one case: an inline `seed-rows` step was
+deliberately skipped because its create converged to `already-satisfied` (the verbatim-replay signal —
+inline rows without a `Name`/`Id` are not replay-safe, so re-running them would double-insert). That
+plan has **no** `failed-operation`; `not-run-operation-indexes` names the operations whose inline seed
+was deferred, and `operations` carries the equivalent standalone `seed-data` ops (which reconcile rows
+by key):
+
+```json
+{
+  "success": true,
+  "results": [
+    {"type": "create-lookup", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "outcome": "already-satisfied", "operation-index": 0},
+    {"type": "seed-data", "schema-name": "UsrTodoStatus", "success": true, "status": "completed", "outcome": "already-satisfied", "operation-index": 0, "messages": ["... inline seed-rows were SKIPPED ..."]}
+  ],
+  "resume-plan": {
+    "instruction": "Batch completed, but the inline seed-rows of the operations listed in resume-plan.not-run-operation-indexes were SKIPPED ...",
+    "not-run-operation-indexes": [0],
+    "operations": [
+      {"type": "seed-data", "schema-name": "UsrTodoStatus", "seed-rows": [/* ... */]}
+    ]
+  }
+}
+```
+
+Resubmit those operations **only if the rows are not yet on the server**. This matters because
+`already-satisfied` cannot distinguish "the schema and its rows already existed" from "an earlier retry
+attempt of *this* call created the schema but lost its response" — in the second case the rows were
+never seeded, so the plan is the recovery affordance. Never resubmit the create ops: they are already
+satisfied.
+
+A failed operation carries `success: false` and a user-friendly `error`. A durable collision
+additionally carries `outcome: "collision"` and `collision-info` (owning package). The safe recovery
+after an ambiguous failure is to fix the real cause (if any) and **re-submit the identical batch** when
+it is schema-only — the convergent ops replay already-applied work as `already-satisfied`/`reconciled`.
+If the batch seeds data, resubmit `resume-plan.operations` instead unless every seed row is
+`Name`-keyed, since a no-`Name` seed row is not replay-safe.
 
 ## See Also
 

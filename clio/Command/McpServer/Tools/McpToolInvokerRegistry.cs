@@ -38,6 +38,35 @@ public interface IMcpToolInvokerRegistry {
 	/// <returns><c>true</c> when the tool is destructive or unknown; otherwise <c>false</c>.</returns>
 	bool IsDestructive(string toolName);
 
+	/// <summary>
+	/// Determines whether the named tool is read-only, derived from its
+	/// <c>[McpServerTool(ReadOnly = ...)]</c> annotation. An unknown tool — or one that leaves the hint
+	/// unspecified — fails CLOSED (treated as write-capable), matching the MCP default for
+	/// <c>readOnlyHint</c>.
+	/// </summary>
+	/// <remarks>
+	/// This is the factual annotation, not a policy: the durable-invocation gate decides what to do with
+	/// it. It is deliberately separate from <see cref="IsDestructive"/> because the two answer different
+	/// questions — <c>readOnlyHint</c> is "does this tool mutate anything at all", while
+	/// <c>destructiveHint</c> is "when it mutates, can the mutation destroy or overwrite existing state"
+	/// (an additive-only write is correctly non-destructive per the MCP contract).
+	/// </remarks>
+	/// <param name="toolName">The MCP tool name.</param>
+	/// <returns><c>true</c> only when the tool explicitly declares itself read-only; otherwise <c>false</c>.</returns>
+	bool IsReadOnly(string toolName);
+
+	/// <summary>
+	/// Determines whether the named tool is retry-safe (read-only, or the get-page local-write read; never
+	/// idempotent server writes, and excluding the get-app-info progress-streaming read), derived
+	/// from its <c>[McpServerTool]</c> annotations via <see cref="McpReadDeadlineGate"/>. Used to decide
+	/// whether an unmatched long-tail dispatch is eligible for the read-response deadline (ENG-93373). An
+	/// unknown tool fails CLOSED (treated as NOT retry-safe) so it is never bounded on the assumption it is
+	/// safe to abandon.
+	/// </summary>
+	/// <param name="toolName">The MCP tool name.</param>
+	/// <returns><c>true</c> when the tool is retry-safe; otherwise <c>false</c> (including unknown).</returns>
+	bool IsRetrySafe(string toolName);
+
 	/// <summary>All registered MCP tool names, in discovery order.</summary>
 	IReadOnlyCollection<string> ToolNames { get; }
 }
@@ -52,6 +81,8 @@ public interface IMcpToolInvokerRegistry {
 public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 	private readonly Dictionary<string, McpServerTool> _tools;
 	private readonly Dictionary<string, bool> _destructive;
+	private readonly Dictionary<string, bool> _readOnly;
+	private readonly Dictionary<string, bool> _retrySafe;
 
 	/// <summary>
 	/// Builds the registry over the executing assembly using the supplied feature predicate and MCP
@@ -93,6 +124,8 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 
 		_tools = new Dictionary<string, McpServerTool>(StringComparer.OrdinalIgnoreCase);
 		_destructive = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+		_readOnly = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+		_retrySafe = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
 		// Mirror the SDK's WithTools discovery (feature-enabled [McpServerToolType] classes, all their
 		// [McpServerTool]-attributed instance/static methods), but always over the FULL enabled catalog
@@ -127,6 +160,10 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 				}
 				_tools[toolName] = tool;
 				_destructive[toolName] = tool.ProtocolTool.Annotations?.DestructiveHint ?? true;
+				// Unspecified readOnlyHint defaults to false (write-capable) per the MCP contract, which is
+				// also the fail-closed direction for the durable-invocation gate.
+				_readOnly[toolName] = tool.ProtocolTool.Annotations?.ReadOnlyHint ?? false;
+				_retrySafe[toolName] = McpReadDeadlineGate.IsRetrySafe(toolName, tool.ProtocolTool.Annotations);
 			}
 		}
 	}
@@ -189,5 +226,25 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 		}
 		// Unknown tool → fail closed so the safe surface refuses it.
 		return !_destructive.TryGetValue(toolName.Trim(), out bool isDestructive) || isDestructive;
+	}
+
+	/// <inheritdoc />
+	public bool IsReadOnly(string toolName) {
+		if (string.IsNullOrWhiteSpace(toolName)) {
+			// No tool to classify safely → fail closed (treat as write-capable).
+			return false;
+		}
+		// Unknown tool → fail closed so the caller gates it rather than running it unchecked.
+		return _readOnly.TryGetValue(toolName.Trim(), out bool isReadOnly) && isReadOnly;
+	}
+
+	/// <inheritdoc />
+	public bool IsRetrySafe(string toolName) {
+		if (string.IsNullOrWhiteSpace(toolName)) {
+			// No tool to classify → fail closed (not retry-safe).
+			return false;
+		}
+		// Unknown tool → fail closed so it is never bounded on the assumption it is safe to abandon.
+		return _retrySafe.TryGetValue(toolName.Trim(), out bool isRetrySafe) && isRetrySafe;
 	}
 }

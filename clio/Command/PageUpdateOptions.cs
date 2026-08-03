@@ -194,7 +194,7 @@ namespace Clio.Command {
 				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
+				response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
 				PopulatePostSaveChecksum(options, context, response);
 				AppendDesignerPresenceWarning(options, response);
 				return true;
@@ -424,6 +424,24 @@ namespace Clio.Command {
 			PageDesignerHierarchySchema root = !string.IsNullOrWhiteSpace(rootUId)
 				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head : head;
 			(string editableUId, bool isCreateReplacing) = ResolveEditableUId(head, schemaName, designPackageUId);
+			// Fail-closed backstop (mobile): if hierarchy resolution would materialize a REPLACING schema in
+			// the design package while the base schema (head) is freshly created / body-empty in a different
+			// package, the write would leave that empty base behind — and the Creatio Mobile app loads the
+			// empty base and CRASHES. Refuse the write with an actionable fix rather than produce the split.
+			// (Web pages legitimately use replacing schemas across apps, so this guard is mobile-only; a
+			// non-empty head is a real platform page being replaced and is NOT blocked. The target-schema-uid
+			// path bypasses this method entirely and stays available as the escape hatch named below.)
+			if (isCreateReplacing && pageSchemaType == PageSchemaType.Mobile && string.IsNullOrWhiteSpace(head.Body)) {
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = $"Refusing to write mobile page '{schemaName}': this would create a REPLACING schema in "
+						+ $"design package '{designPackageUId}' and leave the empty base schema '{head.UId}' in package "
+						+ $"'{head.PackageName}' unrendered — the Creatio Mobile app loads that empty base and crashes. "
+						+ $"Pass target-schema-uid={head.UId} to write the body into the base schema, or create the "
+						+ "page directly in the design package."
+				};
+				return false;
+			}
 			context = new EditableSchemaContext {
 				SchemaName = schemaName,
 				EditableSchemaUId = editableUId,

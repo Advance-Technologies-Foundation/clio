@@ -93,6 +93,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should name the derived page schemas so agents can reference them without re-discovery");
 		article.Text.Should().Contain("`create-app` already creates the default section for the canonical main entity",
 			because: "the guide should state the positive fact before explaining when create-app-section is appropriate");
+		article.Text.Should().Contain("SEQUENTIALLY, not in parallel",
+			because: "the guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
+		article.Text.Should().Contain("contention",
+			because: "the guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -182,6 +188,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the maintenance guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("operations[*].operation",
 			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
+		article.Text.Should().Contain("SEQUENTIALLY, not in parallel",
+			because: "the maintenance guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
+		article.Text.Should().Contain("contention",
+			because: "the maintenance guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -222,6 +234,35 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should keep lookup seeding separate from default semantics");
 		article.Text.Should().Contain("DisplayValue",
 			because: "the guide should make lookup and image-reference display semantics explicit");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("TC-U-30: guards that the four sync-schemas guidance resources keep the convergent re-submit-verbatim recovery language and never instruct a hand-composed catch-up batch, so the shipped no-catch-up guidance cannot silently regress.")]
+	public void SyncSchemasGuidanceResources_ShouldTeachConvergentReSubmit_AndForbidHandComposedCatchUp_WhenRecoveringFromFailure() {
+		// Arrange
+		string appModeling = ((TextResourceContents)new AppModelingGuidanceResource().GetGuide()).Text;
+		string existingApp = ((TextResourceContents)new ExistingAppMaintenanceGuidanceResource().GetGuide()).Text;
+		string agentExecution = ((TextResourceContents)new AgentExecutionGuidanceResource().GetGuide()).Text;
+		string dataBindings = ((TextResourceContents)new DataBindingsGuidanceResource().GetGuide()).Text;
+
+		// Act
+		string[] convergentRecoveryGuides = [appModeling, existingApp, agentExecution, dataBindings];
+
+		// Assert
+		appModeling.Should().Contain("re-submitting the whole batch verbatim is safe",
+			because: "the app-modeling guide must keep the convergent whole-batch re-submit recovery as the safe path");
+		existingApp.Should().Contain("re-submitting the whole batch verbatim is safe",
+			because: "the existing-app maintenance guide must keep the convergent whole-batch re-submit recovery as the safe path");
+		agentExecution.Should().Contain("re-submit the SAME batch verbatim",
+			because: "the agent-execution guide must instruct re-submitting the same batch verbatim after an ambiguous failure");
+		dataBindings.Should().Contain("skips the already-present rows",
+			because: "the data-bindings guide must state that re-running a Name-keyed seed batch is convergent and skips already-present rows");
+		foreach (string guide in convergentRecoveryGuides) {
+			guide.Should().NotContain("hand-compose",
+				because: "no sync-schemas guidance resource may instruct a hand-composed catch-up batch of only the remaining/failed operations");
+		}
 	}
 
 	[Test]

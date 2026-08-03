@@ -101,6 +101,51 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("update-page fails fast on the up-front append/full-config guard (ENG-93090): mode=append with a full-config body (SCHEMA_VIEW_MODEL_CONFIG) is rejected with an actionable hint before any remote call, so the agent does not burn a fetch+merge round-trip discovering the incompatibility server-side.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects append of a full-config body up-front before any remote call")]
+	[AllureDescription("Starts the real clio MCP server and invokes update-page in mode=append with a full-config web body (the non-diff SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG markers). Verifies the structured response carries success=false and the corrective 'Append merge cannot use this body … replace' hint end-to-end via the real MCP transport, with no environment-name supplied so the guard must short-circuit before any environment resolution or merge attempt.")]
+	public async Task PageUpdateTool_Should_FailFast_When_Append_Body_Is_FullConfigForm() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		// Full-config (static) FormPage body: carries SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
+		// (no *_DIFF). Append cannot merge this shape; the up-front guard must reject it offline.
+		// No environment-name — the guard must short-circuit before any environment resolution.
+		string fullConfigBody =
+			"define(\"FullConfig_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrAppendFullConfig_FormPage",
+					["body"] = fullConfigBody,
+					["mode"] = "append"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the append/full-config rejection is a structured tool response, not an MCP transport error");
+		response.Success.Should().BeFalse(
+			because: "append cannot merge a full-config body; the up-front guard must reject it end-to-end via the real MCP transport per AGENTS.md MCP e2e rule");
+		response.Error.Should().Contain(Clio.Command.McpServer.Tools.PageUpdateTool.AppendFullConfigRejectionPrefix,
+			because: "the agent-facing error must begin with the shared rejection-prefix constant so the caller does not chase a phantom environment / syntax failure (ENG-93090 RC-5)");
+		response.Error.Should().Contain("replace",
+			because: "the corrective hint must route the caller to replace mode, the working alternative for a full-config body");
+	}
+
+	[Test]
 	[Description("update-page fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on converter-crt-prefix-reserved lint error before any remote call")]
