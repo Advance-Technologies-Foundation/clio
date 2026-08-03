@@ -51,7 +51,7 @@
 			"parameters": {
 				"config": {
 					"type": "JsonObject",
-					"description": "Load options for the single-source load path (`dataSourceName`) - for example the load type and whether the cached data is updated (`updateCache`). A `config` shaped as a DYNAMIC data-source load (it names the view-model attribute to load into) is checked BEFORE `refreshDataConfig` and wins, so the refresh never runs - never combine the two on mobile. The Designer stamps a constant `{ \"loadType\": \"Reload\" }` into every saved refresh binding; that shape is not dynamic, so the refresh still runs. Tolerate the key when reading an existing page and do not author it on a new refresh button."
+					"description": "Load options for the single-source load path (`dataSourceName`) - for example the load type and whether the cached data is updated (`updateCache`). A `config` shaped as a DYNAMIC data-source load (it names the view-model attribute to load into) is checked BEFORE `refreshDataConfig` and wins, so the refresh never runs - never combine the two on mobile. The Designer stamps a constant `{ \"loadType\": \"reload\" }` into every saved refresh binding; that shape is not dynamic, so the refresh still runs. Tolerate the key when reading an existing page and do not author it on a new refresh button."
 				},
 				"dataSourceName": {
 					"type": "string",

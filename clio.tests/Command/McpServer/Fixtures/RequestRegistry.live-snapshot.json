@@ -75,7 +75,7 @@
 			"parameters": {
 				"config": {
 					"type": "JsonObject",
-					"description": "Load options for the single-source load path (`dataSourceName`) - for example the load type and whether the previous load parameters are reused. Not part of the refresh scenario: when `refreshDataConfig` is present the platform reloads through it and never reads this key. The Designer nevertheless stamps a constant `{ \"loadType\": \"Reload\" }` into every saved refresh binding, so tolerate that key when reading an existing page and do not author it on a new refresh button."
+					"description": "Load options for the single-source load path (`dataSourceName`) - for example the load type and whether the previous load parameters are reused. Not part of the refresh scenario: when `refreshDataConfig` is present the platform reloads through it and never reads this key. The Designer nevertheless stamps a constant `{ \"loadType\": \"reload\" }` into every saved refresh binding, so tolerate that key when reading an existing page and do not author it on a new refresh button."
 				},
 				"dataSourceName": {
 					"type": "string",
