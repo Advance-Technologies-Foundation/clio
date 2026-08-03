@@ -566,6 +566,12 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the guidance tool should return the canonical components sub-guide text");
 		response.Article.Text.Should().Contain("Adding a button with a click handler",
 			because: "the button+handler section moved into the components sub-guide");
+		response.Article.Text.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "the components sub-guide must force native-property-first styling and warn-and-confirm before any custom CSS (ENG-92541)");
+		response.Article.Text.Should().Contain("break or conflict during future Creatio platform upgrades",
+			because: "the CSS warning must explicitly state the upgrade-compatibility risk before the agent asks for confirmation (ENG-92541)");
+		response.Article.Text.Should().Contain("extraStyles",
+			because: "the guide must name extraStyles as custom CSS too — the real failing sessions applied CSS via extraStyles, not only the generic styles bag (ENG-92541)");
 	}
 
 	[Test]

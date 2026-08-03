@@ -49,6 +49,7 @@ public sealed class PageUpdateTool(
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
+		SchemaValidationService.CustomCssPolicySummary + " " +
 		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only. " +

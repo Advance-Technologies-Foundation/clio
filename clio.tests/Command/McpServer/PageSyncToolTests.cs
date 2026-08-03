@@ -1253,4 +1253,37 @@ public sealed class PageSyncToolTests {
 		response.Pages[0].Error.Should().Contain("environment name or an explicit URI is required",
 			because: "the resolver's existing EnvironmentResolutionException throw is the mechanism that still enforces requiredness on stdio/registered-environment paths — AC-05 must not regress this");
 	}
+
+	[Test]
+	[Description("The sync-pages tool [Description] surfaces the single-sourced custom-CSS policy and routes it to the page-modification-components sub-guide (ENG-92541 RC-3/RB-A5/RB-A7).")]
+	public void SyncPages_Description_Should_Carry_CustomCssPolicy_RoutedToComponentsSubGuide() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute descriptionAttribute =
+			typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+				.Cast<System.ComponentModel.DescriptionAttribute>()
+				.Single();
+
+		// Act
+		string description = descriptionAttribute.Description;
+
+		// Assert — pin the actual policy CONTENT, not `Contains(const)` (which is tautological because
+		// the description is composed from that const); a future edit that guts the const's wording
+		// must fail this test (ENG-92541, N-2). Asserting the same phrase set as update-page also keeps
+		// the two descriptions from drifting apart (RB-A5).
+		description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "AC1: sync-pages must state that custom CSS is a last resort, not a default");
+		description.Should().Contain("NATIVE inputs first",
+			because: "AC1: native-first must be stated in the surface the agent reads when calling sync-pages");
+		description.Should().Contain("already-inserted component",
+			because: "RC-3: the policy must explicitly cover the style-an-existing-component path");
+		description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles is custom CSS too and must be named so the agent does not treat it as native");
+		description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be stated before the agent applies CSS");
+		description.Should().Contain("explicit confirmation",
+			because: "AC5: the description must require explicit user confirmation before applying custom CSS");
+		description.Should().Contain("page-modification-components",
+			because: "the CSS trigger must route to the sub-guide that carries the STOP block rather than the entry guide whose GATE table has no general visual-styling row (ENG-92541, RC-3)");
+	}
 }
