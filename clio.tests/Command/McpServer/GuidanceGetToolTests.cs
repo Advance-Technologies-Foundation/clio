@@ -1174,43 +1174,6 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-91228 step 0: the conversion article documents the EMPTY CONTAINERS rule with its load-bearing invariants pinned — silent removal is scoped to converter-created layout containers only, ExpansionPanel is excluded, visible:false counts as content, emptiness cascades bottom-up, and every removal must reach the final conversion report.")]
-	public async Task GuidanceGet_FreedomToMobileArticle_DocumentsEmptyContainerRemoval() {
-		// Arrange
-		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);
-		GuidanceGetTool tool = new(_featureToggleService);
-
-		// Act
-		GuidanceGetResponse guide = await tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion"));
-
-		// Assert
-		string article = guide.Article!.Text;
-		article.Should().Contain("EMPTY CONTAINERS — do NOT insert a container that ends up empty",
-			because: "the rule must be stated as an instruction to the reader, who applies the element map");
-		article.Should().Contain("crt.FlexContainer, crt.GridContainer, crt.TabPanel and an individual tab (crt.TabContainer)",
-			because: "the removable set is a closed list of converter-created layout containers — widening it silently would delete real content");
-		article.Should().Contain("NEVER to template merge twins",
-			because: "a template's own container is not the converter's to remove");
-		article.Should().Contain("crt.ExpansionPanel is NOT removable",
-			because: "an empty panel is a designer placeholder the user fills later — dropping it would lose the detail card (safety exclusion)");
-		article.Should().Contain("visible: false COUNTS as content",
-			because: "a hidden child must keep its container: it is hidden at runtime only and still needs a home in the designer");
-		article.Should().Contain("Evaluate bottom-up so emptiness cascades",
-			because: "without the cascade a wrapper holding only an empty grid would survive as a new empty container");
-		article.Should().Contain("recompute positional indexes",
-			because: "removing a tab without recomputing sibling positions would leave gaps in the tab order");
-		article.Should().Contain("synthesize NO tab body + Area layers for a removed tab",
-			because: "the ENG-94188 layer synthesis must not resurrect a tab the emptiness rule removed");
-		article.Should().Contain("KEEP the attributes and resource strings the removed container referenced",
-			because: "attribute cleanup is out of the experiment's scope — deleting them could break bindings elsewhere");
-		article.Should().Contain("remove silently, and list every removed",
-			because: "removal must never become a question at the gate");
-		article.Should().Contain("in the final conversion report as dropped (reason: empty container)",
-			because: "silent removal is acceptable only while every removal stays visible in the report");
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Attribute lock-in: both MCP surfaces of the converter carry [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
 	public void MobilePageConverter_McpTypes_CarryFeatureToggle() {
 		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)

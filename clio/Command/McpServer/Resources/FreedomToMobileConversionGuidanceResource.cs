@@ -176,24 +176,7 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   - relocate-children — do NOT recreate this container; its children are placed in parentName
 			     instead (each child has its own entry whose parentName already points there).
 			   - drop — skip the element entirely (reason explains why: unsupported type or multi-data-source).
-			     Tell the user what was dropped.
-			   EMPTY CONTAINERS — do NOT insert a container that ends up empty. This applies ONLY to
-			   crt.FlexContainer, crt.GridContainer, crt.TabPanel and an individual tab (crt.TabContainer)
-			   whose elementMap operation is insert (converter-created) — NEVER to template merge twins,
-			   the Scaffold, or any other component type (crt.ExpansionPanel is NOT removable: insert it
-			   even when empty). Emptiness is judged on the TARGET mobile tree after all elementMap
-			   decisions: a container is empty when NO surviving child lands in ANY of its child slots.
-			   Evaluate bottom-up so emptiness cascades — a FlexContainer holding only an empty
-			   GridContainer drops together with it, and a TabPanel whose every converter-created tab is
-			   empty drops too. A child with visible: false COUNTS as content (it must stay for the
-			   designer; it is hidden only at runtime). A dropped or relocated-away child does NOT count.
-			   Consequences of each removal: recompute positional indexes on the cleaned sibling list
-			   (e.g. converted tabs inserted before FeedTab/AttachmentsTab keep contiguous positions);
-			   synthesize NO tab body + Area layers for a removed tab; when a page business rule targets a
-			   removed container, drop only that action — a rule left with no live actions is reported as
-			   dropped. KEEP the attributes and resource strings the removed container referenced (no
-			   cleanup). Do NOT ask the user whether to remove — remove silently, and list every removed
-			   container in the final conversion report as dropped (reason: empty container).
+			     Tell the user what was dropped. (Empty containers are still inserted — the user can delete them.)
 			   For many→one suggestions (primaryWebMerge set, e.g. crt.FolderTree + crt.FolderTreeActions
 			   -> crt.FolderTreeActions), emit a SINGLE mobile component and merge in the secondary
 			   component's properties; do not emit the secondary as a separate component.
