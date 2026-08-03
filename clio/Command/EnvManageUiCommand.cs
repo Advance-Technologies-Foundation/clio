@@ -1061,14 +1061,25 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		return command.Execute(new GetCreatioInfoCommandOptions { Environment = envName });
 	}
 
-	private int ExecuteCompileConfiguration(string envName, EnvironmentSettings environmentSettings)
+	internal int ExecuteCompileConfiguration(string envName, EnvironmentSettings environmentSettings)
 	{
+		// The compile runs silently (BuildEnvUiCompileOptions) so a declined [Y/N] cannot render as a
+		// misleading "failed" banner (RC-12) — but AC-1 still requires the heavy-operation warning to be
+		// shown at least once on this reachable interactive path, so surface it explicitly here (RC-21).
+		WarnHeavyCompilation();
 		var settings = CloneEnvironmentSettings(environmentSettings);
 		var serviceUrlBuilder = ActivatorUtilities.CreateInstance<ServiceUrlBuilder>(_serviceProvider, settings);
 		var command = ActivatorUtilities.CreateInstance<CompileConfigurationCommand>(_serviceProvider,
 			_applicationClientFactory.CreateClient(settings), settings, serviceUrlBuilder);
 		return command.Execute(BuildEnvUiCompileOptions(envName));
 	}
+
+	/// <summary>
+	/// Surfaces the heavy-operation warning for the env-ui "Compile configuration" action so AC-1 (ENG-93157)
+	/// is satisfied even though the compile itself runs silently (no proceed/postpone prompt in the menu).
+	/// </summary>
+	internal void WarnHeavyCompilation() =>
+		_logger.WriteWarning(CompileConfigurationCommand.SiteCompilationWarning);
 
 	/// <summary>
 	/// Builds the compile options for the interactive env-ui "Compile configuration" action. <c>IsSilent</c>

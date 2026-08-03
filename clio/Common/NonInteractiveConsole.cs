@@ -26,11 +26,21 @@ public sealed class NonInteractiveConsole : IInteractiveConsole {
 
 	/// <summary>
 	/// Registers the shared non-interactive console into a child DI container, overriding the default
-	/// <see cref="RealInteractiveConsole"/>. Use it for every automation host that builds its own container
-	/// and resolves commands to run without a human at the console — the per-request MCP child containers
-	/// (<c>ToolCommandResolver</c>) and scenario steps (<c>ScenarioRunnerCommand</c>) — so a command that
-	/// runs a warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) fails OPEN (proceeds) by
-	/// construction instead of blocking on <see cref="System.Console.ReadKey()"/> on an attached TTY.
+	/// <see cref="RealInteractiveConsole"/> service registration. Use it for automation hosts that build
+	/// their own container and resolve commands to run without a human at the console — the per-request MCP
+	/// child containers (<c>ToolCommandResolver</c>) and scenario steps (<c>ScenarioRunnerCommand</c>) — so a
+	/// command that runs a warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) fails OPEN
+	/// (proceeds) instead of blocking on <see cref="System.Console.ReadKey()"/> on an attached TTY.
+	/// <para>
+	/// SCOPE (RC-22): this changes only what CONSTRUCTOR-INJECTED <see cref="IInteractiveConsole"/> consumers
+	/// receive. It does NOT retroactively affect instances already built by <c>BindingsModule.RegisterInto</c>
+	/// before <c>additionalRegistrations</c> run — notably <c>ISettingsRepository</c>, whose
+	/// <see cref="RealInteractiveConsole"/> is baked into a private field at construction. A Safe-environment
+	/// confirmation reached via <c>ISettingsRepository.GetEnvironment(options)</c> therefore still uses the
+	/// real console. The MCP resolver avoids that path by passing <see cref="Shared"/> explicitly to
+	/// <c>settings.Fill(options, ...)</c>; callers that rely on <c>GetEnvironment</c> on a Safe environment
+	/// must not assume this override protects them.
+	/// </para>
 	/// </summary>
 	/// <param name="services">The child container's service collection.</param>
 	public static void ForceInContainer(IServiceCollection services) =>

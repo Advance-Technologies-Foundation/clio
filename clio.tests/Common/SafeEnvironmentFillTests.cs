@@ -132,6 +132,34 @@ public sealed class SafeEnvironmentFillTests {
 	}
 
 	[Test]
+	[Description("RC-22 boundary guard: ForceInContainer overrides the IInteractiveConsole SERVICE (constructor-injected consumers get the shared non-interactive console) but does NOT retroactively rebind a singleton already built with a different console — mirroring the pre-built ISettingsRepository whose RealInteractiveConsole is baked in at construction and is therefore unaffected.")]
+	public void ForceInContainer_ShouldNotRebindAlreadyConstructedSingletons() {
+		// Arrange — mimic BindingsModule.RegisterInto: a singleton is built (capturing the console) BEFORE
+		// additionalRegistrations (ForceInContainer) run.
+		var services = new ServiceCollection();
+		services.AddSingleton<IInteractiveConsole>(RealInteractiveConsole.Shared);
+		var prebuilt = new ConsoleCapturingService(RealInteractiveConsole.Shared);
+		services.AddSingleton(prebuilt);
+		NonInteractiveConsole.ForceInContainer(services);
+		var provider = services.BuildServiceProvider();
+
+		// Act
+		IInteractiveConsole resolvedConsole = provider.GetRequiredService<IInteractiveConsole>();
+		ConsoleCapturingService resolvedService = provider.GetRequiredService<ConsoleCapturingService>();
+
+		// Assert
+		resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+			because: "constructor-injected consumers resolved after the override get the non-interactive console");
+		resolvedService.CapturedConsole.Should().BeSameAs(RealInteractiveConsole.Shared,
+			because: "a singleton already built with a different console (like the pre-built ISettingsRepository) is NOT retroactively rebound by ForceInContainer — this is the RC-22 boundary");
+	}
+
+	private sealed class ConsoleCapturingService {
+		public IInteractiveConsole CapturedConsole { get; }
+		public ConsoleCapturingService(IInteractiveConsole capturedConsole) => CapturedConsole = capturedConsole;
+	}
+
+	[Test]
 	[Description("Fill on a Safe environment with a declining console throws SafeEnvironmentConfirmationRequiredException instead of exiting the process.")]
 	public void Fill_ShouldThrowSafeEnvironmentConfirmationRequiredException_WhenNonInteractiveAndSafeEnvironment() {
 		// Arrange
