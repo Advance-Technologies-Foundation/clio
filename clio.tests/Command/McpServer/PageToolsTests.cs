@@ -3958,6 +3958,66 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page append: a genuine (non-full-config) marker-shape merge failure still surfaces the generic 'Append merge failed'/'marker pairs' wrapper through the public TryUpdatePage path — proving the exception-type classification keeps the negative branch for a plain InvalidOperationException (ENG-94422)")]
+	public void TryUpdatePage_AppendMode_Should_KeepMarkerPairsWrapper_WhenMergeFailsForNonFullConfigReason() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrFcp_FormPage", PackageUId = designPkg, PackageName = "UsrFcp" }
+		});
+		// A diff-form (NOT full-config) current web body whose SCHEMA_VIEW_CONFIG_DIFF section holds malformed
+		// JSON: it clears the full-config gate but makes the merge throw a plain InvalidOperationException at
+		// ReadJsonArray — the genuine marker-shape failure that must keep the generic wrapper + marker-pairs hint.
+		string currentBody = "define(\"UsrFcp_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[not valid json/**SCHEMA_VIEW_CONFIG_DIFF*/ }; });";
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrFcp_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		// Incoming fragment is valid diff form — the caller did nothing wrong; the merge fails on the current body's shape.
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrFcp_FormPage",
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a marker-shape merge failure must still abort the save");
+		response.Success.Should().BeFalse(because: "the response must report the rejection");
+		response.Error.Should().StartWith("Append merge failed:",
+			because: "a plain InvalidOperationException (not a FullConfigAppendNotSupportedException) must keep the generic 'Append merge failed:' prefix — this is the else branch the exception-type classification protects (ENG-94422)");
+		response.Error.Should().Contain("must contain valid marker pairs",
+			because: "the generic marker-pairs hint is correct for a genuine marker-shape failure and must NOT be suppressed for the non-full-config branch (ENG-94422)");
+	}
+
+	[Test]
 	[Description("PageBodyMerger handlers dedupe: when incoming declares the same request as current, incoming wins")]
 	public void PageBodyMerger_Should_Dedupe_Handlers_By_Request() {
 		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
@@ -4859,6 +4919,23 @@ public class PageToolsTests
 				because: "a valid diff-form incoming mobile body must not be blamed when the blocker is the full-config mobile body on the server (ENG-94422)")
 			.WithMessage(PageBodyMerger.MobileCurrentFullConfigNotSupportedMessage,
 				because: "the rejection must name the server-side mobile body and point at replace mode");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge: a full-config INCOMING mobile body against a diff-form current mobile body is rejected with the incoming-body mobile message (blames the caller's body) (ENG-94422)")]
+	public void Merge_ShouldThrowIncomingMessage_WhenIncomingMobileBodyIsFullConfig() {
+		// Arrange
+		string currentBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+
+		// Act
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a full-config incoming mobile body the caller authored is correctly blamed and can be converted or replaced (ENG-94422)")
+			.WithMessage(PageBodyMerger.MobileIncomingFullConfigNotSupportedMessage,
+				because: "the mobile incoming-body case must keep the convert-your-body advice; incoming is checked before current so the caller's own body wins the message");
 	}
 
 	[Test]
