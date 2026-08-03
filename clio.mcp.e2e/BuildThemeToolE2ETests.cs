@@ -73,6 +73,8 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
 		contract.Description.Should().Contain("get-guidance theming",
 			because: "the contract routes agents to the theme workflow guidance");
+		contract.Description.Should().Contain("checked against Google Fonts",
+			because: "the branding skill gates itself on this phrase in the get-tool-contract PROJECTION — the unit assertion on the [Description] attribute would stay green if build-theme ever gained a curated ToolContractCatalog entry that dropped it, silently telling users on a correct clio that their clio predates the feature");
 		callResult.IsError.Should().NotBeTrue(
 			because: "build-theme returns a structured result instead of a top-level MCP failure");
 		result.Success.Should().BeTrue(
