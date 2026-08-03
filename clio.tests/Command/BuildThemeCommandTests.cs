@@ -64,14 +64,19 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("No build advisory contains anything the sensitive-text redactor would rewrite. The advisories travel verbatim onto the create-theme MCP result — the one string channel there that is not redacted — so this must stay true even when every caller-controlled field is filled with redactor-tripping text.")]
+	[Description("No build advisory carries anything the sensitive-text redactor would rewrite, with every field an advisory could ever interpolate driven by redactor-tripping text. Accent, heading-font and body-font stay empty on purpose: the two advisories only fire when they are.")]
 	public void CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite() {
 		// Arrange
+		const string trip = "https://tenant.example/x?password=hunter2";
 		BuildThemeOptions options = new() {
 			Primary = "#7b1fa2",
 			CssClassName = "MyTheme",
-			Caption = "https://tenant.example/theme?password=hunter2",
-			Id = "https://tenant.example/id",
+			Caption = trip,
+			Id = trip,
+			Secondary = trip,
+			Success = trip,
+			Error = trip,
+			Version = trip,
 			FontWeights = [400, 700],
 			Output = "C:/Users/someone/themes"
 		};
@@ -81,10 +86,42 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 
 		// Assert
 		error.Should().BeNull(because: "the inputs are valid; only the advisories are under test");
-		warnings.Should().NotBeEmpty(
-			because: "the arrangement deliberately triggers the font-weights and auto-accent advisories, or this test would pass vacuously");
+		AssertBothAdvisoriesSurviveRedaction(warnings);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Same guarantee with an environment name driving the build: environment settings are the first thing the advisory contract forbids, and environment-name is mutually exclusive with version, so it needs its own arrangement.")]
+	public void CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite_WhenBuiltFromAnEnvironment() {
+		// Arrange
+		const string trip = "https://tenant.example:8443/app?password=hunter2";
+		EnvironmentSettings environment = new() { Uri = trip };
+		_settingsRepository.FindEnvironment(Arg.Any<string>()).Returns(environment);
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
+		_resolverFactory.Create(environment).Returns(resolver);
+		BuildThemeOptions options = new() {
+			Primary = "#7b1fa2",
+			CssClassName = "MyTheme",
+			EnvironmentName = trip,
+			FontWeights = [400, 700]
+		};
+
+		// Act
+		_command.TryBuildTheme(options, out _, out _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		error.Should().BeNull(because: "the environment resolves, so only the advisories are under test");
+		AssertBothAdvisoriesSurviveRedaction(warnings);
+	}
+
+	private static void AssertBothAdvisoriesSurviveRedaction(IReadOnlyList<string> warnings) {
+		warnings.Should().Contain(warning => warning.Contains("font weights"),
+			because: "the static advisory must be in the sample");
+		warnings.Should().Contain(warning => warning.Contains("auto-selected accent"),
+			because: "the auto-accent advisory is the only producer that interpolates a computed value, so a sample without it would prove nothing");
 		warnings.Should().OnlyContain(warning => SensitiveErrorTextRedactor.Redact(warning) == warning,
-			because: "an advisory the redactor would rewrite is one carrying a URI, path or credential — and the create-theme result forwards advisories unredacted");
+			because: "an advisory the redactor would rewrite carries a URI, path or credential — and the create-theme result forwards advisories unredacted");
 	}
 
 	private static BuildThemeOptions ValidOptions() => new() {

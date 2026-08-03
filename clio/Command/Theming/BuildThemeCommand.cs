@@ -446,7 +446,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// which is the one string channel there that is NOT passed through
 	/// <see cref="Clio.Command.McpServer.SensitiveErrorTextRedactor"/> — the error channel beside it is. Every advisory
 	/// added here must therefore be static text or a locally computed value: never an environment setting, a
-	/// path, a URI, or unvalidated caller input. <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c>
+	/// path, a URI, or unvalidated caller input. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> pair
 	/// fails the moment one does.
 	/// </summary>
 	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options) {
