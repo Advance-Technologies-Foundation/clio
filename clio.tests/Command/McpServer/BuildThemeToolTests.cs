@@ -90,8 +90,8 @@ public sealed class BuildThemeToolTests
 		string toolDescription = typeof(BuildThemeTool)
 			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
 			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
-		toolDescription.Should().Contain("Google Fonts",
-			because: "an open-world tool must disclose the host it reaches, not just carry the flag");
+		toolDescription.Should().Contain("checked against Google Fonts",
+			because: "an open-world tool must disclose the host it reaches, and the branding skill keys its clio-capability check on this exact phrase — rewording it would silently disarm that check");
 		toolDescription.Should().Contain("can vary with probe outcomes",
 			because: "the emitted CSS is no longer a pure function of the inputs, and the caller has to know that next to the idempotency claim");
 	}

@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Theming;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
@@ -130,10 +132,65 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolName)]
+	[AllureName("build-theme rejects the removed local-font-families argument with a migration hint")]
+	[Description("Starts the real clio MCP server and invokes build-theme with the removed local-font-families argument; verifies the real JSON binding routes it into the overflow bag and the tool returns a structured failure explaining the argument was removed, instead of silently ignoring it.")]
+	public async Task BuildTheme_Should_RejectRemovedLocalFontFamiliesArgument() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = "MyTheme",
+					["heading-font"] = "Verdana",
+					["local-font-families"] = new[] { "Verdana" }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the removed argument must fail loudly for one release instead of vanishing into the overflow bag");
+		result.Error.Should().Contain("local-font-families was removed",
+			because: "the failure names the removed argument so an agent built against the old contract can self-correct");
+		result.Error.Should().Contain("probed automatically",
+			because: "the failure explains that the availability probe now makes the suppression decision");
+	}
+}
+
+/// <summary>
+/// The one build-theme e2e case that needs outbound access to fonts.google.com. It lives in its own
+/// fixture, and deliberately carries NEITHER <c>McpE2E.NoEnvironment</c> nor <c>McpE2E.Sandbox</c>:
+/// per-method categories are additive on top of the fixture tag, so a live-network test left in the
+/// environment-free tier would still be selected by the blocking pre-merge sweep, whose acceptance gate is
+/// <c>Total == Passed</c> AND <c>Skipped == 0</c> — an egress-blocked runner would fail that gate on a skip.
+/// Exclude it with <c>dotnet test --filter "TestCategory!=McpE2E.LiveGoogleFonts"</c>.
+/// The deterministic InCatalog / NotInCatalog / Unverified matrix lives in the unit suite
+/// (<c>GoogleFontsCatalogTests</c>, <c>BuildThemeCommandTests</c>); the MCP server runs out of process here,
+/// so its <c>IGoogleFontsCatalog</c> cannot be substituted from the test.
+/// </summary>
+[TestFixture]
+[Category(LiveGoogleFontsE2ETests.LiveGoogleFontsCategory)]
+[AllureNUnit]
+[AllureSuite("MCP e2e")]
+[AllureFeature("build-theme")]
+public sealed class LiveGoogleFontsE2ETests : McpContractFixtureBase {
+
+	internal const string LiveGoogleFontsCategory = "McpE2E.LiveGoogleFonts";
+
+	private const string ToolName = "build-theme";
+
+	[Test]
+	[AllureTag(ToolName)]
 	[AllureName("build-theme suppresses the Google Fonts import for a family the live catalogue does not publish")]
-	[Description("Starts the real clio MCP server and invokes build-theme with a family Google Fonts does not host (Verdana); the server probes the live catalogue, applies the family through the --crt-font-family-heading token WITHOUT an @import, and reports the suppression in a warning. Needs outbound network: with fonts.google.com unreachable the probe degrades to unverified and the import is kept, which this test then reports as a failure on the @import assertion.")]
+	[Description("Live smoke test of the whole probe path: starts the real clio MCP server and invokes build-theme with a family Google Fonts does not host (Verdana); the server probes the live catalogue, applies the family through the --crt-font-family-heading token WITHOUT an @import, and reports the suppression in a warning. The server runs out of process, so its IGoogleFontsCatalog cannot be substituted from here — the deterministic InCatalog/NotInCatalog/Unverified matrix lives in the unit suite (GoogleFontsCatalogTests, BuildThemeCommandTests). Carries its own category so a runner without egress can exclude it, and skips rather than fails when the endpoint is unreachable: the production design fails open, so a blocked runner would otherwise report an infrastructure problem as a suppression regression.")]
 	public async Task BuildTheme_Should_OmitImportAndWarn_ForFamilyNotInGoogleFonts() {
 		// Arrange
+		await SkipUnlessGoogleFontsIsReachableAsync();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
@@ -163,34 +220,30 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 			because: "the suppression is disclosed post factum through the warnings channel");
 	}
 
-	[Test]
-	[AllureTag(ToolName)]
-	[AllureName("build-theme rejects the removed local-font-families argument with a migration hint")]
-	[Description("Starts the real clio MCP server and invokes build-theme with the removed local-font-families argument; verifies the real JSON binding routes it into the overflow bag and the tool returns a structured failure explaining the argument was removed, instead of silently ignoring it.")]
-	public async Task BuildTheme_Should_RejectRemovedLocalFontFamiliesArgument() {
-		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["primary"] = "#004fd6",
-					["css-class-name"] = "MyTheme",
-					["heading-font"] = "Verdana",
-					["local-font-families"] = new[] { "Verdana" }
-				}
-			},
-			context.CancellationTokenSource.Token);
-		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
-
-		// Assert
-		result.Success.Should().BeFalse(
-			because: "the removed argument must fail loudly for one release instead of vanishing into the overflow bag");
-		result.Error.Should().Contain("local-font-families was removed",
-			because: "the failure names the removed argument so an agent built against the old contract can self-correct");
-		result.Error.Should().Contain("probed automatically",
-			because: "the failure explains that the availability probe now makes the suppression decision");
+	/// <summary>
+	/// Marks the test inconclusive unless the live endpoint answers the way the production probe requires:
+	/// the same handler posture (no cookies, no redirect following), the same user agent and budget, and a
+	/// JSON success. A looser guard would pass on a captive portal or a slow link while the server's own
+	/// probe degrades to Unverified, keeps the import, and reds the suppression assertion — the very
+	/// infrastructure-as-regression failure this guard exists to prevent.
+	/// </summary>
+	private static async Task SkipUnlessGoogleFontsIsReachableAsync() {
+		using HttpClientHandler handler = new() { UseCookies = false, AllowAutoRedirect = false };
+		using HttpClient probeClient = new(handler) { Timeout = GoogleFontsCatalog.ProbeTimeout };
+		probeClient.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+		try {
+			using HttpResponseMessage response = await probeClient.GetAsync(
+				"https://fonts.google.com/metadata/fonts/Roboto", HttpCompletionOption.ResponseHeadersRead);
+			string mediaType = response.Content?.Headers?.ContentType?.MediaType;
+			if (!response.IsSuccessStatusCode
+				|| mediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) {
+				Assert.Ignore(
+					$"fonts.google.com answered {(int)response.StatusCode} ({mediaType ?? "no content type"}); "
+					+ "the server's probe would degrade to Unverified, so the suppression path cannot be exercised.");
+			}
+		}
+		catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) {
+			Assert.Ignore($"fonts.google.com is unreachable ({exception.GetType().Name}); the live probe path cannot be exercised.");
+		}
 	}
 }
