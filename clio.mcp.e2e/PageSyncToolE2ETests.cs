@@ -65,6 +65,39 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("The sync-pages get-tool-contract description carries the ENG-92541 custom-CSS policy (native-first + upgrade-risk + explicit confirmation) and routes to page-modification-components, over the real MCP contract surface (AGENTS.md mandates e2e for a changed tool [Description], not only unit-level reflection).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages contract description carries the custom-CSS policy")]
+	[AllureDescription("Fetches the sync-pages contract via get-tool-contract over the real clio MCP server and asserts the served description carries the native-first custom-CSS policy and routes to page-modification-components.")]
+	public async Task PageSyncTool_Contract_Should_Carry_CustomCssPolicy() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.Description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "the real MCP contract surface for sync-pages must carry the native-first custom-CSS policy end to end, not only via the unit-level reflection test (AGENTS.md e2e mandate, N-1)");
+		contract.Description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be present on the served contract description");
+		contract.Description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles must be named as custom CSS on the served contract description");
+		contract.Description.Should().Contain("page-modification-components",
+			because: "RC-3: the served contract must route the CSS policy to the sub-guide that carries the STOP block");
+	}
+
+	[Test]
 	[Description("Reports readable failures when sync-pages is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages reports invalid environment failures")]
