@@ -416,6 +416,202 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
+	[Description("Binds a wire payload that carries ONLY 'column-name' onto the column record through the production MCP serializer options, so the alias survives JSON deserialization and is not rejected before ResolveName can run (issue #947, the actual reported failure path).")]
+	[Category("Unit")]
+	public void CreateEntitySchemaColumnArgs_Should_Deserialize_WireShape_WithOnlyColumnName() {
+		// Arrange — the exact JSON an agent following the contract sends: `column-name`, no `name`. This is the
+		// half the direct-record tests cannot cover: `Name` is a non-nullable positional parameter, so the
+		// question is whether the binder accepts a payload that omits it at all.
+		const string payload = """
+		{"column-name":"UsrName","type":"MediumText","title-localizations":{"en-US":"Customer name"}}
+		""";
+		JsonSerializerOptions options = BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		CreateEntitySchemaColumnArgs? column =
+			JsonSerializer.Deserialize<CreateEntitySchemaColumnArgs>(payload, options);
+
+		// Assert
+		column.Should().NotBeNull(
+			because: "omitting `name` must not fail binding — `column-name` is an equally valid spelling");
+		column!.ResolveName().Should().Be("UsrName",
+			because: "the wire alias must reach the resolver, which is what the command layer serializes");
+		column.ResolveType().Should().Be("MediumText",
+			because: "the rest of the wire shape must bind unaffected");
+	}
+
+	[Test]
+	[Description("The emitted create-entity-schema input schema does not mark a column's 'name' as required, so a strict MCP client that validates against the schema cannot reject a contract-following payload that sends only 'column-name' (issue #947).")]
+	[Category("Unit")]
+	public void CreateEntitySchemaTool_Should_NotRequireColumnName_InEmittedInputSchema() {
+		// Arrange — built through the SDK on the production serializer options, the same path BindingsModule
+		// registers, so the assertion is about the schema clients actually receive.
+		McpServerTool tool = McpServerTool.Create(
+			typeof(CreateEntitySchemaTool).GetMethod(nameof(CreateEntitySchemaTool.CreateEntitySchema))!,
+			target: new CreateEntitySchemaTool(
+				new FakeCreateEntitySchemaCommand(),
+				ConsoleLogger.Instance,
+				Substitute.For<IToolCommandResolver>()),
+			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
+
+		// Act
+		string schema = JsonSerializer.Serialize(tool.ProtocolTool.InputSchema);
+
+		// Assert — `name` is one of two accepted spellings, so requiring it in the schema would contradict the
+		// contract that advertises `column-name` as canonical. The `required` array itself is asserted by
+		// navigating the schema in ColumnIdentityEmittedSchemaTests: the exact-substring form this test used to
+		// carry (`NotContain("\"required\":[\"name\",\"type\"]")`) passed vacuously on any element-order,
+		// whitespace, or extra-field change — i.e. precisely when the relaxation had regressed (PR #984 review).
+		schema.Should().Contain("column-name",
+			because: "the canonical column identity field must appear in the emitted schema at all");
+	}
+
+	[Test]
+	[Description("Reports a missing column type as a missing column type — naming both accepted spellings — now that `type` is optional in the emitted schema so its `data-value-type` alias stays usable (issue #947).")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Fail_With_ColumnType_Message_WhenNeitherTypeSpellingSupplied() {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("UsrName", null, Localizations("Customer name"))
+		};
+
+		// Act
+		Action act = () => CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*data-value-type*",
+				because: "both accepted spellings must be named so the caller can pick either")
+			.And.Message.Should().Contain("column type",
+				because: "the message must identify WHICH field is missing, not fail vaguely downstream");
+	}
+
+	[Test]
+	[Description("Accepts the 'data-value-type' alias alone as the column type, mirroring the column-name alias so a get-app-info read shape round-trips into a create without translation.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Serialize_DataValueTypeAlias_AsType() {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("UsrName", null, Localizations("Customer name")) {
+				DataValueTypeAlias = "MediumText"
+			}
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("type").GetString().Should().Be("MediumText",
+			because: "the read-shape alias must reach the command layer's 'type' field");
+	}
+
+	[Test]
+	[Description("Keeps the wire shape working when only the 'name' alias is sent, so accepting 'column-name' did not regress the spelling already in use by get-app-info round-trips (issue #947).")]
+	[Category("Unit")]
+	public void CreateEntitySchemaColumnArgs_Should_Deserialize_WireShape_WithOnlyName() {
+		// Arrange
+		const string payload = """
+		{"name":"UsrName","type":"MediumText","title-localizations":{"en-US":"Customer name"}}
+		""";
+		JsonSerializerOptions options = BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		CreateEntitySchemaColumnArgs? column =
+			JsonSerializer.Deserialize<CreateEntitySchemaColumnArgs>(payload, options);
+
+		// Assert
+		column!.ResolveName().Should().Be("UsrName",
+			because: "the canonical field must keep binding exactly as before");
+	}
+
+	[Test]
+	[Description("Binds a sync-schemas create-entity operation whose column carries only 'column-name' through the production MCP serializer options, covering the batch wire shape as well as the single-column one (issue #947).")]
+	[Category("Unit")]
+	public void SchemaSyncOperation_Should_Deserialize_CreateEntityColumn_WithOnlyColumnName() {
+		// Arrange
+		const string payload = """
+		{"type":"create-entity","schema-name":"UsrOrder","title-localizations":{"en-US":"Order"},
+		 "columns":[{"column-name":"UsrName","type":"MediumText","title-localizations":{"en-US":"Customer name"}}]}
+		""";
+		JsonSerializerOptions options = BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		SchemaSyncOperation? operation = JsonSerializer.Deserialize<SchemaSyncOperation>(payload, options);
+
+		// Assert
+		operation.Should().NotBeNull(because: "the create-entity operation shape must bind");
+		operation!.Columns!.Single().ResolveName().Should().Be("UsrName",
+			because: "the batch path must carry the alias through to the resolver too");
+	}
+
+	[Test]
+	[Description("Serializes the canonical 'column-name' spelling into the command layer's 'name' field, so a caller following the get-tool-contract column identity field is not silently reduced to name:null (issue #947).")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Serialize_Canonical_ColumnName_Alias() {
+		// Arrange — only `column-name` is supplied, exactly as the advertised contract describes it.
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs(null!, "MediumText", Localizations("Customer name")) {
+				ColumnNameAlias = "UsrName"
+			}
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("UsrName",
+			because: "the contract advertises 'column-name' as the column identity field, so it must reach the " +
+				"command layer's 'name' instead of being dropped");
+	}
+
+	[Test]
+	[Description("Prefers the canonical 'name' over the 'column-name' alias when a caller sends both, so the resolution order is deterministic.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Prefer_Name_Over_ColumnNameAlias_WhenBothSupplied() {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("UsrCanonical", "Text", Localizations("Canonical")) {
+				ColumnNameAlias = "UsrAlias"
+			}
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("name").GetString().Should().Be("UsrCanonical",
+			because: "ResolveName prefers the canonical field and falls back to the alias only when it is absent");
+	}
+
+	[Test]
+	[Description("Reports a missing column identity as a missing target column — naming both accepted spellings — instead of failing later on an unrelated localization or type message (issue #947). The wording is single-sourced in ColumnIdentityContract.RequireColumnIdentity, so all three throw sites say the same thing (PR #984 review).")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Fail_With_ColumnIdentity_Message_WhenNeitherSpellingSupplied() {
+		// Arrange — neither `name` nor `column-name`, and no title either: the localization contract would
+		// otherwise be the first to fail and would blame the caption.
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs(null!, "Text", null)
+		};
+
+		// Act
+		Action act = () => CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrOrder'");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*column-name*",
+				because: "the error must name the canonical field the caller is expected to send")
+			.And.Message.Should().Contain("'name'",
+				because: "both accepted spellings must be named so the caller can pick either");
+		act.Should().Throw<ArgumentException>()
+			.And.Message.Should().Contain("missing the target column",
+				because: "the three throw sites now share one message through RequireColumnIdentity — this pins " +
+					"the canonical noun so the wording cannot drift back apart");
+	}
+
+	[Test]
 	[Description("Maps create-lookup MCP arguments into create-entity-schema command options and forces BaseLookup as the parent schema.")]
 	[Category("Unit")]
 	public async Task CreateLookup_Should_Resolve_Command_For_Requested_Environment() {
@@ -507,6 +703,49 @@ public class CreateEntitySchemaToolTests {
 		resolvedCommand.CapturedOptions.Should().BeNull(
 			because: "the resolved command should not be executed when validation fails");
 		registrationService.DidNotReceiveWithAnyArgs().EnsureLookupRegistration(default!, default!, default!);
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Rejects inherited BaseLookup columns spelled with the contract's canonical 'column-name' field, not just the 'name' alias — the guardrail must read the resolved name or {\"column-name\":\"Name\"} bypasses it entirely (PR #984 review).")]
+	[Category("Unit")]
+	public async Task CreateLookup_Should_Reject_Inherited_BaseLookup_Columns_WhenSpelledAsColumnName() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act — `column-name` only, no `name`: the spelling get-tool-contract advertises as canonical.
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
+			"MyPackage",
+			"UsrOrderStatus",
+			Localizations("Order status"),
+			"docker_fix2",
+			[
+				new CreateEntitySchemaColumnArgs(null, "Text", Localizations("Name")) {
+					ColumnNameAlias = "Name"
+				}
+			]));
+		string[] outputValues = result.Output
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "the inherited-column guardrail must fire on the canonical spelling too, otherwise the " +
+				"shadowing column reaches RemoteEntitySchemaCreator, which has no equivalent check");
+		outputValues.Should().Contain(value =>
+				value.Contains("BaseLookup", StringComparison.Ordinal) && value.Contains("Name", StringComparison.Ordinal),
+			because: "the caller should still get clio's purpose-built explanation, not a remote failure");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "no command may run once the guardrail rejects the payload");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

@@ -38,8 +38,11 @@ DESCRIPTION
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
+      (Money is accepted as an alias for Currency2 — the normal two-decimal Creatio money column;
+      Decimal is accepted as an alias for Decimal2, same as Float)
     - Boolean
-    - Date, DateTime, Time
+    - DateTime (Date and Time are accepted, but are aliases of DateTime: the column is stored as DateTime
+      and read back as DateTime, so date-only or time-only intent is not preserved)
     - Lookup (requires --reference-schema)
     - Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
 
