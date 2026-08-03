@@ -1065,7 +1065,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		ok.Should().BeTrue(because: "a long reference list is collected in full, and unresolved names are not failures");
 		response.DetailCount.Should().Be(0,
 			because: "none of the referenced details were registered, so none resolve into the manifest");
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("distinct detail-schema references")));
+		LoggedWarnings().Should().NotContain(w => w.Contains("distinct detail-schema references"),
+			because: "the collection cap is retired, so nothing warns about capping distinct detail-schema references");
 		response.Warnings.Should().NotContain(w => w.Contains("remainder is ignored"),
 			because: "collection no longer stops at a cap, so there is no ignored remainder to report");
 	}
@@ -1132,7 +1133,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		ok.Should().BeTrue(because: "a full parent walk assembles successfully");
 		response.SeedCount.Should().Be(chainDepth,
 			because: "every parent-template level up to the base template is seeded, with no depth cap truncating it");
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
+		LoggedWarnings().Should().NotContain(w => w.Contains("depth cap"),
+			because: "a walk that reached the base template is complete, so no depth-cap warning is logged either");
 		response.Warnings.Should().NotContain(w => w.Contains("depth cap"),
 			because: "a walk that reached the base template is complete and must report no truncation");
 	}
@@ -1155,7 +1157,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		ok.Should().BeTrue(because: "a truncated seed still yields a usable manifest, it does not fail assembly");
 		response.SeedCount.Should().Be(0, because: "the unloadable parent contributed no seed level");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Parent-template walk stopped at")));
+		LoggedWarnings().Should().Contain(w => w.Contains("Parent-template walk stopped at"),
+			because: "an interrupted parent walk must also be visible to a console caller, not only in response.Warnings");
 		response.Warnings.Should().Contain(
 			w => w.Contains("Parent-template walk stopped at") && w.Contains("uid-missing-parent"),
 			because: "the logger does not reach an MCP caller, so the truncated seed must surface in response.Warnings");
@@ -1849,6 +1852,15 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			clone["localizableStrings"] = localizable.DeepClone();
 		}
 		return new JObject { ["schema"] = clone }.ToString();
+	}
+
+	// Messages written through ILogger.WriteWarning, so warning expectations can be expressed as FluentAssertions
+	// assertions that carry a `because` explanation instead of bare NSubstitute Received/DidNotReceive checks.
+	private List<string> LoggedWarnings() {
+		return _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => call.GetArguments()[0] as string ?? string.Empty)
+			.ToList();
 	}
 
 	private void AddLayer(string name, string uid, string package, int hierarchyLevel) {
