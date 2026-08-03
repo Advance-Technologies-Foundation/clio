@@ -609,6 +609,70 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("PRIMARY_REQUIRED")));
 	}
 
+	// The settings-aware overloads never probe on their own, so every caller supplies a verdict map. These
+	// tests use options with no custom font, for which the probe legitimately resolves nothing.
+	private static readonly IReadOnlyDictionary<string, GoogleFontAvailability> NoCustomFonts =
+		new Dictionary<string, GoogleFontAvailability>();
+
+	[Test, Category("Unit")]
+	[Description("The settings-aware overload refuses a null verdict map instead of quietly probing for itself. Dropping the optional-parameter default makes an OMITTED argument a compile error; this pins the remaining hole — a caller that passes null explicitly — so the lock-safety invariant cannot be broken silently at runtime either.")]
+	public void TryBuildTheme_ShouldThrow_WhenTheProbedAvailabilityMapIsNull() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+
+		// Act
+		Action act = () => _command.TryBuildTheme(
+			options, null, out string _, out string _, out IReadOnlyList<string> _, out string _, null);
+
+		// Assert
+		act.Should().Throw<ArgumentNullException>(
+			because: "this overload exists so the probe runs outside the caller's lock; accepting null would reinstate the in-lock probe the ADR removed");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("The synchronous bridge that waits for the concurrent font probes does not deadlock when the calling thread carries a SynchronizationContext. The probes are awaited on the default scheduler rather than marshalled back to the caller's context, so a context that never pumps its queue cannot starve the continuation. A regression that reintroduced context capture would time out here instead of hanging the suite.")]
+	public void ResolveFontAvailability_ShouldNotDeadlock_WhenTheCallingThreadHasASynchronizationContext() {
+		// Arrange
+		NeverPumpingSynchronizationContext context = new();
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Inter";
+		_googleFontsCatalog.LookupAsync("Inter", Arg.Any<CancellationToken>())
+			.Returns(_ => Task.Run(async () => {
+				await Task.Yield();
+				return GoogleFontAvailability.InCatalog;
+			}));
+
+		// Act — on a worker thread so a reintroduced deadlock surfaces as a timeout, not a hung run
+		Task<bool> build = Task.Factory.StartNew(
+			() => {
+				SynchronizationContext.SetSynchronizationContext(context);
+				return _command.TryBuildTheme(options, out string _, out string _, out IReadOnlyList<string> _, out string _);
+			},
+			CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+		bool completed = build.Wait(TimeSpan.FromSeconds(30));
+
+		// Assert
+		completed.Should().BeTrue(
+			because: "the probe bridge must not marshal its continuation onto the caller's SynchronizationContext, or a non-pumping context would block the build forever");
+		build.Result.Should().BeTrue(because: "a published family builds successfully");
+		context.PostCount.Should().Be(0,
+			because: "posting to the caller's context is exactly the capture that makes a sync-over-async bridge deadlockable");
+	}
+
+	// A SynchronizationContext that accepts continuations and never runs them — the classic sync-over-async
+	// deadlock trap. Any continuation captured onto it stays queued forever, so a bridge that captured the
+	// caller's context blocks instead of completing.
+	private sealed class NeverPumpingSynchronizationContext : SynchronizationContext {
+		private int _postCount;
+
+		public int PostCount => Volatile.Read(ref _postCount);
+
+		public override void Post(SendOrPostCallback d, object state) {
+			Interlocked.Increment(ref _postCount);
+		}
+	}
+
 	// Pattern B (ADR verification #5, ENG-93347): the resolvedSettings-aware TryBuildTheme overloads, used
 	// only by the build-theme MCP tool. The existing name-based overloads/CLI path tested above are
 	// untouched by this story and stay green unmodified.
@@ -625,7 +689,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		BuildThemeOptions options = ValidOptions();
 
 		// Act
-		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
+		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error, NoCustomFonts);
 
 		// Assert
 		ok.Should().BeTrue(because: "a resolvable settings-based version builds a valid theme");
@@ -641,7 +705,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		BuildThemeOptions options = ValidOptions();
 
 		// Act
-		bool ok = _command.TryBuildTheme(options, null, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
+		bool ok = _command.TryBuildTheme(options, null, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error, NoCustomFonts);
 
 		// Assert
 		ok.Should().BeTrue(because: "a null resolvedSettings falls back to the highest bundled template, not a failure");
@@ -660,7 +724,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		options.Version = "11.0";
 
 		// Act
-		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
+		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error, NoCustomFonts);
 
 		// Assert
 		ok.Should().BeTrue(because: "an explicit version is a valid, self-sufficient input");

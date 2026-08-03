@@ -232,14 +232,21 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// Verdicts already obtained from <see cref="TryResolveFontAvailability"/> for these SAME options, so the
 	/// network probe can run outside a lock the caller holds. They drive both the import suppression and the
 	/// font warnings, so a map built from different options would report families this build never requested.
-	/// <see langword="null"/> makes this method probe on its own.
+	/// Required, and never <see langword="null"/>: this overload does not probe on its own, so a caller that
+	/// skipped pre-resolution fails to compile rather than silently reopening an in-lock network probe. Call
+	/// the overload without this parameter when self-probing is what you want.
 	/// </param>
+	/// <exception cref="ArgumentNullException">
+	/// <paramref name="probedFontAvailability"/> is <see langword="null"/> — the lock-safety contract is broken
+	/// by a caller that passed null explicitly rather than by omitting the argument.
+	/// </exception>
 	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when validation, build, or write fails.</returns>
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Mirrors the by-name workspace-write overload (options, target directory, target package, three outs) and adds the pre-probed font verdicts the MCP tool resolves outside its execution lock; a parameter object would only rename the same inputs.")]
 	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string workspaceDirectory, string packageName,
 		out string outputPath, out IReadOnlyList<string> warnings, out string error,
-		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability = null) {
+		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability) {
+		ArgumentNullException.ThrowIfNull(probedFontAvailability);
 		outputPath = null;
 		warnings = [];
 		error = null;
@@ -328,11 +335,18 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// Verdicts already obtained from <see cref="TryResolveFontAvailability"/> for these SAME options, so the
 	/// network probe can run outside a lock the caller holds. They drive both the import suppression and the
 	/// font warnings, so a map built from different options would report families this build never requested.
-	/// <see langword="null"/> makes this method probe on its own.
+	/// Required, and never <see langword="null"/>: this overload does not probe on its own, so a caller that
+	/// skipped pre-resolution fails to compile rather than silently reopening an in-lock network probe. Call
+	/// the overload without this parameter when self-probing is what you want.
 	/// </param>
+	/// <exception cref="ArgumentNullException">
+	/// <paramref name="probedFontAvailability"/> is <see langword="null"/> — the lock-safety contract is broken
+	/// by a caller that passed null explicitly rather than by omitting the argument.
+	/// </exception>
 	/// <returns><c>true</c> when the artifacts were built; <c>false</c> when an input or template error is reported in <paramref name="error"/>.</returns>
 	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error,
-		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability = null) {
+		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability) {
+		ArgumentNullException.ThrowIfNull(probedFontAvailability);
 		css = null;
 		descriptor = null;
 		warnings = [];
@@ -342,8 +356,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		try {
 			PlatformVersionResolution resolution = ResolveVersion(normalizedOptions, resolvedSettings);
 			string templateVersion = resolution.Source == VersionResolutionSource.LatestFallback ? null : resolution.ResolvedVersion;
-			IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability =
-				probedFontAvailability ?? ResolveFontAvailability(normalizedOptions);
+			IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability = probedFontAvailability;
 			css = _themeCssBuilder.Build(_themeTemplateProvider.GetCssTemplate(templateVersion), ToBuilderOptions(normalizedOptions, fontAvailability));
 			descriptor = BuildDescriptor(normalizedOptions, templateVersion);
 			warnings = CollectWarnings(normalizedOptions, fontAvailability);
@@ -367,7 +380,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	// private write helpers so the public TryBuildTheme overloads stay adjacent (Sonar S4136).
 	private bool TryBuildAndWrite(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string outputDirectory,
 		out string outputPath, out IReadOnlyList<string> warnings, out string error,
-		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability = null) {
+		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability) {
 		outputPath = null;
 		if (!TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out warnings, out error, probedFontAvailability)) {
 			return false;
