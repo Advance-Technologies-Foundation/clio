@@ -108,10 +108,12 @@ TIMEOUT AND FAILURE DIAGNOSTICS
                       retried with backoff (not a single immediate read) so a
                       section that commits just after the budget expired is
                       reported as success, not a spurious failure (ENG-94419).
-                      If it still does not appear, do NOT retry blindly - the
-                      server may still be processing the insert. Wait a few
-                      minutes, run "clio list-app-sections", and retry only if
-                      the section is still absent.
+                      This re-check adds up to ~30s of read-only polling before
+                      a genuine timeout failure is reported. If it still does
+                      not appear, do NOT retry blindly - the server may still be
+                      processing the insert. Wait a few minutes, run "clio
+                      list-app-sections", and retry only if the section is still
+                      absent.
 
     contention        The insert was aborted without a detailed reason. The
                       server gives no detail, so this may be parallel creation
