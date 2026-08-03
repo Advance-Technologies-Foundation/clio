@@ -73,12 +73,16 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	[Description("RC-21: even though the env-ui compile runs silently, the heavy-operation warning (AC-1) is still surfaced to the user on this interactive menu path.")]
 	public void WarnHeavyCompilation_ShouldWriteSiteCompilationWarning()
 	{
+		// Arrange — capture the warning text passed to the logger.
+		string warning = null;
+		_logger.WriteWarning(Arg.Do<string>(message => warning = message));
+
 		// Act
 		_command.WarnHeavyCompilation();
 
-		// Assert — AC-1 requires the heavy-operation warning on the env-ui compile path (RC-21).
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message == CompileConfigurationCommand.SiteCompilationWarning));
+		// Assert
+		warning.Should().Be(CompileConfigurationCommand.SiteCompilationWarning,
+			because: "AC-1 requires the heavy-operation warning to be shown on the env-ui compile path (RC-21)");
 	}
 
 	[Test]
@@ -87,14 +91,16 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	{
 		// Arrange — the substitute service provider cannot build the real compile command, so the call
 		// throws while constructing it; the AC-1 warning is emitted first, which is what this asserts.
+		string warning = null;
+		_logger.WriteWarning(Arg.Do<string>(message => warning = message));
 		var environmentSettings = new EnvironmentSettings { Uri = "http://localhost", Login = "s", Password = "p" };
 
 		// Act
 		try { _command.ExecuteCompileConfiguration("dev", environmentSettings); } catch { /* command build fails on the substitute provider, after the warning */ }
 
-		// Assert — the warning must be surfaced before compilation is attempted on the env-ui path (RC-21).
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message == CompileConfigurationCommand.SiteCompilationWarning));
+		// Assert
+		warning.Should().Be(CompileConfigurationCommand.SiteCompilationWarning,
+			because: "the warning must be surfaced before compilation is attempted on the env-ui path (RC-21)");
 	}
 
 	#endregion
