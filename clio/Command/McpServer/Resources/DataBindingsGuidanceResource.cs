@@ -46,12 +46,14 @@ public sealed class DataBindingsGuidanceResource {
 			       - Canonical local artifact flow: `get-tool-contract` -> `create-data-binding` -> `add-data-binding-row` or `remove-data-binding-row` -> local artifact verification.
 			       - DB-first SaveSchema metadata should be projected from the primary key plus columns referenced by currently bound or requested rows.
 			       - Unrelated runtime-only columns are not blockers for DB-first flows; explicitly requested unsupported runtime columns are blockers.
+			       - Permission-protected system objects are OUT OF SCOPE for DB-first bindings: rows are applied through the DataService, which enforces object permissions, so a schema such as `SysEntitySchemaOperationRight` is refused even when the authenticated user is Supervisor. Do not retry, do not switch credentials, and do not treat it as an authorization mistake to fix — the failure names the refusal explicitly. For record-level access rights use `set-record-rights` (native RightsService). Object-operation rights have no clio path yet: deploy them through Creatio's Object permissions administration or a package installation script, and tell the user that is what is required.
 
 			       Lookup seeding rules
 			       - Prefer inline seed rows in `sync-schemas` when the lookup is already part of the current schema batch.
 			       - Use a separate binding artifact only when the workflow explicitly needs one.
 			       - Seed rows do not implement defaults.
 			       - Generate fresh GUIDs for explicit rows at execution time.
+			       - Seed-data replay safety is keyed on `Name`: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay. Re-running a `sync-schemas` batch whose seed rows carry a `Name` skips the already-present rows (no duplicates); do not add explicit `Id`s to no-`Name` rows expecting a re-run to be safe.
 
 			       Verification discipline
 			       - Read before write when the task depends on current app, page, schema, or binding context.

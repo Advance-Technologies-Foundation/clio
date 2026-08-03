@@ -5,6 +5,7 @@ using Clio.Common.DataForge;
 using Clio.Common.EntitySchema;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
@@ -174,6 +175,118 @@ public sealed class DataForgeContextServiceTests {
 		result.Coverage.Lookups.Should().BeTrue(because: "coverage should stay true when lookup hints were omitted entirely");
 		result.Coverage.Relations.Should().BeTrue(because: "coverage should stay true when relation pairs were omitted entirely");
 		result.Coverage.Columns.Should().BeTrue(because: "coverage should stay true when there were no resolved tables to enrich");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Collapses one recurring read failure into a single warning naming every affected term, instead of emitting one identical warning per term and burying the diagnosis (issue #948).")]
+	public void GetContext_Should_CollapseRepeatedIdenticalReadFailures_IntoOneWarning() {
+		// Arrange — the same underlying failure for every term, mirroring an environment where the optional
+		// Creatio-side Data Forge service is unconfigured and every search fails identically.
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables(Arg.Any<string>(), Arg.Any<int?>())
+			.Throws(new InvalidOperationException("Value cannot be null. (Parameter 'baseUri')"));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, CreateReadyMaintenanceClient(), runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors", "invoices"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.Warnings.Should().HaveCount(1,
+			because: "one recurring failure must produce one warning, not one per search term");
+		result.Warnings[0].Should().Contain("Value cannot be null. (Parameter 'baseUri')",
+			because: "the platform's own diagnosis must be preserved so the cause stays identifiable");
+		result.Warnings[0].Should().Contain("orders").And.Contain("vendors").And.Contain("invoices",
+			because: "collapsing must stay specific about every term the failure affected");
+		result.Warnings[0].Should().StartWith("tables:orders:",
+			because: "the first occurrence keeps the original category:item:message shape, so a single-failure "
+				+ "payload is unchanged for existing consumers and only repeats are folded in");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the platform's own message byte-for-byte when it happens to look like clio's collapse marker: collapsed state is tracked structurally, so a cause that both ends in ')' and contains ' (also: ' is never parsed as an already-collapsed line and never has the next term spliced into its own parenthetical.")]
+	public void GetContext_Should_PreserveCauseText_WhenMessageItselfLooksLikeTheCollapseMarker() {
+		// Arrange — a message crafted to satisfy the old `EndsWith(")") && Contains(" (also: ")` test on the
+		// FIRST repeat, which is exactly when the emitted line still carries no collapse marker of its own.
+		const string pathologicalMessage = "Load failed (also: check config)";
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables(Arg.Any<string>(), Arg.Any<int?>())
+			.Throws(new InvalidOperationException(pathologicalMessage));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, CreateReadyMaintenanceClient(), runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.Warnings.Should().HaveCount(1,
+			because: "one recurring failure is still one warning regardless of what its message text looks like");
+		result.Warnings[0].Should().Be($"tables:orders:{pathologicalMessage} (also: vendors)",
+			because: "the cause text must survive verbatim and the collapse marker must be appended after it — "
+				+ "parsing the emitted line instead would have produced "
+				+ "'Load failed (also: check config, vendors)', silently rewriting the platform's own message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps genuinely different read failures as separate warnings, so collapsing repeats never hides a second, distinct cause.")]
+	public void GetContext_Should_KeepDistinctReadFailures_AsSeparateWarnings() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables("orders", Arg.Any<int?>())
+			.Throws(new InvalidOperationException("first cause"));
+		readClient.FindSimilarTables("vendors", Arg.Any<int?>())
+			.Throws(new InvalidOperationException("second cause"));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		DataForgeContextService service = new(readClient, CreateReadyMaintenanceClient(), runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["orders", "vendors"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.Warnings.Should().HaveCount(2,
+			because: "two distinct causes are two facts and must both survive the collapse");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still performs the Data Forge reads when the maintenance probe reports the subsystem offline: liveness does not predict whether the reads work, so skipping them would discard real results (the sandbox runs with liveness false while table-column reads succeed).")]
+	public void GetContext_Should_StillAttemptReads_WhenMaintenanceProbeReportsOffline() {
+		// Arrange
+		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
+		maintenanceClient.GetFullStatus().Returns((
+			new DataForgeHealthResult(false, false, false, false, "corr-offline"),
+			new DataForgeMaintenanceStatusResult(false, "Unavailable", "Empty maintenance status response.")));
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables("contact", Arg.Any<int?>())
+			.Returns([new SimilarTableResult("Contact", "Contact", "Primary contact")]);
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		runtimeReader.GetByName("Contact").Returns(new RuntimeEntitySchemaResult(
+			Guid.NewGuid(), "Contact", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Full name", null, 1, true, false, null)]));
+		DataForgeContextService service = new(readClient, maintenanceClient, runtimeReader);
+
+		// Act
+		DataForgeContextAggregationResult result = service.GetContext(
+			new DataForgeContextRequest(null, ["contact"], [], []),
+			CancellationToken.None);
+
+		// Assert
+		result.SimilarTables.Should().ContainSingle(table => table.Name == "Contact",
+			because: "a working read must not be discarded because the maintenance probe reported offline");
+		result.Columns.Should().ContainKey("Contact",
+			because: "column enrichment goes through the runtime schema reader, which is independent of the " +
+				"Data Forge subsystem the probe describes");
+		result.Health.CorrelationId.Should().Be("corr-offline",
+			because: "the health probe result is still reported alongside the successful reads");
 	}
 
 	private static IDataForgeMaintenanceClient CreateReadyMaintenanceClient() {

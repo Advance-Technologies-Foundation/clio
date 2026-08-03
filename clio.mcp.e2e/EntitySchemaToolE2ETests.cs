@@ -204,6 +204,42 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Adds a money column using the Creatio display name 'Money' — the alias of the command value Currency2 — and verifies it materializes, so a caller does not have to provoke a failed write to discover the vocabulary (issue #955).")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column accepts the Money alias for a Currency2 column")]
+	[AllureDescription("Creates a sandbox schema, adds a column with type 'Money' (the name Creatio displays and clio's own sys-setting surface uses) and verifies through get-entity-schema-properties that the column was created, proving Money resolves to the Currency2 command value rather than being rejected.")]
+	public async Task ModifyEntitySchemaColumn_Should_Accept_Money_Alias_For_Currency2_Column() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		string moneyColumnName = $"{arrangeContext.AddedColumnName}Amount";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addMoneyResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				moneyColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Money",
+				titleLocalizations: BuildLocalizations("Amount")));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before adding the money column");
+		AssertCommandSucceeded(addMoneyResult,
+			"'Money' is the Creatio display name for a two-decimal currency column and must be accepted as an " +
+				"alias of Currency2 instead of being rejected as an unsupported type");
+		schemaProperties.Columns.Should().Contain(column => column.Name == moneyColumnName,
+			because: "the money column must actually materialize on the remote schema, not merely pass validation");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Overrides the caption of an inherited column and rejects a non-caption change to the same inherited column.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]
@@ -565,6 +601,70 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			titleColumnName,
 			"Title",
 			TextDefaultSettingCode);
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Applies a Sequence default with a masked value 'LN-{0}' through modify-entity-schema-column and verifies the static prefix (LN-) is persisted and read back instead of being silently dropped (ENG-93375).")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Modify entity schema column honors the Sequence mask prefix")]
+	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a Text column with default-value-config source Sequence and value mask 'LN-{0}', and verifies the structured readback exposes the extracted sequence prefix and width so a created record would be numbered LN-00001 rather than 00001.")]
+	public async Task ModifyEntitySchemaColumn_Should_Apply_Sequence_Mask_Prefix_And_Read_Back() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string sequenceColumnName = "UsrLoanNumber";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult = await ActAddTextColumnWithSequenceMaskDefaultAsync(arrangeContext, sequenceColumnName);
+		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, sequenceColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before the Sequence default mutation can add the new Text column");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation should emit progress output before the Sequence default mutation");
+		AssertCommandSucceeded(addResult,
+			"modify-entity-schema-column should succeed when adding a Text column with a Sequence default expressed as a masked value");
+		AssertIncludesInfoMessage(addResult,
+			"successful Sequence default mutations should emit progress output");
+		AssertStructuredSequenceColumnProperties(
+			columnProperties,
+			arrangeContext.SchemaName,
+			sequenceColumnName,
+			"Loan number",
+			"LN-",
+			5);
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Rejects a Sequence default whose masked value carries an unsupported suffix after '{0}', verified end to end through the real MCP server (ENG-93375).")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column rejects an unsupported Sequence mask")]
+	[AllureDescription("Creates a sandbox entity schema, then adds a Text column with a Sequence default whose value mask has static text after '{0}', and verifies the real MCP server rejects it before save instead of silently dropping the unsupported part.")]
+	public async Task ModifyEntitySchemaColumn_Should_Reject_Unsupported_Sequence_Mask() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string sequenceColumnName = "UsrBadSequence";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult =
+			await ActAddTextColumnWithSequenceMaskDefaultAsync(arrangeContext, sequenceColumnName, mask: "LN-{0}-END");
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before the unsupported Sequence mask mutation is attempted");
+		addResult.ExitCode.Should().Be(1,
+			because: "a Sequence mask with static text after '{0}' is not supported and must be rejected before save (ENG-93375)");
+		addResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains("not supported", StringComparison.Ordinal),
+			because: "the rejection must explain that only a static prefix before a single trailing '{0}' is supported");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -1158,8 +1258,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				arrangeContext.SchemaName,
 				arrangeContext.CancellationTokenSource.Token,
 				columns: [
+					// `column-name` (the canonical column identity field, alias `name`) on a create-entity-schema
+					// column: the create path dropped it and serialized name:null before issue #947.
 					new Dictionary<string, object?> {
-						["name"] = arrangeContext.InitialColumnName,
+						["column-name"] = arrangeContext.InitialColumnName,
 						["type"] = "Text",
 						["title-localizations"] = BuildLocalizations("Vehicle name")
 					}
@@ -1320,6 +1422,26 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				type: "Text",
 				titleLocalizations: BuildLocalizations("Title"),
 				defaultValueConfig: BuildSettingsDefaultValueConfig(TextDefaultSettingCode));
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
+	private static async Task<CommandExecutionEnvelope> ActAddTextColumnWithSequenceMaskDefaultAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName,
+		string mask = "LN-{0}") {
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for a Sequence default expressed as a masked value", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				columnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Text",
+				titleLocalizations: BuildLocalizations("Loan number"),
+				defaultValueConfig: BuildSequenceDefaultValueConfig(mask, 5));
 			return McpCommandExecutionParser.Extract(callResult);
 		});
 	}
@@ -1952,6 +2074,34 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			because: "structured default value readback should include additive resolved-value-source metadata");
 	}
 
+	[AllureStep("Assert structured sequence column properties")]
+	private static void AssertStructuredSequenceColumnProperties(
+		EntitySchemaColumnPropertiesInfo properties,
+		string schemaName,
+		string columnName,
+		string title,
+		string expectedPrefix,
+		int expectedNumberOfChars) {
+		properties.SchemaName.Should().Be(schemaName,
+			because: "the structured result should identify the schema that received the Sequence default");
+		properties.ColumnName.Should().Be(columnName,
+			because: "the structured result should identify the Text column that received the Sequence default");
+		properties.Source.Should().Be("own",
+			because: "columns added through modify-entity-schema-column should be reported as own columns");
+		properties.Type.Should().Be("Text",
+			because: "the structured result should preserve the requested Text column type");
+		properties.Title.Should().Be(title,
+			because: "the structured result should preserve the added Text column title");
+		properties.DefaultValueConfig.Should().NotBeNull(
+			because: "structured column readback should expose default-value-config metadata for Sequence defaults");
+		properties.DefaultValueConfig!.Source.Should().Be("Sequence",
+			because: "the structured default value config should preserve the Sequence source");
+		properties.DefaultValueConfig.SequencePrefix.Should().Be(expectedPrefix,
+			because: "the static prefix parsed from the mask must be persisted and read back, not silently dropped (ENG-93375)");
+		properties.DefaultValueConfig.SequenceNumberOfChars.Should().Be(expectedNumberOfChars,
+			because: "the requested sequence width must round-trip alongside the extracted prefix");
+	}
+
 	[AllureStep("Assert schema properties include Binary, Image, and File columns")]
 	private static void AssertSchemaPropertiesIncludeBinaryLikeColumns(
 		EntitySchemaPropertiesInfo properties,
@@ -2100,6 +2250,14 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		return new Dictionary<string, object?> {
 			["source"] = "Const",
 			["value"] = value
+		};
+	}
+
+	private static Dictionary<string, object?> BuildSequenceDefaultValueConfig(string mask, int numberOfChars) {
+		return new Dictionary<string, object?> {
+			["source"] = "Sequence",
+			["value"] = mask,
+			["sequence-number-of-chars"] = numberOfChars
 		};
 	}
 

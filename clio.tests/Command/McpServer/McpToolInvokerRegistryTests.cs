@@ -152,6 +152,81 @@ public sealed class McpToolInvokerRegistryTests {
 			because: "list-pages is a read-only discovery tool and is not destructive");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies a read-only tool (list-pages) as retry-safe so the read-response deadline may bound it (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeTrue_WhenToolIsReadOnly() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(PageListTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeTrue(
+			because: "list-pages is ReadOnly = true, the canonical retry-safe read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies get-page (ReadOnly=false because it writes local .clio-pages files) as retry-safe: it is admitted by name because it reads from Creatio and a retry re-reads + overwrites (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeTrue_WhenToolIsGetPage() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(PageGetTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeTrue(
+			because: "get-page reads from Creatio (its ReadOnly=false only reflects the local file write), so it is retry-safe");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Excludes an idempotent, non-destructive SERVER write (add-package-dependency) from retry-safe classification so the read deadline never bounds a server write (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeFalse_WhenToolIsIdempotentServerWrite() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act — add-package-dependency is ReadOnly=false, Destructive=false, Idempotent=true.
+		bool retrySafe = registry.IsRetrySafe(AddPackageDependencyTool.AddPackageDependencyToolName);
+
+		// Assert
+		retrySafe.Should().BeFalse(
+			because: "an idempotent server write is not safe to retry concurrently while an abandoned first call is still mutating the server");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Excludes a destructive tool (sync-schemas) from retry-safe classification so it never gets the read deadline (it owns its own timeout contract) (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeFalse_WhenToolIsDestructive() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(SchemaSyncTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeFalse(
+			because: "sync-schemas is Destructive = true, so a 'safe to retry' timeout would be wrong");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails closed for an unknown tool so it is never bounded on the assumption it is safe to abandon (ENG-93373).")]
+	public void IsRetrySafe_ShouldFailClosed_WhenToolIsUnknown() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe("definitely-not-a-tool");
+
+		// Assert
+		retrySafe.Should().BeFalse(
+			because: "an unknown tool must not be assumed retry-safe");
+	}
+
 	// Two deliberately colliding tool types for the duplicate-name guard test below. They live in the
 	// TEST assembly, so the production catalog stays collision-free while the guard is still provable.
 	[McpServerToolType]
@@ -188,6 +263,72 @@ public sealed class McpToolInvokerRegistryTests {
 		act.Should().Throw<InvalidOperationException>(
 				because: "a duplicate tool name makes dispatch ambiguous and must fail fast at registry construction")
 			.WithMessage("*Duplicate MCP tool name*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Derives read-only-ness from the tool's [McpServerTool(ReadOnly=...)] annotation: list-pages is read-only, sync-schemas is not (PR #984 review — IsReadOnly had no registry-level coverage while IsDestructive did).")]
+	public void IsReadOnly_ShouldReflectToolAnnotation_WhenToolIsRegistered() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool listPagesReadOnly = registry.IsReadOnly(PageListTool.ToolName);
+		bool syncSchemasReadOnly = registry.IsReadOnly(SchemaSyncTool.ToolName);
+
+		// Assert
+		listPagesReadOnly.Should().BeTrue(
+			because: "list-pages is a read-only discovery tool and is annotated ReadOnly = true");
+		syncSchemasReadOnly.Should().BeFalse(
+			because: "sync-schemas writes schemas, so it must never be classified read-only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails closed for an unknown tool so the durable gate confirms rather than runs it silently.")]
+	public void IsReadOnly_ShouldFailClosed_WhenToolIsUnknown() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool result = registry.IsReadOnly("definitely-not-a-tool");
+
+		// Assert
+		result.Should().BeFalse(
+			because: "an unknown tool must be treated as write-capable so the durable gate asks for " +
+				"confirmation instead of executing it unchecked");
+	}
+
+	[TestCase("")]
+	[TestCase("   ")]
+	[TestCase(null)]
+	[Category("Unit")]
+	[Description("Fails closed for a blank tool name rather than throwing, matching IsDestructive's contract.")]
+	public void IsReadOnly_ShouldFailClosed_WhenToolNameIsBlank(string? toolName) {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool result = registry.IsReadOnly(toolName!);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "there is no tool to classify, so the safe answer is write-capable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Trims the tool name before lookup, so a padded name is not mistaken for an unknown tool and silently gated.")]
+	public void IsReadOnly_ShouldTrimToolName_BeforeLookup() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool result = registry.IsReadOnly($"  {PageListTool.ToolName}  ");
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the registry trims the name, so surrounding whitespace must not change the classification");
 	}
 
 	[Test]
