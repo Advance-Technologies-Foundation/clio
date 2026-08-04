@@ -8,8 +8,10 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -364,6 +366,40 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the Time-valued date-part round-trips on read-back (time-of-day comparison HourMinute(CreatedOn) = 14:30)");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart restricted to a tracked-change column (on:modified, changedColumns:[Name]), and describe-business-process reads the tracked column back (round-trip).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a column-restricted signal start and describe reads the tracked column back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartTrackedColumns_AndReadThemBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSignalColsE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTrackedColumnsDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart restricted to specific changed columns must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: describe and confirm the tracked column round-tripped. Build resolves the column NAME to its column
+		// UId; describe decodes that UId back to the name — a drop on either side (package or clio DTO) is caught here,
+		// not merely that a signalStart exists. Asserted on the typed graph (not a substring of the serialized
+		// envelope), so a wrong or extra column cannot slip through on an incidental token match.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedSignal signal = graph.Elements.Single(element => element.Name == "SignalStart1").Signal;
+		signal.Should().NotBeNull(because: "describe reports the signal start's record trigger");
+		signal.On.Should().Be("modified", because: "the trigger type round-trips");
+		signal.ChangedColumns.Should().BeEquivalentTo(new[] { "Name" },
+			because: "exactly the requested tracked column round-trips: build resolves it to its column UId and describe decodes that UId back to the name");
+	}
+
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
 	// prove the filter round-tripped (build serialize -> describe decode) rather than just that a signalStart exists.
 	// Contact.Name is a base column present on every stand.
@@ -406,6 +442,146 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		          { "column": "CreatedOn", "comparison": "equal", "datePart": "Year", "value": "2026" },
 		          { "column": "CreatedOn", "comparison": "equal", "datePart": "HourMinute", "value": "14:30" }
 		        ] } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart with a DELETE trigger (on:deleted) and describe-business-process reads the trigger back as 'deleted' (round-trip of the third record-event type).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a delete-trigger signal start and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartDeleteTrigger_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSignalDelE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDeleteTriggerDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart with a record-deleted trigger must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: the delete trigger must survive save->reload and decode back to the canonical token. A change type
+		// dropped or coerced to the 'modified' default on either side is caught here.
+		// Asserted on the typed graph so the trigger token is checked exactly, not matched incidentally anywhere in the
+		// serialized envelope.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedSignal signal = graph.Elements.Single(element => element.Name == "SignalStart1").Signal;
+		signal.Should().NotBeNull(because: "describe reports the signal start's record trigger");
+		signal.On.Should().Be("deleted",
+			because: "the record-deleted trigger round-trips: it persists on save, is decoded back to the 'deleted' token, and is not coerced to the default 'modified'");
+		signal.ChangedColumns.Should().BeNull(because: "a delete trigger carries no tracked columns");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process honours the element-level useBackgroundMode override — false on a signalStart (whose kind default is true) and true on a plain userTask — and describe-business-process reports the flag per element.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process applies useBackgroundMode per element and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_ApplyElementBackgroundMode_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBgModeE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildBackgroundModeDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an element-level useBackgroundMode override must build without a transport error");
+		JsonSerializer.Serialize(callResult).Should().Contain(processName,
+			because: "a successful build reports the created schema name");
+
+		// Readback: the flag must persist per element — the signalStart override to false (against its own default of
+		// true) is the meaningful assertion; a dropped override would read back as true.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		graph.Elements.Single(element => element.Name == "SignalStart1").UseBackgroundMode.Should().BeFalse(
+			because: "an explicit useBackgroundMode:false must override the signal start's own background-mode default and survive the save");
+		graph.Elements.Single(element => element.Name == "task1").UseBackgroundMode.Should().BeTrue(
+			because: "the flag is element-level: an explicit true on a plain user task must persist too");
+	}
+
+	// Deserializes the described graph (the Info log-message value inside the clio command envelope) into the typed
+	// DescribeProcessResult, so a test can assert element fields directly instead of substring-matching the escaped
+	// envelope.
+	private static DescribeProcessResult ParseDescribeGraph(CallToolResult describeResult) {
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value) && value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		return JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+	}
+
+	// Exercises the element-level flag on TWO different element kinds at once: the signalStart is forced OFF (its kind
+	// default is background mode, so this proves the override wins) and the user task is forced ON.
+	private static string BuildBackgroundModeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Background Mode E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart", "useBackgroundMode": false,
+		      "signal": { "entity": "Contact", "on": "modified" } },
+		    { "name": "task1", "type": "performTask", "useBackgroundMode": true },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A signal-start firing on record DELETION — the one record-event type the other e2e descriptors never exercise
+	// (they use added / modified / save). No changedColumns: tracked columns are rejected for a delete trigger.
+	private static string BuildDeleteTriggerDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Signal Delete E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart",
+		      "signal": { "entity": "Contact", "on": "deleted" } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A signal-start restricted to a tracked-change column (on:modified, changedColumns:[Name]). Contact.Name is a base
+	// column on every stand, so build resolves the name->UId and describe decodes the UId->name — proving the tracked
+	// column round-trips through BOTH the package and the clio DTO, not merely that a signalStart exists.
+	private static string BuildTrackedColumnsDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Signal Cols E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart",
+		      "signal": { "entity": "Contact", "on": "modified", "changedColumns": ["Name"] } },
 		    { "name": "task1", "type": "performTask" },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
