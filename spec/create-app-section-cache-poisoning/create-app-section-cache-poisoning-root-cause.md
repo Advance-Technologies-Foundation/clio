@@ -61,14 +61,29 @@ clio is the concurrency **driver** and the symptom **surface**, not the cause:
 
 - **Diagnostic recovery hint (R4).** A new additive helper `PageHierarchyRecoveryHint.Append`
   (`clio/Command/PageHierarchyRecoveryHint.cs`) appends an actionable phantom-cache recovery hint to
-  the hierarchy-read failure error **only** when it carries a poisoned-cache signature (the empty-IN()
-  `Incorrect syntax near ')'` text, or an empty hierarchy). It mirrors the existing save-path
-  `AppendActionableHint` pattern and is wired into the `get-page` and `update-page` surfacing seams
-  above. The hint is worded as **escalating recovery options** with **Restart Creatio** as the
-  *guaranteed* fallback; the lighter recoveries (`clear-redis-db-by-environment`, `sync-schemas`) are
-  offered as "may help" only, because which lighter step actually clears the server schema-manager
-  phantom is **not yet confirmed on a live stand** (open question Q1 / RISK1 — to be verified during
-  the verification stage).
+  the hierarchy-read failure error **only** when it carries the empty-IN() `Incorrect syntax near ')'`
+  signature. It mirrors the existing save-path `AppendActionableHint` pattern and is wired into the
+  `get-page` and `update-page` surfacing seams above. Two scoping decisions came out of review:
+  - **An empty hierarchy is NOT hinted (F1).** It has legitimate non-phantom causes (a stale
+    post-save bundle, a wrong or renamed schema name), so keying the hint on it would recommend an
+    unnecessary production restart. Only the SqlException signature fires the hint.
+  - **The hint is scoped to the hierarchy read itself (F2).** `get-page` wraps only the
+    `GetParentSchemas` call in a narrow `try/catch` (mirroring `update-page`'s `TryGetHierarchy`); an
+    exception from any other step of `TryGetPage` is surfaced without the hint.
+
+  **Q1 answered on a live stand:** flushing Redis (`clio clear-redis-db`) does **not** clear the
+  phantom — it lives in server in-process memory. The hint therefore directs to **Restart Creatio**
+  as the confirmed recovery and no longer offers lighter "may help" steps. A web-farm /
+  Redis-distributed deployment may behave differently; that is untested.
+
+  **Known limitation — the signature is Microsoft SQL Server specific.** `Incorrect syntax near ')'`
+  is the SQL Server wording, which is what the repro stand emitted. Whether the phantom produces a
+  SQL syntax error at all on PostgreSQL is unobserved, and PostgreSQL words it differently
+  (`syntax error at or near ")"`). On PostgreSQL the hint therefore does **not** fire — a missed
+  diagnostic, not a wrong one. The signature is deliberately not broadened on inference: firing
+  wrongly recommends restarting a production application, and the Restart-Creatio recovery is itself
+  confirmed only on the MSSQL / .NET Framework stand. Broadening requires observing the symptom on a
+  PostgreSQL stand first.
 - **Regression coverage (R2/R3).** A unit test pins that two concurrent same-tenant
   `create-app-section` executions never overlap (serialize via the per-tenant lock) and fails if that
   lock is removed from the create path.
@@ -76,13 +91,24 @@ clio is the concurrency **driver** and the symptom **surface**, not the cause:
 ## Out of scope (escalated or tracked elsewhere)
 
 - The server-side fix (server building `IN ()` from an empty cached collection; schema-manager cache
-  coherency; environment-wide save-blocking blast radius) — **escalated as a linked Creatio platform
-  ticket (R5)**; clio cannot fix it.
+  coherency; environment-wide save-blocking blast radius) — **escalated as ENG-94564** (R5); clio
+  cannot fix it.
 - Cross-process CLI serialization (Scope B) — **declined**.
 - The 90 s create false-timeout that enables the abandoned create — **ENG-94419**.
 
+## Acceptance-criteria coverage (ENG-94418)
+
+The ticket's four criteria are **not** all closable inside clio. Honest mapping:
+
+| Criterion | Status in clio | Where the rest lives |
+|---|---|---|
+| Root cause identified for the empty-IN-list hierarchy query | **Done** — identified as a server schema-manager cache phantom; clio only receives the server-built error | Server fix: **ENG-94564** |
+| Concurrent `create-app-section` either serializes or leaves no partially-wired section | **Partial** — the existing in-process per-tenant serialization is *pinned* by a regression test; no new serialization added, and separate `clio` OS processes are still not serialized (Scope B declined) | Partially-wired section is a server-side outcome: **ENG-94564**; the abandoning timeout: **ENG-94419** |
+| A half-created section cannot block saves of unrelated schemas | **Not addressed in clio** — the environment-wide blast radius is server cache behavior; clio can only surface it (save-path `AppendActionableHint`, already shipped) | **ENG-94564** |
+| Regression coverage for the concurrent shape | **Done** — unit-level: same-tenant creates serialize, different-tenant creates overlap (proving the probe detects real overlap) | — |
+
 ## References
 
-- Jira: **ENG-94418** (this bug), **ENG-94419** (90 s false-timeout), **ENG-93089** (parallel-contention
-  guard, prior art), parent epic **ENG-85256**.
+- Jira: **ENG-94418** (this bug), **ENG-94564** (server-side root cause), **ENG-94419** (90 s
+  false-timeout), **ENG-93089** (parallel-contention guard, prior art), parent epic **ENG-85256**.
 - Timeout-diagnostics prior work: `spec/create-app-section-timeout-diagnostics/`.

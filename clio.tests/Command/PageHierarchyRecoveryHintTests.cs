@@ -226,6 +226,34 @@ public sealed class PageHierarchyRecoveryHintTests {
 			because: "the exception came from a non-hierarchy-read step (outer catch), so the hint must NOT be attached (F2)");
 	}
 
+	// ---- Append contract (idempotency guard, ENG-94418 review) ----
+
+	[Test]
+	[Description("The idempotency guard cannot drift from the hint wording: Hint composes HintMarker, so the marker Append checks for is always present in the text it appends.")]
+	public void Hint_ShouldContainHintMarker_SoTheIdempotencyGuardCannotDrift() {
+		// Arrange / Act — both are compile-time constants; the assertion is the contract between them.
+
+		// Assert
+		PageHierarchyRecoveryHint.Hint.Should().Contain(PageHierarchyRecoveryHint.HintMarker,
+			because: "Append dedups on HintMarker, so a reword that dropped the marker from Hint would silently break the guard and let the hint append twice");
+	}
+
+	[Test]
+	[Description("Append is idempotent: applying it to an already-hinted error returns that error unchanged, so a message that passes through two seams never carries the recovery hint twice.")]
+	public void Append_ShouldBeIdempotent_WhenAppliedToAnAlreadyHintedError() {
+		// Arrange
+		string once = PageHierarchyRecoveryHint.Append(EmptyInServerError);
+
+		// Act
+		string twice = PageHierarchyRecoveryHint.Append(once);
+
+		// Assert
+		once.Should().Contain(PageHierarchyRecoveryHint.HintMarker,
+			because: "the first Append must actually fire for this test to be a meaningful idempotency check");
+		twice.Should().Be(once,
+			because: "Append must be idempotent — a second application on an already-hinted error must change nothing");
+	}
+
 	// ---- helpers ----
 
 	private static void AssertPhantomCacheHint(string error) {
