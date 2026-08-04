@@ -194,7 +194,33 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
-		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
+
+		// Deterministic empty-container removal (ENG-91228): a converter-created layout container whose items
+		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
+		// BEFORE the adaptive and tab-area passes: adaptive then stacks only surviving children, and a tab this
+		// pass removed never gets layers synthesized (nothing resurrects it). ConvertPageBusinessRules and
+		// resource-string collection run later and already handle drop entries, so a removed container's rule
+		// actions and caption fall out with no extra code. The request-conversion summary is built AFTER the
+		// pass for the same reason: a binding recorded for a container this pass removed must be reconciled
+		// (reported as discarded, not as converted/flagged for an element the map says not to create). The
+		// removed names are threaded to BuildMobileViewModelConfig so the attributes they referenced are KEPT
+		// (removal is layout cleanup, not attribute cleanup).
+		HashSet<string> emptyRemovedNames = RemoveEmptyContainers(
+			elementMap, rules, out HashSet<string> emptyRemovedMobileNames);
+		// Positional :top indexes are assigned at walk time to ALL siblings of an anchor, including ones the
+		// walk later dropped (unsupported type, foreign data source, unsupported button request) — every drop
+		// source leaves the same index hole the empty-container pass does, so compaction runs unconditionally,
+		// not only when that pass removed something.
+		CompactPositionalIndexes(elementMap);
+		// Deterministic tab order: every SURVIVING converted web tab gets an explicit index under the mobile
+		// Tabs (starting right after the template's general tab) so the template's Feed/Attachments tabs stay
+		// last. The pass order is load-bearing: AFTER RemoveEmptyContainers (a tab removed as empty is a drop
+		// by then and never indexed — no holes), and AFTER CompactPositionalIndexes (that compaction rebases
+		// each parent's indexed group to 0; run over tab indexes it would rebase firstIndex away and put the
+		// first web tab BEFORE the general tab).
+		AssignConvertedTabIndexes(elementMap, rules);
+		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
+			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
 		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
@@ -220,7 +246,7 @@ public static class WebToMobileAnalysisService {
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
 		JsonNode modelConfig = PassthroughModelConfig(bundle);
-		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap);
+		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap, emptyRemovedNames);
 		// Prebuilt, ready-to-paste diffs so the caller never hand-builds the data-source section (the step
 		// where attribute `type` was being dropped). BOTH configs start as a single root merge, then are
 		// SPLIT into FOCUSED targeted merges: a single ROOT merge (path []) lumps the logic of several
@@ -285,7 +311,7 @@ public static class WebToMobileAnalysisService {
 				}
 				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateNativesMissingForArrays, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -1299,9 +1325,14 @@ public static class WebToMobileAnalysisService {
 	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
 	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
-	/// consumer, are kept. All other viewModelConfig sections are passed through unchanged.
+	/// consumer, are kept. A container the EMPTY-container pass removed (<paramref name="emptyRemovedNames"/>)
+	/// is deliberately NOT counted as dropped here: that removal is layout cleanup, and the agreed scope
+	/// (ENG-91228) keeps the attributes it referenced (e.g. a bound <c>visible</c>) untouched. All other
+	/// viewModelConfig sections are passed through unchanged.
 	/// </summary>
-	private static JsonNode BuildMobileViewModelConfig(PageBundleInfo bundle, JArray tree, List<ElementMapEntry> elementMap) {
+	private static JsonNode BuildMobileViewModelConfig(
+		PageBundleInfo bundle, JArray tree, List<ElementMapEntry> elementMap,
+		IReadOnlySet<string> emptyRemovedNames = null) {
 		if (bundle.ViewModelConfig is not { Count: > 0 }) {
 			return null;
 		}
@@ -1318,6 +1349,9 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.WebName)
 					.Where(n => !string.IsNullOrEmpty(n)),
 				StringComparer.OrdinalIgnoreCase);
+			if (emptyRemovedNames is { Count: > 0 }) {
+				dropped.ExceptWith(emptyRemovedNames);
+			}
 			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
 			foreach (JProperty attr in attributes.Properties().ToList()) {
 				if (consumers.TryGetValue(attr.Name, out HashSet<string> users)
@@ -1391,7 +1425,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool mobileTemplateNativesMissingForArrays = false, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false) {
+		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1465,6 +1499,13 @@ public static class WebToMobileAnalysisService {
 				"from the web page as a defect. This is SILENT — never a gate question: state it in the plan " +
 				"and the final report as ONE aggregated line (guide.spacingNormalization lists the containers). " +
 				"Merge twins the mobile template provides keep the template's own spacing untouched.");
+		}
+		if (hasEmptyContainerRemovals) {
+			constraints.Add(
+				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
+				"REMOVED deterministically — they appear in elementMap as drop entries with reason \"empty " +
+				"container\". Do NOT re-create them, do NOT re-parent anything into them, and do NOT ask the user " +
+				"whether to remove them (it is done); just include them in the conversion report like any other drop.");
 		}
 		return constraints;
 	}
@@ -1660,8 +1701,10 @@ public static class WebToMobileAnalysisService {
 					continue;
 				}
 
-				// 2. insert — mobile-supported container; always emitted (even if it ends up empty —
-				//    unsupported children simply drop and the user can remove an empty container). A web tab
+				// 2. insert — mobile-supported container; emitted unconditionally here. A container whose every
+				//    child drops is cleaned up AFTERWARDS by RemoveEmptyContainers (rules-listed types only,
+				//    switched by the emptyContainerRemoval rules section) — the walk itself cannot know
+				//    emptiness, children are decided after their parent. A web tab
 				//    inserts into the mobile Tabs as a new tab; a positional sibling inserts into the mobile
 				//    anchor's parent (± index) instead of the walk parent.
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
@@ -2206,9 +2249,37 @@ public static class WebToMobileAnalysisService {
 		return map;
 	}
 
-	/// <summary>Assembles the advisory request-conversion summary; null when the page references no requests.</summary>
+	/// <summary>
+	/// Assembles the advisory request-conversion summary; null when the page references no requests.
+	/// Reconciles with the empty-container removal pass first: a binding is recorded while the element map
+	/// is built, so a container removed as empty AFTERWARDS would still be reported as converted/flagged —
+	/// contradicting its own drop entry (the binding's payload was discarded with the entry's mobileValues).
+	/// Such records are reclassified into <c>droppedRequests</c> with the removal named as the reason, so
+	/// the report stays consistent and the discarded binding stays visible.
+	/// </summary>
 	private static RequestConversionInfo BuildRequestConversionInfo(
-		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged) {
+		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged,
+		HashSet<string> emptyRemovedMobileNames) {
+		const string emptyRemovedReason =
+			"its container was removed as an empty container — the binding was discarded with it";
+		for (int i = converted.Count - 1; i >= 0; i--) {
+			if (emptyRemovedMobileNames.Contains(converted[i].ElementName)) {
+				dropped.Add(new DroppedRequest {
+					ElementName = converted[i].ElementName, Binding = converted[i].Binding,
+					WebRequest = converted[i].WebRequest, Reason = emptyRemovedReason
+				});
+				converted.RemoveAt(i);
+			}
+		}
+		for (int i = flagged.Count - 1; i >= 0; i--) {
+			if (emptyRemovedMobileNames.Contains(flagged[i].ElementName)) {
+				dropped.Add(new DroppedRequest {
+					ElementName = flagged[i].ElementName, Binding = flagged[i].Binding,
+					WebRequest = flagged[i].Request, Reason = emptyRemovedReason
+				});
+				flagged.RemoveAt(i);
+			}
+		}
 		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0) {
 			return null;
 		}
@@ -2436,6 +2507,164 @@ public static class WebToMobileAnalysisService {
 
 	private static ElementMapEntry Drop(string name, string type, string reason) =>
 		new() { WebName = name, WebType = Nz(type), Operation = "drop", Reason = reason };
+
+	/// <summary>
+	/// Deterministic empty-container removal (ENG-91228): converts to a <c>drop</c> every converter-created
+	/// container of a rules-listed type whose items receive NO surviving child, so an empty layout shell
+	/// never reaches the mobile page. Runs to a fixed point, which IS the bottom-up cascade: a FlexContainer
+	/// holding only an empty GridContainer follows it out on the next round, and a TabPanel whose every tab
+	/// emptied drops too.
+	/// <para>
+	/// Emptiness is judged on the element map itself — a container is occupied when ANY surviving
+	/// <c>insert</c> entry names it as <c>parentName</c>. That definition bakes in the agreed semantics with
+	/// no special cases: a <c>visible: false</c> child is an insert and so COUNTS as content (hidden at
+	/// runtime only — it must keep its designer home); a dropped or relocated-away child does not; a
+	/// <c>relocate-children</c> routing hint is not an element and never occupies its target (only the
+	/// children it re-homed do, via their own entries). A candidate whose <c>items</c> survived into
+	/// mobileValues as a NON-array (a <c>"$Attr"</c> collection binding — see BuildMobileValues) is a
+	/// repeater with data, not empty scaffolding, and is kept.
+	/// </para>
+	/// <para>
+	/// Template protection is structural, not name-based: a template merge twin is <c>merge</c> (never
+	/// <c>insert</c>) and carries no parentName, and the tab-area layers are synthesized AFTER this pass
+	/// (only for tabs that survived it), so neither is ever a candidate. crt.ExpansionPanel is judged on
+	/// items only by AGREED DECISION (2026-08-03): a panel whose items emptied is removed even when its
+	/// <c>tools</c> zone carries buttons — the discarded tools are called out in the drop reason so the
+	/// loss stays visible in the conversion report.
+	/// </para>
+	/// <para>
+	/// Removal is IN PLACE (each removed entry is replaced by a drop at the same position, so the report
+	/// keeps tree order). The removed elements' web names are returned so
+	/// <see cref="BuildMobileViewModelConfig"/> can KEEP the attributes they referenced (that matching is
+	/// web-name-keyed), and their MOBILE names go to <paramref name="removedMobileNames"/> so
+	/// <see cref="BuildRequestConversionInfo"/> can reconcile the request summary (bindings are recorded
+	/// under the element's mobile name). Positional-index compaction is the caller's job — it runs
+	/// unconditionally after this pass because every drop source leaves the same index holes. With no
+	/// <c>emptyContainerRemoval</c> rules section the pass is a no-op (switched by data, not code).
+	/// </para>
+	/// </summary>
+	private static HashSet<string> RemoveEmptyContainers(
+		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules,
+		out HashSet<string> removedMobileNames) {
+		var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		removedMobileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var removable = new HashSet<string>(
+			(rules?.EmptyContainerRemoval?.RemovableTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
+			StringComparer.OrdinalIgnoreCase);
+		if (removable.Count == 0) {
+			return removed;
+		}
+		bool anyRemovedThisRound = true;
+		while (anyRemovedThisRound) {
+			anyRemovedThisRound = false;
+			// Parents with at least one surviving insert child, recomputed per round. Within a round the set
+			// over-approximates (a child removed mid-round still counts as an occupier), which only DEFERS its
+			// parent to the next round — a container is removed strictly on round-start evidence, never early.
+			var occupied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			foreach (ElementMapEntry entry in elementMap) {
+				if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+					&& entry.ParentName is { Length: > 0 }) {
+					occupied.Add(entry.ParentName);
+				}
+			}
+			for (int i = 0; i < elementMap.Count; i++) {
+				ElementMapEntry entry = elementMap[i];
+				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
+					continue;
+				}
+				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason(entry));
+				removed.Add(entry.WebName);
+				removedMobileNames.Add(entry.MobileName);
+				anyRemovedThisRound = true;
+			}
+		}
+		return removed;
+	}
+
+	/// <summary>
+	/// A removal candidate is a WEB-SOURCED insert (webName present — a synthesized layer has none and is
+	/// out of scope by construction) of a rules-listed container type whose mobileValues carry no <c>items</c>
+	/// collection binding (items-as-string marks a repeater with data; items-as-array is never carried).
+	/// </summary>
+	private static bool IsEmptyRemovalCandidate(ElementMapEntry entry, HashSet<string> removableTypes) =>
+		string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+		&& entry.WebName is { Length: > 0 }
+		&& entry.MobileName is { Length: > 0 }
+		&& entry.MobileType is { Length: > 0 }
+		&& removableTypes.Contains(entry.MobileType)
+		&& (entry.MobileValues is not JsonObject values || values["items"] is null);
+
+	/// <summary>
+	/// The drop reason for a removed empty container. When the container carried a non-empty <c>tools</c>
+	/// zone (an ExpansionPanel with header buttons but no items — removed by the items-only decision), the
+	/// discarded tools are named so the silent removal stays visible in the conversion report.
+	/// </summary>
+	private static string EmptyContainerDropReason(ElementMapEntry entry) {
+		const string basis = "empty container — no mobile content survived conversion";
+		return entry.MobileValues is JsonObject values && values["tools"] is JsonArray { Count: > 0 }
+			? basis + "; its tools content is discarded with it"
+			: basis;
+	}
+
+	/// <summary>
+	/// Re-compacts positional insert indexes after the drop passes: <c>:top</c> siblings of an anchor are
+	/// numbered 0..N-1 at walk time (see ResolvePositionalSiblings) BEFORE any drop decision, so a sibling
+	/// dropped for ANY reason (unsupported type, foreign data source, unsupported button request, empty
+	/// container) leaves a hole that would misplace the survivors. Surviving indexed inserts are renumbered
+	/// per parent in their original relative order; appended (<c>index</c>-less) entries are untouched.
+	/// Idempotent and a no-op when no indexed inserts exist, so the caller runs it unconditionally.
+	/// </summary>
+	private static void CompactPositionalIndexes(List<ElementMapEntry> elementMap) {
+		IEnumerable<IGrouping<string, ElementMapEntry>> indexedByParent = elementMap
+			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& e.Index is not null && e.ParentName is { Length: > 0 })
+			.GroupBy(e => e.ParentName, StringComparer.OrdinalIgnoreCase);
+		foreach (IGrouping<string, ElementMapEntry> group in indexedByParent) {
+			int next = 0;
+			foreach (ElementMapEntry entry in group.OrderBy(e => e.Index!.Value)) {
+				entry.Index = next++;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Assigns an explicit ordering index to every SURVIVING converted web tab inserted under the mobile
+	/// Tabs element, so the template's Feed/Attachments tabs stay LAST. The mobile tabbed template ships
+	/// its tabs as [general(0), Feed, Attachments]; an index-less insert appends AFTER them, which is how
+	/// converted tabs used to land past Feed/Attachments (the "keep them last" requirement lived only as
+	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors
+	/// <c>firstIndex, firstIndex+1, …</c> in element-map order (= the web tree order) inserts each tab
+	/// right after the general tab and preserves the web page's own tab order; the template twins are
+	/// merges, never move, and get pushed last by construction.
+	/// <para>
+	/// Pass order is load-bearing (enforced at the call site): AFTER <see cref="RemoveEmptyContainers"/>
+	/// so a tab removed as empty is a drop by then and is never indexed (survivors stay contiguous), and
+	/// AFTER <see cref="CompactPositionalIndexes"/> — that compaction rebases each parent's indexed group
+	/// to 0, which over tab indexes would erase <c>firstIndex</c> and put the first converted tab BEFORE
+	/// the general tab. The two never meet in one group anyway (positional inserts target the Tabs
+	/// anchor's PARENT, e.g. MainContainer, never Tabs itself), but the order makes that a non-issue by
+	/// construction. Synthesized tab-area layers are created later, INSIDE tabs, and are never matched.
+	/// With no usable <c>convertedTabPlacement</c> rules section the pass is a no-op — converted tabs
+	/// then append as before (switched by data, not code).
+	/// </para>
+	/// </summary>
+	private static void AssignConvertedTabIndexes(
+		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
+		ConvertedTabPlacementRule rule = rules?.ConvertedTabPlacement;
+		if (string.IsNullOrWhiteSpace(rule?.TabsElementName) || string.IsNullOrWhiteSpace(rule.TabComponentType)) {
+			return;
+		}
+		int next = Math.Max(0, rule.FirstIndex);
+		foreach (ElementMapEntry entry in elementMap) {
+			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				&& string.Equals(entry.ParentName, rule.TabsElementName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entry.MobileType, rule.TabComponentType, StringComparison.OrdinalIgnoreCase)) {
+				entry.Index = next++;
+				entry.Reason = entry.Reason
+					+ "; explicit index keeps it before the template's Feed/Attachments tabs (they stay last)";
+			}
+		}
+	}
 
 	private static string TwinReason(string name) =>
 		name.Contains("Attachment", StringComparison.OrdinalIgnoreCase)

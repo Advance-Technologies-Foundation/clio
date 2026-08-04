@@ -148,14 +148,17 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     second crt.List and do NOT put itemLayout inside a merge of the parent List (silent no-op;
 			     ListItem is a separate named element).
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
-			     When elementMap[].index is present, add it to the insert op at that 0-based position (a
-			     positional element mapped above/below an anchor, e.g. above the mobile Tabs); otherwise omit
-			     index and append. On a tabbed record page EVERY web tab inserts as its OWN new mobile tab under
-			     Tabs (no general-tab collapse); the web wrapper's non-tab content merges into the mobile general
-			     tab's grid (e.g. CardContentWrapper→GeneralTabContainer). The mobile template's Feed and
-			     Attachments tabs (FeedTab, AttachmentsTab) MUST stay last: insert each converted web tab BEFORE
-			     them (index it after the general tab) so the order is general tab, converted web tabs, Feed,
-			     Attachments.
+			     When elementMap[].index is present, add it to the insert op at that 0-based position VERBATIM
+			     (a positional element mapped above/below an anchor, e.g. above the mobile Tabs — or a converted
+			     web tab, below); otherwise omit index and append. On a tabbed record page EVERY web tab inserts
+			     as its OWN new mobile tab under Tabs (no general-tab collapse); the web wrapper's non-tab
+			     (side/profile) content goes INSIDE the profile Area card of the mobile general tab
+			     (CardContentWrapper→AreaProfileContainer — never directly into GeneralTabContainer or the
+			     general tab's grid). Tab ORDER is already deterministic: every converted web tab arrives with
+			     an explicit index (1, 2, … — right after the template's general tab), so applying the inserts
+			     verbatim yields general tab, converted web tabs, Feed, Attachments, with the template's
+			     FeedTab/AttachmentsTab staying last automatically — do NOT reorder tabs or invent indexes
+			     yourself.
 			     START from elementMap[].mobileValues: paste it as the component's values VERBATIM. It already
 			     carries the type, EVERY source property the mobile component supports AND the field's `control`
 			     binding — never drop any of them. `control` is the data-source binding for EVERY mobile field
@@ -183,8 +186,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     attribute's type) and update-page refuses to save.
 			   - relocate-children — do NOT recreate this container; its children are placed in parentName
 			     instead (each child has its own entry whose parentName already points there).
-			   - drop — skip the element entirely (reason explains why: unsupported type or multi-data-source).
-			     Tell the user what was dropped. (Empty containers are still inserted — the user can delete them.)
+			   - drop — skip the element entirely (reason explains why: unsupported type, multi-data-source, or
+			     "empty container"). Tell the user what was dropped. Empty containers are already handled FOR you:
+			     a converter-created layout container (Flex/Grid/TabPanel/tab/ExpansionPanel) whose every child
+			     dropped was removed deterministically by the converter and arrives as a drop entry with reason
+			     "empty container" (an ExpansionPanel removed with header buttons says its tools were discarded).
+			     Do NOT re-create such a container, do NOT re-parent anything into it, and do NOT ask the user
+			     about it — just report it with the other drops.
 			   For many→one suggestions (primaryWebMerge set, e.g. crt.FolderTree + crt.FolderTreeActions
 			   -> crt.FolderTreeActions), emit a SINGLE mobile component and merge in the secondary
 			   component's properties; do not emit the secondary as a separate component.

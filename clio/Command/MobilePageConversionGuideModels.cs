@@ -144,16 +144,20 @@ public sealed class ElementMapEntry {
 	public string PropertyName { get; init; }
 
 	/// <summary>
-	/// Optional 0-based insert position within the parent's <c>items</c>. Set ONLY for a positional insert
-	/// — a web element mapped above/below an anchor container via a <c>&lt;container&gt;:top</c> /
-	/// <c>:bottom</c> template rule. <c>:top</c> elements get an ascending index from 0 so they land before
-	/// the anchor (e.g. above the mobile <c>Tabs</c>); <c>:bottom</c> elements are appended (no index). Add it
-	/// to the insert operation verbatim when present. Omitted for every other element — the mobile designer
-	/// owns ordering.
+	/// Optional 0-based insert position within the parent's <c>items</c>. Set for a positional insert — a
+	/// web element mapped above/below an anchor container via a <c>&lt;container&gt;:top</c> /
+	/// <c>:bottom</c> template rule (<c>:top</c> elements get an ascending index from 0 so they land before
+	/// the anchor, e.g. above the mobile <c>Tabs</c>; <c>:bottom</c> elements are appended, no index) — and
+	/// for every CONVERTED WEB TAB under the mobile Tabs (indexed right after the template's general tab so
+	/// the template's Feed/Attachments tabs stay last; see the <c>convertedTabPlacement</c> rules section).
+	/// Add it to the insert operation verbatim when present. Omitted for every other element — the mobile
+	/// designer owns ordering. Settable (like <see cref="ParentName"/>): the empty-container removal pass
+	/// (ENG-91228) re-compacts sibling indexes after dropping an empty positional sibling, and the
+	/// converted-tab placement pass assigns tab indexes after the element map is built.
 	/// </summary>
 	[JsonPropertyName("index")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public int? Index { get; init; }
+	public int? Index { get; set; }
 
 	/// <summary>For an <c>insert</c> of a named element with a localizable caption.</summary>
 	[JsonPropertyName("captionResource")]
@@ -173,9 +177,14 @@ public sealed class ElementMapEntry {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonNode MobileValues { get; set; }
 
+	/// <summary>
+	/// Why this operation was chosen, for the conversion report. Settable (like
+	/// <see cref="ParentName"/>): the converted-tab placement pass appends the placement note after the
+	/// element map is built.
+	/// </summary>
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Reason { get; init; }
+	public string Reason { get; set; }
 }
 
 /// <summary>

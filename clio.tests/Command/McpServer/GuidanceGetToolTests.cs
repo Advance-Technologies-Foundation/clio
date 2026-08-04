@@ -1174,6 +1174,29 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-91228: the conversion article states that empty containers are removed DETERMINISTICALLY by the converter (drop entries, reason 'empty container') and forbids the reader to re-create them or turn the removal into a question — the article describes a fact, not an algorithm for the model to run.")]
+	public async Task GuidanceGet_FreedomToMobileArticle_StatesDeterministicEmptyContainerRemoval() {
+		// Arrange
+		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse guide = await tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion"));
+
+		// Assert
+		string article = guide.Article!.Text;
+		article.Should().Contain("Empty containers are already handled FOR you",
+			because: "the reader must know the removal is the converter's deterministic output, not a task left to them");
+		article.Should().Contain("removed deterministically by the converter",
+			because: "the article must describe the behavior as fact — instruction-level removal was deliberately replaced by code");
+		article.Should().Contain("Do NOT re-create such a container",
+			because: "re-creating a removed empty shell is the one way the reader could undo the feature");
+		article.Should().Contain("do NOT ask the user",
+			because: "removal must never resurface as a question at the gate");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Attribute lock-in: both MCP surfaces of the converter carry [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
 	public void MobilePageConverter_McpTypes_CarryFeatureToggle() {
 		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)

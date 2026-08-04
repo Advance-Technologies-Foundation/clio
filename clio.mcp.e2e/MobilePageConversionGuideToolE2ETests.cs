@@ -66,6 +66,46 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
+	[Description("ENG-91228: returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the deterministic empty-container removal contract (already removed by the converter, arrives as a drop with reason \"empty container\", never re-create / re-parent / ask the user) plus the AreaProfileContainer wrapper-content routing.")]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the conversion article with the deterministic empty-container removal contract")]
+	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the feature-gated freedom-page-web-to-mobile-conversion article carrying the ENG-91228 empty-container removal wording end to end.")]
+	public async Task GuidanceGet_Should_Return_Conversion_Guide_With_EmptyContainerRemoval_Contract() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			GuidanceGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["name"] = "freedom-page-web-to-mobile-conversion"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-guidance should return a normal MCP tool result envelope for a registered guidance name");
+		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
+		response.Success.Should().BeTrue(
+			because: "freedom-page-web-to-mobile-conversion is a registered guidance name while mobile-page-converter is enabled");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/freedom-page-web-to-mobile-conversion",
+			because: "the canonical resource URI for the conversion guide should be stable");
+		response.Article.Text.Should().Contain("removed deterministically by the converter",
+			because: "the drop branch must state that empty converter-created containers are removed by the converter itself, not left for the user to delete (ENG-91228)");
+		response.Article.Text.Should().Contain("\"empty container\"",
+			because: "the article must name the exact drop reason the elementMap carries for a removed empty container so the caller can recognize it");
+		response.Article.Text.Should().Contain(
+			"Do NOT re-create such a container, do NOT re-parent anything into it, and do NOT ask the user",
+			because: "the article must forbid the caller from resurrecting a removed empty container or turning its removal into a question (ENG-91228)");
+		response.Article.Text.Should().Contain("CardContentWrapper→AreaProfileContainer",
+			because: "the wrapper's non-tab content must be routed into the profile Area card, never directly into the general tab's grid (ENG-91228 wording fix)");
+	}
+
+	[Test]
 	[Description("Returns a structured failure (not a protocol error) when the target environment is not registered, so the caller can read why the source page could not be read.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide reports invalid environment failures")]
@@ -148,5 +188,36 @@ public sealed class MobilePageConversionGuideToolFeatureGateE2ETests : McpContra
 		// Assert
 		toolNames.Should().NotContain(ToolName,
 			because: "get-mobile-page-conversion-guide is gated behind the mobile-page-converter feature flag and must be absent when the flag is off");
+	}
+
+	[Test]
+	[Description("Hides the freedom-page-web-to-mobile-conversion guidance article when the mobile-page-converter feature flag is disabled, proving the article shares the tool's feature gate.")]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance hides the conversion article when its feature flag is off")]
+	[AllureDescription("Starts the real clio MCP server with mobile-page-converter disabled and verifies get-guidance treats freedom-page-web-to-mobile-conversion as unknown and omits it from availableGuides.")]
+	public async Task GuidanceGet_TreatsConversionGuideAsUnknown_WhenFeatureFlagDisabled() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			GuidanceGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["name"] = "freedom-page-web-to-mobile-conversion"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-guidance reports an unknown guidance name as a structured failure, not a protocol-level error");
+		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
+		response.Success.Should().BeFalse(
+			because: "the conversion article is gated behind the disabled mobile-page-converter feature and must resolve as unknown");
+		response.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article over the real MCP transport");
+		response.AvailableGuides.Should().NotContain("freedom-page-web-to-mobile-conversion",
+			because: "a disabled gated guide must not be advertised in availableGuides");
 	}
 }

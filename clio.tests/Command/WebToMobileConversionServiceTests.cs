@@ -516,7 +516,8 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "ProductsList").Operation.Should().Be("drop");
 		Element(guide, "ProductsList").Reason.Should().Contain("ProductsListDS");
 
-		// Empty tabs are still inserted (the user can delete them); only their unsupported content drops.
+		// Empty tabs are still inserted HERE because these rules carry no emptyContainerRemoval section —
+		// the removal pass is switched by data (see the "Empty container removal" region for the on-state).
 		Element(guide, "ProcessingTab").Operation.Should().Be("insert");
 		Element(guide, "Timeline").Operation.Should().Be("drop");
 		Element(guide, "HistoryTab").Operation.Should().Be("insert");
@@ -3412,6 +3413,466 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
 		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
 		entry.Properties.Should().Equal("gap");
+	}
+
+	#endregion
+
+	#region Empty container removal (ENG-91228)
+
+	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.TabPanel", "crt.TabContainer", "crt.FlexContainer", "crt.GridContainer",
+			"crt.ExpansionPanel", "crt.Input", "crt.ComboBox"
+		};
+
+	private static readonly EmptyContainerRemovalRule EmptyRemoval = new() {
+		RemovableTypes = ["crt.FlexContainer", "crt.GridContainer", "crt.TabPanel", "crt.TabContainer", "crt.ExpansionPanel"]
+	};
+
+	private static WebToMobilePageConversionRules RulesWithEmptyRemoval() => new() {
+		Components = GridRule.Components,
+		EmptyContainerRemoval = EmptyRemoval
+	};
+
+	private static WebToMobilePageConversionRules RulesWithEmptyRemovalAndTabLayers() => new() {
+		Components = GridRule.Components,
+		TabAreaLayers = RulesWithPanelDetails().TabAreaLayers,
+		EmptyContainerRemoval = EmptyRemoval
+	};
+
+	private static MobilePageConversionGuide AnalyzeWithEmptyRemoval(
+		PageBundleInfo bundle,
+		WebToMobilePageConversionRules rules = null,
+		IReadOnlyDictionary<string, string> containerNameMap = null,
+		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = null,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null,
+		PageBusinessRuleProbeResult pageBusinessRulesProbe = null) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, EmptyRemovalMobileTypes,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline" },
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules ?? RulesWithEmptyRemoval(), templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: containerNameMap ?? TabbedContainerMap,
+			positionalPlacements: positionalPlacements, mobileContainerParents: mobileContainerParents,
+			pageBusinessRulesProbe: pageBusinessRulesProbe);
+
+	[Test]
+	[Description("ENG-91228: a converter-created container whose every child dropped is itself converted to a drop with reason 'empty container', and the guide's constraints warn the reader not to re-create it.")]
+	public void Analyze_ShouldDropEmptyContainer_WhenNoChildSurvives() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry box = Element(guide, "OnlyUnsupported");
+		box.Operation.Should().Be("drop");
+		box.Reason.Should().Contain("empty container");
+		box.WebType.Should().Be("crt.GridContainer", because: "the report must still say what was removed");
+		box.MobileName.Should().BeNull(because: "a drop carries no mobile target");
+		Element(guide, "Timeline").Operation.Should().Be("drop", because: "the child's own drop is what emptied the box");
+		guide.Constraints.Should().Contain(c => c.Contains("empty container"),
+			because: "the reader must be told the removal already happened and is not theirs to redo or undo");
+	}
+
+	[Test]
+	[Description("ENG-91228: one surviving child keeps its container — only containers with NO surviving child are removed.")]
+	public void Analyze_ShouldKeepContainer_WhenAnyChildSurvives() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MixedBox", "type": "crt.GridContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input" },
+				{ "name": "Timeline", "type": "crt.Timeline" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "MixedBox").Operation.Should().Be("insert");
+		Element(guide, "LeadName").ParentName.Should().Be("MixedBox");
+		guide.Constraints.Should().NotContain(c => c.Contains("empty container"),
+			because: "with nothing removed there is nothing to warn about");
+	}
+
+	[Test]
+	[Description("ENG-91228: emptiness cascades bottom-up — a FlexContainer holding only an empty GridContainer drops together with it.")]
+	public void Analyze_ShouldCascadeRemoval_WhenWrapperHoldsOnlyEmptyContainer() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Wrapper", "type": "crt.FlexContainer", "items": [
+				{ "name": "InnerGrid", "type": "crt.GridContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "InnerGrid").Operation.Should().Be("drop");
+		Element(guide, "InnerGrid").Reason.Should().Contain("empty container");
+		Element(guide, "Wrapper").Operation.Should().Be("drop",
+			because: "after the inner grid left, the wrapper holds nothing — the removal must cascade");
+		Element(guide, "Wrapper").Reason.Should().Contain("empty container");
+	}
+
+	[Test]
+	[Description("ENG-91228: a child with visible:false COUNTS as content — it is hidden at runtime only and must keep its designer home, so its container survives.")]
+	public void Analyze_ShouldKeepContainer_WhenOnlyChildIsHiddenOnly() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "HiddenBox", "type": "crt.GridContainer", "items": [
+				{ "name": "SecretField", "type": "crt.Input", "visible": false } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "HiddenBox").Operation.Should().Be("insert");
+		ElementMapEntry field = Element(guide, "SecretField");
+		field.Operation.Should().Be("insert");
+		field.MobileValues!["visible"]!.GetValue<bool>().Should().BeFalse(
+			because: "the hidden child is carried, which is exactly why its container is not empty");
+	}
+
+	[Test]
+	[Description("ENG-91228: a container whose items is a COLLECTION BINDING (a string, not an array) is a repeater with data, not empty scaffolding — it is kept.")]
+	public void Analyze_ShouldKeepRepeaterContainer_WhenItemsIsACollectionBinding() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "RepeaterContainer", "type": "crt.FlexContainer", "items": "$Payments" } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry repeater = Element(guide, "RepeaterContainer");
+		repeater.Operation.Should().Be("insert");
+		repeater.MobileValues!["items"]!.GetValue<string>().Should().Be("$Payments",
+			because: "the binding IS the container's content — deleting the shell would delete the repeater");
+	}
+
+	[Test]
+	[Description("ENG-91228 (decision 2026-08-03): an ExpansionPanel is judged on items ONLY — an empty panel drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
+	public void Analyze_ShouldDropEmptyExpansionPanel_AndCascadeIntoTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "EmptyPanel", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "EmptyPanel").Operation.Should().Be("drop");
+		Element(guide, "EmptyPanel").Reason.Should().Contain("empty container");
+		Element(guide, "OverviewTab").Operation.Should().Be("drop",
+			because: "the panel was the tab's only content, so the tab empties and cascades away");
+		Element(guide, "Tabs").Operation.Should().Be("merge",
+			because: "a template merge twin is structurally out of the removal's reach, however empty its converted content");
+	}
+
+	[Test]
+	[Description("ENG-91228 (items-only decision): a panel with header buttons in tools but an empty items still drops — and the discarded tools are called out in the drop reason so the loss stays visible in the report.")]
+	public void Analyze_ShouldMentionDiscardedTools_WhenEmptyPanelCarriesToolsButtons() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ], "items": [] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
+		panel.Operation.Should().Be("drop");
+		panel.Reason.Should().Contain("empty container");
+		panel.Reason.Should().Contain("tools", because: "silent removal is acceptable only while the discarded tools stay visible in the report");
+	}
+
+	[Test]
+	[Description("ENG-91228: the pass is switched by DATA — without an emptyContainerRemoval rules section the empty container is still inserted, exactly as before the feature.")]
+	public void Analyze_ShouldSkipRemovalPass_WhenRulesCarryNoSection() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: GridRule);
+
+		Element(guide, "OnlyUnsupported").Operation.Should().Be("insert");
+		guide.Constraints.Should().NotContain(c => c.Contains("empty container"));
+	}
+
+	[Test]
+	[Description("ENG-91228 + ENG-94188: the removal runs BEFORE the tab-area synthesis — a removed empty tab gets NO layers (nothing resurrects it), while its content-bearing sibling keeps the full two-layer body.")]
+	public void Analyze_ShouldSynthesizeNoLayers_WhenEmptyTabWasRemoved() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "EmptyTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] },
+				{ "name": "FullTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithEmptyRemovalAndTabLayers());
+
+		Element(guide, "EmptyTab").Operation.Should().Be("drop");
+		guide.TabAreaLayers!.Single().TabName.Should().Be("FullTab",
+			because: "only the surviving tab gets the designer's two-layer body");
+		(string emptyMain, string emptyArea) = LayerNames("EmptyTab");
+		IndexOfMobile(guide, emptyMain).Should().Be(-1, because: "a removed tab must not be resurrected by synthesized layers");
+		IndexOfMobile(guide, emptyArea).Should().Be(-1);
+		(string fullMain, string fullArea) = LayerNames("FullTab");
+		Synthesized(guide, fullMain).ParentName.Should().Be("FullTab");
+		Element(guide, "LeadName").ParentName.Should().Be(fullArea);
+	}
+
+	[Test]
+	[Description("ENG-91228: a page's OWN inserted TabPanel (no template twin) whose every tab emptied cascades away completely — no tabless panel shell survives.")]
+	public void Analyze_ShouldDropOwnTabPanelShell_WhenEveryTabEmptied() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OwnTabs", "type": "crt.TabPanel", "items": [
+				{ "name": "FirstTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+		Element(guide, "FirstTab").Operation.Should().Be("drop");
+		Element(guide, "OwnTabs").Operation.Should().Be("drop",
+			because: "a panel whose every tab left is the most pointless shell of all — the cascade must reach it");
+	}
+
+	[Test]
+	[Description("ENG-91228: positional :top indexes are re-compacted after removal — dropping the middle sibling leaves no hole, so the survivors land at contiguous positions above the mobile anchor.")]
+	public void Analyze_ShouldCompactPositionalIndexes_WhenPositionalSiblingIsRemoved() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "TopBox", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "TopEmpty", "type": "crt.FlexContainer", "items": [ { "name": "Timeline", "type": "crt.Timeline" } ] },
+			  { "name": "TopField", "type": "crt.Input" },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "LeadName", "type": "crt.Input" } ] } ] } ] },
+			  { "name": "FooterField", "type": "crt.Input" }
+			]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, containerNameMap: map, positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		Element(guide, "TopEmpty").Operation.Should().Be("drop");
+		Element(guide, "TopBox").Index.Should().Be(0, because: "the first survivor keeps the top slot");
+		Element(guide, "TopField").Index.Should().Be(1,
+			because: "the removed middle sibling must leave no index hole — a gap would misplace the insert");
+		Element(guide, "FooterField").Index.Should().BeNull(because: ":bottom entries append and never carry an index");
+	}
+
+	[Test]
+	[Description("ENG-91228 follow-up: positional :top compaction is NOT tied to the empty-container pass — a middle sibling dropped for an unrelated reason (unsupported type) leaves no index hole even with no emptyContainerRemoval rules section at all.")]
+	public void Analyze_ShouldCompactPositionalIndexes_WhenSiblingDroppedForUnrelatedReason() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "TopBox", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "Timeline", "type": "crt.Timeline" },
+			  { "name": "TopField", "type": "crt.Input" },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "LeadName", "type": "crt.Input" } ] } ] } ] }
+			]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, rules: GridRule, containerNameMap: map, positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		Element(guide, "Timeline").Operation.Should().Be("drop",
+			because: "the unsupported middle sibling drops during the walk itself, before any empty-container logic");
+		Element(guide, "TopBox").Index.Should().Be(0, because: "the first survivor keeps the top slot");
+		Element(guide, "TopField").Index.Should().Be(1,
+			because: "every drop source leaves the same positional hole, so compaction must run even when the empty-container pass removed nothing");
+	}
+
+	[Test]
+	[Description("ENG-91228 follow-up: the requestConversions summary is reconciled with the removal pass — a converted binding on a container later removed as empty is reclassified into droppedRequests (naming the removal), never reported as converted for an element the map says not to create.")]
+	public void Analyze_ShouldReclassifyConvertedRequest_WhenItsContainerWasRemovedAsEmpty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "EmptyBox", "type": "crt.FlexContainer",
+			    "clicked": { "request": "crt.SaveRecordRequest", "params": {} }, "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] },
+			  { "name": "SaveButton", "type": "crt.Input",
+			    "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			Components = GridRule.Components,
+			Requests = [
+				new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" }
+			],
+			EmptyContainerRemoval = EmptyRemoval
+		};
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: rules);
+
+		Element(guide, "EmptyBox").Operation.Should().Be("drop",
+			because: "the container's only child dropped, so the empty-container pass removes the container itself");
+		guide.RequestConversions!.ConvertedRequests.Should().NotContain(r => r.ElementName == "EmptyBox",
+			because: "reporting a binding as converted for a removed element would contradict the drop entry and invite the caller to re-create the container");
+		guide.RequestConversions.DroppedRequests.Should().ContainSingle(r =>
+				r.ElementName == "EmptyBox" && r.Binding == "clicked" && r.WebRequest == "crt.SaveRecordRequest",
+				because: "the discarded binding must stay visible in the report instead of vanishing silently")
+			.Which.Reason.Should().Contain("empty container",
+				because: "the reason must name the removal so the reader can connect it to the elementMap drop entry");
+		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "SaveButton",
+			because: "reconciliation is scoped to removed containers — a surviving element's converted binding still reports as converted");
+	}
+
+	[Test]
+	[Description("ENG-91228 (decision 3): attributes referenced ONLY by a removed empty container are KEPT in viewModelConfig — the removal is layout cleanup, not attribute cleanup — while attributes of a genuinely dropped component are still cleaned as before.")]
+	public void Analyze_ShouldKeepAttributesOfRemovedContainer_WhenOnlyEmptyContainerReferencedThem() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "EmptyBox", "type": "crt.GridContainer", "visible": "$BoxVisible", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline", "value": "$TimelineAttr" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "BoxVisible": { "type": "Boolean" }, "TimelineAttr": { "type": "String" } } }
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "EmptyBox").Operation.Should().Be("drop");
+		JsonObject attributes = guide.ViewModelConfig!["attributes"]!.AsObject();
+		attributes.ContainsKey("BoxVisible").Should().BeTrue(
+			because: "the empty-container removal deliberately keeps the attributes the removed container referenced");
+		attributes.ContainsKey("TimelineAttr").Should().BeFalse(
+			because: "an attribute consumed only by a genuinely dropped component is still cleaned, exactly as before");
+	}
+
+	[Test]
+	[Description("ENG-91228 (decision 6): the removal runs BEFORE the business-rule conversion — a rule whose only action targets the removed container is dropped, while a rule on a surviving element still converts.")]
+	public void Analyze_ShouldDropRuleOnRemovedContainer_WhenRemovalRunsBeforeRuleConversion() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "EmptyBox", "type": "crt.GridContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] },
+			  { "name": "LeadName", "type": "crt.Input" } ]
+			""");
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the box", ElementAction("hide-element", "EmptyBox")),
+			SourceRule("Lock the name", ElementAction("make-read-only", "LeadName")));
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, pageBusinessRulesProbe: probe);
+
+		Element(guide, "EmptyBox").Operation.Should().Be("drop");
+		guide.PageBusinessRules!.DroppedRules.Should().ContainSingle(r => r.Caption == "Hide the box",
+			because: "a rule left with no live action follows its removed target out");
+		guide.PageBusinessRules.ConvertedRules.Should().ContainSingle(r => r.Caption == "Lock the name",
+			because: "rules on surviving elements are untouched by the removal");
+	}
+
+	#endregion
+
+	#region Converted tab placement (explicit indexes so template Feed/Attachments stay last)
+
+	private static readonly ConvertedTabPlacementRule TabPlacement = new() {
+		TabsElementName = "Tabs", TabComponentType = "crt.TabContainer", FirstIndex = 1
+	};
+
+	private static WebToMobilePageConversionRules RulesWithTabPlacement() => new() {
+		Components = GridRule.Components,
+		EmptyContainerRemoval = EmptyRemoval,
+		ConvertedTabPlacement = TabPlacement
+	};
+
+	[Test]
+	[Description("Converted web tabs get explicit indexes under the mobile Tabs starting at firstIndex (right after the template's general tab), in web tree order — so applying the element map verbatim keeps the template's Feed/Attachments tabs last.")]
+	public void Analyze_ShouldIndexConvertedTabs_AfterTemplateGeneralTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] },
+				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithTabPlacement());
+
+		ElementMapEntry sales = Element(guide, "SalesTab");
+		sales.ParentName.Should().Be("Tabs");
+		sales.Index.Should().Be(1, because: "position 0 belongs to the template's general tab");
+		sales.Reason.Should().Contain("Feed/Attachments",
+			because: "the report must explain why a non-positional insert suddenly carries an index");
+		Element(guide, "HistoryTab").Index.Should().Be(2, because: "converted tabs keep the web page's own tab order");
+		Element(guide, "Tabs").Operation.Should().Be("merge",
+			because: "the Tabs twin itself is template chrome and is never indexed or moved");
+		Element(guide, "Budget").Index.Should().BeNull(because: "only the tabs are indexed, never their content");
+	}
+
+	[Test]
+	[Description("Leads_FormPage scenario: a tab removed as empty (its only child is unsupported on mobile) is never indexed, and the surviving tabs are numbered contiguously from firstIndex — no hole where the removed tab was.")]
+	public void Analyze_ShouldIndexOnlySurvivingTabs_WhenMiddleTabWasRemovedAsEmpty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] },
+				{ "name": "NextStepsTab", "type": "crt.TabContainer", "items": [ { "name": "Timeline", "type": "crt.Timeline" } ] },
+				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithTabPlacement());
+
+		ElementMapEntry nextSteps = Element(guide, "NextStepsTab");
+		nextSteps.Operation.Should().Be("drop",
+			because: "its only child is unsupported on mobile, so the tab empties and the removal pass takes it");
+		nextSteps.Index.Should().BeNull(because: "a drop is never indexed");
+		Element(guide, "SalesTab").Index.Should().Be(1);
+		Element(guide, "HistoryTab").Index.Should().Be(2,
+			because: "the removed middle tab must leave no index hole — survivors stay contiguous");
+	}
+
+	[Test]
+	[Description("The pass is switched by DATA — without a convertedTabPlacement rules section a converted tab carries no index and appends, exactly as before the feature.")]
+	public void Analyze_ShouldLeaveTabsUnindexed_WhenRulesCarryNoPlacementSection() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "SalesTab").Index.Should().BeNull(
+			because: "with no placement section the converter behaves exactly as before the feature");
+	}
+
+	[Test]
+	[Description("Tab indexes coexist with positional :top indexes: the positional group (under MainContainer) is compacted from 0, while the tab group (under Tabs) starts at firstIndex — the compaction never rebases the tab indexes because they are assigned after it.")]
+	public void Analyze_ShouldKeepTabIndexBase_WhenPositionalCompactionRuns() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "TopBox", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "Timeline", "type": "crt.Timeline" },
+			  { "name": "TopField", "type": "crt.Input" },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] } ] } ] }
+			]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, rules: RulesWithTabPlacement(), containerNameMap: map,
+			positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		Element(guide, "TopBox").Index.Should().Be(0, because: ":top compaction still rebases the positional group to 0");
+		Element(guide, "TopField").Index.Should().Be(1,
+			because: "the dropped middle sibling leaves no positional hole, exactly as without tab placement");
+		ElementMapEntry sales = Element(guide, "SalesTab");
+		sales.ParentName.Should().Be("Tabs");
+		sales.Index.Should().Be(1,
+			because: "the tab index is assigned AFTER the compaction — rebased to 0 it would land before the template's general tab");
 	}
 
 	#endregion

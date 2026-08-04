@@ -46,7 +46,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled tabbed template carries container-name correspondence, the CardContentWrapper->GeneralTabContainer leftover mapping, and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
+	[Description("Bundled tabbed template carries container-name correspondence, the CardContentWrapper->AreaProfileContainer leftover mapping (non-tab content goes INSIDE the profile Area, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -54,7 +54,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
 		tabbed.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs");
 		tabbed.Containers.Should().Contain(c => c.Web == "FeedTabContainer" && c.Mobile == "FeedContainer");
-		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "AreaProfileContainer",
+			because: "the wrapper's non-tab (side/profile) content lands inside the profile Area card, " +
+				"not directly in GeneralTabContainer — the Area must not be left empty");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
 	}
@@ -68,6 +70,30 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		grid.Mobile.Should().Contain("crt.List");
 		grid.Mobile.Should().Contain("crt.ListItem");
 		grid.Note.Should().Contain("itemLayout");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the empty-container removal allowlist (ENG-91228): the CLOSED set of five layout container types removable when empty. The set is a deliberate decision pinned here — widening it must be an explicit change with its own review, never a drive-by edit or registry inference.")]
+	public void LoadBundled_EmptyContainerRemoval_CarriesClosedAllowlist() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.EmptyContainerRemoval.Should().NotBeNull();
+		rules.EmptyContainerRemoval.RemovableTypes.Should().BeEquivalentTo(
+			["crt.FlexContainer", "crt.GridContainer", "crt.TabPanel", "crt.TabContainer", "crt.ExpansionPanel"],
+			because: "the removable set is a closed allowlist of disposable layout scaffolding — content-bearing " +
+				"containers (crt.List, crt.Tabs) must never appear here");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the converted-tab placement section: converted web tabs are indexed under the mobile Tabs starting right after the template's general tab (firstIndex 1), so the template's Feed/Attachments tabs stay last deterministically instead of by guidance prose.")]
+	public void LoadBundled_ConvertedTabPlacement_CarriesTabsIndexing() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.ConvertedTabPlacement.Should().NotBeNull();
+		rules.ConvertedTabPlacement.TabsElementName.Should().Be("Tabs");
+		rules.ConvertedTabPlacement.TabComponentType.Should().Be("crt.TabContainer");
+		rules.ConvertedTabPlacement.FirstIndex.Should().Be(1,
+			because: "position 0 belongs to the template's general tab — the first converted web tab goes right after it");
 	}
 
 	[Test]

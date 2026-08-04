@@ -56,6 +56,24 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("insertValueOverrides")]
 	public IReadOnlyList<InsertValueOverrideRule> InsertValueOverrides { get; init; } = [];
 
+	/// <summary>
+	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
+	/// element-map decisions (ENG-91228) — a closed allowlist of removable types, evaluated bottom-up so
+	/// emptiness cascades. Null when the section is absent from the rules file — the removal pass is then
+	/// a no-op (the feature is switched by data, not code).
+	/// </summary>
+	[JsonPropertyName("emptyContainerRemoval")]
+	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
+
+	/// <summary>
+	/// Group: deterministic placement of converted web tabs under the mobile Tabs element — every
+	/// surviving converted tab gets an explicit ordering index right after the template's general tab,
+	/// so the template's Feed/Attachments tabs stay LAST. Null when the section is absent from the
+	/// rules file — the placement pass is then a no-op (the feature is switched by data, not code).
+	/// </summary>
+	[JsonPropertyName("convertedTabPlacement")]
+	public ConvertedTabPlacementRule ConvertedTabPlacement { get; init; }
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -227,6 +245,55 @@ public sealed class InsertValueOverrideRule {
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// Rule for the deterministic empty-container removal pass (ENG-91228). <see cref="RemovableTypes"/> is
+/// a CLOSED allowlist of mobile container types the converter may drop when they end up empty — layout
+/// scaffolding whose disappearance loses nothing. It is deliberately NOT derived from the component
+/// registry's <c>container</c> flag: "can hold children" (crt.List, crt.Tabs) is not "safe to delete
+/// when empty", the registry is environment-fetched and incomplete, and the failure mode of a too-wide
+/// set is silent content loss. Widening the set is an explicit rules-file decision, never inference.
+/// </summary>
+public sealed class EmptyContainerRemovalRule {
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+
+	/// <summary>
+	/// Mobile container types removable when empty (e.g. crt.FlexContainer, crt.GridContainer,
+	/// crt.TabPanel, crt.TabContainer, crt.ExpansionPanel). Empty or absent switches the pass off.
+	/// </summary>
+	[JsonPropertyName("removableTypes")]
+	public IReadOnlyList<string> RemovableTypes { get; init; } = [];
+}
+
+/// <summary>
+/// Rule for the deterministic converted-tab placement pass. The mobile tabbed template provides its own
+/// tabs (general/Details first, Feed and Attachments LAST); a converted web tab must land BETWEEN them.
+/// Until this rule the ordering lived only as guidance prose while the element map said "no index —
+/// append" (which lands a converted tab AFTER Feed/Attachments); with the section present every
+/// surviving converted tab gets an explicit index starting at <see cref="FirstIndex"/>, so applying the
+/// element map verbatim yields: general tab, converted web tabs, Feed, Attachments.
+/// </summary>
+public sealed class ConvertedTabPlacementRule {
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+
+	/// <summary>Mobile Tabs element name the converted tabs are inserted under (e.g. "Tabs").</summary>
+	[JsonPropertyName("tabsElementName")]
+	public string TabsElementName { get; init; }
+
+	/// <summary>Mobile component type of a single tab (e.g. "crt.TabContainer").</summary>
+	[JsonPropertyName("tabComponentType")]
+	public string TabComponentType { get; init; }
+
+	/// <summary>
+	/// 0-based index of the FIRST converted tab within the mobile Tabs items — 1 places it right after
+	/// the template's general tab (position 0) and before the template's Feed/Attachments tabs, which
+	/// shift right and stay last.
+	/// </summary>
+	[JsonPropertyName("firstIndex")]
+	public int FirstIndex { get; init; } = 1;
 }
 
 /// <summary>

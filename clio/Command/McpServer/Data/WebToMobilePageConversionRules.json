@@ -27,7 +27,7 @@
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
-        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they must stay LAST. Insert every converted web tab BEFORE them (after the general tab), so tab order is: general tab, converted web tabs, Feed, Attachments." },
+        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab (see convertedTabPlacement), so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
         { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
         { "web": "CardToggleTabPanel", "mobile": "Tabs", "note": "All tabs except Feed and Attachments should be moved to Tabs"},
@@ -134,6 +134,22 @@
       "note": "ENG-91228 spacing normalization: the web flex gap (token, px number or CSS string) is IGNORED, not translated — every inserted flex container gets Medium gap."
     }
   ],
+  "emptyContainerRemoval": {
+    "note": "a converter-created container of one of these types whose items receive NO surviving child is dropped deterministically (bottom-up, so emptiness cascades). A CLOSED allowlist — 'can hold children' (crt.List, crt.Tabs) is not 'safe to delete when empty'; widening it is an explicit decision here, never registry inference. crt.ExpansionPanel is judged on items only (tools content is discarded with it, called out in the drop reason). Template merge twins and synthesized tab layers are structurally out of scope.",
+    "removableTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer",
+      "crt.TabPanel",
+      "crt.TabContainer",
+      "crt.ExpansionPanel"
+    ]
+  },
+  "convertedTabPlacement": {
+    "note": "every SURVIVING converted web tab inserted under the mobile Tabs gets an explicit index starting at firstIndex (1 = right after the template's general tab), in web tree order — so the template's FeedTab/AttachmentsTab stay LAST and the applied order is: general tab, converted web tabs, Feed, Attachments. Runs after empty-container removal (a tab removed as empty gets no index — no holes) and after positional-index compaction (which rebases each group to 0 and must never see these indexes). Absent section switches the pass off — converted tabs then append, as before.",
+    "tabsElementName": "Tabs",
+    "tabComponentType": "crt.TabContainer",
+    "firstIndex": 1
+  },
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
