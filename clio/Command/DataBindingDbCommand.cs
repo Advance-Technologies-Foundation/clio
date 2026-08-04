@@ -60,6 +60,21 @@ public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
 }
 
 /// <summary>
+///     Options for <see cref="ReadDataBindingDbCommand" />.
+/// </summary>
+[Verb("read-data-binding-db", Aliases = ["get-data-binding-db"],
+	HelpText = "Read which columns a remote DB-first data binding actually ships")]
+public class ReadDataBindingDbOptions : EnvironmentOptions {
+
+	[Option("package", Required = true, HelpText = "Target package name")]
+	public string PackageName { get; set; } = string.Empty;
+
+	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
+	public string BindingName { get; set; } = string.Empty;
+
+}
+
+/// <summary>
 /// Creates a DB-first package data binding by persisting data to the remote Creatio database.
 /// </summary>
 public class CreateDataBindingDbCommand(IDataBindingDbService dataBindingDbService, ILogger logger)
@@ -132,6 +147,38 @@ public class RemoveDataBindingRowDbCommand(IDataBindingDbService dataBindingDbSe
 }
 
 /// <summary>
+///     Reports which columns a remote DB-first data binding ships, so the transfer contract can be checked without
+///     exporting and unpacking the whole package.
+/// </summary>
+public class ReadDataBindingDbCommand(IDataBindingDbService dataBindingDbService, ILogger logger)
+	: Command<ReadDataBindingDbOptions> {
+
+	/// <inheritdoc />
+	public override int Execute(ReadDataBindingDbOptions options){
+		try {
+			BoundBindingProjection projection = dataBindingDbService.ReadBinding(options);
+			logger.WriteInfo($"binding: {projection.BindingName}");
+			logger.WriteInfo($"schema:  {projection.EntitySchemaName}");
+			logger.WriteInfo($"uId:     {projection.BindingUId}");
+			logger.WriteInfo($"rows:    {projection.Rows.Count}");
+			logger.WriteInfo($"columns ({projection.Columns.Count}): {string.Join(", ", projection.Columns)}");
+			for (int index = 0; index < projection.Rows.Count; index++) {
+				IReadOnlyDictionary<string, string> row = projection.Rows[index];
+				string values = string.Join(", ", row.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+					.Select(pair => $"{pair.Key}={pair.Value}"));
+				logger.WriteInfo($"row[{index}]: {values}");
+			}
+			return 0;
+		}
+		catch (Exception exception) {
+			logger.WriteError(exception.Message);
+			return 1;
+		}
+	}
+
+}
+
+/// <summary>
 /// Shared DB-first data-binding service used by the CLI commands and MCP tools.
 /// </summary>
 public interface IDataBindingDbService {
@@ -149,6 +196,40 @@ public interface IDataBindingDbService {
 	/// Removes a row from a remote DB-first binding and deletes the package schema data record when empty.
 	/// </summary>
 	void RemoveRow(RemoveDataBindingRowDbOptions options);
+
+	/// <summary>
+	/// Reads what a remote DB-first binding actually ships: its entity schema and, per row, the exact set of
+	/// bound columns.
+	/// </summary>
+	/// <remarks>
+	///     A binding ships ONLY the columns it was created with, and that projection is the transfer contract —
+	///     a workplace bound without its client type installs on the next environment as an unreachable empty
+	///     entry. Reading the live record proves nothing about it, so this is the check that matters. It replaces
+	///     exporting the whole package and parsing <c>Data/&lt;binding&gt;/data.json</c>.
+	/// </remarks>
+	/// <exception cref="InvalidOperationException">The package or the binding does not exist on the environment.</exception>
+	BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options);
+}
+
+/// <summary>
+///     What a DB-first data binding ships, as read back from the environment.
+/// </summary>
+/// <param name="BindingName">Binding folder name, i.e. the <c>SysPackageSchemaData.Name</c>.</param>
+/// <param name="EntitySchemaName">Entity schema the binding carries rows for.</param>
+/// <param name="BindingUId">Identifier of the package-schema-data record.</param>
+/// <param name="Rows">One entry per bound row: the column names mapped to their bound values.</param>
+public sealed record BoundBindingProjection(
+	string BindingName,
+	string EntitySchemaName,
+	Guid BindingUId,
+	IReadOnlyList<IReadOnlyDictionary<string, string>> Rows) {
+
+	/// <summary>
+	///     Every column name the binding ships, across all rows, in stable order.
+	/// </summary>
+	public IReadOnlyList<string> Columns =>
+		Rows.SelectMany(row => row.Keys).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
 }
 
 public interface ILookupRegistrationService {
@@ -603,6 +684,52 @@ internal sealed class DataBindingDbService(
 		ThrowIfUnsuccessful(response, "SaveSchema");
 	}
 
+	/// <inheritdoc />
+	public BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		ValidateEnvironment(options);
+
+		PackageRef packageRef = ResolvePackageRef(options.PackageName);
+		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
+		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
+		IReadOnlyList<IReadOnlyDictionary<string, string>> rows = boundRows
+			.Select(row => (IReadOnlyDictionary<string, string>)row.ToDictionary(
+				pair => pair.Key,
+				pair => FormatBoundValue(pair.Value),
+				StringComparer.Ordinal))
+			.ToArray();
+		return new BoundBindingProjection(options.BindingName, entitySchemaName, bindingUId, rows);
+	}
+
+	/// <summary>
+	///     Renders a bound value compactly.
+	/// </summary>
+	/// <remarks>
+	///     A lookup column comes back as a <c>LookupValue</c> envelope carrying <c>__type</c>, <c>value</c>, and
+	///     <c>displayValue</c>. Emitting that verbatim buries the answer in JSON, and the reason this read exists is
+	///     to be a cheap substitute for exporting the package — so a lookup collapses to
+	///     <c>displayValue (value)</c> and every other value to its plain text.
+	/// </remarks>
+	private static string FormatBoundValue(JsonNode? value) {
+		if (value is null) {
+			return string.Empty;
+		}
+		if (value is not JsonObject envelope) {
+			return value.ToString();
+		}
+		string? displayValue = envelope.TryGetPropertyValue("displayValue", out JsonNode? display)
+			? display?.ToString()
+			: null;
+		string? rawValue = envelope.TryGetPropertyValue("value", out JsonNode? raw)
+			? raw?.ToString()
+			: null;
+		if (displayValue is null && rawValue is null) {
+			return envelope.ToJsonString();
+		}
+		return string.IsNullOrEmpty(displayValue) ? rawValue ?? string.Empty : $"{displayValue} ({rawValue})";
+	}
+
+	/// <inheritdoc />
 	public void RemoveRow(RemoveDataBindingRowDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		ValidateEnvironment(options);

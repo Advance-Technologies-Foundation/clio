@@ -542,6 +542,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="restore-db"></a>
 <a id="rdb"></a>
 - [`restore-db`](docs/commands/restore-db.md) - Restore a database backup, `rdb`
+<a id="read-data-binding-db"></a>
+<a id="get-data-binding-db"></a>
+- [`read-data-binding-db`](docs/commands/read-data-binding-db.md) - Report which columns a DB-first data binding actually ships, `get-data-binding-db`
 
 ## Local Instance Management
 

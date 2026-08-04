@@ -105,6 +105,10 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-themes",
 		"list-user-tasks",
 		"odata-read",
+		// ENG-88474: reports which columns a data binding ships. Reviewed as silently executable — it reads
+		// SysPackageSchemaData plus the bound rows and writes nothing, and it exists to replace exporting the
+		// whole package for the same answer, so prompting on it would defeat the point.
+		"read-data-binding-db",
 		"read-entity-business-rules",
 		"read-page-business-rules",
 		"resolve-oauth-system-user",

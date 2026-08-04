@@ -225,10 +225,9 @@ public sealed class WorkplacesGuidanceResource {
 		       5. `odata-delete` the `SysWorkplace` row with `confirm=true`.
 		       6. `remove-data-binding-row-db` for the `SysWorkplace` binding row.
 		       Recovery if the parent was already deleted: get the binding NAMES from `SysPackageSchemaData` as in
-		       step 1, then get the orphaned row `Id` values from the package itself — `download-application`,
-		       extract the archive, and read `Data/<Schema>_<Suffix>/data.json`. `execute-esq` cannot list a
-		       binding's rows (`SysPackageSchemaData` holds one record per BINDING, not per bound row) and the
-		       binding tools have no list mode.
+		       step 1, then get the orphaned row `Id` values with `read-data-binding-db`, which lists every bound row
+		       of that binding. `execute-esq` cannot do this (`SysPackageSchemaData` holds one record per BINDING,
+		       not per bound row), and neither can the write-side binding tools.
 
 		       ## New apps start in a default workplace
 		       `create-app` registers its section in the `My applications` workplace and ships that placement as a
@@ -302,9 +301,13 @@ public sealed class WorkplacesGuidanceResource {
 		       move is only correct when the row is present in one and absent from the other.
 		       Bindings need their OWN check: a live row that reads back perfectly says nothing about what the
 		       package will install, because the two carry different column sets. Check the binding BEFORE it
-		       reaches any environment — `download-application`, extract the archive, and confirm
-		       `Data/<Schema>_<Suffix>/data.json` carries every column listed in Ship every change as a data
-		       binding. That is how the missing columns were found. Reading the workplace back on the target after
+		       reaches any environment: `read-data-binding-db` with `package-name` and `binding-name` reports the
+		       shipped column set directly, and it must carry every column listed in Ship every change as a data
+		       binding. It lists a localizable column such as `Name` inline; the package export splits those into a
+		       `Localization` folder, so `read-data-binding-db` shows one more column than `data.json` for the same
+		       binding — that is the same binding, not a discrepancy. Fall back to `download-application` plus
+		       extracting `Data/<Schema>_<Suffix>/data.json` only when you need the raw archive; it is several steps
+		       for the same answer. That is how the missing columns were found. Reading the workplace back after
 		       install (assert `SysApplicationClientTypeId`, `TypeId`, `LoaderId` are non-empty) CONFIRMS the
 		       result but does not protect you, because a wrong first install cannot be repaired by re-installing.
 		       """

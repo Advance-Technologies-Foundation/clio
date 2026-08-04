@@ -89,6 +89,63 @@ public class RemoveDataBindingRowDbTool(
 }
 
 /// <summary>
+///     MCP surface for <see cref="ReadDataBindingDbCommand" />: reports which columns a DB-first binding ships.
+/// </summary>
+public class ReadDataBindingDbTool(
+	ReadDataBindingDbCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<ReadDataBindingDbOptions>(command, logger, commandResolver) {
+
+	internal const string ReadDataBindingDbToolName = "read-data-binding-db";
+
+	/// <summary>
+	///     Reads a binding's shipped column set from the environment.
+	/// </summary>
+	[McpServerTool(Name = ReadDataBindingDbToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description(
+		"Reports what a DB-first package data binding ACTUALLY ships: its entity schema, row count, the exact set "
+		+ "of bound columns, and each row's values. A binding ships only the columns it was created with, and that "
+		+ "projection is the transfer contract — reading the LIVE record proves nothing about it, so this is the "
+		+ "check that matters before calling a navigation or seed-data change done. Use it instead of exporting the "
+		+ "package and parsing Data/<binding>/data.json. Note it lists localizable columns (for example a workplace "
+		+ "Name) inline, whereas the package export splits them into a Localization folder — same binding, one list.")]
+	public CommandExecutionResult ReadDataBindingDb(
+		[Description("Parameters: environment-name, package-name, binding-name (all required)")]
+		[Required]
+		ReadDataBindingDbArgs args){
+		ReadDataBindingDbOptions options = new() {
+			Environment = args.EnvironmentName,
+			PackageName = args.PackageName,
+			BindingName = args.BindingName
+		};
+		return InternalExecute<ReadDataBindingDbCommand>(options);
+	}
+
+}
+
+/// <summary>
+///     Arguments for the <c>read-data-binding-db</c> MCP tool.
+/// </summary>
+public sealed record ReadDataBindingDbArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Target package name on the remote environment")]
+	[property: Required]
+	string PackageName,
+
+	[property: JsonPropertyName("binding-name")]
+	[property: Description("Binding folder name, i.e. the SysPackageSchemaData.Name")]
+	[property: Required]
+	string BindingName
+);
+
+/// <summary>
 /// Arguments for the <c>create-data-binding-db</c> MCP tool.
 /// </summary>
 public sealed record CreateDataBindingDbArgs(

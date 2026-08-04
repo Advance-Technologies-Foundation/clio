@@ -690,6 +690,7 @@ public class BindingsModule {
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<ReloadWorkplacesCommand>();
+		services.AddTransient<ReadDataBindingDbCommand>();
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();

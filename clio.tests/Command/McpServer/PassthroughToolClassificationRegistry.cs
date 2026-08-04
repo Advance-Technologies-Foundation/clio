@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Clio.Mcp.E2E;
 
 namespace Clio.Tests.Command.McpServer;
@@ -325,6 +325,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,
 			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
+			["read-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			// ENG-88474 navigation publish: class (a) BaseTool + IToolCommandResolver, passthrough-capable by
