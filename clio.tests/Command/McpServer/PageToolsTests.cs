@@ -3895,6 +3895,129 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page append: a valid diff-form incoming fragment against a full-config CURRENT server body fails through the public TryUpdatePage path with the server-side message, without the misdirecting 'Append merge failed'/'marker pairs' wrapper text (ENG-94422)")]
+	public void TryUpdatePage_AppendMode_Should_ReportServerSideMessage_WhenCurrentBodyIsFullConfig() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrFcp_FormPage", PackageUId = designPkg, PackageName = "UsrFcp" }
+		});
+		// A full-config (generated) FormPage current body: carries the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
+		// full markers instead of the *_DIFF markers — exactly what create-app-section produces.
+		string currentBody = "define(\"UsrFcp_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrFcp_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		// Incoming fragment is valid diff form — the caller did nothing wrong; the blocker is the server body.
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrFcp_FormPage",
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "append cannot merge into a full-config server body, so the save must not proceed");
+		response.Success.Should().BeFalse(because: "the response must report the rejection");
+		response.Error.Should().StartWith(PageBodyMerger.WebCurrentFullConfigNotSupportedMessage,
+			because: "the caller must see the server-side message verbatim (it names the server body and points at replace mode), not a body they authored correctly (ENG-94422)");
+		response.Error.Should().NotContain("Append merge failed:",
+			because: "the redundant 'Append merge failed:' prefix is dropped for a full-config rejection whose message is already a complete sentence (ENG-94422)");
+		response.Error.Should().NotContain("must contain valid marker pairs",
+			because: "the generic marker-pairs hint misdirects for a full-config body, which HAS valid markers and is simply the wrong form (ENG-94422)");
+	}
+
+	[Test]
+	[Description("update-page append: a genuine (non-full-config) marker-shape merge failure still surfaces the generic 'Append merge failed'/'marker pairs' wrapper through the public TryUpdatePage path — proving the exception-type classification keeps the negative branch for a plain InvalidOperationException (ENG-94422)")]
+	public void TryUpdatePage_AppendMode_Should_KeepMarkerPairsWrapper_WhenMergeFailsForNonFullConfigReason() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrFcp_FormPage", PackageUId = designPkg, PackageName = "UsrFcp" }
+		});
+		// A diff-form (NOT full-config) current web body whose SCHEMA_VIEW_CONFIG_DIFF section holds malformed
+		// JSON: it clears the full-config gate but makes the merge throw a plain InvalidOperationException at
+		// ReadJsonArray — the genuine marker-shape failure that must keep the generic wrapper + marker-pairs hint.
+		string currentBody = "define(\"UsrFcp_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[not valid json/**SCHEMA_VIEW_CONFIG_DIFF*/ }; });";
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrFcp_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		// Incoming fragment is valid diff form — the caller did nothing wrong; the merge fails on the current body's shape.
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrFcp_FormPage",
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a marker-shape merge failure must still abort the save");
+		response.Success.Should().BeFalse(because: "the response must report the rejection");
+		response.Error.Should().StartWith("Append merge failed:",
+			because: "a plain InvalidOperationException (not a FullConfigAppendNotSupportedException) must keep the generic 'Append merge failed:' prefix — this is the else branch the exception-type classification protects (ENG-94422)");
+		response.Error.Should().Contain("must contain valid marker pairs",
+			because: "the generic marker-pairs hint is correct for a genuine marker-shape failure and must NOT be suppressed for the non-full-config branch (ENG-94422)");
+	}
+
+	[Test]
 	[Description("PageBodyMerger handlers dedupe: when incoming declares the same request as current, incoming wins")]
 	public void PageBodyMerger_Should_Dedupe_Handlers_By_Request() {
 		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
@@ -4644,6 +4767,175 @@ public class PageToolsTests
 		blankMessage.Should().BeNull(because: "no message is produced when the guard fails open");
 		badJson.Should().BeFalse(because: "an unparseable mobile body must fail open so the merge/JSON validators surface the precise parse error");
 		badJsonMessage.Should().BeNull(because: "no message is produced when the guard fails open");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: a web full-config body inspected as the CURRENT (server-side) role is flagged with the server-side message, not the incoming-body message (ENG-94422)")]
+	public void UsesUnsupportedFullConfigForm_ShouldReturnServerSideWebMessage_WhenRoleIsCurrent() {
+		// Arrange
+		string body = "define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ }; });";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, PageBodyMerger.PageBodyRole.Current, out string message);
+
+		// Assert
+		result.Should().BeTrue(because: "a full-config current body still cannot be append-merged regardless of role");
+		message.Should().Contain("server", because: "the current-body message must state the page ON THE SERVER is full-config, so the caller does not chase converting a body they did not author (ENG-94422)");
+		message.Should().Contain("replace", because: "--mode replace is the actionable path for a full-config server body");
+		message.Should().Be(PageBodyMerger.WebCurrentFullConfigNotSupportedMessage, because: "the Current role must select the server-side web message");
+		message.Should().NotBe(PageBodyMerger.WebIncomingFullConfigNotSupportedMessage, because: "the current-body message must be distinct from the incoming-body message the caller can act on by converting their own body");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: a mobile full-config body inspected as the CURRENT (server-side) role is flagged with the server-side mobile message, not the incoming-body message (ENG-94422)")]
+	public void UsesUnsupportedFullConfigForm_ShouldReturnServerSideMobileMessage_WhenRoleIsCurrent() {
+		// Arrange
+		string body = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, PageBodyMerger.PageBodyRole.Current, out string message);
+
+		// Assert
+		result.Should().BeTrue(because: "a full-config current mobile body still cannot be append-merged regardless of role");
+		message.Should().Contain("server", because: "the current-body mobile message must state the page ON THE SERVER is full-config (ENG-94422)");
+		message.Should().Be(PageBodyMerger.MobileCurrentFullConfigNotSupportedMessage, because: "the Current role must select the server-side mobile message");
+		message.Should().NotBe(PageBodyMerger.MobileIncomingFullConfigNotSupportedMessage, because: "the current-body message must be distinct from the incoming-body message");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: the default (no-role) overload keeps the incoming-body message so the up-front MCP guard, which only ever inspects the incoming body, is unchanged (ENG-94422)")]
+	public void UsesUnsupportedFullConfigForm_ShouldDefaultToIncomingMessage_WhenRoleOmitted() {
+		// Arrange
+		string body = "define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ }; });";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, out string message);
+
+		// Assert
+		result.Should().BeTrue(because: "the no-role overload must still detect a full-config body");
+		message.Should().Be(PageBodyMerger.WebIncomingFullConfigNotSupportedMessage, because: "the no-role overload defaults to the Incoming role, which the up-front MCP guard depends on (it only inspects the caller's incoming body)");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge: a diff-form incoming body against a full-config CURRENT web body is rejected with the server-side message (blames the server body, not the caller's) (ENG-94422)")]
+	public void Merge_ShouldThrowServerSideMessage_WhenCurrentWebBodyIsFullConfig() {
+		// Arrange
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"A\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		// Act
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a valid diff-form incoming body must not be blamed when the blocker is the full-config body already on the server (ENG-94422)")
+			.WithMessage(PageBodyMerger.WebCurrentFullConfigNotSupportedMessage,
+				because: "the rejection must name the server-side body and point at replace mode, not tell the caller to convert their own already-diff-form body");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge: a full-config INCOMING web body against a diff-form current body is rejected with the incoming-body message (blames the caller's body) (ENG-94422)")]
+	public void Merge_ShouldThrowIncomingMessage_WhenIncomingWebBodyIsFullConfig() {
+		// Arrange
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		// Act
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a full-config incoming body the caller authored is correctly blamed and can be converted or replaced (ENG-94422)")
+			.WithMessage(PageBodyMerger.WebIncomingFullConfigNotSupportedMessage,
+				because: "the incoming-body case must keep the convert-your-body advice; incoming is checked before current so the caller's own body wins the message");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge: a full-config body is rejected with the dedicated FullConfigAppendNotSupportedException so the CLI wrapper classifies it by TYPE (not by re-parsing the message) and suppresses the misdirecting marker-pairs hint; a genuine marker-shape failure stays a plain InvalidOperationException that keeps the hint (ENG-94422)")]
+	public void Merge_ShouldThrowTypedFullConfigException_OnlyForFullConfigRejections() {
+		// Arrange
+		string diffFormCurrent = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string fullConfigIncoming = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		// A genuine marker-shape failure: SCHEMA_VIEW_CONFIG_DIFF holds invalid JSON (not the full-config form).
+		string malformedIncoming = "/**SCHEMA_VIEW_CONFIG_DIFF*/[not valid json/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		// Act
+		Action fullConfig = () => PageBodyMerger.Merge(diffFormCurrent, fullConfigIncoming);
+		Action markerShape = () => PageBodyMerger.Merge(diffFormCurrent, malformedIncoming);
+
+		// Assert
+		fullConfig.Should().Throw<PageBodyMerger.FullConfigAppendNotSupportedException>(
+			because: "a full-config rejection must carry the dedicated type so the CLI wrapper classifies it without re-parsing the message (ENG-94422)");
+		markerShape.Should().Throw<InvalidOperationException>(
+				because: "a genuine marker-shape merge failure is still an error")
+			.Which.Should().NotBeOfType<PageBodyMerger.FullConfigAppendNotSupportedException>(
+				because: "a marker-shape failure is NOT a full-config rejection, so it keeps the generic marker-pairs hint");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge: a diff-form incoming body against a full-config CURRENT mobile body is rejected with the server-side mobile message (ENG-94422)")]
+	public void Merge_ShouldThrowServerSideMessage_WhenCurrentMobileBodyIsFullConfig() {
+		// Arrange
+		string currentBody = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		// Act
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a valid diff-form incoming mobile body must not be blamed when the blocker is the full-config mobile body on the server (ENG-94422)")
+			.WithMessage(PageBodyMerger.MobileCurrentFullConfigNotSupportedMessage,
+				because: "the rejection must name the server-side mobile body and point at replace mode");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge: a full-config INCOMING mobile body against a diff-form current mobile body is rejected with the incoming-body mobile message (blames the caller's body) (ENG-94422)")]
+	public void Merge_ShouldThrowIncomingMessage_WhenIncomingMobileBodyIsFullConfig() {
+		// Arrange
+		string currentBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+
+		// Act
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a full-config incoming mobile body the caller authored is correctly blamed and can be converted or replaced (ENG-94422)")
+			.WithMessage(PageBodyMerger.MobileIncomingFullConfigNotSupportedMessage,
+				because: "the mobile incoming-body case must keep the convert-your-body advice; incoming is checked before current so the caller's own body wins the message");
 	}
 
 	[Test]
