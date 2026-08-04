@@ -545,6 +545,20 @@ public sealed class GuidanceGetToolTests {
 			because: "the get-component-info selection-metadata guidance (whenToUse/whenNotToUse) moved into the components sub-guide (ENG-91134 / Solution A)");
 		result.Article.Text.Should().Contain("latest-fallback",
 			because: "the get-component-info resolvedFrom interpretation (incl. latest-fallback) moved into the components sub-guide and must not be silently dropped");
+		result.Article.Text.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "AC1: a visual-styling requirement must exhaust the component's native inputs before any custom CSS (ENG-92541)");
+		result.Article.Text.Should().Contain("first try to satisfy it with the component's NATIVE inputs",
+			because: "AC1: the agent must never apply custom CSS without first attempting native component properties (ENG-92541)");
+		result.Article.Text.Should().Contain("break or conflict during future Creatio platform upgrades",
+			because: "AC4: the warning must explicitly mention the upgrade-compatibility risk of custom CSS (ENG-92541)");
+		result.Article.Text.Should().Contain("ask for explicit user confirmation to proceed with CSS",
+			because: "AC5: the agent must ask for explicit confirmation before applying any CSS styling (ENG-92541)");
+		result.Article.Text.Should().Contain("do NOT apply CSS",
+			because: "AC6: if the user declines, the agent must not apply CSS and should offer a native alternative (ENG-92541)");
+		result.Article.Text.Should().Contain("NEVER apply custom CSS silently",
+			because: "even when told to 'just apply', the agent must emit the upgrade-risk warning and never apply custom CSS silently (ENG-92541)");
+		result.Article.Text.Should().Contain("is NOT native just because it is a component input",
+			because: "AC1/AC8: the load-bearing negation must be pinned — asserting only the word 'extraStyles' would let a future edit invert the meaning while keeping the token; extraStyles is custom CSS, not native (ENG-92541, RB-A6)");
 	}
 
 	[Test]

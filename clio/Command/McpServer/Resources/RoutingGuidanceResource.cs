@@ -39,10 +39,11 @@ public sealed class RoutingGuidanceResource {
 		         - add a button/menu item that runs a business process -> get-process-signature FIRST + get-request-info (crt.RunBusinessProcessRequest)
 		         - bind which page opens for a record / which page adds a record (related pages) -> name=related-page-binding
 		         - add/update a NAMED or PREDEFINED filter a list/section page always applies (e.g. an "Active Requests" list) -> name=page-modification-overview + name=esq-filters-frontend
+		         - add a related/child list (detail), filter a list by the open record, or apply a STATIC business filter to a list/detail (a fixed condition — "Emails only", "status = X") -> name=related-list
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
 		         - virtual entity object, IEntityQueryExecutor reads, or EntityEventListener writes -> name=virtual-entities
 		         - schema designer fails with "GetSchemaDesignItem returned an HTML error page" / package dependencies -> name=package-dependencies
-		         - entity business rules (create/change/remove) / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
+		         - entity business rules (create/change/remove) / lookup filtering / dependent fields -> name=business-rules; static lookup/business-rule filters -> name=business-rule-filters (a STATIC filter on a Freedom UI list/detail datasource is a page concern -> name=related-list)
 		       - Data: raw ESQ queries or filter work -> name=esq AND name=esq-filters
 		         - esq-filters is the entry router; it selects name=esq-filters-frontend (JavaScript/page JSON/DataService), name=esq-filters-backend (native backend C# construction), or name=esq-filter-parsing (runtime C# interpretation)
 		         - lookup seeding / data bindings -> name=data-bindings
