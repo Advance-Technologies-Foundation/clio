@@ -46,7 +46,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled tabbed template carries container-name correspondence, the CardContentWrapper->AreaProfileContainer leftover mapping (non-tab content goes INSIDE the profile Area, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
+	[Description("Bundled tabbed template carries container-name correspondence: CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -54,9 +54,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
 		tabbed.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs");
 		tabbed.Containers.Should().Contain(c => c.Web == "FeedTabContainer" && c.Mobile == "FeedContainer");
-		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "AreaProfileContainer",
-			because: "the wrapper's non-tab (side/profile) content lands inside the profile Area card, " +
-				"not directly in GeneralTabContainer — the Area must not be left empty");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer",
+			because: "the wrapper's general non-tab content fills the mobile general tab's grid");
+		tabbed.Containers.Should().Contain(c => c.Web == "SideAreaProfileContainer" && c.Mobile == "AreaProfileContainer",
+			because: "the web profile island merges into the template's profile Area card — its children " +
+				"land inside AreaProfileContainer, not directly in GeneralTabContainer, so the Area is never left empty");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
 	}

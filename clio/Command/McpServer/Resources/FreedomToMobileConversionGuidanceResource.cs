@@ -152,9 +152,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     (a positional element mapped above/below an anchor, e.g. above the mobile Tabs — or a converted
 			     web tab, below); otherwise omit index and append. On a tabbed record page EVERY web tab inserts
 			     as its OWN new mobile tab under Tabs (no general-tab collapse); the web wrapper's non-tab
-			     (side/profile) content goes INSIDE the profile Area card of the mobile general tab
-			     (CardContentWrapper→AreaProfileContainer — never directly into GeneralTabContainer or the
-			     general tab's grid). Tab ORDER is already deterministic: every converted web tab arrives with
+			     (side/profile) content fills the mobile general tab's grid (CardContentWrapper→
+			     GeneralTabContainer), EXCEPT the profile island itself: SideAreaProfileContainer merges into
+			     the template's profile Area card (SideAreaProfileContainer→AreaProfileContainer — its children
+			     go INSIDE AreaProfileContainer, never directly into GeneralTabContainer; do NOT leave
+			     AreaProfileContainer empty). Tab ORDER is already deterministic: every converted web tab arrives with
 			     an explicit index (1, 2, … — right after the template's general tab), so applying the inserts
 			     verbatim yields general tab, converted web tabs, Feed, Attachments, with the template's
 			     FeedTab/AttachmentsTab staying last automatically — do NOT reorder tabs or invent indexes
