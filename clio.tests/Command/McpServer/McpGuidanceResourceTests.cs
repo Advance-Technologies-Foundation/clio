@@ -519,8 +519,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should keep the create-record request in the parameter catalog");
 		article.Text.Should().Contain("| `crt.OpenPageRequest` | config | `schemaName` required, `packageUId?`, `modelInitConfigs?`, `parameters?`, `skipUnsavedData?` | standard open-page request |",
 			because: "handler guidance should keep the open-page request in the parameter catalog");
-		article.Text.Should().Contain("| `crt.LoadDataRequest` | config | `dataSourceName`, `config` (commonly `loadType`, `useLastLoadParameters?`), `showSuccessMessage?` | reload or refresh a page/list data source |",
-			because: "handler guidance should expose a compact load-data request contract instead of only naming the request");
+		article.Text.Should().Contain("`refreshDataConfig` selects the page-refresh scenario (the Designer's \"Refresh data\" action)",
+			because: "handler guidance must name the parameter that selects the refresh scenario — the hard-coded list it replaces omitted refreshDataConfig entirely, which is what let an agent author a single-source load for a 'refresh the page' requirement");
+		article.Text.Should().Contain("FULL parameter contract lives in the request catalog: get-request-info `crt.LoadDataRequest` (single source of truth)",
+			because: "the load-data row should point at the catalog like the run-process row does, instead of carrying a hard-coded parameter list that drifts from it");
 		article.Text.Should().Contain("| `crt.DeleteRecordRequest` | config | `recordId`, `itemsAttributeName` | delete one record; source handler converts it into `crt.DeleteRecordsRequest` |",
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",
