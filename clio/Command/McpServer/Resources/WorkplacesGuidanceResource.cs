@@ -136,7 +136,13 @@ public sealed class WorkplacesGuidanceResource {
 		       - `SysWorkplace` — `Id`, `Name`, `Position`, `SysApplicationClientType`, `Type`, `LoaderId`, plus
 		         `HomePageUId` when the workplace has a home page.
 		       - `SysModuleInWorkplace` — `Id`, `SysWorkplace`, `SysModule`. Deliberately no `Position`: the server
-		         assigns it on insert and a shipped value is discarded (see Rules that bite).
+		         assigns it on insert and a shipped value is discarded (see Rules that bite). This applies to a
+		         binding you CREATE. When you MOVE a section, you are upserting over the binding `create-app`
+		         already shipped, and an upsert rewrites the columns you pass without dropping the ones already
+		         there — so `Position` stays in that binding and you cannot remove it with these tools. Verified
+		         and harmless: the target gets a possibly-meaningless order value, not an empty column. Do not
+		         chase it, and do not delete the binding to "clean" the column set — `remove-data-binding-row-db`
+		         would take the live placement row with it.
 		       - `SysAdminUnitInWorkplace` — `Id`, `SysWorkplace`, `SysAdminUnit`.
 		       `Type`, `LoaderId`, and the client-type GUID are set for you on the LIVE write, so you will not have
 		       them to hand — get them by READ-BACK: right after `odata-create`, `odata-read` `SysWorkplace` for the
@@ -275,12 +281,20 @@ public sealed class WorkplacesGuidanceResource {
 		         replacement row with a new `Id` rather than patching the broken one.
 
 		       ## When changes appear
-		       Workplace, section, and access data is cached, so a signed-in user keeps seeing the old navigation:
-		       tell the user to log out and back in, and that a browser refresh is not enough. Do not claim a
-		       restart is required; it is not. (Verified once on one stand for workplace creation — F5 showed
-		       nothing, re-login showed it; assume section and access changes behave the same. Creatio's docs also
-		       list refresh-plus-cache-clear as an equivalent route, but clio exposes no verified cache reset, so a
-		       re-login is the only thing you should promise.)
+		       Workplace, section, and edit-page lists are cached PER SESSION, so a signed-in user keeps seeing the old
+		       navigation and a browser refresh alone shows nothing. Do not claim a restart is required; it is not.
+		       Finish every navigation change by publishing it:
+		       - `reload-workplaces` (requires cliogate) reloads the platform navigation caches, after which a plain
+		         page refresh is enough and NO re-login is needed. Call it as the LAST step, after the final write —
+		         run it earlier and the writes that follow are stale again. Then tell the user to refresh.
+		       - If it fails or cliogate is not installed, say the change is applied but that F5 is not enough and
+		         users must log out and back in. Never promise a refresh you did not publish.
+		       Why this is needed even though the platform self-heals sometimes: Creatio invalidates those caches from
+		       an entity event listener on `SysUserInRole` / `SysAdminUnitInWorkplace` INSERT and DELETE only. So a
+		       role grant made through `odata-create` may publish itself, while creating a workplace, moving a section,
+		       or pointing `HomePageUId` at a home page invalidates nothing — and a row written by the binding tools
+		       goes straight through the database engine, which raises no entity events at all. Do not rely on the
+		       listener: ordering it correctly is fragile and it does not cover the section or home-page cases.
 
 		       ## Verify
 		       Read back after every mutation with `odata-read` (filter junctions by `SysWorkplace/Id`); do not

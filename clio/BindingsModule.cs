@@ -1,4 +1,4 @@
-#pragma warning disable CLIO001 // This is DI class, warning not applicable
+﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -689,6 +689,7 @@ public class BindingsModule {
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
+		services.AddTransient<ReloadWorkplacesCommand>();
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();

@@ -157,6 +157,7 @@ push-nuget-pkg:push-nuget-pkg,push-n,push-nuget
 push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
+reload-workplaces:reload-workplaces,reload-navigation,rlwp
 register:register
 ring:ring
 remove-data-binding-row:remove-data-binding-row

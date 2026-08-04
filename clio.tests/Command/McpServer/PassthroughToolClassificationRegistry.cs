@@ -327,6 +327,9 @@ internal static class PassthroughToolClassificationRegistry {
 			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
+			// ENG-88474 navigation publish: class (a) BaseTool + IToolCommandResolver, passthrough-capable by
+			// construction (InternalExecute<ReloadWorkplacesCommand> resolves per call), so no per-path audit row.
+			["reload-workplaces"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["remove-package-dependency"] = PassthroughClassification.NotApplicable,
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,

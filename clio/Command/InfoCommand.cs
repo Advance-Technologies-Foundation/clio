@@ -1,4 +1,4 @@
-using Clio.Common;
+﻿using Clio.Common;
 using CommandLine;
 using System;
 using System.Reflection;
@@ -41,7 +41,7 @@ namespace Clio.Command
 
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.44";
+		private const string _gateVersion = "2.0.0.45";
 		private readonly ILogger _logger;
 
 		public InfoCommand(ILogger logger)

@@ -451,6 +451,128 @@ namespace cliogate.Files.cs
 			return true;
 		}
 
+		/// <summary>
+		///     Reloads the platform navigation caches so workplace changes become visible to users who are already
+		///     signed in.
+		/// </summary>
+		/// <returns>
+		///     A response whose <see cref="BaseResponse.Success" /> is <c>true</c> when the platform reload ran. On
+		///     failure the error message names the reason so the caller can fall back to telling users to re-login.
+		/// </returns>
+		/// <remarks>
+		///     Workplace, section, and edit-page lists are cached per SESSION (the <c>Workplace</c> package's
+		///     <c>WorkplaceRepository</c>, <c>SectionCacheManager</c>, and <c>PageEntityRepository</c> all use session
+		///     cache keys), which is why a browser refresh alone does not surface a new workplace. The platform's own
+		///     invalidation contract is <c>IWorkplaceManager.ReloadWorkplaces()</c>; it is normally reached only from
+		///     an entity event listener on <c>SysUserInRole</c> / <c>SysAdminUnitInWorkplace</c> insert and delete, so
+		///     nothing invalidates the cache when only <c>SysWorkplace</c> or <c>SysModuleInWorkplace</c> changed — or
+		///     when the rows were written straight through <c>Terrasoft.Core.DB</c>, which raises no entity events.
+		///     This endpoint calls the same contract directly so any navigation change can be published.
+		///     <para>
+		///         The interface lives in the <c>Workplace</c> package's <c>WorkplaceApi</c> assembly, which cliogate
+		///         deliberately does not reference — cliogate depends on the SDK only. It is therefore resolved
+		///         reflectively at call time, and a missing type is reported as a normal failure rather than throwing.
+		///     </para>
+		/// </remarks>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "ReloadWorkplaces",
+			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
+			ResponseFormat = WebMessageFormat.Json)]
+		public BaseResponse ReloadWorkplaces(){
+			CheckCanManageSolution();
+			try {
+				Type managerType = FindWorkplaceManagerContract();
+				if (managerType == null) {
+					return CreateFailure("IWorkplaceManager was not found on this environment. "
+						+ "The Workplace package may not be installed, or its assembly is not loaded yet. "
+						+ "Users must log out and back in to see the change.");
+				}
+				MethodInfo classFactoryGet = FindParameterlessClassFactoryGet();
+				if (classFactoryGet == null) {
+					return CreateFailure("No argument-free ClassFactory.Get<T>() overload was found on this platform version.");
+				}
+				object manager = classFactoryGet.MakeGenericMethod(managerType)
+					.Invoke(null, BuildEmptyArguments(classFactoryGet));
+				MethodInfo reload = managerType.GetMethod("ReloadWorkplaces", Type.EmptyTypes);
+				if (reload == null) {
+					return CreateFailure("IWorkplaceManager on this environment has no parameterless ReloadWorkplaces().");
+				}
+				reload.Invoke(manager, null);
+				return new BaseResponse {Success = true};
+			} catch (Exception e) {
+				Exception root = e is TargetInvocationException && e.InnerException != null ? e.InnerException : e;
+				return new BaseResponse {
+					Success = false,
+					ErrorInfo = new ErrorInfo {
+						Message = root.Message,
+						StackTrace = root.StackTrace
+					}
+				};
+			}
+		}
+
+		/// <summary>
+		///     Finds a generic <c>ClassFactory.Get&lt;T&gt;</c> overload that can be called without supplying
+		///     constructor arguments.
+		/// </summary>
+		/// <remarks>
+		///     The overload that takes no arguments at the call site is declared with a <c>params</c> array, so a
+		///     "zero parameters" filter finds nothing. Both shapes are accepted here; a genuinely parameterless
+		///     overload is preferred when the platform declares one.
+		/// </remarks>
+		private static MethodInfo FindParameterlessClassFactoryGet(){
+			MethodInfo[] candidates = typeof(ClassFactory)
+				.GetMethods(BindingFlags.Public | BindingFlags.Static)
+				.Where(method => method.Name == "Get" && method.IsGenericMethodDefinition
+					&& method.GetGenericArguments().Length == 1)
+				.ToArray();
+			return candidates.FirstOrDefault(method => method.GetParameters().Length == 0)
+				?? candidates.FirstOrDefault(method => method.GetParameters().Length == 1
+					&& method.GetParameters()[0].ParameterType.IsArray);
+		}
+
+		/// <summary>
+		///     Builds the argument list for a <see cref="FindParameterlessClassFactoryGet" /> result: nothing for a
+		///     parameterless overload, or a single empty array for the <c>params</c> overload.
+		/// </summary>
+		private static object[] BuildEmptyArguments(MethodInfo method){
+			ParameterInfo[] parameters = method.GetParameters();
+			if (parameters.Length == 0) {
+				return null;
+			}
+			return new object[] {Array.CreateInstance(parameters[0].ParameterType.GetElementType(), 0)};
+		}
+
+		/// <summary>
+		///     Locates the platform's workplace-manager contract without a compile-time reference to the package that
+		///     declares it.
+		/// </summary>
+		/// <returns>The <c>IWorkplaceManager</c> interface type, or <c>null</c> when it is not loaded.</returns>
+		private static Type FindWorkplaceManagerContract(){
+			return AppDomain.CurrentDomain.GetAssemblies()
+				.SelectMany(assembly => {
+					try {
+						return assembly.GetTypes();
+					} catch (ReflectionTypeLoadException loadException) {
+						// A partially loadable assembly must not hide the contract in another one.
+						return loadException.Types.Where(type => type != null);
+					} catch (Exception) {
+						return Enumerable.Empty<Type>();
+					}
+				})
+				.FirstOrDefault(type => type.IsInterface && type.Name == "IWorkplaceManager");
+		}
+
+		/// <summary>
+		///     Builds an unsuccessful response carrying only a message, for expected conditions that are not exceptions.
+		/// </summary>
+		private static BaseResponse CreateFailure(string message){
+			return new BaseResponse {
+				Success = false,
+				ErrorInfo = new ErrorInfo {Message = message}
+			};
+		}
+
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "ResetSchemaChangeState",
 			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,

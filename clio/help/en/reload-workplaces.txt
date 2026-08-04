@@ -1,0 +1,50 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    reload-workplaces - publish navigation changes to signed-in users without a re-login
+
+DESCRIPTION
+    Reloads the platform navigation caches on a Creatio environment so a
+    workplace change becomes visible to users who are already signed in. After
+    this command succeeds, a plain page refresh is enough and no log out / log
+    in cycle is required.
+
+    Workplace, section, and edit-page lists are cached PER SESSION, which is why
+    a browser refresh alone shows nothing after you create a workplace, move a
+    section between workplaces, grant a role, or point a workplace's home page
+    at a new page. Creatio invalidates those caches from an entity event
+    listener on SysUserInRole / SysAdminUnitInWorkplace insert and delete only,
+    so a section move or a home-page change invalidates nothing - and rows
+    written straight through the database engine (the data-binding commands)
+    raise no entity events at all. This command calls the platform's own reload
+    contract directly, so any navigation change can be published.
+
+    Run it as the LAST step of a navigation change. Running it earlier leaves
+    the writes that follow unpublished.
+
+    Requires cliogate on the target environment. Install or update it with
+    'clio install-gate -e <environment>'. When the command fails, the change is
+    still applied - but users must log out and back in to see it.
+
+SYNOPSIS
+    reload-workplaces [options]
+
+ALIASES
+    reload-navigation, rlwp
+
+OPTIONS
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio reload-workplaces -e dev
+
+    clio rlwp -e dev

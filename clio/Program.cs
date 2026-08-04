@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -79,6 +79,7 @@ internal class Program {
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
 		typeof(SetAutoupdateOptions),
+		typeof(ReloadWorkplacesOptions),
 		typeof(ExperimentalOptions),
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
@@ -487,6 +488,7 @@ internal class Program {
 			CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 			UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
 			SetAutoupdateOptions opts => Resolve<SetAutoupdateCommand>().Execute(opts),
+			ReloadWorkplacesOptions opts => Resolve<ReloadWorkplacesCommand>().Execute(opts),
 			ExperimentalOptions opts => Resolve<ExperimentalCommand>().Execute(opts),
 			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),

@@ -222,7 +222,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Applies a merged record-level access rights set for a single record via the native RightsService.
 		/// </summary>
-		RightsApplyChanges = 61
+		RightsApplyChanges = 61,
+
+		/// <summary>
+		///     Reloads the platform navigation caches so a workplace change becomes visible to signed-in users
+		///     without a re-login.
+		/// </summary>
+		ReloadWorkplaces = 62
 
 	}
 
@@ -297,6 +303,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
 		{KnownRoute.RightsGetRecordRights, "/rest/RightsService/GetRecordRights"},
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
+		{KnownRoute.ReloadWorkplaces, "/rest/CreatioApiGateway/ReloadWorkplaces"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

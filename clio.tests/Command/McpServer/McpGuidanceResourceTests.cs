@@ -2551,9 +2551,20 @@ public sealed class McpGuidanceResourceTests {
 
 		// Navigation is cached: reporting success without telling the user to re-login reads as a false done.
 		article.Text.Should().Contain("log out and back in",
-			because: "a signed-in user keeps seeing the old navigation, so the agent must say a re-login is needed");
-		article.Text.Should().Contain("a browser refresh is not enough",
-			because: "a refresh was verified insufficient, so the guide must not let the agent promise it");
+			because: "when the change cannot be published the agent must fall back to telling the user to re-login");
+		article.Text.Should().Contain("F5 is not enough",
+			because: "a refresh alone was verified insufficient, so the guide must not let the agent promise it unpublished");
+
+		// The caches are session-scoped and the platform invalidates them on role-membership events only, so the
+		// change has to be published explicitly — otherwise a section move leaves every signed-in session stale.
+		article.Text.Should().Contain("`reload-workplaces`",
+			because: "the guide must name the tool that publishes the change instead of only prescribing a re-login");
+		article.Text.Should().Contain("Call it as the LAST step",
+			because: "publishing before the final write re-stales the cache, so the ordering is part of the rule");
+		article.Text.Should().Contain("Never promise a refresh you did not publish",
+			because: "the failure path must not degrade into an unverified claim that F5 suffices");
+		article.Text.Should().Contain("raises no entity events",
+			because: "the guide must explain why the platform's own listener cannot be relied on for binding-tool writes");
 
 		// Audience is a security decision and a new workplace has no grant at all.
 		article.Text.Should().Contain("NARROWEST role",
