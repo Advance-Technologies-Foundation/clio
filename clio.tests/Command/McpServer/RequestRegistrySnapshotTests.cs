@@ -261,6 +261,61 @@ public sealed class RequestRegistrySnapshotTests {
 		}
 	}
 
+	[Test]
+	[Description("Content-level pin for the crt.LoadDataRequest entry this fixture refresh added: refreshDataConfig — the parameter that selects the refresh scenario and the only one a \"Refresh data\" button authors — must surface typed RefreshDataConfig with its schema inlined through the closure (mode required, both wire values present), no parameter may carry a required flag because the runtime statically requires none, and the web-only showSuccessMessage must be present.")]
+	public void Pinned_Snapshot_Detail_Should_Pin_LoadDataRequest_RefreshDataConfig_Content() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.LoadDataRequest", out RequestRegistryEntry? loadData).Should().BeTrue(
+			because: "crt.LoadDataRequest is the refresh-action entry this fixture refresh added");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			loadData!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the authorable surface carries the refresh parameter plus the single-source load path.
+		detail.Parameters.Should().NotBeNull(
+			because: "crt.LoadDataRequest declares authorable parameters");
+		detail.Parameters!.Keys.Should().BeEquivalentTo(
+			["config", "dataSourceName", "parameters", "primaryDisplayFilterValue", "refreshDataConfig", "showSuccessMessage"],
+			because: "the pinned entry authors exactly these parameters — a lost or extra key means the fixture and the producer diverged");
+		// Assert — refreshDataConfig content: the typed refresh contract, and optional like every other parameter.
+		JsonElement refreshDataConfig = detail.Parameters["refreshDataConfig"];
+		refreshDataConfig.GetProperty("type").GetString().Should().Be("RefreshDataConfig",
+			because: "the refresh scenario is carried by a named object type, not a loose JsonObject");
+		detail.Parameters["showSuccessMessage"].GetProperty("type").GetString().Should().Be("boolean",
+			because: "showSuccessMessage is the web-only refresh confirmation toggle — the mobile twin must not carry it");
+		// Assert — no parameter is statically required: the runtime accepts a binding with any subset of them.
+		foreach (string parameterName in detail.Parameters.Keys) {
+			detail.Parameters[parameterName].TryGetProperty("required", out _).Should().BeFalse(
+				because: $"'{parameterName}' is optional on the request class — the refresh-versus-single-source "
+					+ "contract is disjunctive prose, and a per-parameter required flag would misstate it");
+		}
+		// Assert — the named refresh type is inlined, so the response stays self-contained...
+		detail.References.Should().NotBeNull(
+			because: "the entry references a named type, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("RefreshDataConfig",
+			because: "a named parameter type must ship its definition on the same response");
+		JsonElement mode = detail.References.TypeDefinitions!["RefreshDataConfig"]
+			.GetProperty("fields").GetProperty("mode");
+		mode.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "a refresh config without a mode selects no refresh scenario at all");
+		mode.GetProperty("values").EnumerateArray().Select(value => value.GetString()).Should().BeEquivalentTo(
+			["RefreshAll", "RefreshSpecific"],
+			because: "these are the only two wire values the platform enum accepts");
+		// ...and the conditional requirement of the RefreshSpecific target list stays prose, never a required flag.
+		detail.References.TypeDefinitions["RefreshDataConfig"].GetProperty("fields")
+			.GetProperty("targetDataSourceNames").TryGetProperty("required", out _).Should().BeFalse(
+				because: "targetDataSourceNames is required only when mode is RefreshSpecific — a static flag "
+					+ "would wrongly demand it for a RefreshAll binding");
+	}
+
 	private const string MobileSnapshotRelativePath = "Command/McpServer/Fixtures/MobileRequestRegistry.live-snapshot.json";
 
 	[Test]
@@ -441,6 +496,54 @@ public sealed class RequestRegistrySnapshotTests {
 			because: "the mobile flavor resolves bound values to the primary key string; the web 'string | number' union does not apply");
 	}
 
+	[Test]
+	[Description("Content-level pin for the MOBILE crt.LoadDataRequest entry this fixture refresh added, on the exact points where it diverges from the web twin: the web-only showSuccessMessage is absent (no such field on the mobile request) and so is `parameters` (the mobile page format discards that key), while the mobile-only legacy `updateCache` alias is present. The shared RefreshDataConfig contract must still resolve through the closure on this flavor too.")]
+	public void Pinned_Mobile_Snapshot_Detail_Should_Pin_LoadDataRequest_Mobile_Divergence() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, MobileSnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.LoadDataRequest", out RequestRegistryEntry? loadData).Should().BeTrue(
+			because: "crt.LoadDataRequest is the refresh-action entry the mobile fixture refresh added");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			loadData!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the mobile authorable surface: no showSuccessMessage, no parameters, plus the legacy alias.
+		detail.Parameters.Should().NotBeNull(
+			because: "the mobile crt.LoadDataRequest declares authorable parameters");
+		detail.Parameters!.Keys.Should().BeEquivalentTo(
+			["config", "dataSourceName", "primaryDisplayFilterValue", "refreshDataConfig", "updateCache"],
+			because: "mobile has no success-message field and discards a `parameters` key, while the legacy "
+				+ "top-level updateCache alias exists only here");
+		detail.Parameters.Should().NotContainKey("showSuccessMessage",
+			because: "the mobile request class carries no such field — documenting it would promise a message that never appears");
+		detail.Parameters.Should().NotContainKey("parameters",
+			because: "the mobile page format drops a `parameters` key on this request, so it is not authorable there");
+		detail.Parameters["updateCache"].GetProperty("type").GetString().Should().Be("boolean",
+			because: "updateCache is the legacy top-level alias promoted into the config block's updateCache option");
+		// Assert — the shared refresh contract resolves on the mobile flavor as well.
+		detail.References.Should().NotBeNull(
+			because: "the mobile entry references a named type, so the detail must carry a typeDefinitions block");
+		detail.References!.TypeDefinitions.Should().ContainKey("RefreshDataConfig",
+			because: "the refresh contract is published on both flavors — an agent authoring a mobile refresh needs its shape inlined");
+		JsonElement mode = detail.References.TypeDefinitions!["RefreshDataConfig"]
+			.GetProperty("fields").GetProperty("mode");
+		mode.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "a refresh config without a mode selects no refresh scenario on mobile either");
+		mode.GetProperty("values").EnumerateArray().Select(value => value.GetString()).Should().BeEquivalentTo(
+			["RefreshAll", "RefreshSpecific"],
+			because: "the mobile runtime accepts the same two wire values as web");
+		// ...and the web-only item type of the dropped `parameters` list must not ride along.
+		detail.References.TypeDefinitions.Should().NotContainKey("ModelParameterConfig",
+			because: "ModelParameterConfig is the item type of the web-only `parameters` list; the mobile flavor publishes no such typedef");
+	}
+
 	[TestCase(SnapshotRelativePath)]
 	[TestCase(MobileSnapshotRelativePath)]
 	[Description("Completeness guard against dangling type references, on BOTH request-registry flavors: every PascalCase identifier tokenised from a `type`/`keyType`/`valueType` string anywhere in the pinned payload (entry parameters, per-request typedefs, global typedefs, baseParameters) must resolve to a type definition the same payload publishes, or sit on the explicit built-in/platform allowlist. A named-but-undefined type is silently dropped from detail responses — the silent-data-loss mode the keyType/valueType closure fix removed — and this invariant catches EVERY typedef removed or renamed by a future fixture refresh, unlike the denylist of specific removed names it replaces. Prose mentions stay unchecked by design: `description` text may discuss types freely, and the closure never tokenises payload properties.")]
@@ -461,10 +564,13 @@ public sealed class RequestRegistrySnapshotTests {
 				.Concat(state.Entries.SelectMany(entry =>
 					entry.References?.TypeDefinitions?.Keys ?? Enumerable.Empty<string>())),
 			System.StringComparer.Ordinal);
-		// `Record` is the TypeScript built-in generic the closure silently drops. `ViewModelContext`
-		// is named only by the platform-injected baseParameters.$context — never authorable, never a
-		// closure seed — so the producer deliberately publishes no schema for it on either flavor.
-		HashSet<string> knownUnpublishedTypeNames = new(System.StringComparer.Ordinal) { "Record", "ViewModelContext" };
+		// `Record` is the TypeScript built-in generic the closure silently drops. `File` is likewise a
+		// platform built-in — the W3C File API interface, named by crt.UploadFileRequest.files (File[]) —
+		// so no Creatio-side schema exists to publish for it (unlike the devkit's own LookupValue, which
+		// the producer DOES publish). `ViewModelContext` is named only by the platform-injected
+		// baseParameters.$context — never authorable, never a closure seed — so the producer
+		// deliberately publishes no schema for it on either flavor.
+		HashSet<string> knownUnpublishedTypeNames = new(System.StringComparer.Ordinal) { "File", "Record", "ViewModelContext" };
 
 		// Act
 		List<string> danglingTypeNames = typeReferences
