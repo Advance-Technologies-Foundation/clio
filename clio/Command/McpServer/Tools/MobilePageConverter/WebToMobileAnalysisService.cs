@@ -938,9 +938,7 @@ public static class WebToMobileAnalysisService {
 					// Scalar (or JSON null): emit a new key always, but a CHANGED key only outside a
 					// template-owned collection (see the method remarks -- a changed collection scalar is
 					// template-owned and re-emitting the web value would clobber the mobile-correct one).
-					if (baseVal is null) {
-						mergeValues[kv.Key] = kv.Value?.DeepClone();
-					} else if (!insideCollection && !JsonNode.DeepEquals(baseVal, kv.Value)) {
+					if (baseVal is null || (!insideCollection && !JsonNode.DeepEquals(baseVal, kv.Value))) {
 						mergeValues[kv.Key] = kv.Value?.DeepClone();
 					}
 					break;

@@ -150,42 +150,57 @@ internal static class MobileDiffApplyValidator {
 	private static JObject SeedBaseForInserts(JArray operations) {
 		var baseObject = new JObject();
 		foreach (JToken operationToken in operations) {
-			if (operationToken is not JObject operation
-				|| !string.Equals(operation["operation"]?.Value<string>(), "insert", StringComparison.OrdinalIgnoreCase)
-				|| operation["path"] is not JArray path || path.Count == 0) {
-				continue;
-			}
-			JObject cursor = baseObject;
-			for (int i = 0; i < path.Count - 1; i++) {
-				string segment = path[i]?.Value<string>();
-				if (segment is null) {
-					cursor = null;
-					break;
-				}
-				if (cursor[segment] is null) {
-					var created = new JObject();
-					cursor[segment] = created;
-					cursor = created;
-				} else if (cursor[segment] is JObject child) {
-					cursor = child;
-				} else {
-					// This segment is already seeded as a non-object (another insert's array/leaf), so the two
-					// insert paths conflict. Do NOT overwrite it — leave this path unseeded so the applier
-					// surfaces the genuine self-consistency error rather than a masked one.
-					cursor = null;
-					break;
-				}
-			}
-			if (cursor is null) {
-				continue;
-			}
-			// Seed the leaf as an empty array (an insert appends to an array). Leave any existing value
-			// untouched: a shared array is reused; a non-array leaf is a conflict the applier will surface.
-			string leaf = path[^1]?.Value<string>();
-			if (leaf is not null && cursor[leaf] is null) {
-				cursor[leaf] = new JArray();
+			if (operationToken is JObject operation
+				&& string.Equals(operation["operation"]?.Value<string>(), "insert", StringComparison.OrdinalIgnoreCase)
+				&& operation["path"] is JArray path && path.Count > 0) {
+				SeedInsertPath(baseObject, path);
 			}
 		}
 		return baseObject;
+	}
+
+	/// <summary>
+	/// Seeds a single insert operation's target path into <paramref name="baseObject"/>: descends/creates an
+	/// object at each intermediate segment, then seeds the leaf as an empty array (an insert appends to an
+	/// array). Leaves any existing leaf value untouched — a shared array is reused; a non-array leaf is a conflict
+	/// the applier will surface. Does nothing when the path collides with a non-object along the way.
+	/// </summary>
+	private static void SeedInsertPath(JObject baseObject, JArray path) {
+		JObject parent = DescendToLeafParent(baseObject, path);
+		if (parent is null) {
+			return;
+		}
+		string leaf = path[^1]?.Value<string>();
+		if (leaf is not null && parent[leaf] is null) {
+			parent[leaf] = new JArray();
+		}
+	}
+
+	/// <summary>
+	/// Walks the intermediate segments (all but the last), creating an empty object where one is absent, and
+	/// returns the container the leaf lives in. Returns null when a segment is null or is already seeded as a
+	/// non-object (another insert's array/leaf) — the two insert paths conflict, so the path is left unseeded and
+	/// the applier surfaces the genuine self-consistency error rather than a masked one.
+	/// </summary>
+	private static JObject DescendToLeafParent(JObject cursor, JArray path) {
+		for (int i = 0; i < path.Count - 1; i++) {
+			string segment = path[i]?.Value<string>();
+			if (segment is null) {
+				return null;
+			}
+			switch (cursor[segment]) {
+				case null:
+					var created = new JObject();
+					cursor[segment] = created;
+					cursor = created;
+					break;
+				case JObject child:
+					cursor = child;
+					break;
+				default:
+					return null;
+			}
+		}
+		return cursor;
 	}
 }
