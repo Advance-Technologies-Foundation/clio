@@ -569,26 +569,38 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
-	/// Internal signal that the insert HTTP call hit <see cref="ApplicationSectionCreateFailureClass.CreatioTimeout"/>.
-	/// Thrown from <see cref="TryCommitAttempt"/> so the per-application serialization guard releases the lock
-	/// (its <c>finally</c> runs as this propagates) BEFORE the read-only recovery poll runs; caught by
-	/// <see cref="CommitGuardedInsert"/>, it never escapes the service (PR #1002 RC-2).
+	/// The classified outcome of one destructive insert attempt. Internal (not private) only so the guard-key
+	/// unit test can name the <see cref="InsertAttemptResult"/> the guard now returns; it is not a public contract.
 	/// </summary>
-	private sealed class InsertTimedOutException(Exception cause) : Exception {
-		/// <summary>The original transport/timeout exception that classified as a Creatio timeout.</summary>
-		public Exception Cause { get; } = cause;
+	internal enum InsertAttemptOutcome {
+		/// <summary>The insert was acknowledged as committed.</summary>
+		Committed,
+
+		/// <summary>A detail-less <c>InsertQuery failed</c> rejection — the caller verifies/retries (contention).</summary>
+		Contention,
+
+		/// <summary>The insert HTTP call hit a Creatio timeout — the caller recovers OUTSIDE the guard.</summary>
+		TimedOut
 	}
 
 	/// <summary>
+	/// Result of <see cref="TryCommitAttempt"/>: the classified outcome plus, for <see cref="InsertAttemptOutcome.TimedOut"/>,
+	/// the original timeout exception the recovery path surfaces. A plain value carrier (no behavior), returned
+	/// rather than signalled via a bespoke internal exception so the timeout signal never needs a public
+	/// exception type (Sonar S3871) while still letting the guard release before recovery runs (PR #1002 RC-2).
+	/// </summary>
+	internal readonly record struct InsertAttemptResult(InsertAttemptOutcome Outcome, Exception? TimeoutCause);
+
+	/// <summary>
 	/// Runs one guarded destructive insert (<see cref="TryCommitAttempt"/>). The serialization guard wraps ONLY
-	/// the insert HTTP call: on a Creatio timeout <see cref="TryCommitAttempt"/> throws
-	/// <see cref="InsertTimedOutException"/>, the guard's <c>finally</c> releases the per-application lock as it
-	/// propagates, and the bounded read-only, id-matched recovery poll (<see cref="RecoverFromInsertTimeout"/>)
-	/// then runs OUTSIDE the guard — mirroring how the detail-less contention-verify already stays unserialized,
-	/// so a timed-out insert never holds the lock during the poll (PR #1002 RC-2). Returns <c>true</c> when the
-	/// section is committed (insert acknowledged, or timed out but recovered-visible), <c>false</c> on a
-	/// detail-less contention signal; throws a classified failure otherwise. The spinner is left running for the
-	/// caller.
+	/// the insert HTTP call: on a Creatio timeout <see cref="TryCommitAttempt"/> RETURNS a
+	/// <see cref="InsertAttemptOutcome.TimedOut"/> result, the guard's <c>finally</c> releases the per-application
+	/// lock as that return unwinds, and the bounded read-only, id-matched recovery poll
+	/// (<see cref="RecoverFromInsertTimeout"/>) then runs OUTSIDE the guard — mirroring how the detail-less
+	/// contention-verify already stays unserialized, so a timed-out insert never holds the lock during the poll
+	/// (PR #1002 RC-2). Returns <c>true</c> when the section is committed (insert acknowledged, or timed out but
+	/// recovered-visible), <c>false</c> on a detail-less contention signal; throws a classified failure otherwise.
+	/// The spinner is left running for the caller.
 	/// </summary>
 	private bool CommitGuardedInsert(
 		string serializationGuardKey,
@@ -599,28 +611,29 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings,
 		int insertTimeoutMs,
 		TimeSpan serializationWait) {
-		try {
-			return sectionCreateSerializationGuard.Run(
-				serializationGuardKey,
-				applicationCode,
-				serializationWait,
-				() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
-		} catch (InsertTimedOutException timedOut) {
-			// Guard already released. The recovery poll reads strictly by the id generated for THIS call, so it
-			// is safe unserialized (PR #1002 RC-2).
-			return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, timedOut.Cause);
+		InsertAttemptResult result = sectionCreateSerializationGuard.Run(
+			serializationGuardKey,
+			applicationCode,
+			serializationWait,
+			() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		if (result.Outcome == InsertAttemptOutcome.TimedOut) {
+			// Guard already released (its finally ran as TryCommitAttempt returned). The recovery poll reads
+			// strictly by the id generated for THIS call, so it is safe unserialized (PR #1002 RC-2).
+			return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, result.TimeoutCause!);
 		}
+
+		return result.Outcome == InsertAttemptOutcome.Committed;
 	}
 
 	/// <summary>
-	/// Performs one destructive section-insert attempt. Returns <c>true</c> when the insert is committed
-	/// (acknowledged by the response); returns <c>false</c> to signal a detail-less contention rejection the
-	/// caller should verify/retry; throws <see cref="InsertTimedOutException"/> on a Creatio timeout (so the
-	/// caller can recover OUTSIDE the guard) and a classified failure for transport/terminal server-error
-	/// outcomes. On a <c>true</c> return the spinner is left running for the caller to end once; on the
-	/// contention signal and the timeout signal it is also left running.
+	/// Performs one destructive section-insert attempt. Returns <see cref="InsertAttemptOutcome.Committed"/> when
+	/// the insert is acknowledged, <see cref="InsertAttemptOutcome.Contention"/> for a detail-less rejection the
+	/// caller should verify/retry, and <see cref="InsertAttemptOutcome.TimedOut"/> (carrying the timeout cause) on
+	/// a Creatio timeout so the caller can recover OUTSIDE the guard; throws a classified failure for
+	/// transport/terminal server-error outcomes. On a committed, contention, or timed-out return the spinner is
+	/// left running for the caller.
 	/// </summary>
-	private bool TryCommitAttempt(
+	private InsertAttemptResult TryCommitAttempt(
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
 		string requestBody,
 		IApplicationClient client,
@@ -640,10 +653,10 @@ public sealed class ApplicationSectionCreateService(
 			}
 			if (failureClass == ApplicationSectionCreateFailureClass.CreatioTimeout) {
 				// Signal the timeout to the caller so the read-only recovery poll runs OUTSIDE the guard: the
-				// guard's finally releases the per-application lock as this propagates, and CommitGuardedInsert
-				// catches it and runs RecoverFromInsertTimeout unserialized (PR #1002 RC-2). The spinner is left
-				// running for RecoverFromInsertTimeout to manage.
-				throw new InsertTimedOutException(exception);
+				// guard's finally releases the per-application lock as this return unwinds, and CommitGuardedInsert
+				// runs RecoverFromInsertTimeout unserialized (PR #1002 RC-2). The spinner is left running for
+				// RecoverFromInsertTimeout to manage.
+				return new InsertAttemptResult(InsertAttemptOutcome.TimedOut, exception);
 			}
 			logger.EndSpinner(false);
 			throw failureClass == ApplicationSectionCreateFailureClass.Transport
@@ -653,7 +666,9 @@ public sealed class ApplicationSectionCreateService(
 
 		// A detail-less rejection signals contention to the caller without ending the spinner; a success
 		// response signals a committed insert (the caller ends the spinner and runs the readback outside).
-		return ClassifyInsertResponse(responseBody, resolvedRequest) != InsertResponseOutcome.Contention;
+		return ClassifyInsertResponse(responseBody, resolvedRequest) == InsertResponseOutcome.Contention
+			? new InsertAttemptResult(InsertAttemptOutcome.Contention, null)
+			: new InsertAttemptResult(InsertAttemptOutcome.Committed, null);
 	}
 
 	private static void ValidateRequest(ApplicationSectionCreateRequest request) {

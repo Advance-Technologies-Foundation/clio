@@ -760,7 +760,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// unwinds with a sentinel once the key is captured so the destructive insert is never reached.
 		List<string> capturedEnvironmentKeys = new();
 		ISectionCreateSerializationGuard recordingGuard = Substitute.For<ISectionCreateSerializationGuard>();
-		recordingGuard.Run(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<Func<bool>>())
+		recordingGuard.Run(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(),
+				Arg.Any<Func<ApplicationSectionCreateService.InsertAttemptResult>>())
 			.Returns(callInfo => {
 				capturedEnvironmentKeys.Add(callInfo.ArgAt<string>(0));
 				throw new NotSupportedException("sentinel: stop before the destructive insert once the guard key is captured");
