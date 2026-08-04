@@ -2348,7 +2348,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
-	#region Tab body / Area layers synthesized into a converted tab (ENG-94188)
+	#region Tab body / Area layers synthesized into a converted tab
 
 	/// <summary>A converter-SYNTHESIZED entry (no webName), addressed by the mobile name it creates.</summary>
 	private static ElementMapEntry Synthesized(MobilePageConversionGuide guide, string mobileName) =>
@@ -2390,7 +2390,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I2: a converted tab with content gets the designer's two layers (tab-body grid + Area card) inserted RIGHT AFTER its own entry, carrying the rule values verbatim plus an items slot, with no webName.")]
+	[Description("I2: a converted tab with content gets the designer's two layers (tab-body grid + Area card) inserted RIGHT AFTER its own entry, carrying the rule values verbatim plus an items slot, with no webName.")]
 	public void Analyze_ShouldSynthesizeBothTabLayers_WhenConvertedTabHasContent() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2435,7 +2435,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I3: every top-level component of a converted tab is retargeted into the Area and stacked in SOURCE order — column 1, rows 1..N of the single-column card.")]
+	[Description("I3: every top-level component of a converted tab is retargeted into the Area and stacked in SOURCE order — column 1, rows 1..N of the single-column card.")]
 	public void Analyze_ShouldStackTabContentInSourceOrder_WhenTabContentMovesIntoArea() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2464,7 +2464,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I2: with TWO content-bearing tabs each tab's layers sit exactly at tab+1/tab+2 in the FINAL map — the first tab's two inserts shift the second tab, so the pass must re-resolve every tab's index instead of snapshotting positions before inserting; and each tab's children land in that tab's OWN Area.")]
+	[Description("I2: with TWO content-bearing tabs each tab's layers sit exactly at tab+1/tab+2 in the FINAL map — the first tab's two inserts shift the second tab, so the pass must re-resolve every tab's index instead of snapshotting positions before inserting; and each tab's children land in that tab's OWN Area.")]
 	public void Analyze_ShouldPlaceLayersRightAfterEachTab_WhenMultipleTabsHaveContent() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2505,7 +2505,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I3: a web layoutConfig carried over from the multi-column web page is REPLACED by the single-column stack placement — the Area is one column, so the old columns would misplace the field.")]
+	[Description("I3: a web layoutConfig carried over from the multi-column web page is REPLACED by the single-column stack placement — the Area is one column, so the old columns would misplace the field.")]
 	public void Analyze_ShouldReplaceCarriedWebLayoutConfig_WhenTabChildMovesIntoSingleColumnArea() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2522,7 +2522,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I3: a layoutConfig the web page carried as a NON-OBJECT (scalar/array) cannot hold `adaptive` and is replaced by the stack placement — string-indexing it directly would crash the whole guide with InvalidOperationException.")]
+	[Description("I3: a layoutConfig the web page carried as a NON-OBJECT (scalar/array) cannot hold `adaptive` and is replaced by the stack placement — string-indexing it directly would crash the whole guide with InvalidOperationException.")]
 	public void Analyze_ShouldReplaceLayoutConfigInsteadOfCrashing_WhenCarriedLayoutConfigIsNotAnObject() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2543,7 +2543,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I3: children of a wrapper dissolved into the tab are retargeted into the Area with rows; the relocate-children entry itself is retargeted but gets no placement (it is not an element).")]
+	[Description("I3: children of a wrapper dissolved into the tab are retargeted into the Area with rows; the relocate-children entry itself is retargeted but gets no placement (it is not an element).")]
 	public void Analyze_ShouldStackRelocatedWrapperChildrenInArea_WhenWrapperDissolvesIntoTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2569,7 +2569,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I3: a multi-column grid inside a converted tab keeps its own adaptive columns, and only its placement in the Area is added — the grid's children stay inside the grid with their adaptive cells.")]
+	[Description("I3: a multi-column grid inside a converted tab keeps its own adaptive columns, and only its placement in the Area is added — the grid's children stay inside the grid with their adaptive cells.")]
 	public void Analyze_ShouldKeepNestedGridAdaptiveLayout_WhenMultiColumnGridSitsInsideTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2596,7 +2596,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I3: an element the adaptive pass already placed per breakpoint keeps that adaptive placement — the stack pass must not flatten it back to a single base cell.")]
+	[Description("I3: an element the adaptive pass already placed per breakpoint keeps that adaptive placement — the stack pass must not flatten it back to a single base cell.")]
 	public void Analyze_ShouldKeepAdaptivePlacement_WhenTabChildIsAlreadyPlacedPerBreakpoint() {
 		// A web tab carrying its own `columns` makes the adaptive pass treat the tab as a multi-column grid, so
 		// its direct children arrive at this pass already holding layoutConfig.adaptive.
@@ -2618,7 +2618,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 AC#5: a converted tab with no content gets NO layers at all, so an empty Area is never created and never has to be deleted.")]
+	[Description("AC#5: a converted tab with no content gets NO layers at all, so an empty Area is never created and never has to be deleted.")]
 	public void Analyze_ShouldSynthesizeNoLayers_WhenConvertedTabIsEmpty() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2636,7 +2636,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: a tab the mobile TEMPLATE provides arrives as a merge twin and gets no synthesized layers — the template already carries its own body.")]
+	[Description("A tab the mobile TEMPLATE provides arrives as a merge twin and gets no synthesized layers — the template already carries its own body.")]
 	public void Analyze_ShouldSynthesizeNoLayers_WhenTabIsTemplateMergeTwin() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2652,7 +2652,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: the pass is switched by DATA — rules without a tabAreaLayers section synthesize nothing (existing conversions unchanged).")]
+	[Description("The pass is switched by DATA — rules without a tabAreaLayers section synthesize nothing (existing conversions unchanged).")]
 	public void Analyze_ShouldSkipTabAreaLayersPass_WhenRulesCarryNoTabAreaLayersSection() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2671,7 +2671,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 I4: when layers were synthesized the guide TELLS the caller they are already baked — a constraint (do not reparent/reorder/add an Area) and a next step (state guide.tabAreaLayers when presenting the plan).")]
+	[Description("I4: when layers were synthesized the guide TELLS the caller they are already baked — a constraint (do not reparent/reorder/add an Area) and a next step (state guide.tabAreaLayers when presenting the plan).")]
 	public void Analyze_ShouldCarryMandatoryConstraintAndNextStep_WhenTabAreaLayersAreSynthesized() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2693,7 +2693,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: which element gets the layers comes from the rule's tabComponentType, not from a type hardcoded in the engine — pointing it at another container type moves the synthesis there.")]
+	[Description("Which element gets the layers comes from the rule's tabComponentType, not from a type hardcoded in the engine — pointing it at another container type moves the synthesis there.")]
 	public void Analyze_ShouldWrapConfiguredComponentType_WhenRulePointsAtAnotherContainerType() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2714,7 +2714,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: an explicit empty tabComponentType leaves nothing to match against, so the pass switches itself off rather than wrapping every insert.")]
+	[Description("An explicit empty tabComponentType leaves nothing to match against, so the pass switches itself off rather than wrapping every insert.")]
 	public void Analyze_ShouldSkipTabAreaLayersPass_WhenTabComponentTypeIsBlank() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2729,7 +2729,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: a wrapper with no mobile equivalent dissolves INTO the tab (relocate-children), which still counts as tab content — the tab gets its layers.")]
+	[Description("A wrapper with no mobile equivalent dissolves INTO the tab (relocate-children), which still counts as tab content — the tab gets its layers.")]
 	public void Analyze_ShouldSynthesizeLayers_WhenTabContentIsOnlyADissolvedWrapper() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2746,7 +2746,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: synthesized names are reproducible across runs and distinct per tab, so repeated guide runs and baseline diffs stay stable.")]
+	[Description("Synthesized names are reproducible across runs and distinct per tab, so repeated guide runs and baseline diffs stay stable.")]
 	public void Analyze_ShouldSynthesizeDeterministicPerTabNames_WhenRunRepeatedly() {
 		const string viewConfig = """
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2766,7 +2766,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: when a source element already owns a synthesized name, the shared suffix is extended so BOTH layer names stay free.")]
+	[Description("When a source element already owns a synthesized name, the shared suffix is extended so BOTH layer names stay free.")]
 	public void Analyze_ShouldExtendSharedSuffix_WhenSourceElementOwnsASynthesizedName() {
 		(string main, string area) = LayerNames("OverviewTab");
 		PageBundleInfo bundle = Bundle($$"""
@@ -2785,7 +2785,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188: a synthesized entry serializes without a webName key at all (not as null), so the guide never shows a phantom source element.")]
+	[Description("A synthesized entry serializes without a webName key at all (not as null), so the guide never shows a phantom source element.")]
 	public void Analyze_ShouldOmitWebNameKey_WhenSynthesizedEntryIsSerialized() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -2934,7 +2934,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
-	#region Stable suffix (synthesized tab-layer names, ENG-94188)
+	#region Stable suffix (synthesized tab-layer names)
 
 	[Test]
 	[Description("StableSuffix is a pure content hash: identical inputs produce the identical 7-char lowercase base36 suffix on every run (reproducible baselines).")]
@@ -2981,14 +2981,14 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("GOLDEN VALUE — a compatibility contract, not a regular assertion: the suffix for a fixed input is pinned to the exact literal StableSuffix produced when ENG-94188 shipped. The other suffix tests compare the function to itself, so ONLY this literal can catch a silent change to the hash input format ($\"{page}:{tab}\"), algorithm (SHA-256), encoding (lowercase base36) or padding (PadLeft 7) — any of which renames every synthesized container in users' existing conversion baselines while the rest of the suite stays green. Do NOT update the literal to make the test pass; changing it is a deliberate baseline-migration decision.")]
+	[Description("GOLDEN VALUE — a compatibility contract, not a regular assertion: the suffix for a fixed input is pinned to the exact literal StableSuffix produced when the feature shipped. The other suffix tests compare the function to itself, so ONLY this literal can catch a silent change to the hash input format ($\"{page}:{tab}\"), algorithm (SHA-256), encoding (lowercase base36) or padding (PadLeft 7) — any of which renames every synthesized container in users' existing conversion baselines while the rest of the suite stays green. Do NOT update the literal to make the test pass; changing it is a deliberate baseline-migration decision.")]
 	public void StableSuffix_ShouldReturnPinnedGoldenValue_WhenInputIsBaselineFixture() {
 		WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3").Should().Be("2vijwqq",
 			because: "the suffix is part of the on-page name compatibility contract — a repeated conversion of the same page must synthesize the very same names it did on the day the feature shipped");
 	}
 
 	[Test]
-	[Description("GOLDEN VALUE through the PUBLIC guide output: the full synthesized layer names for the tabbed fixture are pinned to the exact literals a real Analyze produced when ENG-94188 shipped, so the whole naming pipeline (prefix from the rules + StableSuffix over the page/tab pair) is locked end to end, not just the hash helper. Do NOT update the literals to make the test pass; changing them is a deliberate baseline-migration decision.")]
+	[Description("GOLDEN VALUE through the PUBLIC guide output: the full synthesized layer names for the tabbed fixture are pinned to the exact literals a real Analyze produced when the feature shipped, so the whole naming pipeline (prefix from the rules + StableSuffix over the page/tab pair) is locked end to end, not just the hash helper. Do NOT update the literals to make the test pass; changing them is a deliberate baseline-migration decision.")]
 	public void Analyze_ShouldReproducePinnedGoldenNames_WhenConvertingTabbedFixture() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3009,7 +3009,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
-	#region Spacing normalization on inserted containers (ENG-91228)
+	#region Spacing normalization on inserted containers
 
 	private static readonly IReadOnlySet<string> SpacingMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
@@ -3041,7 +3041,7 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
 
 	[Test]
-	[Description("ENG-91228: a converted grid container's web gap (any value, e.g. the canonical columnGap large / rowGap none) is DISCARDED, not translated — the insert carries the mobile-standard gap Medium on both axes, and the advisory section lists the container.")]
+	[Description("A converted grid container's web gap (any value, e.g. the canonical columnGap large / rowGap none) is DISCARDED, not translated — the insert carries the mobile-standard gap Medium on both axes, and the advisory section lists the container.")]
 	public void Analyze_SpacingNormalization_ShouldReplaceWebGridGapWithMedium() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer",
@@ -3061,7 +3061,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: a flex container's web gap of ANY shape (px number, none, CSS string) becomes the Medium token, and a flex container that carried NO gap at all still gets the explicit Medium — the converted body must be self-describing, not lean on client defaults.")]
+	[Description("A flex container's web gap of ANY shape (px number, none, CSS string) becomes the Medium token, and a flex container that carried NO gap at all still gets the explicit Medium — the converted body must be self-describing, not lean on client defaults.")]
 	public void Analyze_SpacingNormalization_ShouldStampMediumOnFlex_WhateverTheWebCarried() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "TightRow", "type": "crt.FlexContainer", "gap": 0, "items": [
@@ -3081,7 +3081,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: the pass runs AFTER the tab-area synthesis, so the synthesized tab-body grid and Area card are normalized by the SAME rule as converted containers — the invariant is 'every inserted Grid/Flex carries gap Medium', whatever its origin.")]
+	[Description("The pass runs AFTER the tab-area synthesis, so the synthesized tab-body grid and Area card are normalized by the SAME rule as converted containers — the invariant is 'every inserted Grid/Flex carries gap Medium', whatever its origin.")]
 	public void Analyze_SpacingNormalization_ShouldCoverSynthesizedTabLayers() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3107,7 +3107,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: a merge twin the mobile template provides is NEVER touched by the normalization — no values are stamped onto it and it is absent from the advisory list.")]
+	[Description("A merge twin the mobile template provides is NEVER touched by the normalization — no values are stamped onto it and it is absent from the advisory list.")]
 	public void Analyze_SpacingNormalization_ShouldNeverTouchMergeTwins() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3130,7 +3130,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: the pass is switched by DATA — with no insertValueOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
+	[Description("The pass is switched by DATA — with no insertValueOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
 	public void Analyze_SpacingNormalization_ShouldBeNoOp_WhenRulesGroupAbsent() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer",
@@ -3148,7 +3148,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: a rules file can never override an element's identity — 'type' (and 'name') entries in the override values are ignored, other listed properties still apply.")]
+	[Description("A rules file can never override an element's identity — 'type' (and 'name') entries in the override values are ignored, other listed properties still apply.")]
 	public void Analyze_SpacingNormalization_ShouldIgnoreIdentityKeysInOverrides() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
@@ -3176,7 +3176,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
-	#region Empty container removal (ENG-91228)
+	#region Empty container removal
 
 	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
@@ -3217,7 +3217,7 @@ public sealed class WebToMobileConversionServiceTests {
 			pageBusinessRulesProbe: pageBusinessRulesProbe);
 
 	[Test]
-	[Description("ENG-91228: a converter-created container whose every child dropped is itself converted to a drop with reason 'empty container', and the guide's constraints warn the reader not to re-create it.")]
+	[Description("A converter-created container whose every child dropped is itself converted to a drop with reason 'empty container', and the guide's constraints warn the reader not to re-create it.")]
 	public void Analyze_ShouldDropEmptyContainer_WhenNoChildSurvives() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
@@ -3237,7 +3237,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: one surviving child keeps its container — only containers with NO surviving child are removed.")]
+	[Description("One surviving child keeps its container — only containers with NO surviving child are removed.")]
 	public void Analyze_ShouldKeepContainer_WhenAnyChildSurvives() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MixedBox", "type": "crt.GridContainer", "items": [
@@ -3254,7 +3254,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: emptiness cascades bottom-up — a FlexContainer holding only an empty GridContainer drops together with it.")]
+	[Description("Emptiness cascades bottom-up — a FlexContainer holding only an empty GridContainer drops together with it.")]
 	public void Analyze_ShouldCascadeRemoval_WhenWrapperHoldsOnlyEmptyContainer() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Wrapper", "type": "crt.FlexContainer", "items": [
@@ -3272,7 +3272,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: a child with visible:false COUNTS as content — it is hidden at runtime only and must keep its designer home, so its container survives.")]
+	[Description("A child with visible:false COUNTS as content — it is hidden at runtime only and must keep its designer home, so its container survives.")]
 	public void Analyze_ShouldKeepContainer_WhenOnlyChildIsHiddenOnly() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "HiddenBox", "type": "crt.GridContainer", "items": [
@@ -3289,7 +3289,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: a container whose items is a COLLECTION BINDING (a string, not an array) is a repeater with data, not empty scaffolding — it is kept.")]
+	[Description("A container whose items is a COLLECTION BINDING (a string, not an array) is a repeater with data, not empty scaffolding — it is kept.")]
 	public void Analyze_ShouldKeepRepeaterContainer_WhenItemsIsACollectionBinding() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "RepeaterContainer", "type": "crt.FlexContainer", "items": "$Payments" } ]
@@ -3304,7 +3304,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 (decision 2026-08-03): an ExpansionPanel is judged on items ONLY — an empty panel drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
+	[Description("Decision 2026-08-03: an ExpansionPanel is judged on items ONLY — an empty panel drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
 	public void Analyze_ShouldDropEmptyExpansionPanel_AndCascadeIntoTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3323,7 +3323,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 (items-only decision): a panel with header buttons in tools but an empty items still drops — and the discarded tools are called out in the drop reason so the loss stays visible in the report.")]
+	[Description("Items-only decision: a panel with header buttons in tools but an empty items still drops — and the discarded tools are called out in the drop reason so the loss stays visible in the report.")]
 	public void Analyze_ShouldMentionDiscardedTools_WhenEmptyPanelCarriesToolsButtons() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
@@ -3339,7 +3339,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: the pass is switched by DATA — without an emptyContainerRemoval rules section the empty container is still inserted, exactly as before the feature.")]
+	[Description("The pass is switched by DATA — without an emptyContainerRemoval rules section the empty container is still inserted, exactly as before the feature.")]
 	public void Analyze_ShouldSkipRemovalPass_WhenRulesCarryNoSection() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
@@ -3353,7 +3353,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 + ENG-94188: the removal runs BEFORE the tab-area synthesis — a removed empty tab gets NO layers (nothing resurrects it), while its content-bearing sibling keeps the full two-layer body.")]
+	[Description("The removal runs BEFORE the tab-area synthesis — a removed empty tab gets NO layers (nothing resurrects it), while its content-bearing sibling keeps the full two-layer body.")]
 	public void Analyze_ShouldSynthesizeNoLayers_WhenEmptyTabWasRemoved() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3377,7 +3377,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: a page's OWN inserted TabPanel (no template twin) whose every tab emptied cascades away completely — no tabless panel shell survives.")]
+	[Description("A page's OWN inserted TabPanel (no template twin) whose every tab emptied cascades away completely — no tabless panel shell survives.")]
 	public void Analyze_ShouldDropOwnTabPanelShell_WhenEveryTabEmptied() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "OwnTabs", "type": "crt.TabPanel", "items": [
@@ -3394,7 +3394,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228: positional :top indexes are re-compacted after removal — dropping the middle sibling leaves no hole, so the survivors land at contiguous positions above the mobile anchor.")]
+	[Description("Positional :top indexes are re-compacted after removal — dropping the middle sibling leaves no hole, so the survivors land at contiguous positions above the mobile anchor.")]
 	public void Analyze_ShouldCompactPositionalIndexes_WhenPositionalSiblingIsRemoved() {
 		PageBundleInfo bundle = Bundle("""
 			[
@@ -3425,7 +3425,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 follow-up: positional :top compaction is NOT tied to the empty-container pass — a middle sibling dropped for an unrelated reason (unsupported type) leaves no index hole even with no emptyContainerRemoval rules section at all.")]
+	[Description("Follow-up: positional :top compaction is NOT tied to the empty-container pass — a middle sibling dropped for an unrelated reason (unsupported type) leaves no index hole even with no emptyContainerRemoval rules section at all.")]
 	public void Analyze_ShouldCompactPositionalIndexes_WhenSiblingDroppedForUnrelatedReason() {
 		PageBundleInfo bundle = Bundle("""
 			[
@@ -3455,7 +3455,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 follow-up: the requestConversions summary is reconciled with the removal pass — a converted binding on a container later removed as empty is reclassified into droppedRequests (naming the removal), never reported as converted for an element the map says not to create.")]
+	[Description("Follow-up: the requestConversions summary is reconciled with the removal pass — a converted binding on a container later removed as empty is reclassified into droppedRequests (naming the removal), never reported as converted for an element the map says not to create.")]
 	public void Analyze_ShouldReclassifyConvertedRequest_WhenItsContainerWasRemovedAsEmpty() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "EmptyBox", "type": "crt.FlexContainer",
@@ -3488,7 +3488,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 (decision 3): attributes referenced ONLY by a removed empty container are KEPT in viewModelConfig — the removal is layout cleanup, not attribute cleanup — while attributes of a genuinely dropped component are still cleaned as before.")]
+	[Description("Decision 3: attributes referenced ONLY by a removed empty container are KEPT in viewModelConfig — the removal is layout cleanup, not attribute cleanup — while attributes of a genuinely dropped component are still cleaned as before.")]
 	public void Analyze_ShouldKeepAttributesOfRemovedContainer_WhenOnlyEmptyContainerReferencedThem() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -3510,7 +3510,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91228 (decision 6): the removal runs BEFORE the business-rule conversion — a rule whose only action targets the removed container is dropped, while a rule on a surviving element still converts.")]
+	[Description("Decision 6: the removal runs BEFORE the business-rule conversion — a rule whose only action targets the removed container is dropped, while a rule on a surviving element still converts.")]
 	public void Analyze_ShouldDropRuleOnRemovedContainer_WhenRemovalRunsBeforeRuleConversion() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "EmptyBox", "type": "crt.GridContainer", "items": [

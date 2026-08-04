@@ -195,7 +195,7 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
 
-		// Deterministic empty-container removal (ENG-91228): a converter-created layout container whose items
+		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
 		// BEFORE the adaptive and tab-area passes: adaptive then stacks only surviving children, and a tab this
 		// pass removed never gets layers synthesized (nothing resurrects it). ConvertPageBusinessRules and
@@ -235,7 +235,7 @@ public static class WebToMobileAnalysisService {
 		// so the order is safe either way — it is fixed here so it stays that way.
 		List<TabAreaLayerGroup> tabAreaLayers = BuildTabAreaLayers(elementMap, rules, sourcePage);
 
-		// Spacing normalization (ENG-91228): mobile follows its own spacing standard, so the web page's
+		// Spacing normalization: mobile follows its own spacing standard, so the web page's
 		// container spacing is deliberately IGNORED — every Grid/Flex container the converter INSERTS gets
 		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
@@ -1327,7 +1327,7 @@ public static class WebToMobileAnalysisService {
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
 	/// consumer, are kept. A container the EMPTY-container pass removed (<paramref name="emptyRemovedNames"/>)
 	/// is deliberately NOT counted as dropped here: that removal is layout cleanup, and the agreed scope
-	/// (ENG-91228) keeps the attributes it referenced (e.g. a bound <c>visible</c>) untouched. All other
+	/// keeps the attributes it referenced (e.g. a bound <c>visible</c>) untouched. All other
 	/// viewModelConfig sections are passed through unchanged.
 	/// </summary>
 	private static JsonNode BuildMobileViewModelConfig(
@@ -2507,7 +2507,7 @@ public static class WebToMobileAnalysisService {
 		new() { WebName = name, WebType = Nz(type), Operation = "drop", Reason = reason };
 
 	/// <summary>
-	/// Deterministic empty-container removal (ENG-91228): converts to a <c>drop</c> every converter-created
+	/// Deterministic empty-container removal: converts to a <c>drop</c> every converter-created
 	/// container of a rules-listed type whose items receive NO surviving child, so an empty layout shell
 	/// never reaches the mobile page. Runs to a fixed point, which IS the bottom-up cascade: a FlexContainer
 	/// holding only an empty GridContainer follows it out on the next round, and a TabPanel whose every tab
@@ -2672,8 +2672,8 @@ public static class WebToMobileAnalysisService {
 	private static string Nz(string value) => string.IsNullOrEmpty(value) ? null : value;
 
 	/// <summary>
-	/// Synthesizes the mobile designer's two-layer tab body inside every tab the CONVERTER creates
-	/// (ENG-94188): a grid "tab body" (<c>MainTabContainer_&lt;suffix&gt;</c>) holding the tab's Area
+	/// Synthesizes the mobile designer's two-layer tab body inside every tab the CONVERTER creates:
+	/// a grid "tab body" (<c>MainTabContainer_&lt;suffix&gt;</c>) holding the tab's Area
 	/// card(s) (<c>GridContainer_&lt;suffix&gt;</c>). Mobile design puts a tab's content inside a colored,
 	/// rounded Area rather than in the tab body itself, and a tab carried over from web brings neither
 	/// layer. Everything is baked straight into the element map as ordinary inserts placed RIGHT AFTER the
@@ -2846,7 +2846,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT (ENG-91228 spacing
+	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT (spacing
 	/// normalization). For each entry whose <c>mobileType</c> matches an override rule, the listed
 	/// properties are SET on the prebuilt <c>mobileValues</c> — replacing whatever the web page carried
 	/// (any shape: token, px number, CSS string, per-axis object; the web value is discarded, never
@@ -2908,8 +2908,8 @@ public static class WebToMobileAnalysisService {
 	private const int StableSuffixFallbackLimit = 1000;
 
 	/// <summary>
-	/// Deterministic name suffix for the containers synthesized inside a converter-created tab
-	/// (ENG-94188). A random suffix (Guid.NewGuid) would break reproducibility — baseline diffs and
+	/// Deterministic name suffix for the containers synthesized inside a converter-created tab.
+	/// A random suffix (Guid.NewGuid) would break reproducibility — baseline diffs and
 	/// repeated guide runs must produce identical names — so the suffix is a content hash: the first
 	/// <see cref="StableSuffixLength"/> lowercase base36 characters of SHA-256 over
 	/// <c>$"{sourcePage}:{tabName}"</c>. Stable across runs, unique across tabs, visually identical to

@@ -75,7 +75,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules carry the empty-container removal allowlist (ENG-91228): the CLOSED set of five layout container types removable when empty. The set is a deliberate decision pinned here — widening it must be an explicit change with its own review, never a drive-by edit or registry inference.")]
+	[Description("The bundled rules carry the empty-container removal allowlist: the CLOSED set of five layout container types removable when empty. The set is a deliberate decision pinned here — widening it must be an explicit change with its own review, never a drive-by edit or registry inference.")]
 	public void LoadBundled_EmptyContainerRemoval_CarriesClosedAllowlist() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -99,7 +99,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid + Area card) for converter-created tabs (ENG-94188).")]
+	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid + Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 

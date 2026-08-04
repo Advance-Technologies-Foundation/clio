@@ -103,7 +103,7 @@ public sealed class CaptionResource {
 public sealed class ElementMapEntry {
 	/// <summary>
 	/// Source element name. Omitted for a SYNTHESIZED entry — a container the converter creates that has
-	/// no web counterpart (the tab-body / Area layers of a converted tab, ENG-94188). Its <c>reason</c>
+	/// no web counterpart (the tab-body / Area layers of a converted tab). Its <c>reason</c>
 	/// says so explicitly; apply it exactly like any other <c>insert</c>.
 	/// </summary>
 	[JsonPropertyName("webName")]
@@ -131,7 +131,7 @@ public sealed class ElementMapEntry {
 	/// <summary>
 	/// Mobile parent element to attach to. For <c>insert</c> it is the element's parent; for
 	/// <c>relocate-children</c> it is the container the element's children are placed into instead.
-	/// Settable (like <see cref="MobileValues"/>): the tab-area pass (ENG-94188) retargets a tab's
+	/// Settable (like <see cref="MobileValues"/>): the tab-area pass retargets a tab's
 	/// top-level content onto the synthesized Area container after the element map is built.
 	/// </summary>
 	[JsonPropertyName("parentName")]
@@ -152,7 +152,7 @@ public sealed class ElementMapEntry {
 	/// the template's Feed/Attachments tabs stay last; see the <c>convertedTabPlacement</c> rules section).
 	/// Add it to the insert operation verbatim when present. Omitted for every other element — the mobile
 	/// designer owns ordering. Settable (like <see cref="ParentName"/>): the empty-container removal pass
-	/// (ENG-91228) re-compacts sibling indexes after dropping an empty positional sibling, and the
+	/// re-compacts sibling indexes after dropping an empty positional sibling, and the
 	/// converted-tab placement pass assigns tab indexes after the element map is built.
 	/// </summary>
 	[JsonPropertyName("index")]
@@ -472,7 +472,7 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Tab body / Area layers synthesized inside a converted tab ──────
 	/// <summary>
-	/// The containers the converter SYNTHESIZES inside every tab it creates (ENG-94188): the designer's
+	/// The containers the converter SYNTHESIZES inside every tab it creates: the designer's
 	/// tab-body grid and the Area card inside it that receives the tab's content. Already baked into
 	/// <see cref="ElementMap"/> as ordinary
 	/// <c>insert</c> entries placed right after the tab's own entry — there is nothing separate to apply.
@@ -487,7 +487,7 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Spacing normalized on inserted containers ──────────────────────
 	/// <summary>
-	/// Spacing normalization applied by the converter (ENG-91228): mobile pages follow the mobile spacing
+	/// Spacing normalization applied by the converter: mobile pages follow the mobile spacing
 	/// standard, so the WEB page's container spacing is deliberately IGNORED (discarded, not translated) —
 	/// every <c>crt.GridContainer</c> / <c>crt.FlexContainer</c> the converter INSERTS (converted from web
 	/// and synthesized tab-body / Area layers alike) already carries gap Medium on all axes in
@@ -719,7 +719,7 @@ public sealed class AdaptiveLayoutGroup {
 }
 
 /// <summary>
-/// The tab-body / Area layers synthesized inside ONE converter-created tab (ENG-94188). Mirrors what is
+/// The tab-body / Area layers synthesized inside ONE converter-created tab. Mirrors what is
 /// already baked into the element map: mobile design puts a tab's content inside a colored Area card that
 /// sits in a tab-body grid, and a tab converted from web carries neither.
 /// </summary>
@@ -750,7 +750,7 @@ public sealed class TabAreaLayerGroup {
 }
 
 /// <summary>
-/// Advisory summary of the spacing normalization (ENG-91228): which inserted containers had their
+/// Advisory summary of the spacing normalization: which inserted containers had their
 /// spacing stamped with the mobile-standard values (gap Medium). The actionable result is already
 /// baked into <c>elementMap[].mobileValues</c>; this section only feeds the plan / final-report line.
 /// </summary>

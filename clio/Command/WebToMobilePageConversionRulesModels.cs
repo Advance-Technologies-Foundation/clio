@@ -35,8 +35,8 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<RequestMappingRule> Requests { get; init; } = [];
 
 	/// <summary>
-	/// Group: the designer's 2-layer tab body synthesized into every converter-created tab
-	/// (ENG-94188): a grid "tab body" (MainTabContainer_&lt;suffix&gt;) holding one Area card
+	/// Group: the designer's 2-layer tab body synthesized into every converter-created tab:
+	/// a grid "tab body" (MainTabContainer_&lt;suffix&gt;) holding one Area card
 	/// (GridContainer_&lt;suffix&gt;) that receives the tab's content. Null when the section is
 	/// absent from the rules file — the tab-area pass is then a no-op (the feature is switched
 	/// by data, not code).
@@ -46,7 +46,7 @@ public sealed class WebToMobilePageConversionRules {
 
 	/// <summary>
 	/// Group: per-mobile-type property overrides stamped onto EVERY element the converter INSERTS
-	/// (ENG-91228 spacing normalization). Mobile pages follow the mobile spacing standard, so a listed
+	/// (spacing normalization). Mobile pages follow the mobile spacing standard, so a listed
 	/// property is SET to the rule's value — replacing whatever the web page carried (any shape: token,
 	/// px number, CSS string, per-axis object) and added even when the web page carried none, so the
 	/// converted body is self-describing instead of leaning on client defaults. Applies to converted AND
@@ -58,7 +58,7 @@ public sealed class WebToMobilePageConversionRules {
 
 	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
-	/// element-map decisions (ENG-91228) — a closed allowlist of removable types, evaluated bottom-up so
+	/// element-map decisions — a closed allowlist of removable types, evaluated bottom-up so
 	/// emptiness cascades. Null when the section is absent from the rules file — the removal pass is then
 	/// a no-op (the feature is switched by data, not code).
 	/// </summary>
@@ -176,7 +176,7 @@ public sealed class ComponentMappingRule {
 }
 
 /// <summary>
-/// Rule for the two containers synthesized inside every converter-created tab (ENG-94188): the
+/// Rule for the two containers synthesized inside every converter-created tab: the
 /// tab-body grid (layer 2) and the Area card inside it. Mirrors the mobile designer's own
 /// <c>TabItemFactory.getMobileTabContainerConfig()</c> output, kept as DATA so the props follow
 /// the platform without a code change. These values apply only to the synthesized nodes, never to
@@ -219,7 +219,7 @@ public sealed class SynthesizedContainerRule {
 }
 
 /// <summary>
-/// One per-mobile-type value override applied to every INSERTED element of that type (ENG-91228).
+/// One per-mobile-type value override applied to every INSERTED element of that type.
 /// The element identity keys (<c>name</c>/<c>type</c>) can never be overridden — a rules file listing
 /// them is ignored for those keys.
 /// </summary>
@@ -237,7 +237,7 @@ public sealed class InsertValueOverrideRule {
 }
 
 /// <summary>
-/// Rule for the deterministic empty-container removal pass (ENG-91228). <see cref="RemovableTypes"/> is
+/// Rule for the deterministic empty-container removal pass. <see cref="RemovableTypes"/> is
 /// a CLOSED allowlist of mobile container types the converter may drop when they end up empty — layout
 /// scaffolding whose disappearance loses nothing. It is deliberately NOT derived from the component
 /// registry's <c>container</c> flag: "can hold children" (crt.List, crt.Tabs) is not "safe to delete

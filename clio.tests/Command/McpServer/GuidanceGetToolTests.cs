@@ -1147,7 +1147,7 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-94188: the conversion article documents guide.tabAreaLayers — the synthesized tab body + Area card are applied by pasting the element map as it is, so the reader must be told not to reparent or add an Area itself.")]
+	[Description("The conversion article documents guide.tabAreaLayers — the synthesized tab body + Area card are applied by pasting the element map as it is, so the reader must be told not to reparent or add an Area itself.")]
 	public async Task GuidanceGet_FreedomToMobileArticle_DocumentsTabAreaLayers() {
 		// Arrange
 		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);
@@ -1170,7 +1170,7 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-91228: the conversion article states that empty containers are removed DETERMINISTICALLY by the converter (drop entries, reason 'empty container') and forbids the reader to re-create them or turn the removal into a question — the article describes a fact, not an algorithm for the model to run.")]
+	[Description("The conversion article states that empty containers are removed DETERMINISTICALLY by the converter (drop entries, reason 'empty container') and forbids the reader to re-create them or turn the removal into a question — the article describes a fact, not an algorithm for the model to run.")]
 	public async Task GuidanceGet_FreedomToMobileArticle_StatesDeterministicEmptyContainerRemoval() {
 		// Arrange
 		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);

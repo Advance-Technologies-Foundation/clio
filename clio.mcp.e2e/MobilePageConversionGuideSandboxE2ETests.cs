@@ -84,7 +84,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94188: converts a real seeded TABBED page through the real clio MCP server and verifies the mandatory tabAreaLayers contract end to end — the guide carries a tabAreaLayers group per converted tab; the tab body grid sits right after its tab with no webName; the Area follows it and holds ALL of the tab's top-level content (expansion panels included); and the constraints/nextSteps carry the MANDATORY (never offer to skip) wording.")]
+	[Description("Converts a real seeded TABBED page through the real clio MCP server and verifies the mandatory tabAreaLayers contract end to end — the guide carries a tabAreaLayers group per converted tab; the tab body grid sits right after its tab with no webName; the Area follows it and holds ALL of the tab's top-level content (expansion panels included); and the constraints/nextSteps carry the MANDATORY (never offer to skip) wording.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns the mandatory tabAreaLayers contract for a tabbed page")]
 	[AllureDescription("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, converts its pages until one yields tabAreaLayers, and asserts the full serialized contract: the tab body grid at tab+1 with no webName; the Area at tab+2 with movedChildren reparented onto it — exercising the bundled WebToMobilePageConversionRules.json tabAreaLayers section and the BuildTabAreaLayers pass through the real MCP surface.")]
@@ -141,7 +141,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
 				+ "converted successfully, but none produced tabAreaLayers: the seed application has no Freedom UI page "
 				+ "with a converter-created tab that has content. Add a tabbed record page to the seed application to "
-				+ "exercise the ENG-94188 surface.");
+				+ "exercise the tabAreaLayers surface.");
 		}
 
 		// Assert — the serialized guide honors the mandatory layer contract for EVERY converted tab:

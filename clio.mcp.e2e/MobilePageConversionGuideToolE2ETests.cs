@@ -66,10 +66,10 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
-	[Description("ENG-91228: returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the deterministic empty-container removal contract (already removed by the converter, arrives as a drop with reason \"empty container\", never re-create / re-parent / ask the user) plus the AreaProfileContainer wrapper-content routing.")]
+	[Description("Returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the deterministic empty-container removal contract (already removed by the converter, arrives as a drop with reason \"empty container\", never re-create / re-parent / ask the user) plus the AreaProfileContainer wrapper-content routing.")]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the conversion article with the deterministic empty-container removal contract")]
-	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the feature-gated freedom-page-web-to-mobile-conversion article carrying the ENG-91228 empty-container removal wording end to end.")]
+	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the feature-gated freedom-page-web-to-mobile-conversion article carrying the empty-container removal wording end to end.")]
 	public async Task GuidanceGet_Should_Return_Conversion_Guide_With_EmptyContainerRemoval_Contract() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -95,14 +95,14 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 		response.Article!.Uri.Should().Be("docs://mcp/guides/freedom-page-web-to-mobile-conversion",
 			because: "the canonical resource URI for the conversion guide should be stable");
 		response.Article.Text.Should().Contain("removed deterministically by the converter",
-			because: "the drop branch must state that empty converter-created containers are removed by the converter itself, not left for the user to delete (ENG-91228)");
+			because: "the drop branch must state that empty converter-created containers are removed by the converter itself, not left for the user to delete");
 		response.Article.Text.Should().Contain("\"empty container\"",
 			because: "the article must name the exact drop reason the elementMap carries for a removed empty container so the caller can recognize it");
 		response.Article.Text.Should().Contain(
 			"Do NOT re-create such a container, do NOT re-parent anything into it, and do NOT ask the user",
-			because: "the article must forbid the caller from resurrecting a removed empty container or turning its removal into a question (ENG-91228)");
+			because: "the article must forbid the caller from resurrecting a removed empty container or turning its removal into a question");
 		response.Article.Text.Should().Contain("CardContentWrapper→AreaProfileContainer",
-			because: "the wrapper's non-tab content must be routed into the profile Area card, never directly into the general tab's grid (ENG-91228 wording fix)");
+			because: "the wrapper's non-tab content must be routed into the profile Area card, never directly into the general tab's grid (wording fix)");
 	}
 
 	[Test]

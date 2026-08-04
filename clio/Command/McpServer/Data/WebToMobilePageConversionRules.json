@@ -126,12 +126,12 @@
     {
       "type": "crt.GridContainer",
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } },
-      "note": "ENG-91228 spacing normalization: mobile follows the mobile spacing standard, so the web grid's gap (typically columnGap large / rowGap none) is IGNORED, not translated — every inserted grid container (converted and synthesized alike) gets Medium row/column spacing. Keep in sync with tabAreaLayers container gaps."
+      "note": "Spacing normalization: mobile follows the mobile spacing standard, so the web grid's gap (typically columnGap large / rowGap none) is IGNORED, not translated — every inserted grid container (converted and synthesized alike) gets Medium row/column spacing. Keep in sync with tabAreaLayers container gaps."
     },
     {
       "type": "crt.FlexContainer",
       "values": { "gap": "medium" },
-      "note": "ENG-91228 spacing normalization: the web flex gap (token, px number or CSS string) is IGNORED, not translated — every inserted flex container gets Medium gap."
+      "note": "Spacing normalization: the web flex gap (token, px number or CSS string) is IGNORED, not translated — every inserted flex container gets Medium gap."
     }
   ],
   "emptyContainerRemoval": {
