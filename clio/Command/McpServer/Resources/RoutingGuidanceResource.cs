@@ -38,7 +38,7 @@ public sealed class RoutingGuidanceResource {
 		         - wire a button/menu action to a platform request (crt.*Request: print, close, cancel, ...) -> get-request-info + name=when-to-use-requests
 		         - add a button/menu item that runs a business process -> get-process-signature FIRST + get-request-info (crt.RunBusinessProcessRequest)
 		         - bind which page opens for a record / which page adds a record (related pages) -> name=related-page-binding
-		         - add/update a NAMED or PREDEFINED filter a list/section page always applies (e.g. an "Active Requests" list) -> name=page-modification-overview + name=esq-filters-frontend
+		         - add/update a NAMED or PREDEFINED filter that a list/section page always applies (e.g. an "Active Requests" list) -> name=page-modification-overview + name=esq-filters-frontend
 		         - add a related/child list (detail), filter a list by the open record, or apply a STATIC business filter to a list/detail (a fixed condition — "Emails only", "status = X") -> name=related-list
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
 		         - virtual entity object, IEntityQueryExecutor reads, or EntityEventListener writes -> name=virtual-entities

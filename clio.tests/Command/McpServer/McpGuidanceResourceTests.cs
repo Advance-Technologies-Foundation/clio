@@ -2187,8 +2187,8 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The predefined-filter section distinguishes the ADD path (append is safe) from the UPDATE path (mode:replace, because viewModelConfigDiff is plain-concat with no dedupe) so an agent updating an existing filter does not stack a duplicate merge (ENG-90052 PR #989 review).")]
-	public void PageModificationOverviewGuidanceResource_Should_Scope_Append_To_Add_And_Route_Update_To_Replace() {
+	[Description("The predefined-filter section guards BOTH update hazards: a blind append (stacks a duplicate, viewModelConfigDiff no-dedupe) and a blind full-body replace (re-applies own viewConfigDiff merges -> the CRITICAL Object/Array failure), routing to the Modifying-an-existing-component + CRITICAL discipline (ENG-90052 PR #989 review).")]
+	public void PageModificationOverviewGuidanceResource_Should_Guard_The_Update_Path() {
 		// Arrange
 		PageModificationOverviewGuidanceResource resource = new();
 
@@ -2198,8 +2198,10 @@ public sealed class McpGuidanceResourceTests {
 		// Assert
 		article.Text.Should().Contain("UPDATING an existing predefined filter",
 			because: "the guide must call out the update path separately so the agent does not blindly append on an existing filter");
-		article.Text.Should().Contain("mode:\"replace\"",
-			because: "updating an existing Items_PredefinedFilter must edit the op in place and save with mode:replace, since viewModelConfigDiff append is plain-concat with no dedupe and would stack a duplicate op");
+		article.Text.Should().Contain("Do NOT blindly append",
+			because: "the update guard must warn against a blind append that stacks a duplicate viewModelConfigDiff op");
+		article.Text.Should().Contain("do NOT blindly resend the full body",
+			because: "the update guard must also warn against a blind full-body replace that re-applies the page's own viewConfigDiff merges and hits the CRITICAL Object/Array failure (PR #989 tetiana-moshon)");
 	}
 
 	[Test]
@@ -2213,7 +2215,7 @@ public sealed class McpGuidanceResourceTests {
 		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
 
 		// Assert
-		article.Text.Should().Contain("NAMED or PREDEFINED filter a list/section page always applies",
+		article.Text.Should().Contain("NAMED or PREDEFINED filter that a list/section page always applies",
 			because: "the routing row must be keyed to the task wording so the agent picks the page domain, not the data domain");
 		article.Text.Should().Contain("name=page-modification-overview",
 			because: "the routing row must point at the sub-guide that owns the predefined-filter placement rule so the agent lands on it directly");

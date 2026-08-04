@@ -483,8 +483,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the overview sub-guide owns the canonical home of a named/predefined list-page filter (ENG-90052)");
 		response.Article.Text.Should().Contain("Do NOT reverse-engineer a `SysFolder` row with a `FilterData` blob",
 			because: "the overview sub-guide must steer the agent away from the SysFolder/FilterData DataService dead-end that cost ~11 minutes in ENG-90052");
-		response.Article.Text.Should().Contain("mode:\"replace\"",
-			because: "the UPDATE path (edit the existing Items_PredefinedFilter op in place, save mode:replace) must ship through the real mcp-server to the same bar as the placement/SysFolder facts (ENG-90052 PR #989 review)");
+		response.Article.Text.Should().Contain("UPDATING an existing predefined filter",
+			because: "the update-path guard (edit the op in place; do not blindly append or full-body replace) must ship through the real mcp-server to the same bar as the placement/SysFolder facts (ENG-90052 PR #989 review)");
 	}
 
 	[Test]
@@ -973,7 +973,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the canonical resource URI for the routing guide should be stable");
 		response.Article.Text.Should().Contain("name=page-modification",
 			because: "the routing map must carry the domain routing table that points at the matching guides");
-		response.Article.Text.Should().Contain("add/update a NAMED or PREDEFINED filter a list/section page always applies",
+		response.Article.Text.Should().Contain("add/update a NAMED or PREDEFINED filter that a list/section page always applies",
 			because: "the live routing map must serve the ENG-90052 predefined-list-filter row so the agent is routed to page-modification-overview + esq-filters-frontend");
 		response.Article.Text.Should().NotContain("Items_PredefinedFilter",
 			because: "the served routing map must route by guide name only — the placement rule stays in page-modification-overview, never duplicated in the routing article (ENG-90052 PR #987 blocker)");
