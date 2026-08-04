@@ -1460,7 +1460,13 @@ internal static class ToolContractCatalog {
 			[
 				new ToolAntiPattern(
 					"create-app → create-app-section → delete-app-section",
-					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead.")
+					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead."),
+				new ToolAntiPattern(
+					"create-app, build the pages, THEN ask which workplace the app belongs to",
+					"Asking after the build makes the user re-decide finished work, and until they answer only System administrators can open the app. Settle the placement and its audience in the same turn you confirm the environment, before this call.")
+			],
+			Preconditions: [
+				"Navigation placement and audience are settled BEFORE this call. This tool puts the new section in the `My applications` workplace, which is granted to `System administrators` only, so an app created without that decision is unreachable for ordinary users. When the request does not name a target workplace, ask it together with the environment confirmation - which workplace the section AND its home page belong to (offer a NEW workplace named for the app and recommend it when scaffolding), and which roles should see it. Read `get-guidance name=workplaces` for the option set and the write recipes; apply the navigation writes after the app exists, but take the DECISION first."
 			]);
 	}
 

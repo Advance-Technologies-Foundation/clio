@@ -65,6 +65,25 @@ public sealed class McpGuidanceForcingTests {
 			because: "an agent asked to remove a section from one workplace must be routed to the workplaces guide instead of this tool");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("create-app advertises that it places the section in the administrators-only default workplace and that placement must be settled before the call (ENG-88474).")]
+	public void ApplicationCreateToolDescription_ShouldRequirePlacement_BeforeTheCall() {
+		// Arrange
+		string description = ToolDescription<ApplicationCreateTool>();
+
+		// Act
+		bool statesTheDefaultIsAdminOnly = description.Contains("System administrators only");
+
+		// Assert
+		statesTheDefaultIsAdminOnly.Should().BeTrue(
+			because: "the tool's own description is the one surface always in context, and the reason the decision cannot wait is that the default placement is invisible to ordinary users");
+		description.Should().Contain("BEFORE this call",
+			because: "a live run built the whole app and asked afterwards, so the ordering must be stated on the tool itself and not only in a guide");
+		description.Should().Contain("get-guidance name=workplaces",
+			because: "the description states the requirement and routes to the guide that owns the option set and the write recipes");
+	}
+
 	// ---- Pt 1: router ----
 
 	[Test]

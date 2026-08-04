@@ -934,6 +934,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the canonical resource URI for the core-rules guide should be stable");
 		response.Article.Text.Should().Contain("compile-creatio is NOT needed",
 			because: "the core-rules guide must carry the non-negotiable invariants");
+		response.Article.Text.Should().Contain("Navigation placement is decided BEFORE you create an app",
+			because: "the requirement was ignored while it lived only in the app-modeling guide, so it must reach the agent over the real transport as a core invariant (ENG-88474)");
+		response.Article.Text.Should().Contain("get-guidance name=workplaces",
+			because: "core-rules states the requirement and routes to the guide that owns the option set and the write recipes");
 	}
 
 	[Test]
@@ -1080,6 +1084,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the canonical article title proves the right guide came back over the wire");
 		response.Article.Text.Should().Contain("its SECTION and its HOME PAGE go in the SAME workplace",
 			because: "tool-based retrieval should preserve the single-decision rule whose absence stranded a section in another workplace");
+		response.Article.Text.Should().Contain("the decision is due BEFORE",
+			because: "tool-based retrieval should preserve the ordering, since the verified failure was a correct decision taken too late");
+		response.Article.Text.Should().Contain("do NOT reduce it to the two extremes",
+			because: "tool-based retrieval should preserve the prescribed audience option set, which a live run collapsed into administrators-vs-everyone");
 	}
 
 	private static async Task<GuidanceGetResponse> CallAsync(

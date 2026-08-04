@@ -447,6 +447,38 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The create-app contract requires the navigation placement and audience decision BEFORE the call, because the tool itself places the section in the administrators-only My applications workplace.")]
+	public void ToolContractGet_Should_Require_NavigationPlacement_Before_ApplicationCreate() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationCreateTool.ApplicationCreateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "create-app is part of the canonical executable contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "a live run built the whole app before asking where it belonged, so the requirement must be attached to the call that causes it");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("BEFORE this call", StringComparison.Ordinal),
+			because: "the ordering is the substance of the requirement — asking afterwards makes the user re-decide finished work");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("System administrators", StringComparison.Ordinal),
+			because: "the reason the decision cannot be deferred is that the default placement is visible to administrators only");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("get-guidance name=workplaces", StringComparison.Ordinal),
+			because: "the contract states the requirement; the workplaces guide owns the option set and the write recipes");
+		contract.AntiPatterns!.Should().Contain(
+			pattern => pattern.Pattern.Contains("THEN ask which workplace", StringComparison.Ordinal),
+			because: "the observed failure order must be named as an anti-pattern, not only implied by the precondition");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[TestCase("odata-read")]
 	[TestCase("odata-create")]
 	[Description("Both odata-read and odata-create contracts carry the shared unregistered-entity anti-pattern derived from the same hint constant, so an agent gets consistent contract-level steering for the routing-error failure both tools can hit.")]

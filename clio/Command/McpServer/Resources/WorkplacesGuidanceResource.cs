@@ -66,8 +66,11 @@ public sealed class WorkplacesGuidanceResource {
 		       Placement and audience are the user's decisions, not yours. When the request names no target
 		       workplace, STOP and ask before any NAVIGATION write — `SysWorkplace`, `SysModuleInWorkplace`,
 		       `SysAdminUnitInWorkplace`, or their bindings. `create-app` performs such a write itself (it creates
-		       `My applications` and the section placement), so the gate is: ask immediately after `create-app` and
-		       before anything further. Offer these options:
+		       `My applications` and the section placement), so for a NEW app the decision is due BEFORE
+		       `create-app` — ask it in the same turn you confirm the environment, and at the latest immediately
+		       after `create-app` and before anything further. Asking once the pages are built is a defect, not a
+		       late-but-equivalent order: it makes the user re-decide work you already finished. Offer these
+		       options:
 		       - a NEW workplace named for the app (recommend this when scaffolding a new app — it keeps the
 		         app's navigation self-contained);
 		       - the `My applications` workplace — note it may not exist yet, and leaving the app there restricts
@@ -80,7 +83,20 @@ public sealed class WorkplacesGuidanceResource {
 		       the section half; neither is finished alone.
 		       Then ask WHO SHOULD SEE IT, because placement alone does not answer that. A new workplace has no
 		       `SysAdminUnitInWorkplace` row and is invisible to everyone, so choosing one obliges you to grant an
-		       audience — pick the narrowest role that satisfies the request. If the request scopes the app or page
+		       audience. Do NOT offer this as free text and do NOT reduce it to the two extremes
+		       (`System administrators` vs everyone) — that framing makes a blanket grant look like the only way to
+		       let a normal user in. Build the option set from the environment instead:
+		       1. `odata-read` `SysAdminUnit` filtered to roles, not users — `$filter=SysAdminUnitTypeId ne
+		          <user type>` is fragile, so read `Name` plus `SysAdminUnitTypeId` and keep the organisational and
+		          functional roles. Sort by `Name` and cap the list at a handful.
+		       2. Offer, in this order: the role(s) the request itself implies (if it says "for sales managers",
+		          the matching role comes first and is the RECOMMENDED option); then the other concrete roles you
+		          just read; then `All employees` — labelled as granting every user in the system, and never
+		          pre-marked as the recommendation.
+		       3. Offer `System administrators` only as the deliberate admin-tool answer, and say what it costs:
+		          ordinary users will not see the app at all. It is the `create-app` default, so picking it changes
+		          nothing and is the one option that needs no write.
+		       Pick the narrowest role that satisfies the request. If the request scopes the app or page
 		       to a role, an existing target workplace's `SysAdminUnitInWorkplace` rows should match that role; if
 		       they do not, surface the mismatch and confirm rather than silently granting access.
 

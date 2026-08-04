@@ -47,8 +47,10 @@ public sealed class HomePageGuidanceResource {
 		            workplace, present the `Name` list marking which already have a home page (binding REPLACES
 		            it), and offer creating a NEW workplace named for the app — recommend that when the page
 		            belongs to an app being scaffolded. Also settle who should see it: the page's audience is the
-		            audience of the workplace you bind it to (see Access / roles). `workplaces` owns workplace
-		            creation and the elicitation script. Step 5 then only applies the answer.
+		            audience of the workplace you bind it to (see Access / roles). Read the concrete roles off the
+		            environment for that question — `workplaces`, "Ask where things belong before you write",
+		            prescribes the option set; do not offer only `System administrators` vs everyone. `workplaces`
+		            owns workplace creation and the elicitation script. Step 5 then only applies the answer.
 		       2. `create-page` with `template` = `BaseHomePage`, a `schema-name` (active prefix, e.g.
 		          `UsrMyHomePage`), and the target `package-name`. Capture the returned `schemaUId` — that UId is
 		          the value you bind in step 6. `create-page` assigns the home-page schema group automatically

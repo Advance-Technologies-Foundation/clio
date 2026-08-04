@@ -153,7 +153,7 @@ public sealed class ApplicationCreateTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context. Places the new section in the `My applications` workplace, which is granted to System administrators only — so settle WHERE the app belongs in the left navigation and WHO should see it BEFORE this call, together with the environment confirmation, and read get-guidance name=workplaces for the option set. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
 		[Description("Parameters: environment-name (required unless passthrough); name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
 		[Required]

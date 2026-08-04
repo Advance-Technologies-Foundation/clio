@@ -2559,6 +2559,21 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("NARROWEST role",
 			because: "role visibility decides who reaches the data, so the guide must push least privilege instead of a blanket role");
 
+		// Live run: the audience question was asked as prose, so it collapsed to the two extremes and offering a
+		// blanket grant became the only way to let a non-administrator in. Prescribed option sets are what execute.
+		article.Text.Should().Contain("do NOT reduce it to the two extremes",
+			because: "System administrators vs everyone is the framing that makes a blanket grant look like the only real choice");
+		article.Text.Should().Contain("Build the option set from the environment instead",
+			because: "the roles must be read off SysAdminUnit so the offered choices are ones the environment actually has");
+		article.Text.Should().Contain("pre-marked as the recommendation",
+			because: "All employees must stay available as a widening choice without being recommended by default");
+
+		// The decision is due before create-app; asking after the build makes the user re-decide finished work.
+		article.Text.Should().Contain("the decision is due BEFORE",
+			because: "the verified failure was a late ask, so the guide must state the ordering rather than only the requirement");
+		article.Text.Should().Contain("late-but-equivalent order",
+			because: "an agent that treats the ordering as cosmetic will keep asking after the pages are built");
+
 		// Reproduced live: asking only about the home page left the section in My applications, so no single
 		// workplace showed a working app. Section and home page are one decision for a scaffolded app.
 		article.Text.Should().Contain("its SECTION and its HOME PAGE go in the SAME workplace",

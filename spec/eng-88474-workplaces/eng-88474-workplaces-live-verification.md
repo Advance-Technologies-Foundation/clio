@@ -1045,6 +1045,47 @@ two-package conflict rather than creating one silently.
 Test coverage added for all of it, including a `NotContain` guard on the removed "separate decision"
 sentence so it cannot come back.
 
+## Addendum 6 — moving the ask to discovery time, and prescribing the audience
+
+Two gaps survived the TodoApp8 run. Both are about WHEN and HOW the question is asked, not whether
+the guide knows the answer.
+
+**The ask happened after the build, not at discovery.** TodoApp8 was scaffolded, its pages authored,
+and only then did the agent ask where the app belonged. The requirement existed at the time — as a
+GATE bullet in the `app-modeling` guide, verified present in the run's context — and was ignored.
+That is the third confirmation of the same pattern in this ticket: **a prescribed, ordered option set
+executes; a reference bullet does not.** The fix therefore does not reword the bullet. It moves the
+requirement onto the two surfaces that are structurally earlier than any guide the agent chooses to
+read:
+
+- `core-rules` — the always-on instructions mandate reading it FIRST on every operation, so the rule
+  now sits among the invariants rather than inside a domain guide the agent may reach late. It names
+  the turn ("in the SAME turn you ask about the environment"), states the consequence
+  (`My applications` is administrators-only), and routes to `workplaces` for the option set. It
+  deliberately carries no write recipe — asserted by a `NotContain` on `SysModuleInWorkplace` so the
+  two cannot drift.
+- the `create-app` tool contract `preconditions` + a new anti-pattern, and the `create-app`
+  `[Description]` itself. The contract is what an agent reads before its first call to a tool, and
+  the description is the one surface always in context. The anti-pattern names the observed order
+  verbatim: "create-app, build the pages, THEN ask which workplace the app belongs to."
+
+`workplaces` also now states the ordering as due BEFORE `create-app` (previously "immediately
+after"), and says a late ask is a defect rather than a late-but-equivalent order — the cost is that
+the user re-decides work already finished.
+
+**The audience question collapsed to two extremes.** It was prose, so the run offered
+`System administrators only` versus everyone. That framing makes a blanket grant look like the only
+way to let a non-administrator in — the opposite of the least-privilege rule the same guide states.
+The audience question is now a prescribed option set built from the environment: read the roles off
+`SysAdminUnit`, offer the role the request implies first (recommended), then the other concrete
+roles, then `All employees` labelled as every user and explicitly never pre-marked as the
+recommendation, with `System administrators` offered as the deliberate admin-tool answer and the one
+option needing no write. `home-page` cross-links to it instead of restating it.
+
+Coverage: unit assertions on all three surfaces (guide text, contract, tool description) plus E2E
+assertions over the real stdio transport for `core-rules`, the `workplaces` article, and the
+`create-app` contract — the guidance layer is only real if it survives the wire.
+
 ## Bottom line
 
 **Phase 1 is directionally right and the guide's core model is sound.** The three-table model,
