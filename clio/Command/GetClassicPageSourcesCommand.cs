@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -105,6 +106,8 @@ public sealed class GetClassicPageSourcesResponse {
 /// seed, plus resolution inputs (entityColumns/columnTitles/resources). The layer bodies are written to the
 /// manifest file, never returned in the response — the caller triggers the run and reads only the small summary.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Command composes its required collaborators (application client, URL builder, column manager, hierarchy client, section resolver, detail edit-page resolver, file system, logger) via constructor injection; grouping them into a parameter object would hide which Classic-migration lookup each collects and gain nothing behaviorally.")]
 public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions> {
 
 	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.ClientUnit;
