@@ -759,14 +759,36 @@ take a single `args` object with kebab-case fields.
   The stock splash logo is suppressed automatically. A confirmed write (`Destructive=true`: the
   logos change for all users and cannot be automatically reverted; re-issued through
   `clio-run-destructive` on the lazy surface). Idempotent — re-applying the same files converges.
-  Only the slots this run wrote (plus slots an earlier run already shipped) are bound, so a slot
-  nobody branded stays out of the package.
+  Only the slots this run applied are bound, so a slot nobody branded stays out of the package. When
+  the environment refuses one slot and accepts another, the result is `success: false` naming the
+  refused slot — but the accepted slots are already written and already bound, so read `applied` and
+  `package` before retrying and re-run only the refused slot.
 
-  On both tools `package` names the binding target. There is no default package: when `package` is
+  On both tools the `package` field on the result names the resolved delivery target. It is present as
+  soon as the run resolved one — including on a failure — and absent only when the run never got that
+  far, so its presence does NOT by itself mean anything was bound. What landed is in `bound` — the
+  settings or parts the delivery confirmed, omitted when it confirmed none — and the reason for each gap is in
+  `warnings`, which names every difference between what was applied and what the package will deliver,
+  and a mid-delivery failure names in `error` the parts that were bound before it and stay in the
+  package. Re-run only what those name as unfinished.
+
+  On both tools the `package` argument names the binding target. There is no default package: when it is
   omitted the bindings land in the package the environment's `CurrentPackageId` system setting names,
   and when that setting is unset or dangling the tool FAILS with an actionable error rather than
-  falling back to a well-known package. Validate a package the user names against `list-packages`
-  first — binding needs it unlocked.
+  falling back to a well-known package. The apply runs first and the packaging second by design: an
+  unusable target (absent, locked) leaves the branding applied on the environment and fails naming the
+  package problem, so the fix is to resolve the package and re-run — not to expect a rollback. Resolve
+  the target with `get-target-package` first to stay out of that state.
+
+- **`get-target-package`** (read-only probe, non-resident — reachable via `clio-run`) answers which
+  package a run's design-time writes land in, without writing anything: pass `package` to check a name
+  the user gave, or omit it to resolve the `CurrentPackageId` package the agent cannot read for itself
+  (`get-sys-setting` returns the All-Users default, which that per-developer setting normally has
+  none of). It returns `package-name`, which the agent states to the user and then passes to
+  `create-theme` / `set-logo` / `set-background-image` so one branding operation lands in one package.
+  On failure it separates a definitive answer (`resolutionFailed: true` — absent, locked, or no current
+  package; ask the user for another one) from an unreachable environment (`resolutionFailed: false` —
+  retry; never report that no target package exists).
 
 What an external AI can practically do here:
 

@@ -156,4 +156,32 @@ public sealed class SetBackgroundImageToolE2ETests : McpContractFixtureBase {
 		result.Warnings.Should().BeNull(
 			because: "warnings is the only delivery-gap channel the agent is told to relay, so a run that produced none must omit the field over the wire instead of emitting an empty array the agent has to special-case");
 	}
+
+	[Test]
+	[AllureTag(SetBackgroundImageTool.ToolName)]
+	[AllureName("set-background-image omits the package field entirely when the run resolved no delivery target")]
+	[AllureDescription("Calls set-background-image through the real clio MCP server with an empty args object and verifies the structured result carries no package field — package is populated when binding failed partway (the parts that landed are in it), so a failure that never reached binding must omit it rather than emit an empty value an agent could read as a package it must not re-run against.")]
+	[Description("Calls set-background-image through the real clio MCP server with an empty args object and verifies the structured result carries no package field — package is populated when binding failed partway (the parts that landed are in it), so a failure that never reached binding must omit it rather than emit an empty value an agent could read as a package it must not re-run against.")]
+	public async Task SetBackgroundImage_Should_Omit_Package_When_No_Delivery_Target_Was_Resolved() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetBackgroundImageTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?>()
+			},
+			context.CancellationTokenSource.Token);
+		SetBackgroundImageResult result =
+			EntitySchemaStructuredResultParser.Extract<SetBackgroundImageResult>(callResult);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an empty args object cannot name an environment, so the call must fail before any delivery");
+		result.Package.Should().BeNull(
+			because: "package names where the data that landed went, so a run that bound nothing must omit the field over the wire instead of pointing the agent at a package it never touched");
+		result.Bound.Should().BeNull(
+			because: "bound is the field an agent reads to tell what the package now carries, so a run that bound nothing must omit it over the wire instead of emitting an empty array the agent has to special-case");
+	}
 }

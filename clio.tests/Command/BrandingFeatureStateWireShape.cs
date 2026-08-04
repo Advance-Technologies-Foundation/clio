@@ -14,7 +14,7 @@ namespace Clio.Tests.Command;
 /// <list type="bullet">
 /// <item>
 /// <description>
-/// <c>AdminUnitFeatureState</c> — the read projection <c>BrandingBindingService</c> selects from over raw
+/// <c>AdminUnitFeatureState</c> — the read projection <c>EnvironmentPackageDataBinder</c> selects from over raw
 /// DataService — types it as <b>Integer</b> (<c>dataValueType 4</c>), so the wire carries a JSON number:
 /// <see cref="OffOverSelectQuery"/> / <see cref="OnOverSelectQuery"/>.
 /// </description>

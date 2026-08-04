@@ -171,7 +171,7 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The branding guide carries the package-notification contract so the agent tells the user which package the branding data is added to (ENG-93848 acceptance criterion 1).")]
+	[Description("The branding guide carries the package-notification contract so the agent tells the user which package the branding data is added to, by name, from a package it passed explicitly (ENG-93848 acceptance criterion 1).")]
 	public void BrandingGuidanceResource_Should_Require_Naming_The_Target_Package() {
 		// Arrange
 		BrandingGuidanceResource resource = new();
@@ -183,6 +183,15 @@ public sealed class BrandingGuidanceResourceTests {
 		// Assert
 		article.Text.Should().Contain("which package",
 			because: "the agent must tell the user which package the new branding data will be added to");
+		article.Text.Should().Contain("get-target-package",
+			because: "naming the target before the recap needs a channel that resolves it, including the "
+				+ "current-package case the agent cannot read for itself");
+		article.Text.Should().Contain("resolutionFailed",
+			because: "the agent must ask the user for another package only on a definitive answer, and retry "
+				+ "when the environment could not be asked, instead of reporting that no target package exists");
+		article.Text.Should().Contain("never a raw id, and never guess it",
+			because: "a raw package id is meaningless to the user, and a guessed name would misreport where the "
+				+ "branding landed");
 	}
 
 	[Test]

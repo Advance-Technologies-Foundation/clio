@@ -33,6 +33,13 @@ Each file is uploaded as the slot's Binary sys-setting value: the environment's 
 (extension allow/deny lists) is enforced client-side and a per-value size cap (10 MB) applies —
 the same rules as `update-sys-setting` with `value-file-path`.
 
+When the environment refuses one slot and accepts another, the run keeps what already succeeded:
+the splash suppression and the package delivery still run for the applied slots, and the command
+then exits with an error naming every refused slot and the settings that landed in the package.
+The environment and the package therefore never disagree — but a non-zero exit does **not** mean
+nothing changed, so read the `Applied:` line before re-running. When no slot applies at all, the
+run stops there and touches no package.
+
 ## Synopsis
 
 ```bash
@@ -67,31 +74,37 @@ clio set-logo [options]
 
 ## Package delivery
 
-Every applied slot is bound into `--package` under its own binding (`ClioBranding_Logo_<setting>`).
+Every applied slot is bound into `--package` under its own binding (`SysSettingsValue_<setting code>`, the platform naming convention for sys-setting value bindings).
 When `--package` is omitted, the package named by the environment's `CurrentPackageId` system setting
 receives the bindings; when that setting points at nothing resolvable, the command stops and asks for
 an explicit package rather than picking one. A binding is created when it does not exist yet and
 updated in place when it does, so re-running with a new file refreshes both the environment and the
 packaged snapshot.
 
-Only the slots this run wrote — plus slots an earlier run already shipped — are bound. A slot nobody
+Only the slots this run applied are bound, plus the splash-suppression setting. A slot nobody
 branded stays out of the package, so installing it cannot replace the target's own logo with this
-environment's stock image. A slot an earlier run shipped is refreshed on every run, and dropped
-(with a report line) when its value row is gone.
+environment's stock image. A slot this run applied whose value row turns out to be unreadable is
+dropped from the package with a report line; a binding an earlier run shipped for a slot outside
+this run is left as it is.
+
+The binding folder names are reserved: ownership is decided by folder name plus entity schema, so a binding
+you created by hand under `SysSettingsValue_<setting code>` for the same schema is refreshed or dropped by this
+command as if it were its own. Pick a different name for bindings you maintain yourself.
 
 Setting-value bindings are keyed by their natural columns (setting + admin unit) and force-update
 the value, so installing the package **merges** onto the target's existing All-Users value instead
 of inserting a duplicate whose id differs per environment.
 
-The run output names the package and reports every delivery gap as a warning — read them; the
-command still succeeds, but each warning means the package ships less than you may expect. A
+The run output names the package and reports every delivery gap as a warning — read them; the run
+still delivered what it could, but each warning means the package ships less than you may expect. A
 setting defined as `SecureText` is never bound (a package must not carry a secret off its
 environment).
 
 The binding writes package data through the design-time schema-data services, so the target package
 must be editable (unlocked) and the caller needs rights to modify package configuration. When the
-apply succeeds but the binding fails, the command exits with an error — re-run it to retry the
-binding.
+apply succeeds but the binding fails, the command exits with an error naming the cause and the slots
+that were already bound before the failure — those stay in the package. Every slot is written in
+place, so re-running refreshes what landed instead of duplicating it.
 
 ## Examples
 

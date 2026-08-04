@@ -10,7 +10,7 @@ namespace Clio.Tests.Command;
 
 /// <summary>
 /// Unit tests for the optional <see cref="DataBindingColumnPolicy"/> on
-/// <c>DataBindingDbService.BuildSaveSchemaDataRequest</c>: with no policy the payload must stay
+/// <c>PackageDataBindingWriter.BuildSaveSchemaDataRequest</c>: with no policy the payload must stay
 /// key-on-Id / no-force-update (the shape every existing caller relies on), and with a policy the
 /// named columns must be emitted as keys / force-updated.
 /// </summary>
@@ -59,8 +59,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingDbSchema schema = BuildSysSettingsValueSchema();
 
 		// Act
-		string body = DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema, ["11111111-1111-1111-1111-111111111111"]);
+		string body = PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema, ["11111111-1111-1111-1111-111111111111"]);
 
 		// Assert
 		ColumnsWhereFlagIsSet(body, "isKey").Should().BeEquivalentTo(["Id"],
@@ -74,8 +74,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingDbSchema schema = BuildSysSettingsValueSchema();
 
 		// Act
-		string body = DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema, ["11111111-1111-1111-1111-111111111111"]);
+		string body = PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema, ["11111111-1111-1111-1111-111111111111"]);
 
 		// Assert
 		ColumnsWhereFlagIsSet(body, "isForceUpdate").Should().BeEmpty(
@@ -90,8 +90,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingColumnPolicy policy = new(["SysSettings", "SysAdminUnit"], ["TextValue", "BinaryValue"]);
 
 		// Act
-		string body = DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema,
+		string body = PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema,
 			["11111111-1111-1111-1111-111111111111"], null, policy);
 
 		// Assert
@@ -107,8 +107,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingColumnPolicy policy = new(["SysSettings", "SysAdminUnit"], ["TextValue", "BinaryValue"]);
 
 		// Act
-		string body = DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema,
+		string body = PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema,
 			["11111111-1111-1111-1111-111111111111"], null, policy);
 
 		// Assert
@@ -124,8 +124,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingColumnPolicy policy = new(["SysSettings", "SysAdminUnit"], ["TextValue", "BinaryValue"]);
 
 		// Act
-		string body = DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema,
+		string body = PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema,
 			["11111111-1111-1111-1111-111111111111"], null, policy);
 
 		// Assert
@@ -141,8 +141,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingColumnPolicy policy = new(["SysSettings", "MissingColumn"], ["TextValue"]);
 
 		// Act
-		Action act = () => DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema, [], null, policy);
+		Action act = () => PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema, [], null, policy);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -158,8 +158,8 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingColumnPolicy policy = new(["SysSettings"], ["SysSettings"]);
 
 		// Act
-		Action act = () => DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema, [], null, policy);
+		Action act = () => PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema, [], null, policy);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -175,11 +175,34 @@ public sealed class BuildSaveSchemaDataRequestPolicyTests {
 		DataBindingColumnPolicy policy = new([], ["TextValue"]);
 
 		// Act
-		Action act = () => DataBindingDbService.BuildSaveSchemaDataRequest(
-			Package, "ClioBranding_Logos", "SysSettingsValue", schema, [], null, policy);
+		Action act = () => PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "SysSettingsValue_LogoImage", "SysSettingsValue", schema, [], null, policy);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 			because: "a binding must declare at least one key column to match the target row on install");
+	}
+
+	[Test]
+	[Description("A no-policy projection without an Id column is rejected, because the payload would key on nothing and the install target would match every row of the entity instead of the delivered one.")]
+	public void BuildSaveSchemaDataRequest_Should_Throw_When_NoPolicyProjectionHasNoIdColumn() {
+		// Arrange
+		List<DataBindingSchemaColumn> columns = [
+			new(Guid.Parse("00000000-0000-0000-0000-0000000000b1"), "Name", 1, null),
+			new(Guid.Parse("00000000-0000-0000-0000-0000000000b2"), "Code", 1, null)
+		];
+		DataBindingDbSchema schema = new(
+			Guid.Parse("00000000-0000-0000-0000-0000000000fe"), "UsrRow",
+			columns.Select(column => column.Name).ToList(), columns);
+
+		// Act
+		Action act = () => PackageDataBindingWriter.BuildSaveSchemaDataRequest(
+			Package, "UsrRow_Sample", "UsrRow", schema, ["22222222-2222-2222-2222-222222222222"]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the policy path already refuses an empty key set, and a keyless payload is invisible " +
+					"until install — both paths must fail the same way")
+			.WithMessage("*no key column*");
 	}
 }

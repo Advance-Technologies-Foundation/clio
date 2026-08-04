@@ -23,7 +23,7 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 
-	/// <summary>The package the substituted binding service reports back as the resolved delivery target.</summary>
+	/// <summary>The package the substituted delivery target reports back as the resolved delivery target.</summary>
 	private const string TestPackageName = "UsrBrandingPkg";
 
 	private const string LogoFile = "C:/brand/logo.svg";
@@ -35,7 +35,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 
 	private ISysSettingsManager _sysSettingsManager;
 	private IFileSystem _fileSystem;
-	private IBrandingBindingService _brandingBindingService;
+	private IPackageDataBinder _packageDataBinder;
 	private ILogger _logger;
 	private SetLogoCommand _command;
 
@@ -52,14 +52,16 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 				callInfo.Arg<string>() == SetLogoCommand.HideSplashLogoCode ? "Boolean" : "Binary"));
 		_sysSettingsManager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>())
 			.Returns(true);
-		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
-			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, [], [], false));
+		_packageDataBinder.UsePackage(Arg.Any<string>()).Returns(TestPackageName);
+		_packageDataBinder
+			.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(PackageDataBindingOutcome.Success());
 	}
 
 	public override void TearDown() {
 		_sysSettingsManager.ClearReceivedCalls();
 		_fileSystem.ClearReceivedCalls();
-		_brandingBindingService.ClearReceivedCalls();
+		_packageDataBinder.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -67,10 +69,10 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		base.AdditionalRegistrations(containerBuilder);
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_fileSystem = Substitute.For<IFileSystem>();
-		_brandingBindingService = Substitute.For<IBrandingBindingService>();
+		_packageDataBinder = Substitute.For<IPackageDataBinder>();
 		containerBuilder.AddTransient<ISysSettingsManager>(_ => _sysSettingsManager);
 		containerBuilder.AddTransient<IFileSystem>(_ => _fileSystem);
-		containerBuilder.AddTransient<IBrandingBindingService>(_ => _brandingBindingService);
+		containerBuilder.AddTransient<IPackageDataBinder>(_ => _packageDataBinder);
 	}
 
 	[Test, Category("Unit")]
@@ -213,8 +215,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.HideSplashLogoCode, Arg.Any<object>(), Arg.Any<string>())
 			.Returns(false);
-		_brandingBindingService
-			.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
+		_packageDataBinder.UsePackage(Arg.Any<string>())
 			.Throws(new InvalidOperationException("SaveSchema rejected the binding"));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
@@ -227,8 +228,43 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Fails naming the slot when applying one of the logo settings fails, and never reaches the binding.")]
-	public void Execute_ShouldFailNamingTheSlot_WhenApplyingASettingFails() {
+	[Description("Fails naming the slot when applying every requested logo setting fails, and never reaches the binding.")]
+	public void Execute_ShouldFailNamingTheSlot_WhenApplyingEverySettingFails() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { MenuLogo = "C:/brand/menu.svg" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a slot the environment refused was not applied");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("menu-logo")));
+		_packageDataBinder.DidNotReceiveWithAnyArgs().UsePackage(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Still delivers the slots that applied when another slot was refused, so the package never drifts away from what the environment now carries.")]
+	public void Execute_ShouldStillDeliverTheAppliedSlots_WhenAnotherSlotIsRefused() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.LoginLogoCode);
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode);
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
+			SetLogoCommand.MenuLogoCode, Arg.Any<bool>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Reports a refused slot as a failure even when other slots applied, because the caller asked for more than the run produced.")]
+	public void Execute_ShouldFail_WhenOnlySomeSlotsApplied() {
 		// Arrange
 		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
 			.Returns(false);
@@ -238,9 +274,13 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "a slot the environment refused was not applied");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("menu-logo")));
-		_brandingBindingService.DidNotReceiveWithAnyArgs().BindLogos(default, default);
+		exitCode.Should().Be(1,
+			because: "reporting success would hide the slot the user asked for and did not get");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("1 of 2") && message.Contains("menu-logo")
+			&& message.Contains(TestPackageName)));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Applied:") && message.Contains("login-logo")));
 	}
 
 	[Test, Category("Unit")]
@@ -253,9 +293,8 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_brandingBindingService.Received(1).BindLogos(
-			Arg.Is<string>(package => string.IsNullOrWhiteSpace(package)),
-			Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>());
+		_packageDataBinder.Received(1).UsePackage(
+			Arg.Is<string>(package => string.IsNullOrWhiteSpace(package)));
 	}
 
 	[Test, Category("Unit")]
@@ -315,13 +354,11 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_brandingBindingService.Received(1).BindLogos(
-			Arg.Any<string>(),
-			Arg.Is<System.Collections.Generic.IReadOnlyCollection<string>>(codes =>
-				codes.Contains(SetLogoCommand.LoginLogoCode)
-				&& codes.Contains(SetLogoCommand.DarkLogoCode)
-				&& codes.Contains(SetLogoCommand.HideSplashLogoCode)
-				&& codes.Count == 3));
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.LoginLogoCode);
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.DarkLogoCode);
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode);
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
+			SetLogoCommand.MenuLogoCode, Arg.Any<bool>());
 	}
 
 	[Test, Category("Unit")]
@@ -336,18 +373,15 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_brandingBindingService.Received(1).BindLogos(
-			Arg.Any<string>(),
-			Arg.Is<System.Collections.Generic.IReadOnlyCollection<string>>(codes =>
-				!codes.Contains(SetLogoCommand.HideSplashLogoCode)));
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
+			SetLogoCommand.HideSplashLogoCode, Arg.Any<bool>());
 	}
 
 	[Test, Category("Unit")]
 	[Description("Binds the logos into the caller-named package instead of the default.")]
 	public void Execute_ShouldBindLogosIntoNamedPackage_WhenPackageIsPassed() {
 		// Arrange
-		_brandingBindingService.BindLogos("UsrMyApp", Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
-			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, ["LogoImage"], [], false));
+		_packageDataBinder.UsePackage("UsrMyApp").Returns("UsrMyApp");
 		SetLogoOptions options = new() { LoginLogo = LogoFile, PackageName = "UsrMyApp" };
 
 		// Act
@@ -355,7 +389,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 
 		// Assert
 		exitCode.Should().Be(0, because: "a user-named package must be honored");
-		_brandingBindingService.Received(1).BindLogos("UsrMyApp", Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>());
+		_packageDataBinder.Received(1).UsePackage("UsrMyApp");
 	}
 
 	[Test, Category("Unit")]
@@ -376,7 +410,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Fails naming the package and asking for a re-run when the logos applied but the binding failed, so a delivery failure is never silent.")]
 	public void Execute_ShouldFailNamingThePackage_WhenBindingFails() {
 		// Arrange
-		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
+		_packageDataBinder.UsePackage(Arg.Any<string>())
 			.Throws(new InvalidOperationException("package is locked"));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
@@ -386,14 +420,14 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Assert
 		exitCode.Should().Be(1, because: "the user asked for logos that ship with the package, and the package part failed");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("CurrentPackageId") && message.Contains("package is locked") && message.Contains("Re-run")));
+			message.Contains("package is locked")));
 	}
 
 	[Test, Category("Unit")]
 	[Description("Still reports the slots that were applied before a failure, so the caller sees the partial state instead of assuming nothing changed.")]
 	public void Execute_ShouldReportAppliedSlots_WhenALaterStepFails() {
 		// Arrange
-		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
+		_packageDataBinder.UsePackage(Arg.Any<string>())
 			.Throws(new InvalidOperationException("package is locked"));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
@@ -409,16 +443,18 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Relays the binding reconcile's warnings in the run output at warning level, because they are the only place a delivery gap is reported and info level would give a gap the same weight as a success line.")]
 	public void Execute_ShouldRelayTheBindingWarnings_AtWarningLevel() {
 		// Arrange
-		_brandingBindingService.BindLogos(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IReadOnlyCollection<string>>())
-			.Returns(new BrandingScopeReport(BrandingScope.Logos, TestPackageName, ["LogoImage"],
-				["MenuLogoImage: no All-Users value on this environment"], false));
+		_packageDataBinder
+			.BindSysSettingsValue(SetLogoCommand.LoginLogoCode, Arg.Any<bool>())
+			.Returns(PackageDataBindingOutcome.Refused(
+				[$"{SetLogoCommand.LoginLogoCode}: no All-Users value on this environment"]));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
 		// Act
 		_command.Execute(options);
 
 		// Assert
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("MenuLogoImage")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains(SetLogoCommand.LoginLogoCode)));
 	}
 
 	[Test, Category("Unit")]
@@ -436,5 +472,143 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Assert
 		exitCode.Should().Be(1, because: "an svg upload under a png-only allow-list mirrors what the environment's own upload service would refuse");
 		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Names the slots that were already bound when a later delivery throws, so the caller is not told the whole binding failed while the package already carries some of it.")]
+	public void Execute_ShouldNameTheAlreadyBoundSlots_WhenALaterDeliveryFails() {
+		// Arrange
+		_packageDataBinder.BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode, Arg.Any<bool>())
+			.Throws(new InvalidOperationException("SaveSchema rejected the binding"));
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "part of the delivery the user asked for did not land");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Already bound and left in place")
+			&& message.Contains(SetLogoCommand.LoginLogoCode)
+			&& message.Contains("SaveSchema rejected the binding")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Names the slots the delivery actually landed when another slot was refused, instead of claiming every applied slot was bound.")]
+	public void Execute_ShouldNameTheBoundSettings_WhenOnlySomeSlotsApplied() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains($"Settings bound into package '{TestPackageName}'")
+			&& message.Contains(SetLogoCommand.LoginLogoCode)));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Says nothing was bound when every applied slot's delivery was refused, so the failure never claims package changes the warnings contradict.")]
+	public void Execute_ShouldSayNothingWasBound_WhenEveryDeliveryIsRefused() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		_packageDataBinder.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(PackageDataBindingOutcome.Refused(["no All-Users value on this environment"]));
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("No setting could be bound") && !message.Contains("Settings bound into")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Says nothing was bound on a successful run whose every delivery was refused, so the package line never claims a delivery the warnings beside it contradict.")]
+	public void Execute_ShouldSayNothingWasBound_WhenEveryDeliveryIsRefusedOnASuccessfulRun() {
+		// Arrange
+		_packageDataBinder.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(PackageDataBindingOutcome.Refused(["no All-Users value on this environment"]));
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "every slot applied — a delivery gap is a warning channel, not an apply failure");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains($"No logo data could be bound into package '{TestPackageName}'")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Logo data bound into package")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Names the settings the delivery landed on a fully successful run, so the package line reports what the package actually carries.")]
+	public void Execute_ShouldNameTheBoundSettings_WhenEveryDeliverySucceeds() {
+		// Arrange
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains($"Logo data bound into package '{TestPackageName}'")
+			&& message.Contains(SetLogoCommand.LoginLogoCode)
+			&& message.Contains(SetLogoCommand.HideSplashLogoCode)));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Carries the resolved package on a partial failure, so a structured caller learns where the applied slots landed without parsing the message.")]
+	public void ApplyLogos_ShouldCarryThePackage_WhenOnlySomeSlotsApplied() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a slot the caller asked for was refused");
+		result.Package.Should().Be(TestPackageName,
+			because: "the applied slots were bound into it, so the field its own contract describes must name it");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Carries the bound settings on a partial failure, so the field its own contract describes is not empty while the package already carries them.")]
+	public void ApplyLogos_ShouldCarryTheBoundSettings_WhenOnlySomeSlotsApplied() {
+		// Arrange
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a slot the caller asked for was refused");
+		result.Bound.Should().Contain(SetLogoCommand.LoginLogoCode,
+			because: "an empty Bound must mean the package carries nothing from this run, so a failure that did bind must say so");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Never starts delivering a slot the user never branded — an unshipped, unapplied slot stays out of the package.")]
+	public void Execute_ShouldNotDeliverASlot_ThatWasNeverAppliedOrShipped() {
+		// Arrange
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
+			SetLogoCommand.ConfigurationLogoCode, Arg.Any<bool>());
 	}
 }

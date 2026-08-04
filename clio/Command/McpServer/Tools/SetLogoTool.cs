@@ -47,8 +47,9 @@ public class SetLogoTool(
 		"variant). A slot argument overrides logo for that slot, so one call can brand every slot and still " +
 		"give the dark panel its own file. The stock splash logo is suppressed automatically. When package is " +
 		"omitted, the environment's CurrentPackageId system setting decides where the bindings land. The logos " +
-		"change for all users and cannot be automatically reverted — warn the user first. " +
-		"Read get-guidance branding first.")]
+		"change for all users and cannot be automatically reverted — warn the user first. A refused slot " +
+		"returns success: false even though the accepted slots stayed applied and bound, so read applied " +
+		"and bound before retrying. Read get-guidance branding first.")]
 	public SetLogoToolResult SetLogo(
 		[Description("Parameters: environment-name (required); at least one of logo (all slots), login-logo, menu-logo, configuration-logo, dark-logo (local image paths); package (optional, the environment's CurrentPackageId when omitted).")]
 		[Required] SetLogoArgs args) {
@@ -89,7 +90,7 @@ public class SetLogoTool(
 					return SetLogoToolResult.Failure(string.IsNullOrWhiteSpace(result.Error)
 							? "ApplyLogos returned success=false."
 							: SensitiveErrorTextRedactor.Redact(result.Error),
-						result.Applied, result.Warnings);
+						result.Applied, result.Warnings, result.Package, result.Bound);
 				}
 				return SetLogoToolResult.Successful(result);
 			},
@@ -148,7 +149,18 @@ public sealed record SetLogoToolResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Applied { get; init; }
 
-	/// <summary>The package the logo data was bound into; omitted when the run failed before binding.</summary>
+	/// <summary>
+	/// The setting codes the package delivery confirmed it bound. Omitted when nothing was bound, which can
+	/// happen even with <c>applied</c> present — a slot can apply and still be refused by the delivery.
+	/// </summary>
+	[JsonPropertyName("bound")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Bound { get; init; }
+
+	/// <summary>
+	/// The package the logo data was bound into (also populated on a partial failure, where the applied slots
+	/// were bound into it); omitted when the run never got as far as resolving one.
+	/// </summary>
 	[JsonPropertyName("package")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Package { get; init; }
@@ -172,22 +184,27 @@ public sealed record SetLogoToolResult {
 		return new SetLogoToolResult {
 			Success = true,
 			Applied = result.Applied.Count > 0 ? result.Applied : null,
+			Bound = result.Bound.Count > 0 ? result.Bound : null,
 			Package = result.Package,
-			Warnings = result.Warnings.Count > 0 ? result.Warnings : null
+			Warnings = result.Warnings.Count > 0 ? SensitiveErrorTextRedactor.RedactAll(result.Warnings) : null
 		};
 	}
 
 	/// <summary>
-	/// Creates a failure result carrying the diagnostic message, any slots already applied, and any warnings
-	/// raised before the failure — an apply-side caveat must not be lost just because binding failed after it.
+	/// Creates a failure result carrying the diagnostic message, any slots already applied, any warnings
+	/// raised before the failure — an apply-side caveat must not be lost just because binding failed after it —
+	/// and the package the applied slots were bound into, when one was resolved.
 	/// </summary>
 	public static SetLogoToolResult Failure(string error, IReadOnlyList<string> applied = null,
-		IReadOnlyList<string> warnings = null) {
+		IReadOnlyList<string> warnings = null, string package = null, IReadOnlyList<string> bound = null) {
 		return new SetLogoToolResult {
 			Success = false,
 			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error,
 			Applied = applied is { Count: > 0 } ? applied : null,
-			Warnings = warnings is { Count: > 0 } ? warnings : null
+			Bound = bound is { Count: > 0 } ? bound : null,
+			Warnings = warnings is { Count: > 0 } ? SensitiveErrorTextRedactor.RedactAll(warnings) : null,
+			Package = package
 		};
 	}
+
 }

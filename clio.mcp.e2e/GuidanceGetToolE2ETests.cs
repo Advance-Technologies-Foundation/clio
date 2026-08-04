@@ -872,6 +872,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the background-configuration mechanics are owned by the set-background-image tool implementation, not hand-executed from the guide");
 		response.Article.Text.Should().Contain("`warnings`",
 			because: "the guide must name the exact result field the agent relays when the UsePanelIconBackground off-state is not deliverable — that gap means the package will not turn the feature off on the install target and the delivered background can stay hidden there");
+		response.Article.Text.Should().Contain(GetTargetPackageTool.ToolName,
+			because: "the agent has to name the target package before it applies anything, and the current-package case is not readable any other way — the guide must route that resolution through the probe instead of leaving it to a guess");
 	}
 
 	[Test]

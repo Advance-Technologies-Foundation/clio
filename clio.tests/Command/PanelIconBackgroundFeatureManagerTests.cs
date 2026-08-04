@@ -253,9 +253,9 @@ public sealed class PanelIconBackgroundFeatureManagerTests {
 	/// <remarks>
 	/// <paramref name="stateRowState"/> is a CLR <see cref="bool"/> because that is how ATF.Repository surfaces
 	/// <c>FeatureState</c> on this access path — see <see cref="BrandingFeatureStateWireShape"/>. The SAME platform
-	/// column reaches <c>BrandingBindingService</c> as a JSON Integer over raw DataService, which is mocked in
-	/// <c>BrandingBindingServiceTests</c>. The two shapes are both correct for their own layer; if either is ever
-	/// revisited, re-probe a live environment and update both suites together.
+	/// column reaches <c>EnvironmentPackageDataBinder</c> as a JSON Integer over raw DataService, which is mocked in
+	/// <c>EnvironmentPackageDataBinderTests</c>. The two shapes are both correct for their own layer; if either is
+	/// ever revisited, re-probe a live environment and update both suites together.
 	/// </remarks>
 	private static DataProviderMock CreateProvider(
 		bool featureDefined, bool? stateRowState, bool rereadableState = true) {

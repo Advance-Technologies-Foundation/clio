@@ -29,6 +29,11 @@ DESCRIPTION
     still succeeds — a warning means the package ships less than expected,
     not that the apply failed.
 
+    When the binding itself fails, the error names both the cause and the
+    parts that were already bound before the failure; those stay in the
+    package. Every part is written in place, so a later run refreshes what
+    landed instead of duplicating it.
+
 SYNOPSIS
     clio set-background-image [<image-id>] [options]
 

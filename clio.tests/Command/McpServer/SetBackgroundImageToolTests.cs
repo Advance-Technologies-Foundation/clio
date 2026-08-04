@@ -202,6 +202,90 @@ public class SetBackgroundImageToolTests {
 		result.Success.Should().BeFalse(because: "a failed apply must not report success");
 		result.Error.Should().Contain("No uploaded image",
 			because: "the caller needs the actionable failure reason surfaced from the command");
+		result.Package.Should().BeNull(
+			because: "the run failed before a delivery target was resolved, so naming one would invent a change");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the parts the delivery bound as a structured field, so an agent does not have to read prose to tell a full delivery from an empty one.")]
+	public void SetBackgroundImage_ShouldSurfaceTheBoundParts_OnTheResult() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(
+			ImageId, BoundPackageName, [], ["image", "background-config"]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Bound.Should().BeEquivalentTo(["image", "background-config"],
+			because: "the agent must be able to tell what the package carries without parsing the warnings");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts sensitive tokens out of the warning channel too, because a warning interpolates the same DataService failure text the error path redacts.")]
+	public void SetBackgroundImage_ShouldRedactSensitiveText_InTheWarningChannel() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sensitiveWarning =
+			"turning off the UsePanelIconBackground feature failed: " +
+			"POST https://admin:s3cr3t@stand.creatio.com/0/DataService returned 500.";
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(
+			ImageId, BoundPackageName, [sensitiveWarning]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Warnings.Should().NotBeNull(because: "the delivery-gap channel must still reach the agent");
+		string relayed = string.Join(" ", result.Warnings);
+		relayed.Should().NotContain("s3cr3t",
+			because: "a credential embedded in a request URI must never reach the MCP transcript, whichever channel carries it");
+		relayed.Should().NotContain("stand.creatio.com",
+			because: "the target host must be scrubbed from warnings exactly as it is from the error");
+		relayed.Should().Contain("UsePanelIconBackground",
+			because: "the actionable reason must survive redaction so the agent can still relay the gap");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the package the parts that landed were bound into when binding failed partway, so the agent can act on the structured result instead of parsing the error text.")]
+	public void SetBackgroundImage_ShouldSurfaceThePackage_WhenBindingFailedPartway() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Failure(
+			"binding failed: SaveSchema rejected the binding", [], BoundPackageName));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "part of the delivery did not land");
+		result.Package.Should().Be(BoundPackageName,
+			because: "the parts bound before the failure are in that package, and a blind re-run would be wrong");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -344,7 +428,7 @@ public class SetBackgroundImageToolTests {
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
 				Substitute.For<ISysImageUploader>(), Substitute.For<IPanelIconBackgroundFeatureManager>(),
-				Substitute.For<IBrandingBindingService>()) {
+				Substitute.For<IPackageDataBinder>()) {
 			_result = result ?? SetBackgroundResult.Successful(ImageId, BoundPackageName, []);
 		}
 

@@ -610,6 +610,7 @@ public class BindingsModule {
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<GetTargetPackageTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
@@ -719,7 +720,10 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
-		services.AddTransient<IBrandingBindingService, BrandingBindingService>();
+		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
+		services.AddTransient<IPackageDataBindingWriter, PackageDataBindingWriter>();
+		services.AddTransient<IPackageDataBinder, EnvironmentPackageDataBinder>();
+		services.AddTransient<GetTargetPackageCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();

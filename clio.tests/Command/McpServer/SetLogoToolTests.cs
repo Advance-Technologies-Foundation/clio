@@ -190,6 +190,132 @@ public class SetLogoToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Surfaces the settings the delivery bound as a structured field, so an agent does not have to read prose to tell a full delivery from an empty one.")]
+	public void SetLogo_ShouldSurfaceTheBoundSettings_OnTheResult() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Successful(
+			["login-logo"], BoundPackageName, [], ["LogoImage", "HideSplashScreenLogoImage"]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Logo: LogoFile));
+
+		// Assert
+		result.Bound.Should().BeEquivalentTo(["LogoImage", "HideSplashScreenLogoImage"],
+			because: "the agent must be able to tell what the package carries without parsing the warnings");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the bound field when the delivery confirmed nothing, so an empty array is never read as a delivery that happened.")]
+	public void SetLogo_ShouldOmitTheBoundField_WhenNothingWasBound() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Successful(
+			["login-logo"], BoundPackageName, ["LogoImage: no All-Users value on this environment"]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Logo: LogoFile));
+
+		// Assert
+		result.Bound.Should().BeNull(
+			because: "an omitted field is how the wire says the package carries nothing from this run");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts sensitive tokens out of the warning channel too, because a warning interpolates the same DataService failure text the error path redacts.")]
+	public void SetLogo_ShouldRedactSensitiveText_InTheWarningChannel() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sensitiveWarning =
+			"The logos were applied, but setting HideSplashScreenLogoImage failed: " +
+			"POST https://admin:s3cr3t@stand.creatio.com/0/DataService returned 500.";
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Successful(
+			["login-logo"], BoundPackageName, [sensitiveWarning]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Logo: LogoFile));
+
+		// Assert
+		result.Warnings.Should().NotBeNull(because: "the delivery-gap channel must still reach the agent");
+		string relayed = string.Join(" ", result.Warnings);
+		relayed.Should().NotContain("s3cr3t",
+			because: "a credential embedded in a request URI must never reach the MCP transcript, whichever channel carries it");
+		relayed.Should().NotContain("stand.creatio.com",
+			because: "the target host must be scrubbed from warnings exactly as it is from the error");
+		relayed.Should().Contain("HideSplashScreenLogoImage",
+			because: "the actionable reason must survive redaction so the agent can still relay the gap");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the package the applied slots were bound into on a partial failure, so the agent can act on the structured result instead of parsing the error text.")]
+	public void SetLogo_ShouldSurfaceThePackage_WhenTheCommandFailedAfterBinding() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Failure(
+			"Applying 1 of 2 logo slot(s) failed.", ["login-logo"], [], BoundPackageName));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Logo: LogoFile));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a refused slot is still a failure");
+		result.Package.Should().Be(BoundPackageName,
+			because: "the accepted slots are already in that package, and re-running blind would be wrong");
+		result.Applied.Should().BeEquivalentTo(["login-logo"],
+			because: "the partial state must stay readable next to the package it landed in");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the package when the run failed before a delivery target was resolved, so the result never names a package it never touched.")]
+	public void SetLogo_ShouldOmitThePackage_WhenNoTargetWasResolved() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Failure("File not found."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Logo: LogoFile));
+
+		// Assert
+		result.Package.Should().BeNull(
+			because: "an omitted field is how the wire says nothing was bound; an empty string would read as a package");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects a camelCase legacy alias with a structured rename hint instead of silently ignoring the misnamed field.")]
 	public void SetLogo_ShouldReturnRenameHint_WhenLegacyAliasIsPassed() {
 		// Arrange
@@ -311,7 +437,7 @@ public class SetLogoToolTests {
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				new SysSettingsCommand(Substitute.For<ISysSettingsManager>(), Substitute.For<ILogger>(),
 					Substitute.For<IFileSystem>()),
-				Substitute.For<IBrandingBindingService>(), Substitute.For<IFileSystem>()) {
+				Substitute.For<IPackageDataBinder>(), Substitute.For<IFileSystem>()) {
 			_result = result ?? SetLogoResult.Successful(["logo"], BoundPackageName, []);
 		}
 

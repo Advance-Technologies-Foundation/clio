@@ -30,10 +30,22 @@ DESCRIPTION
     environment's file-security policy is enforced client-side and a
     per-value size cap (10 MB) applies.
 
+    When the environment refuses one slot and accepts another, the run keeps
+    what already succeeded: the splash suppression and the package delivery
+    still run for the applied slots, and the command then exits with an error
+    naming every refused slot and the settings that landed in the package. A
+    non-zero exit does NOT mean nothing changed — read the "Applied:" line
+    before re-running. When no slot applies at all, the run stops there and
+    touches no package.
+
     Read the run output: every gap between what was applied and what the
-    package will actually deliver is reported as a warning. The command
-    still succeeds — a warning means the package ships less than expected,
-    not that the apply failed.
+    package will actually deliver is reported as a warning. A warning means
+    the package ships less than expected, not that the apply failed.
+
+    When the binding itself fails, the error names both the cause and the
+    slots that were already bound before the failure; those stay in the
+    package. Every slot is written in place, so re-running refreshes what
+    landed instead of duplicating it.
 
 SYNOPSIS
     clio set-logo [options]

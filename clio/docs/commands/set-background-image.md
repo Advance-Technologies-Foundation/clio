@@ -83,13 +83,21 @@ The run output names the package and reports every delivery gap as a warning —
 command still succeeds, but each warning means the package ships less than you may expect.
 Deliberate limits:
 
+- **The binding folder names are reserved.** Ownership is decided by folder name plus entity schema, so a
+  binding you created by hand under one of these names for the same schema is refreshed or dropped by this
+  command as if it were its own. Pick a different name for bindings you maintain yourself.
 - **A setting defined as `SecureText`** is never bound; its value is an encrypted secret and a
   package must not carry a secret off the environment that owns it.
 - **A gallery membership under a customized `shell_background` tag** is not bound: the row
   references its tag by id, which would not resolve on the target. The image itself still ships.
-- **The background configuration definition is delivered by id** so the value row's reference
-  resolves. If the target created that setting independently the ids differ and the install can add
-  a second definition rather than merging; brand one environment and deliver outward.
+- **The background configuration is withheld when the image row is not bound.** The configuration
+  names the image by id, so shipping it alone would install a background the target cannot render;
+  any configuration folder an earlier run shipped is dropped along with it.
+- **Definitions are delivered by id.** The background configuration setting and the
+  `UsePanelIconBackground` feature both travel by their own id so the rows referencing them resolve.
+  If the target created either one independently the ids differ and the install can add a second row
+  rather than merging: the target keeps its own setting, and its own feature stays on. Brand one
+  environment and deliver outward.
 - **The `UsePanelIconBackground` off-state** is bound only when the All-Users state row on this
   environment is confirmed to read as off. A missing row (the feature was never toggled here), a row
   that still reads as on (every apply ran with `--keep-icon-background`, or the toggle failed), and a
@@ -97,15 +105,11 @@ Deliberate limits:
   an earlier run shipped for the slot is dropped. Its `Feature` definition folder follows the same
   decision, because it exists only to keep the state row's reference resolvable.
 
-  The platform types this one column differently in each of its two projections over the same row:
-  `AdminUnitFeatureState` (the read projection) declares it **Integer**, so a turned-off feature reads
-  back as `0`, while the writable `AppFeatureState` projection declares it Boolean. Both shapes — and
-  their stringified forms — count as a confirmed off-state.
-
 The binding writes package data through the design-time schema-data services, so the target package
 must be editable (unlocked) and the caller needs rights to modify package configuration. When the
-apply succeeds but the binding fails, the command exits with an error naming the applied image —
-re-run it to retry the binding.
+apply succeeds but the binding fails, the command exits with an error naming the applied image and
+the parts that were already bound before the failure — those stay in the package. Every part is
+written in place, so a later run refreshes what landed instead of duplicating it.
 
 ## Examples
 

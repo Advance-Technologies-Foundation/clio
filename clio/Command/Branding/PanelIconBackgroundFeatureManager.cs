@@ -67,11 +67,11 @@ public sealed class PanelIconBackgroundFeatureManager : IPanelIconBackgroundFeat
 		}
 
 		AdminUnitFeatureState existing = context.Models<AdminUnitFeatureState>()
-			.FirstOrDefault(s => s.FeatureId == feature.Id && s.AdminUnitId == BrandingWellKnownIds.AllUsersAdminUnit);
+			.FirstOrDefault(s => s.FeatureId == feature.Id && s.AdminUnitId == SysAdminUnitIds.AllEmployees);
 		if (existing is null) {
 			AppFeatureState state = context.CreateModel<AppFeatureState>();
 			state.FeatureId = feature.Id;
-			state.AdminUnitId = BrandingWellKnownIds.AllUsersAdminUnit;
+			state.AdminUnitId = SysAdminUnitIds.AllEmployees;
 			state.FeatureState = false;
 			ThrowIfSaveFailed(context.Save(), $"turning the {FeatureCode} feature off for all users");
 		} else if (existing.FeatureState) {
