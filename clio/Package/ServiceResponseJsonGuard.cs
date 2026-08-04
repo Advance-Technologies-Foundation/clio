@@ -52,6 +52,9 @@ internal static class ServiceResponseJsonGuard
 	/// <summary>Upper bound on the response preview embedded in the error message.</summary>
 	private const int ResponsePreviewMaxLength = 200;
 
+	/// <summary>UTF-8 byte-order mark, which <see cref="char.IsWhiteSpace(char)"/> does not report as whitespace.</summary>
+	private const char ByteOrderMark = '\uFEFF';
+
 	/// <summary>
 	/// Deserializes <paramref name="responseBody"/> into <typeparamref name="T"/>, or throws a typed
 	/// <see cref="InvalidOperationException"/> describing the non-JSON body.
@@ -138,17 +141,34 @@ internal static class ServiceResponseJsonGuard
 
 	/// <summary>
 	/// Returns whether the body starts with markup (an HTML page, an XML/SOAP fault, or a doctype),
-	/// evaluated on the trimmed body so leading whitespace or a byte-order mark does not hide it.
+	/// skipping any leading whitespace and byte-order marks in any order so neither hides it. A single
+	/// chained trim would not do: a BOM followed by whitespace (<c>BOM + "  &lt;html&gt;"</c>) leaves the
+	/// post-BOM whitespace behind, misclassifying an HTML login page as a generic unparseable body and
+	/// previewing it.
 	/// </summary>
 	/// <param name="responseBody">Raw response body.</param>
 	/// <returns><see langword="true"/> when the body opens with markup.</returns>
-	private static bool LooksLikeMarkup(string responseBody) =>
-		responseBody.TrimStart().TrimStart('﻿').StartsWith("<", StringComparison.Ordinal);
+	private static bool LooksLikeMarkup(string responseBody)
+	{
+		int index = 0;
+		while (index < responseBody.Length
+			&& (char.IsWhiteSpace(responseBody[index]) || responseBody[index] == ByteOrderMark))
+		{
+			index++;
+		}
+
+		return index < responseBody.Length && responseBody[index] == '<';
+	}
 
 	/// <summary>
 	/// Produces a bounded, redacted single-line preview of the body. Redaction runs here rather than at
 	/// the MCP boundary so the CLI path — which logs the exception message with no redactor — is covered
 	/// too, and so a token inside a garbage body never reaches a transcript.
+	/// <para>
+	/// Redaction runs BEFORE the length cap: the redactor matches a bare JWT only as a complete
+	/// three-segment token, so truncating first would cut a token that straddles the cap into a prefix the
+	/// patterns no longer recognise, and that prefix would be surfaced.
+	/// </para>
 	/// </summary>
 	/// <param name="responseBody">Raw, non-empty response body.</param>
 	/// <returns>The preview to embed in the error message.</returns>
@@ -163,9 +183,9 @@ internal static class ServiceResponseJsonGuard
 			return "<empty body>";
 		}
 
-		string bounded = collapsed.Length > ResponsePreviewMaxLength
-			? collapsed[..ResponsePreviewMaxLength] + "…"
-			: collapsed;
-		return SensitiveErrorTextRedactor.Redact(bounded);
+		string redacted = SensitiveErrorTextRedactor.Redact(collapsed);
+		return redacted.Length > ResponsePreviewMaxLength
+			? redacted[..ResponsePreviewMaxLength] + "…"
+			: redacted;
 	}
 }

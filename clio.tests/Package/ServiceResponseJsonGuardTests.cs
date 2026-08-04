@@ -121,6 +121,45 @@ public class ServiceResponseJsonGuardTests
 	}
 
 	[Test]
+	[Description("Deserialize treats a body prefixed with a BOM followed by whitespace as HTML, so the login page is not previewed.")]
+	public void Deserialize_OmitsHtmlBody_WhenBodyStartsWithBomThenWhitespace() {
+		// Arrange — BOM is not whitespace, so trimming whitespace and the BOM in sequence leaves the
+		// post-BOM spaces behind and the markup check misses the '<'.
+		const string body = "\uFEFF  <html><body>token=super-secret-value</body></html>";
+
+		// Act
+		Action act = () => ServiceResponseJsonGuard.Deserialize<ProbeResponse>(
+			"SelectQuery", Url, body, JsonOptions);
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>().Which.Message;
+		message.Should().Contain("HTML page instead of JSON",
+			"a BOM and leading whitespace in any order must not hide the markup");
+		message.Should().NotContain("super-secret-value",
+			"misclassifying the HTML page would preview its body and leak login-page tokens");
+	}
+
+	[Test]
+	[Description("Deserialize redacts a token that straddles the preview length cap instead of surfacing its prefix.")]
+	public void Deserialize_RedactsToken_WhenTokenStraddlesPreviewCap() {
+		// Arrange — the JWT starts before the 200-character cap and extends past it, so capping the
+		// preview first would leave a prefix the three-segment JWT pattern no longer matches.
+		string jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+			+ new string('a', 120) + "."
+			+ new string('b', 120);
+		string body = new string('x', 150) + " " + jwt;
+
+		// Act
+		Action act = () => ServiceResponseJsonGuard.Deserialize<ProbeResponse>(
+			"SelectQuery", Url, body, JsonOptions);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.Which.Message.Should().NotContain("eyJ",
+				"redaction runs before the length cap, so a token crossing the cap is never partially surfaced");
+	}
+
+	[Test]
 	[Description("Deserialize redacts credential values found in a non-JSON body preview.")]
 	public void Deserialize_RedactsCredentials_WhenPreviewCarriesSecrets() {
 		// Arrange
