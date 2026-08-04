@@ -21,8 +21,8 @@ internal static class MobilePageValidation {
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
-		CancellationToken cancellationToken = default,
-		MobileTemplateBaseContext? templateBaseContext = null) {
+		MobilePageMergedConfigContext? templateBaseContext = null,
+		CancellationToken cancellationToken = default) {
 		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
 			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
 		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
@@ -43,14 +43,20 @@ internal static class MobilePageValidation {
 		// through the client-engine clones (JsonDiffApplier / JsonPathDiffApplier) and surface any exception
 		// the Creatio differ would raise (e.g. "Item \"X\" is not a container for other items"). The error is
 		// returned to the caller for analysis instead of being silently patched (no heuristic auto-repair).
-		// Gated on a structurally-sound body so a
-		// malformed diff is not double-reported (the structural validators already flag it).
+		// Gated on a structurally-sound body so a malformed diff is not double-reported (the structural
+		// validators already flag it).
 		if (errors.Count == 0) {
-			// Resolve the template base ONLY now — the oracle is reached only for a structurally-sound body, so a
-			// structurally-invalid one never spends the get-page read. A null context (validate-page, which has no
-			// schema/environment) yields (null, null) and the oracle seeds its own base.
-			(string? templateVmc, string? templateMc) = MobileTemplateBaseResolver.ResolveMergedConfig(templateBaseContext);
-			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body, templateVmc, templateMc);
+			// The apply-oracle needs the page's merged config ONLY to resolve a path-diff insert that appends to
+			// an array the mobile template owns. Pass it a lazy resolver (not a pre-fetched base): the oracle
+			// invokes it at most once and ONLY when a non-empty viewModelConfigDiff / modelConfigDiff actually
+			// carries no own base object -- a viewConfigDiff-only body, or one with an inline base, spends no
+			// get-page read. A null context (validate-page, which has no schema/environment) resolves to no base
+			// and the oracle seeds its own.
+			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
+				templateBaseContext is null
+					? null
+					: () => MobilePageMergedConfigResolver.ResolveMergedConfig(templateBaseContext);
+			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body, resolveBase);
 			if (!applyResult.IsValid) {
 				errors.AddRange(applyResult.Errors);
 			}
@@ -71,29 +77,31 @@ internal static class MobilePageValidation {
 }
 
 /// <summary>
-/// Best-effort resolver for the mobile-diff apply-oracle's base: reads the target page's merged
+/// Best-effort resolver for the mobile-diff apply-oracle's base: reads the TARGET PAGE's own merged
 /// <c>viewModelConfig</c> / <c>modelConfig</c> (its inheritance chain flattened) so
 /// <see cref="MobileDiffApplyValidator"/> can validate the page's <c>viewModelConfigDiff</c> /
 /// <c>modelConfigDiff</c> against the real config those diffs layer over at runtime — most importantly so an
 /// <c>insert</c> that appends to an array the mobile template owns (e.g. a converted quick filter appended to
 /// <c>Items.modelConfig.filterAttributes</c>) resolves instead of falsely failing "not a container". For a
-/// freshly created page (empty own body) the merged config IS the template base the runtime applies the diff
+/// freshly created page (empty own body) that merged config IS the template base the runtime applies the diff
 /// over; for an already-populated page it additionally carries the page's current body, which is harmless for
-/// the oracle's insert-resolution check. Never throws — any failure (no environment, read error, unknown
-/// schema) yields <c>(null, null)</c>, and the oracle falls back to its insert-path-seeded empty base.
+/// the oracle's insert-resolution check. Named for what it reads — the page's own merged config — not the parent
+/// template, which it does not resolve separately. Never throws for a read failure (no environment, read error,
+/// unknown schema) — that yields <c>(null, null)</c> and the oracle falls back to its insert-path-seeded empty
+/// base; a cancellation, however, is allowed to propagate.
 /// </summary>
 /// <remarks>
 /// The caller (<c>update-page</c>) already runs under the MCP tool-execution lock and a flow-local log buffer,
 /// so this read needs neither its own lock nor a mid-flow <c>ClearMessages</c> (which would drop the tool's own
 /// captured log lines) — it behaves like the tool's other internal get-page reads.
 /// </remarks>
-internal static class MobileTemplateBaseResolver {
+internal static class MobilePageMergedConfigResolver {
 
 	/// <summary>
-	/// Resolves the base from a <see cref="MobileTemplateBaseContext"/> (the schema + environment identity the
+	/// Resolves the base from a <see cref="MobilePageMergedConfigContext"/> (the schema + environment identity the
 	/// validation caller has). Returns <c>(null, null)</c> for a null context — the oracle then seeds its own base.
 	/// </summary>
-	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(MobileTemplateBaseContext context) =>
+	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(MobilePageMergedConfigContext context) =>
 		context is null
 			? (null, null)
 			: ResolveMergedConfig(
@@ -119,8 +127,11 @@ internal static class MobileTemplateBaseResolver {
 				&& response.Bundle is { } bundle) {
 				return (bundle.ViewModelConfig?.ToJsonString(), bundle.ModelConfig?.ToJsonString());
 			}
+		} catch (OperationCanceledException) {
+			// A cancelled validation must propagate, not silently degrade to the seeded base.
+			throw;
 		} catch (Exception) {
-			// Best-effort: any read failure falls back to the oracle's seeded empty base.
+			// Best-effort: any other read failure falls back to the oracle's seeded empty base.
 		}
 		return (null, null);
 	}
@@ -129,9 +140,10 @@ internal static class MobileTemplateBaseResolver {
 /// <summary>
 /// The schema + environment identity a validation caller (update-page / sync-pages) hands to
 /// <see cref="MobilePageValidation"/> so the apply-oracle can lazily resolve the mobile-diff base only when it
-/// is actually reached (a structurally-invalid body fails before the oracle, so no get-page read is spent).
+/// is actually reached (a structurally-invalid body, or one with no path diff, is validated without any
+/// get-page read).
 /// </summary>
-internal sealed record MobileTemplateBaseContext(
+internal sealed record MobilePageMergedConfigContext(
 	IToolCommandResolver CommandResolver,
 	string SchemaName,
 	string Environment,

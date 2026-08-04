@@ -73,39 +73,50 @@ public sealed class MobileDiffApplyValidatorTests {
 	[Test]
 	[Description("Empty diff sections apply as a no-op and are valid.")]
 	public void Validate_EmptyDiffs_IsValid() {
+		// Arrange
 		const string body = """{ "viewConfigDiff": [], "viewModelConfigDiff": [], "modelConfigDiff": [] }""";
 
-		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+		// Act / Assert
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue(
+			because: "empty diff sections apply as a no-op");
 	}
 
 	[Test]
 	[Description("A flat field insert with no parent applies into the root and is valid.")]
 	public void Validate_FlatFieldInsert_IsValid() {
+		// Arrange
 		const string body = """
 			{ "viewConfigDiff": [
 				{ "operation": "merge", "name": "UsrName", "values": { "type": "crt.Input", "label": "$Resources.Strings.UsrName_caption" } }
 			] }
 			""";
 
-		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+		// Act / Assert
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue(
+			because: "a root-level merge applies cleanly against the empty base");
 	}
 
 	[Test]
 	[Description("A viewModelConfigDiff root merge (path: []) applies through the path applier and is valid.")]
 	public void Validate_ViewModelConfigDiffRootMerge_IsValid() {
+		// Arrange
 		const string body = """
 			{ "viewModelConfigDiff": [
 				{ "operation": "merge", "path": [], "values": { "attributes": { "UsrName": { "modelConfig": { "path": "PDS.UsrName" } } } } }
 			] }
 			""";
 
-		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+		// Act / Assert
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue(
+			because: "a path:[] root merge applies through the path applier");
 	}
 
 	[Test]
 	[Description("Malformed JSON is not the oracle's concern (ValidateMobileBody reports it) — the oracle returns valid without throwing.")]
 	public void Validate_MalformedJson_IsValidNoThrow() {
-		MobileDiffApplyValidator.Validate("{ not json").IsValid.Should().BeTrue();
+		// Act / Assert
+		MobileDiffApplyValidator.Validate("{ not json").IsValid.Should().BeTrue(
+			because: "the structural validators own the malformed-JSON case; the oracle must not throw on it");
 	}
 
 	[Test]
@@ -118,12 +129,14 @@ public sealed class MobileDiffApplyValidatorTests {
 			] }
 			""";
 
-		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue(
+			because: "with no base the oracle seeds an empty container at the insert path so the append resolves");
 	}
 
 	[Test]
 	[Description("The same insert validates against the supplied mobile template base that owns the array — the faithful path update-page uses (it resolves the page's merged config).")]
 	public void Validate_PathDiffInsertIntoTemplateArray_WithBase_IsValid() {
+		// Arrange
 		const string body = """
 			{ "viewModelConfigDiff": [
 				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
@@ -134,7 +147,9 @@ public sealed class MobileDiffApplyValidatorTests {
 			{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters" } ] } } } }
 			""";
 
-		MobileDiffApplyValidator.Validate(body, templateViewModelConfig).IsValid.Should().BeTrue();
+		// Act / Assert
+		MobileDiffApplyValidator.Validate(body, templateViewModelConfig).IsValid.Should().BeTrue(
+			because: "the supplied base already owns the array, so the append resolves against it");
 	}
 
 	[Test]
@@ -163,6 +178,54 @@ public sealed class MobileDiffApplyValidatorTests {
 			] }
 			""";
 
-		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue(
+			because: "the seed reuses one shared empty array, so both appends target the same container");
+	}
+
+	[Test]
+	[Description("The lazy base resolver is NOT invoked for a viewConfigDiff-only body (no path diff needs the base), so validation of such a body spends no get-page read.")]
+	public void Validate_ViewConfigDiffOnly_DoesNotInvokeBaseResolver() {
+		// Arrange: a body with only a viewConfigDiff — no viewModelConfigDiff / modelConfigDiff.
+		const string body = """
+			{ "viewConfigDiff": [
+				{ "operation": "merge", "name": "UsrName", "values": { "type": "crt.Input" } }
+			] }
+			""";
+		int resolverCalls = 0;
+
+		// Act
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body, () => {
+			resolverCalls++;
+			return (null, null);
+		});
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "the viewConfigDiff applies cleanly");
+		resolverCalls.Should().Be(0,
+			because: "no path diff carries a base need, so the (potentially I/O-bound) resolver must not run");
+	}
+
+	[Test]
+	[Description("The lazy base resolver is invoked at most ONCE even when both viewModelConfigDiff and modelConfigDiff need a base — the resolution is memoized and shared across sections.")]
+	public void Validate_BothPathDiffs_InvokesBaseResolverAtMostOnce() {
+		// Arrange: both path diffs insert into a template-owned array, so both need the base.
+		const string body = """
+			{ "viewModelConfigDiff": [
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"], "values": { "name": "A" } } ],
+			  "modelConfigDiff": [
+				{ "operation": "insert", "path": ["dataSources","PDS","config","filterAttributes"], "values": { "name": "B" } } ] }
+			""";
+		int resolverCalls = 0;
+
+		// Act
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body, () => {
+			resolverCalls++;
+			return ((string)null, (string)null);
+		});
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "both inserts resolve against the seeded base");
+		resolverCalls.Should().Be(1,
+			because: "the resolver result is memoized and shared, so it runs once rather than per section");
 	}
 }

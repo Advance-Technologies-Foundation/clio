@@ -338,7 +338,7 @@ public sealed class PageUpdateTool(
 				out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation
 				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
-					templateBaseContext: new MobileTemplateBaseContext(_commandResolver, options.SchemaName,
+					templateBaseContext: new MobilePageMergedConfigContext(_commandResolver, options.SchemaName,
 						options.Environment, options.Uri, options.Login, options.Password))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {

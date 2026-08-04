@@ -16,12 +16,14 @@ namespace Clio.Command.McpServer.Tools;
 /// <remarks>
 /// The path-addressed diffs (<c>viewModelConfigDiff</c> / <c>modelConfigDiff</c>) are applied against a base
 /// resolved in this priority: (1) a <c>viewModelConfig</c> / <c>modelConfig</c> base object the body itself
-/// carries; (2) the resolved mobile template's own merged config, when the caller can supply it
-/// (<c>update-page</c> / <c>sync-pages</c> resolve the page's parent template) — this is the faithful runtime
-/// base, so an <c>insert</c> that appends to an array the TEMPLATE owns (e.g. a converted quick filter appended
-/// to <c>Items.modelConfig.filterAttributes</c>) resolves and validates; (3) otherwise an empty base SEEDED
-/// with an empty container at every insert target path, so a template-owned-array insert does not false-positive
-/// as "not a container" when no template is available (<c>validate-page</c>, which receives only a body). In all
+/// carries; (2) the target page's own merged config, when the caller can supply it (<c>update-page</c> /
+/// <c>sync-pages</c> resolve the page's merged config — see <c>MobilePageMergedConfigResolver</c>) — this is the
+/// faithful runtime base, so an <c>insert</c> that appends to an array the TEMPLATE owns (e.g. a converted quick
+/// filter appended to <c>Items.modelConfig.filterAttributes</c>) resolves and validates; (3) otherwise an empty
+/// base SEEDED with an empty container at every insert target path, so a template-owned-array insert does not
+/// false-positive as "not a container" when no base is available (<c>validate-page</c>, which receives only a
+/// body). The base is resolved LAZILY through the supplied delegate — it is invoked at most once, and only when a
+/// non-empty path diff carries no own base object, so a <c>viewConfigDiff</c>-only body spends no read. In all
 /// cases a genuine self-consistency error still surfaces — an insert whose parent the same diff declares as a
 /// non-container (or a <c>viewConfigDiff</c> child insert into an undeclared slot) still trips the differ.
 /// </remarks>
@@ -38,13 +40,26 @@ internal static class MobileDiffApplyValidator {
 	/// cannot be parsed (the malformed-JSON case is already reported by <c>ValidateMobileBody</c>) or when every
 	/// section applies cleanly. Never throws — an unexpected (non-differ) apply failure is swallowed, since
 	/// malformed diff shapes are already covered by the structural mobile validators.
-	/// <paramref name="templateViewModelConfigJson"/> / <paramref name="templateModelConfigJson"/> are the mobile
-	/// template's own merged <c>viewModelConfig</c> / <c>modelConfig</c> (the base the page's diff layers over at
-	/// runtime), as JSON. When null (no template context, or the template could not be read) the path-diff base
-	/// falls back to an insert-path-seeded empty object; see the type remarks.
+	/// <paramref name="templateViewModelConfigJson"/> / <paramref name="templateModelConfigJson"/> are the target
+	/// page's own merged <c>viewModelConfig</c> / <c>modelConfig</c> (the base the page's diff layers over at
+	/// runtime), as JSON. When null the path-diff base falls back to an insert-path-seeded empty object; see the
+	/// type remarks. This eager overload is for callers that already hold the base (tests); callers that must
+	/// READ it should use the lazy <see cref="Validate(string, Func{ValueTuple{string, string}})"/> overload so a
+	/// body with no path diff spends no read.
 	/// </summary>
 	public static SchemaValidationResult Validate(
-		string body, string templateViewModelConfigJson = null, string templateModelConfigJson = null) {
+		string body, string templateViewModelConfigJson = null, string templateModelConfigJson = null) =>
+		Validate(body, () => (templateViewModelConfigJson, templateModelConfigJson));
+
+	/// <summary>
+	/// Applies the body's diff sections, resolving the path-diff base LAZILY through
+	/// <paramref name="resolveTemplateBase"/>. The delegate is invoked at most once and ONLY when a non-empty
+	/// <c>viewModelConfigDiff</c> / <c>modelConfigDiff</c> carries no own base object — so a
+	/// <c>viewConfigDiff</c>-only body (or one with an inline base) triggers no resolution (no get-page read). A
+	/// null delegate means "no base available"; the oracle then seeds its own from the insert paths.
+	/// </summary>
+	public static SchemaValidationResult Validate(
+		string body, Func<(string ViewModelConfigJson, string ModelConfigJson)> resolveTemplateBase) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {
 			return result;
@@ -55,9 +70,12 @@ internal static class MobileDiffApplyValidator {
 		} catch (JsonException) {
 			return result;
 		}
+		// Memoize so viewModelConfigDiff and modelConfigDiff share a single resolution.
+		Lazy<(string ViewModelConfigJson, string ModelConfigJson)> lazyBase =
+			resolveTemplateBase is null ? null : new(resolveTemplateBase);
 		ApplyViewConfigDiff(root, result);
-		ApplyPathDiff(root, ViewModelConfigDiff, ViewModelConfig, templateViewModelConfigJson, result);
-		ApplyPathDiff(root, ModelConfigDiff, ModelConfig, templateModelConfigJson, result);
+		ApplyPathDiff(root, ViewModelConfigDiff, ViewModelConfig, () => lazyBase is null ? null : lazyBase.Value.ViewModelConfigJson, result);
+		ApplyPathDiff(root, ModelConfigDiff, ModelConfig, () => lazyBase is null ? null : lazyBase.Value.ModelConfigJson, result);
 		return result;
 	}
 
@@ -79,11 +97,13 @@ internal static class MobileDiffApplyValidator {
 	}
 
 	private static void ApplyPathDiff(
-		JObject root, string diffName, string baseName, string templateConfigJson, SchemaValidationResult result) {
+		JObject root, string diffName, string baseName, Func<string> templateConfigProvider, SchemaValidationResult result) {
 		if (root[diffName] is not JArray operations || operations.Count == 0) {
+			// Empty / absent path diff: return BEFORE resolving the base, so a body with no path diff never
+			// invokes the (potentially I/O-bound) base provider.
 			return;
 		}
-		JToken baseObject = ResolvePathDiffBase(root[baseName], templateConfigJson, operations);
+		JToken baseObject = ResolvePathDiffBase(root[baseName], templateConfigProvider, operations);
 		try {
 			new JsonPathDiffApplier().Apply(baseObject, operations);
 		} catch (JsonDiffApplierException ex) {
@@ -96,15 +116,17 @@ internal static class MobileDiffApplyValidator {
 
 	/// <summary>
 	/// Resolves the base a path-addressed diff is applied against: the body's own base section if present;
-	/// otherwise the resolved mobile template's merged config (parsed from <paramref name="templateConfigJson"/>);
-	/// otherwise an empty object seeded with an empty container at every insert target path (so an insert that
-	/// appends to an array the template owns does not false-positive when no template is available). Always
-	/// returns a fresh, mutable token — the applier mutates the base in place.
+	/// otherwise the page's merged config (resolved LAZILY via <paramref name="templateConfigProvider"/> — invoked
+	/// only here, after the body carries no own base, so a body with an inline base spends no read); otherwise an
+	/// empty object seeded with an empty container at every insert target path (so an insert that appends to an
+	/// array the template owns does not false-positive when no base is available). Always returns a fresh, mutable
+	/// token — the applier mutates the base in place.
 	/// </summary>
-	private static JToken ResolvePathDiffBase(JToken bodyBase, string templateConfigJson, JArray operations) {
+	private static JToken ResolvePathDiffBase(JToken bodyBase, Func<string> templateConfigProvider, JArray operations) {
 		if (bodyBase is JObject bodyConfig) {
 			return bodyConfig;
 		}
+		string templateConfigJson = templateConfigProvider?.Invoke();
 		if (!string.IsNullOrWhiteSpace(templateConfigJson)) {
 			try {
 				if (JToken.Parse(templateConfigJson) is JObject templateConfig) {

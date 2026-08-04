@@ -200,10 +200,17 @@ public static class WebToMobileAnalysisService {
 		// is NEVER merged (a merge REPLACES arrays wholesale, dropping one side) -- each of the page's new
 		// entries is appended via an insert at the array's own path, preserving the template's natives. When
 		// the template base could not be read, this degrades to a single root merge and a constraint warns.
-		JsonNode viewModelConfigDiff = BuildTargetedDiff(viewModelConfig, mobileTemplateViewModelConfig);
-		JsonNode modelConfigDiff = BuildTargetedDiff(modelConfig, mobileTemplateModelConfig);
-		bool mobileTemplateBaseUnavailable =
-			(viewModelConfig is not null || modelConfig is not null) && mobileTemplateUnavailable;
+		JsonNode viewModelConfigDiff = BuildTargetedDiff(viewModelConfig, mobileTemplateViewModelConfig, out IReadOnlyList<string> vmcArrayConflicts);
+		JsonNode modelConfigDiff = BuildTargetedDiff(modelConfig, mobileTemplateModelConfig, out IReadOnlyList<string> mcArrayConflicts);
+		// The root-merge fallback fires per config whenever a page config exists but no usable JsonObject base was
+		// supplied for it -- NOT only when the probe reported the template unavailable. A template that carries only
+		// the other section (one config null) or a page created with no known template both hit the fallback with
+		// mobileTemplateUnavailable == false, so gate the constraint on the fallback actually firing, per config.
+		bool viewModelConfigRootMerge = viewModelConfig is JsonObject && mobileTemplateViewModelConfig is not JsonObject;
+		bool modelConfigRootMerge = modelConfig is JsonObject && mobileTemplateModelConfig is not JsonObject;
+		var dataSectionArrayConflicts = new List<string>();
+		dataSectionArrayConflicts.AddRange(vmcArrayConflicts);
+		dataSectionArrayConflicts.AddRange(mcArrayConflicts);
 
 		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
@@ -237,7 +244,7 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, mobileTemplateBaseUnavailable),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -865,7 +872,18 @@ public static class WebToMobileAnalysisService {
 	/// unavailable (the probe failed); the caller surfaces a constraint. Returns null when
 	/// <paramref name="pageConfig"/> is null.
 	/// </summary>
-	internal static JsonNode BuildTargetedDiff(JsonNode pageConfig, JsonNode templateBase) {
+	internal static JsonNode BuildTargetedDiff(JsonNode pageConfig, JsonNode templateBase) =>
+		BuildTargetedDiff(pageConfig, templateBase, out _);
+
+	/// <summary>
+	/// Overload of <see cref="BuildTargetedDiff(JsonNode, JsonNode)"/> that also reports, in
+	/// <paramref name="arrayConflicts"/>, every template-owned array element the page changed that no diff
+	/// operation can express -- a named entry present in the base but with different content (which would be
+	/// silently lost), or a nameless entry the page modified in place (which would silently duplicate). The
+	/// caller surfaces these as a guide constraint so a lossy body is never shipped silently.
+	/// </summary>
+	internal static JsonNode BuildTargetedDiff(JsonNode pageConfig, JsonNode templateBase, out IReadOnlyList<string> arrayConflicts) {
+		arrayConflicts = [];
 		if (pageConfig is not JsonObject pageObj) {
 			return null;
 		}
@@ -874,38 +892,42 @@ public static class WebToMobileAnalysisService {
 			return BuildRootMergeDiff(pageConfig);
 		}
 		var ops = new JsonArray();
-		DiffObject(pageObj, baseObj, new List<string>(), ops);
+		var conflicts = new List<string>();
+		DiffObject(pageObj, baseObj, new List<string>(), ops, conflicts, insideCollection: false);
+		arrayConflicts = conflicts;
 		return ops;
 	}
 
 	/// <summary>
-	/// Recursive worker for <see cref="BuildTargetedDiff"/>. At <paramref name="path"/> it emits one
-	/// <c>merge</c> carrying every changed scalar and every new object/array subtree, then recurses into shared
-	/// object subtrees and appends an <c>insert</c> per new element of a shared array. Every emitted operation
-	/// targets a path that exists in the base: the merge's own path is a base object, inserts target base
-	/// arrays, and new subtrees ride inside the parent merge.
+	/// Recursive worker for <see cref="BuildTargetedDiff(JsonNode, JsonNode, out IReadOnlyList{string})"/>. At
+	/// <paramref name="path"/> it emits one <c>merge</c> carrying every changed scalar and every new object/array
+	/// subtree, then recurses into shared object subtrees and appends an <c>insert</c> per new element of a shared
+	/// array. Every emitted operation targets a path that exists in the base: the merge's own path is a base
+	/// object, inserts target base arrays, and new subtrees ride inside the parent merge.
+	/// <para>
+	/// When <paramref name="insideCollection"/> is true the current subtree belongs to a template-owned collection
+	/// (a base attribute node with <c>isCollection: true</c>). A scalar that is present in the base but differs is
+	/// then NOT re-emitted: that value is the mobile template's own collection config (e.g.
+	/// <c>modelConfig.path</c>, <c>sortingConfig</c>, <c>pageSize</c>), and the differing page value is web-derived,
+	/// so re-emitting it would clobber the mobile-correct value. This deliberately preserves the ENG-89620 safeguard
+	/// the old split enforced (a template-owned collection's scalars are dropped rather than re-applied); genuinely
+	/// new keys and new array entries still flow through.
+	/// </para>
 	/// </summary>
-	private static void DiffObject(JsonObject page, JsonObject baseObj, List<string> path, JsonArray ops) {
+	private static void DiffObject(
+		JsonObject page, JsonObject baseObj, List<string> path, JsonArray ops,
+		List<string> arrayConflicts, bool insideCollection) {
 		var mergeValues = new JsonObject();
-		var recurse = new List<(JsonObject Page, JsonObject Base, string Key)>();
+		var recurse = new List<(JsonObject Page, JsonObject Base, string Key, bool InCollection)>();
 		var arrayInserts = new List<(string Key, List<JsonNode> Elements)>();
 		foreach (KeyValuePair<string, JsonNode> kv in page) {
 			JsonNode baseVal = baseObj[kv.Key];
 			switch (kv.Value) {
-				case JsonArray pageArr when baseVal is JsonArray baseArr: {
-					var newElements = new List<JsonNode>();
-					foreach (JsonNode elem in pageArr) {
-						if (!ArrayContainsIdentity(baseArr, elem)) {
-							newElements.Add(elem);
-						}
-					}
-					if (newElements.Count > 0) {
-						arrayInserts.Add((kv.Key, newElements));
-					}
+				case JsonArray pageArr when baseVal is JsonArray baseArr:
+					DiffArray(pageArr, baseArr, path, kv.Key, arrayInserts, arrayConflicts);
 					break;
-				}
 				case JsonObject pageChild when baseVal is JsonObject baseChild:
-					recurse.Add((pageChild, baseChild, kv.Key));
+					recurse.Add((pageChild, baseChild, kv.Key, insideCollection || IsCollectionNode(baseChild)));
 					break;
 				case JsonObject:
 				case JsonArray:
@@ -913,8 +935,12 @@ public static class WebToMobileAnalysisService {
 					mergeValues[kv.Key] = kv.Value.DeepClone();
 					break;
 				default:
-					// Scalar (or JSON null): emit only when new or changed.
-					if (baseVal is null || !JsonNode.DeepEquals(baseVal, kv.Value)) {
+					// Scalar (or JSON null): emit a new key always, but a CHANGED key only outside a
+					// template-owned collection (see the method remarks -- a changed collection scalar is
+					// template-owned and re-emitting the web value would clobber the mobile-correct one).
+					if (baseVal is null) {
+						mergeValues[kv.Key] = kv.Value?.DeepClone();
+					} else if (!insideCollection && !JsonNode.DeepEquals(baseVal, kv.Value)) {
 						mergeValues[kv.Key] = kv.Value?.DeepClone();
 					}
 					break;
@@ -927,9 +953,9 @@ public static class WebToMobileAnalysisService {
 				["values"] = mergeValues
 			});
 		}
-		foreach ((JsonObject childPage, JsonObject childBase, string key) in recurse) {
+		foreach ((JsonObject childPage, JsonObject childBase, string key, bool inCollection) in recurse) {
 			path.Add(key);
-			DiffObject(childPage, childBase, path, ops);
+			DiffObject(childPage, childBase, path, ops, arrayConflicts, inCollection);
 			path.RemoveAt(path.Count - 1);
 		}
 		foreach ((string key, List<JsonNode> elements) in arrayInserts) {
@@ -946,6 +972,100 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>
+	/// Diffs a page array against the base array that already exists at the same key. Appends each genuinely NEW
+	/// element (absent from the base by identity) to <paramref name="arrayInserts"/> as an <c>insert</c> delta;
+	/// an element already present by identity and deep-equal is a no-op. When an element is present in the base by
+	/// NAME identity but its content differs, or when the page modified a nameless element in place (leaving a base
+	/// nameless element the page no longer reproduces), it records a CONFLICT into
+	/// <paramref name="arrayConflicts"/> instead: no diff operation in the mobile vocabulary can edit an existing
+	/// array element, so the change would otherwise be lost silently (named case) or duplicated at runtime
+	/// (nameless case). Base identities are hoisted once (O(N+M), no per-candidate re-serialization).
+	/// </summary>
+	private static void DiffArray(
+		JsonArray pageArr, JsonArray baseArr, IReadOnlyList<string> path, string key,
+		List<(string Key, List<JsonNode> Elements)> arrayInserts, List<string> arrayConflicts) {
+		var baseByName = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
+		var baseJson = new HashSet<string>(StringComparer.Ordinal);
+		foreach (JsonNode baseElem in baseArr) {
+			string named = NamedIdentity(baseElem);
+			if (named is not null) {
+				baseByName[named] = baseElem;
+			} else {
+				baseJson.Add(baseElem?.ToJsonString() ?? "null");
+			}
+		}
+		var newElements = new List<JsonNode>();
+		bool namelessInserted = false;
+		foreach (JsonNode elem in pageArr) {
+			string named = NamedIdentity(elem);
+			if (named is not null) {
+				if (baseByName.TryGetValue(named, out JsonNode baseMatch)) {
+					if (!JsonNode.DeepEquals(baseMatch, elem)) {
+						// Present in the base by name but changed -- a merge would REPLACE the whole array and an
+						// insert would duplicate the name; neither edits it. Flag rather than drop silently.
+						arrayConflicts.Add(ArrayConflictLabel(path, key, named));
+					}
+					// else deep-equal -> already present, no-op.
+				} else {
+					newElements.Add(elem);
+				}
+			} else if (!baseJson.Contains(elem?.ToJsonString() ?? "null")) {
+				newElements.Add(elem);
+				namelessInserted = true;
+			}
+		}
+		// A nameless element the page inserted while the base still holds a nameless element the page no longer
+		// reproduces signals an in-place edit that will now DUPLICATE at runtime -- flag it (the insert is still
+		// emitted so nothing is dropped, but the caller is told it is not clean).
+		if (namelessInserted && HasUnreproducedNameless(baseArr, pageArr)) {
+			arrayConflicts.Add(ArrayConflictLabel(path, key, "(nameless element changed in place)"));
+		}
+		if (newElements.Count > 0) {
+			arrayInserts.Add((key, newElements));
+		}
+	}
+
+	/// <summary>True when every nameless base element is deep-equal to some page element; false when the base has a
+	/// nameless element the page does not reproduce (evidence the page changed it in place).</summary>
+	private static bool HasUnreproducedNameless(JsonArray baseArr, JsonArray pageArr) {
+		foreach (JsonNode baseElem in baseArr) {
+			if (NamedIdentity(baseElem) is not null) {
+				continue;
+			}
+			bool reproduced = false;
+			foreach (JsonNode pageElem in pageArr) {
+				if (JsonNode.DeepEquals(baseElem, pageElem)) {
+					reproduced = true;
+					break;
+				}
+			}
+			if (!reproduced) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Human-readable label for a conflicting array element: <c>path.key[identity]</c>.</summary>
+	private static string ArrayConflictLabel(IReadOnlyList<string> path, string key, string identity) {
+		string full = path.Count > 0 ? $"{string.Join(".", path)}.{key}" : key;
+		return $"{full}[{identity}]";
+	}
+
+	/// <summary>The Freedom UI <c>name</c> identity of an array element (<c>name:&lt;value&gt;</c>), or null when the
+	/// element carries no non-empty string <c>name</c>.</summary>
+	private static string NamedIdentity(JsonNode node) =>
+		(node as JsonObject)?["name"] is JsonValue nameValue
+			&& nameValue.TryGetValue(out string nameStr)
+			&& !string.IsNullOrWhiteSpace(nameStr)
+			? $"name:{nameStr}"
+			: null;
+
+	/// <summary>True when a base attribute node declares itself a collection (<c>isCollection: true</c>).</summary>
+	private static bool IsCollectionNode(JsonObject node) =>
+		node["isCollection"] is JsonValue flag && flag.TryGetValue(out bool value) && value;
+
 	/// <summary>Builds a JsonArray path from string segments.</summary>
 	private static JsonArray PathArray(IReadOnlyList<string> path) {
 		var array = new JsonArray();
@@ -953,29 +1073,6 @@ public static class WebToMobileAnalysisService {
 			array.Add(segment);
 		}
 		return array;
-	}
-
-	/// <summary>
-	/// True when <paramref name="array"/> already contains an element with the same identity as
-	/// <paramref name="candidate"/>. A JSON object with a <c>name</c> property is identified by that name (the
-	/// Freedom UI convention for attribute-reference arrays like filterAttributes); anything else by deep JSON
-	/// equality. Ordinal, so a case difference is a genuinely distinct value rather than a duplicate.
-	/// </summary>
-	private static bool ArrayContainsIdentity(JsonArray array, JsonNode candidate) {
-		string candidateId = ArrayElementIdentity(candidate);
-		foreach (JsonNode existing in array) {
-			if (string.Equals(ArrayElementIdentity(existing), candidateId, StringComparison.Ordinal)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static string ArrayElementIdentity(JsonNode node) {
-		string name = (node as JsonObject)?["name"] is JsonValue nameValue && nameValue.TryGetValue(out string nameStr)
-			? nameStr
-			: null;
-		return !string.IsNullOrWhiteSpace(name) ? $"name:{name}" : $"json:{node?.ToJsonString()}";
 	}
 
 	/// <summary>
@@ -1088,7 +1185,8 @@ public static class WebToMobileAnalysisService {
 	private static List<string> BuildConstraints(
 		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
-		bool mobileTemplateBaseUnavailable = false) {
+		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
+		IReadOnlyList<string> dataSectionArrayConflicts = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1096,21 +1194,36 @@ public static class WebToMobileAnalysisService {
 			"Use only mobile-registered component types (get-component-info schema-type \"mobile\")."
 		};
 		if (hasModelConfig) {
-			constraints.Add(
-				"Use the provided modelConfigDiff VERBATIM as the page's modelConfigDiff (it is a set of targeted " +
-				"merge + insert operations diffed against the mobile template's own base: a merge for changed or " +
-				"new values, and an insert for each new element of an array the template already carries -- so a " +
-				"data source's native sort/filter entries are not replaced; it is NOT a single root merge). Do NOT " +
-				"collapse it into one root merge, do NOT hand-build the data-source section, and NEVER source it " +
-				"from a pre-existing or reference mobile body -- that is how an attribute's \"type\" gets dropped, " +
-				"which makes its binding unresolvable in Mobile Designer (\"Item with the path not found\"). Keep " +
-				"every attribute and all of its properties exactly as provided.");
+			// The "targeted, not a root merge" claim only holds when a real base was diffed against; when the
+			// modelConfig fell back to a single root merge (no template base), say so instead of the opposite.
+			constraints.Add(modelConfigRootMerge
+				? "Use the provided modelConfigDiff VERBATIM as the page's modelConfigDiff. NOTE: no mobile template " +
+				  "base was available, so it is a SINGLE ROOT MERGE carrying the whole modelConfig, not a set of " +
+				  "targeted operations. A root merge REPLACES arrays wholesale, so if any array here (e.g. a data " +
+				  "source's own sort/filter array) is also owned by the mobile template, its baseline entries may be " +
+				  "dropped -- verify manually, or re-run with environment-name/uri set so clio can diff against the " +
+				  "real base and emit inserts. Do NOT hand-build the data-source section, and keep every attribute's " +
+				  "type and path exactly as provided."
+				: "Use the provided modelConfigDiff VERBATIM as the page's modelConfigDiff (it is a set of targeted " +
+				  "merge + insert operations diffed against the mobile template's own base: a merge for changed or " +
+				  "new values, and an insert for each new element of an array the template already carries -- so a " +
+				  "data source's native sort/filter entries are not replaced; it is NOT a single root merge). Do NOT " +
+				  "collapse it into one root merge, do NOT hand-build the data-source section, and NEVER source it " +
+				  "from a pre-existing or reference mobile body -- that is how an attribute's \"type\" gets dropped, " +
+				  "which makes its binding unresolvable in Mobile Designer (\"Item with the path not found\"). Keep " +
+				  "every attribute and all of its properties exactly as provided.");
 		}
 		if (hasViewModelConfig) {
-			constraints.Add(
-				"viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
-				"used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
-				"converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
+			constraints.Add(viewModelConfigRootMerge
+				? "viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
+				  "used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
+				  "converters. NOTE: no mobile template base was available, so viewModelConfigDiff is a SINGLE ROOT " +
+				  "MERGE carrying the whole viewModelConfig, not targeted operations -- a root merge REPLACES arrays " +
+				  "wholesale, so any array the mobile template also owns may lose its baseline entries; verify " +
+				  "manually, or re-run with environment-name/uri set so clio can diff against the real base."
+				: "viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
+				  "used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
+				  "converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
 		}
 		if (templatePruned) {
 			constraints.Add(
@@ -1121,7 +1234,7 @@ public static class WebToMobileAnalysisService {
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");
 		}
-		if (mobileTemplateBaseUnavailable) {
+		if ((viewModelConfigRootMerge || modelConfigRootMerge) && mobileTemplateUnavailable) {
 			constraints.Add(
 				"Could not read the mobile template's bundle (no active environment, or the template read failed) -- " +
 				"the data-section diffs fell back to a single root merge instead of being diffed against the " +
@@ -1131,6 +1244,14 @@ public static class WebToMobileAnalysisService {
 				"REPLACES it wholesale and the template's baseline entries may be dropped -- verify manually before " +
 				"pasting, or re-run this tool with environment-name/uri set so clio can diff against the real base " +
 				"and emit inserts.");
+		}
+		if (dataSectionArrayConflicts is { Count: > 0 }) {
+			constraints.Add(
+				"The converted page changes an EXISTING element of a template-owned array that no mobile diff " +
+				"operation can edit in place: " + string.Join(", ", dataSectionArrayConflicts) + ". A changed " +
+				"named entry is NOT re-applied (the mobile template keeps its own value), and a changed nameless " +
+				"entry would DUPLICATE at runtime. Review each listed array; if the page's value must win, adjust " +
+				"that data-section entry manually before pasting.");
 		}
 		if (hasAdaptiveLayout) {
 			constraints.Add(
@@ -1151,7 +1272,7 @@ public static class WebToMobileAnalysisService {
 			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
 		};
 		if (hasDataSections) {
-			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is a set of FOCUSED targeted merges — arrays are hoisted into their own merge unioned with the mobile template's natives, NOT a single root merge). Do NOT rebuild them by hand or collapse them back into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
+			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is diffed against the mobile template's own base: a targeted merge for changed/new values and an insert per new element of an array the template already carries, so the template's native array entries are preserved — unless a constraint reports no template base was available, in which case it degrades to a single root merge). Do NOT rebuild them by hand or collapse targeted operations into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
 		}
 		if (hasAdaptiveLayout) {
 			steps.Add("Adaptive layout for multi-column grid containers is already baked into mobileValues (container adaptive columns + each child's layoutConfig.adaptive: phone collapses to 1 column, tablet/desktop keep the web columns). Present guide.adaptiveLayout to the user for review; they may adjust or decline it.");
