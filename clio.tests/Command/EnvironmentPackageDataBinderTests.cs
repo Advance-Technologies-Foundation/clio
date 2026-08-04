@@ -544,104 +544,7 @@ public sealed class EnvironmentPackageDataBinderTests {
 
 	#endregion
 
-	#region Tests: sys-setting value delivered together with its definition
-
-	[Test]
-	[Category("Unit")]
-	[Description("Delivers the setting's definition row alongside the value when the caller ships a setting clio itself creates.")]
-	public void BindSysSettingsValue_Should_Deliver_The_Definition_Alongside_The_Value_When_Asked() {
-		// Arrange
-		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
-		IPackageDataBinder sut = CreateBinderFor(environment);
-
-		// Act
-		PackageDataBindingOutcome outcome = sut.BindSysSettingsValue(ConfigCode, includeDefinition: true);
-
-		// Assert
-		outcome.Bound.Should().BeTrue(because: "the setting has a value and a definition to deliver");
-		ReadJsonString(environment.SingleSaveBodyFor(ConfigFolder), "entitySchemaName").Should().Be("SysSettingsValue",
-			because: "the value folder delivers the All-Users value row");
-		string defBody = environment.SingleSaveBodyFor(ConfigDefFolder);
-		ReadJsonString(defBody, "entitySchemaName").Should().Be("SysSettings",
-			because: "the definition folder delivers the setting's own SysSettings row");
-		ReadJsonArray(defBody, "boundRecordIds").Should().BeEquivalentTo([environment.DefinitionRowIdOf(ConfigCode)],
-			because: "the definition folder must deliver exactly this setting's definition row");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Keys the definition folder on the row's own Id so the value row's setting reference stays intact on the target.")]
-	public void BindSysSettingsValue_Should_Key_The_Definition_On_Its_Own_Id() {
-		// Arrange
-		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
-		IPackageDataBinder sut = CreateBinderFor(environment);
-
-		// Act
-		sut.BindSysSettingsValue(ConfigCode, includeDefinition: true);
-
-		// Assert
-		KeyColumns(environment.SingleSaveBodyFor(ConfigDefFolder)).Should().BeEquivalentTo(["Id"],
-			because: "preserving the definition's id is what keeps the value row's reference resolvable");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Writes the definition folder before the value folder, so a write that fails partway can never leave a value row whose setting the package does not ship.")]
-	public void BindSysSettingsValue_Should_Write_The_Definition_Before_The_Value() {
-		// Arrange
-		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
-		IPackageDataBinder sut = CreateBinderFor(environment);
-
-		// Act
-		sut.BindSysSettingsValue(ConfigCode, includeDefinition: true);
-
-		// Assert
-		environment.SavedBindingNames().Should().ContainInOrder(new[] { ConfigDefFolder, ConfigFolder },
-			because: "a value row keyed on the setting reference is unresolvable without the definition, while a definition alone resolves on its own");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Leaves the value folder unwritten when the definition folder cannot be saved, so the package never ships the dangling half of the pair.")]
-	public void BindSysSettingsValue_Should_Not_Write_The_Value_When_The_Definition_Save_Fails() {
-		// Arrange
-		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
-		environment.DropSchemaColumn("SysSettings", "Description");
-		IPackageDataBinder sut = CreateBinderFor(environment);
-
-		// Act
-		Action act = () => sut.BindSysSettingsValue(ConfigCode, includeDefinition: true);
-
-		// Assert
-		act.Should().Throw<InvalidOperationException>(
-			because: "an incomplete definition projection must stop the delivery instead of shipping a partial group");
-		environment.SavedBindingNames().Should().NotContain(ConfigFolder,
-			because: "the value row must not reach the package once its definition could not be delivered");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Drops both the value and the definition folder when a grouped setting cannot be delivered — the pair stands or falls together.")]
-	public void BindSysSettingsValue_Should_Drop_Both_Folders_When_A_Grouped_Setting_Cannot_Be_Delivered() {
-		// Arrange
-		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
-		environment.RegisterExistingBinding(ConfigFolder, ExistingBindingUId);
-		environment.RegisterExistingBinding(ConfigDefFolder, Guid.Parse("4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a"));
-		environment.SetSettingValueType(ConfigCode, "SecureText");
-		IPackageDataBinder sut = CreateBinderFor(environment);
-
-		// Act
-		PackageDataBindingOutcome outcome = sut.BindSysSettingsValue(ConfigCode, includeDefinition: true);
-
-		// Assert
-		environment.DeletedBindingNames().Should().Contain(ConfigFolder)
-			.And.Contain(ConfigDefFolder,
-				because: "a definition without its value (or the reverse) is exactly the partially shipped group the pairing exists to prevent");
-		outcome.Warnings.Should()
-			.Contain(warning => warning.StartsWith(ConfigFolder) && warning.Contains("previously shipped binding removed"))
-			.And.Contain(warning => warning.StartsWith(ConfigDefFolder) && warning.Contains("previously shipped binding removed"),
-				because: "the package now delivers less than it did, which the run summary must surface for both folders");
-	}
+	#region Tests: sys-setting value refusal reporting
 
 	[Test]
 	[Category("Unit")]
@@ -1153,27 +1056,7 @@ public sealed class EnvironmentPackageDataBinderTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Removes both the value folder and the definition folder of a grouped setting the caller withdraws, so the pair leaves the package together.")]
-	public void RemoveSysSettingsValue_Should_Remove_The_Value_And_The_Definition() {
-		// Arrange
-		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
-		environment.RegisterExistingBinding(ConfigFolder, ExistingBindingUId, "SysSettingsValue");
-		environment.RegisterExistingBinding(ConfigDefFolder, ExistingBindingUId, "SysSettings");
-		IPackageDataBinder sut = CreateBinderFor(environment);
-
-		// Act
-		IReadOnlyList<string> warnings = sut.RemoveSysSettingsValue(ConfigCode, includeDefinition: true);
-
-		// Assert
-		environment.DeletedBindingNames().Should().Contain([ConfigFolder, ConfigDefFolder],
-			because: "a definition kept without its value row is a folder nothing in the package uses");
-		warnings.Should().HaveCount(2,
-			because: "each removal is a gap between what the caller asked for and what the package now ships");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Withdraws only the value folder when the definition was never part of the delivery, so a product-shipped definition binding is never touched.")]
+	[Description("Withdraws only the value folder, so a same-named definition binding this delivery does not own is never touched.")]
 	public void RemoveSysSettingsValue_Should_Leave_A_Definition_Outside_The_Delivery() {
 		// Arrange
 		DeliveryEnvironment environment = DeliveryEnvironment.WithImageBackground();
@@ -1228,7 +1111,7 @@ public sealed class EnvironmentPackageDataBinderTests {
 		foreach (string code in AllLogoCodes) {
 			sut.BindSysSettingsValue(code);
 		}
-		sut.BindSysSettingsValue(ConfigCode, includeDefinition: true);
+		sut.BindSysSettingsValue(ConfigCode);
 		sut.BindRow("SysImage", "ShellBackground", SysImageColumns, BackgroundImageId);
 		sut.BindFeatureOffState(FeatureCode);
 
@@ -1398,8 +1281,6 @@ public sealed class EnvironmentPackageDataBinderTests {
 		public string ValueRowIdOf(string code) => _allUsersValueRows[code].ToString();
 
 		/// <summary>The definition row id of a setting, as a delivered definition folder would reference it.</summary>
-		public string DefinitionRowIdOf(string code) => _settingDefinitions[code].ToString();
-
 		public string SingleSaveBodyFor(string bindingName) =>
 			SaveBodies.Should().ContainSingle(body => ReadJsonString(body, "name") == bindingName,
 					because: $"exactly one SaveSchema call must target the '{bindingName}' binding folder")

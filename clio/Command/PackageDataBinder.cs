@@ -45,11 +45,6 @@ internal static class PackageDataBindingNames {
 		return For("SysSettingsValue", settingCode);
 	}
 
-	/// <summary>The folder that binds a sys-setting's definition row, e.g. <c>SysSettings_CrtBackgroundConfig</c>.</summary>
-	internal static string SysSettings(string settingCode) {
-		return For("SysSettings", settingCode);
-	}
-
 	/// <summary>The folder that binds rows of <paramref name="schemaName"/> under <paramref name="suffix"/>.</summary>
 	internal static string For(string schemaName, string suffix) {
 		return $"{schemaName}_{suffix}";
@@ -85,36 +80,29 @@ public interface IPackageDataBinder {
 	string UsePackage(string packageName);
 
 	/// <summary>
-	/// Binds a sys-setting's All-Users default value into the <c>SysSettingsValue_&lt;code&gt;</c> folder,
-	/// optionally together with the setting's own definition row (<c>SysSettings_&lt;code&gt;</c>). Matched on
-	/// the setting's natural key at install time, because the value row's own Id differs per environment —
-	/// keying on Id would insert a second default row beside the target's own instead of updating it. The
-	/// definition, when requested, is keyed by its own Id so the value row's setting reference stays
-	/// resolvable, and lands before the value row: a refusal drops both folders, and a write that fails
-	/// partway can leave at most the definition, which resolves on its own. The package therefore never
-	/// carries a value row whose setting it does not also ship.
+	/// Binds a sys-setting's All-Users default value into the <c>SysSettingsValue_&lt;code&gt;</c> folder.
+	/// Matched on the setting's natural key at install time, because the value row's own Id differs per
+	/// environment — keying on Id would insert a second default row beside the target's own instead of
+	/// updating it. That key references the setting by Id, so the value lands only on a target that already
+	/// defines the setting under the same Id: a product-shipped setting. A setting created per environment
+	/// carries a different Id on every install and cannot be delivered this way.
 	/// </summary>
 	/// <param name="settingCode">The sys-setting code.</param>
-	/// <param name="includeDefinition">
-	/// Whether to also bind the setting's definition row. Request it only for a setting clio itself creates —
-	/// a product-shipped setting is present on every installation and its definition needs no delivery.
-	/// </param>
 	/// <returns>
 	/// A refusal when the setting is undefined, has no All-Users value, or is declared as a secret-bearing
 	/// type — a secret value is never shipped inside a package.
 	/// </returns>
-	PackageDataBindingOutcome BindSysSettingsValue(string settingCode, bool includeDefinition = false);
+	PackageDataBindingOutcome BindSysSettingsValue(string settingCode);
 
 	/// <summary>
-	/// Removes the folders <see cref="BindSysSettingsValue"/> would have delivered for
-	/// <paramref name="settingCode"/>, when this delivery owns them. Use it when the caller decides the setting
+	/// Removes the folder <see cref="BindSysSettingsValue"/> would have delivered for
+	/// <paramref name="settingCode"/>, when this delivery owns it. Use it when the caller decides the setting
 	/// must not ship after all — a setting whose value points at a row this delivery could not bind would
 	/// install a reference the target cannot resolve.
 	/// </summary>
 	/// <param name="settingCode">The sys-setting code.</param>
-	/// <param name="includeDefinition">Whether the setting's definition folder is part of the same delivery.</param>
-	/// <returns>A warning for each removal and for each collision that prevented one.</returns>
-	IReadOnlyList<string> RemoveSysSettingsValue(string settingCode, bool includeDefinition = false);
+	/// <returns>A warning for the removal or for the collision that prevented it.</returns>
+	IReadOnlyList<string> RemoveSysSettingsValue(string settingCode);
 
 	/// <summary>
 	/// Binds one row of any entity by its own Id into the <c>&lt;schema&gt;_&lt;suffix&gt;</c> folder. Correct
@@ -198,10 +186,6 @@ internal sealed class EnvironmentPackageDataBinder(
 	private static readonly DataBindingColumnPolicy SysSettingsValuePolicy =
 		new(SysSettingsValueKeyColumns, SysSettingsValueForceUpdateColumns);
 
-	private static readonly IReadOnlyList<string> SysSettingsColumns = [
-		"Id", "Code", "Name", "ValueTypeName", "IsCacheable", "IsPersonal", "IsSSPAvailable", "Description"
-	];
-
 	private static readonly IReadOnlyList<string> AdminUnitFeatureStateColumns = [
 		"Id", FeatureColumn, SysAdminUnitColumn, FeatureStateColumn
 	];
@@ -224,9 +208,8 @@ internal sealed class EnvironmentPackageDataBinder(
 	}
 
 	/// <inheritdoc />
-	public PackageDataBindingOutcome BindSysSettingsValue(string settingCode, bool includeDefinition = false) {
+	public PackageDataBindingOutcome BindSysSettingsValue(string settingCode) {
 		string folderName = PackageDataBindingNames.SysSettingsValue(settingCode);
-		string definitionFolderName = includeDefinition ? PackageDataBindingNames.SysSettings(settingCode) : null;
 		List<string> warnings = [];
 		SysSettingsDefinition definition = FindSysSettingsDefinition(settingCode);
 		if (definition is null) {
@@ -234,26 +217,18 @@ internal sealed class EnvironmentPackageDataBinder(
 				$"{settingCode}: the setting is not defined on this environment, so there is nothing to bind. A " +
 				"value binding references its setting by id, so a target that does not ship this definition could " +
 				"not resolve the row either");
-			return RefuseSettingBinding(
-				folderName, definitionFolderName, warnings, BindingRemovalCause.SourceRowUnavailable);
+			return RefuseSettingBinding(folderName, warnings, BindingRemovalCause.SourceRowUnavailable);
 		}
 		if (IsSecretBearing(definition)) {
 			warnings.Add(
 				$"{settingCode}: the setting is defined as {SecureTextValueTypeName} on this environment, and a " +
 				"secret value is never shipped in a package");
-			return RefuseSettingBinding(
-				folderName, definitionFolderName, warnings, BindingRemovalCause.SourceRowNotShippable);
+			return RefuseSettingBinding(folderName, warnings, BindingRemovalCause.SourceRowNotShippable);
 		}
 		string valueRowId = FindAllUsersValueRowId(definition.Id);
 		if (valueRowId is null) {
 			warnings.Add($"{settingCode}: no All-Users value on this environment");
-			return RefuseSettingBinding(
-				folderName, definitionFolderName, warnings, BindingRemovalCause.SourceRowUnavailable);
-		}
-
-		if (definitionFolderName is not null) {
-			SaveBinding(definitionFolderName, SysSettingsSchema, SysSettingsColumns,
-				[definition.Id.ToString()], columnPolicy: null);
+			return RefuseSettingBinding(folderName, warnings, BindingRemovalCause.SourceRowUnavailable);
 		}
 		SaveBinding(folderName, SysSettingsValueSchema, SysSettingsValueColumns, [valueRowId],
 			SysSettingsValuePolicy);
@@ -261,16 +236,11 @@ internal sealed class EnvironmentPackageDataBinder(
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<string> RemoveSysSettingsValue(string settingCode, bool includeDefinition = false) {
+	public IReadOnlyList<string> RemoveSysSettingsValue(string settingCode) {
 		List<string> warnings = [];
 		RemoveIfShipped(
 			PackageDataBindingNames.SysSettingsValue(settingCode), SysSettingsValueSchema, warnings,
 			BindingRemovalCause.WithdrawnByCaller);
-		if (includeDefinition) {
-			RemoveIfShipped(
-				PackageDataBindingNames.SysSettings(settingCode), SysSettingsSchema, warnings,
-				BindingRemovalCause.WithdrawnByCaller);
-		}
 		return warnings;
 	}
 
@@ -336,11 +306,8 @@ internal sealed class EnvironmentPackageDataBinder(
 	}
 
 	private PackageDataBindingOutcome RefuseSettingBinding(
-		string folderName, string definitionFolderName, List<string> warnings, BindingRemovalCause cause) {
+		string folderName, List<string> warnings, BindingRemovalCause cause) {
 		RemoveIfShipped(folderName, SysSettingsValueSchema, warnings, cause);
-		if (definitionFolderName is not null) {
-			RemoveIfShipped(definitionFolderName, SysSettingsSchema, warnings, cause);
-		}
 		return PackageDataBindingOutcome.Refused(warnings);
 	}
 

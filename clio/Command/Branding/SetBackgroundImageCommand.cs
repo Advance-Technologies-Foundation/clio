@@ -169,7 +169,6 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			return SetBackgroundResult.Failure(galleryError);
 		}
 		string configJson = JsonSerializer.Serialize(new { imageId = imageId.ToString(), mode = "Image" });
-		_sysSettingsManager.CreateSysSettingIfNotExists(BackgroundConfigCode, BackgroundConfigCode, "Text");
 		if (!_sysSettingsManager.UpdateSysSetting(BackgroundConfigCode, configJson)) {
 			return SetBackgroundResult.Failure(
 				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting failed.");
@@ -240,10 +239,9 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 
 	private PackageDataBindingOutcome BindBackgroundConfig(bool imageBound) {
 		if (imageBound) {
-			return _packageDataBinder.BindSysSettingsValue(BackgroundConfigCode, includeDefinition: true);
+			return _packageDataBinder.BindSysSettingsValue(BackgroundConfigCode);
 		}
-		IReadOnlyList<string> dropped =
-			_packageDataBinder.RemoveSysSettingsValue(BackgroundConfigCode, includeDefinition: true);
+		IReadOnlyList<string> dropped = _packageDataBinder.RemoveSysSettingsValue(BackgroundConfigCode);
 		return PackageDataBindingOutcome.Refused([
 			$"{BackgroundConfigCode}: the image row was not bound, so the configuration naming it was not bound " +
 			"either — a package that ships the configuration without the image installs a background the target " +

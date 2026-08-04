@@ -54,7 +54,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 			.Returns(true);
 		_packageDataBinder.UsePackage(Arg.Any<string>()).Returns(TestPackageName);
 		_packageDataBinder
-			.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+			.BindSysSettingsValue(Arg.Any<string>())
 			.Returns(PackageDataBindingOutcome.Success());
 	}
 
@@ -258,8 +258,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Assert
 		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.LoginLogoCode);
 		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode);
-		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
-			SetLogoCommand.MenuLogoCode, Arg.Any<bool>());
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.MenuLogoCode);
 	}
 
 	[Test, Category("Unit")]
@@ -357,8 +356,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.LoginLogoCode);
 		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.DarkLogoCode);
 		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode);
-		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
-			SetLogoCommand.MenuLogoCode, Arg.Any<bool>());
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.MenuLogoCode);
 	}
 
 	[Test, Category("Unit")]
@@ -373,8 +371,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
-			SetLogoCommand.HideSplashLogoCode, Arg.Any<bool>());
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode);
 	}
 
 	[Test, Category("Unit")]
@@ -444,7 +441,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	public void Execute_ShouldRelayTheBindingWarnings_AtWarningLevel() {
 		// Arrange
 		_packageDataBinder
-			.BindSysSettingsValue(SetLogoCommand.LoginLogoCode, Arg.Any<bool>())
+			.BindSysSettingsValue(SetLogoCommand.LoginLogoCode)
 			.Returns(PackageDataBindingOutcome.Refused(
 				[$"{SetLogoCommand.LoginLogoCode}: no All-Users value on this environment"]));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
@@ -478,7 +475,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Names the slots that were already bound when a later delivery throws, so the caller is not told the whole binding failed while the package already carries some of it.")]
 	public void Execute_ShouldNameTheAlreadyBoundSlots_WhenALaterDeliveryFails() {
 		// Arrange
-		_packageDataBinder.BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode, Arg.Any<bool>())
+		_packageDataBinder.BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode)
 			.Throws(new InvalidOperationException("SaveSchema rejected the binding"));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
@@ -516,7 +513,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Arrange
 		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.MenuLogoCode, Arg.Any<object>(), Arg.Any<string>())
 			.Returns(false);
-		_packageDataBinder.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+		_packageDataBinder.BindSysSettingsValue(Arg.Any<string>())
 			.Returns(PackageDataBindingOutcome.Refused(["no All-Users value on this environment"]));
 		SetLogoOptions options = new() { LoginLogo = LogoFile, MenuLogo = "C:/brand/menu.svg" };
 
@@ -532,7 +529,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	[Description("Says nothing was bound on a successful run whose every delivery was refused, so the package line never claims a delivery the warnings beside it contradict.")]
 	public void Execute_ShouldSayNothingWasBound_WhenEveryDeliveryIsRefusedOnASuccessfulRun() {
 		// Arrange
-		_packageDataBinder.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+		_packageDataBinder.BindSysSettingsValue(Arg.Any<string>())
 			.Returns(PackageDataBindingOutcome.Refused(["no All-Users value on this environment"]));
 		SetLogoOptions options = new() { LoginLogo = LogoFile };
 
@@ -608,7 +605,6 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
-			SetLogoCommand.ConfigurationLogoCode, Arg.Any<bool>());
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.ConfigurationLogoCode);
 	}
 }

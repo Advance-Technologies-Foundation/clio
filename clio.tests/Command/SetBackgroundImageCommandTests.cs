@@ -35,7 +35,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_command.Logger = _logger;
 		_packageDataBinder.UsePackage(Arg.Any<string>()).Returns(TestPackageName);
 		_packageDataBinder
-			.BindSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+			.BindSysSettingsValue(Arg.Any<string>())
 			.Returns(PackageDataBindingOutcome.Success());
 		_packageDataBinder.BindRow(
 				Arg.Any<string>(), Arg.Any<string>(),
@@ -45,7 +45,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 			.Returns(PackageDataBindingOutcome.Success());
 		_packageDataBinder.RemoveBinding(Arg.Any<string>(), Arg.Any<string>())
 			.Returns([]);
-		_packageDataBinder.RemoveSysSettingsValue(Arg.Any<string>(), Arg.Any<bool>())
+		_packageDataBinder.RemoveSysSettingsValue(Arg.Any<string>())
 			.Returns([]);
 	}
 
@@ -616,8 +616,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	}
 
 	[Test, Category("Unit")]
-	[Description("Delivers the background configuration together with its definition, because clio creates that setting itself and an install target may not have it.")]
-	public void Execute_ShouldDeliverTheConfigTogetherWithItsDefinition() {
+	[Description("Delivers the background configuration value into the package.")]
+	public void Execute_ShouldDeliverTheConfigValue() {
 		// Arrange
 		ArrangeImageExists();
 		ArrangeGalleryState(alreadyRegistered: true);
@@ -629,8 +629,25 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_command.Execute(options);
 
 		// Assert
-		_packageDataBinder.Received(1).BindSysSettingsValue(
-			SetBackgroundImageCommand.BackgroundConfigCode, includeDefinition: true);
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetBackgroundImageCommand.BackgroundConfigCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Never creates the background configuration setting: it ships with the product, and a setting created here would carry an id no install target shares, making the delivered value row unresolvable there.")]
+	public void Execute_ShouldNotCreateTheConfigSetting() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_sysSettingsManager.DidNotReceiveWithAnyArgs()
+			.CreateSysSettingIfNotExists(default, default, default);
 	}
 
 	[Test, Category("Unit")]
@@ -760,8 +777,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 			_packageDataBinder.BindRow(
 				"SysImage", "ShellBackground",
 				Arg.Any<System.Collections.Generic.IReadOnlyList<string>>(), ImageId);
-			_packageDataBinder.BindSysSettingsValue(
-				SetBackgroundImageCommand.BackgroundConfigCode, includeDefinition: true);
+			_packageDataBinder.BindSysSettingsValue(SetBackgroundImageCommand.BackgroundConfigCode);
 		});
 	}
 
@@ -784,9 +800,9 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 
 		// Assert
 		_packageDataBinder.DidNotReceive().BindSysSettingsValue(
-			SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<bool>());
+			SetBackgroundImageCommand.BackgroundConfigCode);
 		_packageDataBinder.Received(1).RemoveSysSettingsValue(
-			SetBackgroundImageCommand.BackgroundConfigCode, includeDefinition: true);
+			SetBackgroundImageCommand.BackgroundConfigCode);
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
 			message.Contains(SetBackgroundImageCommand.BackgroundConfigCode)
 			&& message.Contains("the image row was not bound")));

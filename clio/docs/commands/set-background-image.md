@@ -69,9 +69,9 @@ When `--package` is omitted, the package named by the environment's `CurrentPack
 receives the bindings; when that setting points at nothing resolvable, the command stops and asks for
 an explicit package rather than picking one.
 
-The bound rows: the background configuration value and its setting definition, (for an image
-background) the image and its gallery membership, and the All-Users off-state of the
-`UsePanelIconBackground` feature plus (by id) its feature definition.
+The bound rows: the background configuration value, (for an image background) the image and its
+gallery membership, and the All-Users off-state of the `UsePanelIconBackground` feature plus (by id)
+its feature definition.
 
 Setting-value and feature-state bindings are keyed by their natural columns (setting/feature +
 admin unit) and force-update the value, so installing the package **merges** onto the target's
@@ -93,11 +93,10 @@ Deliberate limits:
 - **The background configuration is withheld when the image row is not bound.** The configuration
   names the image by id, so shipping it alone would install a background the target cannot render;
   any configuration folder an earlier run shipped is dropped along with it.
-- **Definitions are delivered by id.** The background configuration setting and the
-  `UsePanelIconBackground` feature both travel by their own id so the rows referencing them resolve.
-  If the target created either one independently the ids differ and the install can add a second row
-  rather than merging: the target keeps its own setting, and its own feature stays on. Brand one
-  environment and deliver outward.
+- **The feature definition is delivered by id.** The `UsePanelIconBackground` definition travels by
+  its own id so the state row referencing it resolves. If the target created that feature
+  independently the ids differ and the install can add a second row rather than merging, leaving the
+  target's own feature on. Brand one environment and deliver outward.
 - **The `UsePanelIconBackground` off-state** is bound only when the All-Users state row on this
   environment is confirmed to read as off. A missing row (the feature was never toggled here), a row
   that still reads as on (every apply ran with `--keep-icon-background`, or the toggle failed), and a
