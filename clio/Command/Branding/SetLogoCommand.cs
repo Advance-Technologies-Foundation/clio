@@ -94,11 +94,12 @@ public sealed record SetLogoResult {
 
 	/// <summary>Creates a success result carrying what was applied, the target package, and any warnings.</summary>
 	public static SetLogoResult Successful(IReadOnlyList<string> applied, string package,
-		IReadOnlyList<string> warnings, IReadOnlyList<string> bound = null) =>
-		new() {
+		IReadOnlyList<string> warnings, IReadOnlyList<string> bound = null) {
+		return new SetLogoResult {
 			Success = true, Applied = applied, Package = package, Warnings = warnings ?? [],
 			Bound = bound ?? []
 		};
+	}
 
 	/// <summary>
 	/// Creates a failure result. <paramref name="applied"/> carries the slots that were already written
@@ -108,11 +109,12 @@ public sealed record SetLogoResult {
 	/// structured result learns where the applied slots landed without parsing the message.
 	/// </summary>
 	public static SetLogoResult Failure(string error, IReadOnlyList<string> applied = null,
-		IReadOnlyList<string> warnings = null, string package = null, IReadOnlyList<string> bound = null) =>
-		new() {
+		IReadOnlyList<string> warnings = null, string package = null, IReadOnlyList<string> bound = null) {
+		return new SetLogoResult {
 			Success = false, Error = error, Applied = applied ?? [], Warnings = warnings ?? [], Package = package,
 			Bound = bound ?? []
 		};
+	}
 
 	internal static SetLogoResult FromSlots(
 		IReadOnlyList<LogoSlot> appliedSlots,

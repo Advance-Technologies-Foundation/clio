@@ -64,13 +64,13 @@ public sealed class PackageTargetResolverTests {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Refuses a locked package before anything is written, and names the command that unlocks it.")]
-	public void Resolve_Should_Refuse_A_Locked_Named_Package() {
+	[Description("Refuses a locked package before anything is written when the caller asked for an editable target, and names the command that unlocks it.")]
+	public void Resolve_Should_Refuse_A_Locked_Named_Package_When_Editability_Is_Required() {
 		// Arrange
 		IPackageTargetResolver sut = CreateResolver(new ResolverEnvironment { InstallType = LockedInstallType });
 
 		// Act
-		PackageTargetResolution resolution = sut.Resolve(PackageName);
+		PackageTargetResolution resolution = sut.Resolve(PackageName, requireEditable: true);
 
 		// Assert
 		resolution.Success.Should().BeFalse(
@@ -130,8 +130,40 @@ public sealed class PackageTargetResolverTests {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Refuses the current package too when it is locked, so the no-name path is guarded exactly like a named one.")]
+	[Description("Refuses the current package too when it is locked and editability was required, so the no-name path is guarded exactly like a named one.")]
 	public void Resolve_Should_Refuse_When_The_CurrentPackageId_Package_Is_Locked() {
+		// Arrange
+		IPackageTargetResolver sut = CreateResolver(new ResolverEnvironment { InstallType = LockedInstallType });
+
+		// Act
+		PackageTargetResolution resolution = sut.Resolve(null, requireEditable: true);
+
+		// Assert
+		resolution.Success.Should().BeFalse(
+			because: "an omitted package must not lower the bar the named path is held to");
+		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered and the package is closed");
+		resolution.Error.Should().Contain("unlock-package", because: "the message names how the user fixes it");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Resolves a locked package by default, because a caller whose only effect is the write itself must not have a target refused here that the write would accept.")]
+	public void Resolve_Should_Return_A_Locked_Named_Package_By_Default() {
+		// Arrange
+		IPackageTargetResolver sut = CreateResolver(new ResolverEnvironment { InstallType = LockedInstallType });
+
+		// Act
+		PackageTargetResolution resolution = sut.Resolve(PackageName);
+
+		// Assert
+		resolution.Success.Should().BeTrue(
+			because: "a caller whose only effect is the write itself must not have a target refused here that the write would accept");
+		resolution.PackageName.Should().Be(PackageName,
+			because: "the caller still needs the canonical name to address the write to");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Resolves a locked current package by default too, so the no-name path and the named path agree on when lock state is judged.")]
+	public void Resolve_Should_Return_A_Locked_CurrentPackageId_Package_By_Default() {
 		// Arrange
 		IPackageTargetResolver sut = CreateResolver(new ResolverEnvironment { InstallType = LockedInstallType });
 
@@ -139,10 +171,8 @@ public sealed class PackageTargetResolverTests {
 		PackageTargetResolution resolution = sut.Resolve(null);
 
 		// Assert
-		resolution.Success.Should().BeFalse(
-			because: "an omitted package must not lower the bar the named path is held to");
-		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered and the package is closed");
-		resolution.Error.Should().Contain("unlock-package", because: "the message names how the user fixes it");
+		resolution.Success.Should().BeTrue(
+			because: "lock state is judged by the caller's request, not by which of the two ways the package was named");
 	}
 
 	[Test, Category("Unit")]

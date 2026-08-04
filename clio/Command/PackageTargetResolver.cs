@@ -67,19 +67,26 @@ public sealed record PackageTargetResolution {
 public interface IPackageTargetResolver {
 
 	/// <summary>
-	/// Resolves the target package and verifies it can receive design-time writes.
+	/// Resolves the target package.
 	/// </summary>
 	/// <param name="packageName">
 	/// Name of the package to use. Blank means "the package the environment's <c>CurrentPackageId</c> system
 	/// setting points at" — the same convention design-time writes follow; a well-known package name is never
 	/// silently substituted, and a package the caller named is never silently replaced by another one.
 	/// </param>
+	/// <param name="requireEditable">
+	/// Whether a locked package is refused here rather than left to the write that follows. Request it only
+	/// when the caller mutates the environment before delivering, where learning the package is closed from
+	/// the write itself leaves the run half-applied. A caller whose only effect is the delivery itself gains
+	/// nothing from the extra round-trip and must not have a package refused that the write would accept.
+	/// </param>
 	/// <returns>
 	/// The resolved package, or a classified failure: the named package does not exist, the named or current
-	/// package is locked, no package was named and the current-package setting names none or names one that no
-	/// longer resolves, or the environment could not be asked.
+	/// package is locked and <paramref name="requireEditable"/> was requested, no package was named and the
+	/// current-package setting names none or names one that no longer resolves, or the environment could not
+	/// be asked.
 	/// </returns>
-	PackageTargetResolution Resolve(string packageName);
+	PackageTargetResolution Resolve(string packageName, bool requireEditable = false);
 }
 
 /// <inheritdoc />
@@ -91,7 +98,6 @@ internal sealed class PackageTargetResolver(
 	/// <summary>The system setting that names the package design-time writes land in when the caller names none.</summary>
 	internal const string CurrentPackageSettingCode = "CurrentPackageId";
 
-	/// <summary><c>SysPackage.InstallType</c> of a package that is open for design-time writes.</summary>
 	private const int EditableInstallType = 0;
 
 	private const string SysPackageSchema = "SysPackage";
@@ -103,13 +109,13 @@ internal sealed class PackageTargetResolver(
 	];
 
 	/// <inheritdoc />
-	public PackageTargetResolution Resolve(string packageName) {
+	public PackageTargetResolution Resolve(string packageName, bool requireEditable = false) {
 		return string.IsNullOrWhiteSpace(packageName)
-			? ResolveCurrentPackage()
-			: ResolveNamedPackage(packageName.Trim());
+			? ResolveCurrentPackage(requireEditable)
+			: ResolveNamedPackage(packageName.Trim(), requireEditable);
 	}
 
-	private PackageTargetResolution ResolveNamedPackage(string packageName) {
+	private PackageTargetResolution ResolveNamedPackage(string packageName, bool requireEditable) {
 		List<PackageRowDto> rows;
 		try {
 			rows = SelectPackages([]);
@@ -122,7 +128,7 @@ internal sealed class PackageTargetResolver(
 			return PackageTargetResolution.Unresolvable(
 				$"Package '{packageName}' was not found in the environment. Check the name against list-packages.");
 		}
-		if (IsLocked(row)) {
+		if (requireEditable && IsLocked(row)) {
 			return PackageTargetResolution.Unresolvable(
 				$"Package '{row.Name}' is locked, so it cannot receive design-time writes. Unlock it with " +
 				"unlock-package, or name another package.");
@@ -130,7 +136,7 @@ internal sealed class PackageTargetResolver(
 		return Materialize(row, $"Package '{row.Name}'");
 	}
 
-	private PackageTargetResolution ResolveCurrentPackage() {
+	private PackageTargetResolution ResolveCurrentPackage(bool requireEditable) {
 		string currentPackageId;
 		List<PackageRowDto> rows;
 		try {
@@ -161,7 +167,7 @@ internal sealed class PackageTargetResolver(
 				$"'{currentPackageId}', which could not be resolved to a usable package. Name the package " +
 				"explicitly (see list-packages for the available names).");
 		}
-		if (IsLocked(row)) {
+		if (requireEditable && IsLocked(row)) {
 			return PackageTargetResolution.Unresolvable(
 				$"The environment's {CurrentPackageSettingCode} system setting points at package '{row.Name}', " +
 				"which is locked, so it cannot receive design-time writes. Unlock it with unlock-package, or " +

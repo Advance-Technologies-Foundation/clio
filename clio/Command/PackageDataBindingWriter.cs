@@ -31,7 +31,9 @@ public sealed record PackageDataBindingRef(Guid UId, string EntitySchemaName);
 internal interface IPackageDataBindingWriter {
 
 	/// <summary>
-	/// Resolves a package name to the UId and canonical name the binding endpoints need.
+	/// Resolves a package name to the UId and canonical name the binding endpoints need. A locked package is
+	/// not refused here: the binding write is this caller's only effect on the environment, so whether the
+	/// package accepts it is left to the write rather than pre-judged by an extra read.
 	/// </summary>
 	/// <param name="packageName">Name of a package installed in the remote environment.</param>
 	/// <returns>The resolved package identity.</returns>

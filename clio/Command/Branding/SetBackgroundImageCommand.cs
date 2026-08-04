@@ -84,11 +84,12 @@ public sealed record SetBackgroundResult {
 
 	/// <summary>Creates a success result carrying the applied image id, the bound package, and any warnings.</summary>
 	public static SetBackgroundResult Successful(Guid imageId, string package, IReadOnlyList<string> warnings,
-		IReadOnlyList<string> bound = null) =>
-		new() {
+		IReadOnlyList<string> bound = null) {
+		return new SetBackgroundResult {
 			Success = true, ImageId = imageId, Package = package, Warnings = warnings ?? [],
 			Bound = bound ?? []
 		};
+	}
 
 	/// <summary>
 	/// Creates a failure result carrying the diagnostic message and the caveats raised before it, which the
@@ -97,10 +98,11 @@ public sealed record SetBackgroundResult {
 	/// message.
 	/// </summary>
 	public static SetBackgroundResult Failure(string error, IReadOnlyList<string> warnings = null,
-		string package = null, IReadOnlyList<string> bound = null) =>
-		new() {
+		string package = null, IReadOnlyList<string> bound = null) {
+		return new SetBackgroundResult {
 			Success = false, Error = error, Warnings = warnings ?? [], Package = package, Bound = bound ?? []
 		};
+	}
 }
 
 /// <summary>

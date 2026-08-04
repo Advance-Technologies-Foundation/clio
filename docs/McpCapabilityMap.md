@@ -762,7 +762,7 @@ take a single `args` object with kebab-case fields.
   Only the slots this run applied are bound, so a slot nobody branded stays out of the package. When
   the environment refuses one slot and accepts another, the result is `success: false` naming the
   refused slot — but the accepted slots are already written and already bound, so read `applied` and
-  `package` before retrying and re-run only the refused slot.
+  `bound` before retrying and re-run only the refused slot.
 
   On both tools the `package` field on the result names the resolved delivery target. It is present as
   soon as the run resolved one — including on a failure — and absent only when the run never got that

@@ -215,7 +215,7 @@ internal sealed class EnvironmentPackageDataBinder(
 
 	/// <inheritdoc />
 	public string UsePackage(string packageName) {
-		PackageTargetResolution resolution = targetResolver.Resolve(packageName);
+		PackageTargetResolution resolution = targetResolver.Resolve(packageName, requireEditable: true);
 		if (!resolution.Success) {
 			throw new InvalidOperationException(resolution.Error);
 		}

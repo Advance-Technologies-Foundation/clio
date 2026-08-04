@@ -76,7 +76,7 @@ public class GetTargetPackageCommand : Command<GetTargetPackageOptions> {
 	public virtual bool TryGetTargetPackage(
 		GetTargetPackageOptions options, out GetTargetPackageResponse response) {
 		ArgumentNullException.ThrowIfNull(options);
-		PackageTargetResolution resolution = _targetResolver.Resolve(options.PackageName);
+		PackageTargetResolution resolution = _targetResolver.Resolve(options.PackageName, requireEditable: true);
 		if (!resolution.Success) {
 			response = new GetTargetPackageResponse {
 				Success = false,
