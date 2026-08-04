@@ -12,7 +12,7 @@ using Clio.Common;
 using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Detects a page's source type and returns an advisory mobile-conversion GUIDE (ENG-89620).

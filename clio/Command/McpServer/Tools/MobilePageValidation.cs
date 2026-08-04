@@ -22,8 +22,7 @@ internal static class MobilePageValidation {
 		IComponentInfoCatalog webCatalog,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
 		CancellationToken cancellationToken = default,
-		string? templateViewModelConfigJson = null,
-		string? templateModelConfigJson = null) {
+		MobileTemplateBaseContext? templateBaseContext = null) {
 		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
 			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
 		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
@@ -47,8 +46,11 @@ internal static class MobilePageValidation {
 		// Gated on a structurally-sound body so a
 		// malformed diff is not double-reported (the structural validators already flag it).
 		if (errors.Count == 0) {
-			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(
-				body, templateViewModelConfigJson, templateModelConfigJson);
+			// Resolve the template base ONLY now — the oracle is reached only for a structurally-sound body, so a
+			// structurally-invalid one never spends the get-page read. A null context (validate-page, which has no
+			// schema/environment) yields (null, null) and the oracle seeds its own base.
+			(string? templateVmc, string? templateMc) = MobileTemplateBaseResolver.ResolveMergedConfig(templateBaseContext);
+			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body, templateVmc, templateMc);
 			if (!applyResult.IsValid) {
 				errors.AddRange(applyResult.Errors);
 			}

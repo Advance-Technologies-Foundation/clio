@@ -21,6 +21,16 @@ namespace Clio.Command.McpServer.Tools;
 /// </remarks>
 internal static class MobileTemplateBaseResolver {
 
+	/// <summary>
+	/// Resolves the base from a <see cref="MobileTemplateBaseContext"/> (the schema + environment identity the
+	/// validation caller has). Returns <c>(null, null)</c> for a null context — the oracle then seeds its own base.
+	/// </summary>
+	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(MobileTemplateBaseContext context) =>
+		context is null
+			? (null, null)
+			: ResolveMergedConfig(
+				context.CommandResolver, context.SchemaName, context.Environment, context.Uri, context.Login, context.Password);
+
 	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(
 		IToolCommandResolver commandResolver,
 		string schemaName, string environment, string uri, string login, string password) {
@@ -47,3 +57,16 @@ internal static class MobileTemplateBaseResolver {
 		return (null, null);
 	}
 }
+
+/// <summary>
+/// The schema + environment identity a validation caller (update-page / sync-pages) hands to
+/// <see cref="MobilePageValidation"/> so the apply-oracle can lazily resolve the mobile-diff base only when it
+/// is actually reached (a structurally-invalid body fails before the oracle, so no get-page read is spent).
+/// </summary>
+internal sealed record MobileTemplateBaseContext(
+	IToolCommandResolver CommandResolver,
+	string SchemaName,
+	string Environment,
+	string Uri,
+	string Login,
+	string Password);

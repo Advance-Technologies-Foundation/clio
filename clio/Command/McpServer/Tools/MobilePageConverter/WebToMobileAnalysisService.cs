@@ -1,4 +1,4 @@
-namespace Clio.Command;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -6,7 +6,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Clio.Command.McpServer.Tools;
 using Newtonsoft.Json.Linq;
 using JsonNode = System.Text.Json.Nodes.JsonNode;
 using JsonArray = System.Text.Json.Nodes.JsonArray;

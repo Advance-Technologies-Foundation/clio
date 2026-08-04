@@ -334,14 +334,12 @@ public sealed class PageUpdateTool(
 			// under the McpToolExecutionLock; the MCP server has no SynchronizationContext,
 			// so a sync-over-async wait is deadlock-free here. Refactoring the full
 			// PageUpdate → ValidateBody chain to async is out of scope for this PR.
-			SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? mobileResources, out _);
-				// Resolve the target page's merged config so the apply-oracle validates viewModelConfigDiff /
-				// modelConfigDiff against the base the diff layers over at runtime (best-effort; falls back to
-				// the oracle's seeded base on failure).
-				(string? templateVmc, string? templateMc) = MobileTemplateBaseResolver.ResolveMergedConfig(
-					_commandResolver, options.SchemaName, options.Environment, options.Uri, options.Login, options.Password);
+			SchemaValidationService.TryParseResources(options.Resources,
+				out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation
-				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, templateViewModelConfigJson: templateVmc, templateModelConfigJson: templateMc)
+				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
+					templateBaseContext: new MobileTemplateBaseContext(_commandResolver, options.SchemaName,
+						options.Environment, options.Uri, options.Login, options.Password))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {

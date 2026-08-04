@@ -134,21 +134,32 @@ internal static class MobileDiffApplyValidator {
 				continue;
 			}
 			JObject cursor = baseObject;
-			for (int i = 0; i < path.Count - 1 && cursor is not null; i++) {
+			for (int i = 0; i < path.Count - 1; i++) {
 				string segment = path[i]?.Value<string>();
 				if (segment is null) {
 					cursor = null;
 					break;
 				}
-				if (cursor[segment] is JObject child) {
-					cursor = child;
-				} else {
+				if (cursor[segment] is null) {
 					var created = new JObject();
 					cursor[segment] = created;
 					cursor = created;
+				} else if (cursor[segment] is JObject child) {
+					cursor = child;
+				} else {
+					// This segment is already seeded as a non-object (another insert's array/leaf), so the two
+					// insert paths conflict. Do NOT overwrite it — leave this path unseeded so the applier
+					// surfaces the genuine self-consistency error rather than a masked one.
+					cursor = null;
+					break;
 				}
 			}
-			string leaf = cursor is null ? null : path[^1]?.Value<string>();
+			if (cursor is null) {
+				continue;
+			}
+			// Seed the leaf as an empty array (an insert appends to an array). Leave any existing value
+			// untouched: a shared array is reused; a non-array leaf is a conflict the applier will surface.
+			string leaf = path[^1]?.Value<string>();
 			if (leaf is not null && cursor[leaf] is null) {
 				cursor[leaf] = new JArray();
 			}

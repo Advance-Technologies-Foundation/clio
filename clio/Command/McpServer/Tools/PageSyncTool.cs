@@ -520,6 +520,7 @@ public sealed class PageSyncTool(
 	private PageSyncPageResult TryValidatePage(
 		PageSyncPageInput page,
 		PageSamplingReview samplingReview,
+		string? environmentName,
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
@@ -530,7 +531,7 @@ public sealed class PageSyncTool(
 			// through here.
 			SchemaValidationService.TryParseResources(page.Resources, out Dictionary<string, string>? mobileResources, out _);
 			validationResult = MobilePageValidation
-				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources)
+				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, templateBaseContext: new MobileTemplateBaseContext(commandResolver, page.SchemaName, environmentName, null, null, null))
 				.GetAwaiter().GetResult();
 			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
@@ -575,7 +576,7 @@ public sealed class PageSyncTool(
 			// PageSyncOperationOptions and skip the second run.
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
-				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, out validationResult);
+				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, opOptions.EnvironmentName, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
 			}

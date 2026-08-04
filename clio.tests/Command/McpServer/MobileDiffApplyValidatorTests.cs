@@ -152,4 +152,17 @@ public sealed class MobileDiffApplyValidatorTests {
 		result.IsValid.Should().BeFalse();
 		result.Errors.Should().ContainSingle(e => e.Contains("is not a container for other items"));
 	}
+
+	[Test]
+	[Description("Two inserts appending to the SAME template-owned array both validate against the seeded base — the seed reuses the one shared empty array rather than overwriting it on the second insert.")]
+	public void Validate_TwoInsertsIntoSameArray_NoBase_IsValid() {
+		const string body = """
+			{ "viewModelConfigDiff": [
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"], "values": { "name": "A" } },
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"], "values": { "name": "B" } }
+			] }
+			""";
+
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+	}
 }
