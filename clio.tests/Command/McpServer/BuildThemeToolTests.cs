@@ -642,11 +642,11 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Rejects the removed local-font-families argument in any spelling with a hint that availability is now probed automatically, instead of silently ignoring it as unknown overflow.")]
-	[TestCase("local-font-families", TestName = "BuildTheme_ShouldRejectRemovedArg_KebabCase")]
-	[TestCase("localFontFamilies", TestName = "BuildTheme_ShouldRejectRemovedArg_CamelCase")]
-	[TestCase("local_font_families", TestName = "BuildTheme_ShouldRejectRemovedArg_SnakeCase")]
-	public void BuildTheme_ShouldReturnFailure_WhenRemovedLocalFontFamiliesArgSupplied(string wireName) {
+	[Description("An argument the tool does not advertise fails the call instead of vanishing into the overflow bag. local-font-families is used as the example because it was the argument this slice removed; it never shipped, so it needs no migration hint of its own — the generic unknown-argument guard is the whole contract.")]
+	[TestCase("local-font-families", TestName = "BuildTheme_ShouldRejectUnknownArg_KebabCase")]
+	[TestCase("localFontFamilies", TestName = "BuildTheme_ShouldRejectUnknownArg_CamelCase")]
+	[TestCase("local_font_families", TestName = "BuildTheme_ShouldRejectUnknownArg_SnakeCase")]
+	public void BuildTheme_ShouldReturnFailure_WhenAnUnknownArgumentIsSupplied(string wireName) {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 		BuildThemeArgs args = JsonSerializer.Deserialize<BuildThemeArgs>(
@@ -657,11 +657,11 @@ public sealed class BuildThemeToolTests
 		BuildThemeResult result = _tool.BuildTheme(args);
 
 		// Assert
-		result.Success.Should().BeFalse(because: "a removed argument must fail loudly for one release, not vanish into the overflow bag");
-		result.Error.Should().Contain("local-font-families was removed",
-			because: "the error explains the argument is gone and what replaced it");
-		result.Error.Should().Contain("probed automatically",
-			because: "the caller learns the probe now makes the suppression decision");
+		result.Success.Should().BeFalse(because: "an unadvertised argument must fail loudly, not vanish into the overflow bag");
+		result.Error.Should().Contain(wireName,
+			because: "the caller needs to know which argument was rejected");
+		result.Error.Should().Contain("heading-font",
+			because: "the error lists the arguments that ARE valid, so the caller can correct the call");
 		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 	}
@@ -820,7 +820,7 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Advertises the family-name contract on both font arguments, so an agent reading the tool schema learns the rule that can fail the build before it sends a name.")]
+	[Description("Both font arguments name the one fatal outcome and point at the guidance that owns the full contract, so an agent reading the tool schema can tell a build-failing name from an advisory availability warning without the rule being restated on six surfaces.")]
 	[TestCase("HeadingFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForHeadingFont")]
 	[TestCase("BodyFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForBodyFont")]
 	public void BuildThemeArgs_ShouldDocumentTheFamilyNameContract(string parameterName) {
@@ -830,10 +830,10 @@ public sealed class BuildThemeToolTests
 
 		// Assert
 		description.Should().NotBeNull(because: "every advertised argument carries a description in the tool schema");
-		description.Should().Contain("100 characters",
-			because: "the cap can fail the build, so it belongs on the surface the agent reads before calling");
 		description.Should().Contain("INVALID_FONT_FAMILY",
 			because: "the agent must be able to tell the one fatal font outcome from the advisory availability ones");
+		description.Should().Contain("get-guidance theming",
+			because: "the full name contract lives in the guidance rather than being restated on every surface, so the argument must point at it");
 	}
 
 	[Test]

@@ -134,9 +134,9 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("build-theme rejects the removed local-font-families argument with a migration hint")]
-	[Description("Starts the real clio MCP server and invokes build-theme with the removed local-font-families argument; verifies the real JSON binding routes it into the overflow bag and the tool returns a structured failure explaining the argument was removed, instead of silently ignoring it.")]
-	public async Task BuildTheme_Should_RejectRemovedLocalFontFamiliesArgument() {
+	[AllureName("build-theme rejects an unknown argument through the real JSON binding")]
+	[Description("Starts the real clio MCP server and invokes build-theme with an argument the tool does not advertise; verifies the real JSON binding routes it into the overflow bag and the tool returns a structured failure naming it, instead of silently ignoring it. Uses local-font-families as the example because it is the argument this slice removed — it never shipped, so no migration hint is owed and the generic unknown-argument guard is the whole contract.")]
+	public async Task BuildTheme_Should_RejectUnknownArgument() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -156,11 +156,11 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "the removed argument must fail loudly for one release instead of vanishing into the overflow bag");
-		result.Error.Should().Contain("local-font-families was removed",
-			because: "the failure names the removed argument so an agent built against the old contract can self-correct");
-		result.Error.Should().Contain("probed automatically",
-			because: "the failure explains that the availability probe now makes the suppression decision");
+			because: "an unadvertised argument must fail loudly instead of vanishing into the overflow bag");
+		result.Error.Should().Contain("local-font-families",
+			because: "the failure names the argument it rejected so the caller can correct the call");
+		result.Error.Should().Contain("heading-font",
+			because: "the failure lists the arguments that ARE valid, which is what lets a caller self-correct");
 	}
 }
 
@@ -222,13 +222,6 @@ public sealed class LiveGoogleFontsE2ETests : McpContractFixtureBase {
 			because: "the suppression is disclosed post factum through the warnings channel");
 	}
 
-	/// <summary>
-	/// Marks the test inconclusive unless the live endpoint answers the way the production probe requires:
-	/// the same handler posture (no cookies, no redirect following), the same user agent and budget, and a
-	/// JSON success. A looser guard would pass on a captive portal or a slow link while the server's own
-	/// probe degrades to Unverified, keeps the import, and reds the suppression assertion — the very
-	/// infrastructure-as-regression failure this guard exists to prevent.
-	/// </summary>
 	private static async Task SkipUnlessGoogleFontsIsReachableAsync() {
 		using HttpClientHandler handler = new() { UseCookies = false, AllowAutoRedirect = false };
 		using HttpClient probeClient = new(handler) { Timeout = GoogleFontsCatalog.ProbeTimeout };

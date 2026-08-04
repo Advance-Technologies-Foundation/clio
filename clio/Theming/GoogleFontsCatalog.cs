@@ -41,12 +41,6 @@ public sealed class GoogleFontsAvailabilityCache(TimeProvider timeProvider) : IG
 
 	private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-	/// <summary>
-	/// How long an <see cref="GoogleFontAvailability.Unverified"/> outcome is remembered. Short on purpose:
-	/// long enough that an egress-blocked host pays one probe budget per window instead of one per build,
-	/// short enough that connectivity coming back is picked up almost immediately. Mirrors
-	/// <c>PlatformVersionResolver.TransientCacheTtl</c>.
-	/// </summary>
 	private static readonly TimeSpan TransientCacheTtl = TimeSpan.FromSeconds(30);
 
 	private const int MaxEntries = 512;
@@ -136,8 +130,8 @@ public sealed class GoogleFontsCatalog(HttpClient httpClient, IGoogleFontsAvaila
 		if (string.IsNullOrWhiteSpace(family)) {
 			return GoogleFontAvailability.Unverified;
 		}
-		string key = FontImportBuilder.CollapseWhitespace(family.Trim());
-		if (!FontImportBuilder.IsValidFamily(key)) {
+		string key = FontFamilyName.Normalize(family);
+		if (!FontFamilyName.IsValid(key)) {
 			return GoogleFontAvailability.Unverified;
 		}
 		if (_cache.TryGet(key, out GoogleFontAvailability cached)) {

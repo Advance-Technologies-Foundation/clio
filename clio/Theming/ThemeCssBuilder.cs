@@ -176,7 +176,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		foreach (string family in new[] { headingFamily, bodyFamily }
 			.Where(family => family != DefaultFontFamily)
 			.Distinct(StringComparer.Ordinal)) {
-			FontImportBuilder.ValidateFamily(family);
+			FontFamilyName.Validate(family);
 		}
 		List<FontFamilyEntry> families = new();
 		if (headingFamily != DefaultFontFamily && NeedsImport(fonts, headingFamily)) {

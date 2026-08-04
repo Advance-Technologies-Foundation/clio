@@ -44,12 +44,12 @@ public sealed class BuildThemeOptions {
 	[Option("css-class-name", Required = false, HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted")]
 	public string CssClassName { get; set; }
 
-	/// <summary>Optional heading font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY.</summary>
-	[Option("heading-font", Required = false, HelpText = "Heading font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY")]
+	/// <summary>Optional heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.</summary>
+	[Option("heading-font", Required = false, HelpText = "Heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY")]
 	public string HeadingFont { get; set; }
 
-	/// <summary>Optional body font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY.</summary>
-	[Option("body-font", Required = false, HelpText = "Body font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY")]
+	/// <summary>Optional body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.</summary>
+	[Option("body-font", Required = false, HelpText = "Body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY")]
 	public string BodyFont { get; set; }
 
 	/// <summary>Optional font weights to load; defaults to 400,500,600.</summary>
@@ -476,7 +476,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <param name="fontAvailability">The probe verdicts to pass back into <c>TryBuildTheme</c>; <see langword="null"/> on failure.</param>
 	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
 	/// <returns><c>true</c> when the request is valid and its families were probed.</returns>
-	public bool TryResolveFontAvailability(BuildThemeOptions options,
+	internal bool TryResolveFontAvailability(BuildThemeOptions options,
 		out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out string error) {
 
 		fontAvailability = null;
@@ -506,8 +506,8 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			Success = options.Success,
 			Error = options.Error,
 			CssClassName = resolvedClass,
-			HeadingFont = NormalizeFamily(options.HeadingFont),
-			BodyFont = NormalizeFamily(options.BodyFont),
+			HeadingFont = FontFamilyName.Normalize(options.HeadingFont),
+			BodyFont = FontFamilyName.Normalize(options.BodyFont),
 			FontWeights = options.FontWeights,
 			Id = options.Id,
 			Caption = options.Caption,
@@ -518,18 +518,12 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return true;
 	}
 
-	private static string NormalizeFamily(string family) {
-		return string.IsNullOrWhiteSpace(family)
-			? family
-			: FontImportBuilder.CollapseWhitespace(family.Trim());
-	}
-
 	private static BuildThemeInput ToBuilderOptions(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {
 		List<int> weights = options.FontWeights?.ToList();
 		bool hasCustomFont = !string.IsNullOrEmpty(options.HeadingFont) || !string.IsNullOrEmpty(options.BodyFont)
 			|| weights is { Count: > 0 };
-		List<string> suppressed = fontAvailability
+		List<string> suppressedFonts = fontAvailability
 			.Where(pair => pair.Value == GoogleFontAvailability.NotInCatalog)
 			.Select(pair => pair.Key)
 			.ToList();
@@ -541,19 +535,11 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			Error = options.Error,
 			ThemeCssClass = options.CssClassName,
 			Fonts = hasCustomFont
-				? new FontsInput(options.HeadingFont, options.BodyFont, weights, suppressed)
+				? new FontsInput(options.HeadingFont, options.BodyFont, weights, suppressedFonts)
 				: null,
 		};
 	}
 
-	/// <summary>
-	/// Probes Google Fonts availability for the families requested in <paramref name="options"/>, keyed by
-	/// their normalized spelling. Families are normalized here too, so raw options are fine — the pre-lock
-	/// prepare step and the in-build call therefore produce the same keys.
-	/// </summary>
-	/// <param name="options">The build inputs.</param>
-	/// <returns>One entry per ordinal-distinct requested family; empty when no family needs an import.</returns>
-	/// <exception cref="ArgumentException">A requested family is not a valid font family name.</exception>
 	private IReadOnlyDictionary<string, GoogleFontAvailability> ResolveFontAvailability(BuildThemeOptions options) {
 		string[] families = RequestedFamilies(options).ToArray();
 		Dictionary<string, GoogleFontAvailability> availability = new(StringComparer.Ordinal);
@@ -561,7 +547,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			return availability;
 		}
 		foreach (string family in families) {
-			FontImportBuilder.ValidateFamily(family);
+			FontFamilyName.Validate(family);
 		}
 		Dictionary<string, Task<GoogleFontAvailability>> probes = families.ToDictionary(
 			family => family,
@@ -576,13 +562,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return availability;
 	}
 
-	/// <summary>
-	/// Blocks until every probe has settled, observing any fault so it is neither rethrown here nor raised
-	/// later as an unobserved task exception. A faulted probe is not an error for the caller: the verdict loop
-	/// degrades that family alone to <see cref="GoogleFontAvailability.Unverified"/>, because an advisory probe
-	/// must never fail the build. The continuation runs synchronously so an already-completed set (every cache
-	/// hit) settles on this thread instead of queueing a work item the caller then waits on.
-	/// </summary>
 	private static void WaitUntilEveryProbeSettledObservingFaults(
 		IEnumerable<Task<GoogleFontAvailability>> probes) {
 
@@ -627,7 +606,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	}
 
 	private static IEnumerable<string> RequestedFamilies(BuildThemeOptions options) {
-		return new[] { NormalizeFamily(options.HeadingFont), NormalizeFamily(options.BodyFont) }
+		return new[] { FontFamilyName.Normalize(options.HeadingFont), FontFamilyName.Normalize(options.BodyFont) }
 			.Where(family => !string.IsNullOrWhiteSpace(family))
 			.Where(family => !string.Equals(family, ThemeCssBuilder.DefaultFontFamily, StringComparison.Ordinal))
 			.Distinct(StringComparer.Ordinal);

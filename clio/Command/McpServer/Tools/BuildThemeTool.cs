@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -52,9 +51,6 @@ public sealed class BuildThemeTool(
 
 	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
-	private static readonly string[] RemovedLocalFontFamiliesKeys =
-		["local-font-families", "localFontFamilies", "local_font_families"];
-
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
 	// an actionable rename hint so a camelCase 'cssClassName' never silently binds to nothing.
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
@@ -91,12 +87,6 @@ public sealed class BuildThemeTool(
 		[Description("Parameters: primary (required), css-class-name, caption, id, secondary, accent, success, error, " +
 			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name (all optional).")]
 		[Required] BuildThemeArgs args) {
-		if (args.ExtensionData is not null && RemovedLocalFontFamiliesKeys.Any(args.ExtensionData.ContainsKey)) {
-			return BuildThemeResult.Failure(
-				"local-font-families was removed: Google Fonts availability is now probed automatically and the "
-				+ "@import is suppressed for families the catalog does not publish. Pass the family as heading-font "
-				+ "or body-font only, and read the returned warnings.");
-		}
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
 			"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
@@ -256,11 +246,11 @@ public sealed record BuildThemeArgs(
 	string? Error = null,
 
 	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs first; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY.")]
+	[property: Description("Heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
 	string? HeadingFont = null,
 
 	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family; Montserrat when omitted. clio trims the name and collapses internal whitespace runs first; the normalized name must then start with a letter or digit and contain only letters, digits, spaces and hyphens, at most 100 characters, or the build fails with INVALID_FONT_FAMILY.")]
+	[property: Description("Body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
 	string? BodyFont = null,
 
 	[property: JsonPropertyName("font-weights")]

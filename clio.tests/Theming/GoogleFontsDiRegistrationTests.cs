@@ -128,10 +128,6 @@ public sealed class GoogleFontsDiRegistrationTests {
 		}
 	}
 
-	/// <summary>
-	/// Walks the delegating chain the message-handler factory builds (lifetime tracking, logging) down to
-	/// the primary handler supplied by <c>ConfigurePrimaryHttpMessageHandler</c>.
-	/// </summary>
 	private static HttpMessageHandler PrimaryHandlerOf(HttpMessageHandler handler) {
 		while (handler is DelegatingHandler delegatingHandler) {
 			handler = delegatingHandler.InnerHandler;

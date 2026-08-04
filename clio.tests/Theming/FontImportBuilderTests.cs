@@ -7,7 +7,7 @@ namespace Clio.Tests.Theming;
 
 /// <summary>
 /// Calibration anchors for <see cref="FontImportBuilder"/>: URL/rule construction with sorted +
-/// de-duplicated weights, default weights, multi-family joins, and family validation.
+/// de-duplicated weights, default weights, and multi-family joins.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -62,17 +62,6 @@ public sealed class FontImportBuilderTests {
 		FontImportBuilder.BuildUrl(new[] { new FontFamilyEntry("Inter", new[] { 400, 400, 500 }) })
 			.Should().Be("https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap",
 				because: "duplicate weights are removed");
-	}
-
-	[Test]
-	[Description("ValidateFamily rejects a family longer than 100 characters, bounding the probe URL and the process-lifetime availability cache.")]
-	public void ValidateFamily_ShouldRejectOversizedFamily() {
-		// Act / Assert
-		((Action)(() => FontImportBuilder.ValidateFamily(new string('A', 101))))
-			.Should().Throw<ArgumentException>().WithMessage("INVALID_FONT_FAMILY*",
-				because: "no real Google Fonts family approaches 100 characters, so anything longer is garbage input");
-		((Action)(() => FontImportBuilder.ValidateFamily(new string('A', 100))))
-			.Should().NotThrow(because: "the cap itself is still a valid length");
 	}
 
 	[Test]
