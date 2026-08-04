@@ -775,6 +775,44 @@ Mapped to the ticket's suites; the ones the simplified scope removes are marked 
 
 ---
 
+### 8.1 Verification run — 2026-08-04, `krestov-test` (net472, 8.1.3)
+
+The renamed package was built (`-c Release`), compressed (336,302 bytes) and installed on a stand from
+which the old `clioprocessbuilder` had been removed. Results:
+
+| ID | Result | Evidence |
+|---|---|---|
+| TC-R-2 | **PASS** | `clio list-packages` → `CrtProcessBuilder 1.0.0.0 Creatio` — descriptor `Name` and the 4-part version reach `SysPackage` |
+| TC-R-3 | **PASS** | `POST rest/ProcessDesignService/ListUserTasks` → `success: true`. **The route survived the package + assembly + namespace rename**, as predicted from `serviceImplType.Name` |
+| TC-R-5 | **PASS** (net472) | build emits `Files/Bin/CrtProcessBuilder.dll` |
+| TC-F-1 | **PASS** | `clio push-pkg ./packages/CrtProcessBuilder.gz -e krestov-test` → "Package installation finished", configuration build clean |
+| TC-F-2 | **PASS** | as TC-R-2 |
+| TC-F-3 | **PASS** | `clio restart -e krestov-test` → "Done restart-web-app"; the service answers afterwards |
+| TC-F-4 | **PASS** | **23** user tasks returned — matches the expected catalog size |
+| TC-F-5 | **PASS** | `BuildProcess` → `UsrClioBpCliTest1` / `49247122-aa0e-4220-8056-52805c9c3216`; `DescribeProcess` returns its elements, parameters, the `Recommendation` mapping expression and layout positions |
+| TC-B-1 | **PARTIAL** | archive carries `Files/Bin` + `Files/Bin/netstandard` as paths, no `.pdb` entry, no `.idea`; but `netstandard` is **empty in content** — the leg is parked (§11.5) |
+| TC-F-6, TC-F-7, TC-G-1 | not run | netcore parked; permission-negative and upgrade-over-install still open |
+
+**Two by-products of the run worth carrying forward:**
+
+1. **`push-pkg` failed its post-install step on this stand** — the package installed and the
+   configuration built, but `UnlockMaintainerPackageInternal` → `PackageLockManager.CallGate` threw,
+   because `krestov-test` has `developerModeEnabled: true` and the unlock goes through cliogate. This is
+   direct field evidence for §6.1's requirement that the new command force `DeveloperModeEnabled = false`
+   (as `install-gate` does), which skips that path entirely.
+2. **`PushPackageCommand`'s catch printed only the stack trace, no message**, so the reason for the
+   unlock failure was unrecoverable from the output. Exactly the anti-pattern §6.1 warns against — the
+   new command must log `GetReadableMessageException()` first, like `InstallGateCommand`.
+
+Left on the stand: the test process `UsrClioBpCliTest1` in package `Custom`.
+
+Also note a URL trap for anyone reproducing this: `ServiceUrlBuilder.Build(string)` **already prepends**
+`0/` for `IsNetCore = false`, so `--service-path` must be `rest/ProcessDesignService/…` without the
+`0/` prefix — passing `0/rest/…` yields `0/0/rest/…` and an IIS 404 that looks exactly like a
+missing service.
+
+---
+
 ## 9. P5 — Policy obligations (non-negotiable per `AGENTS.md`)
 
 - **P5.1 Docs.** Hand-author **only** `clio/help/en/install-process-builder.txt` (with a
