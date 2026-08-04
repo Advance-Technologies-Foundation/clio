@@ -47,6 +47,37 @@
 			}
 		},
 		{
+			"requestType": "crt.LoadDataRequest",
+			"parameters": {
+				"config": {
+					"type": "JsonObject",
+					"description": "Load options for the single-source load path (`dataSourceName`) - for example the load type and whether the cached data is updated (`updateCache`). A `config` shaped as a DYNAMIC data-source load (it names the view-model attribute to load into) is checked BEFORE `refreshDataConfig` and wins, so the refresh never runs - never combine the two on mobile. The Designer stamps a constant `{ \"loadType\": \"reload\" }` into every saved refresh binding; that shape is not dynamic, so the refresh still runs. Tolerate the key when reading an existing page and do not author it on a new refresh button."
+				},
+				"dataSourceName": {
+					"type": "string",
+					"description": "Name of a single page data source to load, as declared in the page's `modelConfig` - the programmatic/advanced load path. Not used by the refresh scenario; with neither this parameter nor `refreshDataConfig` the request loads nothing."
+				},
+				"primaryDisplayFilterValue": {
+					"type": "string",
+					"description": "Text added to the single-source load as a primary-display-value filter, for search-style loads over `dataSourceName`. Programmatic/advanced; unused by the refresh scenario."
+				},
+				"refreshDataConfig": {
+					"type": "RefreshDataConfig",
+					"description": "Refresh scenario for the page's data sources, and the only parameter a \"Refresh data\" button needs. When present the platform reloads data sources according to `mode` - unless a dynamic-shaped `config` preempts it (see `config`). The Designer's default is `{ \"mode\": \"RefreshAll\" }`."
+				},
+				"updateCache": {
+					"type": "boolean",
+					"description": "Legacy top-level alias for the `updateCache` load option: the platform moves it into `config.updateCache` when the `config` block does not already carry that key. Mobile-only and kept for backward compatibility - prefer authoring `config` directly."
+				}
+			},
+			"description": "Reloads page data on a mobile page: either refreshes the page's data sources as a group (`refreshDataConfig`) or loads one named data source (`dataSourceName`). Bound to a `crt.Button` or `crt.MenuItem` `clicked` wired to the Designer's \"Refresh data\" action, which authors the group refresh; the single-source form is programmatic/advanced and is not what that action produces.",
+			"references": {
+				"docs": [
+					"mobile-request-docs/mobile-load-data.request.md"
+				]
+			}
+		},
+		{
 			"requestType": "crt.OpenPageRequest",
 			"parameters": {
 				"modelInitConfigs": {
@@ -326,6 +357,33 @@
 					"recordId": {
 						"type": "string",
 						"description": "Primary-key value of the record to load into the model."
+					}
+				}
+			},
+			"RefreshDataConfig": {
+				"fields": {
+					"excludedDataSourceNames": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Names of data sources to leave untouched by a `RefreshAll` refresh. Ignored when `mode` is `RefreshSpecific`."
+					},
+					"mode": {
+						"type": "string",
+						"values": [
+							"RefreshAll",
+							"RefreshSpecific"
+						],
+						"required": true,
+						"description": "Which data sources the refresh covers. `RefreshAll` reloads every data source of the page that does not depend on another data source - a dependent source is reloaded as a consequence of the source it depends on, never on its own - minus the names listed in `excludedDataSourceNames`. `RefreshSpecific` reloads only the data sources named in `targetDataSourceNames`, which must then hold at least one name - an empty list is logged as an error and nothing is reloaded."
+					},
+					"targetDataSourceNames": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Names of the data sources to reload when `mode` is `RefreshSpecific`; at least one name is required in that mode, and an empty list is logged as an error instead of reloading anything. A named data source that depends on another name in the same list is dropped, because reloading the one it depends on already reloads it. Ignored when `mode` is `RefreshAll`."
 					}
 				}
 			},
