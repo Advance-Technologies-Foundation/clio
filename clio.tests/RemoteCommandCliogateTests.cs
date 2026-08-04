@@ -166,6 +166,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [TestCase(typeof(DescribeProcessOptions))]
+        [TestCase(typeof(ListUserTasksOptions))]
         [Test]
         [Description("Each process-designer command options class that actually calls ProcessDesignService must declare [RequiresPackage(\"clioprocessbuilder\")] with no version (presence-only) so the centralized BaseTool.ResolveCommand gate enforces the requirement uniformly. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
         public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
