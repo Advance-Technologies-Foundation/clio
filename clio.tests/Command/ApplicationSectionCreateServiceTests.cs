@@ -596,7 +596,14 @@ public sealed class ApplicationSectionCreateServiceTests {
 
 	// Mirrors CreateSutWithResolver but injects a fake monotonic timestamp source so a test can drive the
 	// cumulative timeout-recovery budget deterministically (ENG-94419, PR #1002 RC-1). Keeps the no-op delay seam.
-	private ApplicationSectionCreateService CreateSutWithRecoveryClock(Func<long> recoveryTimestampProvider) {
+	private ApplicationSectionCreateService CreateSutWithRecoveryClock(Func<long> recoveryTimestampProvider) =>
+		CreateSutWithClocks(contentionDelay: _ => { }, recoveryTimestampProvider: recoveryTimestampProvider);
+
+	// Mirrors CreateSutWithResolver but injects BOTH the delay seam and the monotonic timestamp source, so a test
+	// can couple a virtual clock (delay advances 'now', timestamp reads it) and exercise the backoff schedule vs
+	// cumulative-budget interaction with the real backoff amounts (ENG-94419, PR #1002 RC-3/RC-4).
+	private ApplicationSectionCreateService CreateSutWithClocks(
+		Action<TimeSpan> contentionDelay, Func<long> recoveryTimestampProvider) {
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		return new ApplicationSectionCreateService(
@@ -609,7 +616,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_logger,
 			_captionCultureResolver,
 			new SectionCreateSerializationGuard(_logger),
-			contentionDelay: _ => { },
+			contentionDelay: contentionDelay,
 			recoveryTimestampProvider: recoveryTimestampProvider);
 	}
 
@@ -1623,8 +1630,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "a section that never becomes visible after the insert timed out is still a classified timeout failure");
-		verifyCalls.Should().BeGreaterThan(1,
-			because: "the post-timeout verification must retry with backoff rather than give up after a single immediate check (ENG-94419)");
+		verifyCalls.Should().Be(ApplicationSectionCreateService.TimeoutRecoveryVerifyAttempts,
+			because: "on a responsive server (instant verifies) the recovery poll must run the FULL advertised attempt count, not stop early — the budget must strictly exceed the backoff sum (PR #1002 RC-3)");
 	}
 
 	[Test]
@@ -1655,6 +1662,46 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "an absent section after the insert timed out is still a classified timeout failure");
 		verifyCalls.Should().Be(1,
 			because: "once the cumulative recovery budget is exceeded the poll must stop issuing verify calls rather than run all TimeoutRecoveryVerifyAttempts (PR #1002 RC-1)");
+	}
+
+	[Test]
+	[Description("ENG-94419 / PR #1002 RC-3/RC-4: the recovery poll's attempt count and doubling backoff schedule are pinned. With a virtual clock advanced by each backoff sleep (coupled to the recovery timestamp), the always-absent timeout path runs exactly TimeoutRecoveryVerifyAttempts verifies and sleeps the sequence [2s,4s,8s,8s,8s] — catching an attempt-count drop, a broken doubling/cap formula, or a budget that no longer exceeds the backoff sum.")]
+	public void CreateSection_Should_Poll_Full_Attempt_Count_With_Doubling_Backoff_On_Timeout() {
+		// Arrange — couple ONE virtual clock: each backoff sleep advances 'now' by its real duration, and the
+		// recovery timestamp reads the same 'now', so the cumulative-budget vs backoff-sum interaction is
+		// exercised with the REAL backoff amounts (the production sleeps), not the no-op delay.
+		long freq = System.Diagnostics.Stopwatch.Frequency;
+		long nowTicks = 0;
+		List<TimeSpan> delays = new();
+		ApplicationSectionCreateService sut = CreateSutWithClocks(
+			contentionDelay: d => { delays.Add(d); nowTicks += (long)(d.TotalSeconds * freq); },
+			recoveryTimestampProvider: () => nowTicks);
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		int verifyCalls = 0;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				verifyCalls++;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "an always-absent section after the insert timed out is still a classified timeout failure");
+		verifyCalls.Should().Be(ApplicationSectionCreateService.TimeoutRecoveryVerifyAttempts,
+			because: "with the budget (40s) strictly exceeding the backoff sum (30s), a responsive server must run every advertised attempt (PR #1002 RC-3)");
+		delays.Should().Equal(
+			new[] {
+				TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8),
+				TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(8)
+			},
+			because: "the inter-attempt backoff must double from 2s and cap at 8s across the 6 attempts (5 sleeps) (PR #1002 RC-4)");
 	}
 
 	private static IEnumerable<TestCaseData> InsertFailureClassificationCases() {

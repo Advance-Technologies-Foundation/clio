@@ -391,17 +391,16 @@ public sealed class ApplicationSectionCreateService(
 		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
 		int readbackTimeoutMs = ResolveReadbackTimeout(readbackTimeoutMsOverride);
 
-		// Serialize each destructive insert (the ExecutePostRequest that actually writes the section) per
+		// Serialize ONLY each destructive insert (the ExecutePostRequest that actually writes the section) per
 		// environment + application so concurrent create-app-section calls in one process cannot contend
-		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). One read-only step runs
-		// INSIDE the guard by construction: the timeout-recovery verify poll, which lives in TryCommitAttempt
-		// (via RecoverFromInsertTimeout) and so is covered by the same Run() span — the guarded worst case on
-		// the timeout path is therefore the insert budget PLUS the bounded recovery poll (ENG-94419), not the
-		// insert HTTP call alone. Everything else — the detail-less contention-verify, the fixed backoff
-		// between the two inserts, the retry-decision orchestration, and the success readback — runs OUTSIDE
-		// the guard: those steps read strictly by the section id generated for THIS call, so they are safe
-		// unserialized, and holding them under the guard would inflate the held span past the bounded wait cap
-		// and starve a second concurrent same-app caller into timing out and inserting unserialized. The wait is bounded and degrades to best-effort
+		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). Everything else — the
+		// detail-less contention-verify, the fixed backoff between the two inserts, the retry-decision
+		// orchestration, the success readback, AND the post-timeout recovery poll — runs OUTSIDE the guard: on a
+		// Creatio timeout TryCommitAttempt throws the internal timeout signal, the guard's finally releases the
+		// lock, and CommitGuardedInsert runs RecoverFromInsertTimeout unserialized (PR #1002 RC-2). All those
+		// steps read strictly by the section id generated for THIS call, so they are safe unserialized, and
+		// holding them under the guard would inflate the held span past the bounded wait cap and starve a second
+		// concurrent same-app caller into timing out and inserting unserialized. The wait is bounded and degrades to best-effort
 		// on timeout, so it never introduces a new failure mode — any residual contention (including the
 		// cross-process case the in-process guard cannot cover) is recovered by the reclassify/verify/retry
 		// path in CommitSectionWithContentionRecovery (Option B). The preparation reads above stay OUTSIDE the
@@ -472,12 +471,13 @@ public sealed class ApplicationSectionCreateService(
 		TimeSpan serializationWait,
 		bool contentionRetryEnabled) {
 		// Insert #1 — the guard wraps ONLY this destructive insert; it is released the moment the insert
-		// returns so the verify/backoff below never runs while the lock is held.
-		bool committed = sectionCreateSerializationGuard.Run(
-			serializationGuardKey,
-			applicationCode,
-			serializationWait,
-			() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		// returns (or throws) so NOTHING read-only runs while the lock is held. In particular, on a Creatio
+		// timeout the guard is released FIRST and the bounded read-only recovery poll then runs OUTSIDE it (see
+		// CommitGuardedInsert), just like the detail-less contention-verify below — so a timed-out insert never
+		// holds the per-application lock during the poll (PR #1002 RC-2).
+		bool committed = CommitGuardedInsert(
+			serializationGuardKey, applicationCode, resolvedRequest, requestBody, client, environmentSettings,
+			insertTimeoutMs, serializationWait);
 		if (committed) {
 			logger.EndSpinner(true);
 			return;
@@ -515,14 +515,13 @@ public sealed class ApplicationSectionCreateService(
 			$"Section insert was aborted without detail (contention); retrying once for section '{resolvedRequest.SectionCode}'...");
 		_delay(PollDelay);
 
-		// Retry insert — the guard is re-acquired for just this second destructive insert.
+		// Retry insert — the guard is re-acquired for just this second destructive insert (and, on a timeout,
+		// released again before the recovery poll runs — see CommitGuardedInsert).
 		bool retryCommitted;
 		try {
-			retryCommitted = sectionCreateSerializationGuard.Run(
-				serializationGuardKey,
-				applicationCode,
-				serializationWait,
-				() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+			retryCommitted = CommitGuardedInsert(
+				serializationGuardKey, applicationCode, resolvedRequest, requestBody, client, environmentSettings,
+				insertTimeoutMs, serializationWait);
 		} catch (ApplicationSectionCreateException retryException)
 			when (retryException.FailureClass == ApplicationSectionCreateFailureClass.ServerError) {
 			// The retry surfaced a TERMINAL detailed server rejection (e.g. a duplicate/constraint error).
@@ -570,11 +569,56 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
+	/// Internal signal that the insert HTTP call hit <see cref="ApplicationSectionCreateFailureClass.CreatioTimeout"/>.
+	/// Thrown from <see cref="TryCommitAttempt"/> so the per-application serialization guard releases the lock
+	/// (its <c>finally</c> runs as this propagates) BEFORE the read-only recovery poll runs; caught by
+	/// <see cref="CommitGuardedInsert"/>, it never escapes the service (PR #1002 RC-2).
+	/// </summary>
+	private sealed class InsertTimedOutException(Exception cause) : Exception {
+		/// <summary>The original transport/timeout exception that classified as a Creatio timeout.</summary>
+		public Exception Cause { get; } = cause;
+	}
+
+	/// <summary>
+	/// Runs one guarded destructive insert (<see cref="TryCommitAttempt"/>). The serialization guard wraps ONLY
+	/// the insert HTTP call: on a Creatio timeout <see cref="TryCommitAttempt"/> throws
+	/// <see cref="InsertTimedOutException"/>, the guard's <c>finally</c> releases the per-application lock as it
+	/// propagates, and the bounded read-only, id-matched recovery poll (<see cref="RecoverFromInsertTimeout"/>)
+	/// then runs OUTSIDE the guard — mirroring how the detail-less contention-verify already stays unserialized,
+	/// so a timed-out insert never holds the lock during the poll (PR #1002 RC-2). Returns <c>true</c> when the
+	/// section is committed (insert acknowledged, or timed out but recovered-visible), <c>false</c> on a
+	/// detail-less contention signal; throws a classified failure otherwise. The spinner is left running for the
+	/// caller.
+	/// </summary>
+	private bool CommitGuardedInsert(
+		string serializationGuardKey,
+		string applicationCode,
+		ResolvedApplicationSectionCreateRequest resolvedRequest,
+		string requestBody,
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		int insertTimeoutMs,
+		TimeSpan serializationWait) {
+		try {
+			return sectionCreateSerializationGuard.Run(
+				serializationGuardKey,
+				applicationCode,
+				serializationWait,
+				() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		} catch (InsertTimedOutException timedOut) {
+			// Guard already released. The recovery poll reads strictly by the id generated for THIS call, so it
+			// is safe unserialized (PR #1002 RC-2).
+			return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, timedOut.Cause);
+		}
+	}
+
+	/// <summary>
 	/// Performs one destructive section-insert attempt. Returns <c>true</c> when the insert is committed
-	/// (acknowledged by the response, or timed out but the section is already visible); returns <c>false</c>
-	/// to signal a detail-less contention rejection the caller should verify/retry; throws a classified
-	/// failure for transport/timeout/terminal server-error outcomes. On a <c>true</c> return the spinner is
-	/// left running for the caller to end once; on the contention signal it is also left running.
+	/// (acknowledged by the response); returns <c>false</c> to signal a detail-less contention rejection the
+	/// caller should verify/retry; throws <see cref="InsertTimedOutException"/> on a Creatio timeout (so the
+	/// caller can recover OUTSIDE the guard) and a classified failure for transport/terminal server-error
+	/// outcomes. On a <c>true</c> return the spinner is left running for the caller to end once; on the
+	/// contention signal and the timeout signal it is also left running.
 	/// </summary>
 	private bool TryCommitAttempt(
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
@@ -595,7 +639,11 @@ public sealed class ApplicationSectionCreateService(
 				throw;
 			}
 			if (failureClass == ApplicationSectionCreateFailureClass.CreatioTimeout) {
-				return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, exception);
+				// Signal the timeout to the caller so the read-only recovery poll runs OUTSIDE the guard: the
+				// guard's finally releases the per-application lock as this propagates, and CommitGuardedInsert
+				// catches it and runs RecoverFromInsertTimeout unserialized (PR #1002 RC-2). The spinner is left
+				// running for RecoverFromInsertTimeout to manage.
+				throw new InsertTimedOutException(exception);
 			}
 			logger.EndSpinner(false);
 			throw failureClass == ApplicationSectionCreateFailureClass.Transport
@@ -1018,10 +1066,11 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
-	/// Handles a timed-out ApplicationSection insert INSIDE the guard: returns <c>true</c> (committed) when
-	/// the section created by this call is (or becomes) visible despite the timeout, otherwise throws the
-	/// classified timeout failure. It only VERIFIES visibility — the read-only success readback runs outside
-	/// the guard.
+	/// Handles a timed-out ApplicationSection insert OUTSIDE the guard (the caller, <see cref="CommitGuardedInsert"/>,
+	/// has already released the per-application lock on the timeout signal — PR #1002 RC-2): returns <c>true</c>
+	/// (committed) when the section created by this call is (or becomes) visible despite the timeout, otherwise
+	/// throws the classified timeout failure. It only VERIFIES visibility — the read-only success readback also
+	/// runs unserialized.
 	/// <para>
 	/// When the insert budget expires the section transaction may still be committing server-side, so a single
 	/// immediate readback frequently reports the section absent even though it commits moments later. The verify
@@ -1070,20 +1119,26 @@ public sealed class ApplicationSectionCreateService(
 	// Bounded backoff poll for the TIMEOUT-RECOVERY verify (ENG-94419): when the insert budget expires the
 	// section transaction may still be committing, so a single immediate readback frequently reports the
 	// section absent even though it commits moments later. The id-matched verify is polled with a doubling
-	// backoff (2s, 4s, 8s, capped) so a section that commits shortly after the budget expired is recovered as
-	// success. Under normal (sub-second) verify latency the five inter-attempt sleeps (2+4+8+8+8) dominate, so
-	// the added post-timeout span is ~30 s. But each verify is an HTTP select independently bounded by
-	// VerificationTimeoutMs (30 s), so a STALLED server (whose verifies each burn the full 30 s) could otherwise
-	// stretch the recovery to attempts x 30 s + sleeps (~210 s) and blow past the ~180 s client ceiling
-	// (PR #1002 RC-1). TimeoutRecoveryTotalBudget is a HARD cumulative cap on the whole poll: once wall-clock
-	// elapsed reaches it, no further verify is started, so the recovery span is bounded to
-	// budget + at most one in-flight verify (~30 s + 30 s) regardless of how many verifies stall. On a
-	// responsive server the cap is not reached before the attempts are exhausted, so the normal 5-6 attempts
-	// still run. The no-op delay seam + injected timestamp seam make both instant/deterministic under test.
-	private const int TimeoutRecoveryVerifyAttempts = 6;
+	// backoff (2s, 4s, 8s, capped at 8s) across TimeoutRecoveryVerifyAttempts attempts, so a section that
+	// commits shortly after the budget expired is recovered as success. The five inter-attempt sleeps sum to
+	// 30 s (2+4+8+8+8), so on a responsive server the last verify lands at ~30 s.
+	//
+	// TimeoutRecoveryTotalBudget is a HARD cumulative wall-clock cap that must STRICTLY EXCEED the backoff sum
+	// (40 s > 30 s): otherwise the cap would fire on the responsive path purely from the sleeps and silently
+	// drop the final attempt(s) — the exact slow-commit window this poll exists to cover (PR #1002 RC-3/RC-5).
+	// With the headroom, a responsive server runs ALL TimeoutRecoveryVerifyAttempts attempts; the cap engages
+	// only when the verify readbacks THEMSELVES consume real latency. Each verify is an HTTP select independently
+	// bounded by VerificationTimeoutMs (30 s), so a STALLED server (verifies each burning the full 30 s) could
+	// otherwise stretch recovery to attempts x 30 s + sleeps (~210 s) and blow past the ~180 s client ceiling
+	// (PR #1002 RC-1); the cap bounds the whole poll to budget + at most one in-flight verify + one backoff
+	// (~40 + 30 + 8 = ~78 s worst case, ~168 s with the 90 s insert — under 180 s). The no-op delay seam +
+	// injected timestamp seam make both instant/deterministic under test.
+	internal const int TimeoutRecoveryVerifyAttempts = 6;
 	private static readonly TimeSpan TimeoutRecoveryInitialBackoff = TimeSpan.FromSeconds(2);
 	private static readonly TimeSpan TimeoutRecoveryMaxBackoff = TimeSpan.FromSeconds(8);
-	private static readonly TimeSpan TimeoutRecoveryTotalBudget = TimeSpan.FromSeconds(30);
+	// Must strictly exceed the sum of the backoff delays (30 s) so the cap never drops a nominal attempt on a
+	// responsive server; it engages only when verify HTTP latency consumes the headroom (PR #1002 RC-3/RC-5).
+	private static readonly TimeSpan TimeoutRecoveryTotalBudget = TimeSpan.FromSeconds(40);
 
 	// Doubling backoff (2s, 4s, 8s, 8s, ...) capped at TimeoutRecoveryMaxBackoff; attempt is 1-based.
 	private static TimeSpan TimeoutRecoveryBackoff(int attempt) {
@@ -1143,14 +1198,6 @@ public sealed class ApplicationSectionCreateService(
 		long startTimestamp = _recoveryTimestamp();
 		bool sawDefinitiveAbsent = false;
 		for (int attempt = 1; attempt <= attempts; attempt++) {
-			// Cumulative cap: always do at least one verify, but before any subsequent attempt stop if the whole
-			// poll has already run for totalBudget. A stalled server (each verify burning VerificationTimeoutMs)
-			// can therefore add at most one more in-flight verify past the budget instead of attempts x that HTTP
-			// budget (ENG-94419, PR #1002 RC-1).
-			if (attempt > 1 && System.Diagnostics.Stopwatch.GetElapsedTime(startTimestamp, _recoveryTimestamp()) >= totalBudget) {
-				break;
-			}
-
 			bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, request);
 			if (sectionVisible == true) {
 				return true;
@@ -1160,9 +1207,20 @@ public sealed class ApplicationSectionCreateService(
 				sawDefinitiveAbsent = true;
 			}
 
-			if (attempt < attempts) {
-				_delay(backoffForAttempt(attempt));
+			if (attempt >= attempts) {
+				break;
 			}
+
+			// Cumulative cap, checked AFTER each verify and BEFORE its backoff sleep: once the whole poll has run
+			// for totalBudget, stop without sleeping and without another verify. Placing the check here (not at the
+			// top of the loop) means the final attempt always runs and no trailing backoff is ever slept when no
+			// verify follows it; a stalled server (each verify burning VerificationTimeoutMs) can add at most one
+			// more in-flight verify past the budget rather than attempts x that HTTP budget (PR #1002 RC-1/RC-5).
+			if (System.Diagnostics.Stopwatch.GetElapsedTime(startTimestamp, _recoveryTimestamp()) >= totalBudget) {
+				break;
+			}
+
+			_delay(backoffForAttempt(attempt));
 		}
 
 		// Prefer a definitive "absent" over "unknown": if any attempt proved absence, the id-matched retry is
