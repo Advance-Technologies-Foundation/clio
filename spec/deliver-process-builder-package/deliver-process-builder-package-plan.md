@@ -326,29 +326,45 @@ stamped, not 4-part), net472-only content, a 478 KB `.pdb`, `Files/.idea/**` edi
 copies. The runbook must produce something better:
 
 ```bash
-# 1. net472  -> Files/Bin/            (config selects .build-props/env.dev-nf.props)
-dotnet build packages/CrtProcessBuilder/Files/CrtProcessBuilder.csproj -c dev-nf
+# 0. Files/Bin is the UNCONDITIONAL OutputPath, so any IDE build clobbers it.
+#    Always clear it and rebuild immediately before compressing.
+rm -f packages/CrtProcessBuilder/Files/Bin/*
 
-# 2. netstandard2.0 -> Files/Bin/netstandard/   (needs .application/net-core — see P0.0)
-dotnet build packages/CrtProcessBuilder/Files/CrtProcessBuilder.csproj -c dev-n8 -p:CoreTargetFramework=netstandard2.0
+# 1. net472 -> Files/Bin/    NOTE: -c Release, NOT -c dev-nf (see P1.0)
+dotnet build packages/CrtProcessBuilder/Files/CrtProcessBuilder.csproj -c Release
 
-# 3. Both runtime deps must exist in BOTH Bin dirs (cliogate's build.ps1 does exactly this)
-cp packages/CrtProcessBuilder/Files/Libs/{ATF.Repository,ErrorOr}.dll \
-   packages/CrtProcessBuilder/Files/Bin/netstandard/
+# 2. netstandard2.0 -> Files/Bin/netstandard/   (PARKED — needs .application/net-core, §11.5)
+#    env.Release.props pins CoreTargetFramework=net472, so this leg needs an explicit
+#    override plus a .NET-Core CoreLibPath:
+# dotnet build … -c Release -p:CoreTargetFramework=netstandard2.0 -p:CoreLibPath=<net-core bin>
 
-# 4. Stamp the version — MUST be 4-part (see the arithmetic trap below)
+# 3. Stamp the version — MUST be 4-part (see P1.1)
 clio set-pkg-version ./packages/CrtProcessBuilder --PackageVersion <X.Y.Z.W>
 
-# 5. `clio compress -d` does NOT create the destination directory — create it first
+# 4. `clio compress -d` does NOT create the destination directory — create it first
 mkdir -p <clio-repo>/clio/CrtProcessBuilder
 
-# 6. Compress  (verb: generate-pkg-zip, aliases comp-pkg / compress)
+# 5. Compress  (verb: generate-pkg-zip, aliases comp-pkg / compress)
 clio compress ./packages/CrtProcessBuilder --skip-pdb \
   -d <clio-repo>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
-# 7. Clean build output out of the source tree (build.ps1 does the same for cliogate)
-rm -rf packages/CrtProcessBuilder/Files/Bin/*
+# 6. Clean build output out of the source tree (build.ps1 does the same for cliogate)
+rm -f packages/CrtProcessBuilder/Files/Bin/*
 ```
+
+- **P1.0 Build with `-c Release`, never `-c dev-nf`.** Both optimization PropertyGroups in
+  the csproj are gated on `'Debug|AnyCPU'` and `'Release|AnyCPU'`, so **`dev-nf` matches neither**
+  and silently inherits MSBuild defaults — `Optimize=false`, full debug info. Measured: the
+  `dev-nf` DLL is 147,456 bytes, the `Release` one 139,776, and the embedded debug path flips
+  from `obj\Debug` to `obj\Release`. `env.Release.props` and `env.dev-nf.props` are equivalent
+  for net472, so `-c Release` just works and leaves `dev-nf`/`dev-n8` as the development
+  configurations. *This was caught the hard way:* the first artifact built here was silently a
+  **Rider Debug build** — Rider rebuilt into `Files/Bin` between the `dev-nf` build and the
+  compress, because `OutputPath` is unconditional. Hence step 0.
+- **`ATF.Repository.dll` / `ErrorOr.dll` need no manual copy** (for net472, verified): the
+  `Libs/*` references carry no `Private=False`, so the build copies both into `Files/Bin`
+  automatically. cliogate needs an explicit copy only because it harvests `ATF.Repository`
+  from a NuGet restore instead. Re-verify for the netstandard leg when it becomes buildable.
 
 Four traps that must be written into the runbook, not discovered later:
 
@@ -362,15 +378,15 @@ Four traps that must be written into the runbook, not discovered later:
   `PackageArchiver.cs` is on the *unpack* path. First-time production throws
   `DirectoryNotFoundException`, and since git does not track empty directories the folder will not exist
   in a fresh clone until the `.gz` is committed.
-- **P1.3 Netstandard third-party DLLs are an assembly-resolution hazard.** In the netstandard2.0 branch
-  `Microsoft.Extensions.DependencyInjection` / `Microsoft.Extensions.Http` / `System.Text.Json` 8.0.0 are
-  `PackageReference`s **without `Private=False`**, so they copy into `Files/Bin/netstandard`, and
-  `FileContentStorage.GetAssemblyLocationsFromBin` adds that directory to the workspace resolution set →
-  version skew against the stand's own copies is a runtime break. The net472 branch is immune because
-  the same assemblies come from `$(CoreLibPath)` with `Private=False`. **Decide and record** whether to
-  set `Private=False`/`ExcludeAssets=runtime` on those three, or to ship and accept them. Conversely
-  `ATF.Repository.dll` and `ErrorOr.dll` **must** be present in `Files/Bin/netstandard` (step 3) or the
-  netcore flavour throws on the first DI resolve.
+- **P1.3 Netstandard third-party DLLs — ALREADY MITIGATED, no action needed.** In the netstandard2.0
+  branch `Microsoft.Extensions.DependencyInjection` / `Microsoft.Extensions.Http` / `System.Text.Json`
+  8.0.0 are `PackageReference`s **without `Private=False`**, so the build does copy them into
+  `Files/Bin/netstandard`, and `FileContentStorage.GetAssemblyLocationsFromBin` would add that directory
+  to the workspace resolution set — version skew against the stand's own copies would be a runtime
+  break. **But `.clio/clioignore` already denylists all three by name**, so `clio compress` never packs
+  them and the stand keeps using its own. Verified by reading the ignore file. `ATF.Repository.dll` and
+  `ErrorOr.dll` are *not* in the denylist, so they ship — which is correct. Re-verify once the
+  netstandard leg is buildable.
 - **P1.4 Nothing validates the descriptor against the filename.** `PackageArchiver.Pack` never opens
   `descriptor.json`, and `IPackageInstaller.Install` just uploads the file. A `.gz` *named*
   `CrtProcessBuilder.gz` whose descriptor still says `clioprocessbuilder` installs fine, reports
@@ -859,9 +875,14 @@ they share a shape: the gate reads `SysPackage.Name`, and *nothing* connects tha
    docs, making the refusal Hint point at an unknown verb. The cost is that the verb — and therefore the
    package name — becomes publicly visible before the BP feature ships. Confirm that trade is acceptable;
    the alternative is a remediation message that cannot be followed.
-4. **Transition on existing stands.** Is it acceptable to require an explicit uninstall of
-   `clioprocessbuilder` before installing `CrtProcessBuilder`, if TC-G-2 shows the
-   same-UId rename does not upgrade in place (the `GetIsPackageDescriptorModified` no-op risk of §2.2)?
+4. ~~**Transition on existing stands.**~~ **DECIDED BY ACTION (2026-08-04):** the reporter removed
+   `clioprocessbuilder` from `krestov-test` before the first install of the renamed package, so the
+   transition procedure is **uninstall-then-install**, not a same-UId in-place upgrade. That is the safe
+   path anyway: it sidesteps the whole hazard class of §2.2 — the `GetIsPackageDescriptorModified`
+   silent no-op, the orphaned `Pkg/clioprocessbuilder/` folder, and the duplicate-`ProcessDesignService`
+   takeover. Consequence: **TC-G-2 drops from hard blocker to a documented procedure step.** It can
+   still be run later (the pre-rename `packages/clioprocessbuilder.gz` was deliberately kept for
+   exactly that), but nothing waits on it. The runbook must state the uninstall step explicitly.
 5. **Netcore stand — PARKED (2026-08-04), reporter will clarify.** Factual position: .NET Core Creatio
    builds do exist, and `clio deploy-creatio --platform net6` can provision one locally, so this is a
    setup task rather than an external blocker. What is true today is narrower: **none of the 15
@@ -875,6 +896,7 @@ they share a shape: the gate reads `SysPackage.Name`, and *nothing* connects tha
    "unexpected failure" code to the "refused precondition" code. It is the difference between an agent
    retrying after install and an agent giving up — but it touches a **shared** MCP envelope used by every
    gated tool. In scope here, or a separate ticket (with the capability-map contradiction fixed either way)?
-7. **Netstandard third-party DLLs** (P1.3): set `Private=False` / `ExcludeAssets=runtime` on
-   `Microsoft.Extensions.*` + `System.Text.Json` 8.0.0 so they stop being copied into
-   `Files/Bin/netstandard`, or ship them and accept the assembly-resolution skew risk?
+7. ~~**Netstandard third-party DLLs.**~~ **ANSWERED — no action:** `.clio/clioignore` already denylists
+   `Microsoft.Extensions.DependencyInjection.dll`, `Microsoft.Extensions.Http.dll` and
+   `System.Text.Json.dll` by name, so `clio compress` never packs them regardless of what the build
+   copies into `Files/Bin/netstandard` (P1.3).
