@@ -11,7 +11,7 @@ using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace Clio.Tests.Command;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]

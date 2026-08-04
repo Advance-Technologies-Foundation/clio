@@ -4,7 +4,7 @@ using Clio.Command.McpServer.Tools.MobilePageConverter;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace Clio.Tests.Command;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Unit tests for the parts of <see cref="MobilePageConversionGuideTool"/> that guard which source pages

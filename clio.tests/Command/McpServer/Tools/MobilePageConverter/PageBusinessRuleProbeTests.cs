@@ -8,7 +8,7 @@ using FluentAssertions;
 using NUnit.Framework;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
-namespace Clio.Tests.Command.McpServer.Tools;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]
