@@ -84,10 +84,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94188: converts a real seeded TABBED page through the real clio MCP server and verifies the mandatory tabAreaLayers contract end to end — the guide carries a tabAreaLayers group per converted tab; the tab body grid sits right after its tab with no webName; the shared Area follows it when the tab kept non-detail content (areaName may be null for a panels-only tab, AC#5); each detail Area (AC#4) stacks after with its panel reparented onto it; and the constraints/nextSteps carry the MANDATORY (never offer to skip) wording.")]
+	[Description("ENG-94188: converts a real seeded TABBED page through the real clio MCP server and verifies the mandatory tabAreaLayers contract end to end — the guide carries a tabAreaLayers group per converted tab; the tab body grid sits right after its tab with no webName; the Area follows it and holds ALL of the tab's top-level content (expansion panels included); and the constraints/nextSteps carry the MANDATORY (never offer to skip) wording.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns the mandatory tabAreaLayers contract for a tabbed page")]
-	[AllureDescription("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, converts its pages until one yields tabAreaLayers (preferring one that also exercises the detail-Area split), and asserts the full serialized contract: the tab body grid at tab+1 with no webName; when areaName is non-null the shared Area at tab+2 (row 1 when detail siblings exist) with movedChildren reparented onto it; when areaName is null (panels-only tab, AC#5) NO shared Area and empty movedChildren; each detailAreas entry as a synthesized sibling in the tab body at its declared row with the panel reparented onto it — exercising the bundled WebToMobilePageConversionRules.json tabAreaLayers + detailComponentTypes sections and the BuildTabAreaLayers pass through the real MCP surface.")]
+	[AllureDescription("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, converts its pages until one yields tabAreaLayers, and asserts the full serialized contract: the tab body grid at tab+1 with no webName; the Area at tab+2 with movedChildren reparented onto it — exercising the bundled WebToMobilePageConversionRules.json tabAreaLayers section and the BuildTabAreaLayers pass through the real MCP surface.")]
 	public async Task MobilePageConversionGuideTool_Should_Return_Mandatory_TabAreaLayers_For_Tabbed_Page() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -125,17 +125,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				continue;
 			}
 			if (response.Guide?.TabAreaLayers is { Count: > 0 }) {
-				if (guide is null) {
-					guide = response.Guide;
-					convertedSchemaName = schemaName;
-				}
-				// Prefer a page that also exercises the detail-Area split (ENG-94188 AC#4) — keep the
-				// first tabbed guide as a fallback, but scan on until a tab carries detailAreas.
-				if (response.Guide.TabAreaLayers.Any(g => g.DetailAreas is { Count: > 0 })) {
-					guide = response.Guide;
-					convertedSchemaName = schemaName;
-					break;
-				}
+				guide = response.Guide;
+				convertedSchemaName = schemaName;
+				break;
 			}
 		}
 		if (guide is null) {
@@ -153,9 +145,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		}
 
 		// Assert — the serialized guide honors the mandatory layer contract for EVERY converted tab:
-		// the tab body grid always directly follows its tab; the shared Area follows the body only when
-		// the tab kept non-detail content (areaName non-null); each detail Area (ENG-94188 AC#4) stacks
-		// right after as a sibling in the tab body, with its panel reparented onto it.
+		// the tab body grid always directly follows its tab; the Area follows the body and holds ALL of
+		// the tab's top-level content (expansion panels included).
 		foreach (TabAreaLayerGroup group in guide!.TabAreaLayers!) {
 			int tabAt = IndexOfMobile(guide, group.TabName);
 			tabAt.Should().BeGreaterThanOrEqualTo(0,
@@ -171,43 +162,17 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			mainEntry.ParentName.Should().Be(group.TabName,
 				because: "the tab body grid is the tab's direct child");
 
-			int nextAt = tabAt + 2;
 			if (group.AreaName is not null) {
-				ElementMapEntry areaEntry = guide.ElementMap[nextAt];
+				ElementMapEntry areaEntry = guide.ElementMap[tabAt + 2];
 				areaEntry.MobileName.Should().Be(group.AreaName,
-					because: "the shared Area card must directly follow the tab body it lives in");
+					because: "the Area card must directly follow the tab body it lives in");
 				areaEntry.WebName.Should().BeNull(
 					because: "a synthesized container has no web counterpart, so the serialized entry carries no webName");
 				areaEntry.ParentName.Should().Be(group.MainTabContainerName,
-					because: "the shared Area card sits inside the tab body grid, not in the tab");
-				if (group.DetailAreas is { Count: > 0 }) {
-					areaEntry.MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-						because: "with detail siblings beside it the shared Area needs an explicit first-row placement (Р2)");
-				}
-				nextAt++;
+					because: "the Area card sits inside the tab body grid, not in the tab");
 			} else {
 				group.MovedChildren.Should().BeEmpty(
-					because: "with no shared Area synthesized there is nowhere for shared children to move (AC#5)");
-				guide.ElementMap.Where(e => e.ParentName == group.MainTabContainerName && e.WebName is null)
-					.Should().OnlyContain(
-						e => group.DetailAreas != null && group.DetailAreas.Any(d => d.AreaName == e.MobileName),
-						because: "a panels-only tab body holds detail Areas only — an EMPTY shared Area must never be synthesized (AC#5)");
-			}
-
-			foreach (TabDetailAreaGroup detail in group.DetailAreas ?? []) {
-				ElementMapEntry detailEntry = guide.ElementMap[nextAt];
-				detailEntry.MobileName.Should().Be(detail.AreaName,
-					because: "each detail Area directly follows the shared Area (or the tab body when none), in the panels' web order");
-				detailEntry.WebName.Should().BeNull(
-					because: "a synthesized container has no web counterpart, so the serialized entry carries no webName");
-				detailEntry.ParentName.Should().Be(group.MainTabContainerName,
-					because: "a detail Area is a sibling of the shared Area inside the tab body, never nested in it");
-				detailEntry.MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(detail.Row,
-					because: "the serialized element-map placement must match the row the group declares");
-				guide.ElementMap.Should().Contain(
-					e => e.MobileName == detail.PanelName && e.ParentName == detail.AreaName,
-					because: $"the panel '{detail.PanelName}' is already reparented onto its own detail Area card (AC#4)");
-				nextAt++;
+					because: "with no Area synthesized there is nowhere for children to move (routing hints only)");
 			}
 
 			foreach (string movedChild in group.MovedChildren) {
@@ -220,12 +185,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "the guide must forbid the caller from offering the two-layer body as a choice");
 		guide.NextSteps.Should().Contain(s => s.Contains("tabAreaLayers") && s.Contains("MANDATORY"),
 			because: "the ordered steps must tell the caller to state the structure as fact, not ask for approval");
-		if (guide.TabAreaLayers.All(g => g.DetailAreas is not { Count: > 0 })) {
-			Assert.Warn(
-				$"No seeded page of '{ApplicationCode}' on environment '{environmentName}' carries a top-level expansion "
-				+ "panel inside a converted tab, so the ENG-94188 detailAreas path was asserted only vacuously. Add a tabbed "
-				+ "record page with a top-level crt.ExpansionPanel to the seed application to exercise the detail-Area split end to end.");
-		}
 	}
 
 	/// <summary>Position of an entry in the element map by its mobile name, -1 when absent.</summary>

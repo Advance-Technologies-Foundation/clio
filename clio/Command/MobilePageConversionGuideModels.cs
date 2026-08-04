@@ -473,8 +473,8 @@ public sealed class MobilePageConversionGuide {
 	// ── Tab body / Area layers synthesized inside a converted tab ──────
 	/// <summary>
 	/// The containers the converter SYNTHESIZES inside every tab it creates (ENG-94188): the designer's
-	/// tab-body grid, the shared Area card inside it, and one detail Area card per expansion panel (AC#4 —
-	/// a panel does not join the shared Area). Already baked into <see cref="ElementMap"/> as ordinary
+	/// tab-body grid and the Area card inside it that receives the tab's content. Already baked into
+	/// <see cref="ElementMap"/> as ordinary
 	/// <c>insert</c> entries placed right after the tab's own entry — there is nothing separate to apply.
 	/// This is an informational summary of a MANDATORY structure, NOT a proposal: report it at the
 	/// conversion gate as fact, never offer to skip or replace it. Null when the page has no
@@ -721,9 +721,7 @@ public sealed class AdaptiveLayoutGroup {
 /// <summary>
 /// The tab-body / Area layers synthesized inside ONE converter-created tab (ENG-94188). Mirrors what is
 /// already baked into the element map: mobile design puts a tab's content inside a colored Area card that
-/// sits in a tab-body grid, and a tab converted from web carries neither. An expansion panel among the
-/// tab's top-level content does not join the shared Area — it gets its own detail Area card (AC#4, "like
-/// mobile details"), listed in <see cref="DetailAreas"/>.
+/// sits in a tab-body grid, and a tab converted from web carries neither.
 /// </summary>
 public sealed class TabAreaLayerGroup {
 	/// <summary>The converted tab the layers were synthesized into (its mobile name).</summary>
@@ -735,51 +733,20 @@ public sealed class TabAreaLayerGroup {
 	public string MainTabContainerName { get; init; }
 
 	/// <summary>
-	/// Name of the synthesized shared Area card (child of the tab-body grid; always row 1 when detail
-	/// Areas sit beside it). Null when the tab's top-level content is panels only — no shared Area is
-	/// synthesized then, so an empty card never appears (AC#5).
+	/// Name of the synthesized Area card (child of the tab-body grid). Null when the tab's top-level
+	/// content is routing hints only — no Area is synthesized then, so an empty card never appears (AC#5).
 	/// </summary>
 	[JsonPropertyName("areaName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string AreaName { get; init; }
 
 	/// <summary>
-	/// The components moved out of the tab and into the shared Area, in the order they are stacked there
+	/// The components moved out of the tab and into the Area, in the order they are stacked there
 	/// (the source page's own order — the first entry is row 1). Already reflected in each element's
-	/// <c>parentName</c> and <c>layoutConfig</c>, so there is nothing to re-parent by hand. Panels are not
-	/// listed here — each one moved into its own detail Area instead (see <see cref="DetailAreas"/>).
+	/// <c>parentName</c> and <c>layoutConfig</c>, so there is nothing to re-parent by hand.
 	/// </summary>
 	[JsonPropertyName("movedChildren")]
 	public IReadOnlyList<string> MovedChildren { get; init; } = [];
-
-	/// <summary>
-	/// One entry per expansion panel carried into its OWN Area card (AC#4), in the tab-body row order.
-	/// Already baked into the element map — the detail Areas are ordinary inserts and each panel already
-	/// points at its card. Null when the tab holds no panels.
-	/// </summary>
-	[JsonPropertyName("detailAreas")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<TabDetailAreaGroup> DetailAreas { get; init; }
-}
-
-/// <summary>
-/// One detail Area card synthesized for an expansion panel inside a converted tab (ENG-94188 AC#4): the
-/// panel does not join the tab's shared Area but sits in its own Area card ("like mobile details"), a
-/// sibling of the shared Area inside the tab-body grid. The panel itself is carried AS-IS — only its
-/// parent and its placement (row 1, the sole child of its card) change; its properties are not edited.
-/// </summary>
-public sealed class TabDetailAreaGroup {
-	/// <summary>The panel that was carried into its own Area card (its mobile name).</summary>
-	[JsonPropertyName("panelName")]
-	public string PanelName { get; init; }
-
-	/// <summary>Name of the synthesized detail Area card (child of the tab-body grid).</summary>
-	[JsonPropertyName("areaName")]
-	public string AreaName { get; init; }
-
-	/// <summary>The row the detail Area occupies in the tab-body grid (the shared Area, when present, is row 1).</summary>
-	[JsonPropertyName("row")]
-	public int Row { get; init; }
 }
 
 /// <summary>

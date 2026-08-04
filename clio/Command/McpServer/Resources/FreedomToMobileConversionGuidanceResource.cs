@@ -70,12 +70,10 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    elementMap[].mobileValues.layoutConfig.adaptive) — nothing separate to apply. Present it at the
 			    gate so the user can adjust or decline. Null when there is no multi-column grid container.
 			  - tabAreaLayers — the mobile designer's two-layer body synthesized inside every tab the CONVERTER
-			    creates: a tab-body grid (MainTabContainer_<suffix>) holding the tab's Area card(s)
-			    (GridContainer_<suffix>), with the tab's non-panel top-level content already retargeted into the
-			    shared Area and stacked in web order. An expansion panel does not join the shared Area — it sits
-			    in its OWN detail Area card beside it ("like mobile details"; shared Area first, details next in
-			    web order; a panels-only tab gets no shared Area at all), carried as-is with its properties
-			    untouched. All layers are ORDINARY elementMap inserts placed right after the tab's own entry —
+			    creates: a tab-body grid (MainTabContainer_<suffix>) holding the tab's Area card
+			    (GridContainer_<suffix>), with ALL of the tab's top-level content (expansion panels included)
+			    already retargeted into the Area and stacked in web order. Both layers are ORDINARY elementMap
+			    inserts placed right after the tab's own entry —
 			    nothing separate to apply. This structure is MANDATORY (a team standard), NOT a proposal: report
 			    it at the gate so the user knows what the tab bodies look like, but never offer to skip or
 			    replace it. Null when the converter creates no tab, or every converted tab is empty (an empty tab
@@ -210,20 +208,18 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   would duplicate the operation). Just PRESENT it to the user in plain language ("fields in <container>
 			   stack on the phone, keep <n> columns on a tablet — adjust?"); they may change it or decline.
 			5c. Tab body + Area (when guide.tabAreaLayers is present): every tab the CONVERTER creates already carries
-			   its synthesized inserts in the element map — the tab-body grid, then its Area card(s) — because on
-			   mobile a tab's content lives in an Area card, not directly in the tab body. Each of that tab's non-panel
-			   top-level components already has parentName = the shared Area and a sequential single-column layoutConfig
-			   (a component the adaptive pass placed per breakpoint keeps that adaptive placement instead), and every
-			   expansion panel already sits in its OWN detail Area card beside the shared one (shared Area row 1,
-			   details next in the panels' web order; a panels-only tab has no shared Area) — the panel itself is
-			   carried AS-IS, only its parent and placement changed; do not merge it back or edit its properties.
+			   its synthesized inserts in the element map — the tab-body grid, then its Area card — because on
+			   mobile a tab's content lives in an Area card, not directly in the tab body. Each of that tab's
+			   top-level components (expansion panels included — a panel is an ordinary component here) already has
+			   parentName = the Area and a sequential single-column layoutConfig
+			   (a component the adaptive pass placed per breakpoint keeps that adaptive placement instead).
 			   Apply the inserts in element-map order (a parent always precedes its children) and do NOT reparent,
 			   reorder or re-place anything yourself, do NOT add an Area of your own, and do NOT touch a tab the mobile
 			   template provides (it arrives as a merge twin and gets no layers). The synthesized entries have no
 			   webName — they have no web counterpart. This structure is MANDATORY — do NOT ask whether to apply it,
 			   do NOT offer to keep the web structure instead, and do NOT treat it as a decision at the gate. STATE it
 			   in the plain-language plan as a fact ("the content of <tab> goes into one Area card, stacked in the web
-			   order; the panel <panel> gets its own card"), the way you state which components transfer.
+			   order"), the way you state which components transfer.
 			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
 			7. Persist with update-page — pass target-schema-uid=<create-page schemaUId> so the body lands in the
@@ -314,14 +310,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  paste mobileValues verbatim; do not hand-build adaptive. The mobile runtime reflows children by
 			  `row` / `column`. adaptiveLayout is a PROPOSAL — let the user adjust or decline it at the gate.
 			- TAB BODY + AREA for every tab the CONVERTER creates is baked for you the same way: the tab gets a
-			  tab-body grid holding its Area card(s) (all as ordinary elementMap inserts right after the tab); the
-			  tab's non-panel top-level content is already retargeted into the shared Area with a sequential
-			  single-column layoutConfig, and every expansion panel sits in its OWN detail Area card beside it,
-			  carried as-is (shared Area first, details next in web order; a panels-only tab has no shared Area).
-			  Apply the map in order — do not add an Area, do not reparent the tab's children, do not merge a panel
-			  back into the shared Area, and leave template-provided tabs (merge twins) alone. An empty tab gets NO
+			  tab-body grid holding its Area card (both as ordinary elementMap inserts right after the tab); ALL
+			  of the tab's top-level content (expansion panels included) is already retargeted into the Area with
+			  a sequential single-column layoutConfig.
+			  Apply the map in order — do not add an Area, do not reparent the tab's children, and leave
+			  template-provided tabs (merge twins) alone. An empty tab gets NO
 			  layers, so an empty Area never appears.
-			  Unlike adaptiveLayout, tabAreaLayers is NOT a proposal: the tab body + Area cards are the REQUIRED
+			  Unlike adaptiveLayout, tabAreaLayers is NOT a proposal: the tab body + Area card are the REQUIRED
 			  mobile structure for a converted tab — report it at the gate, never put it up for the user's approval.
 			- SPACING IS NORMALIZED, NOT CONVERTED: mobile follows the mobile spacing standard, so the web page's
 			  container spacing is deliberately IGNORED — every inserted crt.GridContainer / crt.FlexContainer

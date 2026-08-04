@@ -2366,11 +2366,10 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	private static WebToMobilePageConversionRules RulesWithTabAreaLayers(
-		string tabComponentType = "crt.TabContainer", string[] detailComponentTypes = null) => new() {
+		string tabComponentType = "crt.TabContainer") => new() {
 		Components = GridRule.Components,
 		TabAreaLayers = new TabAreaLayersRule {
 			TabComponentType = tabComponentType,
-			DetailComponentTypes = detailComponentTypes ?? [],
 			MainTabContainer = new SynthesizedContainerRule {
 				NamePrefix = "MainTabContainer_",
 				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
@@ -2389,14 +2388,6 @@ public sealed class WebToMobileConversionServiceTests {
 		string suffix = WebToMobileAnalysisService.StableSuffix("Leads_FormPage", tabName);
 		return ("MainTabContainer_" + suffix, "GridContainer_" + suffix);
 	}
-
-	/// <summary>The synthesized detail Area name for one panel of the tabbed fixture (per-panel suffix, ENG-94188 AC#4).</summary>
-	private static string DetailAreaName(string tabName, string panelName) =>
-		"GridContainer_" + WebToMobileAnalysisService.StableSuffix("Leads_FormPage", $"{tabName}:{panelName}");
-
-	/// <summary>Rules with the tab-area layers AND the expansion panel registered as a detail type (AC#4 switched on).</summary>
-	private static WebToMobilePageConversionRules RulesWithPanelDetails() =>
-		RulesWithTabAreaLayers(detailComponentTypes: ["crt.ExpansionPanel"]);
 
 	[Test]
 	[Description("ENG-94188 I2: a converted tab with content gets the designer's two layers (tab-body grid + Area card) inserted RIGHT AFTER its own entry, carrying the rule values verbatim plus an items slot, with no webName.")]
@@ -2813,8 +2804,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 AC#4: an expansion panel among the tab's top-level content does not join the shared Area — it gets its OWN detail Area card as a sibling in the tab body (shared Area row 1, detail Area row 2, panel at row 1 of its card), and the map keeps parent-before-child order.")]
-	public void Analyze_ShouldCarryPanelIntoOwnDetailArea_WhenTabMixesFieldsAndPanel() {
+	[Description("An expansion panel among the tab's top-level content is an ORDINARY component: it joins the tab's Area with the fields, stacked in the web order.")]
+	public void Analyze_ShouldStackPanelInArea_WhenTabMixesFieldsAndPanel() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
@@ -2824,170 +2815,34 @@ public sealed class WebToMobileConversionServiceTests {
 						{ "name": "SimilarLeadName", "type": "crt.Input" } ] } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
 		(string main, string area) = LayerNames("OverviewTab");
-		string detail = DetailAreaName("OverviewTab", "SimilarLead");
-		// The fields stay in the shared Area, stacked as before…
+		// Fields and the panel alike stack in the ONE Area, web order = row order.
 		Element(guide, "LeadName").ParentName.Should().Be(area);
 		Element(guide, "Status").ParentName.Should().Be(area);
 		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
-		// …the panel sits in its own card, the sole child of it.
-		Element(guide, "SimilarLead").ParentName.Should().Be(detail,
-			because: "a detail-like panel must not share the tab's Area (AC#4)");
-		Element(guide, "SimilarLead").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "the panel is the only child of its own single-column card");
-		// In the tab body: the shared Area is row 1, the detail Area row 2 — both explicit, order under a
-		// grid parent is not carried by the items order.
-		Synthesized(guide, area).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "with a detail sibling beside it the shared Area needs an explicit placement");
-		ElementMapEntry detailEntry = Synthesized(guide, detail);
-		detailEntry.ParentName.Should().Be(main, because: "the detail Area is a sibling of the shared Area inside the tab body");
-		detailEntry.MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
-		// Parent-before-child in the final map: layer 2, shared Area, detail Area — right after the tab.
+		Element(guide, "SimilarLead").ParentName.Should().Be(area,
+			because: "a panel is an ordinary component and joins the tab's Area like any other child");
+		Element(guide, "SimilarLead").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
+		// The panel's inner content is none of this pass's business.
+		Element(guide, "SimilarLeadName").ParentName.Should().Be("SimilarLead");
+		// Exactly two layers right after the tab; the Area alone in the tab body carries no placement.
 		int tabAt = IndexOfMobile(guide, "OverviewTab");
 		IndexOfMobile(guide, main).Should().Be(tabAt + 1);
 		IndexOfMobile(guide, area).Should().Be(tabAt + 2);
-		IndexOfMobile(guide, detail).Should().Be(tabAt + 3,
-			because: "applying entries in element-map order must create the detail card before the panel that points at it");
+		Synthesized(guide, area).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the Area is the only child of the tab body, so it needs no explicit placement");
 
 		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
 		group.AreaName.Should().Be(area);
-		group.MovedChildren.Should().Equal(new[] { "LeadName", "Status" },
-			because: "the panel moved into its own detail Area, not into the shared one");
-		TabDetailAreaGroup detailGroup = group.DetailAreas!.Single();
-		detailGroup.PanelName.Should().Be("SimilarLead");
-		detailGroup.AreaName.Should().Be(detail);
-		detailGroup.Row.Should().Be(2);
+		group.MovedChildren.Should().Equal(new[] { "LeadName", "Status", "SimilarLead" },
+			because: "the panel moved into the Area together with the fields, in the web order");
 	}
 
 	[Test]
-	[Description("ENG-94188 Р2: even when the web page puts the panel BEFORE the fields, the shared Area stays first (row 1) and the detail Area follows (row 2) — a deliberate divergence from the through-going web order, fixed in the target spec.")]
-	public void Analyze_ShouldKeepSharedAreaFirst_WhenWebPagePutsPanelBeforeFields() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
-					{ "name": "SimilarLead", "type": "crt.ExpansionPanel", "items": [] },
-					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
-
-		(_, string area) = LayerNames("OverviewTab");
-		string detail = DetailAreaName("OverviewTab", "SimilarLead");
-		Synthesized(guide, area).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "the shared Area is always first regardless of where the panel stood on the web page");
-		Synthesized(guide, detail).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
-		Element(guide, "LeadName").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "inside the shared Area the field is still the first (and only) stacked child");
-	}
-
-	[Test]
-	[Description("ENG-94188 AC#4/AC#5: a tab whose top-level content is panels ONLY gets no shared Area at all — the detail Areas take rows 1..N in the panels' web order, so an empty shared card is never created.")]
-	public void Analyze_ShouldSynthesizeNoSharedArea_WhenTabContentIsPanelsOnly() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
-					{ "name": "OpportunityPlanning", "type": "crt.ExpansionPanel", "items": [] },
-					{ "name": "Products", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
-
-		(string main, string area) = LayerNames("SalesTab");
-		IndexOfMobile(guide, area).Should().Be(-1,
-			because: "with no non-panel content there is nothing for a shared Area to hold (AC#5 one level down)");
-		string firstDetail = DetailAreaName("SalesTab", "OpportunityPlanning");
-		string secondDetail = DetailAreaName("SalesTab", "Products");
-		Synthesized(guide, firstDetail).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "without a shared Area the detail rows start at 1");
-		Synthesized(guide, secondDetail).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
-		Synthesized(guide, firstDetail).ParentName.Should().Be(main);
-		Element(guide, "OpportunityPlanning").ParentName.Should().Be(firstDetail);
-		Element(guide, "Products").ParentName.Should().Be(secondDetail);
-
-		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
-		group.AreaName.Should().BeNull(because: "no shared Area was synthesized");
-		group.MovedChildren.Should().BeEmpty(because: "every child moved into its own detail card");
-		group.DetailAreas!.Select(d => d.PanelName).Should().Equal("OpportunityPlanning", "Products");
-	}
-
-	[Test]
-	[Description("ENG-94188 AC#5: a wrapper of panels ONLY dissolved into the tab leaves just a routing hint beside the panels — a hint is not content, so no shared Area is synthesized, the hint is retargeted to the tab body, and the detail rows start at 1.")]
-	public void Analyze_ShouldSynthesizeNoSharedArea_WhenDissolvedWrapperHoldsPanelsOnly() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
-					{ "name": "Wrapper", "type": "crt.FlexContainer", "items": [
-						{ "name": "OpportunityPlanning", "type": "crt.ExpansionPanel", "items": [] },
-						{ "name": "Products", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
-
-		(string main, string area) = LayerNames("SalesTab");
-		IndexOfMobile(guide, area).Should().Be(-1,
-			because: "a relocate-children hint is a routing note, not content — an Area that would hold nothing must not be created (AC#5 one level down)");
-		ElementMapEntry wrapper = Element(guide, "Wrapper");
-		wrapper.Operation.Should().Be("relocate-children");
-		wrapper.ParentName.Should().Be(main,
-			because: "with no shared Area the hint points at the tab body, where the detail Areas holding its surfaced children live");
-		string firstDetail = DetailAreaName("SalesTab", "OpportunityPlanning");
-		string secondDetail = DetailAreaName("SalesTab", "Products");
-		Synthesized(guide, firstDetail).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "without a shared Area the detail rows start at 1 — nothing may leave a row-1 hole");
-		Synthesized(guide, secondDetail).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2,
-			because: "the second detail card stacks right under the first");
-		Element(guide, "OpportunityPlanning").ParentName.Should().Be(firstDetail,
-			because: "the surfaced panel is a top-level detail child of the tab (Р4)");
-		Element(guide, "Products").ParentName.Should().Be(secondDetail,
-			because: "each surfaced panel gets its own detail card");
-
-		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
-		group.AreaName.Should().BeNull(because: "no shared Area was synthesized");
-		group.MovedChildren.Should().BeEmpty(because: "every real child moved into its own detail card");
-		group.DetailAreas!.Select(d => d.PanelName).Should().Equal(new[] { "OpportunityPlanning", "Products" },
-			"the detail cards follow the panels' web order");
-	}
-
-	[Test]
-	[Description("ENG-94188 Р4: a dissolved wrapper holding a panel AND a field surfaces both to the tab's top level — the panel gets its own detail Area, the field lands in the shared Area, and the hint keeps pointing at that Area.")]
-	public void Analyze_ShouldSplitSurfacedWrapperChildren_WhenDissolvedWrapperMixesFieldAndPanel() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
-					{ "name": "Wrapper", "type": "crt.FlexContainer", "items": [
-						{ "name": "LeadName", "type": "crt.Input" },
-						{ "name": "SimilarLead", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
-
-		(_, string area) = LayerNames("OverviewTab");
-		string detail = DetailAreaName("OverviewTab", "SimilarLead");
-		Element(guide, "LeadName").ParentName.Should().Be(area,
-			because: "the surfaced field is non-detail content and joins the shared Area");
-		Element(guide, "LeadName").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "the field is the first (and only) stacked child of the shared Area");
-		Element(guide, "SimilarLead").ParentName.Should().Be(detail,
-			because: "a surfaced top-level panel still becomes a detail, exactly as a directly-placed one (Р4)");
-		Element(guide, "Wrapper").ParentName.Should().Be(area,
-			because: "with a shared Area synthesized the hint keeps pointing at it, as before this pass learned about details");
-		Synthesized(guide, area).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1,
-			because: "with a detail sibling beside it the shared Area needs an explicit placement");
-		Synthesized(guide, detail).MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2,
-			because: "the detail card stacks under the shared Area");
-
-		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
-		group.AreaName.Should().Be(area, because: "the surfaced field keeps the shared Area alive");
-		group.MovedChildren.Should().Equal(new[] { "LeadName" },
-			"the panel moved into its own detail card, and the hint occupies no row");
-		group.DetailAreas!.Single().PanelName.Should().Be("SimilarLead");
-	}
-
-	[Test]
-	[Description("ENG-94188 Р3: the panel is carried into its detail Area AS-IS — every web property (toggleType, togglePosition, labelColor, fullWidthHeader, titleWidth, fitContent, expanded) survives untouched, no alignItems is added, and only parentName + the single-child placement change; the panel's own children stay inside it.")]
-	public void Analyze_ShouldCarryPanelAsIs_WhenPanelMovesIntoDetailArea() {
+	[Description("The panel is carried into the Area AS-IS — every web property (toggleType, togglePosition, labelColor, fullWidthHeader, titleWidth, fitContent, expanded) survives untouched, no alignItems is added, and only parentName + the stack placement change; the panel's own children stay inside it.")]
+	public void Analyze_ShouldCarryPanelAsIs_WhenPanelMovesIntoArea() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
@@ -2997,108 +2852,35 @@ public sealed class WebToMobileConversionServiceTests {
 					  "items": [ { "name": "SimilarLeadName", "type": "crt.Input" } ] } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
-		JsonObject panel = Element(guide, "SimilarLead").MobileValues!.AsObject();
-		panel["toggleType"]!.GetValue<string>().Should().Be("arrow", because: "prop cleanup is deferred with the general de-skin (Р3)");
+		(_, string area) = LayerNames("OverviewTab");
+		ElementMapEntry panelEntry = Element(guide, "SimilarLead");
+		panelEntry.ParentName.Should().Be(area, because: "the panel stacks in the tab's Area like any other component");
+		JsonObject panel = panelEntry.MobileValues!.AsObject();
+		panel["toggleType"]!.GetValue<string>().Should().Be("arrow", because: "prop cleanup is deferred with the general de-skin");
 		panel["togglePosition"]!.GetValue<string>().Should().Be("right");
 		panel["labelColor"]!.GetValue<string>().Should().Be("#333333");
 		panel["fullWidthHeader"]!.GetValue<bool>().Should().BeTrue();
 		panel["titleWidth"]!.GetValue<int>().Should().Be(200);
 		panel["fitContent"]!.GetValue<bool>().Should().BeTrue();
-		panel["expanded"]!.GetValue<bool>().Should().BeTrue(because: "expanded exists on mobile too and must survive (Р6)");
+		panel["expanded"]!.GetValue<bool>().Should().BeTrue(because: "expanded exists on mobile too and must survive");
 		panel.ContainsKey("alignItems").Should().BeFalse(because: "the pass must not add properties either — the panel goes as-is");
 		panel["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
 		Element(guide, "SimilarLeadName").ParentName.Should().Be("SimilarLead",
-			because: "the panel's inner content is none of this pass's business (Р4)");
+			because: "the panel's inner content is none of this pass's business");
 	}
 
 	[Test]
-	[Description("ENG-94188 Р7: a detail Area carries the SAME areaContainer values from the rules as the shared Area — no separate props block exists for the detail variant.")]
-	public void Analyze_ShouldReuseSharedAreaRuleValues_WhenDetailAreaIsSynthesized() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
-					{ "name": "LeadName", "type": "crt.Input" },
-					{ "name": "SimilarLead", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
-
-		(_, string area) = LayerNames("OverviewTab");
-		JsonObject sharedValues = Synthesized(guide, area).MobileValues!.AsObject();
-		JsonObject detailValues = Synthesized(guide, DetailAreaName("OverviewTab", "SimilarLead")).MobileValues!.AsObject();
-		foreach (string key in new[] { "type", "color", "borderRadius" }) {
-			detailValues[key]!.GetValue<string>().Should().Be(sharedValues[key]!.GetValue<string>(),
-				because: $"the detail Area reuses the shared areaContainer rule values verbatim ('{key}', Р7)");
-		}
-		detailValues["items"]!.AsArray().Should().BeEmpty(because: "a synthesized container needs an initialized slot for its child");
-	}
-
-	[Test]
-	[Description("ENG-94188: detail Area names are per-panel deterministic — repeated runs reproduce them, sibling panels of one tab get distinct suffixes, and a collision with a source element extends the hash prefix instead of renaming randomly.")]
-	public void Analyze_ShouldSynthesizeDeterministicPerPanelNames_WhenTabHoldsSeveralPanels() {
-		const string viewConfig = """
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
-					{ "name": "OpportunityPlanning", "type": "crt.ExpansionPanel", "items": [] },
-					{ "name": "Products", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
-			""";
-
-		MobilePageConversionGuide first = AnalyzeTabbed(Bundle(viewConfig), rules: RulesWithPanelDetails());
-		MobilePageConversionGuide second = AnalyzeTabbed(Bundle(viewConfig), rules: RulesWithPanelDetails());
-
-		IReadOnlyList<TabDetailAreaGroup> details = first.TabAreaLayers!.Single().DetailAreas!;
-		details.Select(d => d.AreaName).Should().Equal(second.TabAreaLayers!.Single().DetailAreas!.Select(d => d.AreaName),
-			because: "repeated guide runs and baseline diffs must reproduce identical detail names");
-		details.Select(d => d.AreaName).Should().OnlyHaveUniqueItems(because: "each panel gets its own card");
-
-		// A source element already owning the first panel's detail name forces a deterministic extension.
-		string detailName = DetailAreaName("SalesTab", "OpportunityPlanning");
-		PageBundleInfo collided = Bundle($$"""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
-					{ "name": "{{detailName}}", "type": "crt.Input" },
-					{ "name": "OpportunityPlanning", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
-			""");
-		MobilePageConversionGuide guide = AnalyzeTabbed(collided, rules: RulesWithPanelDetails());
-		string collidedDetail = guide.TabAreaLayers!.Single().DetailAreas!.Single().AreaName;
-		collidedDetail.Should().NotBe(detailName, because: "the source element keeps its name");
-		collidedDetail.Should().StartWith(detailName, because: "the collision guard extends the hash prefix deterministically");
-	}
-
-	[Test]
-	[Description("ENG-94188 Р4: only the tab's TOP-LEVEL panels become details — a panel nested inside a grid container keeps its place, and a panel inside another panel stays inside it.")]
-	public void Analyze_ShouldLeaveNestedPanelsUntouched_WhenPanelIsNotTopLevelTabContent() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
-					{ "name": "FieldsContainer", "type": "crt.GridContainer", "items": [
-						{ "name": "NestedPanel", "type": "crt.ExpansionPanel", "items": [] } ] },
-					{ "name": "OuterPanel", "type": "crt.ExpansionPanel", "items": [
-						{ "name": "InnerPanel", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
-
-		Element(guide, "NestedPanel").ParentName.Should().Be("FieldsContainer",
-			because: "a panel inside a container is ordinary content of that container (Р4)");
-		Element(guide, "InnerPanel").ParentName.Should().Be("OuterPanel",
-			because: "a panel inside a panel is the outer panel's own content (Р4)");
-		guide.TabAreaLayers!.Single().DetailAreas!.Single().PanelName.Should().Be("OuterPanel",
-			because: "only the top-level panel gets its own detail Area");
-	}
-
-	[Test]
-	[Description("ENG-94188: a tab the mobile TEMPLATE provides is a merge twin and stays out of the pass entirely — a panel inside it gets no detail Area.")]
-	public void Analyze_ShouldSynthesizeNoDetailArea_WhenPanelSitsInTemplateMergeTab() {
+	[Description("A tab the mobile TEMPLATE provides is a merge twin and stays out of the pass entirely — a panel inside it is not retargeted anywhere.")]
+	public void Analyze_ShouldSynthesizeNoLayers_WhenPanelSitsInTemplateMergeTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
 					{ "name": "FeedPanel", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
 		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
 		guide.TabAreaLayers.Should().BeNull(because: "merge tabs get no synthesized layers at all");
@@ -3107,32 +2889,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94188 data compatibility: without detailComponentTypes (or with an empty list) the panel keeps the pre-detail behavior — it joins the shared Area as an ordinary stacked child and no detail Area exists.")]
-	public void Analyze_ShouldKeepPanelInSharedArea_WhenRulesCarryNoDetailComponentTypes() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
-					{ "name": "LeadName", "type": "crt.Input" },
-					{ "name": "SimilarLead", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
-
-		(_, string area) = LayerNames("OverviewTab");
-		Element(guide, "SimilarLead").ParentName.Should().Be(area,
-			because: "an empty detail-type list is the data switch back to the shared-Area behavior");
-		Element(guide, "SimilarLead").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
-		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
-		group.MovedChildren.Should().Equal(new[] { "LeadName", "SimilarLead" },
-			because: "the panel is then an ordinary moved child");
-		group.DetailAreas.Should().BeNull(because: "no detail Areas exist with the feature switched off");
-		Synthesized(guide, area).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
-			because: "a shared Area that is the only child of the tab body still carries no placement of its own");
-	}
-
-	[Test]
-	[Description("ENG-94188 snapshot: a page mixing all three tab shapes (fields+panel, panels-only, fields-only) lays out every tab correctly in ONE map — each tab's layers still sit right after its own entry despite the varying number of inserts of the earlier tabs.")]
-	public void Analyze_ShouldLayOutWholeTabbedPage_WhenTabsMixSharedAndDetailAreas() {
+	[Description("Snapshot: a page mixing tab shapes (fields+panel, panels-only, fields-only) lays out every tab identically in ONE map — one Area per tab holding all its content, each tab's layers right after its own entry despite the earlier tabs' inserts.")]
+	public void Analyze_ShouldLayOutWholeTabbedPage_WhenTabsMixFieldsAndPanels() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
@@ -3145,32 +2903,33 @@ public sealed class WebToMobileConversionServiceTests {
 					{ "name": "Notes", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithPanelDetails());
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
 		guide.TabAreaLayers!.Should().HaveCount(3, because: "every content-bearing converted tab gets its layers");
 		TabAreaLayerGroup overview = guide.TabAreaLayers![0];
 		overview.AreaName.Should().NotBeNull();
-		overview.MovedChildren.Should().Equal(new[] { "LeadName" });
-		overview.DetailAreas!.Single().Row.Should().Be(2);
+		overview.MovedChildren.Should().Equal(new[] { "LeadName", "SimilarLead" },
+			because: "the panel stacks in the Area together with the field");
 		TabAreaLayerGroup sales = guide.TabAreaLayers![1];
-		sales.AreaName.Should().BeNull(because: "the panels-only tab gets no shared Area");
-		sales.DetailAreas!.Select(d => d.Row).Should().Equal(1, 2);
+		sales.AreaName.Should().NotBeNull(because: "a panels-only tab gets an ordinary Area holding the panels");
+		sales.MovedChildren.Should().Equal(new[] { "OpportunityPlanning", "Products" });
 		TabAreaLayerGroup processing = guide.TabAreaLayers![2];
 		processing.AreaName.Should().NotBeNull();
-		processing.DetailAreas.Should().BeNull(because: "a tab without panels has no detail cards");
+		processing.MovedChildren.Should().Equal(new[] { "Notes" });
 
-		// The second tab's layers must sit right after ITS entry in the final map — the first tab inserted
-		// THREE layers (body + shared + detail), so a stale pre-insert index would misplace everything here.
+		// Each tab's layers must sit right after ITS entry in the final map — the earlier tabs' inserts
+		// shift the later tabs, so a stale pre-insert index would misplace everything here.
 		int salesAt = IndexOfMobile(guide, "SalesTab");
 		IndexOfMobile(guide, sales.MainTabContainerName).Should().Be(salesAt + 1);
-		IndexOfMobile(guide, sales.DetailAreas![0].AreaName).Should().Be(salesAt + 2,
-			because: "with no shared Area the first detail directly follows the tab body");
-		IndexOfMobile(guide, sales.DetailAreas![1].AreaName).Should().Be(salesAt + 3);
+		IndexOfMobile(guide, sales.AreaName).Should().Be(salesAt + 2);
+		Element(guide, "OpportunityPlanning").ParentName.Should().Be(sales.AreaName);
+		Element(guide, "Products").ParentName.Should().Be(sales.AreaName);
+		Element(guide, "Products").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
 		int processingAt = IndexOfMobile(guide, "ProcessingTab");
 		IndexOfMobile(guide, processing.MainTabContainerName).Should().Be(processingAt + 1);
 		IndexOfMobile(guide, processing.AreaName).Should().Be(processingAt + 2);
 		Synthesized(guide, processing.AreaName).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
-			because: "a shared Area alone in the tab body keeps carrying no placement");
+			because: "the Area alone in the tab body carries no placement");
 	}
 
 	#endregion
@@ -3436,7 +3195,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static WebToMobilePageConversionRules RulesWithEmptyRemovalAndTabLayers() => new() {
 		Components = GridRule.Components,
-		TabAreaLayers = RulesWithPanelDetails().TabAreaLayers,
+		TabAreaLayers = RulesWithTabAreaLayers().TabAreaLayers,
 		EmptyContainerRemoval = EmptyRemoval
 	};
 

@@ -89,8 +89,8 @@ public sealed class MobilePageConversionGuideTool {
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
 			"plus tabAreaLayers (MANDATORY, not a proposal: every converter-created tab carries synthesized containers — the tab body grid, " +
-			"then its Area card(s) — already baked into elementMap as ordinary inserts right after the tab's entry, with the tab's non-panel top-level children " +
-			"retargeted into the shared Area and every expansion panel carried AS-IS into its OWN detail Area card beside it (detailAreas; a panels-only tab has no shared Area); " +
+			"then its Area card — already baked into elementMap as ordinary inserts right after the tab's entry, with ALL of the tab's top-level children " +
+			"(expansion panels included) retargeted into the Area; " +
 			"the synthesized entries have no web counterpart so they carry no webName; apply the inserts in element-map " +
 			"order, never ask whether to apply it, never offer to skip it; tabs the mobile template provides get no layers), " +
 			"plus spacingNormalization (SILENT, not a gate question: every inserted Grid/Flex container — converted and synthesized alike — already carries gap Medium " +

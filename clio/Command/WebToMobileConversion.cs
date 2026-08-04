@@ -1480,12 +1480,10 @@ public static class WebToMobileAnalysisService {
 				"tabAreaLayers is MANDATORY, not a proposal: the two-layer tab body is this team's required mobile " +
 				"structure, so never ask whether to apply it, never offer to skip it, and never build a converted " +
 				"tab any other way. It is ALREADY baked into the element map: every converter-created tab carries " +
-				"synthesized containers (the tab body grid, then its Area card(s)) as ordinary inserts placed right " +
-				"after the tab's own entry; every one of that tab's non-panel top-level children already points at " +
-				"the shared Area with a sequential single-column layoutConfig (a child the adaptive pass placed per " +
-				"breakpoint keeps that adaptive placement instead), and every expansion panel already sits in its " +
-				"OWN detail Area card beside the shared one, carried as-is — do not merge a panel back into the " +
-				"shared Area and do not edit its properties. Apply the inserts in element-map order and " +
+				"synthesized containers (the tab body grid, then its Area card) as ordinary inserts placed right " +
+				"after the tab's own entry; every one of that tab's top-level children (expansion panels included) " +
+				"already points at the Area with a sequential single-column layoutConfig (a child the adaptive pass " +
+				"placed per breakpoint keeps that adaptive placement instead). Apply the inserts in element-map order and " +
 				"paste mobileValues verbatim — do NOT reparent, reorder or re-place anything yourself, and do NOT " +
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
@@ -1525,7 +1523,7 @@ public static class WebToMobileAnalysisService {
 			steps.Add("Adaptive layout for multi-column grid containers is already baked into mobileValues (container adaptive columns + each child's layoutConfig.adaptive: phone collapses to 1 column, tablet/desktop keep the web columns). Present guide.adaptiveLayout to the user for review; they may adjust or decline it.");
 		}
 		if (hasTabAreaLayers) {
-			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area cards) is already baked into the element map for every converter-created tab: the tab's non-panel top-level content is retargeted into the shared Area and stacked in web order, and every expansion panel sits in its OWN detail Area card beside it (shared Area first, then the details in web order; a panels-only tab has no shared Area at all). Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order -> detailAreas per panel).");
+			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
 		if (hasSpacingNormalization) {
 			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
@@ -2688,25 +2686,14 @@ public static class WebToMobileAnalysisService {
 	/// nothing to delete afterwards).
 	/// </para>
 	/// <para>
-	/// A top-level child whose mobile type is listed in the rule's <c>detailComponentTypes</c> (an
-	/// expansion panel) is a DETAIL (AC#4, "like mobile details"): it does not join the shared Area but
-	/// gets its OWN synthesized Area card as a sibling inside the tab body, and is carried into it AS-IS —
-	/// only its parent and its single-child placement change, its properties are not edited. The shared
-	/// Area is synthesized only when non-detail content remains, so a tab holding nothing but panels never
-	/// produces an empty shared Area (the same AC#5 construction, one level down). In the tab body the
-	/// shared Area always comes first (row 1) and the detail Areas follow in the panels' web order; the
-	/// shared Area carries an explicit <c>layoutConfig</c> only when detail siblings exist beside it.
-	/// </para>
-	/// <para>
-	/// The tab's remaining top-level content is then RETARGETED into the shared Area, and every retargeted
-	/// component gets a sequential single-column <c>layoutConfig</c> so the mobile order matches the web
-	/// order. The element map is walked in tree order, so the row numbers follow the source page's own
-	/// ordering.
+	/// The tab's top-level content (expansion panels included — a panel is an ordinary component here) is
+	/// then RETARGETED into the Area, and every retargeted component gets a sequential single-column
+	/// <c>layoutConfig</c> so the mobile order matches the web order. The element map is walked in tree
+	/// order, so the row numbers follow the source page's own ordering.
 	/// </para>
 	/// <para>
 	/// The whole pass is switched by DATA: with no usable <c>tabAreaLayers</c> section in the rules file it
-	/// is a no-op, and with no <c>detailComponentTypes</c> every child (panels included) goes into the
-	/// shared Area exactly as before.
+	/// is a no-op.
 	/// </para>
 	/// </summary>
 	private static List<TabAreaLayerGroup> BuildTabAreaLayers(
@@ -2716,9 +2703,6 @@ public static class WebToMobileAnalysisService {
 			|| !IsUsableLayer(rule.MainTabContainer) || !IsUsableLayer(rule.AreaContainer)) {
 			return [];
 		}
-		var detailTypes = new HashSet<string>(
-			(rule.DetailComponentTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
-			StringComparer.OrdinalIgnoreCase);
 		// Every name already spoken for: the source element names and the mobile names the template owns
 		// (merge targets), plus the layers synthesized for tabs handled earlier in this same pass. A suffix is
 		// free only when BOTH names built from it are free — the two layers share one suffix, so checking just
@@ -2753,19 +2737,6 @@ public static class WebToMobileAnalysisService {
 			if (content.Count == 0) {
 				continue;
 			}
-			// AC#4: a top-level DETAIL child (an expansion panel) does not join the shared Area — it gets
-			// its own Area card. Split the content in one pass so both halves keep the element-map order
-			// (= the web order). Only insert entries can be details: a relocate-children routing hint has
-			// no mobile type of its own and always belongs to the shared half. Anything nested deeper
-			// (a panel inside a container, a panel inside a panel) never reaches this pass at all.
-			var panels = new List<ElementMapEntry>();
-			var shared = new List<ElementMapEntry>();
-			foreach (ElementMapEntry child in content) {
-				bool isDetail = string.Equals(child.Operation, "insert", StringComparison.Ordinal)
-					&& child.MobileType is { Length: > 0 } && detailTypes.Contains(child.MobileType);
-				(isDetail ? panels : shared).Add(child);
-			}
-
 			string suffix = StableSuffix(sourcePage, tab.MobileName,
 				candidate => taken.Contains(rule.MainTabContainer.NamePrefix + candidate)
 					|| taken.Contains(rule.AreaContainer.NamePrefix + candidate));
@@ -2774,67 +2745,31 @@ public static class WebToMobileAnalysisService {
 
 			// Freshly resolved index: earlier tabs have already shifted this one by their own inserts.
 			// insertAt walks forward so every synthesized layer lands right after the tab's entry, parent
-			// always before child (layer 2 → shared Area → detail Areas; the panels themselves sit later
-			// in the map anyway).
+			// always before child (layer 2 → Area; the tab's children sit later in the map anyway).
 			int insertAt = elementMap.IndexOf(tab);
 			elementMap.Insert(++insertAt, SynthesizedLayerEntry(rule.MainTabContainer, mainName, tab.MobileName,
 				$"synthesized by the converter (no web counterpart) — the tab body of the converted tab "
-				+ $"'{tab.MobileName}'; it holds the Area card(s) that follow"));
+				+ $"'{tab.MobileName}'; it holds the Area card that follows"));
 
-			// The shared Area exists only when non-detail content remains (AC#5 one level down: a tab of
-			// nothing but panels must not produce an empty shared Area). Only insert entries count as
-			// content: a relocate-children routing hint never occupies a row, so a tab whose non-detail
-			// half is hints alone (a dissolved wrapper of panels) gets no shared Area either. When detail
-			// siblings exist beside it, every child of the tab body needs an explicit placement — order
-			// under a grid parent is not carried by the items order — so the shared Area then gets row 1;
-			// alone it keeps carrying no layoutConfig, exactly as before this pass learned about details.
+			// The Area exists only when real content remains: a relocate-children routing hint never
+			// occupies a row, so a tab whose content is hints alone gets no Area (an Area that would hold
+			// nothing must not be created — the same AC#5 construction, one level down).
 			string areaName = null;
-			if (shared.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
+			if (content.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
 				areaName = rule.AreaContainer.NamePrefix + suffix;
 				taken.Add(areaName);
-				ElementMapEntry sharedArea = SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
+				elementMap.Insert(++insertAt, SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
 					$"synthesized by the converter (no web counterpart) — the Area card of the converted tab "
-					+ $"'{tab.MobileName}'; on mobile a tab's content lives in an Area, not in the tab body itself");
-				if (panels.Count > 0) {
-					sharedArea.MobileValues["layoutConfig"] = SingleColumnPlacement(1);
-				}
-				elementMap.Insert(++insertAt, sharedArea);
+					+ $"'{tab.MobileName}'; on mobile a tab's content lives in an Area, not in the tab body itself"));
 			}
 
-			// One detail Area per panel, stacked after the shared Area in the panels' web order. The panel
-			// is carried AS-IS: its properties are not edited — only its parent and its placement (row 1,
-			// the sole child of its own card) change. The suffix hashes the panel name too, so every detail
-			// card of the page gets its own reproducible name.
-			var detailAreas = new List<TabDetailAreaGroup>();
-			int bodyRow = areaName is null ? 1 : 2;
-			foreach (ElementMapEntry panel in panels) {
-				string panelSuffix = StableSuffix(sourcePage, $"{tab.MobileName}:{panel.MobileName}",
-					candidate => taken.Contains(rule.AreaContainer.NamePrefix + candidate));
-				string detailName = rule.AreaContainer.NamePrefix + panelSuffix;
-				taken.Add(detailName);
-				ElementMapEntry detailArea = SynthesizedLayerEntry(rule.AreaContainer, detailName, mainName,
-					$"synthesized by the converter (no web counterpart) — the detail Area card of the expansion "
-					+ $"panel '{panel.MobileName}' in tab '{tab.MobileName}'; on mobile a detail-like panel sits "
-					+ "in its own Area card beside the tab's shared Area");
-				detailArea.MobileValues["layoutConfig"] = SingleColumnPlacement(bodyRow);
-				elementMap.Insert(++insertAt, detailArea);
-
-				panel.ParentName = detailName;
-				PlaceInSingleColumn(panel, 1);
-				detailAreas.Add(new TabDetailAreaGroup {
-					PanelName = panel.MobileName, AreaName = detailName, Row = bodyRow
-				});
-				bodyRow++;
-			}
-
-			// Move the tab's remaining top-level content into the shared Area and stack it in source order.
-			// The Area is a single-column grid, so each component gets row N of column 1 — element-map
-			// order IS the web order.
+			// Move the tab's top-level content into the Area and stack it in source order. The Area is a
+			// single-column grid, so each component gets row N of column 1 — element-map order IS the web
+			// order.
 			var moved = new List<string>();
 			int row = 1;
-			foreach (ElementMapEntry child in shared) {
-				// Without a shared Area only routing hints can remain here; they point at the tab body,
-				// where the detail Areas holding their surfaced children actually live.
+			foreach (ElementMapEntry child in content) {
+				// Without an Area only routing hints can remain here; they point at the tab body.
 				child.ParentName = areaName ?? mainName;
 				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
 					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
@@ -2846,7 +2781,7 @@ public static class WebToMobileAnalysisService {
 
 			groups.Add(new TabAreaLayerGroup {
 				TabName = tab.MobileName, MainTabContainerName = mainName, AreaName = areaName,
-				MovedChildren = moved, DetailAreas = detailAreas.Count > 0 ? detailAreas : null
+				MovedChildren = moved
 			});
 		}
 		return groups;

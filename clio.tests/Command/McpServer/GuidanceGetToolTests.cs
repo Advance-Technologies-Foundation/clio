@@ -1164,12 +1164,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the retargeting is already baked — a reader that reparents children again would break the body");
 		article.Should().Contain("tabAreaLayers is NOT a proposal",
 			because: "the mobile tab body is a team standard: the article must not let the reader offer it as a choice");
-		article.Should().Contain("OWN detail Area card",
-			because: "AC#4: the reader must know an expansion panel does not share the tab's Area but gets its own card");
-		article.Should().Contain("a panels-only tab has no shared Area",
-			because: "AC#5 one level down: the reader must not expect (or synthesize) a shared Area a panels-only tab never gets");
-		article.Should().Contain("do not merge it back or edit its properties",
-			because: "Р3: the panel travels as-is — merging it back into the shared Area would undo the detail split");
+		article.Should().Contain("expansion panels included",
+			because: "the reader must know a panel is an ordinary component that stacks in the tab's Area with the rest");
 	}
 
 	[Test]

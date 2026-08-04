@@ -113,8 +113,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.TabAreaLayers.AreaContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
 		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
 		rules.TabAreaLayers.AreaContainer.Values["borderRadius"].GetString().Should().Be("medium");
-		rules.TabAreaLayers.DetailComponentTypes.Should().Equal(new[] { "crt.ExpansionPanel" },
-			because: "an expansion panel is carried out of the shared Area into its own detail Area card (ENG-94188 AC#4)");
 	}
 
 	[Test]
@@ -151,40 +149,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.TabAreaLayers.MainTabContainer.Values["alignItems"].GetString().Should().Be("stretch");
 		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
 		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
-	}
-
-	[Test]
-	[Description("ParseStream parses the tabAreaLayers detailComponentTypes list; a group that omits it parses to an empty list, so an older rules file keeps the pre-detail behavior (every child goes into the shared Area).")]
-	public void ParseStream_TabAreaLayersDetailComponentTypes_ParsesListAndDefaultsToEmpty() {
-		const string withDetails = """
-			{
-			  "version": "8.3.3",
-			  "tabAreaLayers": {
-			    "tabComponentType": "crt.TabContainer",
-			    "detailComponentTypes": ["crt.ExpansionPanel", "usr.CustomDetail"],
-			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer" } },
-			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
-			  }
-			}
-			""";
-		const string withoutDetails = """
-			{
-			  "version": "8.3.3",
-			  "tabAreaLayers": {
-			    "tabComponentType": "crt.TabContainer",
-			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer" } },
-			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
-			  }
-			}
-			""";
-
-		WebToMobilePageConversionRules parsedWith = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(withDetails));
-		WebToMobilePageConversionRules parsedWithout = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(withoutDetails));
-
-		parsedWith.TabAreaLayers.DetailComponentTypes.Should().Equal(new[] { "crt.ExpansionPanel", "usr.CustomDetail" },
-			because: "the list is data — future detail-like types must join without an engine change");
-		parsedWithout.TabAreaLayers.DetailComponentTypes.Should().BeEmpty(
-			because: "an absent list must keep the pre-detail behavior instead of failing or wrapping anything");
 	}
 
 	[Test]
