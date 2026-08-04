@@ -1086,6 +1086,76 @@ Coverage: unit assertions on all three surfaces (guide text, contract, tool desc
 assertions over the real stdio transport for `core-rules`, the `workplaces` article, and the
 `create-app` contract — the guidance layer is only real if it survives the wire.
 
+## Addendum 7 — the first honest measurement of the branch, and why the earlier ones were not
+
+Two runs before this one appeared to measure the branch and did not. Both spawned `clio` from `PATH`,
+so both got the RELEASED build. One said so outright — "No workplaces guide in this build" — and
+therefore concluded from released guidance that a workplace is UI-only, recommending browser
+automation for precisely the case this branch adds an odata recipe for. Patching the plugin
+`.mcp.json` to a snapshot path does not fix this: an agent launches `clio mcp-server`, not the path
+in the config.
+
+Making the measurement honest required installing the branch as the GLOBAL tool. Three silent traps
+on the way, worth recording because each one produced a plausible-looking wrong result:
+
+1. `--add-source` is rejected outright when the user's NuGet config uses package source mapping. The
+   way through is `--configfile` with a standalone config, which REPLACES the machine/user configs
+   rather than merging them.
+2. That config must have no BOM. NuGet reports a BOM as `NuGet.Config is not valid XML`, naming the
+   path and nothing else.
+3. clio is multi-TFM (net8.0 + net10.0) and the tool shim runs **net10.0**. Building only
+   `-f net8.0` yields a package whose net8.0 payload carries the change and whose net10.0 payload is
+   stale from an older commit. The install reports success, `clio --version` prints the OLD assembly
+   version, and every guidance probe returns false. Always build all TFMs, then byte-verify each
+   `tools/<tfm>/any/clio.dll` INSIDE the nupkg before installing.
+
+And one finding that would have quietly undone the setup: **clio auto-updates itself in the
+background** (`[INF] - Updating clio 8.1.0.95 -> 8.1.0.96 in background...`). Any branch install
+reverts to the released build on some later invocation. `clio autoupdate --disable` is required for
+the duration of any behavioural measurement. Note also that `clio --version` prints AssemblyVersion
+(`8.1.0.95`), not the tool package version (`8.1.0.98-eng88474`); a mismatch there is expected and is
+not evidence of a stale install. The reliable identity check is to ask the MCP server for a guide
+that exists only on the branch.
+
+### Result with the branch actually in play
+
+Prompt: the plain Todo-app request (entity + form + list + home page with two metrics) against a
+fresh stand. Verified by reading state, not the log:
+
+| Claim | Verified |
+|---|---|
+| `Todo` workplace created with the full column set | `d5679ebf` — Position 23, `HomePageUId` `5e12d8fd`, Web, General, `LoaderId` `3707a058` |
+| Section MOVED, not duplicated | exactly ONE `SysModuleInWorkplace` row (`0f0398bb`), in `Todo`; absent from `My applications` |
+| Audience granted as chosen | `Todo` → `All employees` (`a2874add`); `My applications` → `System administrators` |
+| Every change ships as a package data binding | `SysWorkplace_Todo`, `SysAdminUnitInWorkplace_Todo`, `SysModuleInWorkplace_UsrTodo` |
+
+Binding column sets, read out of the exported package:
+
+```
+SysWorkplace_Todo            6 cols: Id, SysApplicationClientType(Web), LoaderId, Position(23),
+                                     HomePageUId(5e12d8fd), Type(General)   Localization: 28 cultures
+SysAdminUnitInWorkplace_Todo 3 cols: Id, SysAdminUnit(All employees), SysWorkplace(Todo)
+SysModuleInWorkplace_UsrTodo 4 cols: Id, SysWorkplace(d5679ebf = NEW workplace), SysModule(Todo), Position(26)
+SysWorkplace_MyApps          5 cols, NO HomePageUId, Localization: 2 — left alone, as the guide says
+```
+
+This is the F17 column set exactly, and `SysModuleInWorkplace_UsrTodo` was UPDATED to point at the
+new workplace — so the reparent ships, it was not merely applied live. One small deviation: that
+junction binding carries `Position`, which the guide tells the agent to omit because it is unstable
+on that table. It came from `create-app`'s own binding and the move only rewrote the `SysWorkplace`
+value, so the extra column is inherited rather than introduced — harmless (a possibly-meaningless
+value rather than an empty column), but it means the guide's "deliberately no `Position`" line does
+not survive an upsert over a `create-app` binding.
+
+The "home page removed from previous `My applications`" acceptance item is N/A here by construction,
+consistent with F7: `My applications`.`HomePageUId` is empty both live and in its binding — the home
+page was never placed there.
+
+The agent also, unprompted, told the user that other users must log out and back in and that F5 is
+not enough, and explained that it deliberately left the `My applications` bindings alone because
+removing them deletes a live row shared with other custom apps. Both are branch guidance reaching
+the user verbatim.
+
 ## Bottom line
 
 **Phase 1 is directionally right and the guide's core model is sound.** The three-table model,
