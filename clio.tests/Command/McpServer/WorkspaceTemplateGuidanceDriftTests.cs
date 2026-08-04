@@ -247,8 +247,10 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	/// resolves a bare name against that role alone, so reference articles are reachable by URI only.
 	/// Guidance content lives in clio-knowledge, so this fixture — not a compiled catalog — is what a
 	/// unit test can check shipped templates against without network access. Regenerate it from that
-	/// repository's <c>bundle-source.json</c> (currently tracking clio-knowledge#32) whenever the
-	/// curated library publishes a new generation.
+	/// repository's <c>bundle-source.json</c> (currently tracking library version 1.10.0, sequence 12)
+	/// whenever the curated library publishes a new generation. A generation that only edits article
+	/// bodies leaves the name arrays untouched; refresh the recorded version and sequence anyway, so
+	/// the fixture states which generation it was checked against.
 	/// </remarks>
 	private static IReadOnlySet<string> CuratedKnowledgeNames(string arrayProperty) {
 		string path = Path.Combine(
