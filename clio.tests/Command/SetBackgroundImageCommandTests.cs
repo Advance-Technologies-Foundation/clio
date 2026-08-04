@@ -752,9 +752,10 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(0, because: "the delivery order only matters on a run that reached the package");
 		Received.InOrder(() => {
 			_packageDataBinder.BindRow(
 				"SysImage", "ShellBackground",

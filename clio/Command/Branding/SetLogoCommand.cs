@@ -246,27 +246,7 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 			warnings.Add($"The logos were applied, but setting {HideSplashLogoCode} failed, so the stock splash " +
 				$"logo may still flash during load: {splash.Error}");
 		}
-
-		string package = null;
-		List<string> bound = [];
-		try {
-			package = _packageDataBinder.UsePackage(options.PackageName);
-			foreach (string code in appliedCodes) {
-				PackageDataBindingOutcome outcome = _packageDataBinder.BindSysSettingsValue(code);
-				warnings.AddRange(outcome.Warnings);
-				if (outcome.Bound) {
-					bound.Add(code);
-				}
-			}
-			return SetLogoResult.FromSlots(appliedSlots, failedSlots, package, bound, warnings);
-		} catch (Exception exception) {
-			string into = package is null ? string.Empty : $" into package '{package}'";
-			string kept = bound.Count == 0
-				? string.Empty
-				: $" Already bound and left in place: {string.Join(", ", bound)}.";
-			return SetLogoResult.FromSlots(appliedSlots, failedSlots, package, bound, warnings,
-				error: $"The applied logos could not be bound{into}: {exception.Message}{kept}");
-		}
+		return BindLogos(appliedSlots, failedSlots, appliedCodes, options.PackageName, warnings);
 	}
 
 	/// <inheritdoc />
@@ -285,6 +265,30 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 			? $"Logo data bound into package '{result.Package}': {string.Join(", ", result.Bound)}."
 			: $"No logo data could be bound into package '{result.Package}'; the warnings name the reason for each.");
 		Logger.WriteWarnings(result.Warnings);
+	}
+
+	private SetLogoResult BindLogos(List<LogoSlot> appliedSlots, List<(LogoSlot Slot, string Error)> failedSlots,
+		IReadOnlyList<string> appliedCodes, string packageName, List<string> warnings) {
+		string package = null;
+		List<string> bound = [];
+		try {
+			package = _packageDataBinder.UsePackage(packageName);
+			foreach (string code in appliedCodes) {
+				PackageDataBindingOutcome outcome = _packageDataBinder.BindSysSettingsValue(code);
+				warnings.AddRange(outcome.Warnings);
+				if (outcome.Bound) {
+					bound.Add(code);
+				}
+			}
+			return SetLogoResult.FromSlots(appliedSlots, failedSlots, package, bound, warnings);
+		} catch (Exception exception) {
+			string into = package is null ? string.Empty : $" into package '{package}'";
+			string kept = bound.Count == 0
+				? string.Empty
+				: $" Already bound and left in place: {string.Join(", ", bound)}.";
+			return SetLogoResult.FromSlots(appliedSlots, failedSlots, package, bound, warnings,
+				error: $"The applied logos could not be bound{into}: {exception.Message}{kept}");
+		}
 	}
 
 	private static IReadOnlyList<LogoSlot> ResolveSlots(SetLogoOptions options) {
