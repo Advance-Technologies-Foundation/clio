@@ -619,7 +619,7 @@ public sealed class ApplicationSectionCreateService(
 		if (result.Outcome == InsertAttemptOutcome.TimedOut) {
 			// Guard already released (its finally ran as TryCommitAttempt returned). The recovery poll reads
 			// strictly by the id generated for THIS call, so it is safe unserialized (PR #1002 RC-2).
-			return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, result.TimeoutCause!);
+			return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, result.TimeoutCause);
 		}
 
 		return result.Outcome == InsertAttemptOutcome.Committed;
