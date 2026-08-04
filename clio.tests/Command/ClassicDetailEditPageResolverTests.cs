@@ -145,8 +145,8 @@ public sealed class ClassicDetailEditPageResolverTests {
 	}
 
 	[Test]
-	[Description("ResolveChildPages resolves every requested entity in three batched queries rather than one lookup per entity.")]
-	public void ResolveChildPages_ShouldIssueThreeQueries_ForManyEntities() {
+	[Description("ResolveChildPages resolves every requested entity in three batched stages rather than one lookup per entity, and the bound scales with chunks instead of pinning an exact query count.")]
+	public void ResolveChildPages_ShouldBatchQueries_WithNoRoundTripPerEntity() {
 		// Arrange
 		IApplicationClient client = ClientReturning(
 			Rows($"{{\"Name\":\"Contract\",\"UId\":\"{ContractEntityUId}\",\"ExtendParent\":false}}",
@@ -160,9 +160,21 @@ public sealed class ClassicDetailEditPageResolverTests {
 		// Act
 		ClassicChildPageLookup result = resolver.ResolveChildPages(new[] { "Contract", "Activity", "Contract" });
 
-		// Assert
-		_queries.Should().HaveCount(3,
-			because: "the whole entity set resolves in three batched queries, so a large detail set costs no round-trip per detail");
+		// Assert — the contract is "three bounded stages per chunk", NOT an exact query count: the stages are chunked
+		// at InFilterChunkSize, so pinning a literal count would re-pin the un-chunked shape this branch removed.
+		const int distinctEntities = 2;
+		int chunksPerStage = (distinctEntities + ClassicEntitySchemaQuery.InFilterChunkSize - 1)
+			/ ClassicEntitySchemaQuery.InFilterChunkSize;
+		_queries.Count.Should().BeLessThanOrEqualTo(3 * chunksPerStage,
+			because: "the whole entity set resolves in three batched stages per chunk, so a large detail set costs no " +
+				"round-trip per detail");
+		_queries.Any(query => query["rootSchemaName"]?.ToString() == "SysSchema"
+				&& query["columns"]?["items"]?["ExtendParent"] != null).Should().BeTrue(
+			because: "stage one maps the entity names to their base-schema UIds");
+		_queries.Any(query => query["rootSchemaName"]?.ToString() == "SysModuleEdit").Should().BeTrue(
+			because: "stage two reads the registrations for those entity UIds");
+		_queries.Any(IsPageNameLookup).Should().BeTrue(
+			because: "stage three resolves the referenced page UIds to schema names");
 		result.ChildPages.Select(page => page.EntityName + ":" + page.SchemaName).Should().BeEquivalentTo(
 			new[] { "Contract:ContractPageV2", "Activity:ActivityPageV2" },
 			because: "each entity's page is attributed to that entity, and a duplicate request name is collapsed");
@@ -262,6 +274,52 @@ public sealed class ClassicDetailEditPageResolverTests {
 		result.Warnings.Should().NotContain(warning => warning.Contains("rowCount cap"),
 			because: "each chunk carries its own proportional rowCount and the cap is checked over the accumulated " +
 				"rows, so splitting a query cannot invent a truncation the unchunked query would not have reported");
+	}
+
+	[Test]
+	[Description("ResolveChildPages reports its own detail-entity rowCount cap as a caller-visible warning instead of silently resolving a short entity set.")]
+	public void ResolveChildPages_ShouldWarn_WhenEntityLookupReachesRowCountCap() {
+		// Arrange — one requested name whose SysSchema lookup comes back filled to the cap (cap = names * rows-per-name),
+		// which is exactly the case where rows may have been left behind on the server.
+		int entityCap = ClassicEntitySchemaQuery.EntityRowCount;
+		IApplicationClient client = ClientReturning(
+			Rows(Enumerable.Range(0, entityCap)
+				.Select(i => $"{{\"Name\":\"Contract\",\"UId\":\"{Uid(i)}\",\"ExtendParent\":{(i == 0 ? "false" : "true")}}}")
+				.ToArray()),
+			Rows(),
+			Rows());
+		ClassicDetailEditPageResolver resolver = Create(client);
+
+		// Act
+		ClassicChildPageLookup result = resolver.ResolveChildPages(new[] { "Contract" });
+
+		// Assert
+		result.Error.Should().BeNull(because: "a saturated row set degrades the lookup, it does not fail it");
+		result.Warnings.Should().Contain(warning => warning.Contains($"rowCount cap ({entityCap})"),
+			because: "the caps that remain must be caller-visible: a truncated entity lookup would otherwise read as " +
+				"'these details resolve to nothing' (ENG-94402's no-silent-truncation thesis)");
+	}
+
+	[Test]
+	[Description("ResolveChildPages reports its own child-page rowCount cap as a caller-visible warning instead of silently returning a short child-page list.")]
+	public void ResolveChildPages_ShouldWarn_WhenChildPageLookupReachesRowCountCap() {
+		// Arrange — one resolved entity whose SysModuleEdit rows come back filled to the per-entity cap
+		const int editCap = 20;
+		IApplicationClient client = ClientReturning(
+			Rows($"{{\"Name\":\"Contract\",\"UId\":\"{ContractEntityUId}\",\"ExtendParent\":false}}"),
+			Rows(Enumerable.Range(0, editCap)
+				.Select(i => $"{{\"SysEntitySchemaUId\":\"{ContractEntityUId}\",\"CardSchemaUId\":\"{Uid(1000 + i)}\"," +
+					$"\"MiniPageSchemaUId\":\"{EmptyGuid}\"}}").ToArray()),
+			Rows($"{{\"UId\":\"{Uid(1000)}\",\"Name\":\"ContractPageV2\"}}"));
+		ClassicDetailEditPageResolver resolver = Create(client);
+
+		// Act
+		ClassicChildPageLookup result = resolver.ResolveChildPages(new[] { "Contract" });
+
+		// Assert
+		result.Error.Should().BeNull(because: "a saturated registration set degrades the lookup, it does not fail it");
+		result.Warnings.Should().Contain(warning => warning.Contains($"rowCount cap ({editCap})"),
+			because: "a child-page list that may be short must say so, or the engine plans around pages it never saw");
 	}
 
 	[Test]

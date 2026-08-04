@@ -135,11 +135,11 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Collects a real page's details in full with no fan-out cap: the reported count matches the manifest exactly and no truncation gap is reported (ENG-94402).")]
+	[Description("The reported detail count agrees exactly with the manifest and no truncation gap is reported on a live stand (ENG-94402). Names what it proves: on a narrow product this passes with or without the caps — the unbounded fan-out itself is pinned by the unit regression tests, this is the live consistency witness.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-classic-page-sources collects a page's details without truncating")]
-	[AllureDescription("Live witness that the fan-out caps are gone: the response's detailCount must equal the manifest's detailSchemas size and no cap/truncation warning may be reported. Deliberately product-agnostic — the detail count of a given page differs per installed product (Studio ContactPageV2 gathers 9, a Sales product far more), so this asserts CONSISTENCY and the absence of truncation rather than any specific number.")]
-	public async Task GetPageSources_Should_Collect_Every_Detail_Without_Cap() {
+	[AllureName("get-classic-page-sources reports a detail count consistent with its manifest and no truncation")]
+	[AllureDescription("Live witness that the response counter and the manifest agree and that no cap/truncation warning is reported. Deliberately product-agnostic — the detail count of a given page differs per installed product (Studio ContactPageV2 gathers 9, a Sales product far more), so this asserts CONSISTENCY and the absence of truncation rather than any specific number. It does NOT by itself prove the caps are gone: on a narrow (Studio) stand the page stays under the retired caps, so that claim rests on the unit regression tests (250/250/120/30).")]
+	public async Task GetPageSources_Should_Report_DetailCount_ConsistentWithManifest_AndNoTruncation() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
