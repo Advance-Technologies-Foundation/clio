@@ -21,7 +21,9 @@ internal static class MobilePageValidation {
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
-		CancellationToken cancellationToken = default) {
+		CancellationToken cancellationToken = default,
+		string? templateViewModelConfigJson = null,
+		string? templateModelConfigJson = null) {
 		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
 			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
 		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
@@ -45,7 +47,8 @@ internal static class MobilePageValidation {
 		// Gated on a structurally-sound body so a
 		// malformed diff is not double-reported (the structural validators already flag it).
 		if (errors.Count == 0) {
-			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body);
+			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(
+				body, templateViewModelConfigJson, templateModelConfigJson);
 			if (!applyResult.IsValid) {
 				errors.AddRange(applyResult.Errors);
 			}

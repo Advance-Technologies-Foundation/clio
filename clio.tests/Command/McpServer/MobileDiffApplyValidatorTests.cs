@@ -107,4 +107,49 @@ public sealed class MobileDiffApplyValidatorTests {
 	public void Validate_MalformedJson_IsValidNoThrow() {
 		MobileDiffApplyValidator.Validate("{ not json").IsValid.Should().BeTrue();
 	}
+
+	[Test]
+	[Description("A viewModelConfigDiff insert that appends to an array the mobile template owns (absent from the body) validates cleanly when NO template base is supplied: the oracle seeds an empty container at the insert path so a template-owned-array append does not false-positive as not-a-container (the validate-page / seeded fallback).")]
+	public void Validate_PathDiffInsertIntoTemplateArray_NoBase_IsValid() {
+		const string body = """
+			{ "viewModelConfigDiff": [
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+					"values": { "name": "QuickFilter_x_Items", "loadOnChange": true } }
+			] }
+			""";
+
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue();
+	}
+
+	[Test]
+	[Description("The same insert validates against the supplied mobile template base that owns the array — the faithful path update-page uses (it resolves the page's merged config).")]
+	public void Validate_PathDiffInsertIntoTemplateArray_WithBase_IsValid() {
+		const string body = """
+			{ "viewModelConfigDiff": [
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+					"values": { "name": "QuickFilter_x_Items", "loadOnChange": true } }
+			] }
+			""";
+		const string templateViewModelConfig = """
+			{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters" } ] } } } }
+			""";
+
+		MobileDiffApplyValidator.Validate(body, templateViewModelConfig).IsValid.Should().BeTrue();
+	}
+
+	[Test]
+	[Description("A genuine self-consistency error still surfaces even with the seeded base: a merge sets the attribute to a scalar, then an insert targets a sub-path of it — the differ reports not-a-container.")]
+	public void Validate_PathDiffInsertIntoScalar_ReportsNotAContainer() {
+		const string body = """
+			{ "viewModelConfigDiff": [
+				{ "operation": "merge", "path": ["attributes"], "values": { "Items": "scalar" } },
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"], "values": { "name": "x" } }
+			] }
+			""";
+
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("is not a container for other items"));
+	}
 }
