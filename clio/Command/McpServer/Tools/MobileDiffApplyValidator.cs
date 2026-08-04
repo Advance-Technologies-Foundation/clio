@@ -166,8 +166,7 @@ internal static class MobileDiffApplyValidator {
 	/// the applier will surface. Does nothing when the path collides with a non-object along the way.
 	/// </summary>
 	private static void SeedInsertPath(JObject baseObject, JArray path) {
-		JObject parent = DescendToLeafParent(baseObject, path);
-		if (parent is null) {
+		if (!TryDescendToLeafParent(baseObject, path, out JObject parent)) {
 			return;
 		}
 		string leaf = path[^1]?.Value<string>();
@@ -178,15 +177,16 @@ internal static class MobileDiffApplyValidator {
 
 	/// <summary>
 	/// Walks the intermediate segments (all but the last), creating an empty object where one is absent, and
-	/// returns the container the leaf lives in. Returns null when a segment is null or is already seeded as a
-	/// non-object (another insert's array/leaf) — the two insert paths conflict, so the path is left unseeded and
-	/// the applier surfaces the genuine self-consistency error rather than a masked one.
+	/// yields the container the leaf lives in via <paramref name="parent"/>. Returns false when a segment is null
+	/// or is already seeded as a non-object (another insert's array/leaf) — the two insert paths conflict, so the
+	/// path is left unseeded and the applier surfaces the genuine self-consistency error rather than a masked one.
 	/// </summary>
-	private static JObject DescendToLeafParent(JObject cursor, JArray path) {
+	private static bool TryDescendToLeafParent(JObject cursor, JArray path, out JObject parent) {
+		parent = null;
 		for (int i = 0; i < path.Count - 1; i++) {
 			string segment = path[i]?.Value<string>();
 			if (segment is null) {
-				return null;
+				return false;
 			}
 			switch (cursor[segment]) {
 				case null:
@@ -198,9 +198,10 @@ internal static class MobileDiffApplyValidator {
 					cursor = child;
 					break;
 				default:
-					return null;
+					return false;
 			}
 		}
-		return cursor;
+		parent = cursor;
+		return true;
 	}
 }
