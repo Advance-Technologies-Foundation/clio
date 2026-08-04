@@ -264,7 +264,7 @@ public sealed class ClioRunExecutor(
 			// (mirrors McpToolErrorFilter; SensitiveErrorTextRedactor is the single redaction rule).
 			// A fatal/programming-defect exception (OOM/NRE/…) is NOT masked as a tool failure here — it
 			// propagates to the top-level request boundary (McpToolErrorFilter).
-			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
+			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
 		}
 		finally {
 			callContext.Params = originalParams;
@@ -455,7 +455,7 @@ public sealed class ClioRunExecutor(
 
 	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with McpToolErrorFilter so a
 	// nested clio-run dispatch surfaces exactly the same text as a direct tool call (ENG-93365).
-	private static string GetInnermostMessage(Exception ex) =>
+	private static string GetSurfacedMessage(Exception ex) =>
 		Clio.Common.SurfacedExceptionMessage.Resolve(ex);
 
 	// Recovers the real (command, args) pair from the WRAPPED call shape an agent sends when it treats

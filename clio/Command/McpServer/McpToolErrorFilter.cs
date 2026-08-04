@@ -62,7 +62,7 @@ public static class McpToolErrorFilter
 				// redacted, because this text lands in the model/host transcript and inner-most messages
 				// routinely carry absolute paths, request URIs (target hosts), and credentials.
 				return CreateJsonErrorResult(
-					$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
+					$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
 			}
 		};
 
@@ -75,7 +75,7 @@ public static class McpToolErrorFilter
 
 	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with the nested clio-run
 	// dispatcher so both MCP error paths surface the same text (ENG-93365).
-	private static string GetInnermostMessage(Exception exception) =>
+	private static string GetSurfacedMessage(Exception exception) =>
 		Clio.Common.SurfacedExceptionMessage.Resolve(exception);
 
 	private static bool TryCreateArgumentDeserializationError(

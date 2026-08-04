@@ -123,8 +123,13 @@ internal static class ServiceResponseJsonGuard
 				+ "The HTML body is omitted from this message because an error or login page can carry session tokens.";
 		}
 
+		// The parser message is redacted too, not just the preview: System.Text.Json quotes the offending
+		// VALUE in its text (for example "The JSON value 'hunter2' could not be converted … Path: $.password"),
+		// so an unredacted parser message leaks the same secrets the preview redaction exists to catch. The MCP
+		// boundary redacts again, but the CLI path (logger warnings, terminal output) has no second pass.
 		return $"{operationName} returned an unparseable response (URL: {url}). "
-			+ $"Parser error: {parseException.Message}. Response preview: {BuildResponsePreview(responseBody)}";
+			+ $"Parser error: {SensitiveErrorTextRedactor.Redact(parseException.Message)}. "
+			+ $"Response preview: {BuildResponsePreview(responseBody)}";
 	}
 
 	/// <summary>
@@ -174,9 +179,14 @@ internal static class ServiceResponseJsonGuard
 	/// <returns>The preview to embed in the error message.</returns>
 	private static string BuildResponsePreview(string responseBody)
 	{
+		// Byte-order marks are trimmed alongside whitespace: char.IsWhiteSpace does not report a BOM, so a
+		// BOM-only body survives the IsNullOrWhiteSpace gate in Deserialize and would otherwise produce a
+		// preview made entirely of invisible characters.
 		string collapsed = responseBody
 			.Replace("\r", " ", StringComparison.Ordinal)
 			.Replace("\n", " ", StringComparison.Ordinal)
+			.Trim()
+			.Trim(ByteOrderMark)
 			.Trim();
 		if (collapsed.Length == 0)
 		{

@@ -64,6 +64,9 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
 	private const string WorkspaceExplorerServicePath = "ServiceModel/WorkspaceExplorerService.svc";
 
+	/// <summary>UTF-8 byte-order mark, spelled as an escape so it stays visible in diffs and survives formatters.</summary>
+	private const char ByteOrderMark = '\uFEFF';
+
 	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
 	// which is a compile-class operation. Use the same long timeout as compile-configuration
 	// so a slow-but-successful build is not mistaken for a failure.
@@ -320,7 +323,12 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		if (string.IsNullOrEmpty(rawResponse)) {
 			return false;
 		}
-		string trimmed = rawResponse.TrimStart();
+		// Byte-order marks are stripped along with whitespace (char.IsWhiteSpace does not report a BOM), so a
+		// BOM-prefixed HTML error page still takes the dependency-recovery branch instead of falling through to
+		// the generic invalid-JSON message. The predicate stays narrower than
+		// ServiceResponseJsonGuard.LooksLikeMarkup on purpose: this branch claims a Creatio HTML/XML error page
+		// specifically, while the guard classifies any markup-looking body.
+		string trimmed = rawResponse.TrimStart(ByteOrderMark).TrimStart();
 		return trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
 			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
 			|| trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase);

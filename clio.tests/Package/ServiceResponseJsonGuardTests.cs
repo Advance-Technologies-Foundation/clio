@@ -176,6 +176,45 @@ public class ServiceResponseJsonGuardTests
 	}
 
 	[Test]
+	[Description("BuildNonJsonMessage runs the parser message through the redactor too, not only the body preview: System.Text.Json echoes a literal-looking body fragment back in its own text, and the CLI path logs that message with no second redaction pass.")]
+	public void BuildNonJsonMessage_RedactsParserMessage_WhenParserTextCarriesSecrets() {
+		// Arrange — the parser text, not the preview, is what carries the secret here. System.Text.Json quotes
+		// the offending fragment for a literal-lookalike body (for example
+		// "'not json at all' is an invalid JSON literal"), so body text does reach the parser message.
+		JsonException parseException = new(
+			"'https://user:hunter2@target.creatio.com/0/rest' is an invalid JSON literal. "
+			+ "Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.");
+
+		// Act
+		string message = ServiceResponseJsonGuard.BuildNonJsonMessage(
+			"SelectQuery", Url, "body", parseException);
+
+		// Assert
+		message.Should().NotContain("hunter2",
+			"an unredacted parser message leaks on the CLI path, which has no second redaction pass");
+		message.Should().Contain("[redacted-uri]",
+			"redaction replaces the sensitive fragment with the stable placeholder rather than dropping the parser detail");
+		message.Should().Contain("is an invalid JSON literal",
+			"the diagnostic shape of the parser error must survive redaction so the caller can still act on it");
+	}
+
+	[Test]
+	[Description("Deserialize reports an empty preview for a body made only of byte-order marks instead of a preview of invisible characters.")]
+	public void Deserialize_ReportsEmptyPreview_WhenBodyIsByteOrderMarksOnly() {
+		// Arrange — a BOM is not whitespace, so this body passes the IsNullOrWhiteSpace gate.
+		const string body = "\uFEFF\uFEFF";
+
+		// Act
+		Action act = () => ServiceResponseJsonGuard.Deserialize<ProbeResponse>(
+			"SelectQuery", Url, body, JsonOptions);
+
+		// Assert
+		act.Should().Throw<NonJsonServiceResponseException>()
+			.Which.Message.Should().Contain("<empty body>",
+				"a BOM-only body carries nothing to preview, and invisible characters read as a blank preview");
+	}
+
+	[Test]
 	[Description("Deserialize throws NonJsonServiceResponseException so soft-degrading callers can tell a non-JSON body from a server rejection.")]
 	public void Deserialize_ThrowsNonJsonServiceResponseException_WhenBodyIsNotJson() {
 		// Arrange
