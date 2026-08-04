@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -36,6 +38,24 @@ public sealed record ServerReadinessOptions {
 	/// Creatio installer's post-deploy readiness wait is unchanged.
 	/// </summary>
 	public bool RequireAuthenticatedReadiness { get; init; }
+
+}
+
+/// <summary>
+/// Outcome of one authenticated application-layer round-trip. <see cref="AuthenticationRejected"/> is kept
+/// separate from <see cref="NotReady"/> because it is not a warm-up symptom: waiting longer cannot fix a
+/// credential the application already refused.
+/// </summary>
+internal enum ApplicationLayerReadiness {
+
+	/// <summary>The application answered a genuine authenticated DataService call.</summary>
+	Ready,
+
+	/// <summary>No genuine answer yet (login page, transport error, or the round-trip outran its budget).</summary>
+	NotReady,
+
+	/// <summary>The application answered and refused the credentials.</summary>
+	AuthenticationRejected
 
 }
 
@@ -101,6 +121,7 @@ public class ServerReadinessWaiter(
 		DateTime deadlineUtc = DateTime.UtcNow + options.Timeout;
 
 		int attempt = 0;
+		int consecutiveAuthRejections = 0;
 		do {
 			attempt++;
 			// Bound EACH probe by what is left of the readiness budget. HealthCheckOptions inherits
@@ -122,7 +143,28 @@ public class ServerReadinessWaiter(
 			// returns a login page / an unauthenticated redirect during warm-up (ENG-94417). Gate readiness on
 			// the authenticated round-trip too, and keep polling until the deadline when only liveness answers.
 			bool liveness = healthCheckCommand.Execute(healthOptions) == 0;
-			if (liveness && (!options.RequireAuthenticatedReadiness || IsApplicationLayerReady(probeTimeoutMs))) {
+			if (liveness && options.RequireAuthenticatedReadiness) {
+				ApplicationLayerReadiness readiness = ProbeApplicationLayer(probeTimeoutMs);
+				if (readiness == ApplicationLayerReadiness.Ready) {
+					logger.WriteInfo($"Server is ready after {attempt} attempt(s).");
+					return true;
+				}
+				// A rejected credential is not a warm-up symptom and will not heal by waiting: retrying it
+				// burns the whole readiness budget and then reports a misleading generic timeout. Two
+				// consecutive rejections (not one) before giving up, so a single transient rejection during
+				// security-cache warm-up cannot abort an otherwise healthy wait.
+				consecutiveAuthRejections = readiness == ApplicationLayerReadiness.AuthenticationRejected
+					? consecutiveAuthRejections + 1
+					: 0;
+				if (consecutiveAuthRejections >= MaxConsecutiveAuthRejections) {
+					logger.WriteError(
+						"The application answered its liveness probe, but the authenticated readiness round-trip was "
+						+ $"rejected {consecutiveAuthRejections} times in a row. This is an authentication failure, not "
+						+ "a warm-up delay — verify the environment credentials (e.g. 'clio reg-web-app "
+						+ "--check-login') instead of waiting longer.");
+					return false;
+				}
+			} else if (liveness) {
 				logger.WriteInfo($"Server is ready after {attempt} attempt(s).");
 				return true;
 			}
@@ -141,42 +183,77 @@ public class ServerReadinessWaiter(
 	}
 
 	/// <summary>
-	/// Performs the authenticated application-layer round-trip: logs in and issues a minimal authenticated
-	/// DataService call, returning <c>true</c> only when the app answers with a genuine JSON response (not a
-	/// login page / HTML redirect / 401 auth-failure envelope). A transient warm-up failure (login page, a
-	/// throw from <see cref="IApplicationClient.Login"/>, or a non-JSON body) is treated as "not ready yet" so
-	/// the caller keeps polling until the deadline rather than failing hard.
+	/// Runs the authenticated round-trip under a hard wall-clock bound of <paramref name="probeTimeoutMs"/>.
+	/// The round-trip cannot be bounded from the inside: <c>creatio.client</c> establishes its session lazily
+	/// (<c>InitAuthCookie</c> → <c>Login</c> + up to three pings, each on its own ~100 s
+	/// <see cref="System.Net.HttpWebRequest.Timeout"/>, with a 300 s response-stream read timeout on top), and
+	/// <see cref="IApplicationClient.Login"/> exposes no timeout or cancellation at all. Against the shape this
+	/// ticket targets — a socket that accepts and then never answers — a single in-flight round-trip could
+	/// therefore overshoot the caller's whole readiness budget inside ONE poll iteration. Running it on a
+	/// background task and abandoning the wait keeps the caller's deadline authoritative; the abandoned thread
+	/// is not leaked indefinitely — it ends when the client's own internal timeouts fire.
 	/// </summary>
 	/// <param name="probeTimeoutMs">Per-request timeout, derived from the remaining readiness budget.</param>
-	/// <returns><c>true</c> when the authenticated round-trip returned a genuine JSON answer; otherwise <c>false</c>.</returns>
-	private bool IsApplicationLayerReady(int probeTimeoutMs) {
+	/// <returns>The readiness classification of this round-trip.</returns>
+	private ApplicationLayerReadiness ProbeApplicationLayer(int probeTimeoutMs) {
+		Task<ApplicationLayerReadiness> roundTrip =
+			Task.Run(() => ExecuteAuthenticatedRoundTrip(probeTimeoutMs));
+		if (roundTrip.Wait(probeTimeoutMs)) {
+			return roundTrip.Result;
+		}
+		logger.WriteInfo(
+			"Liveness probe passed, but the authenticated application-layer round-trip did not answer within "
+			+ $"{probeTimeoutMs} ms (the instance accepts connections but is not serving yet).");
+		return ApplicationLayerReadiness.NotReady;
+	}
+
+	/// <summary>
+	/// Issues a minimal authenticated DataService call and classifies the answer. No explicit
+	/// <see cref="IApplicationClient.Login"/> is performed: <c>creatio.client</c> establishes the session on
+	/// demand (and <see cref="ReauthExecutor"/> re-establishes it when a stale one returns the login page), so an
+	/// explicit login would be redundant for the login/password path AND actively wrong for the OAuth and
+	/// bearer-passthrough paths — those clients carry a token instead of credentials, so
+	/// <see cref="IApplicationClient.Login"/> would post an empty username/password and throw, making readiness
+	/// unreachable for a perfectly healthy instance.
+	/// </summary>
+	/// <param name="probeTimeoutMs">Per-request timeout, derived from the remaining readiness budget.</param>
+	/// <returns>The readiness classification of this round-trip.</returns>
+	private ApplicationLayerReadiness ExecuteAuthenticatedRoundTrip(int probeTimeoutMs) {
 		try {
-			applicationClient.Login();
 			string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 			string body = applicationClient.ExecutePostRequest(url, AuthenticatedReadinessQuery, probeTimeoutMs, 1, 0);
 			if (IsGenuineAuthenticatedJsonAnswer(body)) {
-				return true;
+				return ApplicationLayerReadiness.Ready;
 			}
 			logger.WriteInfo(
 				"Liveness probe passed, but the authenticated application-layer round-trip has not returned a "
-				+ "genuine JSON answer yet (login page / warm-up).");
-			return false;
+				+ "genuine DataService answer yet (login page / warm-up).");
+			return ApplicationLayerReadiness.NotReady;
+		} catch (UnauthorizedAccessException exception) {
+			// Distinguishable from a warm-up stall: the application answered and REFUSED the credentials.
+			logger.WriteInfo(
+				"The authenticated application-layer round-trip was rejected by the application: "
+				+ exception.Message);
+			return ApplicationLayerReadiness.AuthenticationRejected;
 		} catch (Exception exception) {
 			logger.WriteInfo(
 				"Liveness probe passed, but the authenticated application-layer round-trip is not ready yet: "
 				+ exception.Message);
-			return false;
+			return ApplicationLayerReadiness.NotReady;
 		}
 	}
 
 	/// <summary>
-	/// Classifies a response body as a genuine authenticated application-layer answer. A login page (HTML) or a
-	/// JSON 401 auth-failure envelope — both flagged by <see cref="ReauthExecutor.IsSessionExpiredResponse"/> —
-	/// is rejected; any other well-formed JSON (an answer, or even a DataService failure envelope, both of which
-	/// prove the app authenticated the request) is accepted.
+	/// Classifies a response body as a genuine authenticated DataService answer. The check is POSITIVE: the body
+	/// must be a JSON object carrying a marker of the DataService response contract
+	/// (<see cref="DataServiceAnswerMarkers"/>) — either a <c>SelectQuery</c> result or a DataService error
+	/// envelope, both of which prove the application layer authenticated the request and executed it. Accepting
+	/// "any JSON that is not a login page" instead would re-admit the very class of false-ready answer this
+	/// ticket removes, only JSON-shaped: a reverse proxy, gateway, or half-initialized app tier answering
+	/// <c>{"error":"502"}</c> would pass. A login page / session-expired envelope is rejected up front.
 	/// </summary>
 	/// <param name="body">The raw response body of the authenticated round-trip.</param>
-	/// <returns><c>true</c> when the body is a genuine authenticated JSON answer; otherwise <c>false</c>.</returns>
+	/// <returns><c>true</c> when the body is a genuine authenticated DataService answer; otherwise <c>false</c>.</returns>
 	internal static bool IsGenuineAuthenticatedJsonAnswer(string body) {
 		if (string.IsNullOrWhiteSpace(body)) {
 			return false;
@@ -185,12 +262,24 @@ public class ServerReadinessWaiter(
 			return false;
 		}
 		try {
-			JToken.Parse(body);
-			return true;
+			return JToken.Parse(body) is JObject answer
+				&& answer.Properties().Any(property =>
+					DataServiceAnswerMarkers.Contains(property.Name, StringComparer.OrdinalIgnoreCase));
 		} catch (JsonReaderException) {
 			return false;
 		}
 	}
+
+	/// <summary>
+	/// Property names that identify a DataService response: <c>rows</c>/<c>rowsAffected</c> from a successful
+	/// <c>SelectQuery</c>, and <c>success</c>/<c>errorInfo</c> from either outcome's envelope.
+	/// </summary>
+	private static readonly string[] DataServiceAnswerMarkers = [
+		"rows", "rowsAffected", "success", "errorInfo"
+	];
+
+	/// <summary>Consecutive credential rejections tolerated before the wait gives up (see WaitForReady).</summary>
+	private const int MaxConsecutiveAuthRejections = 2;
 
 	/// <summary>
 	/// Per-probe request timeout, derived from the time left before <paramref name="deadlineUtc"/>. Never

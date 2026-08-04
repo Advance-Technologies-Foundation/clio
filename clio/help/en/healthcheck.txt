@@ -35,7 +35,16 @@ OPTIONS
                                         is bounded by this value, so a stalled endpoint (accepts
                                         the connection but never answers) is reported unhealthy
                                         within the timeout rather than pinning the ~100s default.
-                                        Only a genuine 2xx response is reported healthy.
+                                        Only a genuine 2xx response is reported healthy; redirects
+                                        are not followed, so a 3xx (typically a login redirect) is
+                                        reported unhealthy instead of counting the login page's own
+                                        200 as a healthy answer.
+
+NOTES
+    healthcheck is a LIVENESS probe: it proves the web layer answers, not that the
+    application can authenticate a request or serve DataService. When you need a
+    readiness signal that exercises the application layer, use
+    'restart-web-app --wait-ready' (or the restart-by-environment-name MCP tool).
 
     --json                              Return results as the unified command envelope
                                         {schemaVersion, ok, command, data, error}. On

@@ -21,7 +21,13 @@ to wait, after the restart, until the application answers an authenticated
 application-layer round-trip — not merely the liveness health-check ping —
 and return only once it is genuinely serving (or exit non-zero on timeout).
 This is the signal to rely on before verifying a fix, instead of hand-rolled
-polling.
+polling. If the application refuses the environment credentials while waiting,
+the wait stops early with an authentication error instead of burning the whole
+`--ready-timeout` on a failure that waiting cannot fix.
+
+The readiness round-trip does not perform an explicit login: the client establishes
+its session on demand, so OAuth and bearer-token environments (which carry a token
+instead of a login/password) are supported by the same path.
 
 ## Synopsis
 

@@ -127,6 +127,30 @@ public class HealthCheckCommandTestCase
 	}
 
 	[Test]
+	[Description("ENG-94417 AC2 regression: the ping endpoint answering a redirect (typically to the login page) is classified unhealthy — the redirect is NOT followed, so the login page's own 200 cannot be counted as a healthy answer.")]
+	public void HealthCheckCommand_ClassifiesRedirect_AsUnhealthy() {
+		// Arrange — the degraded shape from the ticket: the app redirects instead of serving its health endpoint.
+		UseHandler(StubHttpMessageHandler.RespondingWith(() => {
+			HttpResponseMessage redirect = new(HttpStatusCode.Found);
+			redirect.Headers.Location = new Uri("http://test.domain.com/Login/NuiLogin.aspx");
+			return redirect;
+		}));
+		_hcCommand.Logger = Substitute.For<ILogger>();
+
+		// Act
+		int result = _hcCommand.Execute(new HealthCheckOptions { Json = true });
+
+		// Assert
+		result.Should().Be(1,
+			because: "a health endpoint that redirects is not serving a health response and must be reported unhealthy");
+		_handler.RequestedUris.Should().ContainSingle(
+			because: "the redirect must not be followed — following it would probe the login page instead");
+		_jsonResponseFormater.Received(1).FormatEnvelope("healthcheck",
+			Clio.Common.CommandErrorCodes.HealthCheckFailed,
+			Arg.Is<string>(message => message.Contains("redirect")));
+	}
+
+	[Test]
 	[Description("ENG-94417 AC2/AC4 regression: a connect-but-never-answer endpoint is classified unhealthy, not reported OK.")]
 	public void HealthCheckCommand_ClassifiesStalledEndpoint_AsUnhealthy() {
 		// Arrange — the endpoint accepts the connection and then never answers.
@@ -154,8 +178,9 @@ public class HealthCheckCommandTestCase
 
 		// Assert
 		result.Should().Be(1, because: "the stalled probe is unhealthy");
-		stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15),
-			because: "the probe must be bounded by --timeout (1000ms), not the inherited ~100s DefaultTimeout");
+		stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5),
+			because: "the probe must be bounded by --timeout (1000ms), not the inherited ~100s DefaultTimeout; the "
+				+ "5s ceiling still leaves headroom for a loaded CI agent while failing on a regression to a larger timeout");
 		_jsonResponseFormater.Received(1).FormatEnvelope("healthcheck",
 			Clio.Common.CommandErrorCodes.HealthCheckFailed,
 			Arg.Is<string>(message => message.Contains("timed out")));

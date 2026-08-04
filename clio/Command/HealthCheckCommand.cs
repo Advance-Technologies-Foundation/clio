@@ -82,10 +82,15 @@ namespace Clio.Command
 		/// created per probe (and disposed with the probe's <see cref="HttpClient"/>). Defaults to a real
 		/// <see cref="HttpClientHandler"/> that trusts the target certificate (health probes routinely hit
 		/// self-signed dev instances); unit tests substitute a stub handler to simulate a healthy 2xx, a
-		/// non-2xx, a transport failure, or a connect-but-never-answer stall.
+		/// non-2xx, a redirect, a transport failure, or a connect-but-never-answer stall.
+		/// <para>Redirects are NOT followed on purpose (ENG-94417): <c>/api/HealthCheck/Ping</c> is an anonymous
+		/// endpoint that answers 200 directly, so a 3xx from it means the request was routed somewhere else —
+		/// typically the login page, which then answers 200 and would be counted as healthy. Following the
+		/// redirect would therefore reproduce the false-healthy result this command must stop reporting.</para>
 		/// </summary>
 		internal Func<HttpMessageHandler> HttpMessageHandlerFactory { get; set; } =
 			() => new HttpClientHandler {
+				AllowAutoRedirect = false,
 				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
 			};
 
@@ -116,7 +121,7 @@ namespace Clio.Command
 				};
 				using HttpResponseMessage response = client.GetAsync(requestUri).GetAwaiter().GetResult();
 				if (!response.IsSuccessStatusCode) {
-					string message = $"{(int)response.StatusCode} {response.ReasonPhrase}";
+					string message = DescribeUnsuccessfulResponse(response);
 					if (!jsonMode) Logger.WriteError($"\tError: {message}");
 					return new HealthCheckEntry(checkName, requestUri, false, message);
 				}
@@ -129,6 +134,22 @@ namespace Clio.Command
 				if (!jsonMode) Logger.WriteError($"\tError: {message}");
 				return new HealthCheckEntry(checkName, requestUri, false, message);
 			}
+		}
+
+		// Explains a non-2xx probe answer. A 3xx is called out specifically: the ping endpoint is anonymous and
+		// answers 200 directly, so a redirect means the request was routed elsewhere (almost always the login
+		// page) — the degraded shape ENG-94417 must report as unhealthy instead of following the redirect and
+		// counting the login page's own 200 as a healthy answer.
+		private static string DescribeUnsuccessfulResponse(HttpResponseMessage response) {
+			string status = $"{(int)response.StatusCode} {response.ReasonPhrase}";
+			if ((int)response.StatusCode is < 300 or >= 400) {
+				return status;
+			}
+			string location = response.Headers.Location?.ToString();
+			string target = string.IsNullOrEmpty(location) ? string.Empty : $" to {location}";
+			return $"{status} — the health-check endpoint answered a redirect{target} instead of a health "
+				+ "response (the application is not serving its own health endpoint; commonly a login "
+				+ "redirect or a scheme/host mismatch in the registered environment uri)";
 		}
 
 		private TimeSpan ResolveProbeTimeout() =>

@@ -57,6 +57,16 @@ Each probe is issued as a bounded HTTP GET. Only a genuine `2xx` response is rep
 a non-`2xx` status, a transport error, or a connect-but-never-answer stall is reported unhealthy
 (and the probe is aborted at `--timeout` rather than the inherited ~100s default).
 
+Redirects are not followed. `/api/HealthCheck/Ping` is anonymous and answers `200` directly, so a
+`3xx` means the request was routed elsewhere — most often the login page, whose own `200` would
+otherwise be counted as a healthy answer. A redirect is therefore reported unhealthy, with the
+`Location` target in the error message.
+
+The probe checks liveness only: it proves the web layer answers, not that the application can
+authenticate a request or serve DataService. Use `restart-web-app --wait-ready` (or the
+`restart-by-environment-name` MCP tool) when you need a readiness signal that exercises the
+application layer.
+
 ## JSON output (`--json`)
 
 With `--json`, healthcheck emits exactly one JSON envelope. On success, `data` carries the

@@ -40,7 +40,7 @@ public class RestartTool(
 	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
 		[Description("Target Environment name to restart")] [Required] string environmentName,
-		[DefaultValue(true)] [Description("Poll the application after restart until it answers health-check; default true")] bool waitReady = true,
+		[DefaultValue(true)] [Description("Wait after the restart until the instance answers an authenticated application-layer round-trip (not merely the liveness health-check ping); default true")] bool waitReady = true,
 		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600, capped at 3600")] int waitTimeoutSeconds = 600,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
@@ -78,7 +78,7 @@ public class RestartTool(
 		[Description("Creatio instance Username")] [Required] string userName,
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false,
-		[DefaultValue(true)] [Description("Poll the application after restart until it answers health-check; default true")] bool waitReady = true,
+		[DefaultValue(true)] [Description("Wait after the restart until the instance answers an authenticated application-layer round-trip (not merely the liveness health-check ping); default true")] bool waitReady = true,
 		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600, capped at 3600")] int waitTimeoutSeconds = 600,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,

@@ -16,7 +16,9 @@ DESCRIPTION
     application-layer round-trip — not merely the liveness health-check ping —
     and return only once it is genuinely serving (or exit non-zero on timeout).
     This is the signal to rely on before verifying a fix, instead of hand-rolled
-    polling.
+    polling. If the application refuses the environment credentials while waiting,
+    the wait stops early with an authentication error instead of burning the whole
+    --ready-timeout on a failure that waiting cannot fix.
 
 SYNOPSIS
     restart-web-app [Name] [options]

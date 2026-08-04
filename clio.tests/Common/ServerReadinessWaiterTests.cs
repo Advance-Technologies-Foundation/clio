@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -231,7 +233,7 @@ public sealed class ServerReadinessWaiterTests {
 	}
 
 	[Test]
-	[Description("R1: with authenticated readiness required, a passing liveness probe is NOT enough — the waiter also logs in and issues an authenticated round-trip, and reports ready only once that round-trip returns a genuine JSON answer.")]
+	[Description("R1: with authenticated readiness required, a passing liveness probe is NOT enough — the waiter also issues an authenticated round-trip, and reports ready only once that round-trip returns a genuine DataService answer.")]
 	public void WaitForReady_Should_ReturnTrue_When_AuthRoundTrip_Returns_GenuineJson() {
 		// Arrange
 		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
@@ -253,9 +255,137 @@ public sealed class ServerReadinessWaiterTests {
 
 		// Assert
 		ready.Should().BeTrue(because: "the authenticated application-layer round-trip returned a genuine JSON answer");
-		applicationClient.Received(1).Login();
 		applicationClient.Received(1).ExecutePostRequest(
 			SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		applicationClient.DidNotReceive().Login();
+	}
+
+	[Test]
+	[Description("R1 / OAuth+bearer safety: the readiness round-trip must NOT call Login() explicitly — the client authenticates on demand, and an OAuth or bearer-token client carries a token instead of a login/password, so an explicit Login() would throw and make readiness unreachable for a healthy instance.")]
+	public void WaitForReady_Should_NotCallLogin_When_AuthRoundTripIsRequired() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		applicationClient.When(client => client.Login())
+			.Do(_ => throw new UnauthorizedAccessException("bearer client cannot log in with a login/password"));
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		ServerReadinessWaiter waiter = CreateWaiter(
+			healthCheckCommand, applicationClient: applicationClient, serviceUrlBuilder: serviceUrlBuilder);
+
+		// Act
+		bool ready = waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.FromSeconds(30),
+			RequireAuthenticatedReadiness = true
+		});
+
+		// Assert
+		ready.Should().BeTrue(
+			because: "a token-authenticated client whose Login() throws must still reach ready through the on-demand session");
+		applicationClient.DidNotReceive().Login();
+	}
+
+	[Test]
+	[Description("R1 / blocker regression: a readiness round-trip that never answers (the connect-but-never-answer shape) must not pin the wait past its budget — the wait is bounded by the caller's deadline, not by the client's internal ~100s+ login/ping timeouts.")]
+	public void WaitForReady_Should_Bound_AuthRoundTrip_When_ItNeverAnswers() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		using ManualResetEventSlim released = new(false);
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				// Simulates a socket that accepts and never answers: releasing the gate only at teardown keeps
+				// the faked round-trip hung for the whole duration of the wait.
+				released.Wait(TimeSpan.FromSeconds(30));
+				return "{\"rows\":[],\"success\":true}";
+			});
+		ServerReadinessWaiter waiter = CreateWaiter(
+			healthCheckCommand, applicationClient: applicationClient, serviceUrlBuilder: serviceUrlBuilder);
+		Stopwatch stopwatch = Stopwatch.StartNew();
+
+		// Act
+		bool ready = waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.FromSeconds(2),
+			RequireAuthenticatedReadiness = true
+		});
+		stopwatch.Stop();
+		released.Set();
+
+		// Assert
+		ready.Should().BeFalse(because: "a round-trip that never answers is not a readiness signal");
+		stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+			because: "the 2s readiness budget must bound the hung round-trip instead of waiting on the client's own ~100s timeout");
+	}
+
+	[Test]
+	[Description("R1: a credential the application refuses is not a warm-up symptom — the wait stops after two consecutive rejections instead of burning the whole readiness budget on a failure waiting cannot fix.")]
+	public void WaitForReady_Should_FailFast_When_CredentialsAreRejectedRepeatedly() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns<string>(_ => throw new UnauthorizedAccessException("Unauthorized Supervisor for http://sandbox.local"));
+		ILogger logger = Substitute.For<ILogger>();
+		ServerReadinessWaiter waiter = CreateWaiter(
+			healthCheckCommand, logger, applicationClient, serviceUrlBuilder);
+		Stopwatch stopwatch = Stopwatch.StartNew();
+
+		// Act
+		bool ready = waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.FromSeconds(60),
+			RequireAuthenticatedReadiness = true
+		});
+		stopwatch.Stop();
+
+		// Assert
+		ready.Should().BeFalse(because: "a rejected credential cannot become ready by waiting");
+		applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+			because: "the wait must give up on an authentication failure instead of consuming the 60s budget");
+		logger.Received().WriteError(Arg.Is<string>(message => message.Contains("authentication failure")));
+	}
+
+	[Test]
+	[Description("R1: a SINGLE credential rejection does not abort the wait — a transient rejection during security-cache warm-up is followed by a genuine answer and still reports ready.")]
+	public void WaitForReady_Should_KeepPolling_When_ASingleAuthRejectionIsFollowedByAnAnswer() {
+		// Arrange
+		HealthCheckCommand healthCheckCommand = CreateHealthCheckCommand();
+		healthCheckCommand.Execute(Arg.Any<HealthCheckOptions>()).Returns(0);
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		int call = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns<string>(_ => ++call == 1
+				? throw new UnauthorizedAccessException("transient rejection during warm-up")
+				: "{\"rows\":[],\"success\":true}");
+		ServerReadinessWaiter waiter = CreateWaiter(
+			healthCheckCommand, applicationClient: applicationClient, serviceUrlBuilder: serviceUrlBuilder);
+
+		// Act
+		bool ready = waiter.WaitForReady(new ServerReadinessOptions {
+			Uri = "http://sandbox.local", IsNetCore = true, Timeout = TimeSpan.FromSeconds(30),
+			RequireAuthenticatedReadiness = true
+		});
+
+		// Assert
+		ready.Should().BeTrue(because: "one rejection is tolerated; the next round-trip returned a genuine answer");
+		applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -282,7 +412,8 @@ public sealed class ServerReadinessWaiterTests {
 		// Assert
 		ready.Should().BeFalse(
 			because: "a liveness ping that answers while the app still serves a login page must NOT be reported ready");
-		applicationClient.Received().Login();
+		applicationClient.Received().ExecutePostRequest(
+			SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -294,8 +425,9 @@ public sealed class ServerReadinessWaiterTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
-		applicationClient.When(client => client.Login())
-			.Do(_ => throw new System.Net.WebException("connection refused during warm-up"));
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns<string>(_ => throw new System.Net.WebException("connection refused during warm-up"));
 		ServerReadinessWaiter waiter = CreateWaiter(
 			healthCheckCommand, applicationClient: applicationClient, serviceUrlBuilder: serviceUrlBuilder);
 
@@ -310,13 +442,22 @@ public sealed class ServerReadinessWaiterTests {
 	}
 
 	[Test]
-	[Description("Classifier: a genuine DataService JSON answer is accepted, while a login page, a 401 auth-failure envelope, an empty body, and a non-JSON body are all rejected.")]
+	[Description("Classifier: only a body carrying the DataService response contract is accepted, while a login page, a 401 auth-failure envelope, an empty body, a non-JSON body, and JSON of an unrecognized shape (proxy/gateway error) are all rejected.")]
 	public void IsGenuineAuthenticatedJsonAnswer_Should_Classify_Answers_Correctly() {
-		// Assert — genuine JSON answers
+		// Assert — genuine DataService answers
 		ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer("{\"rows\":[],\"success\":true}")
-			.Should().BeTrue(because: "a well-formed DataService JSON envelope proves the app answered an authenticated request");
+			.Should().BeTrue(because: "a SelectQuery result envelope proves the app answered an authenticated request");
+		ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(
+				"{\"success\":false,\"errorInfo\":{\"errorCode\":\"NoRightsForOperation\"}}")
+			.Should().BeTrue(because: "a DataService error envelope still proves the app authenticated and executed the request");
+
+		// Assert — JSON that is NOT a DataService answer (the JSON-shaped false-ready class)
+		ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer("{\"error\":\"502 Bad Gateway\"}")
+			.Should().BeFalse(because: "a gateway/proxy JSON error body does not prove the application layer served the request");
 		ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer("[]")
-			.Should().BeTrue(because: "a JSON array is still genuine JSON from a serving application layer");
+			.Should().BeFalse(because: "a bare JSON array carries no DataService response marker");
+		ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer("123")
+			.Should().BeFalse(because: "a JSON scalar is not a DataService answer");
 
 		// Assert — warm-up / not-authenticated shapes
 		ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(
