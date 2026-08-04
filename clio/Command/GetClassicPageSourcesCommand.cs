@@ -115,6 +115,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	// The manifest/detail-entry field naming the bound object. One name for the three places that write it (page
 	// manifest, child-page manifest, annotated detail entry) so the engine's contract key is stated once.
 	private const string EntityKey = "entity";
+	// The detail-entry field naming the resolved child page (or `false` for a verified none). Single-sourced for the
+	// same reason as EntityKey: the engine reads this exact key, so it is stated once rather than spelled at each write.
+	private const string EditPageKey = "editPage";
 	// No numeric fan-out caps (ENG-94402): a migration unit is collected WHOLE. A page with 250 details migrates
 	// all 250, and a parent chain deeper than any hand-picked number is walked to its base template. Termination
 	// does not rest on a cap — every unbounded walk is bounded by a visited-set over a finite input: the parent walk
@@ -435,7 +438,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	// driven by the page, not by a constant. Chunking keeps each query far below the DBMS parameter ceiling
 	// (MSSql refuses a parameterized statement past 2100) and below request-size limits, so a very wide page
 	// still resolves in a few batched queries instead of failing the batch and degrading to N per-name lookups.
-	private const int LayerBatchChunkSize = 400;
+	// The bound itself is the shared `In`-list ceiling: every batched value set in this flow — here and in the
+	// child-page resolver — is the same kind of parameter list against the same DBMS, so one constant states it.
+	private const int LayerBatchChunkSize = ClassicEntitySchemaQuery.InFilterChunkSize;
 
 	// Resolves many names in batched SelectQueries and seeds the enumeration cache — including empty entries for
 	// names that do not exist, so later per-name lookups don't re-query them. A batch failure only logs (no
@@ -1097,7 +1102,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
 		IReadOnlyDictionary<string, string> entityByDetail =
 			ResolveDetailEntities(ctx, detailSchemas, detailEntityOverrides);
-		(IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, bool lookupSucceeded) =
+		(IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, ISet<string> resolvedEntities) =
 			ResolveChildPagesByEntity(ctx, entityByDetail);
 		var info = new Dictionary<string, DetailChildPageInfo>(StringComparer.OrdinalIgnoreCase);
 		detailChildPageInfo = info;
@@ -1120,8 +1125,8 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		foreach (JProperty detail in detailSchemas.Properties()) {
 			entityByDetail.TryGetValue(detail.Name, out string entity);
 			// Metadata first; the body scan runs only for a detail the metadata answered nothing for.
-			if (!TryCollectFromMetadata(detail.Name, entity, pagesByEntity, info, Add)) {
-				CollectFromDetailBody(ctx, detail, entity, lookupSucceeded, info, Add);
+			if (!TryCollectFromMetadata(detail.Name, entity, pageSchemaName, pagesByEntity, info, Add)) {
+				CollectFromDetailBody(ctx, detail, entity, resolvedEntities, info, Add);
 			}
 		}
 		return editPageNames;
@@ -1133,6 +1138,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private static bool TryCollectFromMetadata(
 		string detailName,
 		string entity,
+		string pageSchemaName,
 		IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity,
 		IDictionary<string, DetailChildPageInfo> info,
 		Action<string> add) {
@@ -1146,22 +1152,24 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 		// The engine reads ONE editPage per detail: the edit card, not the add mini page (which it keys
 		// separately). The mini pages stay in childPageSchemas so the plan still carries their sources.
-		string card = PickPrimaryCard(metadataPages, entity);
+		string card = PickPrimaryCard(metadataPages, entity, pageSchemaName);
 		info[detailName] = new DetailChildPageInfo(entity, card, VerifiedNoEditPage: card == null);
 		return true;
 	}
 
 	// SECONDARY route for one detail: the getEditPageName/editPageName token in its own body. `verified none` is
-	// claimable ONLY when the metadata lookup actually ran AND the entity was resolved — otherwise we never looked,
-	// and saying "none" would license the engine to plan around a child page that does exist.
+	// claimable ONLY when the metadata answered for THIS detail's entity — i.e. the entity is in the resolver's
+	// resolved set. A batch-wide "the lookup ran" is not enough: the resolver warns per entity and leaves the ones it
+	// could not resolve out, and for those we never looked, so saying "none" would license the engine to plan around a
+	// child page that does exist.
 	private void CollectFromDetailBody(
 		PageSourcesRunContext ctx,
 		JProperty detail,
 		string entity,
-		bool lookupSucceeded,
+		ISet<string> resolvedEntities,
 		IDictionary<string, DetailChildPageInfo> info,
 		Action<string> add) {
-		bool verifiedNone = lookupSucceeded && entity != null;
+		bool verifiedNone = entity != null && resolvedEntities.Contains(entity);
 		string detailBody = detail.Value["body"]?.ToString();
 		Match editPageMatch = string.IsNullOrEmpty(detailBody)
 			? Match.Empty
@@ -1177,27 +1185,45 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		add(bodyPage);
 	}
 
-	// Which of an entity's registered cards to name as THE detail's editPage. Every candidate here already came from
-	// metadata and every one of them is nested in childPageSchemas — this only ranks them for the engine's single
-	// per-detail slot, so it never invents or filters out a page.
+	// Which of an entity's registered cards to name as THE detail's editPage. Every candidate here came from metadata,
+	// and every candidate this method may return is also nested in childPageSchemas — so it ranks for the engine's
+	// single per-detail slot without ever inventing a page or naming one the manifest does not carry.
 	//
-	// TypeColumnValue cannot make this call: an entity's cards are either all typed (Activity registers
+	// The self-referential card is excluded for exactly that reason: a detail bound to the page's OWN entity resolves
+	// back to the page being assembled, which the nesting guard drops, so naming it as editPage would point the
+	// engine's [editPage, entity, entity + "Page"] lookup at a page that is not in the manifest — the detail would then
+	// read as "child page NOT verified", the very gate failure this annotation exists to clear. With no card left, the
+	// caller records a verified "no edit page" instead (the metadata did answer for this entity).
+	//
+	// TypeColumnValue cannot rank the rest: an entity's cards are either all typed (Activity registers
 	// EmailPageV2 + ActivityPageV2 + ActivityPageV2 under three different type values, with no default row) or all
 	// untyped (Order registers PortalOrderPage and OrderPageV2, both with an empty one). So prefer the card whose name
-	// is derived from the entity — which picks ActivityPageV2 over EmailPageV2, OrderPageV2 over PortalOrderPage, and
-	// CasePage over PortalCasePage — and fall back to registration order when no card is named after the entity
-	// (e.g. VwAccountRelationship -> AccountRelationshipDetailPageV2).
-	private static string PickPrimaryCard(IReadOnlyList<ClassicChildPage> registered, string entity) {
-		List<ClassicChildPage> cards = registered.Where(page => !page.IsMiniPage).ToList();
+	// is the entity's own conventional page name — `<entity>PageV2`, then `<entity>Page` — which picks ActivityPageV2
+	// over EmailPageV2, OrderPageV2 over PortalOrderPage, and CasePage over PortalCasePage. An exact match outranks a
+	// mere prefix match so a second entity-prefixed card (e.g. ContactPageV2 vs ContactPageV2Detail) cannot win by
+	// registration order alone. Fall back to a prefix match, then to registration order, when the entity registers no
+	// conventionally-named card (e.g. VwAccountRelationship -> AccountRelationshipDetailPageV2).
+	private static string PickPrimaryCard(
+		IReadOnlyList<ClassicChildPage> registered, string entity, string pageSchemaName) {
+		List<ClassicChildPage> cards = registered
+			.Where(page => !page.IsMiniPage
+				&& !string.Equals(page.SchemaName, pageSchemaName, StringComparison.OrdinalIgnoreCase))
+			.ToList();
 		if (cards.Count == 0) {
 			return null;
 		}
-		ClassicChildPage namedAfterEntity = string.IsNullOrWhiteSpace(entity)
-			? null
-			: cards.FirstOrDefault(page =>
-				page.SchemaName.StartsWith(entity, StringComparison.OrdinalIgnoreCase));
-		return (namedAfterEntity ?? cards[0]).SchemaName;
+		if (string.IsNullOrWhiteSpace(entity)) {
+			return cards[0].SchemaName;
+		}
+		ClassicChildPage conventional =
+			FindCard(cards, entity + "PageV2")
+			?? FindCard(cards, entity + "Page")
+			?? cards.FirstOrDefault(page => page.SchemaName.StartsWith(entity, StringComparison.OrdinalIgnoreCase));
+		return (conventional ?? cards[0]).SchemaName;
 	}
+
+	private static ClassicChildPage FindCard(IEnumerable<ClassicChildPage> cards, string schemaName) =>
+		cards.FirstOrDefault(page => string.Equals(page.SchemaName, schemaName, StringComparison.OrdinalIgnoreCase));
 
 	// Writes what the child-page lookup learned onto the detail entries themselves. The engine resolves a detail's
 	// child page by `[detail.editPage, detail.entity, detail.entity + "Page"]` and an explicit value on the entry WINS
@@ -1215,10 +1241,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				entry[EntityKey] = info.Entity;
 			}
 			if (!string.IsNullOrWhiteSpace(info.EditPage)) {
-				entry["editPage"] = info.EditPage;
+				entry[EditPageKey] = info.EditPage;
 			}
 			else if (info.VerifiedNoEditPage) {
-				entry["editPage"] = false;
+				entry[EditPageKey] = false;
 			}
 		}
 	}
@@ -1251,16 +1277,19 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return entityByDetail;
 	}
 
-	// Entity -> the child pages it registers, from ONE batched SysModuleEdit lookup over every detail entity, plus
-	// whether that lookup actually RAN: only a lookup that ran lets a caller claim "verified: this detail has no edit
-	// page". A lookup failure degrades to the body-scan route for every detail and is surfaced as a response warning,
-	// never fatal — child pages are an enricher, not the sources' payload.
-	private (IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, bool lookupSucceeded)
+	// Entity -> the child pages it registers, from ONE batched SysModuleEdit lookup over every detail entity, plus the
+	// set of entities the lookup actually RESOLVED: only an entity the metadata answered for lets a caller claim
+	// "verified: this detail has no edit page". Note the two are independent — an entity can resolve fine and still
+	// register no page (a legitimate verified none), while an entity the resolver warned about is absent from the set
+	// even though the lookup as a whole succeeded. A lookup failure degrades to the body-scan route for every detail
+	// and is surfaced as a response warning, never fatal — child pages are an enricher, not the sources' payload.
+	private (IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, ISet<string> resolvedEntities)
 		ResolveChildPagesByEntity(PageSourcesRunContext ctx, IReadOnlyDictionary<string, string> entityByDetail) {
 		var pagesByEntity = new Dictionary<string, IReadOnlyList<ClassicChildPage>>(StringComparer.OrdinalIgnoreCase);
+		var noneResolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		List<string> entities = entityByDetail.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 		if (entities.Count == 0) {
-			return (pagesByEntity, false);
+			return (pagesByEntity, noneResolved);
 		}
 		ClassicChildPageLookup lookup;
 		try {
@@ -1270,11 +1299,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			// The resolver contract is not to throw, but a substituted or faulty implementation must not fail the whole
 			// assembly: degrade to the body-scan route exactly like a reported error does.
 			ReportChildPageLookupFailure(ctx, ex.Message);
-			return (pagesByEntity, false);
+			return (pagesByEntity, noneResolved);
 		}
 		if (lookup.Error != null) {
 			ReportChildPageLookupFailure(ctx, lookup.Error);
-			return (pagesByEntity, false);
+			return (pagesByEntity, noneResolved);
 		}
 		foreach (string warning in lookup.Warnings ?? []) {
 			_logger.WriteWarning(warning);
@@ -1288,7 +1317,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				.Select(byName => byName.First())
 				.ToList();
 		}
-		return (pagesByEntity, true);
+		return (pagesByEntity, new HashSet<string>(lookup.ResolvedEntities ?? [], StringComparer.OrdinalIgnoreCase));
 	}
 
 	private void ReportChildPageLookupFailure(PageSourcesRunContext ctx, string error) {

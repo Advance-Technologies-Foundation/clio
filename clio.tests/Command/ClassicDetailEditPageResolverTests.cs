@@ -27,6 +27,16 @@ public sealed class ClassicDetailEditPageResolverTests {
 	private const string MiniPageUId = "44444444-4444-4444-4444-444444444444";
 	private const string EmailPageUId = "55555555-5555-5555-5555-555555555555";
 
+	// A distinct, readable UId per index, so a test can generate a value set wider than one query chunk.
+	private static string Uid(int index) => $"{index:D8}-0000-0000-0000-000000000000";
+
+	// Sizes of every In-filter list the query carries: an In value costs one query parameter, so this is what has to
+	// stay bounded no matter how wide the page is.
+	private static IEnumerable<int> InFilterSizes(JObject query) =>
+		query.Descendants().OfType<JObject>()
+			.Where(node => node["filterType"]?.Value<int>() == 4)
+			.Select(node => ((JArray)node["rightExpressions"]).Count);
+
 	private static string Rows(params string[] rows) =>
 		"{\"rows\":[" + string.Join(",", rows) + "],\"success\":true}";
 
@@ -214,6 +224,64 @@ public sealed class ClassicDetailEditPageResolverTests {
 		result.Error.Should().Contain("service unavailable",
 			because: "the transport failure is reported through the contract, never thrown at the caller");
 		result.ChildPages.Should().BeEmpty(because: "a failed lookup resolves nothing");
+	}
+
+	[Test]
+	[Description("ResolveChildPages chunks every In filter it issues so no single query can outgrow the DBMS parameter ceiling, and chunking alone does not manufacture a truncation warning.")]
+	public void ResolveChildPages_ShouldChunkEveryInFilter_WhenValueSetExceedsChunkSize() {
+		// Arrange — a page wide enough to push all three stages past one chunk: the entity-name list, the entity-UId
+		// list, and (the sharpest edge) the page-UId list, whose size is row-driven rather than request-driven.
+		const int entityCount = 450;
+		const int editRowCount = 210;
+		string[] names = Enumerable.Range(0, entityCount).Select(i => "UsrEntity" + i).ToArray();
+		IApplicationClient client = ClientReturning(
+			Rows(Enumerable.Range(0, entityCount)
+				.Select(i => $"{{\"Name\":\"UsrEntity{i}\",\"UId\":\"{Uid(i)}\",\"ExtendParent\":false}}").ToArray()),
+			Rows(Enumerable.Range(0, editRowCount)
+				.Select(i => $"{{\"SysEntitySchemaUId\":\"{Uid(i)}\",\"CardSchemaUId\":\"{Uid(1000 + i)}\"," +
+					$"\"MiniPageSchemaUId\":\"{Uid(2000 + i)}\"}}").ToArray()),
+			Rows());
+		ClassicDetailEditPageResolver resolver = Create(client);
+
+		// Act
+		ClassicChildPageLookup result = resolver.ResolveChildPages(names);
+
+		// Assert
+		result.Error.Should().BeNull(because: "a wide page must resolve in several bounded queries, not fail one oversized one");
+		_queries.SelectMany(InFilterSizes).Should().OnlyContain(
+			size => size <= ClassicEntitySchemaQuery.InFilterChunkSize,
+			because: "each In value costs one query parameter, so an unchunked list would throw past the ceiling and " +
+				"abandon the whole page's child-page set at once");
+		_queries.Count(query => query["rootSchemaName"]?.ToString() == "SysSchema" &&
+			query["columns"]?["items"]?["ExtendParent"] != null).Should().Be(2,
+			because: "450 entity names split into two bounded entity-name queries");
+		_queries.Count(query => query["rootSchemaName"]?.ToString() == "SysModuleEdit").Should().Be(2,
+			because: "the 450 resolved entity UIds split into two bounded SysModuleEdit queries");
+		_queries.Count(IsPageNameLookup).Should().Be(2,
+			because: "the 420 distinct page UIds those rows reference split into two bounded name lookups");
+		result.Warnings.Should().NotContain(warning => warning.Contains("rowCount cap"),
+			because: "each chunk carries its own proportional rowCount and the cap is checked over the accumulated " +
+				"rows, so splitting a query cannot invent a truncation the unchunked query would not have reported");
+	}
+
+	[Test]
+	[Description("ResolveChildPages reports the entities the metadata actually answered for, so a caller can tell 'registers nothing' from 'could not look'.")]
+	public void ResolveChildPages_ShouldReportResolvedEntities_SeparatelyFromTheWarnedOnes() {
+		// Arrange — Contract resolves and registers nothing; UsrGhostEntity has no SysSchema row at all
+		IApplicationClient client = ClientReturning(
+			Rows($"{{\"Name\":\"Contract\",\"UId\":\"{ContractEntityUId}\",\"ExtendParent\":false}}"),
+			Rows(),
+			Rows());
+		ClassicDetailEditPageResolver resolver = Create(client);
+
+		// Act
+		ClassicChildPageLookup result = resolver.ResolveChildPages(new[] { "Contract", "UsrGhostEntity" });
+
+		// Assert
+		result.Error.Should().BeNull(because: "one unresolvable name degrades the lookup, it does not fail it");
+		result.ResolvedEntities.Should().BeEquivalentTo(new[] { "Contract" },
+			because: "only the entity the metadata answered for may be read as a verified 'registers no edit page'; " +
+				"the warned one was never looked up and must not be mistaken for one");
 	}
 
 	[Test]

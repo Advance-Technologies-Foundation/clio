@@ -34,10 +34,17 @@ public sealed record ClassicChildPage(string EntityName, string SchemaName, bool
 /// Reason the lookup could not complete (DataService failure); <c>null</c> when it ran to completion. An empty
 /// <see cref="ChildPages"/> with a <c>null</c> error means "these entities register no child pages".
 /// </param>
+/// <param name="ResolvedEntities">
+/// The requested entities whose metadata the lookup actually resolved, as the caller spelled them. This is what makes
+/// "verified: this entity registers no edit page" claimable PER ENTITY: an entity missing from here was warned about
+/// and never looked up, so an empty <see cref="ChildPages"/> for it means "we could not check", NOT "it has none" —
+/// a distinction the batch-wide <see cref="Error"/> flag cannot express.
+/// </param>
 public sealed record ClassicChildPageLookup(
 	IReadOnlyList<ClassicChildPage> ChildPages,
 	IReadOnlyList<string> Warnings,
-	string Error);
+	string Error,
+	IReadOnlyList<string> ResolvedEntities);
 
 /// <summary>
 /// Resolves the child pages (edit card + add mini page) that Classic details' entities register in
@@ -56,13 +63,15 @@ public interface IClassicDetailEditPageResolver {
 	/// <summary>Resolves the child pages every entity in <paramref name="entityNames"/> registers.</summary>
 	/// <param name="entityNames">
 	/// Detail entity schema names, e.g. <c>Contract</c>. Blank entries and duplicates are ignored. The whole set is
-	/// resolved in three batched queries regardless of its size, so callers should pass every detail entity at once
-	/// rather than calling per detail.
+	/// resolved through three batched query STAGES regardless of its size — each stage chunked so no single
+	/// <c>In</c> list can outgrow the database's parameter ceiling — so callers should pass every detail entity at
+	/// once rather than calling per detail.
 	/// </param>
 	/// <returns>
-	/// The resolved child pages, or an <see cref="ClassicChildPageLookup.Error"/> describing why the lookup could not
-	/// complete. Never throws: transport and parse failures are reported through the error field so the caller can
-	/// degrade to its own heuristics.
+	/// The resolved child pages plus the subset of <paramref name="entityNames"/> the metadata actually answered for,
+	/// or an <see cref="ClassicChildPageLookup.Error"/> describing why the lookup could not complete. Never throws:
+	/// transport and parse failures are reported through the error field so the caller can degrade to its own
+	/// heuristics.
 	/// </returns>
 	ClassicChildPageLookup ResolveChildPages(IReadOnlyCollection<string> entityNames);
 }
@@ -108,31 +117,35 @@ public sealed class ClassicDetailEditPageResolver : IClassicDetailEditPageResolv
 		}
 		try {
 			var warnings = new List<string>();
-			// 1. Every detail entity name -> its base-schema UId, in ONE query. The per-name base-row rule
+			// 1. Every detail entity name -> its base-schema UId, in ONE batched stage. The per-name base-row rule
 			//    (ExtendParent == false) is reused from the shared resolver so a batch cannot resolve a different
 			//    physical schema than the single-name path would.
 			IReadOnlyDictionary<string, string> uIdByEntity = ResolveEntityUIds(names, warnings);
+			string[] resolvedEntities = uIdByEntity.Keys.ToArray();
 			if (uIdByEntity.Count == 0) {
-				return new ClassicChildPageLookup(Array.Empty<ClassicChildPage>(), warnings, null);
+				return new ClassicChildPageLookup(
+					Array.Empty<ClassicChildPage>(), warnings, null, resolvedEntities);
 			}
-			// 2. Every SysModuleEdit registration for those entities, in ONE query. The entity UId travels back as a
-			//    column so each row can be attributed to the entity it belongs to.
+			// 2. Every SysModuleEdit registration for those entities, in ONE batched stage. The entity UId travels back
+			//    as a column so each row can be attributed to the entity it belongs to.
 			string[] entityUIds = uIdByEntity.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 			int editCap = entityUIds.Length * EditPageRowsPerEntity;
-			JArray editRows = Select(BuildSelectEditPages(entityUIds, editCap));
+			JArray editRows = SelectChunked(entityUIds,
+				chunk => BuildSelectEditPages(chunk, chunk.Count * EditPageRowsPerEntity));
 			if (editRows.Count >= editCap) {
 				warnings.Add(
 					$"Child-page lookup reached the rowCount cap ({editCap}); the child-page list may be truncated.");
 			}
 			if (editRows.Count == 0) {
-				return new ClassicChildPageLookup(Array.Empty<ClassicChildPage>(), warnings, null);
+				return new ClassicChildPageLookup(
+					Array.Empty<ClassicChildPage>(), warnings, null, resolvedEntities);
 			}
-			// 3. Page UId -> schema name, in ONE query. Only real references are looked up: an unset reference comes
-			//    back as the all-zero GUID, NOT as null, so filtering on "not null" alone would inflate the set
+			// 3. Page UId -> schema name, in ONE batched stage. Only real references are looked up: an unset reference
+			//    comes back as the all-zero GUID, NOT as null, so filtering on "not null" alone would inflate the set
 			//    (measured 17.8x on MiniPageSchemaUId) and then resolve nothing for the surplus.
 			IReadOnlyDictionary<string, string> nameByUId = ResolveSchemaNames(editRows);
 			return new ClassicChildPageLookup(
-				BuildChildPages(editRows, uIdByEntity, nameByUId), warnings, null);
+				BuildChildPages(editRows, uIdByEntity, nameByUId), warnings, null, resolvedEntities);
 		}
 		catch (Exception ex) {
 			return Empty(ex.Message);
@@ -140,14 +153,33 @@ public sealed class ClassicDetailEditPageResolver : IClassicDetailEditPageResolv
 	}
 
 	private static ClassicChildPageLookup Empty(string error) =>
-		new(Array.Empty<ClassicChildPage>(), Array.Empty<string>(), error);
+		new(Array.Empty<ClassicChildPage>(), Array.Empty<string>(), error, Array.Empty<string>());
+
+	// Runs one In-filter select per chunk of at most InFilterChunkSize values and accumulates the rows. An In list
+	// costs one query parameter per value, and with the fan-out caps gone (ENG-94402) the value count is page-driven
+	// rather than bounded — so a single unchunked list can cross the database's parameter ceiling, throw, and abandon
+	// the WHOLE page's child-page set at once (unlike the layer batch, where one bad chunk costs only that chunk).
+	// Each chunk carries its own proportional rowCount, so the caller's cap check over the ACCUMULATED rows keeps the
+	// exact meaning it had unchunked and chunking cannot manufacture a truncation warning.
+	private JArray SelectChunked(IReadOnlyList<string> values, Func<IReadOnlyCollection<string>, JObject> buildQuery) {
+		var rows = new JArray();
+		for (int offset = 0; offset < values.Count; offset += ClassicEntitySchemaQuery.InFilterChunkSize) {
+			int take = Math.Min(ClassicEntitySchemaQuery.InFilterChunkSize, values.Count - offset);
+			List<string> chunk = values.Skip(offset).Take(take).ToList();
+			foreach (JToken row in Select(buildQuery(chunk))) {
+				rows.Add(row);
+			}
+		}
+		return rows;
+	}
 
 	// Groups the entity rows by name and applies the shared base-row rule per group. An entity the metadata does not
 	// answer for is reported as a warning rather than dropped silently: the caller would otherwise read "no child
 	// pages registered" for what is really "we could not look".
-	private IReadOnlyDictionary<string, string> ResolveEntityUIds(IReadOnlyCollection<string> names, List<string> warnings) {
+	private IReadOnlyDictionary<string, string> ResolveEntityUIds(IReadOnlyList<string> names, List<string> warnings) {
 		int entityCap = names.Count * EntityRowsPerName;
-		JArray entityRows = Select(BuildSelectEntitiesByName(names, entityCap));
+		JArray entityRows = SelectChunked(names,
+			chunk => BuildSelectEntitiesByName(chunk, chunk.Count * EntityRowsPerName));
 		if (entityRows.Count >= entityCap) {
 			warnings.Add(
 				$"Detail-entity lookup reached the rowCount cap ({entityCap}); some detail entities may be unresolved.");
@@ -187,7 +219,7 @@ public sealed class ClassicDetailEditPageResolver : IClassicDetailEditPageResolv
 		if (pageUIds.Length == 0) {
 			return nameByUId;
 		}
-		foreach (JToken row in Select(BuildSelectSchemaNamesByUId(pageUIds))) {
+		foreach (JToken row in SelectChunked(pageUIds, ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId)) {
 			string uId = row["UId"]?.ToString();
 			string name = row["Name"]?.ToString();
 			if (!string.IsNullOrWhiteSpace(uId) && !string.IsNullOrWhiteSpace(name)) {
@@ -269,13 +301,4 @@ public sealed class ClassicDetailEditPageResolver : IClassicDetailEditPageResolv
 			ClassicEntitySchemaQuery.Group(
 				("byEntity", ClassicEntitySchemaQuery.InFilter(EntitySchemaUIdColumnPath, entityUIds, 0))),
 			rowCount);
-
-	private static JObject BuildSelectSchemaNamesByUId(IReadOnlyCollection<string> uIds) =>
-		ClassicEntitySchemaQuery.Query("SysSchema",
-			new JObject {
-				["UId"] = ClassicEntitySchemaQuery.Column("UId"),
-				["Name"] = ClassicEntitySchemaQuery.Column("Name")
-			},
-			ClassicEntitySchemaQuery.Group(("byUId", ClassicEntitySchemaQuery.InFilter("UId", uIds, 0))),
-			uIds.Count);
 }

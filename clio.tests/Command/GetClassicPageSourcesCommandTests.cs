@@ -67,8 +67,9 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// to the (secondary) detail-body scan and the pre-existing token-fixtured tests keep asserting that path
 		// unchanged. The metadata-route tests configure this explicitly.
 		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
-			.Returns(new ClassicChildPageLookup(
-				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), null));
+			.Returns(ci => new ClassicChildPageLookup(
+				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), null,
+				ci.Arg<IReadOnlyCollection<string>>().ToList()));
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_columnManager);
@@ -1646,7 +1647,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			EmptyGuid, "UsrApp");
 		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
 			.Returns(new ClassicChildPageLookup(
-				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), "Access to SysModuleEdit is denied"));
+				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), "Access to SysModuleEdit is denied",
+				Array.Empty<string>()));
 		StubEntityColumns();
 		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
 
@@ -1779,6 +1781,63 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "the ranking only picks which card the annotation names — BOTH registered pages are still nested");
 	}
 
+	[Test]
+	[Description("TryAssemblePageSources omits editPage for a detail whose entity the lookup warned about, even though the lookup as a whole succeeded.")]
+	public void TryAssemblePageSources_ShouldNotClaimVerifiedNone_WhenOnlyThisDetailsEntityWasUnresolved() {
+		// Arrange — the ghost-entity case: the lookup returns no Error (so it "ran"), but it could not resolve
+		// UsrGhost and says so per entity. Nothing was ever checked for this detail.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrGhostDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrGhostDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrGhostDetail\", [], function() { return { entitySchemaName: \"UsrGhost\" }; });",
+			EmptyGuid, "UsrApp");
+		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(new ClassicChildPageLookup(
+				Array.Empty<ClassicChildPage>(),
+				new[] { "No entity metadata resolved for detail entity UsrGhost; its child pages are unaccounted for." },
+				null,
+				Array.Empty<string>()));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JToken detail = JObject.Parse(ReadManifest(response))["detailSchemas"]!["UsrGhostDetail"]!;
+		detail["editPage"].Should().BeNull(
+			because: "the batch ran but this entity's metadata did not answer, so 'no edit page' was never established — " +
+				"writing the verified-none signal here would let the engine plan around a child page that may exist");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources does not name the page being assembled as a detail's editPage, since that card is never nested; it records a verified none instead.")]
+	public void TryAssemblePageSources_ShouldNotAnnotateSelfReferencingCardAsEditPage() {
+		// Arrange — the self-detail shape again, this time watching the detail's annotation rather than the nesting:
+		// UsrCase's only registered card IS UsrCasePage, which the self-reference guard keeps out of childPageSchemas.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrCaseDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrCaseDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrCaseDetail\", [], function() { return { entitySchemaName: \"UsrCase\" }; });",
+			EmptyGuid, "UsrApp");
+		StubChildPages(("UsrCase", "UsrCasePage", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JToken detail = JObject.Parse(ReadManifest(response))["detailSchemas"]!["UsrCaseDetail"]!;
+		detail["editPage"]!.Value<bool>().Should().BeFalse(
+			because: "the only candidate is the page being assembled, which is never nested — naming it would point the " +
+				"engine at a page the manifest does not carry, so the metadata answer collapses to a verified none");
+	}
+
 	// --- fake-environment helpers ------------------------------------------------------------------
 
 	// Stubs the SysModuleEdit child-page lookup with the registrations the fake environment should report, grouped the
@@ -1793,7 +1852,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 				return new ClassicChildPageLookup(
 					childPages.Where(page => requested.Contains(page.EntityName, StringComparer.OrdinalIgnoreCase)).ToList(),
 					Array.Empty<string>(),
-					null);
+					null,
+					requested.ToList());
 			});
 	}
 
