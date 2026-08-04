@@ -286,7 +286,10 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			return _jsonConverter.DeserializeObject<TResponse>(rawResponse);
 		} catch (Exception rawException) {
 			if (IsHtmlResponse(rawResponse)) {
-				throw new InvalidOperationException(
+				// NonJsonServiceResponseException (not a plain InvalidOperationException): its message is marked
+				// authoritative, so the MCP boundary surfaces this recovery guidance instead of unwrapping to the
+				// raw parser text of the inner exception (ENG-93365).
+				throw new NonJsonServiceResponseException(
 					$"{methodName} returned an HTML error page instead of JSON. " +
 					"The Creatio server encountered an unhandled error. Two common causes, check them in this order: " +
 					"(1) the target package is MISSING A DEPENDENCY on the package/app that owns the upper layer of " +
@@ -303,7 +306,9 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			try {
 				return _jsonConverter.DeserializeObject<TResponse>(correctedJson);
 			} catch (Exception correctedException) {
-				throw new InvalidOperationException(
+				// Authoritative for the same reason as the HTML branch above: this message already carries both
+				// parser errors and the response, so unwrapping to the inner exception would only lose context.
+				throw new NonJsonServiceResponseException(
 					$"{methodName} returned invalid JSON. Raw error: {rawException.Message}. " +
 					$"Corrected error: {correctedException.Message}. Response: {Truncate(rawResponse, 1000)}",
 					correctedException);

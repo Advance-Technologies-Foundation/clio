@@ -73,15 +73,10 @@ public static class McpToolErrorFilter
 		context.MatchedPrimitive is McpServerTool tool
 		&& McpReadDeadlineGate.IsRetrySafe(tool.ProtocolTool.Name, tool.ProtocolTool.Annotations);
 
-	// Unwraps to the inner-most exception message so the surfaced detail is the actual cause rather than a
-	// generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
-	private static string GetInnermostMessage(Exception exception) {
-		Exception current = exception;
-		while (current.InnerException is not null) {
-			current = current.InnerException;
-		}
-		return current.Message;
-	}
+	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with the nested clio-run
+	// dispatcher so both MCP error paths surface the same text (ENG-93365).
+	private static string GetInnermostMessage(Exception exception) =>
+		Clio.Common.SurfacedExceptionMessage.Resolve(exception);
 
 	private static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,

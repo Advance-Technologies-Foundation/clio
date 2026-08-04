@@ -1137,6 +1137,12 @@ public class BindingsModule {
 			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
 				continue;
 			}
+			// An exception is never a service. Registering one (they carry a marker interface such as
+			// IAuthoritativeErrorMessage) makes DI try to construct it, and its `string message` ctor cannot be
+			// resolved — ValidateOnBuild then fails and the whole host, mcp-server included, refuses to start.
+			if (typeof(Exception).IsAssignableFrom(type)) {
+				continue;
+			}
 			foreach (Type implementedInterface in type.GetInterfaces()) {
 				if (implementedInterface.Namespace is null
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)

@@ -453,15 +453,10 @@ public sealed class ClioRunExecutor(
 
 	private static bool IsErrorFieldName(string key) => FailureFieldNames.Contains(key);
 
-	// Unwraps to the inner-most exception's message so the surfaced detail is the actual failure cause
-	// rather than a generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
-	private static string GetInnermostMessage(Exception ex) {
-		Exception current = ex;
-		while (current.InnerException is not null) {
-			current = current.InnerException;
-		}
-		return current.Message;
-	}
+	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with McpToolErrorFilter so a
+	// nested clio-run dispatch surfaces exactly the same text as a direct tool call (ENG-93365).
+	private static string GetInnermostMessage(Exception ex) =>
+		Clio.Common.SurfacedExceptionMessage.Resolve(ex);
 
 	// Recovers the real (command, args) pair from the WRAPPED call shape an agent sends when it treats
 	// clio-run like a single-`args`-record tool. Two wrapped variants are handled:
