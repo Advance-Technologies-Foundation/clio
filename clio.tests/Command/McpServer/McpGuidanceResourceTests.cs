@@ -2594,6 +2594,13 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("neither is finished alone",
 			because: "the guide must say the section half and the home-page half are both required");
 
+		// A measured add-section run recommended creating a second workplace named after an app that already had
+		// one — the Name-collision trap this same guide documents. The option order has to depend on the case.
+		article.Text.Should().Contain("Do NOT lead with it when adding a section to an app that",
+			because: "leading with a new workplace on an add-section request produces a duplicate workplace name");
+		article.Text.Should().Contain("the workplace the app's sections ALREADY live in",
+			because: "adding a section to an existing app must offer that app's own workplace as the first choice");
+
 		// Verified on a live stand: with the AppWithHomePage template, create-app points the SHARED My applications
 		// workplace at the new app's home page AND its binding ships that HomePageUId — so the package exports a
 		// mutation of a workplace the app does not own. The guide previously asserted the opposite as fact.

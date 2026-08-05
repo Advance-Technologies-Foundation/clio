@@ -71,8 +71,13 @@ public sealed class WorkplacesGuidanceResource {
 		       after `create-app` and before anything further. Asking once the pages are built is a defect, not a
 		       late-but-equivalent order: it makes the user re-decide work you already finished. Offer these
 		       options:
-		       - a NEW workplace named for the app (recommend this when scaffolding a new app — it keeps the
-		         app's navigation self-contained);
+		       - a NEW workplace named for the app — recommend this when SCAFFOLDING a new app, because it keeps
+		         the app's navigation self-contained. Do NOT lead with it when adding a section to an app that
+		         already has its own workplace: `SysWorkplace`.`Name` is not unique, so a second workplace named
+		         after the app is created silently and then competes with the first for every binding (see Create a
+		         workplace). Read `SysModuleInWorkplace` for the app's existing sections first;
+		       - the workplace the app's sections ALREADY live in — recommend this one when adding a section to an
+		         existing app, and name it so the choice is concrete;
 		       - the `My applications` workplace — note it may not exist yet, and leaving the app there restricts
 		         it to administrators (see New apps start in a default workplace);
 		       - an existing workplace the user names (list the available `Name` values so the choice is real).
