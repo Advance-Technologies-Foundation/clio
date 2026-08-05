@@ -155,6 +155,7 @@ public sealed class MobileDiffApplyValidatorTests {
 	[Test]
 	[Description("A genuine self-consistency error still surfaces even with the seeded base: a merge sets the attribute to a scalar, then an insert targets a sub-path of it — the differ reports not-a-container.")]
 	public void Validate_PathDiffInsertIntoScalar_ReportsNotAContainer() {
+		// Arrange: a merge sets attributes.Items to a scalar, then an insert targets a sub-path of it.
 		const string body = """
 			{ "viewModelConfigDiff": [
 				{ "operation": "merge", "path": ["attributes"], "values": { "Items": "scalar" } },
@@ -162,10 +163,14 @@ public sealed class MobileDiffApplyValidatorTests {
 			] }
 			""";
 
+		// Act
 		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body);
 
-		result.IsValid.Should().BeFalse();
-		result.Errors.Should().ContainSingle(e => e.Contains("is not a container for other items"));
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "inserting into a sub-path of a scalar is a genuine self-consistency error the differ rejects");
+		result.Errors.Should().ContainSingle(e => e.Contains("is not a container for other items"),
+			because: "the seeded base does not mask a real not-a-container error introduced by the diff itself");
 	}
 
 	[Test]
@@ -227,5 +232,74 @@ public sealed class MobileDiffApplyValidatorTests {
 		result.IsValid.Should().BeTrue(because: "both inserts resolve against the seeded base");
 		resolverCalls.Should().Be(1,
 			because: "the resolver result is memoized and shared, so it runs once rather than per section");
+	}
+
+	[Test]
+	[Description("NeedsResolvedBase is true when a non-empty viewModelConfigDiff carries no own viewModelConfig base — the case that would otherwise trigger a get-page read inside the sync lock.")]
+	public void NeedsResolvedBase_PathDiffWithoutOwnBase_IsTrue() {
+		// Arrange
+		const string body = """
+			{ "viewModelConfigDiff": [
+				{ "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"], "values": { "name": "x" } }
+			] }
+			""";
+
+		// Act / Assert
+		MobileDiffApplyValidator.NeedsResolvedBase(body).Should().BeTrue(
+			because: "a non-empty path diff with no inline base must be resolved against the template base");
+	}
+
+	[Test]
+	[Description("NeedsResolvedBase is true for a non-empty modelConfigDiff with no own modelConfig base.")]
+	public void NeedsResolvedBase_ModelConfigDiffWithoutOwnBase_IsTrue() {
+		// Arrange
+		const string body = """
+			{ "modelConfigDiff": [
+				{ "operation": "insert", "path": ["dataSources","PDS","config","filterAttributes"], "values": { "name": "x" } }
+			] }
+			""";
+
+		// Act / Assert
+		MobileDiffApplyValidator.NeedsResolvedBase(body).Should().BeTrue(
+			because: "modelConfigDiff follows the same rule as viewModelConfigDiff");
+	}
+
+	[Test]
+	[Description("NeedsResolvedBase is false when the body inlines its own base object — the diff resolves against that, so no get-page read is needed.")]
+	public void NeedsResolvedBase_PathDiffWithInlineOwnBase_IsFalse() {
+		// Arrange
+		const string body = """
+			{ "viewModelConfig": { "attributes": {} },
+			  "viewModelConfigDiff": [
+				{ "operation": "insert", "path": ["attributes","Items"], "values": { "name": "x" } }
+			] }
+			""";
+
+		// Act / Assert
+		MobileDiffApplyValidator.NeedsResolvedBase(body).Should().BeFalse(
+			because: "an inline own base is used directly, so no external base resolution is required");
+	}
+
+	[Test]
+	[Description("NeedsResolvedBase is false for a viewConfigDiff-only body — there is no path diff that needs a base, so pre-resolution must skip it.")]
+	public void NeedsResolvedBase_ViewConfigDiffOnly_IsFalse() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [
+				{ "operation": "merge", "name": "Items", "values": { "type": "crt.List" } }
+			] }
+			""";
+
+		// Act / Assert
+		MobileDiffApplyValidator.NeedsResolvedBase(body).Should().BeFalse(
+			because: "a viewConfigDiff-only body never resolves a path-diff base, so it must not spend a get-page read");
+	}
+
+	[Test]
+	[Description("NeedsResolvedBase is false for an empty or unparseable body — nothing to resolve.")]
+	public void NeedsResolvedBase_EmptyOrMalformed_IsFalse() {
+		// Act / Assert
+		MobileDiffApplyValidator.NeedsResolvedBase("").Should().BeFalse(because: "an empty body needs no base");
+		MobileDiffApplyValidator.NeedsResolvedBase("{ not json").Should().BeFalse(because: "an unparseable body is handled by the structural validators, not here");
 	}
 }

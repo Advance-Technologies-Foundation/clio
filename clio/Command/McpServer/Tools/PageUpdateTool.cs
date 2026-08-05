@@ -339,7 +339,12 @@ public sealed class PageUpdateTool(
 			PageSyncValidationResult mobileResult = MobilePageValidation
 				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
 					templateBaseContext: new MobilePageMergedConfigContext(_commandResolver, options.SchemaName,
-						options.Environment, options.Uri, options.Login, options.Password))
+						// The write mode decides the validation base: replace (default) validates against the base
+						// WITHOUT the page's own body (it gets overwritten); append validates against the full merged
+						// config (the own body survives the merge).
+						options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode,
+						// update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
+						Logger: logger))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {

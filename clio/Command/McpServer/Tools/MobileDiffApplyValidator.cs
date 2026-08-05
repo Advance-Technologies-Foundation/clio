@@ -16,10 +16,11 @@ namespace Clio.Command.McpServer.Tools;
 /// <remarks>
 /// The path-addressed diffs (<c>viewModelConfigDiff</c> / <c>modelConfigDiff</c>) are applied against a base
 /// resolved in this priority: (1) a <c>viewModelConfig</c> / <c>modelConfig</c> base object the body itself
-/// carries; (2) the target page's own merged config, when the caller can supply it (<c>update-page</c> /
-/// <c>sync-pages</c> resolve the page's merged config — see <c>MobilePageMergedConfigResolver</c>) — this is the
-/// faithful runtime base, so an <c>insert</c> that appends to an array the TEMPLATE owns (e.g. a converted quick
-/// filter appended to <c>Items.modelConfig.filterAttributes</c>) resolves and validates; (3) otherwise an empty
+/// carries; (2) the target page's merged config, when the caller can supply it (<c>update-page</c> /
+/// <c>sync-pages</c> resolve it — see <c>MobilePageMergedConfigResolver</c> — mode-aware: replace excludes the
+/// page's own body, which the write overwrites; append includes it) — this is the faithful runtime base, so an
+/// <c>insert</c> that appends to an array the TEMPLATE owns (e.g. a converted quick filter appended to
+/// <c>Items.modelConfig.filterAttributes</c>) resolves and validates; (3) otherwise an empty
 /// base SEEDED with an empty container at every insert target path, so a template-owned-array insert does not
 /// false-positive as "not a container" when no base is available (<c>validate-page</c>, which receives only a
 /// body). The base is resolved LAZILY through the supplied delegate — it is invoked at most once, and only when a
@@ -78,6 +79,32 @@ internal static class MobileDiffApplyValidator {
 		ApplyPathDiff(root, ModelConfigDiff, ModelConfig, () => lazyBase is null ? null : lazyBase.Value.ModelConfigJson, result);
 		return result;
 	}
+
+	/// <summary>
+	/// True when validating this body would need an externally-resolved base — it carries a non-empty
+	/// <c>viewModelConfigDiff</c> or <c>modelConfigDiff</c> AND no matching own base object
+	/// (<c>viewModelConfig</c> / <c>modelConfig</c>). This is exactly the condition under which
+	/// <see cref="Validate(string, Func{ValueTuple{string, string}})"/> invokes its lazy base resolver, so a caller
+	/// that wants to resolve the base OFF a hot path (e.g. sync-pages, which otherwise resolves inside its
+	/// per-tenant lock) can gate the pre-resolution on this and skip a get-page read for a <c>viewConfigDiff</c>-only
+	/// body or one that inlines its own base.
+	/// </summary>
+	internal static bool NeedsResolvedBase(string body) {
+		if (string.IsNullOrWhiteSpace(body)) {
+			return false;
+		}
+		JObject root;
+		try {
+			root = JObject.Parse(body);
+		} catch (JsonException) {
+			return false;
+		}
+		return PathDiffNeedsExternalBase(root, ViewModelConfigDiff, ViewModelConfig)
+			|| PathDiffNeedsExternalBase(root, ModelConfigDiff, ModelConfig);
+	}
+
+	private static bool PathDiffNeedsExternalBase(JObject root, string diffName, string baseName) =>
+		root[diffName] is JArray { Count: > 0 } && root[baseName] is not JObject;
 
 	private static void ApplyViewConfigDiff(JObject root, SchemaValidationResult result) {
 		if (root[ViewConfigDiff] is not JArray operations || operations.Count == 0) {

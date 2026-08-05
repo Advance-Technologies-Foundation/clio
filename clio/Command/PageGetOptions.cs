@@ -26,6 +26,15 @@ public class PageGetOptions : EnvironmentOptions {
 	/// </summary>
 	[Option("output-directory", Required = false, HelpText = "Directory that anchors the .clio-pages output tree (body.js/bundle.json/meta.json). Defaults to the workspace root, or the clio home root when no workspace is found.")]
 	public string OutputDirectory { get; set; }
+
+	/// <summary>
+	/// When <c>true</c>, <see cref="PageGetCommand.TryGetPage"/> additionally computes the merged config
+	/// EXCLUDING the editable schema's own body and returns it in <see cref="PageGetResponse.BaseViewModelConfig"/>
+	/// / <see cref="PageGetResponse.BaseModelConfig"/> — the runtime base a REPLACE-mode write layers over
+	/// (replace overwrites the own body, so it is not part of that base). Set only by the internal mobile
+	/// replace-mode validation resolver; it is not a CLI/MCP option and does not change the main bundle.
+	/// </summary>
+	public bool ExcludeOwnBody { get; set; }
 }
 
 /// <summary>
@@ -169,6 +178,24 @@ public class PageGetCommand : Command<PageGetOptions> {
 			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
 			PageEditableSchemaInfo editableInfo = BuildEditableSchemaInfo(editableSchema);
+			// Replace-mode validation base: the merged config the incoming body layers over at runtime is the
+			// chain WITHOUT the editable schema's own body (replace overwrites that body, so it is not part of the
+			// base). When the editable schema is not in the resolved chain — a will-create-replacing case, where
+			// the new replacing layer sits on top of everything — exclude nothing: the full merged config IS the
+			// base. Built only on demand (validation), so the normal get-page read pays nothing.
+			System.Text.Json.Nodes.JsonObject baseViewModelConfig = null;
+			System.Text.Json.Nodes.JsonObject baseModelConfig = null;
+			if (options.ExcludeOwnBody) {
+				List<PageSchemaBundlePart> baseParts = editableSchema is null
+					? parts
+					: parts.Where(p => !string.Equals(p.Schema.UId, editableSchema.UId, StringComparison.OrdinalIgnoreCase)).ToList();
+				if (baseParts.Count == 0) {
+					baseParts = parts;
+				}
+				PageBundleInfo baseBundle = _bundleBuilder.Build(baseParts);
+				baseViewModelConfig = baseBundle.ViewModelConfig;
+				baseModelConfig = baseBundle.ModelConfig;
+			}
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -204,6 +231,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 					Body = editableBody
 				},
 				Editable = editableInfo,
+				BaseViewModelConfig = baseViewModelConfig,
+				BaseModelConfig = baseModelConfig,
 				Error = null
 			};
 			return true;

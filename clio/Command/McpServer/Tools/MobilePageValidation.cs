@@ -22,6 +22,7 @@ internal static class MobilePageValidation {
 		IComponentInfoCatalog webCatalog,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
 		MobilePageMergedConfigContext? templateBaseContext = null,
+		Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveTemplateBase = null,
 		CancellationToken cancellationToken = default) {
 		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
 			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
@@ -50,12 +51,15 @@ internal static class MobilePageValidation {
 			// an array the mobile template owns. Pass it a lazy resolver (not a pre-fetched base): the oracle
 			// invokes it at most once and ONLY when a non-empty viewModelConfigDiff / modelConfigDiff actually
 			// carries no own base object -- a viewConfigDiff-only body, or one with an inline base, spends no
-			// get-page read. A null context (validate-page, which has no schema/environment) resolves to no base
-			// and the oracle seeds its own.
+			// get-page read. A caller may supply resolveTemplateBase directly (sync-pages pre-resolves the base
+			// OFF its per-tenant lock and hands it in as a no-network delegate); otherwise it is derived from the
+			// context. A null context (validate-page, which has no schema/environment) resolves to no base and the
+			// oracle seeds its own.
 			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
-				templateBaseContext is null
+				resolveTemplateBase
+				?? (templateBaseContext is null
 					? null
-					: () => MobilePageMergedConfigResolver.ResolveMergedConfig(templateBaseContext);
+					: () => MobilePageMergedConfigResolver.ResolveMergedConfig(templateBaseContext));
 			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body, resolveBase);
 			if (!applyResult.IsValid) {
 				errors.AddRange(applyResult.Errors);
@@ -82,11 +86,14 @@ internal static class MobilePageValidation {
 /// <see cref="MobileDiffApplyValidator"/> can validate the page's <c>viewModelConfigDiff</c> /
 /// <c>modelConfigDiff</c> against the real config those diffs layer over at runtime — most importantly so an
 /// <c>insert</c> that appends to an array the mobile template owns (e.g. a converted quick filter appended to
-/// <c>Items.modelConfig.filterAttributes</c>) resolves instead of falsely failing "not a container". For a
-/// freshly created page (empty own body) that merged config IS the template base the runtime applies the diff
-/// over; for an already-populated page it additionally carries the page's current body, which is harmless for
-/// the oracle's insert-resolution check. Named for what it reads — the page's own merged config — not the parent
-/// template, which it does not resolve separately. Never throws for a read failure (no environment, read error,
+/// <c>Items.modelConfig.filterAttributes</c>) resolves instead of falsely failing "not a container". The base is
+/// mode-aware (<see cref="MobilePageMergedConfigContext.Mode"/>): a REPLACE-mode write overwrites the page's own
+/// body verbatim, so its runtime base is the merged config EXCLUDING that own body (resolved via
+/// <see cref="PageGetResponse.BaseViewModelConfig"/> / <see cref="PageGetResponse.BaseModelConfig"/>); this stops
+/// an <c>insert</c> into an array present ONLY in the current own body from passing here and then failing at
+/// runtime once that body is gone. An APPEND-mode write keeps the current body and merges into it, so its base is
+/// the page's FULL merged config (own body included). For a freshly created page (empty own body) the two are
+/// identical. Never throws for a read failure (no environment, read error,
 /// unknown schema) — that yields <c>(null, null)</c> and the oracle falls back to its insert-path-seeded empty
 /// base; a cancellation, however, is allowed to propagate.
 /// </summary>
@@ -105,33 +112,59 @@ internal static class MobilePageMergedConfigResolver {
 		context is null
 			? (null, null)
 			: ResolveMergedConfig(
-				context.CommandResolver, context.SchemaName, context.Environment, context.Uri, context.Login, context.Password);
+				context.CommandResolver, context.SchemaName, context.Environment, context.Uri, context.Login, context.Password,
+				context.Mode, context.Logger);
 
+	/// <summary>
+	/// Resolves the base according to the write <paramref name="mode"/>. A REPLACE-mode write (the update-page
+	/// default; sync-pages' only mode — anything that is not <c>"append"</c>) overwrites the page's own body verbatim,
+	/// so the base is the merged config EXCLUDING that own body — the config the incoming body actually layers over at
+	/// runtime — and an <c>insert</c> into an array present ONLY in the page's current own body correctly fails
+	/// validation instead of passing against a body that is about to be overwritten. An APPEND-mode write keeps the
+	/// current body and merges into it, so the base is the page's FULL merged config, own body included.
+	/// </summary>
 	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(
 		IToolCommandResolver commandResolver,
-		string schemaName, string environment, string uri, string login, string password) {
+		string schemaName, string environment, string uri, string login, string password, string mode,
+		Clio.Common.ILogger logger = null) {
 		if (commandResolver is null || string.IsNullOrWhiteSpace(schemaName)) {
 			return (null, null);
 		}
+		// Translate the write mode to the mechanical get-page option here — get-page itself is a generic bundle
+		// reader and stays free of update-page's append/replace vocabulary.
+		bool excludeOwnBody = !string.Equals(mode, "append", StringComparison.OrdinalIgnoreCase);
 		try {
 			var options = new PageGetOptions {
 				SchemaName = schemaName,
 				Environment = environment,
 				Uri = uri,
 				Login = login,
-				Password = password
+				Password = password,
+				ExcludeOwnBody = excludeOwnBody
 			};
 			PageGetCommand command = commandResolver.Resolve<PageGetCommand>(options);
 			if (command.TryGetPage(options, out PageGetResponse response)
 				&& response?.Success == true
 				&& response.Bundle is { } bundle) {
-				return (bundle.ViewModelConfig?.ToJsonString(), bundle.ModelConfig?.ToJsonString());
+				return excludeOwnBody
+					? (response.BaseViewModelConfig?.ToJsonString(), response.BaseModelConfig?.ToJsonString())
+					: (bundle.ViewModelConfig?.ToJsonString(), bundle.ModelConfig?.ToJsonString());
 			}
+			// The read did not yield a usable bundle. Leave a diagnostic trail (when a logger is available) so the
+			// fallback to the permissive insert-path-seeded base is not mistaken for a genuine successful resolution
+			// when a later validation result looks off.
+			logger?.WriteWarning(
+				$"Mobile validation base for '{schemaName}' could not be resolved ({response?.Error ?? "no bundle returned"}); " +
+				"falling back to the insert-path-seeded base.");
 		} catch (OperationCanceledException) {
 			// A cancelled validation must propagate, not silently degrade to the seeded base.
 			throw;
-		} catch (Exception) {
-			// Best-effort: any other read failure falls back to the oracle's seeded empty base.
+		} catch (Exception ex) {
+			// Best-effort: any other read failure falls back to the oracle's seeded empty base — but record why,
+			// so a transient auth/network failure is distinguishable from a real resolution during triage.
+			logger?.WriteWarning(
+				$"Mobile validation base for '{schemaName}' failed to resolve: {ex.Message}; " +
+				"falling back to the insert-path-seeded base.");
 		}
 		return (null, null);
 	}
@@ -149,4 +182,11 @@ internal sealed record MobilePageMergedConfigContext(
 	string Environment,
 	string Uri,
 	string Login,
-	string Password);
+	string Password,
+	// The write mode of the update the validation is gating: "append" (base includes the page's current own body,
+	// which survives the merge) or replace (the default; null/"replace"/anything else — base excludes the own body,
+	// which the write overwrites). The resolver translates this to the get-page ExcludeOwnBody option.
+	string Mode,
+	// Optional logger: when supplied, the resolver records a warning if the base could not be resolved (a read
+	// failure degrades to the permissive seeded base). Callers that have no logger (sync-pages) omit it.
+	Clio.Common.ILogger Logger = null);
