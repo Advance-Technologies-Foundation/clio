@@ -42,7 +42,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 	private const string ToolName = MobilePageConversionGuideTool.ToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
-	private const string FallbackEnvironmentName = "d2";
 
 	[Test]
 	[Description("Converts a real seeded Freedom UI page through the real clio MCP server and verifies that the returned modelConfigDiff / viewModelConfigDiff are SPLIT into focused targeted merges (no path-[] root merge remains), which is the split/union behavior fed by the mobile template probe.")]
@@ -223,6 +222,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			.Where(name => !string.IsNullOrWhiteSpace(name))
 			.OrderByDescending(name => name!.EndsWith("FormPage", StringComparison.OrdinalIgnoreCase)
 				|| name.Contains("RecordPage", StringComparison.OrdinalIgnoreCase))
+			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Select(name => name!)
 			.ToList();
 		if (candidates.Count == 0) {
@@ -306,17 +306,17 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName)
-			&& await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
+		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
+			Assert.Ignore(
+				"mobile-page-conversion MCP E2E requires a configured sandbox environment: set Sandbox.EnvironmentName "
+				+ "in the MCP E2E settings to a registered clio environment that hosts the seed application.");
 		}
-		if (await CanReachEnvironmentAsync(settings, FallbackEnvironmentName)) {
-			return FallbackEnvironmentName;
+		if (!await CanReachEnvironmentAsync(settings, configuredEnvironmentName!)) {
+			Assert.Ignore(
+				$"mobile-page-conversion MCP E2E requires a reachable environment: configured sandbox environment "
+				+ $"'{configuredEnvironmentName}' did not answer ping-app. Start it or point Sandbox.EnvironmentName at a reachable environment.");
 		}
-		Assert.Ignore(
-			$"mobile-page-conversion MCP E2E requires a reachable environment. Configured sandbox environment "
-			+ $"'{configuredEnvironmentName}' was not reachable, and fallback environment '{FallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
+		return configuredEnvironmentName!;
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {

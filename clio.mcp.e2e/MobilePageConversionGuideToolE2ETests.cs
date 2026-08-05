@@ -66,7 +66,7 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
-	[Description("Returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the deterministic empty-container removal contract (already removed by the converter, arrives as a drop with reason \"empty container\", never re-create / re-parent / ask the user) plus the AreaProfileContainer wrapper-content routing.")]
+	[Description("Returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the deterministic empty-container removal contract (already removed by the converter, arrives as a drop with reason \"empty container\", never re-create / re-parent / ask the user) plus the profile-island routing (SideAreaProfileContainer merges into AreaProfileContainer; other wrapper content fills GeneralTabContainer).")]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the conversion article with the deterministic empty-container removal contract")]
 	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the feature-gated freedom-page-web-to-mobile-conversion article carrying the empty-container removal wording end to end.")]
@@ -101,8 +101,8 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 		response.Article.Text.Should().Contain(
 			"Do NOT re-create such a container, do NOT re-parent anything into it, and do NOT ask the user",
 			because: "the article must forbid the caller from resurrecting a removed empty container or turning its removal into a question");
-		response.Article.Text.Should().Contain("CardContentWrapper→AreaProfileContainer",
-			because: "the wrapper's non-tab content must be routed into the profile Area card, never directly into the general tab's grid (wording fix)");
+		response.Article.Text.Should().Contain("SideAreaProfileContainer→AreaProfileContainer",
+			because: "only the profile island's children merge into the template's profile Area card, while the wrapper's other non-tab content fills the general tab's grid (CardContentWrapper→GeneralTabContainer)");
 	}
 
 	[Test]
