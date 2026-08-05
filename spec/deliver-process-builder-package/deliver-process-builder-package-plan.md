@@ -408,12 +408,27 @@ Four traps that must be written into the runbook, not discovered later:
   > the file changed nothing, as expected in hindsight. The real lesson is about the install SURFACE, not
   > about names (see P1.11).
 
-- **P1.11 A package archive cannot be installed through the Application Hub dialog.** That dialog
-  (`AppInstallInfoDialog`) accepts **application** archives only; handed a package it reports zero
-  `appInstallInfos` and shows the misleading name-mismatch message above. Install a package either
-  through the package-installation UI (Advanced settings → Configuration → Packages → install from
-  file) or with `clio push-pkg`, which is the path `IPackageInstaller.Install` — and therefore
-  `install-process-builder` — actually uses. Verified working via `push-pkg` on 2026-08-05.
+- **P1.11 The Application Hub DOES accept a single-package `.gz` — but it rejected our source-only
+  archive, and why is still OPEN.** `DefaultPackageExtractor.Extract` treats any `*.gz` as a single
+  package and merely **copies** it into the staging directory (it does not even decompress it);
+  `PackageStorage`, initialised with `SetLoadOnlyFileContentOptions()`, then reads the package out of
+  that archive. `GetAppsInstallInfoWithoutAppDescriptor` explicitly synthesises one `AppInstallInfo`
+  per package that has no app descriptor. So a plain package archive is a supported input, and the
+  reporter confirms this package has always been installed that way.
+  Our `CrtProcessBuilder.gz` nonetheless yields zero `appInstallInfos`. Unresolved candidates:
+  the source-only shape (`Type: 1` assembly package with no `Files/Bin`), something the rename or
+  `set-pkg-version`'s descriptor rewrite changed, or a format detail of clio's writer that
+  `PackageStorage` rejects while `PackageInstallerService` accepts.
+  **Note the verification asymmetry that hid this:** the archive was written by `clio compress` and
+  checked by `clio extract-pkg-zip` — a clio→clio round trip that proves nothing about Creatio's
+  readers. And the two server paths are *different readers*: `push-pkg` →
+  `PackageInstallerService.svc/InstallPackage` (verified working) versus the Hub →
+  `AppInstallerService` → `DefaultPackageExtractor` + `PackageStorage` (failing). Any future claim that
+  an artifact "is valid" must say which reader validated it.
+  **This does not block the ticket:** `install-process-builder` uses `IPackageInstaller.Install`, i.e.
+  the `push-pkg` reader, which installs both the compiled and the source-only artifact successfully.
+  It does block the reporter's manual Hub workflow, so it needs an answer before the source-only
+  approach can be adopted.
 
 Runbook must also state:
 
