@@ -75,9 +75,11 @@ public sealed class InstallProcessBuilderTool(
 	             environment). You never restart anything yourself, though a restart does happen - the platform
 	             recycles itself on .NET Framework, the installer issues it on .NET - and the tool waits for the
 	             instance to come back before judging it. It then
-	             verifies the outcome rather than the install call - it queries ListUserTasks and fails if the
-	             service does not answer, so "installed but not compiled" is reported instead of looking like
-	             success.
+	             verifies the outcome rather than the install call: it asks ProcessDesignService which build is
+	             SERVING and fails if that is older than the version installed. That is the only way to see a
+	             failed upgrade - the platform records the new version when it accepts the archive and keeps
+	             running its last successfully built assembly, so list-packages shows the new version either
+	             way. So "installed but not compiled" is reported instead of looking like success.
 
 	             Re-running against an already-current environment does not reinstall, but it is still checked:
 	             the recorded package version proves the archive was accepted, not that the environment ever

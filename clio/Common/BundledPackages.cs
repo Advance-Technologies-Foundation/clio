@@ -30,24 +30,53 @@ public static class BundledPackages {
 	public const string ProcessBuilderPackageName = "CrtProcessBuilder";
 
 	/// <summary>
-	/// Version of the bundled process-builder archive, and therefore the minimum version the consuming
-	/// commands require on a target environment.
+	/// Minimum process-builder version the consuming commands require on a target environment — the floor
+	/// enforced by <c>[RequiresPackage]</c> against the version the PLATFORM reports.
 	/// </summary>
 	/// <remarks>
-	/// This constant and the archive descriptor's <c>PackageVersion</c> MUST have the SAME NUMBER OF PARTS.
-	/// <c>RequiredPackageChecker.IsCompatible</c> compares through <see cref="System.Version"/>, which gives
-	/// a three-part string a <c>Revision</c> of <c>-1</c>: so a four-part floor of <c>1.0.0.0</c> against a
-	/// three-part installed <c>1.0.0</c> evaluates as installed &lt; required, and the five gated commands
-	/// refuse forever after a SUCCESSFUL install — while this command reinstalls (and forces the target to
-	/// recompile) on every invocation, because its own short-circuit never fires either.
+	/// <b>Effectively frozen. Do not raise this to match a rebundled archive.</b> Creatio does not update the
+	/// recorded version when it re-installs a package it already has (it matches by <c>UId</c>), so the
+	/// version clio reads back stays whatever the FIRST install wrote. Verified on both runtimes on
+	/// 2026-08-05: after installing an archive whose descriptor said <c>1.1.0.0</c>,
+	/// <c>ProcessDesignService.GetVersion</c> reported <c>1.1.0.0</c> — the new build was serving — while
+	/// <c>clio list-packages</c> still reported <c>1.0.0.0</c> on both stands.
 	/// <para>
-	/// Both are four-part today. Changing the part count here without changing the descriptor — or the other
-	/// way round — creates that unsatisfiable gate, which is why
-	/// <c>BundledProcessBuilderPackageTests.BundledArchive_ShouldCarryADescriptorMatchingBundledPackages</c>
-	/// compares the two.
+	/// Raising this floor would therefore refuse the five gated commands FOREVER on every environment that
+	/// already carries the package, no matter how correctly it was upgraded, and would make
+	/// <c>install-process-builder</c> reinstall on every invocation because its short-circuit could never
+	/// fire. Both were observed before this was understood. In practice the floor can only move when the
+	/// package <c>UId</c> changes, i.e. for a genuinely different package.
+	/// </para>
+	/// <para>
+	/// So this constant answers "is a compatible package installed at all", and
+	/// <see cref="ProcessBuilderBuildVersion"/> answers "did the target compile the build we ship". Those are
+	/// different questions with different sources — the database versus the running assembly — which is why
+	/// they are two constants and not one.
+	/// </para>
+	/// <para>
+	/// Must stay four-part: <c>RequiredPackageChecker.IsCompatible</c> compares through
+	/// <see cref="System.Version"/>, which gives a three-part string a <c>Revision</c> of <c>-1</c>, so a
+	/// four-part floor against a three-part installed version compares as installed &lt; required.
 	/// </para>
 	/// </remarks>
 	public const string ProcessBuilderVersion = "1.0.0.0";
+
+	/// <summary>
+	/// Version of the build inside the bundled archive — what <c>ProcessDesignService.GetVersion</c> must
+	/// report after a successful install.
+	/// </summary>
+	/// <remarks>
+	/// Moves with every rebundle, unlike <see cref="ProcessBuilderVersion"/>. Must equal BOTH the archive
+	/// descriptor's <c>PackageVersion</c> and the <c>ProcessDesignConstants.PackageVersion</c> constant
+	/// compiled into the shipped sources; <c>BundledProcessBuilderPackageTests</c> asserts both.
+	/// <para>
+	/// This is the value that detects a failed upgrade. The platform records a descriptor version when it
+	/// ACCEPTS an archive and keeps serving the assembly from its last successful configuration build, so
+	/// after a build failure the database and the running code disagree — and only the running code can be
+	/// asked which it is.
+	/// </para>
+	/// </remarks>
+	public const string ProcessBuilderBuildVersion = "1.1.0.0";
 
 	/// <summary>
 	/// File name of the bundled process-builder archive, inside the folder of the same name.

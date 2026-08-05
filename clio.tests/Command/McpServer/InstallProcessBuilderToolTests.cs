@@ -127,9 +127,10 @@ public sealed class InstallProcessBuilderToolTests {
 		description.Description.Should().Contain("create-business-process",
 			because: "the description should name a process-designer tool whose refusal motivates this one, "
 				+ "so an agent can connect the refusal to the remedy");
-		description.Description.Should().Contain("ListUserTasks",
-			because: "the description must disclose that the tool verifies the outcome, not just the install, "
-				+ "so a caller understands why a successful install can still fail");
+		description.Description.Should().Contain("SERVING",
+			because: "the description must disclose that the tool verifies which BUILD is serving rather than "
+				+ "just that the install call returned, so a caller understands why a successful install can "
+				+ "still fail — and why list-packages showing the new version proves nothing");
 	}
 
 	[Test]
@@ -155,7 +156,6 @@ public sealed class InstallProcessBuilderToolTests {
 				Substitute.For<IPackageInstaller>(),
 				Substitute.For<IWorkingDirectoriesProvider>(),
 				Substitute.For<IFileSystem>(),
-				Substitute.For<IRequiredPackageChecker>(),
 				Substitute.For<IApplicationClient>(),
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<IServerReadinessWaiter>(),

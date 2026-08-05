@@ -45,17 +45,26 @@ instance to answer its health check before checking the service. Probing sooner
 would either fail while the app warms up or, when upgrading, be answered by the
 outgoing app domain still serving the old assembly.
 
-Because the assembly is produced by the target rather than shipped, installing
-and working are different states. After a successful install the command calls
-ListUserTasks and fails if ProcessDesignService does not answer, so an
-environment that accepted the package but never compiled it is reported instead
-of looking like a success.
+Because the assembly is produced by the target rather than shipped, installing and
+working are different states. After a successful install the command asks
+ProcessDesignService which build is **serving** (`GetVersion`) and fails if that is
+older than the version just installed. That is the only way to see a failed
+upgrade: the platform records the new version when it *accepts* the archive and
+then keeps running the assembly from its last successful configuration build, so
+`clio list-packages` shows the new version either way.
 
-A compatible installation is detected and left alone, so re-running the command on
-an up-to-date environment does not make it recompile. It is still checked, not
-merely reported: the recorded version proves the archive was accepted, not that the
-environment ever compiled it, so the command calls ProcessDesignService on this path
-too and fails if it does not answer. That is the state `--force` exists for.
+Environments carrying a package older than 1.1.0.0 have no `GetVersion` operation.
+For those the command falls back to calling `ListUserTasks` and only checks that
+the service answers at all — weaker, because it cannot tell which build answered,
+and because `ListUserTasks` needs the `CanManageProcessDesign` right while
+installing does not.
+
+Re-running the command asks the service the same question **before** installing, so
+an environment already serving this build is left alone and does not recompile. The
+skip decision deliberately does not use the recorded package version: Creatio does
+not update that record when it re-installs a package it already has (it matches by
+`UId`), so it stays at whatever the first install wrote and would report "nothing to
+do" for exactly the environment still running an old build.
 
 ## Options
 
@@ -63,9 +72,11 @@ too and fails if it does not answer. That is the state `--force` exists for.
         Target environment name from your configuration
 
     --force
-        Install even when a compatible version is already recorded on the
-        environment. Use it when the package is present but ProcessDesignService
-        does not answer - the environment has the package and never compiled it.
+        Reinstall even when the environment already serves this exact build.
+        Rarely needed: the skip decision asks the SERVICE, not the database, so
+        an environment that has the package but never compiled it does not
+        satisfy it and is reinstalled on the next ordinary run without any flag.
+        Use --force when you want the sources on the target replaced regardless.
         (The shared help text for this flag reads "Force restore"; for this
         command it means "reinstall".)
 
@@ -119,7 +130,11 @@ connection type, so granting `CanManageSolution` does not grant process design.
 - Installation includes a configuration build on the target environment, so it
   takes longer than a plain package install — roughly 15 to 75 seconds depending
   on the environment's speed.
-- Use 'clio list-packages -e <ENV>' to verify the installed version.
+- To verify what is actually **serving**, ask the service:
+  `clio call-service --service-path rest/ProcessDesignService/GetVersion -m POST -b "{}" -e <ENV>`.
+  `clio list-packages` is not a substitute: it reports the version recorded at the
+  *first* install, which Creatio does not update on a re-install, so it can
+  legitimately differ from the build that is running.
 - Installing does not unlock maintainer packages, even on an environment with
   developer mode enabled.
 - If the command reports that ProcessDesignService does not answer, the package

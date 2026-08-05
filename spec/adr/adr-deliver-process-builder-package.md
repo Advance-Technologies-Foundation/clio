@@ -102,12 +102,34 @@ silent failure:
 1. **The compile-marker schema must stay in the archive and must stay empty.** Lose it and the package
    installs, satisfies the name-based gate, and never compiles.
    `clio.tests/Common/BundledProcessBuilderPackageTests.cs` pins its presence in the shipped `.gz`.
-2. **The command verifies the outcome, not the install call.** Because the assembly is produced by the
-   target rather than shipped, "installed" and "working" are genuinely different states. After a
-   successful install the command POSTs `{}` to `KnownRoute.ListUserTasks` and requires a parsed
-   `ListUserTasksResult.success == true`. This check fails CLOSED; the installed-version pre-check fails
-   OPEN, because an unreachable host or a denied `SysPackage` read must not block an explicitly
-   requested install.
+2. **The command verifies the outcome against the RUNNING assembly, and the database cannot substitute.**
+   Because the assembly is produced by the target rather than shipped, "installed" and "working" are
+   genuinely different states. After a successful install the command asks
+   `ProcessDesignService.GetVersion` — an operation that returns a constant compiled INTO the assembly —
+   and fails when the reported version is older than `BundledPackages.ProcessBuilderBuildVersion`. This
+   check fails CLOSED; the pre-install probe fails OPEN, because an unreachable host must not block an
+   explicitly requested install.
+
+   Two platform behaviours make this the only workable shape, both established on stands on 2026-08-05:
+
+   - **A failed configuration build is invisible from the database.** The platform records the new version
+     when it ACCEPTS the archive and keeps serving the assembly it last built successfully, so after a
+     build failure the database and the running code disagree — and both sides of any database-only
+     comparison come from the descriptor. `GlobalContext.FailOnError` is NOT an alternative: it switches
+     install success to a log-substring match on "application installed successfully", which the observed
+     package installs never emit, so setting it would report failure on a successful install.
+   - **The recorded version is frozen at the first install.** Creatio does not update it when re-installing
+     a package it already has (it matches by `UId`). Verified on both runtimes: after installing the
+     1.1.0.0 archive, `GetVersion` reported `1.1.0.0` while `clio list-packages` still reported `1.0.0.0`.
+
+   Hence two constants, not one. `ProcessBuilderVersion` (the `[RequiresPackage]` floor, read from the
+   database) is **effectively frozen** — raising it would refuse the five gated commands forever on every
+   environment that already carries the package, and in practice it can only move when the `UId` changes.
+   `ProcessBuilderBuildVersion` (read from the service) moves with every rebundle. `GetVersion` is
+   deliberately UNGATED on the package side: installing a package and designing processes are different
+   rights, and the guard's rejection is returned as an unsuccessful envelope, i.e. indistinguishable from
+   "never compiled". Packages predating `GetVersion` fall back to a `ListUserTasks` proof-of-life, which is
+   weaker on both counts — it cannot tell which build answered, and it needs `CanManageProcessDesign`.
 3. **The restart must be waited out before the outcome is judged.** Installing a package whose assembly
    changed restarts the instance, and the restart comes from a DIFFERENT place on each runtime: on .NET
    Framework the platform recycles itself once the workspace assembly changes; on .NET

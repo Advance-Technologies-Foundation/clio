@@ -222,7 +222,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Applies a merged record-level access rights set for a single record via the native RightsService.
 		/// </summary>
-		RightsApplyChanges = 61
+		RightsApplyChanges = 61,
+
+		/// <summary>
+		///     Reads the version of the process-builder build that is SERVING, via the ProcessDesignService
+		///     package. Unlike the package version in <c>SysPackage</c>, this one exists only in an assembly
+		///     the target actually compiled — see <c>InstallProcessBuilderCommand.DoesServiceReportCurrentBuild</c>.
+		/// </summary>
+		GetProcessBuilderVersion = 62
 
 	}
 
@@ -288,6 +295,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
+		{KnownRoute.GetProcessBuilderVersion, "/rest/ProcessDesignService/GetVersion"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},

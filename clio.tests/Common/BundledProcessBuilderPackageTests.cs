@@ -53,19 +53,21 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c>, branch <c>feature/ENG-94385-rename-crt-process-builder</c>) with
-	/// <c>clio compress</c>; there is no build step in the release path that could regenerate it here.
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>58dc0ea</c>, branch
+	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
+	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
+	/// here.
 	/// </summary>
 	/// <remarks>
 	/// This is the change-detection pin, not a security control: it cannot tell a good archive from a bad
-	/// one. What it does is make replacing the archive impossible to do QUIETLY — a `.gz` swap otherwise
-	/// shows up in review as <c>Bin 187531 -&gt; N bytes</c> and passes every other check here, because the
+	/// one. What it does is make replacing the archive impossible to do QUIETLY — a <c>.gz</c> swap otherwise
+	/// shows up in review as nothing but a changed byte count, and passes every other check here, because the
 	/// rest are substring probes that a tampered archive can satisfy while adding whatever it likes. Update
-	/// this constant in the SAME commit that replaces the archive, and say in the message where the new bytes
-	/// came from.
+	/// this constant in the SAME commit that replaces the archive, and say in the message which commit of the
+	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"7233B4DBC45C97F5535F1EBFD43D00A00CDFA505A4962A4F8DEFF1699A337699";
+		"BD5ECFD00C9758805A7A8ABD8F84C8F3DEC0BFB07002C5EF95088FE5E315B120";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -193,9 +195,28 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain($"\"UId\": \"{ExpectedPackageUId}\"",
 			because: "Creatio identifies a package by UId, so a changed UId would install a SECOND package "
 				+ "instead of upgrading this one");
-		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderVersion}\"",
-			because: "the version in the archive is the floor the [RequiresPackage] gate enforces; if they "
-				+ "drift, the gate either refuses a correct installation or accepts a stale one");
+		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderBuildVersion}\"",
+			because: "the descriptor version identifies the BUILD clio ships, which is what the post-install "
+				+ "check compares the serving assembly against. Note it is deliberately NOT compared against "
+				+ "ProcessBuilderVersion (the [RequiresPackage] floor): Creatio does not update the recorded "
+				+ "version when it re-installs a package it already has, so that floor is frozen at what the "
+				+ "first install wrote and the two constants legitimately differ");
+	}
+
+	[Test]
+	[Description("The version compiled into the shipped sources must equal the archive descriptor's version, because the post-install check compares the SERVING build against it to detect an upgrade whose configuration build failed.")]
+	public void BundledArchive_ShouldCarryASourceVersionMatchingItsDescriptor() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		archive.Should().Contain(
+			$"PackageVersion = \"{BundledPackages.ProcessBuilderBuildVersion}\"",
+			because: "the two values answer different questions and that is the point. The descriptor's version "
+				+ "is written to SysPackage when the archive is ACCEPTED; this constant exists only in a build "
+				+ "that actually COMPILED, which is why install-process-builder asks the service for it. Let "
+				+ "them drift and that check either rejects a correct install forever (constant lower than the "
+				+ "floor) or accepts a stale assembly forever (constant higher)");
 	}
 
 	[Test]
