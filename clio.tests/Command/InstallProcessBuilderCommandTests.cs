@@ -31,6 +31,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	private IRequiredPackageChecker _requiredPackageChecker;
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
+	private IServerReadinessWaiter _serverReadinessWaiter;
 	private ILogger _logger;
 	private InstallProcessBuilderCommand _command;
 
@@ -53,6 +54,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_requiredPackageChecker = Substitute.For<IRequiredPackageChecker>();
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_serverReadinessWaiter = Substitute.For<IServerReadinessWaiter>();
 		_logger = Substitute.For<ILogger>();
 		_workingDirectoriesProvider.ExecutingDirectory.Returns(ClioRoot);
 		// Happy-path defaults, so each test only arranges the deviation it is actually about: the bundled
@@ -67,12 +69,14 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(ServiceAnswersResponse);
+		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
 		containerBuilder.AddSingleton(_packageInstaller);
 		containerBuilder.AddSingleton(_workingDirectoriesProvider);
 		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton(_requiredPackageChecker);
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
+		containerBuilder.AddSingleton(_serverReadinessWaiter);
 		containerBuilder.AddSingleton(_logger);
 	}
 
@@ -92,6 +96,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_fileSystem.ClearReceivedCalls();
 		_requiredPackageChecker.ClearReceivedCalls();
 		_applicationClient.ClearReceivedCalls();
+		_serverReadinessWaiter.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 
@@ -124,6 +129,35 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			.Should().Be(1,
 				because: "the package ships without an assembly, so the service answering is the only proof "
 					+ "the target actually compiled it");
+		_serverReadinessWaiter.Received(1).WaitForReady(Arg.Is<ServerReadinessOptions>(o =>
+			o.Uri == EnvironmentSettings.Uri && o.IsNetCore == EnvironmentSettings.IsNetCore));
+	}
+
+	[Test]
+	[Description("Execute should wait for the platform's own post-install restart before probing, and fail without probing when the instance does not come back.")]
+	public void Execute_ShouldFailWithoutProbing_WhenInstanceDoesNotBecomeReady() {
+		// Arrange
+		_packageInstaller
+			.Install(
+				Arg.Any<string>(),
+				Arg.Any<EnvironmentSettings>(),
+				packageInstallOptions: null,
+				reportPath: null,
+				createBackup: true)
+			.Returns(true);
+		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(false);
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1, because: "an instance that never came back cannot be reported as a success");
+		_applicationClient.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Should().Be(0,
+				because: "probing a restarting instance races the restart in both directions: it can fail "
+					+ "while the app warms up, and on an upgrade the outgoing app domain can answer with the "
+					+ "OLD assembly and produce a false pass");
 	}
 
 	[Test]

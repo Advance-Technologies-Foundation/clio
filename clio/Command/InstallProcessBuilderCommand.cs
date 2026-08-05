@@ -77,6 +77,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	private readonly IRequiredPackageChecker _requiredPackageChecker;
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IServerReadinessWaiter _serverReadinessWaiter;
 	private readonly ILogger _logger;
 
 	#endregion
@@ -95,6 +96,9 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </param>
 	/// <param name="applicationClient">Client used to prove the service answers after installation.</param>
 	/// <param name="serviceUrlBuilder">Builder for the <c>ProcessDesignService</c> route.</param>
+	/// <param name="serverReadinessWaiter">
+	/// Waiter used to let the platform's self-triggered restart finish before the service is probed.
+	/// </param>
 	/// <param name="logger">Logger used for command output.</param>
 	public InstallProcessBuilderCommand(
 		EnvironmentSettings environmentSettings,
@@ -104,6 +108,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		IRequiredPackageChecker requiredPackageChecker,
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
+		IServerReadinessWaiter serverReadinessWaiter,
 		ILogger logger) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		packageInstaller.CheckArgumentNull(nameof(packageInstaller));
@@ -112,6 +117,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		requiredPackageChecker.CheckArgumentNull(nameof(requiredPackageChecker));
 		applicationClient.CheckArgumentNull(nameof(applicationClient));
 		serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
+		serverReadinessWaiter.CheckArgumentNull(nameof(serverReadinessWaiter));
 		logger.CheckArgumentNull(nameof(logger));
 		_environmentSettings = environmentSettings;
 		_packageInstaller = packageInstaller;
@@ -120,6 +126,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		_requiredPackageChecker = requiredPackageChecker;
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_serverReadinessWaiter = serverReadinessWaiter;
 		_logger = logger;
 	}
 
@@ -177,9 +184,15 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// The response is parsed rather than pattern-matched, because the interesting failure is an HTML error
 	/// page from IIS when the route does not resolve — that fails <see cref="JsonDocument.Parse"/> and is
 	/// correctly reported as "not answering", whereas a substring search over it could accidentally match.
-	/// A single attempt is deliberate: the compile finishes before the install call returns (the platform
-	/// logs it synchronously), and a 404 from an unbound route is not a transient condition that retrying
-	/// would fix.
+	/// </para>
+	/// <para>
+	/// MUST be called only after <see cref="WaitForPlatformRestart"/>. Installing a package whose assembly
+	/// changed makes the platform restart ITSELF — observed in a stand's <c>Application.log</c> as
+	/// "Workspace assembly changed - Run restart application", with <c>Application_Start</c> following
+	/// AFTER the install call had already returned success. Probing immediately therefore races the
+	/// restart in both directions: it can fail while the app is still warming up (a false "did not
+	/// compile"), and on an UPGRADE it can be answered by the outgoing app domain still serving the OLD
+	/// assembly (a false pass).
 	/// </para>
 	/// </remarks>
 	private bool DoesServiceAnswer() {
@@ -196,6 +209,22 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			return false;
 		}
 	}
+
+	/// <summary>
+	/// Waits for the platform's own post-install restart to complete.
+	/// </summary>
+	/// <returns><c>true</c> when the instance answered its health check within the budget.</returns>
+	/// <remarks>
+	/// The restart is the platform's, not ours: a changed workspace assembly makes Creatio recycle itself.
+	/// Reusing <see cref="IServerReadinessWaiter"/> rather than retrying the service probe is deliberate —
+	/// its <c>InitialDelay</c> exists precisely because "the previous app domain may still answer briefly
+	/// after a restart request", which is the false-pass this command must not report.
+	/// </remarks>
+	private bool WaitForPlatformRestart() =>
+		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
+			Uri = _environmentSettings.Uri,
+			IsNetCore = _environmentSettings.IsNetCore
+		});
 
 	#endregion
 
@@ -234,6 +263,16 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			if (!success) {
 				_logger.WriteError(
 					$"Failed to install the bundled {BundledPackages.ProcessBuilderPackageName} package.");
+				return 1;
+			}
+			// Installing a package whose assembly changed makes the platform restart itself, and that
+			// restart outlives the install call — so wait for the instance to come back before judging it.
+			if (!WaitForPlatformRestart()) {
+				_logger.WriteError(
+					$"{BundledPackages.ProcessBuilderPackageName} was installed, but the environment did not "
+					+ "become ready within the timeout after the platform's post-install restart. Check the "
+					+ "instance, then verify with 'clio call-service --service-path "
+					+ "rest/ProcessDesignService/ListUserTasks -m POST -b {} -e <environment>'.");
 				return 1;
 			}
 			// The install only proves the archive was accepted. The assembly is compiled BY THE TARGET, so
