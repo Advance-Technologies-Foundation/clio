@@ -125,13 +125,26 @@
   "insertValueOverrides": [
     {
       "type": "crt.GridContainer",
+      "reportGroup": "spacing",
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } },
       "note": "Spacing normalization: mobile follows the mobile spacing standard, so the web grid's gap (typically columnGap large / rowGap none) is IGNORED, not translated — every inserted grid container (converted and synthesized alike) gets Medium row/column spacing. Keep in sync with tabAreaLayers container gaps."
     },
     {
       "type": "crt.FlexContainer",
+      "reportGroup": "spacing",
       "values": { "gap": "medium" },
       "note": "Spacing normalization: the web flex gap (token, px number or CSS string) is IGNORED, not translated — every inserted flex container gets Medium gap."
+    },
+    {
+      "type": "crt.IndicatorWidget",
+      "reportGroup": "metricStyle",
+      "values": {
+        "config": {
+          "text": { "fontSizeMode": "extra-small" },
+          "layout": { "border": { "hidden": true } }
+        }
+      },
+      "note": "Metric style normalization (ENG-94230): mobile metrics follow the mobile design standard, so the web widget's text size and border are IGNORED, not translated — every inserted indicator widget gets extra-small text with the border hidden (the 'plain white' look; the default 'without-fill' theme is left alone). The value is an OBJECT, so it MERGES into the converted config — config.data (the aggregation/providing subtree, without which the widget renders nothing) and config.title survive untouched. fontSizeMode accepts extra-small|small|medium|large|extra-large; hide-border lives at layout.border.hidden (WidgetBorderConfig), there is no top-level size/hideBorder input."
     }
   ],
   "emptyContainerRemoval": {

@@ -86,6 +86,15 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    SILENT — never a gate question: state it in the plan and the final report as ONE aggregated line
 			    ("spacing of N containers normalized to Medium; web spacing ignored"). Never restore the web gap.
 			    Null when nothing was normalized.
+			  - metricStyleNormalization — the metrics whose style the converter NORMALIZED to the mobile
+			    standard: every inserted crt.IndicatorWidget carries config.text.fontSizeMode "extra-small" and
+			    config.layout.border.hidden true in its mobileValues (the "plain white" look), and the web
+			    widget's own text size and border are deliberately IGNORED (discarded, not translated). The values
+			    are MERGED into the converted config, so config.data (the aggregation/providing subtree) and
+			    config.title survive untouched — never rebuild config from the rule values alone. The theme is
+			    left at its default. SILENT — never a gate question: state it in the plan and the final report as
+			    ONE aggregated line ("style of N metrics normalized to extra-small with hidden border; web values
+			    ignored"). Never restore the web text size or border. Null when the page carries no metric.
 			  - resourceStrings — every localized string the converted body references (top-level captions AND
 			    nested tokens like config.title / text.template), keyed by resource name and resolved to its
 			    en-US text. Register this whole map via update-page `resources` so every #ResourceString token renders.
@@ -326,6 +335,17 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  difference from the web page as a defect. Merge twins keep the template's own spacing untouched.
 			  Like tabAreaLayers this is NOT a proposal — SILENT, never a gate question: state it as ONE
 			  aggregated line in the plan and the final report (guide.spacingNormalization lists the containers).
+			- METRIC STYLE IS NORMALIZED, NOT CONVERTED: mobile metrics follow the mobile design standard, so the
+			  web widget's text size and border are deliberately IGNORED — every inserted crt.IndicatorWidget
+			  already carries config.text.fontSizeMode "extra-small" and config.layout.border.hidden true in its
+			  mobileValues (the "plain white" look), even when the web widget set a larger size or a visible
+			  border. The stamp is a MERGE into the converted config, so config.data (the aggregation/providing
+			  subtree — the widget renders nothing without it) and config.title are preserved:
+			  never reconstruct config from the normalized keys alone.
+			  The theme stays at its default. Do NOT restore or translate
+			  the web text size or border, and do NOT treat the difference from the web page as a defect. Like
+			  spacing this is NOT a proposal — SILENT, never a gate question: state it as ONE aggregated line in
+			  the plan and the final report (guide.metricStyleNormalization lists the metrics).
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
 			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
 			  registry), the field's `control` binding included — paste it verbatim. Fields bind via `control`

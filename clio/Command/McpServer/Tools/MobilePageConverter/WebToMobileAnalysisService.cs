@@ -228,7 +228,13 @@ public static class WebToMobileAnalysisService {
 		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
 		// merge twins the mobile template provides are never touched.
-		List<SpacingNormalizationEntry> spacingNormalization = ApplyInsertValueOverrides(elementMap, rules);
+		// The same pass also stamps the mobile-standard metric style (extra-small text, hidden border) onto
+		// every inserted crt.IndicatorWidget: the web widget's own font size and border are IGNORED, not
+		// translated. Each rule declares which guide section it reports into, so the two standards never
+		// bleed into each other's summary.
+		InsertValueOverrideResult insertValueOverrides = ApplyInsertValueOverrides(elementMap, rules);
+		List<SpacingNormalizationEntry> spacingNormalization = insertValueOverrides.Spacing;
+		List<MetricStyleNormalizationEntry> metricStyleNormalization = insertValueOverrides.MetricStyle;
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -298,9 +304,20 @@ public static class WebToMobileAnalysisService {
 					Normalized = spacingNormalization
 				}
 				: null,
+			MetricStyleNormalization = metricStyleNormalization.Count > 0
+				? new MetricStyleNormalizationInfo {
+					Note = "Mobile metrics follow the mobile design standard: the web widget's text size and "
+						+ "border were IGNORED (not translated) and every inserted crt.IndicatorWidget carries "
+						+ "extra-small text (config.text.fontSizeMode) with its border hidden "
+						+ "(config.layout.border.hidden), already baked into elementMap[].mobileValues — nothing "
+						+ "separate to apply. Silent normalization, not a gate decision: report it as ONE "
+						+ "aggregated line and never restore the web text size or border.",
+					Normalized = metricStyleNormalization
+				}
+				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0, metricStyleNormalization.Count > 0),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, metricStyleNormalization.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1248,7 +1265,8 @@ public static class WebToMobileAnalysisService {
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false) {
+		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false,
+		bool hasMetricStyleNormalization = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1346,6 +1364,17 @@ public static class WebToMobileAnalysisService {
 				"and the final report as ONE aggregated line (guide.spacingNormalization lists the containers). " +
 				"Merge twins the mobile template provides keep the template's own spacing untouched.");
 		}
+		if (hasMetricStyleNormalization) {
+			constraints.Add(
+				"Metric style is NORMALIZED, not converted: mobile metrics follow the mobile design standard, so " +
+				"the web widget's text size and border were deliberately IGNORED — every inserted " +
+				"crt.IndicatorWidget already carries config.text.fontSizeMode \"extra-small\" and " +
+				"config.layout.border.hidden true in its mobileValues, merged into the converted config so its " +
+				"data/aggregation subtree is untouched. Do NOT restore or translate the web text size or border, " +
+				"and do NOT treat the difference from the web page as a defect. This is SILENT — never a gate " +
+				"question: state it in the plan and the final report as ONE aggregated line " +
+				"(guide.metricStyleNormalization lists the metrics).");
+		}
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -1357,7 +1386,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false) {
+		bool hasSpacingNormalization = false, bool hasMetricStyleNormalization = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1375,6 +1404,9 @@ public static class WebToMobileAnalysisService {
 		}
 		if (hasSpacingNormalization) {
 			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
+		}
+		if (hasMetricStyleNormalization) {
+			steps.Add("Metric style: every inserted crt.IndicatorWidget already carries extra-small text and a hidden border in its mobileValues — the web widget's text size and border are ignored by design (guide.metricStyleNormalization lists them). Do not restore them; mention the normalization as ONE aggregated line when you present the plan and the final report.");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
@@ -2705,12 +2737,12 @@ public static class WebToMobileAnalysisService {
 	/// absent/empty group is a no-op. Returns one advisory entry per normalized element for the guide's
 	/// <c>spacingNormalization</c> report section.
 	/// </summary>
-	private static List<SpacingNormalizationEntry> ApplyInsertValueOverrides(
+	private static InsertValueOverrideResult ApplyInsertValueOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
-		var normalized = new List<SpacingNormalizationEntry>();
+		var result = new InsertValueOverrideResult();
 		IReadOnlyList<InsertValueOverrideRule> overrides = rules?.InsertValueOverrides;
 		if (overrides is not { Count: > 0 }) {
-			return normalized;
+			return result;
 		}
 		var byType = new Dictionary<string, InsertValueOverrideRule>(StringComparer.OrdinalIgnoreCase);
 		foreach (InsertValueOverrideRule rule in overrides) {
@@ -2719,7 +2751,7 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		if (byType.Count == 0) {
-			return normalized;
+			return result;
 		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
@@ -2734,16 +2766,82 @@ public static class WebToMobileAnalysisService {
 					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
 					continue; // element identity is never overridable, whatever the rules file says
 				}
-				values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
+				StampOverrideValue(values, pair.Key, pair.Value);
 				properties.Add(pair.Key);
 			}
 			if (properties.Count > 0) {
-				normalized.Add(new SpacingNormalizationEntry {
-					Name = entry.MobileName, Type = entry.MobileType, Properties = properties
-				});
+				result.Add(ParseReportGroup(rule.ReportGroup), entry.MobileName, entry.MobileType, properties);
 			}
 		}
-		return normalized;
+		return result;
+	}
+
+	/// <summary>
+	/// Stamps one rule value onto <paramref name="values"/> under <paramref name="key"/>. When BOTH the
+	/// existing value and the rule value are JSON objects they are merged key-by-key (recursively), so a
+	/// rule targeting a nested property (e.g. <c>config.text.fontSizeMode</c>) keeps the sibling subtrees
+	/// the converter already produced (e.g. <c>config.data.providing</c>, without which an indicator
+	/// widget renders nothing). Every other combination — the element carries no such key, carries a
+	/// scalar/array, or the shapes disagree — replaces the value outright, which is the pre-existing
+	/// behavior every flat rule relies on.
+	/// </summary>
+	private static void StampOverrideValue(JsonObject values, string key, JsonElement ruleValue) {
+		JsonNode incoming = JsonNode.Parse(ruleValue.GetRawText());
+		if (values[key] is JsonObject existing && incoming is JsonObject incomingObject) {
+			MergeJsonObject(existing, incomingObject);
+			return;
+		}
+		values[key] = incoming;
+	}
+
+	/// <summary>
+	/// Recursively merges <paramref name="source"/> into <paramref name="target"/>: an object-vs-object
+	/// key recurses, anything else is overwritten with a detached clone (a <see cref="JsonNode"/> already
+	/// owned by another parent cannot be re-attached).
+	/// </summary>
+	private static void MergeJsonObject(JsonObject target, JsonObject source) {
+		foreach (KeyValuePair<string, JsonNode> pair in source) {
+			if (target[pair.Key] is JsonObject existingChild && pair.Value is JsonObject sourceChild) {
+				MergeJsonObject(existingChild, sourceChild);
+				continue;
+			}
+			target[pair.Key] = pair.Value?.DeepClone();
+		}
+	}
+
+	/// <summary>
+	/// Maps a rules-file <c>reportGroup</c> to its enum. An absent or unrecognized value falls back to
+	/// <see cref="InsertValueOverrideReportGroup.Spacing"/> so a rules file written before the field
+	/// existed reports exactly where it used to.
+	/// </summary>
+	private static InsertValueOverrideReportGroup ParseReportGroup(string reportGroup) =>
+		Enum.TryParse(reportGroup, ignoreCase: true, out InsertValueOverrideReportGroup parsed)
+			? parsed
+			: InsertValueOverrideReportGroup.Spacing;
+
+	/// <summary>
+	/// Per-report-group output of the shared insert-value override pass. One pass stamps every standard,
+	/// but each standard reports through its own guide section because each carries its own
+	/// caller-facing summary and constraint.
+	/// </summary>
+	private sealed class InsertValueOverrideResult {
+		/// <summary>Inserted containers whose spacing was normalized (gap Medium).</summary>
+		public List<SpacingNormalizationEntry> Spacing { get; } = [];
+
+		/// <summary>Inserted metrics whose style was normalized (extra-small text, hidden border).</summary>
+		public List<MetricStyleNormalizationEntry> MetricStyle { get; } = [];
+
+		/// <summary>Records one normalized element under the group its rule declared.</summary>
+		public void Add(
+			InsertValueOverrideReportGroup group, string name, string type, IReadOnlyList<string> properties) {
+			if (group == InsertValueOverrideReportGroup.MetricStyle) {
+				MetricStyle.Add(new MetricStyleNormalizationEntry {
+					Name = name, Type = type, Properties = properties
+				});
+				return;
+			}
+			Spacing.Add(new SpacingNormalizationEntry { Name = name, Type = type, Properties = properties });
+		}
 	}
 
 	/// <summary>Base36 digit alphabet for <see cref="StableSuffix"/> (lowercase, designer-style).</summary>

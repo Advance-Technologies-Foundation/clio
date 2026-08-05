@@ -2897,6 +2897,146 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Metric style normalization (ENG-94230)
+
+	private static readonly IReadOnlySet<string> MetricMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.GridContainer", "crt.FlexContainer", "crt.Input", "crt.IndicatorWidget"
+		};
+
+	/// <summary>The shipped metric rule: a NESTED object value, which must merge rather than replace.</summary>
+	private static readonly InsertValueOverrideRule MetricStyleOverride = new() {
+		Type = "crt.IndicatorWidget",
+		ReportGroup = "metricStyle",
+		Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+			"""
+			{ "config": { "text": { "fontSizeMode": "extra-small" },
+			              "layout": { "border": { "hidden": true } } } }
+			""")
+	};
+
+	private static WebToMobilePageConversionRules RulesWithMetricOverride() => new() {
+		InsertValueOverrides = [.. SpacingOverrides, MetricStyleOverride]
+	};
+
+	private static MobilePageConversionGuide AnalyzeMetric(PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, MetricMobileTypes, WebTypes,
+			webByType: Reg(("crt.GridContainer", true), ("crt.Input", false), ("crt.IndicatorWidget", false)),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+	/// <summary>A web metric carrying its own larger font size and a visible border, plus a data subtree.</summary>
+	private static PageBundleInfo MetricBundle() => Bundle("""
+		[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+			{ "name": "TotalIndicator", "type": "crt.IndicatorWidget", "config": {
+				"title": "Total",
+				"theme": "without-fill",
+				"text": { "template": "{0}", "fontSizeMode": "large", "labelPosition": "above-under" },
+				"layout": { "color": "green", "border": { "hidden": false } },
+				"data": { "providing": { "schemaName": "Lead", "attribute": "TotalLeads" } } } } ] } ]
+		""");
+
+	[Test]
+	[Description("ENG-94230: an inserted metric carries the mobile-standard style — extra-small text size and a hidden border — whatever the web widget declared, and the advisory section lists it.")]
+	public void Analyze_MetricStyleNormalization_ShouldStampExtraSmallTextAndHiddenBorder() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("extra-small",
+			because: "the web font size is ignored by design — mobile metrics follow the mobile design standard");
+		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
+			because: "hide-border true is the 'plain white' mobile metric style required by ENG-94230");
+		MetricStyleNormalizationEntry entry =
+			guide.MetricStyleNormalization!.Normalized.Single(n => n.Name == "TotalIndicator");
+		entry.Type.Should().Be("crt.IndicatorWidget");
+		entry.Properties.Should().Equal("config");
+	}
+
+	[Test]
+	[Description("ENG-94230: stamping the nested style MERGES into the converted config — the aggregation subtree (config.data, without which the widget renders nothing) and every untargeted sibling survive byte-for-byte.")]
+	public void Analyze_MetricStyleNormalization_ShouldPreserveConvertedConfigSubtrees() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
+			because: "a shallow assign would have replaced the whole config and destroyed the aggregation subtree");
+		config["data"]!["providing"]!["attribute"]!.GetValue<string>().Should().Be("TotalLeads");
+		config["theme"]!.GetValue<string>().Should().Be("without-fill",
+			because: "the theme is deliberately left alone — the ticket names only size and hide-border");
+		config["layout"]!["color"]!.GetValue<string>().Should().Be("green",
+			because: "merging border.hidden must not drop its sibling keys inside layout");
+		config["text"]!["labelPosition"]!.GetValue<string>().Should().Be("above-under",
+			because: "merging fontSizeMode must not drop its sibling keys inside text");
+	}
+
+	[Test]
+	[Description("ENG-94230: the metric reports through its OWN guide section — spacingNormalization keeps listing containers only, so neither standard pollutes the other's aggregated report line.")]
+	public void Analyze_MetricStyleNormalization_ShouldReportSeparatelyFromSpacing() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
+			because: "the metric declares the metricStyle report group, so it must not land in the spacing section");
+		guide.MetricStyleNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["TotalIndicator"]);
+		guide.Constraints.Should().Contain(c => c.Contains("Metric style is NORMALIZED"),
+			because: "the caller must be told not to restore the web text size or border");
+	}
+
+	[Test]
+	[Description("ENG-94230: the metric rule is switched by DATA — with no override for the widget its web font size and border are carried verbatim and the advisory section is null.")]
+	public void Analyze_MetricStyleNormalization_ShouldBeNoOp_WhenRuleAbsent() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithSpacingOverrides());
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("large",
+			because: "without the rule the property-carry behavior is unchanged");
+		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeFalse();
+		guide.MetricStyleNormalization.Should().BeNull();
+		guide.Constraints.Should().NotContain(c => c.Contains("Metric style is NORMALIZED"));
+	}
+
+	[Test]
+	[Description("The merge applies only when BOTH sides are objects: an element carrying a non-object under the targeted key keeps the pre-existing replace semantics every flat rule relies on.")]
+	public void Analyze_MetricStyleNormalization_ShouldReplace_WhenExistingValueIsNotAnObject() {
+		// Arrange — the web widget carries a scalar where the rule expects an object
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "TotalIndicator", "type": "crt.IndicatorWidget", "config": "legacy-string" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("extra-small",
+			because: "a shape mismatch falls back to replacing the value outright rather than failing");
+		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue();
+	}
+
+	#endregion
+
 	#region Empty container removal
 
 	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =

@@ -500,6 +500,22 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public SpacingNormalizationInfo SpacingNormalization { get; init; }
 
+	// ── Metric style normalized on inserted indicator widgets ──────────
+	/// <summary>
+	/// Metric style normalization applied by the converter: mobile metrics follow the mobile design
+	/// standard, so the WEB widget's text size and border are deliberately IGNORED (discarded, not
+	/// translated) — every <c>crt.IndicatorWidget</c> the converter INSERTS already carries
+	/// <c>config.text.fontSizeMode</c> "extra-small" and <c>config.layout.border.hidden</c> true in
+	/// <c>elementMap[].mobileValues</c>, so there is nothing separate to apply. The values are MERGED into
+	/// the converted <c>config</c>, so the widget's own data/aggregation subtree survives untouched. Like
+	/// spacing this is a SILENT normalization, NOT a gate decision: report it as one aggregated line in the
+	/// plan and the final report; never ask whether to apply it and never restore the web values. Null when
+	/// the page carries no metric.
+	/// </summary>
+	[JsonPropertyName("metricStyleNormalization")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public MetricStyleNormalizationInfo MetricStyleNormalization { get; init; }
+
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
 	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted mobileValues
@@ -775,6 +791,39 @@ public sealed class SpacingNormalizationEntry {
 	public string Type { get; init; }
 
 	/// <summary>The property names stamped onto the container's mobileValues (e.g. ["gap"]).</summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+}
+
+/// <summary>
+/// Advisory summary of the metric style normalization: which inserted metrics had their style stamped
+/// with the mobile-standard values (extra-small text, hidden border). The actionable result is already
+/// baked into <c>elementMap[].mobileValues</c>; this section only feeds the plan / final-report line.
+/// </summary>
+public sealed class MetricStyleNormalizationInfo {
+	/// <summary>Why the web text size and border are ignored and how to report the normalization.</summary>
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+
+	/// <summary>One entry per normalized inserted metric.</summary>
+	[JsonPropertyName("normalized")]
+	public IReadOnlyList<MetricStyleNormalizationEntry> Normalized { get; init; } = [];
+}
+
+/// <summary>One inserted metric whose style was normalized to the mobile standard.</summary>
+public sealed class MetricStyleNormalizationEntry {
+	/// <summary>The metric's mobile element name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The metric's mobile component type (i.e. "crt.IndicatorWidget").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The top-level property names stamped onto the metric's mobileValues (e.g. ["config"]). The stamp is
+	/// a merge into that object, so the reported name is the merged root rather than each nested leaf.
+	/// </summary>
 	[JsonPropertyName("properties")]
 	public IReadOnlyList<string> Properties { get; init; } = [];
 }

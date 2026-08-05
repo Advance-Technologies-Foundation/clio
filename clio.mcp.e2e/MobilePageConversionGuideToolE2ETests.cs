@@ -107,6 +107,45 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
+	[Description("ENG-94230: returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the metric style normalization contract — every inserted crt.IndicatorWidget already has extra-small text and a hidden border, the stamp is a merge that preserves config.data, and the caller must neither restore the web values nor turn the normalization into a gate question.")]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the conversion article with the metric style normalization contract")]
+	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the freedom-page-web-to-mobile-conversion article carrying the ENG-94230 metric style wording end to end.")]
+	public async Task GuidanceGet_Should_Return_Conversion_Guide_With_MetricStyleNormalization_Contract() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			GuidanceGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["name"] = "freedom-page-web-to-mobile-conversion"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-guidance should return a normal MCP tool result envelope for a registered guidance name");
+		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
+		response.Success.Should().BeTrue(
+			because: "freedom-page-web-to-mobile-conversion is a registered guidance name while mobile-page-converter is enabled");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Text.Should().Contain("METRIC STYLE IS NORMALIZED, NOT CONVERTED",
+			because: "the article must state that the metric style is stamped by the converter rather than translated from the web widget");
+		response.Article.Text.Should().Contain("config.text.fontSizeMode \"extra-small\"",
+			because: "the caller must see the exact registry property and value, since the ticket's 'Size XS' wording matches no input name");
+		response.Article.Text.Should().Contain("config.layout.border.hidden true",
+			because: "hide-border lives at layout.border.hidden and the article must name that path, not a top-level hideBorder");
+		response.Article.Text.Should().Contain("never reconstruct config from the normalized keys alone",
+			because: "the stamp is a merge — rebuilding config from the rule values would drop the aggregation subtree and the widget would render nothing");
+		response.Article.Text.Should().Contain("guide.metricStyleNormalization",
+			because: "the article must point the caller at the report section that lists the normalized metrics");
+	}
+
+	[Test]
 	[Description("Returns a structured failure (not a protocol error) when the target environment is not registered, so the caller can read why the source page could not be read.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide reports invalid environment failures")]

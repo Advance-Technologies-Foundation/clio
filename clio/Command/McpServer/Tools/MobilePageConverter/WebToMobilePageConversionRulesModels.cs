@@ -228,12 +228,39 @@ public sealed class InsertValueOverrideRule {
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
-	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
+	/// <summary>
+	/// Property name → value stamped onto the inserted element's mobile values. A value that is a JSON
+	/// object is MERGED into the element's existing object key-by-key (recursively), so stamping a
+	/// nested property such as <c>config.text.fontSizeMode</c> keeps the converter's sibling subtrees
+	/// (e.g. <c>config.data.providing</c>) intact. Every other shape — scalar, array, or a type
+	/// mismatch against what the element carries — replaces the existing value outright.
+	/// </summary>
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
 
+	/// <summary>
+	/// Which guide normalization section this rule reports into, so one pass can serve several
+	/// standards without their report sections bleeding into each other (container spacing vs metric
+	/// style). Absent or unrecognized falls back to <see cref="InsertValueOverrideReportGroup.Spacing"/>,
+	/// which keeps a rules file written before this field behaving exactly as before.
+	/// </summary>
+	[JsonPropertyName("reportGroup")]
+	public string ReportGroup { get; init; }
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// Guide report sections an <see cref="InsertValueOverrideRule"/> can feed. The pass is shared; the
+/// reporting is not, because each standard carries its own caller-facing summary and constraint.
+/// </summary>
+public enum InsertValueOverrideReportGroup {
+	/// <summary>Container spacing normalization (gap Medium on inserted Grid/Flex containers).</summary>
+	Spacing,
+
+	/// <summary>Metric (indicator widget) style normalization — extra-small text, hidden border.</summary>
+	MetricStyle
 }
 
 /// <summary>

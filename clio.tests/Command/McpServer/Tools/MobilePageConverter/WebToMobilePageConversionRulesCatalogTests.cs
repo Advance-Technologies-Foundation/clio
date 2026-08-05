@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -32,6 +33,38 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			c.Web.Contains("crt.Checkbox") && c.Mobile.Contains("crt.Toggle") && c.Category == "AlternativeAvailable");
 		rules.Components.Should().Contain(c =>
 			c.Web.Contains("crt.DataGrid") && c.Mobile.Contains("crt.List") && c.Category == "AlternativeAvailable");
+	}
+
+	[Test]
+	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, reporting into the metricStyle section — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
+	public void LoadBundled_ReturnsSeededMetricStyleOverride() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		InsertValueOverrideRule metric = rules.InsertValueOverrides
+			.Single(o => o.Type == "crt.IndicatorWidget");
+		metric.ReportGroup.Should().Be("metricStyle",
+			because: "the metric must report through its own guide section, not the spacing one");
+		JsonElement config = metric.Values["config"];
+		config.GetProperty("text").GetProperty("fontSizeMode").GetString().Should().Be("extra-small",
+			because: "the registry's fontSizeMode enum spells XS as 'extra-small'");
+		config.GetProperty("layout").GetProperty("border").GetProperty("hidden").GetBoolean().Should().BeTrue(
+			because: "hide-border lives at layout.border.hidden (WidgetBorderConfig)");
+		config.TryGetProperty("theme", out _).Should().BeFalse(
+			because: "the theme is a deliberate non-goal — the default 'without-fill' already gives the plain white look");
+	}
+
+	[Test]
+	[Description("ENG-94230: the pre-existing spacing overrides keep declaring the spacing report group, so adding the metric group does not silently move containers into another section.")]
+	public void LoadBundled_SpacingOverridesDeclareSpacingReportGroup() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.InsertValueOverrides
+			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
+			.Should().HaveCount(2).And.OnlyContain(o => o.ReportGroup == "spacing");
 	}
 
 	[Test]

@@ -2474,3 +2474,17 @@ stories:
       - story-sync-schemas-verify-resume-1
       - story-sync-schemas-verify-resume-2
     blocks: []
+
+  - id: story-mobile-converter-metric-style-rule-1
+    title: "Stamp the mobile-standard style (extra-small text, hidden border) on converted metrics"
+    feature: "mobile-converter-metric-style-rule"
+    repo: "clio"
+    size: S
+    status: in-progress
+    file: spec/stories/story-mobile-converter-metric-style-rule-1.md
+    prd: spec/prd/spec-mobile-converter-metric-style-rule.md
+    jira: ENG-94230
+    status_note: "Branched off the ENG-91228 insertValueOverrides pass; needs deep-merge before a nested config value can be stamped"
+    fr: [CAP-01, CAP-02, CAP-03, CAP-04, CAP-05]
+    depends_on: []
+    blocks: []
