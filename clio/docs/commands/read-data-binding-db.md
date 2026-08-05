@@ -82,6 +82,15 @@ row[0]: HomePageUId=4e48900d-..., Id=0e743480-..., LoaderId=3707a058-..., Name=L
 | 0 | The binding was read. |
 | 1 | The package or the binding does not exist on the environment; the message says which. |
 
+## Output sensitivity
+
+The report includes each bound row's **values**, not just the column names. That is
+the same data a package export carries, so it grants no new access — but the MCP
+tool is annotated read-only and therefore runs without a confirmation prompt. Treat
+a binding over a settings or credential-bearing schema as sensitive output: read the
+binding you were asked about, and do not paste values from unrelated bindings into a
+summary or a ticket.
+
 ## See also
 
 - [`create-data-binding-db`](create-data-binding-db.md) — create a binding

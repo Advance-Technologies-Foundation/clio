@@ -110,7 +110,10 @@ public class ReadDataBindingDbTool(
 		+ "projection is the transfer contract — reading the LIVE record proves nothing about it, so this is the "
 		+ "check that matters before calling a navigation or seed-data change done. Use it instead of exporting the "
 		+ "package and parsing Data/<binding>/data.json. Note it lists localizable columns (for example a workplace "
-		+ "Name) inline, whereas the package export splits them into a Localization folder — same binding, one list.")]
+		+ "Name) inline, whereas the package export splits them into a Localization folder — same binding, one list. "
+		+ "It PRINTS the bound values, and being read-only it runs without a confirmation prompt: that is the same "
+		+ "data a package export carries, but do not fan it out over bindings you were not asked about, and treat a "
+		+ "binding over a settings or credential schema as sensitive output rather than pasting it into a summary.")]
 	public CommandExecutionResult ReadDataBindingDb(
 		[Description("Parameters: environment-name, package-name, binding-name (all required)")]
 		[Required]

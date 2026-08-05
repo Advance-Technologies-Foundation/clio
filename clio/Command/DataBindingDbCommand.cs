@@ -842,11 +842,21 @@ internal sealed class DataBindingDbService(
 		return JsonSerializer.Serialize(payload);
 	}
 
+	/// <summary>
+	///     Builds a DataService DeleteQuery body for one row of a schema.
+	/// </summary>
+	/// <remarks>
+	///     Both arguments are JSON-escaped rather than interpolated raw. <paramref name="keyValue" /> arrives straight
+	///     from a CLI option or an MCP argument and is never validated as a GUID, so an embedded quote would malform
+	///     the body and a crafted value could close the string and inject sibling properties into the filter.
+	/// </remarks>
 	private static string BuildDeleteQueryBody(string rootSchemaName, string keyValue) {
+		string escapedRootSchemaName = JsonEncodedText.Encode(rootSchemaName ?? string.Empty).ToString();
+		string escapedKeyValue = JsonEncodedText.Encode(keyValue ?? string.Empty).ToString();
 		return $$"""
 			{
 			  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
-			  "rootSchemaName":"{{rootSchemaName}}",
+			  "rootSchemaName":"{{escapedRootSchemaName}}",
 			  "filters":{
 			    "isEnabled":true,
 			    "filterType":6,
@@ -866,7 +876,7 @@ internal sealed class DataBindingDbService(
 			          "expressionType":2,
 			          "parameter":{
 			            "dataValueType":0,
-			            "value":"{{keyValue}}"
+			            "value":"{{escapedKeyValue}}"
 			          }
 			        }
 			      }
