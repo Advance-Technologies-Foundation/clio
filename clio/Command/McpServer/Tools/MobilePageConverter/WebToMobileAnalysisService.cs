@@ -204,9 +204,9 @@ public static class WebToMobileAnalysisService {
 		// Tabs (starting right after the template's general tab) so the template's Feed/Attachments tabs stay
 		// last. The pass order is load-bearing: AFTER RemoveEmptyContainers (a tab removed as empty is a drop
 		// by then and never indexed — no holes), and AFTER CompactPositionalIndexes (that compaction rebases
-		// each parent's indexed group to 0; run over tab indexes it would rebase firstIndex away and put the
-		// first web tab BEFORE the general tab).
-		AssignConvertedTabIndexes(elementMap, rules);
+		// each parent's indexed group to 0; run over tab indexes it would rebase the first-tab offset away and
+		// put the first web tab BEFORE the general tab).
+		AssignConvertedTabIndexes(elementMap);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
 			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames);
 
@@ -2473,38 +2473,50 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>Mobile Tabs element name that converted web tabs are inserted under.</summary>
+	private const string MobileTabsElementName = "Tabs";
+
+	/// <summary>Mobile component type of a single tab.</summary>
+	private const string MobileTabComponentType = "crt.TabContainer";
+
+	/// <summary>
+	/// 0-based index of the FIRST converted tab within the mobile Tabs items: 1 places it right after the
+	/// template's general tab (position 0) and before the template's Feed/Attachments tabs, which shift
+	/// right and stay last.
+	/// </summary>
+	private const int FirstConvertedTabIndex = 1;
+
 	/// <summary>
 	/// Assigns an explicit ordering index to every SURVIVING converted web tab inserted under the mobile
 	/// Tabs element, so the template's Feed/Attachments tabs stay LAST. The mobile tabbed template ships
 	/// its tabs as [general(0), Feed, Attachments]; an index-less insert appends AFTER them, which is how
 	/// converted tabs used to land past Feed/Attachments (the "keep them last" requirement lived only as
-	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors
-	/// <c>firstIndex, firstIndex+1, …</c> in element-map order (= the web tree order) inserts each tab
+	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors from
+	/// <see cref="FirstConvertedTabIndex"/> up in element-map order (= the web tree order) inserts each tab
 	/// right after the general tab and preserves the web page's own tab order; the template twins are
 	/// merges, never move, and get pushed last by construction.
 	/// <para>
 	/// Pass order is load-bearing (enforced at the call site): AFTER <see cref="RemoveEmptyContainers"/>
 	/// so a tab removed as empty is a drop by then and is never indexed (survivors stay contiguous), and
 	/// AFTER <see cref="CompactPositionalIndexes"/> — that compaction rebases each parent's indexed group
-	/// to 0, which over tab indexes would erase <c>firstIndex</c> and put the first converted tab BEFORE
+	/// to 0, which over tab indexes would erase the first-tab offset and put the first converted tab BEFORE
 	/// the general tab. The two never meet in one group anyway (positional inserts target the Tabs
 	/// anchor's PARENT, e.g. MainContainer, never Tabs itself), but the order makes that a non-issue by
 	/// construction. Synthesized tab-area layers are created later, INSIDE tabs, and are never matched.
-	/// With no usable <c>convertedTabPlacement</c> rules section the pass is a no-op — converted tabs
-	/// then append as before (switched by data, not code).
+	/// The pass is UNCONDITIONAL: correct tab order is a correctness invariant, not an opt-in, and the
+	/// values it needs are constants of the mobile tabbed template (the Tabs element name, the tab
+	/// component type, the general tab owning position 0) rather than variable data — a rules file could
+	/// only ever restate them, and its absence would silently reorder tabs behind the guidance contract,
+	/// which promises the caller the indexes are already there. On a non-tabbed page nothing inserts a tab
+	/// under Tabs, so the loop matches nothing and the pass costs one map walk.
 	/// </para>
 	/// </summary>
-	private static void AssignConvertedTabIndexes(
-		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
-		ConvertedTabPlacementRule rule = rules?.ConvertedTabPlacement;
-		if (string.IsNullOrWhiteSpace(rule?.TabsElementName) || string.IsNullOrWhiteSpace(rule.TabComponentType)) {
-			return;
-		}
-		int next = Math.Max(0, rule.FirstIndex);
+	private static void AssignConvertedTabIndexes(List<ElementMapEntry> elementMap) {
+		int next = FirstConvertedTabIndex;
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				&& string.Equals(entry.ParentName, rule.TabsElementName, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(entry.MobileType, rule.TabComponentType, StringComparison.OrdinalIgnoreCase)) {
+				&& string.Equals(entry.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entry.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)) {
 				entry.Index = next++;
 				entry.Reason = entry.Reason
 					+ "; explicit index keeps it before the template's Feed/Attachments tabs (they stay last)";

@@ -27,7 +27,7 @@
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
-        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab (see convertedTabPlacement), so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
+        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab, so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
         { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
         { "web": "CardToggleTabPanel", "mobile": "Tabs", "note": "All tabs except Feed and Attachments should be moved to Tabs"},
@@ -139,11 +139,6 @@
       "crt.TabContainer",
       "crt.ExpansionPanel"
     ]
-  },
-  "convertedTabPlacement": {
-    "tabsElementName": "Tabs",
-    "tabComponentType": "crt.TabContainer",
-    "firstIndex": 1
   },
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },

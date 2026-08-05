@@ -88,18 +88,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules carry the converted-tab placement section: converted web tabs are indexed under the mobile Tabs starting right after the template's general tab (firstIndex 1), so the template's Feed/Attachments tabs stay last deterministically instead of by guidance prose.")]
-	public void LoadBundled_ConvertedTabPlacement_CarriesTabsIndexing() {
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		rules.ConvertedTabPlacement.Should().NotBeNull();
-		rules.ConvertedTabPlacement.TabsElementName.Should().Be("Tabs");
-		rules.ConvertedTabPlacement.TabComponentType.Should().Be("crt.TabContainer");
-		rules.ConvertedTabPlacement.FirstIndex.Should().Be(1,
-			because: "position 0 belongs to the template's general tab — the first converted web tab goes right after it");
-	}
-
-	[Test]
 	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

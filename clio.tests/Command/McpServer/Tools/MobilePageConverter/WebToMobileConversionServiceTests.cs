@@ -494,7 +494,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry overview = Element(guide, "OverviewTab");
 		overview.Operation.Should().Be("insert");
 		overview.ParentName.Should().Be("Tabs");
-		overview.Index.Should().BeNull(because: "a web tab is not a positional insert");
+		overview.Index.Should().Be(1,
+			because: "a converted tab is not a positional insert, but the converter still indexes it right after "
+				+ "the template's general tab so the template's Feed/Attachments tabs stay last");
 		Element(guide, "LeadName").Operation.Should().Be("insert");
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
 		Element(guide, "Status").ParentName.Should().Be("OverviewTab");
@@ -3285,18 +3287,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#region Converted tab placement (explicit indexes so template Feed/Attachments stay last)
 
-	private static readonly ConvertedTabPlacementRule TabPlacement = new() {
-		TabsElementName = "Tabs", TabComponentType = "crt.TabContainer", FirstIndex = 1
-	};
-
-	private static WebToMobilePageConversionRules RulesWithTabPlacement() => new() {
-		Components = GridRule.Components,
-		EmptyContainerRemoval = EmptyRemoval,
-		ConvertedTabPlacement = TabPlacement
-	};
-
 	[Test]
-	[Description("Converted web tabs get explicit indexes under the mobile Tabs starting at firstIndex (right after the template's general tab), in web tree order — so applying the element map verbatim keeps the template's Feed/Attachments tabs last.")]
+	[Description("Converted web tabs get explicit indexes under the mobile Tabs starting right after the template's general tab, in web tree order — so applying the element map verbatim keeps the template's Feed/Attachments tabs last.")]
 	public void Analyze_ShouldIndexConvertedTabs_AfterTemplateGeneralTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3304,7 +3296,7 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithTabPlacement());
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		ElementMapEntry sales = Element(guide, "SalesTab");
 		sales.ParentName.Should().Be("Tabs");
@@ -3318,7 +3310,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Leads_FormPage scenario: a tab removed as empty (its only child is unsupported on mobile) is never indexed, and the surviving tabs are numbered contiguously from firstIndex — no hole where the removed tab was.")]
+	[Description("Leads_FormPage scenario: a tab removed as empty (its only child is unsupported on mobile) is never indexed, and the surviving tabs are numbered contiguously from the first tab index — no hole where the removed tab was.")]
 	public void Analyze_ShouldIndexOnlySurvivingTabs_WhenMiddleTabWasRemovedAsEmpty() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3327,7 +3319,7 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithTabPlacement());
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		ElementMapEntry nextSteps = Element(guide, "NextStepsTab");
 		nextSteps.Operation.Should().Be("drop",
@@ -3339,21 +3331,22 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The pass is switched by DATA — without a convertedTabPlacement rules section a converted tab carries no index and appends, exactly as before the feature.")]
-	public void Analyze_ShouldLeaveTabsUnindexed_WhenRulesCarryNoPlacementSection() {
+	[Description("The pass is UNCONDITIONAL: correct tab order is a correctness invariant, not an opt-in — a converted tab is indexed even on a rules file carrying nothing but the component map, so no missing (or externally fetched) rules section can silently push it past the template's Feed/Attachments tabs.")]
+	public void Analyze_ShouldIndexConvertedTab_WhenRulesCarryOnlyComponents() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, rules: new WebToMobilePageConversionRules { Components = GridRule.Components });
 
-		Element(guide, "SalesTab").Index.Should().BeNull(
-			because: "with no placement section the converter behaves exactly as before the feature");
+		Element(guide, "SalesTab").Index.Should().Be(1,
+			because: "the tab index comes from the converter itself, not from a rules section that could go missing");
 	}
 
 	[Test]
-	[Description("Tab indexes coexist with positional :top indexes: the positional group (under MainContainer) is compacted from 0, while the tab group (under Tabs) starts at firstIndex — the compaction never rebases the tab indexes because they are assigned after it.")]
+	[Description("Tab indexes coexist with positional :top indexes: the positional group (under MainContainer) is compacted from 0, while the tab group (under Tabs) starts at the first tab index — the compaction never rebases the tab indexes because they are assigned after it.")]
 	public void Analyze_ShouldKeepTabIndexBase_WhenPositionalCompactionRuns() {
 		PageBundleInfo bundle = Bundle("""
 			[
@@ -3373,7 +3366,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
-			bundle, rules: RulesWithTabPlacement(), containerNameMap: map,
+			bundle, containerNameMap: map,
 			positionalPlacements: placements, mobileContainerParents: mobileParents);
 
 		Element(guide, "TopBox").Index.Should().Be(0, because: ":top compaction still rebases the positional group to 0");
