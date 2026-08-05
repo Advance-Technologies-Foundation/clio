@@ -2619,7 +2619,7 @@ public static class WebToMobileAnalysisService {
 			.GroupBy(e => e.ParentName, StringComparer.OrdinalIgnoreCase);
 		foreach (IGrouping<string, ElementMapEntry> group in indexedByParent) {
 			int next = 0;
-			foreach (ElementMapEntry entry in group.OrderBy(e => e.Index!.Value)) {
+			foreach (ElementMapEntry entry in group.OrderBy(e => e.Index.Value)) {
 				entry.Index = next++;
 			}
 		}
@@ -2758,7 +2758,7 @@ public static class WebToMobileAnalysisService {
 			if (content.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
 				areaName = rule.AreaContainer.NamePrefix + suffix;
 				taken.Add(areaName);
-				elementMap.Insert(++insertAt, SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
+				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
 					$"synthesized by the converter (no web counterpart) — the Area card of the converted tab "
 					+ $"'{tab.MobileName}'; on mobile a tab's content lives in an Area, not in the tab body itself"));
 			}
@@ -2837,7 +2837,7 @@ public static class WebToMobileAnalysisService {
 			Operation = "insert",
 			MobileName = name,
 			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
-			MobileType = values["type"]!.GetValue<string>(),
+			MobileType = values["type"].GetValue<string>(),
 			ParentName = parentName,
 			PropertyName = "items",
 			MobileValues = values,
