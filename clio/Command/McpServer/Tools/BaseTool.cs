@@ -77,21 +77,7 @@ public abstract class BaseTool<T>(
 	/// <paramref name="executor"/> do not leak into the next tool invocation's <c>execution-log-messages</c>.
 	/// </summary>
 	private protected TResponse ExecuteWithCleanLog<TResponse>(EnvironmentOptions options, Func<TResponse> executor) =>
-		ExecuteUnderTenantLock(options, () => {
-			// Establish a FRESH per-flow capture buffer for this scope (FIX 6, ENG-93208), matching
-			// InternalExecute. Setting PreserveMessages = true resets the flow-local buffer, so log lines
-			// this executor produces are isolated from the process-wide MCP-mode flag (Program.cs) and any
-			// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
-			bool previousPreserveMessages = logger.PreserveMessages;
-			logger.PreserveMessages = true;
-			try {
-				return executor();
-			}
-			finally {
-				logger.ClearMessages();
-				logger.PreserveMessages = previousPreserveMessages;
-			}
-		});
+		ExecuteUnderTenantLock(options, () => WithCleanLog(executor));
 
 	/// <summary>
 	/// Environment-less overload of <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse})"/>
@@ -99,7 +85,45 @@ public abstract class BaseTool<T>(
 	/// fallback lock; must NOT be used to execute a per-tenant command (that would serialize tenants).
 	/// </summary>
 	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor) =>
-		ExecuteWithCleanLog(null, executor);
+		ExecuteUnderTenantLock(null, () => WithCleanLog(executor));
+
+	/// <summary>
+	/// Runs <paramref name="executor"/> serialized against other calls to the SAME tool rather than against
+	/// a tenant, with the same fresh capture buffer as the other overloads. Use this for a tool that resolves
+	/// no environment and acquires no session container, yet still needs mutual exclusion against itself —
+	/// typically because the command it delegates to mutates state every call shares. Serializing per tool
+	/// keeps it off <see cref="McpToolExecutionLock.SharedFallbackKey"/>, which every environment-less tool
+	/// shares, so a slow call blocks only concurrent calls to this same tool. The session-container in-use
+	/// markers are deliberately not taken: there is no container on this path to protect from eviction.
+	/// </summary>
+	/// <param name="executor">The work to run.</param>
+	private protected TResponse ExecuteWithCleanLogUnderToolLock<TResponse>(Func<TResponse> executor) {
+		string toolLockKey = $"tool:{GetType().FullName}";
+		lock (McpToolExecutionLock.GetLock(toolLockKey)) {
+			try {
+				return WithCleanLog(executor);
+			}
+			finally {
+				McpToolExecutionLock.MarkAvailable(toolLockKey);
+			}
+		}
+	}
+
+	private TResponse WithCleanLog<TResponse>(Func<TResponse> executor) {
+		// Establish a FRESH per-flow capture buffer for this scope (FIX 6, ENG-93208), matching
+		// InternalExecute. Setting PreserveMessages = true resets the flow-local buffer, so log lines
+		// this executor produces are isolated from the process-wide MCP-mode flag (Program.cs) and any
+		// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
+		bool previousPreserveMessages = logger.PreserveMessages;
+		logger.PreserveMessages = true;
+		try {
+			return executor();
+		}
+		finally {
+			logger.ClearMessages();
+			logger.PreserveMessages = previousPreserveMessages;
+		}
+	}
 
 	/// <summary>
 	/// Resolves an environment-scoped command for the current MCP call and runs <paramref name="executor"/>
