@@ -86,6 +86,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should name the derived page schemas so agents can reference them without re-discovery");
 		article.Text.Should().Contain("`create-app` already creates the default section for the canonical main entity",
 			because: "the guide should state the positive fact before explaining when create-app-section is appropriate");
+		article.Text.Should().Contain("SEQUENTIALLY, not in parallel",
+			because: "the guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
+		article.Text.Should().Contain("contention",
+			because: "the guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -175,6 +181,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the maintenance guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("operations[*].operation",
 			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
+		article.Text.Should().Contain("SEQUENTIALLY, not in parallel",
+			because: "the maintenance guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
+		article.Text.Should().Contain("contention",
+			because: "the maintenance guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -215,6 +227,35 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should keep lookup seeding separate from default semantics");
 		article.Text.Should().Contain("DisplayValue",
 			because: "the guide should make lookup and image-reference display semantics explicit");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("TC-U-30: guards that the four sync-schemas guidance resources keep the convergent re-submit-verbatim recovery language and never instruct a hand-composed catch-up batch, so the shipped no-catch-up guidance cannot silently regress.")]
+	public void SyncSchemasGuidanceResources_ShouldTeachConvergentReSubmit_AndForbidHandComposedCatchUp_WhenRecoveringFromFailure() {
+		// Arrange
+		string appModeling = ((TextResourceContents)new AppModelingGuidanceResource().GetGuide()).Text;
+		string existingApp = ((TextResourceContents)new ExistingAppMaintenanceGuidanceResource().GetGuide()).Text;
+		string agentExecution = ((TextResourceContents)new AgentExecutionGuidanceResource().GetGuide()).Text;
+		string dataBindings = ((TextResourceContents)new DataBindingsGuidanceResource().GetGuide()).Text;
+
+		// Act
+		string[] convergentRecoveryGuides = [appModeling, existingApp, agentExecution, dataBindings];
+
+		// Assert
+		appModeling.Should().Contain("re-submitting the whole batch verbatim is safe",
+			because: "the app-modeling guide must keep the convergent whole-batch re-submit recovery as the safe path");
+		existingApp.Should().Contain("re-submitting the whole batch verbatim is safe",
+			because: "the existing-app maintenance guide must keep the convergent whole-batch re-submit recovery as the safe path");
+		agentExecution.Should().Contain("re-submit the SAME batch verbatim",
+			because: "the agent-execution guide must instruct re-submitting the same batch verbatim after an ambiguous failure");
+		dataBindings.Should().Contain("skips the already-present rows",
+			because: "the data-bindings guide must state that re-running a Name-keyed seed batch is convergent and skips already-present rows");
+		foreach (string guide in convergentRecoveryGuides) {
+			guide.Should().NotContain("hand-compose",
+				because: "no sync-schemas guidance resource may instruct a hand-composed catch-up batch of only the remaining/failed operations");
+		}
 	}
 
 	[Test]
@@ -478,8 +519,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should keep the create-record request in the parameter catalog");
 		article.Text.Should().Contain("| `crt.OpenPageRequest` | config | `schemaName` required, `packageUId?`, `modelInitConfigs?`, `parameters?`, `skipUnsavedData?` | standard open-page request |",
 			because: "handler guidance should keep the open-page request in the parameter catalog");
-		article.Text.Should().Contain("| `crt.LoadDataRequest` | config | `dataSourceName`, `config` (commonly `loadType`, `useLastLoadParameters?`), `showSuccessMessage?` | reload or refresh a page/list data source |",
-			because: "handler guidance should expose a compact load-data request contract instead of only naming the request");
+		article.Text.Should().Contain("`refreshDataConfig` selects the page-refresh scenario (the Designer's \"Refresh data\" action)",
+			because: "handler guidance must name the parameter that selects the refresh scenario — the hard-coded list it replaces omitted refreshDataConfig entirely, which is what let an agent author a single-source load for a 'refresh the page' requirement");
+		article.Text.Should().Contain("FULL parameter contract lives in the request catalog: get-request-info `crt.LoadDataRequest` (single source of truth)",
+			because: "the load-data row should point at the catalog like the run-process row does, instead of carrying a hard-coded parameter list that drifts from it");
 		article.Text.Should().Contain("| `crt.DeleteRecordRequest` | config | `recordId`, `itemsAttributeName` | delete one record; source handler converts it into `crt.DeleteRecordsRequest` |",
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",

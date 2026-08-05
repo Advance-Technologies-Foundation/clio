@@ -235,6 +235,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["clio-run"] = PassthroughClassification.NotApplicable,
 			["clio-run-destructive"] = PassthroughClassification.NotApplicable,
 			["compile-creatio"] = PassthroughClassification.NotApplicable,
+			["compile-status"] = PassthroughClassification.NotApplicable,
 			["create-business-process"] = PassthroughClassification.NotApplicable,
 			["create-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["create-data-binding"] = PassthroughClassification.NotApplicable,
@@ -279,6 +280,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
+			["get-classic-page-sources"] = PassthroughClassification.NotApplicable,
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,
@@ -289,6 +291,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-mobile-page-conversion-guide"] = PassthroughClassification.NotApplicable, // ENG-91228 advisory guide tool; resolver-backed (class b), read-only, not part of the ENG-93347 passthrough audit
 			["get-page"] = PassthroughClassification.NotApplicable,
+			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
@@ -300,6 +303,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
+			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
 			["list-pages"] = PassthroughClassification.NotApplicable,
@@ -328,6 +332,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,
+			["restart-status"] = PassthroughClassification.NotApplicable, // ENG-91315 readiness-wait status poll; reads the in-memory RestartOperationRegistry only (mirrors compile-status), never makes a credential-passthrough Creatio call
 			["restore-db-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,

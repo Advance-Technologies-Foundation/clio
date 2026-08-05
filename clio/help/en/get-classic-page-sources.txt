@@ -1,0 +1,68 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-classic-page-sources - Collect the Classic page sources for folding and write the manifest JSON to disk
+
+ALIASES
+    classic-page-sources (deprecated: get-classic-migration-bundle, classic-migration-bundle)
+
+SYNOPSIS
+    clio get-classic-page-sources [OPTIONS]
+
+DESCRIPTION
+    Collects, server-side, everything the Classic->Freedom migration engine
+    needs to fold a classic page, and writes it to disk as a manifest JSON. It
+    gathers the raw page sources for folding; it does not fold them, so the same
+    manifest is equally useful for page audits, layer diffing, and provenance.
+
+    The manifest contains the replacing-schema layer chain, parent-template
+    seed layers, merged resources, entity columns, column titles, and best-effort
+    related schemas such as details, sections, and child edit pages.
+
+    Layer bodies are written to the manifest file, not returned in stdout. The
+    response reports only the absolute manifest path and a small summary.
+
+    The section is resolved from SysModule metadata first and only then by the
+    <Entity>Section[V2] / <PagePrefix>Section[V2] naming conventions, so a
+    renamed section or one whose name carries a UId infix is still found. When
+    the collected sources are incomplete - no section resolved, or the metadata
+    lookup failed - the response carries a "warnings" list saying so.
+
+OPTIONS
+    --schema-name                      Classic client-unit (page) schema name to collect
+                                       the page sources for (required)
+
+    --entity                           Entity schema name (optional; inferred from the page
+                                       body when omitted). Drives entityColumns/columnTitles
+
+    --output-file                      Manifest output path. An explicit path must resolve inside
+                                       the workspace or the OS temp directory (symlinks resolved; a
+                                       path outside both, or one that already exists, is rejected).
+                                       Omit to write the default manifest (overwritten on re-runs):
+                                       Default: <workspace-root>/.clio-migration/<schema>/manifest.json
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+EXAMPLES
+    clio get-classic-page-sources --schema-name ContactPageV2 -e dev
+        Collect ContactPageV2 into the default manifest path
+
+    clio get-classic-page-sources --schema-name UsrCasePage --entity UsrCase --output-file ./sources.json -e dev
+        Collect with an explicit entity and output path
+
+    clio classic-page-sources --schema-name ContactPageV2 -e dev
+        Same as the first example using the alias
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-client-unit-schema - Read body and metadata of a client unit schema
+    update-client-unit-schema - Update the body of a JavaScript schema

@@ -350,6 +350,44 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid: true when an inserted crt.ImageInput carries an inline literal tooltip — the ImageInput control renders the raw tooltip and never reads a localizable resource, so the localizable-text rule must NOT reject it (ENG-92940). Proves the component-scoped exemption reaches through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts inline tooltip literal on crt.ImageInput")]
+	[AllureDescription("Sends a page body whose inserted crt.ImageInput (bound to a declared DS attribute) sets tooltip to a plain string literal, and verifies validate-page accepts it — the control shows the raw tooltip and a $Resources.Strings binding would render empty, so the literal is the only working form.")]
+	public async Task PageValidateTool_Should_Accept_Inline_Tooltip_Literal_On_ImageInput() {
+		// Arrange
+		string bodyWithImageInputTooltip = ValidPageBody
+			.Replace(
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+					"{\"operation\":\"insert\",\"name\":\"UsrPhoto\",\"values\":{\"type\":\"crt.ImageInput\"," +
+					"\"value\":\"$UsrPhoto\",\"size\":\"large\",\"tooltip\":\"Upload a photo of the task owner\"}}" +
+					"]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
+					"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"UsrPhoto\":{\"modelConfig\":{\"path\":\"PDS.UsrPhoto\"}}}}}" +
+					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithImageInputTooltip);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "crt.ImageInput.tooltip is literal-only — a localizable binding renders empty, so the literal must be accepted (ENG-92940)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "no content-level validator, including the localizable-text rule, should reject the ImageInput tooltip literal");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the ImageInput tooltip literal is a valid, working authoring form and must not produce an error");
+	}
+
+	[Test]
 	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects inline placeholder literal")]
@@ -605,6 +643,39 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
 			because: "validate-page must surface the server-faithful differ exception so the agent fixes the diff before writing");
+	}
+
+	[Test]
+	[Description("Returns valid=true for a mobile JSON body whose viewModelConfigDiff is the ENG-94101 insert-delta shape: an 'insert' appends a new entry into a template-owned array (Items.modelConfig.filterAttributes) rather than a root merge replacing it. Proves the new merge+insert diff contract validates through the real MCP wire — the apply-oracle seeds a container at the insert path so a template-owned-array append does not false-positive as not-a-container.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts the ENG-94101 template-array insert-delta shape")]
+	[AllureDescription("Sends a mobile JSON body whose viewModelConfigDiff appends a filter entry via an insert at the array's own path (no own base section) and verifies validate-page accepts it end-to-end — the observable output shape the converter now emits.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Body_With_TemplateArray_InsertDelta() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithInsertDelta = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [
+			    { "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+			      "values": { "name": "QuickFilter_x_Items", "loadOnChange": true } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithInsertDelta);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an insert appending to a template-owned array is the ENG-94101 contract; the oracle seeds the container path so it resolves instead of false-positiving as not-a-container");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "the insert-delta shape is a valid mobile data-section diff and must pass content validation");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported for the canonical template-array insert-delta the converter now emits");
 	}
 
 	[Test]

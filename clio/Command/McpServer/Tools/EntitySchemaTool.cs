@@ -13,6 +13,35 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
+/// Single source of the "at least one of <c>column-name</c> / <c>name</c>" rule and the caller-facing message
+/// that states it.
+/// </summary>
+/// <remarks>
+/// Neither spelling is schema-required — the emitted MCP schema deliberately leaves both optional so a strict
+/// client can validate a payload that sends either one (issue #947) — so the rule has to be enforced in code.
+/// It fires from three surfaces (create columns, update operations, modify-entity-schema-column), and the
+/// wording had already drifted between them ("missing the column code" vs "missing the target column"). Since
+/// the whole point of the fix is caller-facing message quality, the message is owned here rather than repeated.
+/// </remarks>
+internal static class ColumnIdentityContract {
+	/// <summary>
+	/// Returns the trimmed column code, or throws naming both accepted spellings when neither was supplied.
+	/// </summary>
+	/// <param name="resolvedName">The already-resolved column code (canonical field, then alias).</param>
+	/// <param name="context">Caller-facing prefix identifying which payload element is at fault.</param>
+	/// <param name="parameterName">Argument name to attribute the <see cref="ArgumentException" /> to.</param>
+	internal static string RequireColumnIdentity(string? resolvedName, string context, string parameterName) {
+		string? trimmed = resolvedName?.Trim();
+		if (string.IsNullOrWhiteSpace(trimmed)) {
+			throw new ArgumentException(
+				$"{context} is missing the target column. Send it as 'column-name' (or its alias 'name').",
+				parameterName);
+		}
+		return trimmed;
+	}
+}
+
+/// <summary>
 /// MCP tool surface for remote entity schema creation.
 /// </summary>
 public sealed class CreateEntitySchemaTool(
@@ -114,16 +143,34 @@ public sealed class CreateEntitySchemaTool(
 	}
 
 	private static string SerializeColumn(CreateEntitySchemaColumnArgs column, string context) {
+		// Resolved and validated BEFORE the localization contract, which takes the column code as its en-US
+		// fallback: with no code, that contract fails first and reports a missing en-US caption instead of the
+		// real problem. `name` is not schema-required precisely because `column-name` is an equally valid
+		// spelling, so the "at least one of the two" rule is enforced here (issue #947).
+		string resolvedName = ColumnIdentityContract.RequireColumnIdentity(
+			column.ResolveName(), context, nameof(column));
+		// Type is checked here for the same reason as the code above: it is optional in the EMITTED SCHEMA so
+		// the `data-value-type` alias stays usable, which means the "one of the two is required" rule has to
+		// live in code or a typeless column would reach the creator and fail with a vaguer message.
+		string? resolvedType = column.ResolveType()?.Trim();
+		if (string.IsNullOrWhiteSpace(resolvedType)) {
+			throw new ArgumentException(
+				$"{context} is missing the column type. Send it as 'type' (or its alias 'data-value-type').",
+				nameof(column));
+		}
 		IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 			column.TitleLocalizations,
 			column.LegacyTitle,
 			column.LegacyCaption,
-			column.ResolveName(),
+			resolvedName,
 			context);
 		string? resolvedReferenceSchemaName = column.ResolveReferenceSchemaName();
+		// ResolveName(), not Name: the contract advertises `column-name` as the column identity field with
+		// `name` as its alias, so a contract-following caller sends `column-name` — reading the raw Name here
+		// serialized it as "name": null and the underlying creator rejected the whole batch (issue #947).
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
-			["name"] = column.Name?.Trim(),
-			["type"] = column.ResolveType()?.Trim(),
+			["name"] = resolvedName,
+			["type"] = resolvedType,
 			["title-localizations"] = titleLocalizations,
 			["reference-schema-name"] = string.IsNullOrWhiteSpace(resolvedReferenceSchemaName)
 				? null
@@ -325,6 +372,10 @@ public sealed class UpdateEntitySchemaTool(
 	internal static Dictionary<string, object?> BuildOperationPayload(
 		UpdateEntitySchemaOperationArgs operation,
 		string context) {
+		// Checked before the localization contract, which uses the column name as its caption fallback and
+		// would otherwise fail first and blame the caption. `column-name` is optional in the emitted schema on
+		// purpose so its `name` alias stays usable, so this is where "at least one of the two" is enforced.
+		ColumnIdentityContract.RequireColumnIdentity(operation.ResolveColumnName(), context, nameof(operation));
 		IReadOnlyDictionary<string, string>? titleLocalizations =
 			EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(
 				operation.Action,
@@ -543,9 +594,12 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		+ "description-localizations) on a replacing/child schema; its name, type, and flags stay read-only. "
 		+ "Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
-		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
+		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required; column-name accepts the alias 'name'); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
-			string resolvedColumnName = args.ResolveColumnName();
+			// Enforced here because `column-name` is deliberately optional in the emitted schema so its
+			// `name` alias stays usable by strict clients (see ColumnModificationArgsBase.ColumnName).
+			string resolvedColumnName = ColumnIdentityContract.RequireColumnIdentity(
+				args.ResolveColumnName(), ModifyEntitySchemaColumnToolName, nameof(args));
 			string context = $"Column '{resolvedColumnName}' action '{args.Action}'";
 			IReadOnlyDictionary<string, string>? titleLocalizations =
 				EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(
@@ -723,32 +777,42 @@ public sealed record UpdateEntitySchemaArgs(
 /// Structured column input for the <c>create-entity-schema</c> MCP tool.
 /// </summary>
 public sealed record CreateEntitySchemaColumnArgs(
+	// Name and Type are declared nullable-with-default ON PURPOSE, even though a column needs both: the MCP
+	// SDK derives the emitted schema's `required` array from non-nullable, non-defaulted positional
+	// parameters, NOT from [Required]. While they were non-nullable, the schema demanded `name` and `type`
+	// even though each has an equally valid alias (`column-name`, `data-value-type`), so a strict client that
+	// validates against the schema would reject a contract-following payload before it ever reached the
+	// resolvers. "At least one spelling of each" is enforced in SerializeColumn instead (issue #947).
 	[property: JsonPropertyName("name")]
-	[property: Description("Column code. Must use the active SchemaNamePrefix as prefix " +
+	[property: Description("Column code. Alias of the canonical 'column-name' — send either one, but at least " +
+		"one is required. Must use the active SchemaNamePrefix as prefix " +
 		"(e.g. 'UsrStatus' when prefix is 'Usr', 'MyStatus' when prefix is 'My'). " +
 		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix (e.g. 'Status'). " +
 		"Use the same prefix value from `schema-name-prefix`.")]
-	[property: Required]
-	string Name,
+	string? Name = null,
 
 	[property: JsonPropertyName("type")]
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
-						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						  Integer, Float, Boolean, DateTime, Lookup,
 						  Binary, Image, ImageLookup, File, SecureText, Email, Color.
+						  Case-insensitive.
+						  Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as
+						  DateTime and reads it back as DateTime, so date-only or time-only intent is NOT preserved.
 						  Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
 						  text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						  Blob is also accepted as an alias for Binary.
 						  ImageLink is also accepted as an alias for ImageLookup.
 						  Encrypted and Password are accepted as aliases for SecureText.
 						  EmailAddress is accepted as an alias for Email.
+						  Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
+						  and Decimal for Decimal2 (same as Float).
 						  For image/photo fields rendered by the crt.ImageInput Freedom UI component,
 						  use ImageLookup ("Image link") — NOT the binary Image type, which crt.ImageInput
 						  cannot read or write. ImageLookup references the SysImage schema automatically.
 						  """)]
-	[property: Required]
-	string Type,
+	string? Type = null,
 
 	[property: JsonPropertyName("title-localizations")]
 	[property: Description("Column title/caption localizations. OPTIONAL — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
@@ -864,10 +928,14 @@ public abstract record ColumnModificationArgsBase(
 	[property: Required]
 	string Action,
 
+	// Nullable-with-default for the same reason as CreateEntitySchemaColumnArgs.Name: the MCP SDK derives the
+	// emitted schema's `required` array from non-nullable, non-defaulted positional parameters, so while this
+	// was non-nullable the schema demanded `column-name` and a strict client could not use the advertised
+	// `name` alias at all — breaking the get-app-info read-shape round-trip it exists for (ENG-90313 / #947).
+	// "At least one of the two" is enforced where the name is resolved.
 	[property: JsonPropertyName("column-name")]
-	[property: Description("Target column name")]
-	[property: Required]
-	string ColumnName,
+	[property: Description("Target column name. Alias 'name' — send either one, but at least one is required.")]
+	string? ColumnName = null,
 
 	[property: JsonPropertyName("new-name")]
 	[property: Description("New column name for rename operations")]
@@ -876,12 +944,17 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("type")]
 	[property: Description("""
 						   Column type. Supported values:
-						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						   Guid, Integer, Float, Boolean, DateTime, Lookup,
 						   Text, ShortText, MediumText, LongText, MaxSizeText,
 						   Binary, Image, ImageLookup, File, Blob, SecureText,
 						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
 						   Currency0, Currency1, Currency2, Currency3, Color.
+						   Case-insensitive.
+						   Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as
+						   DateTime and reads it back as DateTime, so date-only or time-only intent is NOT preserved.
+						   Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
+						   and Decimal for Decimal2 (same as Float).
 						   Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
 						   text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						   Encrypted and Password are accepted as aliases for SecureText.
@@ -1065,7 +1138,13 @@ public abstract record ColumnModificationArgsBase(
 /// </summary>
 public sealed record UpdateEntitySchemaOperationArgs(
 	string Action,
-	string ColumnName,
+	// Nullable-with-default to match ColumnModificationArgsBase.ColumnName: this derived record is what STJ
+	// binds, and the MCP SDK derives the emitted schema's `required` array from the DERIVED record's
+	// non-nullable, non-defaulted positional parameters. Leaving it non-nullable here kept `column-name` in
+	// `required` for BOTH surfaces this record backs (`update-entity-schema` operations and the
+	// `sync-schemas` update-operations it embeds), so a strict client still rejected the `name`-only read
+	// shape the contract advertises (PR #984 review).
+	string? ColumnName = null,
 	string? NewName = null,
 	string? Type = null,
 	Dictionary<string, string>? TitleLocalizations = null,
@@ -1166,7 +1245,10 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	string SchemaName,
 
 	string Action,
-	string ColumnName,
+	// Nullable-with-default for the same reason as UpdateEntitySchemaOperationArgs.ColumnName: this derived
+	// record is the one STJ binds, so its own parameter nullability is what puts `column-name` into the
+	// emitted schema's `required` array (PR #984 review).
+	string? ColumnName = null,
 	string? NewName = null,
 	string? Type = null,
 	Dictionary<string, string>? TitleLocalizations = null,

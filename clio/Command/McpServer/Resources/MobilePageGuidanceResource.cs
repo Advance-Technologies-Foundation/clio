@@ -410,8 +410,9 @@ public sealed class MobilePageGuidanceResource {
 		       ── Data ────────────────────────────────────────────────────
 
 		       crt.LoadDataRequest
-		         Reloads data from a data source.
-		         params: dataSourceName? (string), updateCache? (boolean)
+		         Reloads the page's data sources - the Designer's "Refresh data" action; also loads a
+		         single named data source in its programmatic form. FULL parameter contract is the
+		         request catalog (single source of truth): get-request-info request-type=crt.LoadDataRequest schema-type=mobile.
 
 		       crt.QuickFilterRequest
 		         Applies a quick filter to a list/value attribute.
@@ -457,15 +458,9 @@ public sealed class MobilePageGuidanceResource {
 		       ── Files ───────────────────────────────────────────────────
 
 		       crt.UploadFileRequest
-		         Uploads a file. On mobile supports camera, gallery, and file picker.
-		         params: viewElementName? (string),
-		                 itemsAttributeName? (string),
-		                 maximumAllowedFileSize? (number, MB),
-		                 allowedFileTypes? (string, comma-separated extensions),
-		                 fileEntitySchemaName? (string),
-		                 recordEntitySchemaName? (string),
-		                 recordColumnName? (string),
-		                 recordId? (string)
+		         Uploads files into a crt.FileList on the page and attaches them to its record; the
+		         file-source picker is always used. FULL parameter contract is the request catalog
+		         (single source of truth): get-request-info request-type=crt.UploadFileRequest schema-type=mobile.
 
 		       crt.DeleteFileRequest
 		         Deletes an uploaded file.
