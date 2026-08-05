@@ -41,15 +41,11 @@ public class CreateThemeTool(
 		internal const string BuildFailed = "theme-build-failed";
 	}
 
-	// Detects whether the caller supplied ANY brand input. It drives the css-content conflict check and the
-	// primary-missing diagnostic — brand mode itself is triggered by primary alone (see brandMode). The
-	// colour/font half of the surface lives on the shared ThemeBrandArgs base record, so it is derived
-	// reflectively from that type instead of being re-listed here: a property added to the base record would
-	// otherwise have to be mirrored by hand, and a caller could pass css-content plus the new field without
-	// the conflict being detected. Primary and Version are declared on CreateThemeArgs itself (Primary is the
-	// brand mode's required input, Version selects the template), so they stay explicit.
-	// Ordered by metadata token — declaration order in practice — because Type.GetProperties() does not
-	// guarantee an order, and the rendered parameter list below is a caller-facing contract string.
+	/// <summary>
+	/// The brand surface, derived from <see cref="ThemeBrandArgs"/> so a property added there cannot be
+	/// missed by the conflict guard. Ordered by metadata token because <c>Type.GetProperties()</c> gives no
+	/// order and <see cref="BrandParameterNames"/> renders a caller-facing contract string from this.
+	/// </summary>
 	private static readonly PropertyInfo[] BrandProperties =
 		typeof(ThemeBrandArgs).GetProperties(BindingFlags.Public | BindingFlags.Instance)
 			.OrderBy(property => property.MetadataToken)
@@ -57,10 +53,11 @@ public class CreateThemeTool(
 
 
 
-	// Built from the same reflective source as the guard, so the message can never list a different set of
-	// parameters than the one that actually raises the conflict. "primary" leads and "version" trails the
-	// reflective names — both are declared on CreateThemeArgs and checked explicitly — and that bracketing
-	// is what reproduces the message text the tool advertised before the list was generated.
+	/// <summary>
+	/// The parameter list the conflict message names, built from the same source as the guard so the two can
+	/// never disagree. <c>primary</c> and <c>version</c> bracket the reflective names because both are
+	/// declared on <see cref="CreateThemeArgs"/> and checked explicitly.
+	/// </summary>
 	private static readonly string BrandParameterNames = string.Join(", ",
 		new[] { "primary" }
 			.Concat(BrandProperties.Select(WireNameOf))
@@ -76,8 +73,6 @@ public class CreateThemeTool(
 		"Valid: environment-name, css-content, css-class-name, caption, id, package-name, "
 		+ $"{BrandParameterNames}.";
 
-	// NOTE: BrandParameterNames and ValidArgumentNames read BrandProperties in their initializers, and
-	// static field initializers run in TEXTUAL order — keep these three declarations in this sequence.
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
 			["cssContent"] = "css-content",
@@ -185,18 +180,6 @@ public class CreateThemeTool(
 		return property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
 	}
 
-	// A property counts as supplied only when it carries a value the caller could have meant.
-	//
-	// Every ThemeBrandArgs property is `string?` or `int[]?` today, so only the null / string / ICollection
-	// arms below actually run: the two value-type arms are FORWARD-LOOKING, kept because the guard is
-	// reflective and the record is expected to grow from the build-theme side. They encode what that growth
-	// must not break:
-	//  - a nullable value type is decided by the DECLARED type, because boxing a Nullable<T> yields a boxed T
-	//    and loses the null-ness — `bool? DarkMode = false` or `int? Contrast = 0` would otherwise compare
-	//    equal to its default, read as not supplied, and let a caller pass css-content plus that field
-	//    straight past the conflict this guard exists to raise;
-	//  - a NON-nullable value type is compared against its default, because boxing makes even the default
-	//    non-null, which would otherwise make every request look like a brand request.
 	private static bool IsSupplied(PropertyInfo property, object value) {
 		if (Nullable.GetUnderlyingType(property.PropertyType) is not null) {
 			return value is not null;
@@ -232,10 +215,6 @@ public class CreateThemeTool(
 			EnvironmentName = null
 		};
 		BuildThemeCommand buildCommand = _commandResolver.Resolve<BuildThemeCommand>(environmentOptions);
-		// The build probes Google Fonts for each custom family, so this runs under the per-tenant lock that
-		// ExecuteResolved already holds. That is acceptable here in a way it was not for build-theme: the lock
-		// is this tenant's rather than shared, and the create call's own HTTP round-trip occupies it for
-		// longer than the bounded probe does.
 		return buildCommand.TryBuildTheme(buildOptions, resolvedSettings, out css, out _, out warnings, out error);
 	}
 }
