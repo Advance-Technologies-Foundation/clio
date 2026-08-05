@@ -113,6 +113,11 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 	[TearDown]
 	public void TearDownCommand() {
+		// EnvironmentSettings is a FIELD on the fixture instance and NUnit reuses that instance across tests
+		// (default SingleInstance lifecycle), so a test that flips IsNetCore would otherwise decide the
+		// runtime for every test declared after it - passing or failing by declaration order rather than by
+		// the code under test.
+		EnvironmentSettings.IsNetCore = false;
 		_packageInstaller.ClearReceivedCalls();
 		_fileSystem.ClearReceivedCalls();
 		_applicationClient.ClearReceivedCalls();
@@ -511,7 +516,18 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(1, because: "an exception during installation should make the command fail");
-		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("upload rejected")));
+		// Assert the ORDER, which is the whole point of the name: the readable message carries the HTTP
+		// status / WebException reason, and a stack printed first buries it. Comparing the recorded call
+		// indexes is the only way to see it - a Received() check passes for either order.
+		System.Collections.Generic.List<string> errors = _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => call.GetArguments()[0] as string)
+			.ToList();
+		errors.Should().HaveCountGreaterThanOrEqualTo(1,
+			because: "a failed install must report something");
+		errors[0].Should().Contain("upload rejected",
+			because: "the readable message must come FIRST; push-pkg loses this information by printing the "
+				+ "bare stack, which is the behaviour this ordering exists to avoid");
 		_applicationClient.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
 			.Should().Be(1,

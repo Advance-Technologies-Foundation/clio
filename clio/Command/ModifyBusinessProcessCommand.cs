@@ -12,8 +12,7 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
-	Hint = "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
-	     + "MCP tool) to install or update " + BundledPackages.ProcessBuilderPackageName + ".")]
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
 	public string ProcessName { get; set; } = string.Empty;

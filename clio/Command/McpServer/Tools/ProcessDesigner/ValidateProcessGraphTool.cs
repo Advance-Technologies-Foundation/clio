@@ -99,8 +99,7 @@ public sealed class ValidateProcessGraphTool {
 
 /// <summary>Request arguments for <c>validate-process-graph</c>.</summary>
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
-	Hint = "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
-	     + "MCP tool) to install or update " + BundledPackages.ProcessBuilderPackageName + ".")]
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed record ValidateProcessGraphArgs(
 	[property:JsonPropertyName("environment-name")]
 	[property:Description("Creatio environment name")]

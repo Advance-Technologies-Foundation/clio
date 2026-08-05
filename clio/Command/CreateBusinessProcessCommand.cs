@@ -12,8 +12,7 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
-	Hint = "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
-	     + "MCP tool) to install or update " + BundledPackages.ProcessBuilderPackageName + ".")]
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
 	public string DescriptorJson { get; set; } = string.Empty;

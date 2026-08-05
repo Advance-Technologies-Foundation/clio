@@ -122,10 +122,15 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 		contract.InputSchema.Required.Should().Equal(["environment-name"],
 			because: "the environment is the tool's only argument and it is mandatory — the package ships inside "
 				+ "clio, so there is nothing else for the caller to supply");
-		contract.PreferredFlow.Tools.Should().Equal(
-			[ToolName, ListUserTasksTool.ListUserTasksToolName],
-			because: "the advertised flow is install-then-confirm, and list-user-tasks is the cheapest proof that "
-				+ "ProcessDesignService answers");
+		contract.PreferredFlow.Tools.Should().Equal([ToolName],
+			because: "the flow must stop at this tool. It used to name list-user-tasks as a confirmation step, "
+				+ "which contradicted the assertion above in this same fixture: that tool is feature-gated and "
+				+ "absent from this very server, so the contract was telling an agent to call something it "
+				+ "could not see. The confirmation is also redundant — the tool verifies its own outcome by "
+				+ "asking the service which build is serving");
+		contract.PreferredFlow.Tools.Should().NotContain(ListUserTasksTool.ListUserTasksToolName,
+			because: "naming a [FeatureToggle]-gated tool in the flow of an ungated one is the drift this pins: "
+				+ "the two halves of this fixture would otherwise assert a contradiction and call it correct");
 		contract.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the contract must name the package it installs so an agent can match it against the refusal "
 				+ "text of the tool that sent it here");

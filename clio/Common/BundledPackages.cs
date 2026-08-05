@@ -83,6 +83,22 @@ public static class BundledPackages {
 	/// </summary>
 	public const string ProcessBuilderArchiveFileName = ProcessBuilderPackageName + ".gz";
 
+	/// <summary>
+	/// The remediation text every process-designer gate puts on its <c>[RequiresPackage]</c> hint.
+	/// </summary>
+	/// <remarks>
+	/// One constant because it was five identical literals, and a rename of the verb would have been an
+	/// invitation to update four of them. It names BOTH surfaces on purpose: the same refusal is read by a
+	/// developer on the CLI and by an agent over MCP, and each needs the name it can actually invoke.
+	/// <para>
+	/// Attribute arguments must be compile-time constants, so this is a <c>const</c> built by concatenation
+	/// rather than an interpolated string.
+	/// </para>
+	/// </remarks>
+	public const string ProcessBuilderInstallHint =
+		"Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
+		+ "MCP tool) to install or update " + ProcessBuilderPackageName + ".";
+
 	#endregion
 
 }

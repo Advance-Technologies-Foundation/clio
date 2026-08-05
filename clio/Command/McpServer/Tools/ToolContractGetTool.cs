@@ -5239,15 +5239,14 @@ internal static class ToolContractCatalog {
 			],
 			Flow(
 				[
-					InstallProcessBuilderTool.InstallProcessBuilderToolName,
-					ListUserTasksTool.ListUserTasksToolName
+					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Install the package, then retry the process-designer tool that reported the missing-or-stale package. list-user-tasks is the cheapest confirmation that the service now answers."),
+				"Install the package, then retry whichever process-designer tool sent you here. The flow deliberately stops at this tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one as the follow-up would point at a tool this server may not expose. This tool verifies the outcome itself - it asks the service which build is serving - so no confirmation call is needed."),
 			[],
 			[],
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
-				"A process-designer tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) reported that the CrtProcessBuilder package is missing or older than required.",
+				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are feature-gated and may be absent from this server's tool list; this one never is, so it stays reachable as the remedy.",
 				"The caller can install a package on the target environment, and has DataService read access to SysPackage so the installed version can be detected.",
 				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
 			]);

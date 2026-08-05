@@ -135,6 +135,22 @@ public sealed class InstallProcessBuilderToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The OPTIONS class must not be feature-gated either: MCP registration keys off the tool type, but the CLI verb keys off the options type, so gating that alone would silently remove the verb while every refusal still named it.")]
+	public void InstallProcessBuilderOptions_Should_Not_Be_FeatureGated() {
+		// Arrange & Act
+		object[] toggles = typeof(InstallProcessBuilderOptions)
+			.GetCustomAttributes(typeof(FeatureToggleAttribute), inherit: true);
+
+		// Assert
+		toggles.Should().BeEmpty(
+			because: "a gated options type is filtered out of the verb parse array, so 'clio "
+				+ "install-process-builder' would report an unknown verb - while the five [RequiresPackage] "
+				+ "hints keep telling users to run it. The tool-type test below does not cover this: the two "
+				+ "surfaces read different attributes");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool must not be feature-gated, or the remediation the process-designer tools point at would be unreachable exactly when it is needed.")]
 	public void InstallProcessBuilderTool_Should_Not_Be_FeatureGated() {
 		// Arrange & Act

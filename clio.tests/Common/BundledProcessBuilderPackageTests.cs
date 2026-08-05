@@ -67,7 +67,7 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"BD5ECFD00C9758805A7A8ABD8F84C8F3DEC0BFB07002C5EF95088FE5E315B120";
+		"8A5945D5DD0B75BD3F7E19A15CE9348CF1EFFA007BCF9D789A2101F9C7A4C633";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -126,6 +126,31 @@ public class BundledProcessBuilderPackageTests {
 	#region Methods: Public
 
 	[Test]
+	[Description("The shipped project must gate its InternalsVisibleTo attributes on a property that only local builds define, because the platform does not strip them and every customer environment would otherwise compile this package with friend assemblies.")]
+	public void BundledArchive_ShouldNotGrantFriendAccessOnTheCustomerBuild() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		int unconditionalVisibilityGroups = CountOccurrences(archive,
+			"<ItemGroup Label=\"Add visibility for test project\">");
+
+		// Assert
+		unconditionalVisibilityGroups.Should().Be(0,
+			because: "an UNCONDITIONED visibility group ships the friend assemblies into the assembly the "
+				+ "TARGET compiles. Established on a stand rather than assumed: the platform rewrites the "
+				+ "package csproj on install but does NOT drop these entries, and the DLL the stand produced "
+				+ "contained both friend names. Creatio compiles configuration packages into separate UNSIGNED "
+				+ "assemblies, where InternalsVisibleTo matches on simple name, and 'DynamicProxyGenAssembly2' "
+				+ "has no dot — i.e. it is a usable Creatio package name");
+		archive.Should().Contain("CrtProcessBuilderIncludeTestVisibility",
+			because: "the attributes must survive for LOCAL builds (the package's own tests reach internals), "
+				+ "so the fix is a condition on a property defined outside the package directory — not "
+				+ "deleting them. Losing the property reference would mean they were deleted instead, which "
+				+ "breaks the package repository's test project");
+	}
+
+	[Test]
 	[Description("The bundled archive's SHA-256 must equal the pinned value, so replacing the committed binary cannot pass review as an opaque byte-count change.")]
 	public void BundledArchive_ShouldMatchThePinnedHash() {
 		// Arrange
@@ -176,9 +201,13 @@ public class BundledProcessBuilderPackageTests {
 		exists.Should().BeTrue(
 			because: $"install-process-builder resolves the archive as "
 				+ $"<ExecutingDirectory>/{BundledPackages.ProcessBuilderPackageName}/"
-				+ $"{BundledPackages.ProcessBuilderArchiveFileName}; if the csproj Content entry or the "
-				+ $"committed file goes missing, nothing fails until a user runs the command against a "
-				+ $"real environment. Looked in '{BundledArchivePath}'");
+				+ $"{BundledPackages.ProcessBuilderArchiveFileName}; if the committed file goes missing, "
+				+ $"nothing fails until a user runs the command against a real environment. Looked in "
+				+ $"'{BundledArchivePath}'. NOTE the limit of this check: it reads the BUILD OUTPUT, so it "
+				+ $"cannot see a packaging regression. The csproj entry carries Pack=\"false\" and a separate "
+				+ $"None/Pack pair puts the file under tools/<tfm>/any/ in the nupkg; break that and every "
+				+ $"test here still passes while the shipped global tool cannot find the archive. Covering it "
+				+ $"needs a check over the produced .nupkg or publish output");
 	}
 
 	[Test]

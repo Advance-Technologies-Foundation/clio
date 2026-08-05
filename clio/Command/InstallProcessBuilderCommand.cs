@@ -133,6 +133,15 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 
 	#region Methods: Private
 
+	/// <summary>
+	/// Builds the settings the install runs under.
+	/// </summary>
+	/// <remarks>
+	/// Duplicated deliberately from <see cref="InstallGateCommand"/> rather than shared: the two commands are
+	/// the only bundled-package installers and they agree on this today, but folding them into a common helper
+	/// would tie the process-builder install to any future change cliogate needs. If the developer-mode/unlock
+	/// interaction changes, BOTH copies need looking at - the reason for the flag is documented here.
+	/// </remarks>
 	private EnvironmentSettings CreateInstallEnvironmentSettings() {
 		EnvironmentSettings installEnvironmentSettings = new();
 		installEnvironmentSettings.Merge(_environmentSettings);
@@ -142,6 +151,34 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		installEnvironmentSettings.DeveloperModeEnabled = false;
 		return installEnvironmentSettings;
 	}
+
+	/// <summary>
+	/// Per-request budget for a service probe, in milliseconds.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="IApplicationClient.ExecutePostRequest"/> defaults to <see cref="Timeout.Infinite"/>, which
+	/// is wrong for the one call that decides this command's exit code: an instance that accepts the
+	/// connection right after its restart but stalls behind the configuration-build lock would hang the CLI
+	/// with no output and no way out but Ctrl+C. Every probe in <see cref="IServerReadinessWaiter"/> is
+	/// bounded for exactly this reason; the final probe must not be the only unbounded call in the flow. A
+	/// serving GetVersion answers in well under a second.
+	/// </remarks>
+	private const int ProbeTimeoutMs = 15_000;
+
+	/// <summary>
+	/// Attempts for the POST-install probe, retried because the readiness gate is weaker than the question.
+	/// </summary>
+	/// <remarks>
+	/// <c>WaitForReady</c> proves the host answers <c>/api/HealthCheck/Ping</c>, which a still-draining
+	/// worker or one whose configuration workspace has not finished loading can also do. A single probe
+	/// therefore risks reporting "the environment did not compile the package" about an environment that
+	/// answers correctly a few seconds later. The pre-install probe is NOT retried: an unanswerable route
+	/// there simply means "install", so waiting on it would only slow the ordinary path.
+	/// </remarks>
+	private const int PostInstallProbeAttempts = 3;
+
+	/// <summary>Delay between post-install probe attempts, in seconds.</summary>
+	private const int PostInstallProbeDelaySec = 5;
 
 	private string GetPackagePath() => Path.Combine(
 		_workingDirectoriesProvider.ExecutingDirectory,
@@ -168,7 +205,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </para>
 	/// </remarks>
 	private bool IsAlreadyRunningBundledBuild() =>
-		DoesServiceReportCurrentBuild(reportOlderAsError: false, out _) == true;
+		DoesServiceReportCurrentBuild(reportOlderAsError: false, maxAttempts: 1, out _) == true;
 
 	/// <summary>
 	/// Proves that the <c>ProcessDesignService</c> build now serving is the one just shipped.
@@ -197,9 +234,9 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </para>
 	/// </remarks>
 	private bool DoesServiceAnswer(out string diagnosis) {
-		diagnosis = null;
-		bool? current = DoesServiceReportCurrentBuild(reportOlderAsError: true, out diagnosis);
-		return current ?? DoesListUserTasksAnswer();
+		bool? current = DoesServiceReportCurrentBuild(
+			reportOlderAsError: true, maxAttempts: PostInstallProbeAttempts, out diagnosis);
+		return current ?? DoesListUserTasksAnswer(out diagnosis);
 	}
 
 	/// <summary>
@@ -211,11 +248,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// must fall back.
 	/// </returns>
 	/// <remarks>
-	/// This is the only check that can catch a failed UPGRADE. Installing writes the archive's descriptor
-	/// version into <c>SysPackage</c> when the archive is ACCEPTED, and the platform keeps serving the
-	/// assembly it last built successfully — so after an upgrade whose configuration build failed, the
-	/// database reports the new version while the old code runs. No database read can see that: both sides of
-	/// any such comparison come from the descriptor. <c>GetVersion</c> returns a constant compiled INTO the
+	/// This is the only check that can catch a failed UPGRADE. The platform records a descriptor version when
+	/// it ACCEPTS an archive and keeps serving the assembly it last built successfully, so after an upgrade
+	/// whose configuration build failed the database and the running code disagree. No database read can see
+	/// it: both sides of any such comparison come from the descriptor — and worse, the record is not even
+	/// refreshed on a re-install (Creatio matches by <c>UId</c>), so it is inert rather than merely lagging. <c>GetVersion</c> returns a constant compiled INTO the
 	/// assembly, which only a build that actually compiled can carry.
 	/// <para>
 	/// Returns <see langword="null"/> rather than <c>false</c> for a missing route, and that distinction is
@@ -225,13 +262,15 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// exactly the environments that need upgrading.
 	/// </para>
 	/// </remarks>
-	private bool? DoesServiceReportCurrentBuild(bool reportOlderAsError, out string diagnosis) {
+	private bool? DoesServiceReportCurrentBuild(bool reportOlderAsError, int maxAttempts,
+		out string diagnosis) {
 		diagnosis = null;
 		string reported;
 		try {
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetProcessBuilderVersion);
 			// ProcessDesignService uses BodyStyle=Wrapped: a parameterless operation accepts an empty object.
-			string response = _applicationClient.ExecutePostRequest(url, "{}");
+			string response = _applicationClient.ExecutePostRequest(
+				url, "{}", ProbeTimeoutMs, maxAttempts, PostInstallProbeDelaySec);
 			using JsonDocument document = JsonDocument.Parse(response);
 			if (!document.RootElement.TryGetProperty("GetVersionResult", out JsonElement result)
 				|| !result.TryGetProperty("version", out JsonElement version)
@@ -265,10 +304,10 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		diagnosis =
 			$"{BundledPackages.ProcessBuilderPackageName} {BundledPackages.ProcessBuilderBuildVersion} was " +
 			$"installed, but ProcessDesignService is still serving {reported}. The environment accepted the " +
-			"package and recorded the new version, then kept running the assembly from its last successful " +
-			"configuration build — so the build of the new sources FAILED. Check the environment's " +
-			"configuration build log; the package list will show the new version regardless, which is why " +
-			"this check exists.";
+			"package and then kept running the assembly from its last successful configuration build — so " +
+			"the build of the new sources FAILED. Check the environment's configuration build log. " +
+			"The package list cannot show this: it reports the version recorded at the FIRST install, which " +
+			"Creatio does not update on a re-install, so it looks the same either way.";
 		return false;
 	}
 
@@ -289,14 +328,37 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// correctly reported as "not answering", whereas a substring search over it could accidentally match.
 	/// </para>
 	/// </remarks>
-	private bool DoesListUserTasksAnswer() {
+	private bool DoesListUserTasksAnswer(out string diagnosis) {
+		diagnosis = null;
 		try {
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks);
-			string response = _applicationClient.ExecutePostRequest(url, "{}");
+			string response = _applicationClient.ExecutePostRequest(
+				url, "{}", ProbeTimeoutMs, PostInstallProbeAttempts, PostInstallProbeDelaySec);
 			using JsonDocument document = JsonDocument.Parse(response);
-			return document.RootElement.TryGetProperty("ListUserTasksResult", out JsonElement result)
-				&& result.TryGetProperty("success", out JsonElement success)
-				&& success.ValueKind == JsonValueKind.True;
+			if (!document.RootElement.TryGetProperty("ListUserTasksResult", out JsonElement result)) {
+				return false;
+			}
+			if (result.TryGetProperty("success", out JsonElement success)
+				&& success.ValueKind == JsonValueKind.True) {
+				return true;
+			}
+			// A PARSEABLE envelope saying success:false proves the assembly exists and is serving — the
+			// failure is INSIDE it, and errorMessage is the only field that says what. Discarding it and
+			// letting the caller print "the environment did not compile the package" sends the reader to a
+			// build log that is clean. The likeliest cause is authorization: the package returns the
+			// process-design guard's rejection this way, and installing a package does not grant
+			// CanManageProcessDesign.
+			if (result.TryGetProperty("errorMessage", out JsonElement message)
+				&& message.ValueKind == JsonValueKind.String
+				&& !string.IsNullOrWhiteSpace(message.GetString())) {
+				diagnosis =
+					$"{BundledPackages.ProcessBuilderPackageName} was installed and ProcessDesignService is " +
+					$"responding, but it rejected the check: {message.GetString()}. The package compiled — " +
+					"this is not a build failure. If the message is about permissions, note that ListUserTasks " +
+					"requires the CanManageProcessDesign operation and a General (non-portal) user, which " +
+					"installing a package does not grant.";
+			}
+			return false;
 		} catch (Exception e) {
 			_logger.WriteInfo($"ProcessDesignService did not answer: {e.GetReadableMessageException()}");
 			return false;
@@ -371,9 +433,14 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		try {
 			string packagePath = GetPackagePath();
 			if (!_fileSystem.ExistsFile(packagePath)) {
+				// Says "do not retry" explicitly. Every failure branch here returns 1, which the MCP contract
+				// documents as EXPECTED / caller-actionable — and an agent that reads it that way will retry
+				// forever on a broken distribution. The exit code is left alone (changing it is a contract
+				// change for every script that calls this verb); the message carries the distinction.
 				_logger.WriteError(
 					$"The bundled {BundledPackages.ProcessBuilderPackageName} package was not found at " +
-					$"'{packagePath}'. This clio installation does not carry the package archive.");
+					$"'{packagePath}'. This clio installation does not carry the package archive, so retrying " +
+					"will not help — reinstall or update clio itself.");
 				return 1;
 			}
 			if (!options.Force && IsAlreadyRunningBundledBuild()) {
