@@ -257,7 +257,54 @@ Cost is minutes of tooling, not risk. (Recorded here because the cost/benefit wa
 
 ---
 
-## 3. Decision: one package and one `.gz`, not a `_netcore` twin
+## 3. DECISION (2026-08-05): ship SOURCE ONLY, compiled by the target
+
+**Chosen delivery shape:** the archive carries `descriptor.json`, the package `.csproj` + build props,
+`Files/Libs/*.dll` (third-party deps), all `Files/src/**` sources, and **one empty Source Code schema**
+(`CrtProcessBuilderCompileMarker`) whose presence puts the package into the target's configuration
+build. **No compiled assembly, no `Files/Bin`.** Descriptor stays `Type: 1` with
+`ProjectPath = Files/CrtProcessBuilder.csproj`.
+
+Validated on both runtimes (§8.1 and P1.11): .NET Framework 4.8 and .NET 8.0.29, through both the
+Application Hub and `push-pkg`, verified by the service answering with the full 23-task catalog.
+
+**What this decision buys**
+
+- One artifact for every runtime — the platform regenerates the csproj and picks the target framework
+  per host (`NetStandardCompatibilityMode = True`, `TargetFramework [net472]` observed on .NET Framework).
+- **No build step in the release path at all** — no `dev-nf`/`dev-n8`, no deployed Creatio, no
+  `.build-props`, no `CoreLibPath`. P0.0 is cancelled.
+- Version decoupling from the core: the code compiles against the target's own `Terrasoft.*`.
+- The compiled path's worst failure — shipping the wrong framework flavour, which installs, satisfies
+  the name-based gate and then 404s on every call — becomes structurally impossible.
+- No restart needed; artifact 44 % smaller (187 KB vs 336 KB).
+
+**What it costs — accept consciously**
+
+- Recovery from a failed compile is an **explicit** action (`RestoreFromBackup` / `restore-configuration`),
+  not a transactional rollback, so an unattended install has nobody to press it.
+- The compile cost is the target's, not ours (16–35 s observed, 74 s on a slow stand) and it **recurs on
+  every subsequent configuration build** on that environment.
+- We no longer control the compile flags — the customer's analyzer settings or a colliding type name in
+  another package can now break our install where a prebuilt DLL was immune.
+- We can never test the bits that actually run; testing shifts to representative platform versions.
+- **The marker schema becomes load-bearing and fails silently if lost** — without it the package
+  installs, never compiles, and the gate reports it present while every call 404s. This re-opens the
+  exact failure mode the decision closes, through another door.
+
+**Three mitigations that are part of the decision, not optional extras**
+
+1. A guard test asserting the marker schema is inside the committed archive (P2.4d).
+2. A comment in the schema itself explaining why an empty class ships forever.
+3. **`install-process-builder` verifies the OUTCOME, not the install call** — after installing it calls
+   `ListUserTasks` and fails if the service does not answer (P3.6). This is the single most valuable
+   mitigation: it makes "installed but never compiled" loud on the one path that has no restore button.
+
+**Explicitly not doing:** converting the 69 sources into Source Code schemas. The current shape —
+plain files compiled through the package's own csproj — is what was validated; moving them would be a
+large change with no benefit.
+
+### 3.1 Superseded: one package and one `.gz`, not a `_netcore` twin
 
 `cliogate` ships **two** packages — `cliogate.gz` (descriptor `Name`/AssemblyName `cliogate`) and
 `cliogate_netcore.gz` (`cliogate_netcore`) — and `build.ps1` string-flips `descriptor.json` between
