@@ -107,17 +107,17 @@
         "gap": { "rowGap": "medium", "columnGap": "medium" },
         "alignItems": "stretch",
         "padding": { "bottom": "medium" }
-      }
-    },
-    "areaContainer": {
-      "namePrefix": "GridContainer_",
-      "values": {
-        "type": "crt.GridContainer",
-        "padding": { "top": "medium", "bottom": "medium", "right": "medium", "left": "medium" },
-        "color": "primary",
-        "borderRadius": "medium",
-        "gap": { "rowGap": "medium", "columnGap": "medium" },
-        "alignItems": "stretch"
+      },
+      "areaContainer": {
+        "namePrefix": "GridContainer_",
+        "values": {
+          "type": "crt.GridContainer",
+          "padding": { "top": "medium", "bottom": "medium", "right": "medium", "left": "medium" },
+          "color": "primary",
+          "borderRadius": "medium",
+          "gap": { "rowGap": "medium", "columnGap": "medium" },
+          "alignItems": "stretch"
+        }
       }
     }
   },

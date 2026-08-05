@@ -100,20 +100,24 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid + Area card) for converter-created tabs.")]
+	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		rules.TabAreaLayers.Should().NotBeNull();
 		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer",
 			because: "which element gets the layers is data, not a hardcoded type in the engine");
-		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
-		rules.TabAreaLayers.MainTabContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
-		rules.TabAreaLayers.MainTabContainer.Values["padding"].GetProperty("bottom").GetString().Should().Be("medium");
-		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
-		rules.TabAreaLayers.AreaContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
-		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
-		rules.TabAreaLayers.AreaContainer.Values["borderRadius"].GetString().Should().Be("medium");
+		SynthesizedContainerRule main = rules.TabAreaLayers.MainTabContainer;
+		main.NamePrefix.Should().Be("MainTabContainer_");
+		main.Values["type"].GetString().Should().Be("crt.GridContainer");
+		main.Values["padding"].GetProperty("bottom").GetString().Should().Be("medium");
+		SynthesizedContainerRule area = main.AreaContainer;
+		area.Should().NotBeNull(because: "the Area card rule nests inside the tab-body rule, mirroring the DOM");
+		area.NamePrefix.Should().Be("GridContainer_");
+		area.Values["type"].GetString().Should().Be("crt.GridContainer");
+		area.Values["color"].GetString().Should().Be("primary");
+		area.Values["borderRadius"].GetString().Should().Be("medium");
+		area.AreaContainer.Should().BeNull(because: "the Area card is the innermost container — it nests nothing");
 	}
 
 	[Test]
@@ -127,7 +131,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ParseStream parses the tabAreaLayers group into the typed rule (prefixes + verbatim values).")]
+	[Description("ParseStream parses the tabAreaLayers group into the typed rule (nested tab-body → Area chain, prefixes + verbatim values).")]
 	public void ParseStream_WithTabAreaLayers_ParsesTypedRule() {
 		const string json = """
 			{
@@ -135,8 +139,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			  "tabAreaLayers": {
 			    "note": "n",
 			    "tabComponentType": "usr.CustomTab",
-			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer", "alignItems": "stretch" } },
-			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer", "color": "primary" } }
+			    "mainTabContainer": {
+			      "namePrefix": "MainTabContainer_",
+			      "values": { "type": "crt.GridContainer", "alignItems": "stretch" },
+			      "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer", "color": "primary" } }
+			    }
 			  }
 			}
 			""";
@@ -148,8 +155,8 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.TabAreaLayers.TabComponentType.Should().Be("usr.CustomTab");
 		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
 		rules.TabAreaLayers.MainTabContainer.Values["alignItems"].GetString().Should().Be("stretch");
-		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
-		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
+		rules.TabAreaLayers.MainTabContainer.AreaContainer.NamePrefix.Should().Be("GridContainer_");
+		rules.TabAreaLayers.MainTabContainer.AreaContainer.Values["color"].GetString().Should().Be("primary");
 	}
 
 	[Test]
@@ -159,8 +166,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			{
 			  "version": "8.3.3",
 			  "tabAreaLayers": {
-			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer" } },
-			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
+			    "mainTabContainer": {
+			      "namePrefix": "MainTabContainer_",
+			      "values": { "type": "crt.GridContainer" },
+			      "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
+			    }
 			  }
 			}
 			""";

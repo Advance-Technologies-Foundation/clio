@@ -177,7 +177,9 @@ public sealed class ComponentMappingRule {
 
 /// <summary>
 /// Rule for the two containers synthesized inside every converter-created tab: the
-/// tab-body grid (layer 2) and the Area card inside it. Mirrors the mobile designer's own
+/// tab-body grid (layer 2) nesting the Area card inside it — the JSON nesting mirrors the
+/// resulting DOM (<see cref="MainTabContainer"/> holds its <see cref="SynthesizedContainerRule.AreaContainer"/>).
+/// Mirrors the mobile designer's own
 /// <c>TabItemFactory.getMobileTabContainerConfig()</c> output, kept as DATA so the props follow
 /// the platform without a code change. These values apply only to the synthesized nodes, never to
 /// elements converted from the web page.
@@ -195,13 +197,12 @@ public sealed class TabAreaLayersRule {
 	[JsonPropertyName("tabComponentType")]
 	public string TabComponentType { get; init; } = "crt.TabContainer";
 
-	/// <summary>The synthesized tab-body grid (layer 2, the tab's direct child).</summary>
+	/// <summary>
+	/// The synthesized tab-body grid (layer 2, the tab's direct child); carries the nested
+	/// <see cref="SynthesizedContainerRule.AreaContainer"/> that receives the tab's content.
+	/// </summary>
 	[JsonPropertyName("mainTabContainer")]
 	public SynthesizedContainerRule MainTabContainer { get; init; }
-
-	/// <summary>The synthesized Area card (child of the tab-body grid; receives the tab's content).</summary>
-	[JsonPropertyName("areaContainer")]
-	public SynthesizedContainerRule AreaContainer { get; init; }
 }
 
 /// <summary>
@@ -216,6 +217,13 @@ public sealed class SynthesizedContainerRule {
 	/// <summary>Property name → value the synthesized element carries as its mobile values.</summary>
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	/// <summary>
+	/// The synthesized Area card nested inside this container (receives the tab's content); the nesting
+	/// mirrors the resulting DOM. Null on the innermost container — the Area card carries no nested layer.
+	/// </summary>
+	[JsonPropertyName("areaContainer")]
+	public SynthesizedContainerRule AreaContainer { get; init; }
 }
 
 /// <summary>

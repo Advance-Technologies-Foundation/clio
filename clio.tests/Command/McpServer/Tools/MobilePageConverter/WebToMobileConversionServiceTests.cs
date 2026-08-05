@@ -2094,12 +2094,12 @@ public sealed class WebToMobileConversionServiceTests {
 			MainTabContainer = new SynthesizedContainerRule {
 				NamePrefix = "MainTabContainer_",
 				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-					"""{ "type": "crt.GridContainer", "alignItems": "stretch", "padding": { "bottom": "medium" } }""")
-			},
-			AreaContainer = new SynthesizedContainerRule {
-				NamePrefix = "GridContainer_",
-				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-					"""{ "type": "crt.GridContainer", "color": "primary", "borderRadius": "medium" }""")
+					"""{ "type": "crt.GridContainer", "alignItems": "stretch", "padding": { "bottom": "medium" } }"""),
+				AreaContainer = new SynthesizedContainerRule {
+					NamePrefix = "GridContainer_",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "type": "crt.GridContainer", "color": "primary", "borderRadius": "medium" }""")
+				}
 			}
 		}
 	};
@@ -2447,6 +2447,36 @@ public sealed class WebToMobileConversionServiceTests {
 
 		guide.TabAreaLayers.Should().BeNull();
 		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+	}
+
+	[Test]
+	[Description("A tab-body rule with NO nested areaContainer cannot produce the Area card that receives the content, so the pass switches itself off instead of synthesizing a tab body with nowhere to put the tab's children.")]
+	public void Analyze_ShouldSkipTabAreaLayersPass_WhenTabBodyRuleNestsNoAreaContainer() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules complete = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = complete.Components,
+			TabAreaLayers = new TabAreaLayersRule {
+				TabComponentType = complete.TabAreaLayers.TabComponentType,
+				MainTabContainer = new SynthesizedContainerRule {
+					NamePrefix = complete.TabAreaLayers.MainTabContainer.NamePrefix,
+					Values = complete.TabAreaLayers.MainTabContainer.Values
+				}
+			}
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		guide.TabAreaLayers.Should().BeNull(
+			because: "without the nested Area card rule there is no content receiver, so no layer may be synthesized");
+		guide.ElementMap.Should().NotContain(e => e.WebName == null,
+			because: "a switched-off pass must synthesize nothing at all, not a half-built body");
+		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab",
+			because: "with the pass off the tab's content stays directly in the tab, as before the feature");
 	}
 
 	[Test]

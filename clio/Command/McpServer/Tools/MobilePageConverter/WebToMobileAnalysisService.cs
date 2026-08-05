@@ -2547,8 +2547,11 @@ public static class WebToMobileAnalysisService {
 	private static List<TabAreaLayerGroup> BuildTabAreaLayers(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules, string sourcePage) {
 		TabAreaLayersRule rule = rules?.TabAreaLayers;
+		// The Area card rule is nested inside the tab-body rule — the rules JSON mirrors the DOM it produces.
+		SynthesizedContainerRule mainRule = rule?.MainTabContainer;
+		SynthesizedContainerRule areaRule = mainRule?.AreaContainer;
 		if (string.IsNullOrWhiteSpace(rule?.TabComponentType)
-			|| !IsUsableLayer(rule.MainTabContainer) || !IsUsableLayer(rule.AreaContainer)) {
+			|| !IsUsableLayer(mainRule) || !IsUsableLayer(areaRule)) {
 			return [];
 		}
 		// Every name already spoken for: the source element names and the mobile names the template owns
@@ -2586,16 +2589,16 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			string suffix = StableSuffix(sourcePage, tab.MobileName,
-				candidate => taken.Contains(rule.MainTabContainer.NamePrefix + candidate)
-					|| taken.Contains(rule.AreaContainer.NamePrefix + candidate));
-			string mainName = rule.MainTabContainer.NamePrefix + suffix;
+				candidate => taken.Contains(mainRule.NamePrefix + candidate)
+					|| taken.Contains(areaRule.NamePrefix + candidate));
+			string mainName = mainRule.NamePrefix + suffix;
 			taken.Add(mainName);
 
 			// Freshly resolved index: earlier tabs have already shifted this one by their own inserts.
 			// insertAt walks forward so every synthesized layer lands right after the tab's entry, parent
 			// always before child (layer 2 → Area; the tab's children sit later in the map anyway).
 			int insertAt = elementMap.IndexOf(tab);
-			elementMap.Insert(++insertAt, SynthesizedLayerEntry(rule.MainTabContainer, mainName, tab.MobileName,
+			elementMap.Insert(++insertAt, SynthesizedLayerEntry(mainRule, mainName, tab.MobileName,
 				$"synthesized by the converter (no web counterpart) — the tab body of the converted tab "
 				+ $"'{tab.MobileName}'; it holds the Area card that follows"));
 
@@ -2604,9 +2607,9 @@ public static class WebToMobileAnalysisService {
 			// nothing must not be created — the same AC#5 construction, one level down).
 			string areaName = null;
 			if (content.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
-				areaName = rule.AreaContainer.NamePrefix + suffix;
+				areaName = areaRule.NamePrefix + suffix;
 				taken.Add(areaName);
-				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
+				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(areaRule, areaName, mainName,
 					$"synthesized by the converter (no web counterpart) — the Area card of the converted tab "
 					+ $"'{tab.MobileName}'; on mobile a tab's content lives in an Area, not in the tab body itself"));
 			}
