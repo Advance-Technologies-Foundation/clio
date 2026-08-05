@@ -84,7 +84,13 @@ public sealed class DeployLifecycleGuidanceResource {
 		          package tooling (`restore-workspace`, `push-workspace`, `unlock-package`, ...) depend on it. If a
 		          gate-dependent tool fails with "you need to install the cliogate package version ... or higher",
 		          run `install-gate -e <environment>` and retry.
-		       3. `restore-workspace` / `push-workspace` - move packages between the environment and a local workspace.
+		       3. `install-process-builder` - ONLY if this environment will be used for process design. It installs
+		          the bundled CrtProcessBuilder package, which serves ProcessDesignService. Not part of a plain
+		          deployment: run it when a process-designer tool (`create-business-process`,
+		          `modify-business-process`, `describe-business-process`, `list-user-tasks`,
+		          `validate-process-graph`) refuses because the package is missing or older than required. It takes
+		          longer than a normal install (the target compiles the package, ~15-75 s) and needs no restart.
+		       4. `restore-workspace` / `push-workspace` - move packages between the environment and a local workspace.
 
 		       Failure policy
 		       - If `assert-infrastructure` returns fail with no passing database candidates, stop with a blocker and

@@ -642,6 +642,7 @@ internal static class ToolContractCatalog {
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
 			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
+			[InstallProcessBuilderTool.InstallProcessBuilderToolName] = BuildInstallProcessBuilder(),
 			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
@@ -5214,6 +5215,40 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"A gate-dependent tool reported \"you need to install the cliogate package version ... or higher\", or this is a freshly deployed instance that has not yet had cliogate installed."
+			]);
+	}
+
+	private static ToolContractDefinition BuildInstallProcessBuilder() {
+		return new ToolContractDefinition(
+			InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			"Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio environment, making ProcessDesignService reachable there. The package ships as source and the TARGET compiles it during installation, so the call takes roughly 15-75 seconds and needs no application restart. The tool verifies the outcome rather than the install call: it queries ListUserTasks afterwards and fails if the service does not answer, so \"installed but never compiled\" is reported instead of looking like success. Re-running against an already-current environment does nothing.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install the process-builder package after a process-designer tool refused",
+					new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+			],
+			Flow(
+				[
+					InstallProcessBuilderTool.InstallProcessBuilderToolName,
+					ListUserTasksTool.ListUserTasksToolName
+				],
+				"Install the package, then retry the process-designer tool that reported the missing-or-stale package. list-user-tasks is the cheapest confirmation that the service now answers."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app).",
+				"A process-designer tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) reported that the CrtProcessBuilder package is missing or older than required.",
+				"The caller has CanManageSolution on the target environment, and DataService read access to SysPackage so the installed version can be detected."
 			]);
 	}
 

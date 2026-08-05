@@ -30,6 +30,11 @@ public sealed class ProcessModelingGuidanceResource {
 			clio MCP process-modeling guide — design Creatio business processes (BPMN)
 
 			== How clio builds processes (read first) ==
+			- PREREQUISITE: the target environment must carry the CrtProcessBuilder package, which serves
+			  ProcessDesignService. If a tool below refuses because it is missing or older than required, run
+			  `install-process-builder -e <environment>` and retry the original call — that is the whole remedy;
+			  do not work around it. The package ships inside clio, so nothing is downloaded, but the target
+			  compiles it during installation (~15-75 s) and the install verifies the service answers afterwards.
 			- clio makes no LLM call. You own the intent->BPMN translation: decide which elements the process
 			  needs, their parameters, and how they connect. The server-side ProcessDesignService package owns
 			  metadata serialization — you NEVER hand-author process metadata, filters, or column mappings.

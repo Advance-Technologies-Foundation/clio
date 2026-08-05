@@ -613,6 +613,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
+		services.AddTransient<InstallProcessBuilderTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
