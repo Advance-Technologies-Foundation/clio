@@ -489,10 +489,12 @@ namespace Clio.Command {
 				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
 			} catch (Exception ex) {
 				hierarchy = null;
-				response = new PageUpdateResponse { Success = false, Error = $"Failed to load hierarchy for '{schemaName}': {ex.Message}" };
+				response = new PageUpdateResponse { Success = false, Error = PageHierarchyRecoveryHint.Append($"Failed to load hierarchy for '{schemaName}': {ex.Message}") };
 				return false;
 			}
 			if (hierarchy != null && hierarchy.Count > 0) { response = null; return true; }
+			// F1 (ENG-94418 review): an empty hierarchy is not a phantom-cache signal (it has non-phantom
+			// causes), so it does not get the recovery hint — only the empty-IN() SqlException does.
 			response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' hierarchy is empty" };
 			return false;
 		}
