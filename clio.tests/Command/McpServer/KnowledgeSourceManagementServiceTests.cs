@@ -66,7 +66,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 				1,
 				null));
 		_fileSystem = TestFileSystem.MockFileSystem();
-		_keyDirectory = Path.Combine(Path.GetTempPath(), $"clio-source-trust-{Guid.NewGuid():N}");
+		_keyDirectory = Path.Combine(KnowledgeTrustTestPaths.ResolvedTempRoot, $"clio-source-trust-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(_keyDirectory);
 		_publicKeyPath = Path.Combine(_keyDirectory, "publisher-public.pem");
 		using (ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256)) {

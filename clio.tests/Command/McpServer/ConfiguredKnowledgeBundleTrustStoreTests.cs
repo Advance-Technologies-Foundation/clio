@@ -23,7 +23,7 @@ public sealed class ConfiguredKnowledgeBundleTrustStoreTests {
 
 	[SetUp]
 	public void SetUp() {
-		_directory = Path.Combine(Path.GetTempPath(), $"clio-knowledge-trust-{Guid.NewGuid():N}");
+		_directory = Path.Combine(KnowledgeTrustTestPaths.ResolvedTempRoot, $"clio-knowledge-trust-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(_directory);
 		_publicKeyPath = Path.Combine(_directory, "publisher-public.pem");
 		using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
