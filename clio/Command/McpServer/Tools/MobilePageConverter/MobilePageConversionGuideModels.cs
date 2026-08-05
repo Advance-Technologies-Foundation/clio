@@ -510,7 +510,8 @@ public sealed class MobilePageConversionGuide {
 	/// the converted <c>config</c>, so the widget's own data/aggregation subtree survives untouched. Like
 	/// spacing this is a SILENT normalization, NOT a gate decision: report it as one aggregated line in the
 	/// plan and the final report; never ask whether to apply it and never restore the web values. Null when
-	/// the page carries no metric.
+	/// no inserted metric was normalized — which also covers a metric that was dropped rather than
+	/// inserted, and a rules file carrying no metric rule.
 	/// </summary>
 	[JsonPropertyName("metricStyleNormalization")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -821,8 +822,9 @@ public sealed class MetricStyleNormalizationEntry {
 	public string Type { get; init; }
 
 	/// <summary>
-	/// The top-level property names stamped onto the metric's mobileValues (e.g. ["config"]). The stamp is
-	/// a merge into that object, so the reported name is the merged root rather than each nested leaf.
+	/// The dotted paths of the properties stamped onto the metric's mobileValues (e.g.
+	/// <c>["config.text.fontSizeMode", "config.layout.border.hidden"]</c>). Leaves, not the merged root:
+	/// the root alone would under-report which properties the rules file actually touched.
 	/// </summary>
 	[JsonPropertyName("properties")]
 	public IReadOnlyList<string> Properties { get; init; } = [];

@@ -94,7 +94,8 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    config.title survive untouched — never rebuild config from the rule values alone. The theme is
 			    left at its default. SILENT — never a gate question: state it in the plan and the final report as
 			    ONE aggregated line ("style of N metrics normalized to extra-small with hidden border; web values
-			    ignored"). Never restore the web text size or border. Null when the page carries no metric.
+			    ignored"). Never restore the web text size or border. Null when no inserted metric was normalized
+			    (a dropped metric does not count as one).
 			  - resourceStrings — every localized string the converted body references (top-level captions AND
 			    nested tokens like config.title / text.template), keyed by resource name and resolved to its
 			    en-US text. Register this whole map via update-page `resources` so every #ResourceString token renders.

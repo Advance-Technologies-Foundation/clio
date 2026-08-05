@@ -228,15 +228,26 @@ public sealed class InsertValueOverrideRule {
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
-	/// <summary>
-	/// Property name → value stamped onto the inserted element's mobile values. A value that is a JSON
-	/// object is MERGED into the element's existing object key-by-key (recursively), so stamping a
-	/// nested property such as <c>config.text.fontSizeMode</c> keeps the converter's sibling subtrees
-	/// (e.g. <c>config.data.providing</c>) intact. Every other shape — scalar, array, or a type
-	/// mismatch against what the element carries — replaces the existing value outright.
-	/// </summary>
+	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	/// <summary>
+	/// How an object-valued entry in <see cref="Values"/> is stamped. Default (false) REPLACES the
+	/// element's value outright — the long-standing behavior every flat rule relies on, and the reason a
+	/// spacing rule can promise the web value is discarded rather than translated. When true the rule
+	/// value is MERGED key-by-key (recursively) into the element's existing object, which is what a rule
+	/// targeting a nested leaf (e.g. <c>config.text.fontSizeMode</c>) needs so the converter's sibling
+	/// subtrees (e.g. <c>config.data.providing</c>) survive.
+	/// <para>
+	/// A merging rule NEVER fabricates the container: when the element carries no object under the key,
+	/// the entry is skipped rather than stamped, because a partial object assembled from the rule alone
+	/// would be missing the component's required fields (an indicator widget without <c>config.data</c>
+	/// renders nothing) while still looking normalized in the report.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("mergeNestedObjects")]
+	public bool MergeNestedObjects { get; init; }
 
 	/// <summary>
 	/// Which guide normalization section this rule reports into, so one pass can serve several

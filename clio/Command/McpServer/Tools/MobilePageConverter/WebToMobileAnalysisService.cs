@@ -316,8 +316,8 @@ public static class WebToMobileAnalysisService {
 				}
 				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0, metricStyleNormalization.Count > 0),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, metricStyleNormalization.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, emptyRemovedNames.Count > 0, insertValueOverrides),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, insertValueOverrides),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1265,8 +1265,7 @@ public static class WebToMobileAnalysisService {
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false,
-		bool hasMetricStyleNormalization = false) {
+		bool hasEmptyContainerRemovals = false, InsertValueOverrideResult normalization = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1354,7 +1353,7 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
-		if (hasSpacingNormalization) {
+		if (normalization is { Spacing.Count: > 0 }) {
 			constraints.Add(
 				"Spacing is NORMALIZED, not converted: mobile follows the mobile spacing standard, so the web " +
 				"page's container spacing was deliberately IGNORED — every inserted crt.GridContainer / " +
@@ -1364,7 +1363,7 @@ public static class WebToMobileAnalysisService {
 				"and the final report as ONE aggregated line (guide.spacingNormalization lists the containers). " +
 				"Merge twins the mobile template provides keep the template's own spacing untouched.");
 		}
-		if (hasMetricStyleNormalization) {
+		if (normalization is { MetricStyle.Count: > 0 }) {
 			constraints.Add(
 				"Metric style is NORMALIZED, not converted: mobile metrics follow the mobile design standard, so " +
 				"the web widget's text size and border were deliberately IGNORED — every inserted " +
@@ -1386,7 +1385,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false, bool hasMetricStyleNormalization = false) {
+		InsertValueOverrideResult normalization = null) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1402,10 +1401,10 @@ public static class WebToMobileAnalysisService {
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
-		if (hasSpacingNormalization) {
+		if (normalization is { Spacing.Count: > 0 }) {
 			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
 		}
-		if (hasMetricStyleNormalization) {
+		if (normalization is { MetricStyle.Count: > 0 }) {
 			steps.Add("Metric style: every inserted crt.IndicatorWidget already carries extra-small text and a hidden border in its mobileValues — the web widget's text size and border are ignored by design (guide.metricStyleNormalization lists them). Do not restore them; mention the normalization as ONE aggregated line when you present the plan and the final report.");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
@@ -2726,16 +2725,20 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT (spacing
-	/// normalization). For each entry whose <c>mobileType</c> matches an override rule, the listed
-	/// properties are SET on the prebuilt <c>mobileValues</c> — replacing whatever the web page carried
-	/// (any shape: token, px number, CSS string, per-axis object; the web value is discarded, never
-	/// translated) and ADDED when the web page carried none, so the converted body is self-describing
-	/// instead of leaning on the mobile client's defaults. Covers converted and synthesized inserts alike
-	/// (run it after the tab-area pass); merge twins, drops and relocate hints are never touched, and the
-	/// element identity keys (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an
-	/// absent/empty group is a no-op. Returns one advisory entry per normalized element for the guide's
-	/// <c>spacingNormalization</c> report section.
+	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT, stamping each mobile
+	/// standard the rules file declares (container spacing, metric style). For each entry whose
+	/// <c>mobileType</c> matches an override rule, the listed properties are SET on the prebuilt
+	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
+	/// number, CSS string, per-axis object; the web value is discarded, never translated) and ADDED when
+	/// the web page carried none, so the converted body is self-describing instead of leaning on the
+	/// mobile client's defaults. A rule that sets <c>mergeNestedObjects</c> instead merges its object
+	/// value into the element's own, which is what a rule targeting a nested leaf needs — see
+	/// <see cref="StampOverrideValue"/> for both semantics and for why a merging rule never fabricates a
+	/// missing container. Covers converted and synthesized inserts alike (run it after the tab-area pass);
+	/// merge twins, drops and relocate hints are never touched, and the element identity keys
+	/// (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an absent/empty group is a
+	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
+	/// declared via <c>reportGroup</c>.
 	/// </summary>
 	private static InsertValueOverrideResult ApplyInsertValueOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
@@ -2766,8 +2769,7 @@ public static class WebToMobileAnalysisService {
 					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
 					continue; // element identity is never overridable, whatever the rules file says
 				}
-				StampOverrideValue(values, pair.Key, pair.Value);
-				properties.Add(pair.Key);
+				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties);
 			}
 			if (properties.Count > 0) {
 				result.Add(ParseReportGroup(rule.ReportGroup), entry.MobileName, entry.MobileType, properties);
@@ -2777,21 +2779,52 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Stamps one rule value onto <paramref name="values"/> under <paramref name="key"/>. When BOTH the
-	/// existing value and the rule value are JSON objects they are merged key-by-key (recursively), so a
-	/// rule targeting a nested property (e.g. <c>config.text.fontSizeMode</c>) keeps the sibling subtrees
-	/// the converter already produced (e.g. <c>config.data.providing</c>, without which an indicator
-	/// widget renders nothing). Every other combination — the element carries no such key, carries a
-	/// scalar/array, or the shapes disagree — replaces the value outright, which is the pre-existing
-	/// behavior every flat rule relies on.
+	/// Stamps one rule value onto <paramref name="values"/> under <paramref name="key"/> and records what
+	/// was stamped in <paramref name="stamped"/>.
+	/// <para>
+	/// Default (<paramref name="mergeNestedObjects"/> false) REPLACES the value outright and reports the
+	/// top-level key — the long-standing behavior, kept byte-for-byte so a spacing rule still discards the
+	/// web value instead of translating it.
+	/// </para>
+	/// <para>
+	/// When the rule opts into merging, an object rule value is merged key-by-key into the element's
+	/// existing object so the converter's sibling subtrees survive, and the concrete LEAF PATHS are
+	/// reported (e.g. <c>config.text.fontSizeMode</c>) rather than the merged root — the root alone would
+	/// under-report which properties a rules file actually touched. If the element carries no object under
+	/// the key, NOTHING is stamped and nothing is reported: fabricating the container from the rule alone
+	/// would drop a whole-value binding and leave the component missing its required fields while still
+	/// appearing normalized. A non-object rule value still replaces, so a merging rule can carry flat
+	/// entries too.
+	/// </para>
 	/// </summary>
-	private static void StampOverrideValue(JsonObject values, string key, JsonElement ruleValue) {
+	private static void StampOverrideValue(
+		JsonObject values, string key, JsonElement ruleValue, bool mergeNestedObjects, List<string> stamped) {
 		JsonNode incoming = JsonNode.Parse(ruleValue.GetRawText());
-		if (values[key] is JsonObject existing && incoming is JsonObject incomingObject) {
+		if (mergeNestedObjects && incoming is JsonObject incomingObject) {
+			if (values[key] is not JsonObject existing) {
+				return;
+			}
 			MergeJsonObject(existing, incomingObject);
+			CollectLeafPaths(incomingObject, key, stamped);
 			return;
 		}
 		values[key] = incoming;
+		stamped.Add(key);
+	}
+
+	/// <summary>
+	/// Appends the dotted path of every LEAF the merge wrote (<c>config.layout.border.hidden</c>), so the
+	/// guide reports exactly which properties a rules file touched instead of the merged root.
+	/// </summary>
+	private static void CollectLeafPaths(JsonObject source, string prefix, List<string> paths) {
+		foreach (KeyValuePair<string, JsonNode> pair in source) {
+			string path = $"{prefix}.{pair.Key}";
+			if (pair.Value is JsonObject child) {
+				CollectLeafPaths(child, path, paths);
+				continue;
+			}
+			paths.Add(path);
+		}
 	}
 
 	/// <summary>
@@ -2812,12 +2845,15 @@ public static class WebToMobileAnalysisService {
 	/// <summary>
 	/// Maps a rules-file <c>reportGroup</c> to its enum. An absent or unrecognized value falls back to
 	/// <see cref="InsertValueOverrideReportGroup.Spacing"/> so a rules file written before the field
-	/// existed reports exactly where it used to.
+	/// existed reports exactly where it used to. <see cref="Enum.IsDefined{T}"/> guards the numeric form
+	/// <see cref="Enum.TryParse{T}(string, bool, out T)"/> also accepts: the rules file is CDN-served, so
+	/// "7" must not become an undefined enum value that a later switch could route on.
 	/// </summary>
 	private static InsertValueOverrideReportGroup ParseReportGroup(string reportGroup) =>
 		Enum.TryParse(reportGroup, ignoreCase: true, out InsertValueOverrideReportGroup parsed)
-			? parsed
-			: InsertValueOverrideReportGroup.Spacing;
+			&& Enum.IsDefined(parsed)
+				? parsed
+				: InsertValueOverrideReportGroup.Spacing;
 
 	/// <summary>
 	/// Per-report-group output of the shared insert-value override pass. One pass stamps every standard,

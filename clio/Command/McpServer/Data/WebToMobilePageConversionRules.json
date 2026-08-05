@@ -138,6 +138,7 @@
     {
       "type": "crt.IndicatorWidget",
       "reportGroup": "metricStyle",
+      "mergeNestedObjects": true,
       "values": {
         "config": {
           "text": { "fontSizeMode": "extra-small" },

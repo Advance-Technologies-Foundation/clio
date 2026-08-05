@@ -46,6 +46,8 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			.Single(o => o.Type == "crt.IndicatorWidget");
 		metric.ReportGroup.Should().Be("metricStyle",
 			because: "the metric must report through its own guide section, not the spacing one");
+		metric.MergeNestedObjects.Should().BeTrue(
+			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
 		JsonElement config = metric.Values["config"];
 		config.GetProperty("text").GetProperty("fontSizeMode").GetString().Should().Be("extra-small",
 			because: "the registry's fontSizeMode enum spells XS as 'extra-small'");
@@ -64,7 +66,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		// Assert
 		rules.InsertValueOverrides
 			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
-			.Should().HaveCount(2).And.OnlyContain(o => o.ReportGroup == "spacing");
+			.Should().HaveCount(2)
+			.And.OnlyContain(o => o.ReportGroup == "spacing",
+				because: "the containers must keep reporting into the spacing section")
+			.And.OnlyContain(o => !o.MergeNestedObjects,
+				because: "the spacing rules promise the web gap is discarded wholesale, which only replace semantics deliver");
 	}
 
 	[Test]
