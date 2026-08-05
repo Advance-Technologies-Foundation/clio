@@ -58,14 +58,14 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Derives from BaseTool so execution holds the shared MCP lock (the workspace-write mode mutates the singleton IWorkspacePathBuilder.RootPath), and is advertised as build-theme.")]
+	[Description("Derives from BaseTool so execution can be serialized against concurrent build-theme calls (the workspace-write mode mutates the singleton IWorkspacePathBuilder.RootPath), and is advertised as build-theme.")]
 	public void BuildThemeTool_ShouldDeriveFromBaseTool_WhenInspected() {
 		// Arrange
 		Type toolType = typeof(BuildThemeTool);
 
 		// Assert
 		toolType.BaseType.Should().Be(typeof(BaseTool<Clio.Command.Theming.BuildThemeOptions>),
-			because: "BaseTool.ExecuteWithCleanLog serializes the workspace-write mode's mutation of the singleton IWorkspacePathBuilder.RootPath against concurrent MCP tool invocations");
+			because: "BaseTool.ExecuteWithCleanLogUnderToolLock serializes the workspace-write mode's mutation of the singleton IWorkspacePathBuilder.RootPath against concurrent build-theme invocations");
 		toolType.GetCustomAttribute<McpServerToolTypeAttribute>().Should().NotBeNull(
 			because: "the tool must be discoverable as an MCP tool type");
 		MethodInfo method = toolType.GetMethod(nameof(BuildThemeTool.BuildTheme));
@@ -705,7 +705,7 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Probes each requested family exactly once per call: the tool runs the probe before taking the shared execution lock and passes the verdicts into the build, so the build must not re-probe inside the lock.")]
+	[Description("Probes each requested family exactly once per call, so a build that names two families costs two round trips and a repeated family costs none extra.")]
 	public void BuildTheme_ShouldProbeEachFamilyOnce_WhenBuilding() {
 		// Act
 		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
@@ -718,7 +718,7 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Rejects a malformed font family with INVALID_FONT_FAMILY as a structured failure rather than an exception escaping the pre-lock probe step.")]
+	[Description("Rejects a malformed font family with INVALID_FONT_FAMILY as a structured failure rather than an exception escaping the tool boundary.")]
 	public void BuildTheme_ShouldReturnFailure_WhenFontFamilyIsMalformed() {
 		// Act
 		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
@@ -727,12 +727,12 @@ public sealed class BuildThemeToolTests
 		// Assert
 		result.Success.Should().BeFalse(because: "a family that breaks the name contract cannot be applied");
 		result.Error.Should().Contain("INVALID_FONT_FAMILY",
-			because: "the pre-lock probe step surfaces the same validation error the builder would raise");
+			because: "the family-name contract is enforced before anything goes outbound, with the code the agent branches on");
 		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 	}
 
 	[Test]
-	[Description("Normalizes a padded, multi-space family on the MCP path — where the probe runs on RAW options before the lock — so the probe key and the suppression match the same canonical spelling.")]
+	[Description("Normalizes a padded, multi-space family on the MCP path, where the tool passes the caller's RAW options straight through, so the probe key and the suppression match the same canonical spelling.")]
 	public void BuildTheme_ShouldProbeAndSuppressCanonicalSpelling_WhenFamilyIsPadded() {
 		// Arrange
 		_googleFontsCatalog.LookupAsync("Open Sans", Arg.Any<CancellationToken>())
@@ -750,7 +750,7 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Probes exactly once in workspace-write mode too: that branch must pass the pre-lock verdicts into the build instead of letting it re-probe inside the shared lock.")]
+	[Description("Probes exactly once in workspace-write mode too: that branch resolves the verdicts through the same build path rather than probing a second time on its way to the write.")]
 	public void BuildTheme_ShouldProbeOnce_WhenWritingToWorkspacePackage() {
 		// Arrange
 		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-probe-ws");
@@ -778,7 +778,27 @@ public sealed class BuildThemeToolTests
 		// Assert
 		result.Success.Should().BeFalse(because: "the css class name is validated the same way regardless of the fonts requested");
 		result.Error.Should().Contain("css-class-name must match",
-			because: "the caller must get the css-class-name diagnostic, not a font error, exactly as before the probe was hoisted");
+			because: "the caller must get the css-class-name diagnostic rather than a font error");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Reports the workspace target failure ahead of a malformed font family when a request carries both: every local check now runs before the probe, so the caller is told what it can fix without any name reaching Google.")]
+	public void BuildTheme_ShouldReportTheWorkspaceFailure_WhenTheFontFamilyIsAlsoMalformed() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-precedence-notws");
+		_workspacePathBuilder.IsWorkspace.Returns(false);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			HeadingFont: "Evil'; }", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "neither the target nor the family is usable");
+		result.Error.Should().Contain("is not a clio workspace",
+			because: "the free local check reports first; the font family would only be reached by a request that can actually build");
+		result.Error.Should().NotContain("INVALID_FONT_FAMILY",
+			because: "the probe and its name-contract check live inside the build, which this request never enters");
 		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 	}
 
@@ -837,8 +857,8 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Documents the ACTUAL pre-probe boundary: only the request's shape is validated first, so a workspace target that is not a clio workspace still probes before failing.")]
-	public void BuildTheme_ShouldStillProbe_WhenWorkspaceIsNotAClioWorkspace() {
+	[Description("Sends nothing outbound for a request that cannot build: the probe now sits inside the build, after the workspace target is validated, so a caller's font names never reach Google Fonts on a request that fails earlier.")]
+	public void BuildTheme_ShouldNotProbe_WhenWorkspaceIsNotAClioWorkspace() {
 		// Arrange
 		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-probe-notws");
 		_workspacePathBuilder.IsWorkspace.Returns(false);
@@ -849,12 +869,35 @@ public sealed class BuildThemeToolTests
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the theme cannot be written outside a clio workspace");
+		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Builds to completion while the shared MCP execution lock is held by someone else: build-theme resolves no environment and acquires no session container, so it must not serialize behind the key every other environment-less tool shares — its bounded font probe would otherwise stall all of them.")]
+	public void BuildTheme_ShouldComplete_WhileTheSharedExecutionLockIsHeldByAnotherCaller() {
+		// Arrange
+		object sharedLock = McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey);
+
+		// Act
+		Task<BuildThemeResult> build;
+		bool completedWhileLockHeld;
+		lock (sharedLock) {
+			build = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+				HeadingFont: "Inter")));
+			completedWhileLockHeld = build.Wait(TimeSpan.FromSeconds(10));
+		}
+		BuildThemeResult result = build.GetAwaiter().GetResult();
+
+		// Assert
+		completedWhileLockHeld.Should().BeTrue(
+			because: "the whole build must finish while another holder still owns the shared fallback lock — taking that lock would put the font probe in front of every unrelated environment-less tool");
+		result.Success.Should().BeTrue(because: "a published family builds successfully");
 		_googleFontsCatalog.Received(1).LookupAsync("Inter", Arg.Any<CancellationToken>());
 	}
 
 	[Test]
-	[Description("Probes Google Fonts while the shared MCP execution lock is held by someone else, proving the probe runs BEFORE the tool takes that lock — the count assertions elsewhere would all still pass if the call were moved back inside it.")]
-	public void BuildTheme_ShouldProbe_BeforeTakingTheSharedExecutionLock() {
+	[Description("Serializes concurrent build-theme calls against each other: the injected command's IWorkspacePathBuilder.RootPath is shared by every call, so two builds must not interleave even though neither carries a tenant identity.")]
+	public void BuildTheme_ShouldNotRunConcurrently_WithAnotherBuildThemeCall() {
 		// Arrange
 		using ManualResetEventSlim probeStarted = new(false);
 		using ManualResetEventSlim releaseProbe = new(false);
@@ -864,23 +907,26 @@ public sealed class BuildThemeToolTests
 				releaseProbe.Wait(TimeSpan.FromSeconds(10));
 				return Task.FromResult(GoogleFontAvailability.InCatalog);
 			});
-		object sharedLock = McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey);
 
 		// Act
-		Task<BuildThemeResult> build;
-		bool probedWhileLockHeld;
-		lock (sharedLock) {
-			build = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-				HeadingFont: "Inter")));
-			probedWhileLockHeld = probeStarted.Wait(TimeSpan.FromSeconds(10));
-			releaseProbe.Set();
-		}
-		BuildThemeResult result = build.GetAwaiter().GetResult();
+		Task<BuildThemeResult> first = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6",
+			CssClassName: "MyTheme", HeadingFont: "Inter")));
+		bool firstReachedTheProbe = probeStarted.Wait(TimeSpan.FromSeconds(10));
+		Task<BuildThemeResult> second = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6",
+			CssClassName: "OtherTheme", HeadingFont: "Inter")));
+		bool secondFinishedWhileFirstWasInFlight = second.Wait(TimeSpan.FromSeconds(2));
+		int probesWhileFirstHeldTheLock = _googleFontsCatalog.ReceivedCalls().Count();
+		releaseProbe.Set();
 
 		// Assert
-		probedWhileLockHeld.Should().BeTrue(
-			because: "the probe must reach the catalogue while another holder still owns the shared fallback lock — if it ran inside ExecuteWithCleanLog it could not start until the lock was free");
-		result.Success.Should().BeTrue(because: "the build still completes once the lock is released");
+		firstReachedTheProbe.Should().BeTrue(
+			because: "the first call must be inside the locked region before the second starts, or the test proves nothing about contention");
+		secondFinishedWhileFirstWasInFlight.Should().BeFalse(
+			because: "the second call must wait for the first to release the build-theme execution lock, or the two would race on the shared RootPath");
+		probesWhileFirstHeldTheLock.Should().Be(1,
+			because: "the second call must not even reach its probe while the first holds the lock — a bare timeout assertion would also pass on a runner that is merely slow");
+		first.GetAwaiter().GetResult().Success.Should().BeTrue(because: "the first build completes normally");
+		second.GetAwaiter().GetResult().Success.Should().BeTrue(because: "the second build completes once the first releases the lock");
 	}
 
 	[Test]

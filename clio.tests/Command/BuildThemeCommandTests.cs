@@ -609,27 +609,6 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("PRIMARY_REQUIRED")));
 	}
 
-	// The settings-aware overloads never probe on their own, so every caller supplies a verdict map. These
-	// tests use options with no custom font, for which the probe legitimately resolves nothing.
-	private static readonly IReadOnlyDictionary<string, GoogleFontAvailability> NoCustomFonts =
-		new Dictionary<string, GoogleFontAvailability>();
-
-	[Test, Category("Unit")]
-	[Description("The settings-aware overload refuses a null verdict map instead of quietly probing for itself. Dropping the optional-parameter default makes an OMITTED argument a compile error; this pins the remaining hole — a caller that passes null explicitly — so the lock-safety invariant cannot be broken silently at runtime either.")]
-	public void TryBuildTheme_ShouldThrow_WhenTheProbedAvailabilityMapIsNull() {
-		// Arrange
-		BuildThemeOptions options = ValidOptions();
-
-		// Act
-		Action act = () => _command.TryBuildTheme(
-			options, null, out string _, out string _, out IReadOnlyList<string> _, out string _, null);
-
-		// Assert
-		act.Should().Throw<ArgumentNullException>(
-			because: "this overload exists so the probe runs outside the caller's lock; accepting null would reinstate the in-lock probe the ADR removed");
-		_googleFontsCatalog.DidNotReceive().LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-	}
-
 	[Test, Category("Unit")]
 	[Description("The synchronous bridge that waits for the concurrent font probes does not deadlock when the calling thread carries a SynchronizationContext. The probes are awaited on the default scheduler rather than marshalled back to the caller's context, so a context that never pumps its queue cannot starve the continuation. A regression that reintroduced context capture would time out here instead of hanging the suite.")]
 	public void ResolveFontAvailability_ShouldNotDeadlock_WhenTheCallingThreadHasASynchronizationContext() {
@@ -678,6 +657,28 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	// untouched by this story and stay green unmodified.
 
 	[Test, Category("Unit")]
+	[Description("The resolvedSettings-aware overload probes and applies the verdict itself, exactly like the by-name overloads: it takes no pre-resolved map, so a caller that forgets one cannot end up with an unsuppressed import for an unpublished family.")]
+	public void TryBuildTheme_ShouldProbeAndSuppressImport_WhenResolvedSettingsSuppliedAndFamilyNotInCatalog() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Verdana";
+		_googleFontsCatalog.LookupAsync("Verdana", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, null, out string _, out string _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "an unpublished family is advisory, not fatal");
+		error.Should().BeNull(because: "a successful build carries no error");
+		_googleFontsCatalog.Received(1).LookupAsync("Verdana", Arg.Any<CancellationToken>());
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(
+			i => i.Fonts.SuppressedImportFamilies.Contains("Verdana")));
+		warnings.Should().Contain(w => w.Contains("was not found in Google Fonts"),
+			because: "the suppression must be disclosed on this overload too, not only on the by-name path");
+	}
+
+	[Test, Category("Unit")]
 	[Description("New resolvedSettings-aware TryBuildTheme overload (build-theme MCP tool only): when resolvedSettings is supplied, resolves the version via _resolverFactory.Create(resolvedSettings) directly — no ISettingsRepository call at all.")]
 	public void TryBuildTheme_ShouldResolveVersionViaResolverFactory_WhenResolvedSettingsSupplied() {
 		// Arrange
@@ -689,7 +690,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		BuildThemeOptions options = ValidOptions();
 
 		// Act
-		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error, NoCustomFonts);
+		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
 
 		// Assert
 		ok.Should().BeTrue(because: "a resolvable settings-based version builds a valid theme");
@@ -705,7 +706,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		BuildThemeOptions options = ValidOptions();
 
 		// Act
-		bool ok = _command.TryBuildTheme(options, null, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error, NoCustomFonts);
+		bool ok = _command.TryBuildTheme(options, null, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
 
 		// Assert
 		ok.Should().BeTrue(because: "a null resolvedSettings falls back to the highest bundled template, not a failure");
@@ -724,7 +725,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		options.Version = "11.0";
 
 		// Act
-		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error, NoCustomFonts);
+		bool ok = _command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error);
 
 		// Assert
 		ok.Should().BeTrue(because: "an explicit version is a valid, self-sufficient input");

@@ -153,8 +153,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <remarks>
 	/// Probes Google Fonts availability for the requested custom families over the network (each probe
 	/// bounded by <see cref="Clio.Theming.GoogleFontsCatalog.ProbeTimeout"/>), which decides whether each
-	/// family gets a web-font import. A caller holding a lock should pre-resolve with
-	/// <see cref="TryResolveFontAvailability"/> and use the overload that accepts <c>probedFontAvailability</c>.
+	/// family gets a web-font import.
 	/// </remarks>
 	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when a build or write error is reported in <paramref name="error"/>.</returns>
 	public bool TryBuildTheme(BuildThemeOptions options, string outputDirectory, out string outputPath,
@@ -185,8 +184,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <remarks>
 	/// Probes Google Fonts availability for the requested custom families over the network (each probe
 	/// bounded by <see cref="Clio.Theming.GoogleFontsCatalog.ProbeTimeout"/>), which decides whether each
-	/// family gets a web-font import. A caller holding a lock should pre-resolve with
-	/// <see cref="TryResolveFontAvailability"/> and use the overload that accepts <c>probedFontAvailability</c>.
+	/// family gets a web-font import.
 	/// </remarks>
 	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when validation, build, or write fails.</returns>
 	public bool TryBuildTheme(BuildThemeOptions options, string workspaceDirectory, string packageName,
@@ -228,25 +226,14 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <param name="outputPath">The written theme directory on success; otherwise <c>null</c>.</param>
 	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
 	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
-	/// <param name="probedFontAvailability">
-	/// Verdicts already obtained from <see cref="TryResolveFontAvailability"/> for these SAME options, so the
-	/// network probe can run outside a lock the caller holds. They drive both the import suppression and the
-	/// font warnings, so a map built from different options would report families this build never requested.
-	/// Required, and never <see langword="null"/>: this overload does not probe on its own, so a caller that
-	/// skipped pre-resolution fails to compile rather than silently reopening an in-lock network probe. Call
-	/// the overload without this parameter when self-probing is what you want.
-	/// </param>
-	/// <exception cref="ArgumentNullException">
-	/// <paramref name="probedFontAvailability"/> is <see langword="null"/> — the lock-safety contract is broken
-	/// by a caller that passed null explicitly rather than by omitting the argument.
-	/// </exception>
+	/// <remarks>
+	/// Probes Google Fonts availability for the requested custom families over the network (each probe
+	/// bounded by <see cref="Clio.Theming.GoogleFontsCatalog.ProbeTimeout"/>), which decides whether each
+	/// family gets a web-font import.
+	/// </remarks>
 	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when validation, build, or write fails.</returns>
-	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-		Justification = "Mirrors the by-name workspace-write overload (options, target directory, target package, three outs) and adds the pre-probed font verdicts the MCP tool resolves outside its execution lock; a parameter object would only rename the same inputs.")]
 	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string workspaceDirectory, string packageName,
-		out string outputPath, out IReadOnlyList<string> warnings, out string error,
-		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability) {
-		ArgumentNullException.ThrowIfNull(probedFontAvailability);
+		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
 		outputPath = null;
 		warnings = [];
 		error = null;
@@ -266,7 +253,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			return false;
 		}
 		string themeDirectory = Path.Combine(packagePath, PackageFilesFolderName, ThemesFolderName, resolvedClass);
-		return TryBuildAndWrite(options, resolvedSettings, themeDirectory, out outputPath, out warnings, out error, probedFontAvailability);
+		return TryBuildAndWrite(options, resolvedSettings, themeDirectory, out outputPath, out warnings, out error);
 	}
 
 	/// <summary>
@@ -282,8 +269,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <remarks>
 	/// Probes Google Fonts availability for the requested custom families over the network (each probe
 	/// bounded by <see cref="Clio.Theming.GoogleFontsCatalog.ProbeTimeout"/>), which decides whether each
-	/// family gets a web-font import. A caller holding a lock should pre-resolve with
-	/// <see cref="TryResolveFontAvailability"/> and use the overload that accepts <c>probedFontAvailability</c>.
+	/// family gets a web-font import.
 	/// </remarks>
 	/// <returns><c>true</c> when the artifacts were built; <c>false</c> when an input or template error is reported in <paramref name="error"/>.</returns>
 	public bool TryBuildTheme(BuildThemeOptions options, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error) {
@@ -331,22 +317,13 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <param name="descriptor">The built <c>theme.json</c> descriptor on success; otherwise <c>null</c>.</param>
 	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
 	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
-	/// <param name="probedFontAvailability">
-	/// Verdicts already obtained from <see cref="TryResolveFontAvailability"/> for these SAME options, so the
-	/// network probe can run outside a lock the caller holds. They drive both the import suppression and the
-	/// font warnings, so a map built from different options would report families this build never requested.
-	/// Required, and never <see langword="null"/>: this overload does not probe on its own, so a caller that
-	/// skipped pre-resolution fails to compile rather than silently reopening an in-lock network probe. Call
-	/// the overload without this parameter when self-probing is what you want.
-	/// </param>
-	/// <exception cref="ArgumentNullException">
-	/// <paramref name="probedFontAvailability"/> is <see langword="null"/> — the lock-safety contract is broken
-	/// by a caller that passed null explicitly rather than by omitting the argument.
-	/// </exception>
+	/// <remarks>
+	/// Probes Google Fonts availability for the requested custom families over the network (each probe
+	/// bounded by <see cref="Clio.Theming.GoogleFontsCatalog.ProbeTimeout"/>), which decides whether each
+	/// family gets a web-font import.
+	/// </remarks>
 	/// <returns><c>true</c> when the artifacts were built; <c>false</c> when an input or template error is reported in <paramref name="error"/>.</returns>
-	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error,
-		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability) {
-		ArgumentNullException.ThrowIfNull(probedFontAvailability);
+	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error) {
 		css = null;
 		descriptor = null;
 		warnings = [];
@@ -356,7 +333,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		try {
 			PlatformVersionResolution resolution = ResolveVersion(normalizedOptions, resolvedSettings);
 			string templateVersion = resolution.Source == VersionResolutionSource.LatestFallback ? null : resolution.ResolvedVersion;
-			IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability = probedFontAvailability;
+			IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability = ResolveFontAvailability(normalizedOptions);
 			css = _themeCssBuilder.Build(_themeTemplateProvider.GetCssTemplate(templateVersion), ToBuilderOptions(normalizedOptions, fontAvailability));
 			descriptor = BuildDescriptor(normalizedOptions, templateVersion);
 			warnings = CollectWarnings(normalizedOptions, fontAvailability);
@@ -379,10 +356,9 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	// TryBuildTheme(options, outputDirectory, ...) overload does for the CLI path. Placed with the other
 	// private write helpers so the public TryBuildTheme overloads stay adjacent (Sonar S4136).
 	private bool TryBuildAndWrite(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string outputDirectory,
-		out string outputPath, out IReadOnlyList<string> warnings, out string error,
-		IReadOnlyDictionary<string, GoogleFontAvailability> probedFontAvailability) {
+		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
 		outputPath = null;
-		if (!TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out warnings, out error, probedFontAvailability)) {
+		if (!TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out warnings, out error)) {
 			return false;
 		}
 		if (!TryWriteArtifacts(outputDirectory, css, descriptor, out error)) {
@@ -456,41 +432,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (!string.IsNullOrWhiteSpace(options.Version) && !string.IsNullOrWhiteSpace(options.EnvironmentName)) {
 			throw new ArgumentException(
 				"build-theme: --version and --environment-name are mutually exclusive. Pass one or neither.");
-		}
-	}
-
-	/// <summary>
-	/// Validates the request's shape and then probes Google Fonts availability, for a caller that must keep
-	/// the network step OUT of a lock it holds (the <c>build-theme</c> MCP tool runs under the shared
-	/// execution lock, so a probe inside it would stall every other environment-less tool for its whole
-	/// budget). Validation runs FIRST and in the order the build itself uses, so preparing separately never
-	/// changes which error a bad request reports. Normalization is pure and idempotent, so the build
-	/// repeating it costs nothing.
-	/// </summary>
-	/// <remarks>
-	/// Shape validation only — the css-class-name and the version/environment pair. Colour parsing and the
-	/// workspace/package existence checks still run inside the build, so a request that fails on those does
-	/// probe before failing.
-	/// </remarks>
-	/// <param name="options">The brand inputs and template-version selectors.</param>
-	/// <param name="fontAvailability">The probe verdicts to pass back into <c>TryBuildTheme</c>; <see langword="null"/> on failure.</param>
-	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
-	/// <returns><c>true</c> when the request is valid and its families were probed.</returns>
-	internal bool TryResolveFontAvailability(BuildThemeOptions options,
-		out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out string error) {
-
-		fontAvailability = null;
-		if (!TryNormalizeOptions(options, out BuildThemeOptions normalizedOptions, out error)) {
-			return false;
-		}
-		try {
-			RejectAmbiguousVersionSource(normalizedOptions);
-			fontAvailability = ResolveFontAvailability(normalizedOptions);
-			return true;
-		}
-		catch (ArgumentException ex) {
-			error = ex.Message;
-			return false;
 		}
 	}
 

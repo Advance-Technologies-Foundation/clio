@@ -7,8 +7,8 @@
 
 The probe is an advisory network step whose verdict changes the emitted CSS, so the plan pins three
 things separately: the **verdict mapping** (what each HTTP outcome means), the **consequence** (import
-emitted or suppressed, and which warning), and the **placement** (validated before probing, probed
-outside the lock, probed once). The live endpoint is an undocumented contract, so it is re-verified by
+emitted or suppressed, and which warning), and the **placement** (validated before probing, off the
+shared execution lock, probed once). The live endpoint is an undocumented contract, so it is re-verified by
 an explicit canary rather than trusted implicitly in CI.
 
 ## Coverage by acceptance criterion
@@ -21,9 +21,10 @@ an explicit canary rather than trusted implicitly in CI.
 | AC-4 (argument removed and rejected) | `BuildTheme_ShouldReturnFailure_WhenRemovedLocalFontFamiliesArgSupplied` (3 spellings), `BuildThemeArgs_ShouldBindKebabAndRouteCamelToExtensionData_WhenDeserializedFromRawJson` | `BuildThemeToolTests` |
 | AC-5 (`OpenWorld = true`) | `BuildThemeTool_Should_DeclareBuildSafetyFlags_WhenInspectingMcpServerToolAttribute` | `BuildThemeToolTests` |
 | AC-6 (name contract, no request for invalid input) | `ValidateFamily_ShouldRejectOversizedFamily`, `LookupAsync_ShouldReportUnverifiedWithoutRequest_ForInvalidFamily` (grammar + over-length), `Execute_ShouldFailWithoutProbing_WhenFamilyIsInvalid`, `BuildTheme_ShouldReturnFailure_WhenFontFamilyIsMalformed` | `FontImportBuilderTests`, `GoogleFontsCatalogTests`, `BuildThemeCommandTests`, `BuildThemeToolTests` |
-| AC-7 — placement | **`BuildTheme_ShouldProbe_BeforeTakingTheSharedExecutionLock`** — the lock-placement canary: it holds `McpToolExecutionLock.GetLock(SharedFallbackKey)` on the test thread and asserts the probe still fires. Every other AC-7 test asserts count or precedence and would stay green if the probe call moved back inside `ExecuteWithCleanLog`, so this one is the only guard against that regression — do not delete it in a refactor. | `BuildThemeToolTests` |
-| AC-7 — count (verdicts threaded in, no re-probe inside the lock) | `BuildTheme_ShouldProbeEachFamilyOnce_WhenBuilding`, `BuildTheme_ShouldProbeOnce_WhenWritingToWorkspacePackage`, `Execute_ShouldProbeOnce_WhenHeadingAndBodyShareTheFamily`, `Execute_ShouldNotProbe_WhenNoCustomFontRequested`, `Execute_ShouldNotProbe_ForDefaultFontFamily` | `BuildThemeToolTests`, `BuildThemeCommandTests` |
-| AC-7 — shape validation before the probe, and the narrowed second clause | `BuildTheme_ShouldFailWithoutProbing_WhenCssClassNameIsInvalid`, `BuildTheme_ShouldFailWithoutProbing_WhenBothVersionAndEnvironmentProvided`, and `BuildTheme_ShouldStillProbe_WhenWorkspaceIsNotAClioWorkspace` — which pins the ACCEPTED behaviour that colour/workspace/package failures are detected after the probe | `BuildThemeToolTests` |
+| AC-7 — off the shared lock | **`BuildTheme_ShouldComplete_WhileTheSharedExecutionLockIsHeldByAnotherCaller`** — holds `McpToolExecutionLock.GetLock(SharedFallbackKey)` on the test thread and asserts the whole build still finishes. This is the only guard against `build-theme` drifting back onto the key every environment-less tool shares — do not delete it in a refactor. | `BuildThemeToolTests` |
+| AC-7 — serialized against itself | **`BuildTheme_ShouldNotRunConcurrently_WithAnotherBuildThemeCall`** — pins the reason the tool still locks at all: concurrent calls share the injected command's `IWorkspacePathBuilder.RootPath`. Dropping the tool-scoped key would leave that race unguarded and this is the only test that would notice. | `BuildThemeToolTests` |
+| AC-7 — count | `BuildTheme_ShouldProbeEachFamilyOnce_WhenBuilding`, `BuildTheme_ShouldProbeOnce_WhenWritingToWorkspacePackage`, `Execute_ShouldProbeOnce_WhenHeadingAndBodyShareTheFamily`, `Execute_ShouldNotProbe_WhenNoCustomFontRequested`, `Execute_ShouldNotProbe_ForDefaultFontFamily` | `BuildThemeToolTests`, `BuildThemeCommandTests` |
+| AC-7 — nothing outbound on a rejected request | `BuildTheme_ShouldFailWithoutProbing_WhenCssClassNameIsInvalid`, `BuildTheme_ShouldFailWithoutProbing_WhenBothVersionAndEnvironmentProvided`, `BuildTheme_ShouldNotProbe_WhenWorkspaceIsNotAClioWorkspace` | `BuildThemeToolTests` |
 | AC-8 (one contract on every surface) | `ThemingGuidanceResource_Should_Keep_NonGoogleFamily_Confirmation_Gated`, `ThemingGuidanceResource_Should_Describe_The_Unverified_FailOpen`, `ThemingGuidanceResource_Should_State_The_FamilyName_Contract`, `BuildThemeArgs_ShouldDocumentTheFamilyNameContract` (both font arguments), and the probe-disclosure assertions in `BuildThemeTool_Should_DeclareBuildSafetyFlags_WhenInspectingMcpServerToolAttribute` | `ThemingGuidanceResourceTests`, `BuildThemeToolTests` |
 
 ## Supporting invariants
