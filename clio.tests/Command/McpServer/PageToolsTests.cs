@@ -1447,8 +1447,8 @@ public class PageToolsTests
 			because: "the read should fail when the designer hierarchy cannot be loaded");
 		response.Success.Should().BeFalse(
 			because: "the returned envelope should flag the failed hierarchy read");
-		response.Error.Should().Be("Failed to load page schema hierarchy",
-			because: "the hierarchy failure should stay readable in the command response");
+		response.Error.Should().Be("Failed to load hierarchy for 'UsrBroken_FormPage': Failed to load page schema hierarchy",
+			because: "the hierarchy-read failure is surfaced by get-page's scoped hierarchy-read catch (ENG-94418 F2), which mirrors update-page's TryGetHierarchy wording and names the schema; no phantom-cache hint is attached because the message carries no empty-IN() signature");
 	}
 
 	[Test]
