@@ -345,6 +345,9 @@ clio set-pkg-version ./packages/CrtProcessBuilder --PackageVersion <X.Y.Z.W>
 mkdir -p <clio-repo>/clio/CrtProcessBuilder
 
 # 5. Compress  (verb: generate-pkg-zip, aliases comp-pkg / compress)
+#    The .gz FILE NAME must equal the descriptor's Name — Creatio validates the pair on a
+#    manual install and refuses a mismatch ("The name of your *.gz archive does not match the
+#    name specified in the descriptor.json file"). See P1.4.
 clio compress ./packages/CrtProcessBuilder --skip-pdb \
   -d <clio-repo>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
@@ -387,11 +390,16 @@ Four traps that must be written into the runbook, not discovered later:
   them and the stand keeps using its own. Verified by reading the ignore file. `ATF.Repository.dll` and
   `ErrorOr.dll` are *not* in the denylist, so they ship — which is correct. Re-verify once the
   netstandard leg is buildable.
-- **P1.4 Nothing validates the descriptor against the filename.** `PackageArchiver.Pack` never opens
-  `descriptor.json`, and `IPackageInstaller.Install` just uploads the file. A `.gz` *named*
-  `CrtProcessBuilder.gz` whose descriptor still says `clioprocessbuilder` installs fine, reports
-  success, restarts the app — and then the gate reports the package missing **forever**. Mitigated by
-  the P2.4b guard test; the runbook must still say to check.
+- **P1.4 The `.gz` file name must equal the descriptor `Name`** — established empirically (2026-08-04):
+  a manual install of an archive named `CrtProcessBuilder-nobin.gz` carrying
+  `"Name": "CrtProcessBuilder"` was refused with *"The name of your \*.gz archive does not match the
+  name specified in the descriptor.json file"*. So **Creatio itself validates the pair** on the manual
+  path, which is better than this plan originally assumed.
+  It does **not** remove the need for the P2.4b guard test, for two reasons: (a) nothing on the *clio*
+  side checks it — `PackageArchiver.Pack` never opens `descriptor.json` and `IPackageInstaller.Install`
+  merely uploads the file, so whether `push-pkg` enforces the same rule as the UI is unverified; and
+  (b) the guard test catches a stale *version* inside the archive, which no name check would ever see.
+  Catching it in clio's own build is still strictly earlier than catching it on a customer's stand.
 
 Runbook must also state:
 
