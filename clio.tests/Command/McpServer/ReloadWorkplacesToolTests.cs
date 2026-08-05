@@ -1,4 +1,4 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -8,9 +8,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-///     ENG-88474: the tool that publishes a navigation change must run against the environment carried by the current
-///     MCP call, not the startup-time command instance — otherwise the caches of a different environment get reloaded
-///     and the agent reports a publish that never reached the target stand.
+///     The publish must run against the environment of the current MCP call, or it reloads the caches of a different
+///     stand and reports a publish that never reached the target.
 /// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]

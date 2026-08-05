@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -313,7 +313,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract requires the navigation placement decision before create-app")]
-	[Description("Verifies over the real MCP transport that the create-app contract carries the ENG-88474 precondition and anti-pattern, so an agent reading the contract before its first call learns the placement decision is due beforehand.")]
+	[Description("Verifies over the real MCP transport that the create-app contract carries the precondition and anti-pattern, so an agent reading the contract before its first call learns the placement decision is due beforehand.")]
 	public async Task ToolContractGet_Should_Require_NavigationPlacement_Before_ApplicationCreate() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));

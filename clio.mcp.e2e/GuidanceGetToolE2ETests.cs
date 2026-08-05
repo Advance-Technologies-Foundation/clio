@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -935,7 +935,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 		response.Article.Text.Should().Contain("compile-creatio is NOT needed",
 			because: "the core-rules guide must carry the non-negotiable invariants");
 		response.Article.Text.Should().Contain("Navigation placement is decided BEFORE you create an app",
-			because: "the requirement was ignored while it lived only in the app-modeling guide, so it must reach the agent over the real transport as a core invariant (ENG-88474)");
+			because: "the requirement was ignored while it lived only in the app-modeling guide, so it must reach the agent over the real transport as a core invariant");
 		response.Article.Text.Should().Contain("get-guidance name=workplaces",
 			because: "core-rules states the requirement and routes to the guide that owns the option set and the write recipes");
 	}
@@ -1036,7 +1036,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the workplaces article by stable name")]
-	[Description("Verifies the navigation-workplace article resolves through the live MCP surface and carries the invariants an agent needs to avoid a wrong-but-successful workplace change (ENG-88474).")]
+	[Description("Verifies the navigation-workplace article resolves through the live MCP surface and carries the invariants an agent needs to avoid a wrong-but-successful workplace change.")]
 	public async Task GuidanceGet_ShouldReturnWorkplacesGuide_WhenStableNameIsRequested() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));

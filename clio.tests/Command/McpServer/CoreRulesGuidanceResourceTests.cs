@@ -1,4 +1,4 @@
-using Clio.Command.McpServer.Resources;
+﻿using Clio.Command.McpServer.Resources;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -30,7 +30,7 @@ public sealed class CoreRulesGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The core-rules guide requires the navigation placement decision before create-app, because that requirement was ignored while it lived only as a reference bullet inside the app-modeling guide (ENG-88474).")]
+	[Description("The core-rules guide requires the navigation placement decision before create-app, because that requirement was ignored while it lived only as a reference bullet inside the app-modeling guide.")]
 	public void Guide_Should_RequireNavigationPlacement_BeforeApplicationCreate() {
 		// Arrange
 		string coreRules = CoreRulesGuidanceResource.Guide.Text;

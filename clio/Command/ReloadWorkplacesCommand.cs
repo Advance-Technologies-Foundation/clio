@@ -33,16 +33,10 @@ public interface IWorkplaceCacheReloader {
 	///     Reloads the platform navigation caches on the target environment.
 	/// </summary>
 	/// <remarks>
-	///     Workplace, section, and edit-page lists are cached per SESSION, so a browser refresh alone does not surface
-	///     a workplace that was created, granted, or re-pointed after the user signed in. The platform invalidates
-	///     those caches from an entity event listener on <c>SysUserInRole</c> / <c>SysAdminUnitInWorkplace</c> insert
-	///     and delete only — nothing fires when just the workplace row, a section placement, or a home-page binding
-	///     changed, nor when the rows were written straight through the database engine. This call reaches the same
-	///     platform contract directly.
+	///     Navigation is cached per session, so a refresh alone does not surface a workplace changed after sign-in.
 	/// </remarks>
 	/// <exception cref="InvalidOperationException">
-	///     The environment answered with an empty body, a non-JSON body (typically an HTTP error page), or an explicit
-	///     failure. The message states which, so the caller can fall back to telling users to log out and back in.
+	///     The reload did not happen; the message states why, so the caller can fall back to prescribing a re-login.
 	/// </exception>
 	void Reload();
 

@@ -11,16 +11,9 @@ using System.Text.Json;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-///     End-to-end coverage for the <c>reload-workplaces</c> MCP tool (ENG-88474).
+///     End-to-end coverage for the <c>reload-workplaces</c> MCP tool. The live cache reload needs a stand with
+///     cliogate, so these cover the environment-free surface: dispatch through <c>clio-run</c> and contract discovery.
 /// </summary>
-/// <remarks>
-///     The tool publishes a navigation change to sessions that are already signed in. Its live effect is a platform
-///     cache reload behind cliogate, which needs a stand with cliogate installed — so these tests cover the parts that
-///     run everywhere and are the ones an agent depends on: the tool is a long-tail write reachable through
-///     <c>clio-run</c>, its contract is discoverable, and an unresolvable environment fails cleanly instead of
-///     reporting a publish that never happened. Option forwarding is pinned by
-///     <c>ReloadWorkplacesToolTests</c> and the failure/success reporting by <c>ReloadWorkplacesCommandTests</c>.
-/// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]

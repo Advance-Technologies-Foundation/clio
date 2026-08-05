@@ -8,7 +8,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 /// <summary>
-///     ENG-88474: a navigation change is invisible to every signed-in session until the platform navigation caches are
+///     a navigation change is invisible to every signed-in session until the platform navigation caches are
 ///     reloaded, because those caches are session-scoped. The command's contract is therefore not just "call the
 ///     endpoint" — a failure must surface the reason so the agent falls back to telling users to re-login instead of
 ///     promising a refresh that will not work.

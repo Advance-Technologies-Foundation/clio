@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -50,7 +50,7 @@ public sealed class McpGuidanceForcingTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("delete-app-section advertises that it removes the section from every workplace and routes single-workplace removal to the workplaces guide (ENG-88474).")]
+	[Description("delete-app-section advertises that it removes the section from every workplace and routes single-workplace removal to the workplaces guide.")]
 	public void SectionDeleteToolDescription_ShouldRouteSingleWorkplaceRemoval_ToWorkplacesGuide() {
 		// Arrange
 		string description = ToolDescription<ApplicationSectionDeleteTool>();
@@ -67,7 +67,7 @@ public sealed class McpGuidanceForcingTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("create-app advertises that it places the section in the administrators-only default workplace and that placement must be settled before the call (ENG-88474).")]
+	[Description("create-app advertises that it places the section in the administrators-only default workplace and that placement must be settled before the call.")]
 	public void ApplicationCreateToolDescription_ShouldRequirePlacement_BeforeTheCall() {
 		// Arrange
 		string description = ToolDescription<ApplicationCreateTool>();

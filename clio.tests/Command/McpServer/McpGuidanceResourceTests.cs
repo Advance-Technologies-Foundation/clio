@@ -38,7 +38,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain the canonical app-creation entry point");
 		article.Text.Should().Contain("create-app-section",
 			because: "the guide should explain the canonical existing-app section creation entry point");
-		// A scaffolded app lands in a workplace most users cannot see, so placement must be elicited (ENG-88474).
+		// A scaffolded app lands in a workplace most users cannot see, so placement must be elicited.
 		article.Text.Should().Contain("GATE — navigation placement and audience",
 			because: "app-modeling is the entry point an agent reads first, so the placement gate has to fire there");
 		article.Text.Should().Contain("STOP after `create-app`",
@@ -228,7 +228,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "section-specific stable ID sourcing does not belong in the generic binding guide");
 		article.Text.Should().Contain("runtime-only columns are not blockers",
 			because: "the guide should explain the DB-first subset-column projection rule for Account-like schemas");
-		// The projection rule is also the cross-environment transfer contract, and this guide owns it (ENG-88474).
+		// The projection rule is also the cross-environment transfer contract, and this guide owns it.
 		article.Text.Should().Contain("package install supplies NO default for it",
 			because: "a column left out of the binding arrives empty on the next environment, which is the defect this rule prevents");
 		article.Text.Should().Contain("IsForceUpdate: false",
@@ -2468,7 +2468,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The workplaces guide preserves the lab-verified navigation invariants and the confirmation-gate split, so an agent managing a workplace cannot silently produce a wrong-but-successful result (ENG-88474).")]
+	[Description("The workplaces guide preserves the lab-verified navigation invariants and the confirmation-gate split, so an agent managing a workplace cannot silently produce a wrong-but-successful result.")]
 	public void WorkplacesGuidanceResource_Should_Return_Canonical_Workplaces_Guide() {
 		// Arrange
 		WorkplacesGuidanceResource resource = new();
@@ -2518,7 +2518,7 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("no list mode",
 			because: "the guide must explain why the child Ids cannot be recovered after the cascade");
 
-		// Placement is the user's decision (ENG-88474 acceptance criteria).
+		// Placement is the user's decision (acceptance criteria).
 		article.Text.Should().Contain("Ask where things belong before you write",
 			because: "the guide must require the placement question instead of letting the agent choose");
 
@@ -2661,7 +2661,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("GuidanceCatalog and the routing map expose workplaces as the canonical navigation-workplace guide (ENG-88474).")]
+	[Description("GuidanceCatalog and the routing map expose workplaces as the canonical navigation-workplace guide.")]
 	public void TryGet_ShouldReturnWorkplacesGuide_WhenWorkplaceManagementIsRouted() {
 		// Arrange
 		RoutingGuidanceResource routingResource = new();
@@ -2682,7 +2682,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Adjacent guides route workplace concerns to the workplaces owner instead of restating the model (ENG-88474 de-duplication).")]
+	[Description("Adjacent guides route workplace concerns to the workplaces owner instead of restating the model (de-duplication).")]
 	public void WorkplaceModel_ShouldHaveExactlyOneOwner_AcrossAdjacentGuides() {
 		// Arrange
 		HomePageGuidanceResource homePageResource = new();

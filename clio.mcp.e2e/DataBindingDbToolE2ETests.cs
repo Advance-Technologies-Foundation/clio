@@ -167,7 +167,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("read-data-binding-db reaches its binding-resolution layer over the real MCP server and reports a human-readable failure for an unresolvable environment, so an agent never mistakes an unreachable read for a proven projection (ENG-88474).")]
+	[Description("read-data-binding-db reaches its binding-resolution layer over the real MCP server and reports a human-readable failure for an unresolvable environment, so an agent never mistakes an unreachable read for a proven projection.")]
 	[AllureTag(ReadDbToolName)]
 	[AllureName("Read DB-first binding reports failure without an environment")]
 	[AllureDescription("Invokes read-data-binding-db through the real clio MCP server with an empty environment-name and verifies the read fails with a readable message instead of returning an empty projection that would read as 'no columns shipped'.")]

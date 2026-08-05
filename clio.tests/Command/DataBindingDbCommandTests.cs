@@ -743,7 +743,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Reports the union of every bound row's columns in ordinal order and collapses lookup envelopes to caption plus id, because that projection is the transfer contract the guides are built on (ENG-88474).")]
+	[Description("Reports the union of every bound row's columns in ordinal order and collapses lookup envelopes to caption plus id, because that projection is the transfer contract the guides are built on.")]
 	public void ReadDataBindingDb_Should_ReportTheUnionOfBoundColumns_InOrdinalOrder() {
 		// Arrange
 		_bindingLookupResponseJson = BuildBindingLookupResponse("SysWorkplace", "SysWorkplace_Todo");
@@ -781,7 +781,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Renders a lookup with a caption but no id as the caption alone, so a cleared reference does not read as corrupted data (ENG-88474).")]
+	[Description("Renders a lookup with a caption but no id as the caption alone, so a cleared reference does not read as corrupted data.")]
 	public void ReadDataBindingDb_Should_RenderACaptionWithoutAnId_AsTheCaptionAlone() {
 		// Arrange
 		_bindingLookupResponseJson = BuildBindingLookupResponse("SysWorkplace", "SysWorkplace_Todo");
@@ -808,7 +808,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Fails instead of reporting an empty projection when the binding record has no readable UId, because \"ships nothing\" is the worst possible wrong answer for this command (ENG-88474).")]
+	[Description("Fails instead of reporting an empty projection when the binding record has no readable UId, because \"ships nothing\" is the worst possible wrong answer for this command.")]
 	public void ReadDataBindingDb_Should_Fail_WhenTheBindingHasNoReadableUId() {
 		// Arrange
 		_bindingLookupResponseJson = """
@@ -840,7 +840,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Fails with the binding name when the binding does not exist in the target package, so a typo is not reported as an empty projection (ENG-88474).")]
+	[Description("Fails with the binding name when the binding does not exist in the target package, so a typo is not reported as an empty projection.")]
 	public void ReadDataBindingDb_Should_Fail_WhenTheBindingDoesNotExist() {
 		// Arrange
 		_bindingLookupResponseJson = """{"rows": [], "success": true}""";

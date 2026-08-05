@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -8,11 +8,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 /// <summary>
-///     ENG-88474: <see cref="WorkplaceCacheReloader" /> is what decides whether the agent tells the user "a refresh is
-///     enough" or "log out and back in". Every one of its failure branches collapsing to "did not throw" would make
-///     <see cref="ReloadWorkplacesCommand" /> exit 0 and promise a refresh while every signed-in session stays stale —
-///     the false-done this feature exists to remove. The command's own tests substitute the reloader wholesale, so this
-///     fixture is the only coverage of the contract itself.
+///     Covers <see cref="WorkplaceCacheReloader" />: every failure branch must throw, because a silent one makes the
+///     command exit 0 and promise a refresh while the caches are still stale.
 /// </summary>
 [TestFixture]
 [Property("Module", "Command")]
