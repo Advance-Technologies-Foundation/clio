@@ -26,10 +26,12 @@ This plan deliberately implements the **clio-side half only**, with the artifact
 | Ship in the Creatio product (`CrtProcessBuilder`, release train) | **OUT** — Option 1, deferred end-state | deferred |
 | Rename the REST service class | **EXPLICITLY NOT DONE** — see §2.2 | — |
 
-Because CI is skipped, the artifact is produced by a developer on a machine with a deployed Creatio
-(the package `.csproj` resolves ~45 `Terrasoft.*` assemblies by `HintPath` into a deployed Creatio's
-`bin`, via `.build-props/env.$(Configuration).props`). That machine dependency is precisely what
-ENG-92113 removes; until then the runbook (P1) is the contract.
+Because CI is skipped, the artifact is produced by hand. Under the source-only decision (§3) that is
+cheap and machine-independent: producing it needs only `clio` and a checkout — `set-pkg-version` if the
+version changed, then `compress`. There is **no build step**, so the earlier concern that the producer
+needs a machine with a deployed Creatio no longer applies. ENG-92113 still automates the hop; until then
+the runbook (P1) is the contract, and P1.9 records provenance so "which source produced this archive" has
+an answer.
 
 ---
 
@@ -202,35 +204,25 @@ package, assembly or namespace rename. The only registration hook is the assembl
 
 **Do not rename the service class.** TC-R-3 still proves the route empirically after the rename.
 
-### 2.4 Build both target frameworks — and mind the build prerequisites
+### 2.4 The local build is a development tool, not part of delivery
 
-The csproj is **not** multi-targeted in one pass: `TargetFramework = $(CoreTargetFramework)`,
-defaulting to `net472`, with `Choose` blocks per TFM routing output to:
-
-- `net472` → `Files/Bin/`
-- `netstandard2.0` → `Files/Bin/netstandard/`
-
-Both must be built into one package folder. This is what makes §3 possible.
-
-Configuration names are **not** `Debug`/`Release` — they select
+The csproj is **not** multi-targeted in one pass: `TargetFramework = $(CoreTargetFramework)`, defaulting
+to `net472`, with `Choose` blocks routing `net472` → `Files/Bin/` and `netstandard2.0` →
+`Files/Bin/netstandard/`. Configuration names are **not** `Debug`/`Release` — they select
 `.build-props/env.$(Configuration).props`, which supplies `$(CoreLibPath)` for ~45 `Terrasoft.*`
 `HintPath` references:
 
 | Configuration | `CoreLibPath` source | State in this checkout |
 |---|---|---|
-| `dev-nf` (net472) | `.application/net-framework/core-bin` → symlink to a deployed Creatio's `Terrasoft.WebApp/bin` | **works** |
-| `dev-n8` (netstandard2.0) | `.application/net-core` | **not wired — the netstandard2.0 output has never been produced here** |
+| `dev-nf` (net472) | `.application/net-framework/core-bin` → symlink into a deployed Creatio's `Terrasoft.WebApp/bin` | works |
+| `dev-n8` (netstandard2.0) | `.application/net-core` | not wired — never produced here |
 
-**This is a P0 prerequisite, but a local one, not an external dependency.** .NET Core Creatio builds
-exist and `clio deploy-creatio --platform net6` provisions one, so wiring `.application/net-core` is
-ordinary setup work. **Parked at the reporter's request (2026-08-04) — which stand/build to use will be
-clarified later.** Until then, treat the netstandard half as *unvalidated*, not as *impossible*:
-
-- the netstandard branch's NuGet-sourced `Microsoft.Extensions.*` / `System.Text.Json` 8.0.0
-  references have never been checked against a real .NET Core stand's runtime assemblies (P1.3);
-- `ATF.Repository` / `ErrorOr` come from committed `Files/Libs/*.dll`, not NuGet.
-
-Everything else in this plan proceeds on net472 without waiting for it.
+**Under the source-only decision none of this is on the delivery path.** The archive ships no assembly,
+the target regenerates the csproj and picks its own target framework, so `dev-n8` never has to be
+buildable locally and the earlier P0.0 prerequisite (deploy a local .NET Core Creatio) is **cancelled**.
+`dev-nf` remains the development loop — it is what compiles the package for its 477 unit tests — and a
+local build's output must simply be cleared before compressing (P1 step 0), or it would leak an assembly
+into an archive that is supposed to have none.
 
 ### 2.5 Namespace rename — a deliberate choice, not a requirement
 
@@ -244,7 +236,7 @@ Cost is minutes of tooling, not risk. (Recorded here because the cost/benefit wa
 
 ### 2.6 Tasks
 
-- **P0.0** Prerequisite: stand up a local .NET 8 Creatio and wire `.application/net-core` (§2.4).
+- ~~**P0.0** stand up a local .NET 8 Creatio and wire `.application/net-core`~~ — **cancelled**: the target compiles the package, so no local netcore build is needed (§2.4, §3).
 - **P0.1** Rename per the table above; `git mv` for folders/files so history follows.
 - **P0.2** Rename `ClioProcessBuilderApp` → `CrtProcessBuilderApp` and its references.
 - **P0.3** Rename the test project + assembly; confirm `InternalsVisibleTo` resolves.
@@ -304,159 +296,96 @@ Application Hub and `push-pkg`, verified by the service answering with the full 
 plain files compiled through the package's own csproj — is what was validated; moving them would be a
 large change with no benefit.
 
-### 3.1 Superseded: one package and one `.gz`, not a `_netcore` twin
+### 3.1 Superseded, in one paragraph: the one-vs-two-archive question
 
-`cliogate` ships **two** packages — `cliogate.gz` (descriptor `Name`/AssemblyName `cliogate`) and
-`cliogate_netcore.gz` (`cliogate_netcore`) — and `build.ps1` string-flips `descriptor.json` between
-the two names per run. That split costs three things: the `IsNetCore` branch in
-`InstallGateCommand.GetPackagePath()`, the `PackageAliases` entry in `RequiredPackageChecker.cs:87-90`,
-and a git-tracked descriptor mutated twice per build.
-
-**Why cliogate needs two, and we do not:** cliogate ships two *differently named packages* because
-clio installs a different package **name** per runtime — the split is a clio-side artifact, not a
-platform requirement. The platform itself needs only one package: `FileContentStorage.GetAssemblyName`
-loads `<packageName>.dll` from `Files/Bin` on net472 and from `Files/Bin/netstandard` on .NET
-(`UseSeparateDirectoryToLoadPackageAssemblies` defaults to `true`). One package folder carrying both
-subfolders satisfies both hosts.
-
-**Corroborating evidence:** the package `.csproj` routes the two TFMs into exactly those two folders
-(`:36, :43, :48`), and the existing hand-built `packages/clioprocessbuilder.gz` (446 KB) carries both
-`Files/Bin` and `Files/Bin/netstandard` path entries. Further, cliogate itself proves the split is a
-naming choice, not a TFM necessity: **both** its `.gz` files carry the *identical* UId
-`e24226f9-c177-458f-af34-9338e2699983` and both ship a `Files/Bin/netstandard` — only the `Name`
-differs. `build.ps1:18-19` confirms why: the **same** `-p:AssemblyName=cliogate_netcore` override is
-passed to *both* the net472 and the netstandard2.0 build of that flavour, because the assembly name
-must track the descriptor **name**, not the TFM — exactly what `GetAssemblyName(packageName)` requires.
-
-**Two consequences to carry into the build recipe:**
-
-- Both TFM builds must produce a DLL named `CrtProcessBuilder.dll` (TC-R-5).
-- **The current artifact is net472-only in content** — `Files/Bin/netstandard` is present as a path but
-  the DLL was never produced, because `dev-n8` has never been buildable in this checkout (§2.4).
-  Bundling that shape would be the worst possible failure mode for a detect-and-offer flow: a .NET 8
-  stand installs "successfully", restarts, has `ProcessDesignService` **nowhere**, and clio's gate
-  reports the package as **present**. Cf. the general hazard: the gate reads only `SysPackage.Name`,
-  while the route exists only if `Files/Bin[/netstandard]/<Name>.dll` exists *and* the app restarted
-  (routes register once at startup) — so a DLL-name or Bin-subdirectory mismatch yields
-  "installed, detected, and every call returns an HTML error page", which `ServerProcessDescriber`
-  retries **three times** (`IProcessDescriber.cs:64`) before surfacing anything.
-
-**Note the descriptor is not a cliogate clone.** cliogate is `Type 0` (General) with `ProjectPath ""`;
-this package is `Type 1` (Assembly) with `ProjectPath Files/<Name>.csproj`. The packaging, csproj glob
-and tool-layout mechanics are reusable; descriptor authoring is new work.
-
-**Decision:** ship **one** package named `CrtProcessBuilder`, as **one**
-`CrtProcessBuilder.gz` carrying both TFM binaries.
-
-Consequences: no `PackageAliases` entry, no `IsNetCore` branch in the install command, no descriptor
-name flip, one version to track.
-
-**This is the single riskiest assumption in the plan.** It is falsifiable by TC-F-1/TC-F-6 (install
-the same `.gz` on a net472 stand and on a .NET Core stand). **Fallback if a .NET Core stand rejects
-it:** adopt the cliogate two-name split — add `CrtProcessBuilder → CrtProcessBuilder_netcore`
-to `PackageAliases` and the `IsNetCore` branch to `GetPackagePath()`. Budget: +0.5 day. Run this
-verification **first**, before the clio-side work in P2/P3 hardens around one name.
+Before source-only was validated, the open question was whether to mirror cliogate's two-archive split
+(`cliogate.gz` + `cliogate_netcore.gz`, differing only in descriptor `Name`/`AssemblyName`) or ship one
+archive carrying both `Files/Bin` and `Files/Bin/netstandard`. The question no longer has a subject:
+**the archive contains no assembly at all**, so there is nothing to split per framework, and the
+`PackageAliases` entry, the `IsNetCore` branch in `GetPackagePath()` and the per-flavour descriptor flip
+are all unnecessary. Two facts from that analysis remain worth keeping: cliogate's split is a *clio-side
+naming choice* rather than a platform requirement (both its archives carry the same UId and both ship a
+`netstandard` subfolder), and this package is `Type: 1` with a `ProjectPath` whereas cliogate is
+`Type: 0` with none — so descriptor authoring was never a cliogate copy.
 
 ---
 
-## 4. P1 — Manual build runbook (replaces CI until ENG-92113)
+## 4. P1 — Producing the artifact (there is no build step)
 
-Deliverable: `docs/build-and-bundle.md` in the process-builder repo **and** a mirror section in
-`spec/deliver-process-builder-package/deliver-process-builder-package-runbook.md` in clio, because
-whoever bumps the bundled `.gz` works in the clio repo.
+Deliverable: a short runbook in the process-builder repo **and** a mirror in clio, because whoever
+refreshes the bundled `.gz` works in the clio repo.
 
-**The current artifact is not shippable**, and no build script or CI exists anywhere in the workspace
-(no `.github`, `.gitlab-ci.yml`, `Jenkinsfile`, `azure-pipelines.yml`, no build/compress script) — how
-today's `.gz` was produced is entirely tacit. Its defects, measured: `PackageVersion: "1.0.0"` (never
-stamped, not 4-part), net472-only content, a 478 KB `.pdb`, `Files/.idea/**` editor files, and
-`Files/Libs/{ATF.Repository,ErrorOr}.dll` shipped as byte-identical duplicates of the `Files/Bin`
-copies. The runbook must produce something better:
+Under the source-only decision (§3) the whole build stage is gone. The sources **are** the payload, the
+target compiles them, and producing the artifact needs nothing but `clio` and a checkout — no deployed
+Creatio, no `.build-props`, no `CoreLibPath`, no SDK pinning, no per-framework leg. That also retires a
+class of traps this plan hit while the compiled shape was still assumed: `dev-nf` silently matching
+neither optimization PropertyGroup, an IDE rebuilding into `Files/Bin` between build and compress, and
+"which SDK produces the artifact".
 
 ```bash
-# 0. Files/Bin is the UNCONDITIONAL OutputPath, so any IDE build clobbers it.
-#    Always clear it and rebuild immediately before compressing.
-rm -f packages/CrtProcessBuilder/Files/Bin/*
+# 0. There must be NO compiled output in the archive. Files/Bin is the csproj's unconditional
+#    OutputPath, so any local or IDE build leaves one behind — clear it before compressing.
+rm -rf packages/CrtProcessBuilder/Files/Bin packages/CrtProcessBuilder/Files/obj
 
-# 1. net472 -> Files/Bin/    NOTE: -c Release, NOT -c dev-nf (see P1.0)
-dotnet build packages/CrtProcessBuilder/Files/CrtProcessBuilder.csproj -c Release
-
-# 2. netstandard2.0 -> Files/Bin/netstandard/   (PARKED — needs .application/net-core, §11.5)
-#    env.Release.props pins CoreTargetFramework=net472, so this leg needs an explicit
-#    override plus a .NET-Core CoreLibPath:
-# dotnet build … -c Release -p:CoreTargetFramework=netstandard2.0 -p:CoreLibPath=<net-core bin>
-
-# 3. Stamp the version — MUST be 4-part (see P1.1)
+# 1. Only when the version actually changes — MUST stay 4-part (see P1.1)
 clio set-pkg-version ./packages/CrtProcessBuilder --PackageVersion <X.Y.Z.W>
 
-# 4. `clio compress -d` does NOT create the destination directory — create it first
+# 2. `clio compress -d` does NOT create the destination directory (see P1.2)
 mkdir -p <clio-repo>/clio/CrtProcessBuilder
 
-# 5. Compress  (verb: generate-pkg-zip, aliases comp-pkg / compress)
-#    Keep the .gz name equal to the descriptor's Name as a matter of hygiene — nothing enforces
-#    it (see P1.4), but a mismatched pair is exactly the silent failure P2.4b guards against.
-clio compress ./packages/CrtProcessBuilder --skip-pdb \
-  -d <clio-repo>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
-
-# 6. Clean build output out of the source tree (build.ps1 does the same for cliogate)
-rm -f packages/CrtProcessBuilder/Files/Bin/*
+# 3. Compress  (verb: generate-pkg-zip, aliases comp-pkg / compress)
+clio compress ./packages/CrtProcessBuilder --skip-pdb   -d <clio-repo>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ```
 
-- **P1.0 Build with `-c Release`, never `-c dev-nf`.** Both optimization PropertyGroups in
-  the csproj are gated on `'Debug|AnyCPU'` and `'Release|AnyCPU'`, so **`dev-nf` matches neither**
-  and silently inherits MSBuild defaults — `Optimize=false`, full debug info. Measured: the
-  `dev-nf` DLL is 147,456 bytes, the `Release` one 139,776, and the embedded debug path flips
-  from `obj\Debug` to `obj\Release`. `env.Release.props` and `env.dev-nf.props` are equivalent
-  for net472, so `-c Release` just works and leaves `dev-nf`/`dev-n8` as the development
-  configurations. *This was caught the hard way:* the first artifact built here was silently a
-  **Rider Debug build** — Rider rebuilt into `Files/Bin` between the `dev-nf` build and the
-  compress, because `OutputPath` is unconditional. Hence step 0.
-- **`ATF.Repository.dll` / `ErrorOr.dll` need no manual copy** (for net472, verified): the
-  `Libs/*` references carry no `Private=False`, so the build copies both into `Files/Bin`
-  automatically. cliogate needs an explicit copy only because it harvests `ATF.Repository`
-  from a NuGet restore instead. Re-verify for the netstandard leg when it becomes buildable.
+Then commit the `.gz` in clio and let the guard tests (§5.4) check it. They assert exactly the
+properties a human reviewer cannot see in a binary diff: the descriptor triple, the presence of the
+compile-marker schema, and that the sources are in there.
 
-Four traps that must be written into the runbook, not discovered later:
+**The local build is still useful — just not for delivery.** `dotnet build … -c dev-nf` and the package's
+unit tests remain the development loop; they simply no longer produce anything that ships.
 
-- **P1.1 The version must be 4-part.** The descriptor is `"1.0.0"` today. `RequiredPackageChecker.IsCompatible`
-  does `Version.TryParse(required)` then `installedVersion >= new PackageVersion(requiredVersion, "")`,
-  and `System.Version("1.0.0")` yields `Revision = -1`. So a 4-part floor such as `1.0.0.0` compares
-  **greater** than an installed `1.0.0` and the gate **refuses a correctly installed package**. Keep
-  both sides 4-part (step 4 above).
+Traps that survive the simplification:
+
+- **P1.1 A version floor must be 4-part.** `RequiredPackageChecker.IsCompatible` parses the required
+  version with `Version.TryParse` and compares `installedVersion >= new PackageVersion(required, "")`.
+  `System.Version("1.0.0")` yields `Revision = -1`, so a 4-part floor compares **greater** than a 3-part
+  installed version and the gate would **refuse a correctly installed package**. The descriptor is
+  `1.0.0.0` today; keep both sides 4-part.
 - **P1.2 `clio compress -d` does not create the destination directory.** `CompressionUtilities.PackToGZip`
-  opens `FileMode.Create` with no `Directory.CreateDirectory`; the only `CreateDirectory` in
-  `PackageArchiver.cs` is on the *unpack* path. First-time production throws
-  `DirectoryNotFoundException`, and since git does not track empty directories the folder will not exist
-  in a fresh clone until the `.gz` is committed.
-- **P1.3 Netstandard third-party DLLs — ALREADY MITIGATED, no action needed.** In the netstandard2.0
-  branch `Microsoft.Extensions.DependencyInjection` / `Microsoft.Extensions.Http` / `System.Text.Json`
-  8.0.0 are `PackageReference`s **without `Private=False`**, so the build does copy them into
-  `Files/Bin/netstandard`, and `FileContentStorage.GetAssemblyLocationsFromBin` would add that directory
-  to the workspace resolution set — version skew against the stand's own copies would be a runtime
-  break. **But `.clio/clioignore` already denylists all three by name**, so `clio compress` never packs
-  them and the stand keeps using its own. Verified by reading the ignore file. `ATF.Repository.dll` and
-  `ErrorOr.dll` are *not* in the denylist, so they ship — which is correct. Re-verify once the
-  netstandard leg is buildable.
+  opens `FileMode.Create` with no `Directory.CreateDirectory` — the only `CreateDirectory` in
+  `PackageArchiver.cs` is on the *unpack* path. First-time production throws `DirectoryNotFoundException`,
+  and since git does not track empty directories the folder will not exist in a fresh clone until the
+  `.gz` is committed.
 - **P1.4 Nothing validates the descriptor against the filename.** `PackageArchiver.Pack` never opens
-  `descriptor.json`, and `IPackageInstaller.Install` just uploads the file. A `.gz` *named*
-  `CrtProcessBuilder.gz` whose descriptor still says `clioprocessbuilder` installs fine, reports
-  success — and then the gate reports the package missing **forever**. Mitigated by the P2.4b guard
-  test; the runbook must still say to check.
+  `descriptor.json` and `IPackageInstaller.Install` merely uploads the file. A `.gz` *named*
+  `CrtProcessBuilder.gz` whose descriptor said something else would install, report success, and then the
+  gate would report the package missing **forever**. This is what the P2.4b guard test exists for.
 
-  > **Retracted claim, kept as a warning.** An earlier revision of this plan asserted that Creatio
-  > validates the archive name against the descriptor `Name`, on the strength of the Application Hub
-  > install dialog refusing an archive with *"The name of your \*.gz archive does not match the name
-  > specified in the descriptor.json file"*. **That message is misleading and the inference was wrong.**
-  > The client-side condition (bundle `3584.*.js`, `_openConfirmDialogWithCorrectApp`) is:
+  > **Retracted claim, kept as a warning against re-deriving it.** An earlier revision asserted that
+  > Creatio validates the archive name against the descriptor `Name`, on the strength of the Application
+  > Hub refusing an archive with *"The name of your \*.gz archive does not match the name specified in the
+  > descriptor.json file"*. **That message is misleading and the inference was wrong.** The client-side
+  > condition (bundle `3584.*.js`, `_openConfirmDialogWithCorrectApp`) is:
   > ```js
   > const t = e.appInstallInfos || [];
   > if (t.length === 0) { … instant("AppInstallInfoDialog.OutOfSyncNames") … }
   > ```
-  > — it fires when the server found **no APPLICATION** in the archive, regardless of any name. Renaming
-  > the file changed nothing, as expected in hindsight. The real lesson is about the install SURFACE, not
-  > about names (see P1.11).
+  > — it fires when the server found **no APPLICATION** in the archive, whatever the names. Renaming the
+  > file changed nothing.
 
-- **P1.11 The Application Hub DOES accept a single-package `.gz` — but it rejected our source-only
-  archive, and why is still OPEN.** `DefaultPackageExtractor.Extract` treats any `*.gz` as a single
+- **P1.6 Archive hygiene lives in `.clio/clioignore`, not `.gitignore`.** `clio compress` honours
+  `.clio/clioignore` (resolved from `packagePath.Parent.Parent/.clio/`), which is why `Files/.idea/**`
+  reached the archive despite being git-ignored. `**/.idea` and `**/*.pdb` are now in that file, and
+  `--skip-pdb` is belt-and-braces. Note the ignore file **already** denylists
+  `Microsoft.Extensions.DependencyInjection.dll`, `Microsoft.Extensions.Http.dll` and
+  `System.Text.Json.dll`, so those never ship even if a local build drops them into `Files/Bin` —
+  the target uses its own.
+- **P1.9 Provenance.** `ProcessBuilder/.gitignore` excludes `*.gz`, so the artifact can never be
+  committed where it is produced; the hop into clio is a manual step. Record the producing commit SHA in
+  the clio commit message so "which source produced this archive" has an answer.
+
+- **P1.11 Both install surfaces accept the source-only archive.** `DefaultPackageExtractor.Extract`
+  treats any `*.gz` as a single
   package and merely **copies** it into the staging directory (it does not even decompress it);
   `PackageStorage`, initialised with `SetLoadOnlyFileContentOptions()`, then reads the package out of
   that archive. `GetAppsInstallInfoWithoutAppDescriptor` explicitly synthesises one `AppInstallInfo`
@@ -611,15 +540,15 @@ a release defect.)
 
 ---
 
-## 5. P2 — Bundle the `.gz` into clio
+## 5. P2 — Bundle the `.gz` into clio · **DONE** (commit `8e549c96`)
 
 ### 5.1 Placement, mirroring `clio/cliogate/`
 
 ```
-clio/CrtProcessBuilder/CrtProcessBuilder.gz     (committed binary)
+clio/CrtProcessBuilder/CrtProcessBuilder.gz     (committed binary, 187,531 bytes, source only)
 ```
 
-`clio/clio.csproj` — add next to the cliogate entry at lines 85-88:
+`clio/clio.csproj`, next to the cliogate entry:
 
 ```xml
 <None Include="CrtProcessBuilder\**"/>
@@ -628,16 +557,20 @@ clio/CrtProcessBuilder/CrtProcessBuilder.gz     (committed binary)
 </Content>
 ```
 
-**Verified** by inspecting a built `clio` nupkg: `Content` + `CopyToOutputDirectory=Always` puts the
-payload at `tools/{tfm}/any/<dir>/` — exactly where `IWorkingDirectoriesProvider.ExecutingDirectory`
-resolves at runtime. `NU5100` is already globally suppressed (`clio.csproj:35`), so no pack warning.
+`Content` + `CopyToOutputDirectory=Always` puts the payload at `tools/{tfm}/any/<dir>/` — exactly where
+`IWorkingDirectoriesProvider.ExecutingDirectory` resolves at runtime. `NU5100` is already globally
+suppressed (`clio.csproj:35`), so no pack warning.
 
-**`Pack="false"` is included deliberately, and it was measured, not guessed.** Without it the payload
-lands in **five** places (`content/`, `contentFiles/any/{net8.0,net10.0}/`, `tools/{net8.0,net10.0}/any/`).
-A controlled `PackAsTool` repro confirmed that with `Pack="false"` **only the `tools/{tfm}/any/` copies
-survive** — which are the only ones the install code ever reads. This is a genuine improvement over the
-cliogate entry, which pays the 5× duplication. (Keep `NU5128` in mind: it is *not* in `NoWarn`. Harmless
-while cliogate keeps its own `contentFiles` entries; relevant only if all `contentFiles` are ever removed.)
+**`Pack="false"` was measured on a real `dotnet pack` of this project**, not inferred from a repro:
+
+| | nupkg entries | payload |
+|---|---|---|
+| ours, `Pack="false"` | **2** — `tools/{net8.0,net10.0}/any/` only | 375 KB |
+| cliogate, no attribute | 5 — plus `content/` and two `contentFiles/{tfm}/` | 7.15 MB |
+
+The two `tools/` copies are the only ones the install code ever reads; the other three would be dead
+weight in a ~96 MB package. (Keep `NU5128` in mind: it is *not* in `NoWarn`. Harmless while cliogate
+keeps its own `contentFiles` entries; relevant only if all `contentFiles` are ever removed.)
 
 Also verified: the release workflow (`.github/workflows/reliase-to-nuget.yml:92-104,186`) runs only
 `dotnet build` → `dotnet pack` → `nuget push` and **never** `build.ps1`. The `.gz` therefore **must**
@@ -670,63 +603,88 @@ For the new package, introduce **one** constant and derive everything from it:
 - **P2.3c** `clio info` surfaces it (mirror the `--gate` branch in `InfoCommand.cs:44,64-67,76`);
 - **P2.3d** **no `version.txt`** for this package — it would reproduce the stale-file bug.
 
-### 5.4 Guard tests the cliogate pattern lacks
+### 5.4 Guard tests — DONE (`clio.tests/Common/BundledProcessBuilderPackageTests.cs`)
 
-Nothing in the repo asserts that a bundled `.gz` exists in build output or in the nupkg; a missing
-artifact currently surfaces only as a generic install failure at runtime
-(`BasePackageInstaller.InternalInstall` has no existence pre-check). Close that gap for the new package:
+Nothing in the repo asserted that a bundled `.gz` exists in build output or in the nupkg, and
+`BasePackageInstaller.InternalInstall` has no existence pre-check, so a missing artifact surfaced only as
+a generic install failure at runtime. Four tests now close that, and each one covers a failure that is
+otherwise **silent** — the package installs, the name-based gate reports it present, and only a
+`ProcessDesignService` call reveals the problem, on a customer environment after release:
 
-- **P2.4a** a test asserting `CrtProcessBuilder/CrtProcessBuilder.gz` exists relative
-  to the test assembly's output directory (proves the `Content` entry works). **Assert over the TFMs
-  actually produced** — a test hardcoding both `net8.0` and `net10.0` breaks on an SDK-9 build, because
-  `clio.csproj:5-6` collapses `TargetFrameworks` to `net8.0` only and no `global.json` pins the SDK.
-- **P2.4b** a test that gunzips the committed `.gz`, reads `descriptor.json`, and asserts
-  `Name == ProcessBuilderPackageName` **byte-exactly** (casing matters, §2.2), `UId == <fixed guid>`,
-  and `PackageVersion == ProcessBuilderVersion`. This is the **only** guard against the
-  descriptor-vs-filename divergence of P1.4 — nothing else in clio compares them — and it makes a
-  forgotten version bump a red test instead of a silent field bug (covers TC-N-5, TC-N-6, TC-D-4/5).
-- **P2.4c** *(optional, higher value than it looks)* assert the archive contains
-  `Files/Bin/<Name>.dll` **and** `Files/Bin/netstandard/<Name>.dll`. This is the difference between
-  catching a net472-only artifact in CI and discovering it as "installed, detected, every call 404" on
-  a .NET 8 stand (§3).
+- **P2.4a** the archive exists at `<output>/CrtProcessBuilder/CrtProcessBuilder.gz`, i.e. exactly where
+  `IWorkingDirectoriesProvider.ExecutingDirectory` resolves it. A lost `Content` entry or an uncommitted
+  file fails nowhere else. (The path is derived from `AppContext.BaseDirectory`, so it is TFM-agnostic —
+  a test hardcoding both `net8.0` and `net10.0` would break on an SDK-9 build, since `clio.csproj:5-6`
+  collapses `TargetFrameworks` to `net8.0` only and no `global.json` pins the SDK.)
+- **P2.4b** the descriptor inside the archive matches `BundledPackages` **byte-exactly** on `Name`
+  (casing matters, §2.2), carries the fixed `UId`, and its `PackageVersion` equals
+  `ProcessBuilderVersion`. This is the only guard against the descriptor-vs-filename divergence of P1.4,
+  and it turns a forgotten version bump into a red test instead of a silent field bug.
+- **P2.4d** the archive contains the `CrtProcessBuilderCompileMarker` Source Code schema and a
+  `SourceCodeSchemaManager` manager name. **This is the load-bearing one under source-only delivery**:
+  lose that schema and the package installs, is never compiled, produces no assembly at all, and the gate
+  still reports it present. It is the mitigation the §3 decision names as non-optional.
+- **P2.4e** the archive carries the sources and `class ProcessDesignService` — now that no assembly
+  ships, the sources *are* the payload.
+
+*Retired: the earlier P2.4c, which would have asserted a per-framework DLL inside the archive. There is
+no assembly in the archive at all, so it has no subject.*
 
 ### 5.5 Housekeeping
 
-- **P2.5a** `.gitattributes` has no `*.gz` rule, and `core.autocrlf=true` on the dev machine. The
-  existing artifacts survive **only** because git's content sniffing finds a NUL at byte offset 3 (the
-  gzip FLG byte). That is luck, not design — and this repo already pins byte-compared fixtures in
-  `.gitattributes` for exactly this class of reason, so the omission is inconsistent. **Add
-  `*.gz binary` before committing a second artifact** (TC-D-6).
-- **P2.5b** Record the nupkg impact from the **git blob** size, not the checked-in nupkg (which is an
-  older build): `cliogate.gz` is 1,430,162 bytes in git. With `Pack="false"` (§5.1) the new ~450 KB
-  artifact adds ~0.9 MB across the two `tools/` TFMs instead of ~2.3 MB. Current nupkg is ~96 MiB
-  against nuget.org's 250 MB limit — ample headroom either way, but there is no reason to pay 5×.
-- **P2.5c** No CI signal detects source-vs-artifact drift: `build.yml:31-40` filters `clio-src` on
-  `clio/**` and `cliogate` on `cliogate/**`, so a committed `.gz` under `clio/` is just "clio source"
-  and nothing correlates a package-source change with a stale committed artifact. The new bundle
-  inherits this blind spot; P1.9's provenance record is the mitigation available under the simplified
-  scope, and ENG-92113 is the real fix.
+- **P2.5a DONE.** `*.gz binary` added to `.gitattributes`. The existing artifacts survived
+  `core.autocrlf=true` **only** because git's content sniffing finds a NUL at byte offset 3 (the gzip FLG
+  byte) — luck, not design, and inconsistent with a repo that already pins byte-compared fixtures there.
+- **P2.5b Measured.** With `Pack="false"` the artifact adds 375 KB across the two `tools/` TFMs. For
+  comparison, `cliogate.gz` is 1,430,162 bytes in the git blob and pays 5× duplication. The nupkg is
+  ~96 MiB against nuget.org's 250 MB limit — headroom either way, but no reason to pay it.
+- **P2.5c Still open, by design of the simplified scope.** No CI signal detects source-vs-artifact drift:
+  `build.yml:31-40` filters `clio-src` on `clio/**` and `cliogate` on `cliogate/**`, so a committed `.gz`
+  under `clio/` reads as "clio source" and nothing correlates a package-source change with a stale
+  committed artifact. P1.9's provenance record is the available mitigation; ENG-92113 is the real fix.
+- **P2.5d Optional, cheap, not done.** The release workflow already has a *"Verify packaged tool version"*
+  step (`reliase-to-nuget.yml` ~`:106-175`) that installs the packed tool and runs `clio info --clio`.
+  Adding a `Test-Path` on
+  `tool-smoke/.store/clio/$version/clio/$version/tools/*/any/CrtProcessBuilder/CrtProcessBuilder.gz`
+  would catch a payload that failed to pack, at the last moment before publishing.
 
 ---
 
 ## 6. P3/P4 — `install-process-builder` and the detect→offer path
 
-### 6.1 The command
+### 6.1 The command · **DONE** (commits `a1718541`, reworked in `4017d42c`)
 
-New file `clio/Command/InstallProcessBuilderCommand.cs`, cloned from `InstallGateCommand.cs`:
+`clio/Command/InstallProcessBuilderCommand.cs`, modelled on `InstallGateCommand.cs`:
 
 | Aspect | Value |
 |---|---|
-| Verb | `install-process-builder`, aliases `update-process-builder`, `install-bp-builder` (kebab-case, CLIO001). *Note: `install-clioprocessbuilder` appears in a unit-test throw string (`ValidateProcessGraphToolTests.cs:223`) — that is a fabricated NSubstitute message, **not** a decided verb name.* |
+| Verb | `install-process-builder`, aliases `update-process-builder`, `installprocessbuilder`. *Note: `install-clioprocessbuilder` appears in a unit-test throw string (`ValidateProcessGraphToolTests.cs:223`) — a fabricated NSubstitute message, **not** a decided verb name.* |
 | Options | `InstallProcessBuilderOptions : EnvironmentNameOptions` — no options of its own, and **no `[RequiresPackage]`** (see below) |
 | Feature gate | **NONE — do not gate it.** See the reasoning below; this reverses the obvious first instinct. |
-| Deps (all null-checked) | `EnvironmentSettings`, `IPackageInstaller`, `IApplication`, `IWorkingDirectoriesProvider`, `ILogger` |
-| Path | `Path.Combine(ExecutingDirectory, "CrtProcessBuilder", "CrtProcessBuilder.gz")` — **no `IsNetCore` branch** (§3) |
+| Deps (all null-checked) | `EnvironmentSettings`, `IPackageInstaller`, `IWorkingDirectoriesProvider`, `IFileSystem`, `IRequiredPackageChecker`, `IApplicationClient`, `IServiceUrlBuilder`, `ILogger` |
+| Path | `Path.Combine(ExecutingDirectory, BundledPackages.ProcessBuilderPackageName, …ArchiveFileName)` — **no `IsNetCore` branch**: there is no assembly in the archive to pick a flavour of (§3) |
+| Pre-check | the bundled archive must exist, else a plain error — `BasePackageInstaller` has no existence pre-check of its own, so without this a distribution that failed to carry the artifact surfaces as a generic install failure |
+| Short-circuit | `IRequiredPackageChecker.IsCompatible(name, version)` → log and return 0. Prevents making a healthy environment recompile the package for nothing. **Fails OPEN**: an unreachable host or a denied `SysPackage` read must not block an explicitly requested install |
 | Install | `IPackageInstaller.Install(path, settings, packageInstallOptions: **null**, reportPath: null, createBackup: true)` — `null` options keeps it on the plain `/ServiceModel/PackageInstallerService.svc/InstallPackage` route; a non-null value would switch to `/rest/ClioPackageInstallerService/Install`, which **is not implemented in cliogate** |
-| Settings | fresh `EnvironmentSettings` merged from the resolved one with `DeveloperModeEnabled = false` |
-| On success | log `Done`, `IApplication.Restart()`, return 0 |
-| On failure | `WriteError`, **no restart**, return 1; catch logs `GetReadableMessageException()` **first**, then the stack (copy `InstallGateCommand`, not `PushPackageCommand`, whose catch drops the message) |
-| Compile | **none** — the package ships prebuilt assemblies in `Files/Bin`, not C# schemas; `install-gate` does not compile either, and core-rules guidance forbids compiling "just in case" |
+| Settings | fresh `EnvironmentSettings` merged from the resolved one with `DeveloperModeEnabled = false`. Field-justified: on a developer-mode environment `push-pkg`'s unlock step routes through cliogate and threw, even though the package itself installed |
+| **Outcome check** | after a successful install, POST `{}` to `KnownRoute.ListUserTasks` and require a parsed `ListUserTasksResult.success == true`. **Fails CLOSED** — this IS the command's contract |
+| Restart | **none.** The configuration build that compiles the package also loads the result; observed on both a .NET Framework and a .NET 8 stand with the service answering and no restart at all |
+| On failure | `WriteError`, return 1; the catch logs `GetReadableMessageException()` **first**, then the stack (copy `InstallGateCommand`, not `PushPackageCommand`, whose catch drops the message) |
+| Compile | not requested by clio — the *target* compiles the package as part of installing it |
+
+**Why the outcome check matters more than the restart it replaced.** Because the assembly is produced by
+the target rather than shipped, "installed" and "working" are genuinely different states. If the
+compile-marker schema were ever lost from the archive, the package would install, never compile, and the
+name-based `[RequiresPackage]` gate would still report it present while every
+`/rest/ProcessDesignService/*` call failed. The Hub can recover that class of failure through its
+`RestoreFromBackup` stage; this path has no such button, so the check belongs here. It is parsed rather
+than pattern-matched on purpose: the interesting failure is an IIS error page from an unbound route, which
+fails `JsonDocument.Parse` and is correctly read as "not answering", whereas a substring search over HTML
+could accidentally match. One attempt is deliberate — the compile finishes before the install call
+returns, and a 404 from an unbound route is not transient.
+
+*Historical note: the command originally restarted the application, faithfully cloned from the cliogate
+pattern before source-only delivery was validated. `IApplication` left the constructor with it.*
 
 #### Do NOT feature-gate this command (reversal of the obvious choice)
 
@@ -761,24 +719,34 @@ requirement it exists to satisfy. Nothing in the codebase prevents this mistake;
 `InstallGateOptions` precedent (which carries no attributes). **Add a test** asserting
 `InstallProcessBuilderOptions` carries no `[RequiresPackage]`.
 
-#### Known hazard, accept and document
+#### The double-restart hazard no longer applies
 
-`BasePackageInstaller` already restarts the app itself when `DeveloperModeEnabled || IsNetCore`
-(`BasePackageInstaller.cs:263-272`), so on a .NET Core stand the explicit `Restart()` is a **second**
-restart. `install-gate` has this behaviour today. Mirror it for consistency rather than inventing a
-divergent rule; note it in the command's XML docs. The short-circuit above at least stops it from
-firing when nothing needed installing.
+`BasePackageInstaller` restarts the app itself when `DeveloperModeEnabled || IsNetCore`
+(`BasePackageInstaller.cs:263-272`), so an explicit `Restart()` on top of it would have made two on a
+.NET Core stand — which is what `install-gate` does today. Since this command no longer restarts at all,
+the hazard is gone rather than accepted.
 
-- **P3.1** command + options.
-- **P3.2** DI: `services.AddTransient<InstallProcessBuilderCommand>()` in `BindingsModule.cs` (~line 674).
-- **P3.3** `Program.cs`: add the options type to the verb-type array **and** the dispatch arm.
-- **P3.4** `CommandHelpCatalog.cs`: assign to the `IntegrationsAndTools` group (where `install-gate`
-  lives, line 253) + a `DescriptionOverrides` entry (line 146 pattern) — otherwise the description
-  just echoes the verb.
-- **P3.5** unit tests, cloned from `InstallGateCommandTests.cs`: happy path (exact `.gz` path, exit 0,
-  `DeveloperModeEnabled == false`, exactly 1 `Restart`, 1 `WriteLine`), failure (exit 1, **0**
-  restarts), and — replacing cliogate's flavor test — a test asserting the path is the **same**
-  regardless of `IsNetCore` (pins the §3 decision).
+Delivered tasks:
+
+- **P3.1 DONE** command + options (`InstallProcessBuilderCommand.cs`).
+- **P3.2 DONE** DI: `services.AddTransient<InstallProcessBuilderCommand>()` in `BindingsModule.cs`.
+- **P3.3 DONE** `Program.cs`: options type in the verb-type array **and** the dispatch arm.
+- **P3.4 DONE** `CommandHelpCatalog.cs`: `IntegrationsAndTools` group + a `DescriptionOverrides` entry,
+  without which the description would just echo the verb.
+- **P3.5 DONE** unit tests (11): install-then-verify with `DeveloperModeEnabled == false`; the resolved
+  path is identical when `IsNetCore` is true (pins §3); missing bundled archive; short-circuit when
+  already current, asserting the service is **not** probed; version check fails open; install failure and
+  installer exception, both asserting no service probe; service returns an IIS error page; service returns
+  a `success: false` envelope; and `InstallProcessBuilderOptions` carries no `[RequiresPackage]`.
+- **P3.6 DONE** the outcome check (§6.1) — the mitigation the §3 decision names as non-optional.
+- **P3.7 DONE** hand-authored `clio/help/en/install-process-builder.txt`; `docs/commands/…`,
+  `Commands.md` and `WikiAnchors.txt` written by hand too, deliberately — see §9 P5.1 for why the
+  generator could not be used.
+
+**Not yet verified on a stand:** the full install path. Every registered environment already carries the
+package, so the live run exercised only the short-circuit (`… or higher is already installed. Nothing to
+do.`, exit 0, path resolved from the build output). The install-and-verify path needs an environment that
+has never had the package.
 
 ### 6.2 Make the existing gate actionable (this is "detect + offer")
 
@@ -926,27 +894,27 @@ Mapped to the ticket's suites; the ones the simplified scope removes are marked 
 | TC-R-1 | Rename complete: no `clioprocessbuilder`/`ClioProcessBuilder` token outside the append-only diary | P0 |
 | TC-R-2 | `descriptor.json` — `Name = CrtProcessBuilder`, `UId` **unchanged**, 4-part `PackageVersion`, `Maintainer = Creatio`, `ProjectPath = Files/CrtProcessBuilder.csproj` | P0 |
 | TC-R-3 | **`/rest/ProcessDesignService/ListUserTasks` answers after the rename** (route unaffected by package/assembly/namespace rename) | P0 |
-| TC-R-4 | Both configurations (`dev-nf`, `dev-n8`) build; package unit tests green | P0 |
-| TC-R-5 | The produced DLL is named `CrtProcessBuilder.dll` in **both** `Files/Bin` and `Files/Bin/netstandard` — the platform loads `<packageName>.dll` and will not find a differently named assembly | P0 |
-| TC-B-1 | Produced `.gz` contains `Files/Bin/CrtProcessBuilder.dll` **and** `Files/Bin/netstandard/CrtProcessBuilder.dll` + `ATF.Repository.dll` + `ErrorOr.dll`, and **no** `.pdb`, `obj/` traces or `.idea/` files | P1 |
-| TC-B-2 | `Files/Bin` cleaned in the source tree after the build | P1 |
+| TC-R-4 | `dev-nf` builds and the package's 477 unit tests pass. `dev-n8` remains unbuilt locally and **no longer needs to be** — the target compiles the package (§3) | P0 |
+| TC-R-5 | ~~Produced DLL naming per TFM~~ **RETIRED** — no assembly ships; the target names its own output. The casing constraint it protected now lives on the descriptor `Name` (TC-R-2) | — |
+| TC-B-1 | **PASS** — the `.gz` carries the sources, `Files/Libs/{ATF.Repository,ErrorOr}.dll`, the compile-marker schema and its resource, and **no** assembly, `.pdb`, `obj/` or `.idea/`. Asserted by tests P2.4b/d/e | P1 |
+| TC-B-2 | **PASS** — `Files/Bin` and `Files/obj` removed before compressing, so no local build output can leak in | P1 |
 | TC-C-* | dfs-ts delivery / build registration | **N/A → ENG-92113** |
 | TC-D-1 | `.gz` committed at `clio/CrtProcessBuilder/` | P2 |
 | TC-D-2 | `clio.csproj` `Content Include` + `CopyToOutputDirectory=Always` present | P2 |
-| TC-D-3 | Release build output contains `CrtProcessBuilder/CrtProcessBuilder.gz` — **asserted by test P2.4a**, not by eye | P2 |
-| TC-D-5/6 | descriptor `Name`/`UId`/`Version` inside the committed `.gz` match the code constant — **asserted by test P2.4b** | P2 |
+| TC-D-3 | **PASS** — build output contains `CrtProcessBuilder/CrtProcessBuilder.gz`; asserted by test P2.4a and confirmed in `clio/bin/Debug/net8.0/` | P2 |
+| TC-D-5/6 | **PASS** — descriptor `Name`/`UId`/`Version` inside the committed `.gz` match `BundledPackages`; asserted by test P2.4b. Plus TC-D-8: the compile-marker schema is present (P2.4d) | P2 |
 | TC-D-7 | `build.ps1` does **not** try to build the package from source | P2 |
-| TC-E-2 | `dotnet pack` → the `.gz` is present under `tools/{tfm}/any/CrtProcessBuilder/` in the nupkg, and — with `Pack="false"` — **absent** from `content/` and `contentFiles/` | P2 |
+| TC-E-2 | **PASS** — measured on a real `dotnet pack`: 2 entries under `tools/{net8.0,net10.0}/any/CrtProcessBuilder/`, and absent from `content/` and `contentFiles/` | P2 |
 | TC-E-3 | Installed global tool resolves the `.gz` at the path the command expects; asserted in the release workflow's existing "Verify packaged tool version" step | P2 |
 | TC-E-4 | The `.gz` in the built output is **not stale** relative to git (per-TFM `CopyToOutputDirectory` refresh trap) | P2 |
 | TC-F-1 | `clio install-process-builder -e <net472-stand>` succeeds from the **bundled** artifact | P3 |
-| TC-F-6 | **The same `.gz` installs on a .NET Core stand** — the §3 make-or-break check | P3 |
+| TC-F-6 | **PASS** — the same source-only `.gz` installed on `.NET 8.0.29` (`ts1-infr-web02:8530`) in ~35 s and the service answered with 23 tasks | P3 |
 | TC-F-2 | `clio list-packages -e <env>` shows `CrtProcessBuilder` at the delivered version | P3 |
-| TC-F-3 | App healthy after the restart (`clio get-info -e <env>`) | P3 |
+| TC-F-3 | ~~App healthy after the restart~~ **RETIRED** — the command no longer restarts; the equivalent guarantee is TC-F-4, which the command now performs itself | — |
 | TC-F-4 | `list-user-tasks` returns the catalog (~23) → the service resolves | P3 |
 | TC-F-5 | `create-business-process` → `describe-business-process` round-trip | P3 |
 | TC-F-7 | A user without `CanManageSolution` is rejected cleanly, not crashed | P3 |
-| TC-G-1 | Upgrade over install: vN → vN+1 on the same stand, service still answers after restart | P3 |
+| TC-G-1 | Upgrade over install: vN → vN+1 on the same stand, service still answers afterwards. **Not run** — no version bump has been needed yet | P3 |
 | TC-G-2 | **Transition (must be run on a disposable stand):** install `CrtProcessBuilder` (same UId) over an existing `clioprocessbuilder`. Assert: (a) the `SysPackage` row is renamed, not duplicated; (b) **no orphaned `Terrasoft.Configuration/Pkg/clioprocessbuilder` folder with a stale `clioprocessbuilder.dll`** — an orphan would register a second `ProcessDesignService` type and `CustomServicesParser` silently skips duplicates, so the route could bind the stale assembly; (c) `SysPackageInInstalledApp` follows. **Write the answer into the runbook.** | P1/P3 |
 | TC-X-1 | Missing-package refusal names the new command and version, on both the CLI and MCP paths | P4 |
 | TC-X-2 | Stale-package refusal ("version X or higher") fires when an older version is installed | P4 |
@@ -1047,46 +1015,60 @@ missing service.
 
 ---
 
-## 10. Sequencing and estimate
+## 10. Status and remaining work
 
-Run **P0 → verification spike → P2/P3** in that order: the §3 one-vs-two-`.gz` answer changes the
-command, the alias map, and the tests, so buy that information before building on it.
+**Delivered** (branch `feature/ENG-94385-bundle-process-builder-package` in clio,
+`feature/ENG-94385-rename-crt-process-builder` in `cli-process-builder`):
+
+| # | Work | State |
+|---|---|---|
+| P0 | Rename `clioprocessbuilder` → `CrtProcessBuilder`; UId and REST route preserved | **done**, verified on a stand |
+| — | Delivery-shape experiment: compiled vs source-only, both readers, both runtimes | **done**, §3 decided |
+| P1 | Artifact production — no build step; `.clioignore` hygiene; runbook content | **done** (runbook still to be written out as a file) |
+| P2 | Bundle in clio: `.gz`, csproj `Content` with `Pack="false"`, `BundledPackages`, 4 guard tests, `*.gz binary` | **done** |
+| P3 | `install-process-builder`: command, DI, `Program.cs`, help catalog, 11 unit tests, help + docs | **done** |
+| P4.5c | Refusal envelope: package refusal now returns the caller-actionable code, not the unexpected-failure one | **done** |
+| P4.5a | The missing 4th `[TestCase]` in the reflection lock-in, so the rename cannot half-land green | **done** |
+
+**Remaining:**
 
 | # | Work | Days |
 |---|---|---|
-| P0.0 | **PARKED (§11.5):** deploy a local .NET Core Creatio and wire `.application/net-core` so `dev-n8` can build at all (§2.4). Not on the critical path — net472 work proceeds without it | 0.5 |
-| P0 | Rename in `cli-process-builder` (+ tests, PR) | 2.0 |
-| — | **Spike: build both TFMs, install one `.gz` on a net472 stand and a netcore stand** (TC-F-6, TC-G-2) | 0.5 |
-| P1 | Manual build+bundle runbook, both repos | 0.5 |
-| P2 | Bundle in clio: csproj, version constant, `clio info`, guard tests | 1.0 |
-| P3 | `install-process-builder` command + DI + Program + help catalog + unit tests | 1.5 |
-| P4 | Detect/offer wiring: requirement rename + version floor, tool descriptions, MCP tool + contract + classification row + unit tests, guidance, capability map | 2.0 |
-| P4.5c | Refusal-envelope fix + re-validate `BaseToolTests` + correct the capability map *(drop if §11.6 sends it to its own ticket)* | 0.5 |
-| P4.12 | MCP E2E (no install-style sibling to copy) | 1.0 |
-| P5 | Docs regeneration, BMAD artifacts, diary, review gates, full unit suite | 1.0 |
-| — | Buffer (§3 fallback to the two-name split, TC-G-2 transition surprises, first-ever `dev-n8` build) | 0.5 |
-| | **Total** | **≈ 11 days** |
+| P4 | Detect/offer wiring: the `[RequiresPackage]` argument renamed at 5 sites + version floor from `BundledPackages`, hints naming the new command, 5 tool `[Description]`s, lock-in tests, MCP tool + curated contract + classification row + unit tests, `deploy-lifecycle` and `process-modeling` guidance, `docs/McpCapabilityMap.md` | 2.0 |
+| P4.12 | MCP E2E (no install-style sibling to copy; model on `InstallApplicationToolE2ETests`) | 1.0 |
+| P5 | Generated docs, BMAD artifacts, diary, review gates, full unit suite | 1.0 |
+| — | Live install-path run on an environment that has never had the package (only the short-circuit is verified so far) | 0.25 |
+| — | Buffer | 0.5 |
+| | **Total remaining** | **≈ 4.75 days** |
 
-Consistent with Confluence's Option 2 estimate (~1 sprint) — the CI work we skip is offset by the
-netcore-stand prerequisite plus the version-floor and guard-test hardening this plan adds.
+**What the source-only decision removed from the original estimate:** P0.0 (local .NET Core Creatio,
+0.5 d) is cancelled outright; the two-flavour spike and its fallback budget are moot; P1 shrank from a
+build recipe to two commands. P4.5c came in at ~0.5 h rather than the 0.5 d budgeted, because the
+ClioRing gate turned out not to apply.
 
-**Biggest schedule risks, in order:** (1) the netstandard2.0 target has never been built in this
-checkout, so `dev-n8` may surface reference/version problems that are pure unknowns today — **deferred,
-not removed**, and it lands late precisely because it is parked (§11.5); (2) the
-one-`.gz`-for-both-hosts decision (§3); (3) TC-G-2 — the same-UId rename may be a silent no-op *and*
-may orphan the old package folder, and both failure modes are **silent** (gate green, stale assembly
-serving the route).
+**Biggest remaining risks:** (1) P4 touches five `[RequiresPackage]` sites plus their pinned Hint strings
+and tool descriptions — mechanical but wide, and one site was unpinned until P4.5a; (2) the MCP E2E has no
+sibling to copy; (3) the residual unexplained Hub rejection (§P1.11) sits on the manual install path.
 
-**The three ways this ships looking green and being broken** — all covered above, collected here because
-they share a shape: the gate reads `SysPackage.Name`, and *nothing* connects that to a working service.
+**The ways this can ship looking green and being broken** — collected because they share one shape: the
+gate reads `SysPackage.Name`, and *nothing in clio* connects that name to a working service.
 
-1. **Descriptor says the old name, file says the new one** → installs, succeeds, gate reports missing
-   forever. Caught by P2.4b.
-2. **net472-only artifact on a .NET 8 stand** → installs, restarts, gate reports **present**, every
-   call 404s (retried 3×). Caught by P2.4c + TC-F-6.
-3. **Same-UId install lands in an "unmodified" descriptor state, or the old Pkg folder is orphaned** →
-   either the name never changes, or two `ProcessDesignService` types load and the *first* one wins by
-   enumeration order. Caught only by TC-G-2 on a disposable stand.
+1. **The archive's descriptor disagrees with what the gate looks for** → installs, reports success, gate
+   reports the package missing forever. Caught by guard test P2.4b.
+2. **The compile-marker schema is lost from the archive** → the package installs, is never compiled,
+   produces no assembly, and the gate reports it **present** while every call fails. This is the failure
+   mode the source-only decision introduces, and it has two independent guards: test P2.4d at build time,
+   and the command's own outcome check at install time.
+3. **The environment accepts the package but fails to compile it** → same visible symptom as (2), but on
+   the target rather than in the artifact. Caught by the command's outcome check; recoverable through the
+   Hub's `RestoreFromBackup` stage or `clio restore-configuration`.
+4. **Same-UId install over a stale predecessor** → the `SysPackage` row might not be renamed, or the old
+   `Pkg/<oldname>` folder might be orphaned with its own assembly, in which case two
+   `ProcessDesignService` types load and `CustomServicesParser` keeps whichever it enumerates first.
+   Mitigated procedurally: the transition is uninstall-then-install (§11.4), not an in-place upgrade.
+
+*Retired: "net472-only artifact on a .NET 8 stand". No assembly ships, so there is no flavour to get
+wrong — the failure mode is structurally impossible rather than guarded.*
 
 ---
 
