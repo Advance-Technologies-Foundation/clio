@@ -232,20 +232,11 @@ public class CreateThemeTool(
 			EnvironmentName = null
 		};
 		BuildThemeCommand buildCommand = _commandResolver.Resolve<BuildThemeCommand>(environmentOptions);
-		// The Google Fonts probe runs here, inside the per-tenant execution lock — deliberately NOT hoisted
-		// the way build-theme hoists it. build-theme's hoist exists because its env-less path takes the
-		// process-wide SharedFallbackKey that every env-less tool shares; this tool holds only its tenant's
-		// lock, which the create call's own HTTP round-trip occupies for longer than the bounded probe.
-		// Hoisting would also require resolving BuildThemeCommand before ExecuteResolved, breaking the pinned
-		// failure order (CreateTheme_ShouldFailBeforeTheExecutorBody_WhenEnvironmentCannotBeResolved asserts
-		// no other Resolve<T> runs when the environment cannot be resolved).
-		if (!buildCommand.TryResolveFontAvailability(buildOptions,
-				out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out error)) {
-			css = null;
-			warnings = [];
-			return false;
-		}
-		return buildCommand.TryBuildTheme(buildOptions, resolvedSettings, out css, out _, out warnings, out error, fontAvailability);
+		// The build probes Google Fonts for each custom family, so this runs under the per-tenant lock that
+		// ExecuteResolved already holds. That is acceptable here in a way it was not for build-theme: the lock
+		// is this tenant's rather than shared, and the create call's own HTTP round-trip occupies it for
+		// longer than the bounded probe does.
+		return buildCommand.TryBuildTheme(buildOptions, resolvedSettings, out css, out _, out warnings, out error);
 	}
 }
 

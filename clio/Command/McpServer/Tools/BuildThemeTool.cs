@@ -28,10 +28,12 @@ namespace Clio.Command.McpServer.Tools;
 /// identically.
 /// </summary>
 /// <remarks>
-/// Execution goes through <see cref="BaseTool{T}.ExecuteWithCleanLog{TResponse}"/> so it holds the shared
-/// MCP execution lock: the workspace-write mode mutates the singleton <c>IWorkspacePathBuilder.RootPath</c>
-/// inside <see cref="BuildThemeCommand"/>, which must not race with concurrent tool invocations in a
-/// long-lived MCP server.
+/// Execution goes through <see cref="BaseTool{T}.ExecuteWithCleanLogUnderToolLock{TResponse}"/>, so it is
+/// serialized against other <c>build-theme</c> calls only: the workspace-write mode mutates the singleton
+/// <c>IWorkspacePathBuilder.RootPath</c> inside <see cref="BuildThemeCommand"/>, which must not race with
+/// concurrent invocations in a long-lived MCP server. The tool resolves no environment and acquires no
+/// session container, so it deliberately does NOT take the shared fallback lock — its bounded Google Fonts
+/// probe would otherwise stall every other environment-less tool for the probe budget.
 /// </remarks>
 /// <remarks>
 /// Pattern B (ADR verification #5, ENG-93347): <see cref="BuildThemeOptions"/> is not
@@ -117,17 +119,14 @@ public sealed class BuildThemeTool(
 			EnvironmentName = args.EnvironmentName
 		};
 		EnvironmentSettings resolvedSettings = ResolveVersionSettings(args, out string environmentFallbackWarning);
-		if (!command.TryResolveFontAvailability(options, out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out string prepareError)) {
-			return BuildThemeResult.Failure(prepareError);
-		}
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLogUnderToolLock(() => {
 			if (writeToPackage) {
-				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError, fontAvailability)) {
+				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
 					return BuildThemeResult.Failure(writeError);
 				}
 				return BuildThemeResult.Written(writtenPath, PrependWarning(environmentFallbackWarning, writeWarnings));
 			}
-			if (!command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError, fontAvailability)) {
+			if (!command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
 				return BuildThemeResult.Failure(buildError);
 			}
 			return BuildThemeResult.Successful(css, descriptor, PrependWarning(environmentFallbackWarning, warnings));

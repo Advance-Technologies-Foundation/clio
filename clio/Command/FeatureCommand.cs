@@ -53,17 +53,18 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 
 	private readonly IDataProvider _dataProvider;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
-	private readonly ILogger _logger;
+	private readonly IFeatureStateService _featureState;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public FeatureCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IDataProvider dataProvider, IServiceUrlBuilder serviceUrlBuilder)
+		IDataProvider dataProvider, IServiceUrlBuilder serviceUrlBuilder, IFeatureStateService featureState)
 		: base(applicationClient, settings){
 		_dataProvider = dataProvider;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_featureState = featureState;
 	}
 
 	#endregion
@@ -103,50 +104,27 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 			Logger.WriteWarning("Use of UseFeatureWebService flag is not recommended");
 			return base.Execute(options);
 		}
-		if (options.SysAdminUnitName is null) {
-			SetFeatureStateDefValue(options);
-		} else {
-			SetFeatureStateForUser(options);
+		bool applied = options.SysAdminUnitName is null
+			? SetFeatureStateDefValue(options)
+			: SetFeatureStateForUser(options);
+		if (!applied) {
+			Logger.WriteError(options.SysAdminUnitName is null
+				? $"Feature '{options.Code}' state was not written."
+				: $"Feature '{options.Code}' state was not written for '{options.SysAdminUnitName}'.");
 		}
 		ClearCache(options.Code);
-		return 0;
+		return applied ? 0 : 1;
 	}
 
-	public AppFeature GetFeature(string featureCode){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-		AppFeature feature = ctx.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == featureCode);
-
-		if (feature is null || feature.Id == Guid.Empty) {
-			feature = ctx.CreateModel<AppFeature>();
-			feature.Code = featureCode;
-			feature.Name = featureCode;
-			ctx.Save();
-		}
-		return feature;
-	}
-
-	public void SaveFeatureState(AppFeature feature, Guid sysAdminUnitId, bool state){
-		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
-
-		Guid? featureStateId = ctx.Models<AdminUnitFeatureState>()
-								.FirstOrDefault(f => f.FeatureId == feature.Id && f.AdminUnitId == sysAdminUnitId)?.Id;
-
-		if (featureStateId is null) {
-			AppFeatureState featureState = ctx.CreateModel<AppFeatureState>();
-			featureState.FeatureId = feature.Id;
-			featureState.FeatureState = state;
-			featureState.AdminUnitId = sysAdminUnitId;
-			ctx.Save();
-		} else {
-			AppFeatureState featureState = ctx
-											.Models<AppFeatureState>()
-											.FirstOrDefault(f => f.Id == featureStateId);
-			featureState.FeatureState = state;
-			ctx.Save();
-		}
-	}
-
-	public void SetFeatureStateDefValue(FeatureOptions options){
+	/// <summary>
+	/// Writes the feature's own default state, and for the current user when the options ask for it.
+	/// </summary>
+	/// <param name="options">The feature code, the state, and whether it applies to the current user only.</param>
+	/// <returns>
+	/// <see langword="false"/> when the platform rejects the write. A caller that must not report a state
+	/// it never wrote reads this back.
+	/// </returns>
+	public bool SetFeatureStateDefValue(FeatureOptions options){
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 		AppFeature feature = ctx.Models<AppFeature>().ToList().FirstOrDefault(f => f.Code == options.Code);
 
@@ -157,12 +135,20 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 		}
 		feature.State = options.State == 1;
 		feature.StateForCurrentUser = options.OnlyCurrentUser;
-		ctx.Save();
+		return ctx.Save()?.Success == true;
 	}
 
-	public void SetFeatureStateForUser(FeatureOptions options){
+	/// <summary>
+	/// Writes the feature state for the role named in <paramref name="options"/>.
+	/// </summary>
+	/// <param name="options">The feature code, the state, and the role name to write it for.</param>
+	/// <returns>
+	/// <see langword="false"/> when no role carries that name, in which case nothing is written and the
+	/// reason is logged as a warning. A caller that must not report a state it never wrote reads this back.
+	/// </returns>
+	public bool SetFeatureStateForUser(FeatureOptions options){
 		if (options.SysAdminUnitName is null) {
-			return;
+			return false;
 		}
 		IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 		SysAdminUnit user = ctx
@@ -170,11 +156,10 @@ public class FeatureCommand : RemoteCommand<FeatureOptions> {
 							.FirstOrDefault(s => s.Name == options.SysAdminUnitName);
 		if (user is null) {
 			Logger.WriteWarning($"User with name {options.SysAdminUnitName} was not found");
-			return;
+			return false;
 		}
-		Guid id = user.Id;
-		AppFeature feature = GetFeature(options.Code);
-		SaveFeatureState(feature, id, options.State == 1);
+		_featureState.SetFeatureState(options.Code, user.Id, options.State == 1, defineIfMissing: true);
+		return true;
 	}
 
 	#endregion

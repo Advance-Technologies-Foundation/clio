@@ -108,10 +108,8 @@ public interface IGoogleFontsCatalog {
 public sealed class GoogleFontsCatalog(HttpClient httpClient, IGoogleFontsAvailabilityCache cache) : IGoogleFontsCatalog {
 
 	/// <summary>
-	/// Per-probe budget, configured once on the typed client in <c>BindingsModule</c>. Kept short because
-	/// it is the only bound on the blocking wait in <c>BuildThemeCommand.ResolveFontAvailability</c>; the
-	/// <c>build-theme</c> MCP tool runs that probe BEFORE taking the shared execution lock, so a slow probe
-	/// delays its own call instead of every other environment-less tool.
+	/// Maximum time a single availability probe may take. A probe that does not answer within it is
+	/// abandoned and its family resolves to <see cref="GoogleFontAvailability.Unverified"/>.
 	/// </summary>
 	internal static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(3);
 

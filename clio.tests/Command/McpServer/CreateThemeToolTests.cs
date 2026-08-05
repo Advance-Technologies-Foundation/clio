@@ -1455,8 +1455,7 @@ public class CreateThemeToolTests {
 				Primary = "#004fd6", CssClassName = "ocean-theme", Caption = "Ocean", Id = "ocean",
 				HeadingFont = "Poppins", FontWeights = new[] { 400, 600 }, Version = "10.0"
 			},
-			null, out string expectedCss, out _, out _, out _,
-			new Dictionary<string, GoogleFontAvailability> { ["Poppins"] = GoogleFontAvailability.InCatalog });
+			null, out string expectedCss, out _, out _, out _);
 
 		// Assert
 		directOk.Should().BeTrue(because: "the pinned inputs are valid for the real engine");

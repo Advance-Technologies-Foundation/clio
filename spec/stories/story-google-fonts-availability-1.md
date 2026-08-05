@@ -45,11 +45,13 @@ place for a confirm-then-rebuild round trip.
 - **AC-6** A font family that breaks the name contract (grammar or the 100-character cap, applied to
   the trimmed and whitespace-collapsed name) fails with `INVALID_FONT_FAMILY` **before** any network
   request, and never reaches the probe URL or the availability cache.
-- **AC-7** The probe runs **outside** the MCP shared execution lock, and the verdicts are passed into
-  the build so it never re-probes inside the lock. The request's **shape** validation — css-class-name
-  and the version/environment pair — runs before the probe, so error precedence is unchanged and those
-  rejections cost no outbound request. Colour parsing and the workspace/package existence checks stay
-  inside the build, so a request failing on those still probes first; that is accepted, not a gap.
+- **AC-7** The `build-theme` MCP tool does **not** take the shared MCP execution lock. It resolves no
+  environment and acquires no session container, so it serializes only against other `build-theme`
+  calls — the injected command's `IWorkspacePathBuilder.RootPath` is shared by every call and must not
+  be interleaved. A slow probe therefore delays another `build-theme` call and nothing else. The probe
+  runs inside the build, after the request is validated, so every rejection — css-class-name, the
+  version/environment pair, and the workspace/package existence checks — costs no outbound request.
+  Each requested family is probed once.
 - **AC-8** The theming guidance, the CLI docs/help, the MCP argument descriptions and the toolkit
   skill all state the same family-name contract and the same post-factum warning handling.
 

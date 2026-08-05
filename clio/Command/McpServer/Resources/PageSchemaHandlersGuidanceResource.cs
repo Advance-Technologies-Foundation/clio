@@ -76,6 +76,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | page init, destroy, attribute-change orchestration, editor interaction, or domain-specific workflow | handler in `SCHEMA_HANDLERS` | handlers runtime | yes |
 
 		       crt.CreateRecordRequest page-resolution note
+		       - Decision rule: use `crt.CreateRecordRequest` when the action should open a new record. Use
+		         `entityPageName` when the request must select a specific add `FormPage`; it is a supported,
+		         non-deprecated navigation parameter and takes priority for page resolution. This is especially
+		         appropriate when the entity has no registered section add page. Still provide `entityName` or
+		         `itemsAttributeName` when the entity must be resolved from the list/context — `entityPageName`
+		         does not replace that entity-resolution input.
 		       - A button/menu wired to `crt.CreateRecordRequest` opens the target entity's navigation/edit page,
 		         which the runtime resolves from the entity's REGISTERED page. For a standalone detail/child
 		         entity with NO section (no registered edit page) the click throws this exact toast:
@@ -84,6 +90,17 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         Pass an explicit `entityPageName` in `params` naming an existing FormPage schema, or register a
 		         section page (`create-app-section`). To simply ADD rows to a related list, prefer INLINE grid add
 		         (`features.editable.itemsCreation`) — no page needed; see get-guidance `related-list`.
+		       - Typed-page menu caveat: the runtime preprocessor examines every `crt.Button` whose clicked
+		         request is `crt.CreateRecordRequest` and has `params`. It resolves the entity from `entityName`
+		         or, when omitted, from `itemsAttributeName`, loads the entity's eligible add pages, and when
+		         more than one exists it changes the button to `clickMode: "menu"` and prepends one typed menu
+		         item per page — unless `params.defaultValues` already contains the entity structure's actual
+		         type-column attribute with a value. `entityPageName` does not suppress this preprocessor.
+		       - To open one specific typed new-record flow without the dropdown, keep the direct
+		         `crt.CreateRecordRequest` and supply `defaultValues` for the actual type column, using the
+		         intended page/type UId as its value, for example:
+		         `"defaultValues": [{ "attributeName": "<TypeColumnAttribute>", "value": "<IntendedPageOrTypeUId>" }]`.
+		         Do not replace the button or add a custom handler solely to remove this generated menu.
 
 		       Request shape quick reference
 		       - Do NOT mix the declarative page-config shape with the imperative runtime-dispatch shape.
