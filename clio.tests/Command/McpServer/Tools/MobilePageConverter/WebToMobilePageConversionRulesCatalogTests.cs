@@ -61,6 +61,20 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Bundled tabbed template maps the attachments detail as a name-only, same-component twin: web AttachmentList -> mobile AttachmentFileList (both crt.FileList) with no carryProperties whitelist, so the whole node — recordColumnName included — merges onto the template-provided element instead of being pruned as chrome.")]
+	public void LoadBundled_TabbedTemplateMapsAttachmentListTwin() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		TemplateMappingRule tabbed = rules.Templates.First(t =>
+			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
+		ComponentMappingRule attachments = tabbed.Components.Single(c => c.Web == "AttachmentList");
+		attachments.Mobile.Should().Be("AttachmentFileList",
+			because: "the web AttachmentList maps to the mobile AttachmentFileList element");
+		attachments.CarryProperties.Should().BeEmpty(
+			because: "it is the same component on both sides (crt.FileList) — a name-only twin carries the whole node, no whitelist needed");
+	}
+
+	[Test]
 	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem] and its note explains the crt.ListItem goes into the crt.List itemLayout.")]
 	public void LoadBundled_GridRuleMapsToListAndListItem() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

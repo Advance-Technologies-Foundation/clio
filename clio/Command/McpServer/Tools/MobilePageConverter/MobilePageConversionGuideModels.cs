@@ -153,12 +153,15 @@ public sealed class ElementMapEntry {
 	public CaptionResource CaptionResource { get; init; }
 
 	/// <summary>
-	/// For an <c>insert</c>: the prebuilt, ready-to-paste mobile component <c>values</c>. It carries the
+	/// The prebuilt, ready-to-paste mobile component <c>values</c>. For an <c>insert</c> it carries the
 	/// component <c>type</c> and EVERY source property the mobile component supports (per the mobile
-	/// registry) — copied verbatim, with only mobile-unsupported properties pruned. Paste it as the inserted
-	/// component's <c>values</c> WITHOUT dropping anything; then add ONLY the value binding (e.g.
-	/// <c>control</c>, or <c>value</c> for lookups), which is type-specific and intentionally left out. Null
-	/// for non-insert operations.
+	/// registry) — copied verbatim, with only mobile-unsupported properties pruned; paste it as the inserted
+	/// component's <c>values</c> WITHOUT dropping anything, then add ONLY the value binding (e.g.
+	/// <c>control</c>, or <c>value</c> for lookups), which is type-specific and intentionally left out. For a
+	/// <c>merge</c> twin it carries the page's parameters onto the template-provided element with no
+	/// <c>type</c> — the whitelisted keys when the rule declares <c>carryProperties</c>, otherwise the whole
+	/// node for a same-component twin (e.g. crt.FileList → crt.FileList); merge them by name. Null when there
+	/// is nothing prebuilt (a structural/advisory merge, or an operation that carries no values).
 	/// </summary>
 	[JsonPropertyName("mobileValues")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

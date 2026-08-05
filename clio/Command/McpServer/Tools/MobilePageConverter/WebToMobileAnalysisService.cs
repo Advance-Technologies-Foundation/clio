@@ -1432,15 +1432,21 @@ public static class WebToMobileAnalysisService {
 				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
 					? compRule.MobileType
 					: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
+				// Deterministic merge payload carried onto the template-provided element:
+				//  • an explicit carryProperties whitelist → just those keys (e.g. the folder tree binding);
+				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
+				//    e.g. crt.FileList → crt.FileList) → carry ALL its properties, because a name twin of one
+				//    component is just the same element renamed between the web and mobile templates;
+				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List) → no
+				//    payload; it stays an advisory merge and the how-to is left to componentSuggestions.
+				// The payload never carries the component `type` (a merge targets an element the template
+				// already owns) nor re-keys captions (the template owns the element's caption).
+				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,
-					// A twin whose rule declares carryProperties gets a DETERMINISTIC merge payload: the listed
-					// web-node properties carried verbatim onto the mobile element (e.g. the folder tree's
-					// sourceSchemaName/rootSchemaName). Null when the rule carries none — the twin stays an advisory
-					// merge configured by the caller (e.g. DataTable → List's structural grid→row transform).
-					MobileValues = BuildCarriedTwinValues(ctx, node, compRule, twinMobileType),
-					Reason = ComponentTwinReason(name, type, compRule)
+					MobileValues = twinValues,
+					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile);
@@ -1519,19 +1525,70 @@ public static class WebToMobileAnalysisService {
 	/// keeps no component-specific transform — the "how" (e.g. a grid's columns → the list row) is defined
 	/// by the general components rule and surfaced there for the model to apply.
 	/// </summary>
-	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule) {
+	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule, bool hasPrebuiltPayload) {
 		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
-		// A twin that carries properties ships a prebuilt mobileValues merge payload — tell the caller to
-		// paste it (not to hand-configure), since merges are otherwise advisory. Keeps the DataTable-style
-		// (no carryProperties) advisory wording unchanged.
-		if (rule.CarryProperties is { Count: > 0 }) {
-			return $"{basis} — template-provided element — merge the prebuilt mobileValues " +
-				$"({string.Join(", ", rule.CarryProperties)}) onto '{rule.Mobile}' by name (do not insert a duplicate)";
+		// Whenever a prebuilt mobileValues payload was produced — a carryProperties whitelist OR a
+		// same-component carry-all — tell the caller to paste it (a merge is otherwise advisory). A structural
+		// twin with no payload keeps the advisory, type-driven wording (e.g. DataTable → List).
+		if (hasPrebuiltPayload) {
+			string what = rule.CarryProperties is { Count: > 0 } ? $" ({string.Join(", ", rule.CarryProperties)})" : "";
+			return $"{basis} — template-provided element — merge the prebuilt mobileValues{what} onto " +
+				$"'{rule.Mobile}' by name (do not insert a duplicate)";
 		}
 		string detail = string.IsNullOrEmpty(type)
 			? $"template-provided element — configure '{rule.Mobile}' by merge-by-name (do not insert a duplicate)"
 			: $"template-provided element — configure '{rule.Mobile}' by merge-by-name per componentSuggestions[\"{type}\"] (do not insert a duplicate)";
 		return $"{basis} — {detail}";
+	}
+
+	/// <summary>
+	/// Builds the merge payload for a component twin. An explicit
+	/// <see cref="ComponentMappingRule.CarryProperties"/> whitelist carries just those keys
+	/// (<see cref="BuildCarriedTwinValues"/>); otherwise, when the twin is the SAME component on both sides
+	/// (<paramref name="webType"/> survives on mobile as <paramref name="twinMobileType"/>, e.g.
+	/// crt.FileList → crt.FileList), the whole node is carried (<see cref="BuildCarriedTwinMergeValues"/>) —
+	/// a name twin of one component is just the same element renamed between the web and mobile templates. A
+	/// twin whose web type has no mobile equivalent (a structural conversion, e.g. crt.DataGrid → crt.List)
+	/// gets no payload and stays advisory.
+	/// </summary>
+	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string twinMobileType, string webType) {
+		if (rule.CarryProperties is { Count: > 0 }) {
+			return BuildCarriedTwinValues(ctx, node, rule, twinMobileType);
+		}
+		bool sameComponent = !string.IsNullOrEmpty(webType)
+			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase);
+		return sameComponent ? BuildCarriedTwinMergeValues(ctx, node, twinMobileType) : null;
+	}
+
+	/// <summary>
+	/// Merge payload for a SAME-component twin: EVERY source property (minus element identity — <c>name</c>
+	/// and <c>type</c> — and value/event bindings) copied verbatim onto the template-provided element,
+	/// shape-coerced to the mobile registry contract. Unlike <see cref="BuildMobileValues"/> (the insert
+	/// builder) it emits NO <c>type</c> (a merge targets an element the template already owns) and does NO
+	/// caption re-keying (the template owns the element's caption). Null when nothing carries.
+	/// </summary>
+	private static JsonNode BuildCarriedTwinMergeValues(ElementMapContext ctx, JObject node, string mobileType) {
+		var values = new JObject();
+		foreach (JProperty prop in node.Properties()) {
+			// `items` as an ARRAY is the child view-element collection (structural) — never a value.
+			if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				continue;
+			}
+			// Element identity (name/type) and value bindings (control/value) are excluded; event bindings are
+			// the template element's own — a same-component merge carries data parameters, not interactions.
+			if (ExcludedSourceProps.Contains(prop.Name) || IsEventBinding(prop.Value)) {
+				continue;
+			}
+			values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+		}
+		if (values.Count == 0) {
+			return null;
+		}
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch (System.Text.Json.JsonException) {
+			return null;
+		}
 	}
 
 	/// <summary>
