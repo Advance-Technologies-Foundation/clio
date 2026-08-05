@@ -107,7 +107,7 @@ public sealed class BaseToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The environment-scoped gate fails the tool with the PackageRequirementException message and never runs the command when a gated options type's requirement is unmet.")]
+	[Description("The environment-scoped gate fails the tool with the PackageRequirementException message on the caller-actionable exit code (1, not -1) and never runs the command when a gated options type's requirement is unmet.")]
 	public void InternalExecuteGeneric_ShouldReturnFailedResultWithMessageAndNotRunCommand_WhenPackageRequirementCheckerThrowsPackageRequirementException() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
@@ -126,8 +126,11 @@ public sealed class BaseToolTests {
 		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "an unsatisfied package requirement must fail the MCP tool before the command runs");
+		result.ExitCode.Should().Be(1,
+			because: "a missing package is an EXPECTED precondition the caller can fix by installing it, which "
+				+ "docs/McpCapabilityMap.md defines as exit 1; reporting it as -1 would tell the agent that "
+				+ "clio itself broke and that retrying is futile, defeating the install-then-retry remediation "
+				+ "the refusal message itself describes");
 		messageValues.Should().Contain("Install the cliogate package.",
 			because: "the PackageRequirementException message must be surfaced verbatim to the MCP caller");
 		command.WasExecuted.Should().BeFalse(

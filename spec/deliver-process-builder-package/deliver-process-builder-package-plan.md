@@ -90,7 +90,7 @@ cliogate" means in code:
 3. the MCP guidance (`deploy-lifecycle`, `process-modeling`) tells the agent to run it on that failure;
 4. `get-tool-contract` carries the install tool's contract so the agent can call it.
 
-**But step 1 is broken today and must be fixed as part of this work — see P4.5c.** The MCP refusal goes
+**Step 1 was broken and is now FIXED — see P4.5c (done 2026-08-04).** The MCP refusal went
 through `CommandExecutionResult.FromError` (`BaseTool.cs:177-179`), which is exit **-1**, documented in
 that very file as "an *unexpected runtime failure*", with `FromValidationError` (exit 1) documented as
 the factory for "a *refused precondition*". `docs/McpCapabilityMap.md:261-264` then teaches agents that
@@ -650,7 +650,14 @@ firing when nothing needed installing.
 - **P4.5b** Also rename the package literal in the non-obvious places the sweep must not miss:
   `docs/McpCapabilityMap.md:674,680` and `clio.mcp.e2e/Support/Configuration/ProcessDesignerE2EGate.cs:14,23`.
 
-- **P4.5c Fix the refusal envelope so install-and-retry is actually reachable.** As established in §1.1,
+- **P4.5c DONE (2026-08-04).** `BaseTool.cs:178` now returns `FromValidationError` (exit 1) instead of
+  `FromError` (exit −1) for a `PackageRequirementException`, and `BaseToolTests.cs:129` pins the new
+  value with a `because` that defends the choice rather than merely asserting failure. Nothing else
+  pinned the old code: the second `PackageRequirementException` test asserts the **version** gate wins
+  and never reaches the package gate, and the e2e only asserts the *absence* of the refusal message on
+  an environment where the package IS installed. `docs/McpCapabilityMap.md` needed **no** change — it
+  already documented exit 1 for "a required package not installed", so the code caught up with the doc.
+  Full unit suite green (7970 passed, 0 failed). Original problem statement, kept for the record:
   the MCP refusal is exit **-1** via `FromError`, which the shipped guidance defines as "clio itself
   failed, retrying won't help", while `FromValidationError` (exit 1) is the documented factory for a
   refused precondition. Switch `BaseTool.cs:177-179` to `FromValidationError`.
@@ -835,12 +842,18 @@ missing service.
   Ring reads the `get-tool-contract` catalog dynamically (`CatalogCount > 0`) and pins no tool list.
   State in the PR: **"ClioRing compatibility reviewed, no Ring-consumed contract changed"** with those
   paths cited.
-  **But note P4.5c is not additive.** Changing `BaseTool`'s package-refusal exit code alters a shared MCP
-  error envelope that every gated tool emits — including `install-gate`, which Ring **does** consume
-  (`ClioWorkflowViewModel.cs:138`). If P4.5c stays in scope, the **full gate fires**: run
-  `dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release` **and** the Windows x64
-  NativeAOT publish, and the PR must say so instead of claiming a no-op. This is a further argument for
-  splitting P4.5c into its own ticket (§11.6).
+  **P4.5c included — and it does NOT fire the full gate.** An earlier draft of this plan claimed it
+  would, on the grounds that the changed envelope is shared with `install-gate`, which Ring consumes.
+  That was wrong, and the cross-check is cheap to state: Ring's consumed tool set is closed and hardcoded
+  to `list-packages`, `list-apps`, `install-gate`, `restart-by-environment-name`,
+  `clear-redis-db-by-environment` (`ClioWorkflowViewModel.cs:135-141`), plus the deploy/uninstall nested
+  commands and the three preflight commands via `clio-run`. **None of those carries
+  `[RequiresPackage]`** — the 13 attribute sites are `Create`/`Modify`/`Describe`/`ListUserTasks`
+  process-designer commands, `ValidateProcessGraphTool`, `Feature`, `GetProcessSignature`, `Listen`,
+  `Lock`/`UnlockPackage`, `DownloadPackage`, `ShowPackageFileContent` and `SqlScript`. So the
+  package-refusal branch is unreachable from Ring's surface and Ring can never observe the changed exit
+  code. The determination stays **"reviewed, no Ring-consumed contract changed"**, with these paths
+  cited; no `ClioRing.Tests` run and no NativeAOT publish are required for this change.
 - **P5.3 BMAD.** The architecture decision is already made (ENG-91840 / Confluence), so take the
   small-feature path: `/bmad-spec` → `spec/prd/spec-deliver-process-builder-package.md`, an ADR
   addendum closing the open item in `adr-ENG-90883`, stories in `spec/sprint-status.yaml`
@@ -930,10 +943,10 @@ they share a shape: the gate reads `SysPackage.Name`, and *nothing* connects tha
    *Fallback if a netcore target never materialises:* ship net472-only and make the install command
    **refuse with a clear message when `EnvironmentSettings.IsNetCore` is true**, rather than installing a
    package that can never load (§3's worst failure mode).
-6. **Refusal-envelope fix in scope?** P4.5c changes `BaseTool`'s package-refusal from the
-   "unexpected failure" code to the "refused precondition" code. It is the difference between an agent
-   retrying after install and an agent giving up — but it touches a **shared** MCP envelope used by every
-   gated tool. In scope here, or a separate ticket (with the capability-map contradiction fixed either way)?
+6. ~~**Refusal-envelope fix in scope?**~~ **DECIDED: in scope, and DONE** (2026-08-04). The concern that
+   drove the question — that touching a shared MCP envelope would pull in the full ClioRing gate — did not
+   survive the cross-check: no Ring-consumed tool is package-gated, so Ring cannot observe the changed
+   branch (see §9 P5.2). Actual cost was one production line plus one test assertion.
 7. ~~**Netstandard third-party DLLs.**~~ **ANSWERED — no action:** `.clio/clioignore` already denylists
    `Microsoft.Extensions.DependencyInjection.dll`, `Microsoft.Extensions.Http.dll` and
    `System.Text.Json.dll` by name, so `clio compress` never packs them regardless of what the build

@@ -175,8 +175,16 @@ public abstract class BaseTool<T>(
 					// EnvironmentResolutionException (exit 1); each becomes a caller-actionable failed result.
 					resolvedCommand = ResolveCommand<TCommand>(options);
 				} catch (PackageRequirementException ex) {
-					// Surface the actionable install hint verbatim, without the exception-chain decoration.
-					return CommandExecutionResult.FromError(ex.Message);
+					// Expected, caller-actionable refusal (a package the caller can install) → exit code 1,
+					// like the sibling gates below, and NOT FromError's -1. The distinction is load-bearing,
+					// not cosmetic: docs/McpCapabilityMap.md teaches agents that -1 means "clio itself failed,
+					// retrying the same call won't help", whereas the whole point of this refusal is that the
+					// caller CAN fix it — install the named package, then retry. Reporting it as -1 tells the
+					// agent not to bother, which breaks the install-then-retry remediation the hint describes.
+					// The message stays STATIC (package name + attribute Hint, built by RequiredPackageChecker):
+					// neither FromValidationError nor FromError redacts, so never enrich it with the target URI
+					// or any connection detail — route dynamic text through FromException(redactSensitive: true).
+					return CommandExecutionResult.FromValidationError(ex.Message);
 				} catch (CreatioVersionRequirementException ex) {
 					// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
 					return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
