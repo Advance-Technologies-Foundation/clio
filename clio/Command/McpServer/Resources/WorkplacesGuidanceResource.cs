@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -172,6 +172,11 @@ public sealed class WorkplacesGuidanceResource {
 		         Client type above), read the row back for `TypeId` / `LoaderId` / `SysApplicationClientTypeId`,
 		         then `create-data-binding-db` with the FULL column set from Ship every change as a data binding.
 		         Binding only `Name`/`Position` yields a package that installs a workplace with no client type.
+		         `SysWorkplace`.`Name` is NOT unique — a stand can hold a web and a mobile workplace with the same
+		         name — and `create-data-binding-db` matches an existing row by `Name` before `Id`, keeping the FIRST
+		         match. So a name collision silently binds the OTHER workplace and reports it only as
+		         "Skipped existing row: <that other id>". Read `SysWorkplace` for the name first; on a collision
+		         either pick a distinct name or verify with `read-data-binding-db` that the bound `Id` is yours.
 		         A brand-new workplace has NO `SysAdminUnitInWorkplace` rows, so nobody can see it yet — agree the
 		         audience with the user and grant it (see Grant / remove a role's access) or the workplace is dead.
 		       - Update a workplace: `odata-update` by `Id` with `confirm=true`, then `upsert-data-binding-row-db`
@@ -184,6 +189,11 @@ public sealed class WorkplacesGuidanceResource {
 		         section in the workplace: confirm the role list with the USER, start from the NARROWEST role that
 		         satisfies the request, and never default to a blanket role such as `All employees` because it is
 		         convenient — see Confirmation gates.
+		         Before you BIND the grant, check who owns the workplace: read `SysPackageSchemaData` filtered by
+		         `SysSchema.Name = 'SysWorkplace'` and see whether the workplace is already bound by another package.
+		         Binding a grant EXPORTS it — every environment that installs your package gets that role granted on
+		         that workplace. On a workplace your package does not own, say so and keep the grant live-only
+		         (unbound) unless the user explicitly agrees to ship an access grant that applies everywhere.
 		       - Add / remove a section: `odata-create` / `odata-delete` a `SysModuleInWorkplace` row. Resolve the
 		         section `Id` from `SysModule` by code first — codes are NOT unique (`Code = 'Contact'` returns two
 		         rows on a stock environment) and the zero-GUID rule below does not catch the wrong one, because a
@@ -221,9 +231,16 @@ public sealed class WorkplacesGuidanceResource {
 		          steps 4-6 cannot run without this read. Do not skip it and do not guess the names.
 		       2. `odata-read` `SysModuleInWorkplace` filtered by `SysWorkplace/Id` — cache the `Id` values.
 		       3. `odata-read` `SysAdminUnitInWorkplace` filtered by `SysWorkplace/Id` — cache the `Id` values.
-		       4. `remove-data-binding-row-db` for each cached child row.
-		       5. `odata-delete` the `SysWorkplace` row with `confirm=true`.
-		       6. `remove-data-binding-row-db` for the `SysWorkplace` binding row.
+		       4. `read-data-binding-db` each child binding and INTERSECT its rows with the `Id` values from steps
+		          2-3. `remove-data-binding-row-db` handles only rows the binding actually carries — it throws
+		          "Row with key … was not found in binding" on anything else and aborts the cascade half-done. So:
+		          `remove-data-binding-row-db` for each child row that IS bound, and plain `odata-delete` for any
+		          live child row that was never bound.
+		       5. `odata-delete` the `SysWorkplace` row with `confirm=true`. Optional: step 6 deletes this row
+		          itself, so you may skip straight to it.
+		       6. `remove-data-binding-row-db` for the `SysWorkplace` binding row. This works even when step 5
+		          already removed the live row — verified on a live stand, because the bound-row set is read from the
+		          binding's own data and not from the table, so the key is still found. Do not "fix" the order.
 		       Recovery if the parent was already deleted: get the binding NAMES from `SysPackageSchemaData` as in
 		       step 1, then get the orphaned row `Id` values with `read-data-binding-db`, which lists every bound row
 		       of that binding. `execute-esq` cannot do this (`SysPackageSchemaData` holds one record per BINDING,
@@ -256,7 +273,9 @@ public sealed class WorkplacesGuidanceResource {
 		         `SysWorkplace_MyApps` row with that same zero GUID. Do NOT remove the binding to "clean" the
 		         column — `remove-data-binding-row-db` deletes the live shared workplace, and an upsert cannot drop
 		         a column that is already in a binding. Say plainly what remains: the package still ships a
-		         `My applications` row, so on install it clears whatever home page that environment had there.
+		         `My applications` row carrying that column, and what install does with it on an environment that
+		         already has its own `My applications` home page has NOT been measured — report it as a residual
+		         risk, not as a known outcome.
 		         Leaving the app's own UId in place is strictly worse — that hijacks the shared workplace instead of
 		         emptying one field. If `HomePageUId` points at something you did not create, leave it alone and
 		         surface the conflict;
@@ -282,11 +301,14 @@ public sealed class WorkplacesGuidanceResource {
 		         section is already there.
 		       - `Position` is unstable on BOTH tables, for different reasons. `SysModuleInWorkplace.Position`
 		         ignores the value you send outright (verified: sent 99, stored 123) — which is why the binding
-		         column set omits it. `SysWorkplace.Position` DOES keep the value you insert (verified: sent 23,
-		         read back 23, shipped 23, still 23 on the target), but the platform renumbers every workplace's
-		         `Position` whenever workplaces are added or removed — one install that created two workplaces
-		         renumbered all 22 pre-existing rows. Read back for the actual order; never treat `Position` as an
-		         identifier.
+		         column set omits it. `SysWorkplace.Position` behaves differently on create and on update: an
+		         `odata-create` value is NORMALISED (verified: sent 91, stored 24 — the next free slot), while an
+		         `odata-update` value is stored exactly as sent (verified: 24 changed to 7). `Position` is also NOT
+		         unique — several workplaces routinely share one number — and the platform renumbers every
+		         workplace's `Position` whenever workplaces are added or removed: one install that created two
+		         workplaces renumbered all 22 pre-existing rows. So to place a workplace at a chosen position,
+		         create it and then update it; always read back for the actual order, and never treat `Position` as
+		         an identifier.
 		       - A junction row whose `SysModuleId` or `SysWorkplaceId` is the zero GUID
 		         (`00000000-0000-0000-0000-000000000000`) is dead weight: it inserts and reads back but binds
 		         nothing. Assert both links are non-zero after every write; repair a zero-GUID row by creating a
@@ -296,9 +318,13 @@ public sealed class WorkplacesGuidanceResource {
 		       Workplace, section, and edit-page lists are cached PER SESSION, so a signed-in user keeps seeing the old
 		       navigation and a browser refresh alone shows nothing. Do not claim a restart is required; it is not.
 		       Finish every navigation change by publishing it:
-		       - `reload-workplaces` (requires cliogate) reloads the platform navigation caches, after which a plain
-		         page refresh is enough and NO re-login is needed. Call it as the LAST step, after the final write —
-		         run it earlier and the writes that follow are stale again. Then tell the user to refresh.
+		       - `reload-workplaces` (requires cliogate) invokes the platform's own workplace-cache reload — the same
+		         contract Creatio itself runs when a role membership changes. Call it as the LAST step, after the
+		         final write: run it earlier and the writes that follow are stale again. What is VERIFIED is that the
+		         call reaches that contract and succeeds; whether a given session then needs only F5 is the
+		         platform's behaviour, not something clio can guarantee, and the section and edit-page caches are
+		         separate from the workplace cache. So tell the user to refresh FIRST, and to re-login if the change
+		         still is not visible — do not state the refresh is sufficient as a fact.
 		       - If it fails or cliogate is not installed, say the change is applied but that F5 is not enough and
 		         users must log out and back in. Never promise a refresh you did not publish.
 		       Why this is needed even though the platform self-heals sometimes: Creatio invalidates those caches from

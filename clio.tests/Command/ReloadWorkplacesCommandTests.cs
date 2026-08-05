@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -43,8 +43,7 @@ public class ReloadWorkplacesCommandTests : BaseCommandTests<ReloadWorkplacesOpt
 	}
 
 	[Test]
-	[Category("Unit")]
-	[Description("Reloads the navigation caches and tells the user a refresh is now enough, so the agent does not fall back to prescribing a re-login after a successful publish.")]
+	[Description("Reloads the navigation caches and tells the user to refresh, so the agent does not fall back to prescribing a re-login after a successful publish.")]
 	public void Execute_ShouldReloadAndReportNoReloginNeeded_WhenTheGateSucceeds(){
 		// Arrange
 		ReloadWorkplacesCommand sut = Container.GetRequiredService<ReloadWorkplacesCommand>();
@@ -57,13 +56,12 @@ public class ReloadWorkplacesCommandTests : BaseCommandTests<ReloadWorkplacesOpt
 		actual.Should().Be(0,
 			because: "a successful reload is the whole point of the command and must report success");
 		_reloaderMock.Received(1).Reload();
-		// The user has to learn that a plain refresh now suffices; otherwise publishing the change was pointless.
+		// The user has to learn that refreshing is the next step; otherwise publishing the change was pointless.
 		_loggerMock.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("no re-login is required", StringComparison.OrdinalIgnoreCase)));
+			message.Contains("refresh the page", StringComparison.OrdinalIgnoreCase)));
 	}
 
 	[Test]
-	[Category("Unit")]
 	[Description("Surfaces the reload failure reason verbatim and returns a non-zero exit code, so a stale navigation cache is never reported as published.")]
 	public void Execute_ShouldReportTheFailureReason_WhenTheGateCannotReload(){
 		// Arrange

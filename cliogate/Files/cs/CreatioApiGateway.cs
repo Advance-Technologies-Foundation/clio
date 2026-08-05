@@ -479,12 +479,18 @@ namespace cliogate.Files.cs
 			BodyStyle = WebMessageBodyStyle.WrappedRequest, RequestFormat = WebMessageFormat.Json,
 			ResponseFormat = WebMessageFormat.Json)]
 		public BaseResponse ReloadWorkplaces(){
-			CheckCanManageSolution();
 			try {
+				// Deliberately inside the try, unlike most endpoints here: a thrown permission error crosses the WCF
+				// boundary as an HTTP 500 error page, and the clio side then reports it as "non-JSON response —
+				// verify the installed cliogate version", which points the operator at the wrong thing entirely.
+				if (!UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")) {
+					return CreateFailure("You don't have permission for operation CanManageSolution.");
+				}
 				Type managerType = FindWorkplaceManagerContract();
 				if (managerType == null) {
-					return CreateFailure("IWorkplaceManager was not found on this environment. "
-						+ "The Workplace package may not be installed, or its assembly is not loaded yet. "
+					return CreateFailure("No single Terrasoft IWorkplaceManager contract was found on this environment. "
+						+ "The Workplace package may not be installed, its assembly may not be loaded yet, or more than one "
+						+ "assembly declares that interface. "
 						+ "Users must log out and back in to see the change.");
 				}
 				MethodInfo classFactoryGet = FindParameterlessClassFactoryGet();
@@ -493,7 +499,10 @@ namespace cliogate.Files.cs
 				}
 				object manager = classFactoryGet.MakeGenericMethod(managerType)
 					.Invoke(null, BuildEmptyArguments(classFactoryGet));
-				MethodInfo reload = managerType.GetMethod("ReloadWorkplaces", Type.EmptyTypes);
+				MethodInfo reload = managerType.GetMethod("ReloadWorkplaces", Type.EmptyTypes)
+					?? managerType.GetInterfaces()
+						.Select(baseContract => baseContract.GetMethod("ReloadWorkplaces", Type.EmptyTypes))
+						.FirstOrDefault(candidate => candidate != null);
 				if (reload == null) {
 					return CreateFailure("IWorkplaceManager on this environment has no parameterless ReloadWorkplaces().");
 				}
@@ -549,6 +558,22 @@ namespace cliogate.Files.cs
 		/// </summary>
 		/// <returns>The <c>IWorkplaceManager</c> interface type, or <c>null</c> when it is not loaded.</returns>
 		private static Type FindWorkplaceManagerContract(){
+			Type[] candidates = EnumerateLoadedTypes()
+				.Where(type => type.IsInterface && type.Name == "IWorkplaceManager"
+					&& type.Namespace != null
+					&& type.Namespace.StartsWith("Terrasoft.", StringComparison.Ordinal))
+				.Distinct()
+				.ToArray();
+			// Matching an unqualified type name across every loaded assembly could pick up a same-named contract
+			// declared by a package or a stale compiled copy, and invoking the wrong one would report success while
+			// nothing was reloaded. Fail closed instead of guessing.
+			return candidates.Length == 1 ? candidates[0] : null;
+		}
+
+		/// <summary>
+		///     Enumerates every type of every loaded assembly, tolerating assemblies that are only partially loadable.
+		/// </summary>
+		private static IEnumerable<Type> EnumerateLoadedTypes(){
 			return AppDomain.CurrentDomain.GetAssemblies()
 				.SelectMany(assembly => {
 					try {
@@ -559,8 +584,7 @@ namespace cliogate.Files.cs
 					} catch (Exception) {
 						return Enumerable.Empty<Type>();
 					}
-				})
-				.FirstOrDefault(type => type.IsInterface && type.Name == "IWorkplaceManager");
+				});
 		}
 
 		/// <summary>

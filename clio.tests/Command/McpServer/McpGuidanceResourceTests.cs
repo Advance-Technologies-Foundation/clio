@@ -1,4 +1,4 @@
-using Clio.Command.McpServer.Resources;
+﻿using Clio.Command.McpServer.Resources;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
@@ -2603,6 +2603,31 @@ public sealed class McpGuidanceResourceTests {
 			because: "the agent must understand the blast radius is other environments, not just this one");
 		article.Text.Should().Contain("leave it alone and",
 			because: "a home page someone else set must not be cleared just because it is not empty");
+
+		// Position: the earlier claim that an inserted value is kept was a coincidence (23 happened to be the next
+		// free slot). Measured: create normalises (91 -> 24), update honours the value exactly (24 -> 7).
+		article.Text.Should().Contain("is NORMALISED",
+			because: "an agent that trusts the inserted Position will ship a number the platform silently replaced");
+		article.Text.Should().Contain("create it and then update it",
+			because: "the only way to land a chosen position is the two-step, so the guide must say it");
+
+		// The publish claim must not outrun the endpoint: it invokes the workplace-cache reload only.
+		article.Text.Should().Contain("do not state the refresh is sufficient as a fact",
+			because: "the section and edit-page caches are separate, and promising F5 for them was never measured");
+
+		// Reviewed as a defect and refuted by a live run; pin it so the order is not "fixed" back.
+		article.Text.Should().Contain("Do not \"fix\" the order",
+			because: "removing the binding after deleting the live row works, and a well-meant reorder would break the recipe");
+		article.Text.Should().Contain("was never bound",
+			because: "the cascade aborts half-done on a live child row the binding does not carry");
+
+		// Binding a grant exports it to every install target, so ownership has to be checked first.
+		article.Text.Should().Contain("Binding a grant EXPORTS it",
+			because: "granting a role on a workplace another package owns would ship that access everywhere");
+
+		// SysWorkplace.Name is not unique and the create tool matches on it before Id.
+		article.Text.Should().Contain("matches an existing row by `Name` before `Id`",
+			because: "a name collision silently binds a different workplace and reports it only as a skipped row");
 
 		// The junction binding cannot reference a workplace row that is not itself bound in the package.
 		article.Text.Should().Contain("must already have its OWN",

@@ -12,8 +12,8 @@ reload-workplaces - publish navigation changes to signed-in users without a re-l
 
 Reloads the platform navigation caches on a Creatio environment so a workplace
 change becomes visible to users who are already signed in. After this command
-succeeds, a plain page refresh is enough and no log out / log in cycle is
-required.
+succeeds, users should only need to refresh the page; a log out / log in cycle
+should not be required.
 
 Workplace, section, and edit-page lists are cached **per session**, which is why
 a browser refresh alone shows nothing after you create a workplace, move a
@@ -77,7 +77,7 @@ clio rlwp -e dev
 
 | Code | Meaning |
 |---|---|
-| 0 | The navigation caches were reloaded. Tell users to refresh the page; no re-login is needed. |
+| 0 | The navigation caches were reloaded. Tell users to refresh the page; a re-login should not be needed. |
 | 1 | The reload did not happen. The error message names the reason. The navigation change itself is still applied — but users must log out and back in to see it. |
 
 ## Notes

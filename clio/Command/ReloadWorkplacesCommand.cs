@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json;
 using Clio.Common;
 using CommandLine;
@@ -173,8 +173,11 @@ public class ReloadWorkplacesCommand : Command<ReloadWorkplacesOptions> {
 	public override int Execute(ReloadWorkplacesOptions options){
 		try {
 			_reloader.Reload();
-			_logger.WriteInfo("Navigation caches reloaded. Signed-in users see the change after a page refresh; "
-				+ "no re-login is required.");
+			// Deliberately hedged: what is verified is that the platform's workplace-cache reload ran. Whether a
+			// given session then needs only a refresh is platform behaviour, and the section/edit-page caches are
+			// separate from the workplace cache — so this must not promise more than was measured.
+			_logger.WriteInfo("Navigation caches reloaded. Tell users to refresh the page; a re-login should not be "
+				+ "needed. If the change is still not visible, have them log out and back in.");
 			return 0;
 		} catch (Exception e) {
 			_logger.WriteError(e.Message);

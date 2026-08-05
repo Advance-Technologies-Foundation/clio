@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -73,7 +73,7 @@ public class RemoveDataBindingRowDbTool(
 
 	[McpServerTool(Name = RemoveDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when no bound rows remain.")]
+	[Description("DELETES THE LIVE RECORD by primary-key value (a DataService delete of the row itself, not just its binding), then unbinds it and deletes the package schema data record when no bound rows remain. There is NO confirm argument and no undo: on a shared row such as the My applications workplace this destroys configuration other apps depend on. Use it only to retire a row you own. To stop shipping a value without destroying the row, upsert the binding instead; to inspect what a binding ships, use read-data-binding-db.")]
 	public CommandExecutionResult RemoveDataBindingRowDb(
 		[Description("Parameters: environment-name, package-name, binding-name, key-value (all required)")]
 		[Required]

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -117,7 +117,7 @@ public sealed class HomePageGuidanceResource {
 		       When you bind the page to a NEW workplace for a scaffolded app, check whether `My applications` is
 		       ALREADY pointing at that same page and clear it if so. The `AppWithHomePage` template creates a home
 		       page and points `My applications` at it, and its binding ships that `HomePageUId` — so the package
-		       exports a change to a workplace the app does not own. `workplaces` → Move a section owns that
+		       exports a change to a workplace the app does not own. `workplaces` → New apps start in a default workplace owns that
 		       cleanup, including what still ships afterwards; do not improvise it here.
 
 		       ## Access / roles

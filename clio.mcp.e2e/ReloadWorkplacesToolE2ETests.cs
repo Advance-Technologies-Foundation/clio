@@ -1,7 +1,8 @@
-using Allure.NUnit;
+﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -48,33 +49,42 @@ public sealed class ReloadWorkplacesToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 
 		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "clio-run must dispatch the tool and let it report its own outcome, not fail at the executor");
 		string payload = SerializeResult(callResult);
 		payload.Should().NotContain("Unknown command",
 			because: "clio-run must recognise reload-workplaces, otherwise the guide sends agents at a tool that cannot be dispatched");
-		payload.Should().NotContain("no re-login is required",
+		payload.Should().Contain(unknownEnvironment,
+			because: "the failure must name the environment it could not resolve, which also proves the args reached the tool");
+		payload.Should().NotContain("Navigation caches reloaded",
 			because: "an unresolvable environment must never report a successful publish");
 	}
 
 	[Test]
-	[Description("The reload-workplaces contract is discoverable and marked as a non-destructive idempotent write, so an agent can tell it apart from the destructive cache flush.")]
+	[Description("The reload-workplaces contract index entry is discoverable and advertises the tool as non-destructive, so an agent can tell it apart from the destructive cache flush it might otherwise reach for.")]
 	[AllureTag(ReloadWorkplacesTool.ToolName)]
-	[AllureName("reload-workplaces is advertised as a non-destructive idempotent write")]
-	public async Task ReloadWorkplaces_ShouldBeAdvertised_AsNonDestructiveIdempotentWrite(){
+	[AllureName("reload-workplaces is advertised as non-destructive in the contract index")]
+	public async Task ReloadWorkplaces_ShouldBeAdvertised_AsNonDestructive(){
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolContractGetTool.ToolName,
-			new Dictionary<string, object?>(),
+			new Dictionary<string, object?> {["args"] = new Dictionary<string, object?>()},
 			context.CancellationTokenSource.Token);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "the compact contract index is the discovery entry point and must answer over the wire");
-		SerializeResult(callResult).Should().Contain(ReloadWorkplacesTool.ToolName,
-			because: "an agent that cannot discover the tool falls back to prescribing a re-login it no longer needs");
+		ToolContractGetResponse response = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+		ToolContractIndexEntry entry = response.Index!.Single(item => item.Name == ReloadWorkplacesTool.ToolName);
+		entry.Destructive.Should().NotBeTrue(
+			because: "publishing a navigation change destroys nothing, and advertising it as destructive would push agents to prescribe a re-login instead");
+		entry.Resident.Should().BeFalse(
+			because: "it is a long-tail write dispatched through clio-run, like the other navigation writes");
 	}
+
 
 	// Serializes the tool result (structured content plus content blocks) to a JSON string so assertions can inspect
 	// the payload without coupling to the response DTO shape.

@@ -7,8 +7,8 @@ NAME
 DESCRIPTION
     Reloads the platform navigation caches on a Creatio environment so a
     workplace change becomes visible to users who are already signed in. After
-    this command succeeds, a plain page refresh is enough and no log out / log
-    in cycle is required.
+    this command succeeds, users should only need to refresh the page; a log out / log in
+    cycle should not be required.
 
     Workplace, section, and edit-page lists are cached PER SESSION, which is why
     a browser refresh alone shows nothing after you create a workplace, move a

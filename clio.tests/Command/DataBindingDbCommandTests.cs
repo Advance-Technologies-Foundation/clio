@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -26,6 +26,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private CreateDataBindingDbCommand _createCommand = null!;
 	private UpsertDataBindingRowDbCommand _upsertCommand = null!;
 	private RemoveDataBindingRowDbCommand _removeCommand = null!;
+	private ReadDataBindingDbCommand _readCommand = null!;
 	private IApplicationClient _applicationClient = null!;
 	private ILogger _logger = null!;
 	private IApplicationPackageListProvider _packageListProvider = null!;
@@ -38,6 +39,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	public override void Setup() {
 		base.Setup();
 		_createCommand = Container.GetRequiredService<CreateDataBindingDbCommand>();
+		_readCommand = Container.GetRequiredService<ReadDataBindingDbCommand>();
 		_upsertCommand = Container.GetRequiredService<UpsertDataBindingRowDbCommand>();
 		_removeCommand = Container.GetRequiredService<RemoveDataBindingRowDbCommand>();
 		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettings");
@@ -738,6 +740,123 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 				}
 			}
 		}
+	}
+
+	[Test]
+	[Description("Reports the union of every bound row's columns in ordinal order and collapses lookup envelopes to caption plus id, because that projection is the transfer contract the guides are built on (ENG-88474).")]
+	public void ReadDataBindingDb_Should_ReportTheUnionOfBoundColumns_InOrdinalOrder() {
+		// Arrange
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysWorkplace", "SysWorkplace_Todo");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = ExistingRowId,
+				["Name"] = "Todo",
+				["SysApplicationClientType"] = new Dictionary<string, object?> {
+					["value"] = "195785b4-f55a-4e72-ace3-6480b54c8fa5",
+					["displayValue"] = "Web"
+				}
+			},
+			// A second row missing Name and carrying an extra column: the report must union both key sets.
+			new Dictionary<string, object?> {
+				["Id"] = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+				["Position"] = 23
+			}
+		});
+		ReadDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysWorkplace_Todo"
+		};
+
+		// Act
+		int result = _readCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a resolvable binding must be reported rather than treated as an error");
+		_logger.Received(1).WriteInfo("columns (4): Id, Name, Position, SysApplicationClientType");
+		_logger.Received(1).WriteInfo("rows:    2");
+		_logger.Received(1).WriteInfo(
+			$"row[0]: Id={ExistingRowId}, Name=Todo, SysApplicationClientType=Web (195785b4-f55a-4e72-ace3-6480b54c8fa5)");
+	}
+
+	[Test]
+	[Description("Renders a lookup with a caption but no id as the caption alone, so a cleared reference does not read as corrupted data (ENG-88474).")]
+	public void ReadDataBindingDb_Should_RenderACaptionWithoutAnId_AsTheCaptionAlone() {
+		// Arrange
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysWorkplace", "SysWorkplace_Todo");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = ExistingRowId,
+				["Type"] = new Dictionary<string, object?> {["displayValue"] = "General"},
+				["HomePageUId"] = null
+			}
+		});
+		ReadDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysWorkplace_Todo"
+		};
+
+		// Act
+		int result = _readCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a lookup missing its id is still a readable projection, not a failure");
+		_logger.Received(1).WriteInfo($"row[0]: HomePageUId=, Id={ExistingRowId}, Type=General");
+	}
+
+	[Test]
+	[Description("Fails instead of reporting an empty projection when the binding record has no readable UId, because \"ships nothing\" is the worst possible wrong answer for this command (ENG-88474).")]
+	public void ReadDataBindingDb_Should_Fail_WhenTheBindingHasNoReadableUId() {
+		// Arrange
+		_bindingLookupResponseJson = """
+		{
+		  "rows": [
+		    {
+		      "Id": "4f41bcc2-7ed0-45e8-a1fd-474918966d15",
+		      "UId": "not-a-guid",
+		      "Name": "SysWorkplace_Todo",
+		      "EntitySchemaName": "SysWorkplace"
+		    }
+		  ]
+		}
+		""";
+		ReadDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysWorkplace_Todo"
+		};
+
+		// Act
+		int result = _readCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "an unidentifiable binding must not be reported as one that ships no columns");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("no readable UId")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.StartsWith("columns (0)")));
+	}
+
+	[Test]
+	[Description("Fails with the binding name when the binding does not exist in the target package, so a typo is not reported as an empty projection (ENG-88474).")]
+	public void ReadDataBindingDb_Should_Fail_WhenTheBindingDoesNotExist() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows": [], "success": true}""";
+		ReadDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysWorkplace_Missing"
+		};
+
+		// Act
+		int result = _readCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a binding that is absent is a different outcome from a binding that ships nothing");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("SysWorkplace_Missing")));
 	}
 
 	private static string BuildBindingLookupResponse(string schemaName, string? bindingName = null) {

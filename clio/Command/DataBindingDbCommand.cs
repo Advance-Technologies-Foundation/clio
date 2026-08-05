@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -47,7 +47,7 @@ public class UpsertDataBindingRowDbOptions : EnvironmentOptions {
 /// <summary>
 /// Options for the <c>remove-data-binding-row-db</c> command.
 /// </summary>
-[Verb("remove-data-binding-row-db", HelpText = "Remove a row from a remote DB-first data binding and delete the package schema data record when no bound rows remain")]
+[Verb("remove-data-binding-row-db", HelpText = "DELETE the live record and remove its row from a remote DB-first data binding (no confirmation, no undo)")]
 public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
@@ -691,6 +691,14 @@ internal sealed class DataBindingDbService(
 
 		PackageRef packageRef = ResolvePackageRef(options.PackageName);
 		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
+		if (bindingUId == Guid.Empty) {
+			// FetchBoundRows would answer "no rows" for an empty UId, and this command's whole purpose is to prove a
+			// projection — reporting "ships nothing" for a binding we simply failed to identify is the worst possible
+			// wrong answer.
+			throw new InvalidOperationException(
+				$"Binding '{options.BindingName}' in package '{options.PackageName}' has no readable UId, so its "
+				+ "shipped columns cannot be determined.");
+		}
 		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
 		IReadOnlyList<IReadOnlyDictionary<string, string>> rows = boundRows
 			.Select(row => (IReadOnlyDictionary<string, string>)row.ToDictionary(
@@ -723,10 +731,15 @@ internal sealed class DataBindingDbService(
 		string? rawValue = envelope.TryGetPropertyValue("value", out JsonNode? raw)
 			? raw?.ToString()
 			: null;
-		if (displayValue is null && rawValue is null) {
+		bool hasLookupShape = envelope.ContainsKey("displayValue") || envelope.ContainsKey("value");
+		if (!hasLookupShape) {
 			return envelope.ToJsonString();
 		}
-		return string.IsNullOrEmpty(displayValue) ? rawValue ?? string.Empty : $"{displayValue} ({rawValue})";
+		if (string.IsNullOrEmpty(displayValue)) {
+			return rawValue ?? string.Empty;
+		}
+		// A cleared lookup can carry a caption with no id; "Name ()" reads like corrupted data.
+		return string.IsNullOrEmpty(rawValue) ? displayValue : $"{displayValue} ({rawValue})";
 	}
 
 	/// <inheritdoc />
@@ -864,9 +877,18 @@ internal sealed class DataBindingDbService(
 	}
 
 	private static string BuildDeletePackageSchemaDataBody(Guid packageUId, string packageSchemaDataName) =>
-		$$"""{"packageUId":"{{packageUId}}","packageSchemaDataName":"{{packageSchemaDataName}}"}""";
+		$$"""{"packageUId":"{{packageUId}}","packageSchemaDataName":"{{JsonEncodedText.Encode(packageSchemaDataName ?? string.Empty)}}"}""";
 
+	/// <summary>
+	///     Builds the SysPackageSchemaData lookup body for a binding name.
+	/// </summary>
+	/// <remarks>
+	///     <paramref name="bindingName" /> reaches this method straight from a CLI option or an MCP argument, so it
+	///     is JSON-escaped rather than interpolated raw: an embedded quote would otherwise malform the body, and a
+	///     crafted value could close the string and inject sibling properties into the filters object.
+	/// </remarks>
 	private static string BuildLookupBindingRequestBody(Guid packageUId, string bindingName) {
+		string escapedBindingName = JsonEncodedText.Encode(bindingName ?? string.Empty).ToString();
 		return $$"""
 			{
 			  "rootSchemaName":"SysPackageSchemaData",
@@ -917,7 +939,7 @@ internal sealed class DataBindingDbService(
 			          "expressionType":2,
 			          "parameter":{
 			            "dataValueType":28,
-			            "value":"{{bindingName}}"
+			            "value":"{{escapedBindingName}}"
 			          }
 			        }
 			      },
