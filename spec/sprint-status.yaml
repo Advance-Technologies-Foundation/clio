@@ -2474,3 +2474,78 @@ stories:
       - story-sync-schemas-verify-resume-1
       - story-sync-schemas-verify-resume-2
     blocks: []
+
+  # --- deliver-process-builder-package stories (ENG-94385) - added 2026-08-05 ---
+  # SPEC route (< 5 stories, see the AGENTS.md routing table), so there are no per-story files:
+  # spec/prd/spec-deliver-process-builder-package.md carries the FRs/ACs, the ADR carries the decision,
+  # and spec/deliver-process-builder-package/deliver-process-builder-package-plan.md carries the
+  # experiment log, cost ledger and the four dead hypotheses. Same shape as story-mcp-resident-tool-flag-1.
+  # Status is in-progress rather than review: the work is complete on
+  # feature/ENG-94385-bundle-process-builder-package but no PR is open yet (the pre-PR review gate has
+  # not run). Flip to review when the PR opens.
+
+  - id: story-deliver-process-builder-package-1
+    title: "Bundle the source-only CrtProcessBuilder archive into the clio distribution"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: M
+    status: in-progress
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-01, FR-02]
+    ac: [AC-02]
+    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (187,531 bytes) committed with a csproj Content glob and *.gz marked binary; 4 archive-content tests pin the descriptor identity and the load-bearing compile-marker schema. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved."
+    depends_on: []
+    blocks:
+      - story-deliver-process-builder-package-2
+
+  - id: story-deliver-process-builder-package-2
+    title: "install-process-builder command and MCP tool, verifying the outcome not the install call"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: M
+    status: in-progress
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-03, FR-04, FR-05, FR-06, FR-07, FR-09, FR-10, FR-11]
+    ac: [AC-03, AC-04]
+    status_note: "Verified live on both runtimes: net472 78 s exit 0, .NET 8 71 s exit 0, package listed, 23 user tasks. The restart comes from a different place on each runtime and outlives the install call, so IServerReadinessWaiter sits between installing and probing; 11 unit tests including the readiness-wait race."
+    depends_on:
+      - story-deliver-process-builder-package-1
+    blocks:
+      - story-deliver-process-builder-package-3
+
+  - id: story-deliver-process-builder-package-3
+    title: "Detect the missing-or-stale package and name the remediation on both surfaces"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: S
+    status: in-progress
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-08, FR-12]
+    ac: [AC-01, AC-05, AC-06]
+    status_note: "5 versioned [RequiresPackage] sites with a Hint naming both the CLI verb and the MCP tool; BaseTool now returns FromValidationError (exit 1) for PackageRequirementException instead of FromError (-1); process-modeling guidance carries the ORDER OF CHECKS rule so an agent never proposes an install before establishing the buildable slice; clio info reports the bundled version."
+    depends_on:
+      - story-deliver-process-builder-package-2
+    blocks:
+      - story-deliver-process-builder-package-4
+
+  - id: story-deliver-process-builder-package-4
+    title: "Docs, MCP contract and stand-free MCP E2E coverage"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: S
+    status: in-progress
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-11]
+    ac: [AC-05]
+    status_note: "help/en + docs/commands + Commands.md + WikiAnchors + McpCapabilityMap hand-written because clio __generate-help-artifacts is broken (it rewrote ~130 files, deleted 7, and mangles verb aliases - chip filed). 3 stand-free E2E tests; a real-install fixture was deliberately NOT shipped, see SPEC section 7."
+    depends_on:
+      - story-deliver-process-builder-package-3
+    blocks: []
