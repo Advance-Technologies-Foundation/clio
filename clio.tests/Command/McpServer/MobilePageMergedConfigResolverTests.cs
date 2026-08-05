@@ -89,8 +89,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		IToolCommandResolver resolver = ResolverReturning(CreateCommandWithHierarchy());
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) =
-			MobilePageMergedConfigResolver.ResolveMergedConfig(resolver, SchemaName, "dev", null, null, null, mode: "replace");
+		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
+			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace"));
 
 		// Assert
 		viewModelConfigJson.Should().Contain("BaseAttr",
@@ -108,8 +108,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		IToolCommandResolver resolver = ResolverReturning(CreateCommandWithHierarchy());
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) =
-			MobilePageMergedConfigResolver.ResolveMergedConfig(resolver, SchemaName, "dev", null, null, null, mode: "append");
+		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
+			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "append"));
 
 		// Assert
 		viewModelConfigJson.Should().Contain("BaseAttr").And.Contain("OwnAttr",
@@ -133,8 +133,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		ILogger logger = Substitute.For<ILogger>();
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) =
-			MobilePageMergedConfigResolver.ResolveMergedConfig(resolver, SchemaName, "dev", null, null, null, mode: "replace", logger);
+		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
+			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
 
 		// Assert
 		viewModelConfigJson.Should().BeNull(because: "a failed base resolution must fall back to the oracle's seeded base");
@@ -152,7 +152,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		resolver.Resolve<PageGetCommand>(Arg.Any<EnvironmentOptions>()).Returns(_ => throw new OperationCanceledException());
 
 		// Act
-		Action act = () => MobilePageMergedConfigResolver.ResolveMergedConfig(resolver, SchemaName, "dev", null, null, null, mode: "replace");
+		Action act = () => MobilePageMergedConfigResolver.ResolveMergedConfig(
+			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace"));
 
 		// Assert
 		act.Should().Throw<OperationCanceledException>(
