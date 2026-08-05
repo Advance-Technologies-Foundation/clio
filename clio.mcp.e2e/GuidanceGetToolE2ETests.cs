@@ -61,6 +61,14 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the guidance tool should return the canonical handler guide text");
 		response.Article.Text.Should().Contain("There is no page for new or existing record",
 			because: "the page-schema-handlers guide must carry the crt.CreateRecordRequest page-resolution note warning that the request throws this runtime error on a section-less detail entity with no registered page");
+		response.Article.Text.Should().Contain("use `crt.CreateRecordRequest` when the action should open a new record.",
+			because: "the published page-schema-handlers guide must state the purpose of CreateRecordRequest explicitly");
+		response.Article.Text.Should().Contain("non-deprecated navigation parameter and takes priority for page resolution.",
+			because: "the published page-schema-handlers guide must preserve the supported entityPageName navigation contract");
+		response.Article.Text.Should().Contain("Typed-page menu caveat: the runtime preprocessor examines every `crt.Button` whose clicked",
+			because: "the published page-schema-handlers guide must explain why a CreateRecordRequest button can become a typed-page dropdown");
+		response.Article.Text.Should().Contain("type-column attribute with a value.",
+			because: "the published page-schema-handlers guide must identify the type-column default that suppresses typed-page menu synthesis");
 	}
 
 	[Test]

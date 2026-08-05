@@ -7238,6 +7238,20 @@ Discovery: ClioRing.Tests has 1 pre-existing macOS failure — ResolveContainedR
 Files: clio/Common/ServerReadinessWaiter.cs, clio/Command/McpServer/Tools/{RestartTool,RestartStatusTool}.cs, clio.tests/Common/ServerReadinessWaiterTests.cs, clio.tests/Command/McpServer/RestartToolTests.cs
 Impact: a short --ready-timeout is now actually honored; the agent is no longer told to poll a target that structurally cannot answer. Validated: dotnet test --filter "Category=Unit" -> 19 failed / 7789 passed, failure set identical to the pre-fix trx (0 regressions); dotnet test clio-ring/ClioRing.Tests -c Release -> 151/152 (the 1 pre-existing macOS failure above).
 
+## 2026-08-05  – CreateRecordRequest typed-page menu guidance
+Context: Updated Freedom UI handler guidance after verifying the Creatio UI typed-page button preprocessor source.
+Decision: Keep the rule in PageSchemaHandlersGuidanceResource: a parameterized crt.CreateRecordRequest button can become a menu when multiple eligible typed add pages exist; entityPageName does not suppress it, while a truthy defaultValues entry for the actual type-column attribute does.
+Discovery: The preprocessor resolves entityName directly or through itemsAttributeName, prepends one typed menu item per eligible page, and the intentional single-flow fix is the type-column attribute plus intended page/type UId in defaultValues. No custom handler or button replacement is needed.
+Files: clio/Command/McpServer/Resources/PageSchemaHandlersGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents now receive the source-grounded cause and suppression recipe from the handler guide; focused guidance tests pass on net8.0 and net10.0 (48/48 each). Initial multi-target run hit a pre-existing PDB sharing collision; sequential per-framework runs passed.
+
+## 2026-08-05  – Clarify CreateRecordRequest page selection
+Context: Follow-up documentation improvement requested for the Freedom UI handler guide.
+Decision: State that crt.CreateRecordRequest opens a new record and entityPageName is the supported, non-deprecated explicit add-FormPage selector with page-resolution priority; retain entityName/itemsAttributeName when entity resolution comes from list/context and keep typed-page suppression separate.
+Discovery: History shows the existing page-resolution section was authored by Alex Kravchuk in f1644bc2, while the broader handler guide originated with d-krestov and the direct-request table with that earlier guide. The focused test assertions are mostly inherited from those same changes; this follow-up is uncommitted.
+Files: clio/Command/McpServer/Resources/PageSchemaHandlersGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Review should include Alex Kravchuk for the page-resolution/related-list guidance and d-krestov for the handler-guide contract; a.serhiichyk is a useful secondary reviewer for current request-catalog alignment. Validated: focused tests 48/48 on net8.0 and net10.0; git diff --check passes.
+
 ## 2026-07-29 14:20 – PR #985: clear the 9 Sonar "new issues" + transient TeamCity trigger failure
 Context: Sonar re-ran on #985 — Quality Gate PASSED but 9 new issues stayed open. None sat in the merge-resolution files; all came from already-merged sub-PR code surfaced as "new" because the PR diff is the whole umbrella. Cleared them anyway so the umbrella lands at zero.
 Decision: 5x S8970 (null-forgiving `!`) removed outright — verified first that nullable context is OFF project-wide (no `<Nullable>` in clio.csproj, no `#nullable` directive in either file), so each `!` was a pure no-op and removal cannot change semantics. 1x S3358 nested ternary in SchemaValidationService extracted to `ResolveEntryRootType` (own-type wins, then same-name sibling insert, then empty). 2x S3267 in BoundedOperationStore rewritten as Where/Select (`EvictIdle` -> ToList, `Remove` -> FirstOrDefault); needed `using System.Linq`. 1x S1192 in Program.cs: `--help` appeared at 4 sites -> `LongHelpFlag` const.
