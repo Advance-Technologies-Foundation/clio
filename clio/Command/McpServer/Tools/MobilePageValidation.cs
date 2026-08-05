@@ -105,44 +105,33 @@ internal static class MobilePageValidation {
 internal static class MobilePageMergedConfigResolver {
 
 	/// <summary>
-	/// Resolves the base from a <see cref="MobilePageMergedConfigContext"/> (the schema + environment identity the
-	/// validation caller has). Returns <c>(null, null)</c> for a null context — the oracle then seeds its own base.
+	/// Resolves the base from a <see cref="MobilePageMergedConfigContext"/> (the schema + environment identity, write
+	/// mode and optional logger the validation caller has) — one bundled argument so callers never spread the
+	/// environment fields. Returns <c>(null, null)</c> for a null/incomplete context — the oracle then seeds its own
+	/// base. The base is chosen by the context's write mode: a REPLACE-mode write (the update-page default;
+	/// sync-pages' only mode — anything that is not <c>"append"</c>) overwrites the page's own body verbatim, so the
+	/// base is the merged config EXCLUDING that own body (the config the incoming body actually layers over at
+	/// runtime), and an <c>insert</c> into an array present ONLY in the current own body correctly fails validation
+	/// instead of passing against a body that is about to be overwritten. An APPEND-mode write keeps the current body
+	/// and merges into it, so the base is the FULL merged config, own body included.
 	/// </summary>
-	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(MobilePageMergedConfigContext context) =>
-		context is null
-			? (null, null)
-			: ResolveMergedConfig(
-				context.CommandResolver, context.SchemaName, context.Environment, context.Uri, context.Login, context.Password,
-				context.Mode, context.Logger);
-
-	/// <summary>
-	/// Resolves the base according to the write <paramref name="mode"/>. A REPLACE-mode write (the update-page
-	/// default; sync-pages' only mode — anything that is not <c>"append"</c>) overwrites the page's own body verbatim,
-	/// so the base is the merged config EXCLUDING that own body — the config the incoming body actually layers over at
-	/// runtime — and an <c>insert</c> into an array present ONLY in the page's current own body correctly fails
-	/// validation instead of passing against a body that is about to be overwritten. An APPEND-mode write keeps the
-	/// current body and merges into it, so the base is the page's FULL merged config, own body included.
-	/// </summary>
-	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(
-		IToolCommandResolver commandResolver,
-		string schemaName, string environment, string uri, string login, string password, string mode,
-		Clio.Common.ILogger logger = null) {
-		if (commandResolver is null || string.IsNullOrWhiteSpace(schemaName)) {
+	public static (string ViewModelConfigJson, string ModelConfigJson) ResolveMergedConfig(MobilePageMergedConfigContext context) {
+		if (context?.CommandResolver is null || string.IsNullOrWhiteSpace(context.SchemaName)) {
 			return (null, null);
 		}
 		// Translate the write mode to the mechanical get-page option here — get-page itself is a generic bundle
 		// reader and stays free of update-page's append/replace vocabulary.
-		bool excludeOwnBody = !string.Equals(mode, "append", StringComparison.OrdinalIgnoreCase);
+		bool excludeOwnBody = !string.Equals(context.Mode, "append", StringComparison.OrdinalIgnoreCase);
 		try {
 			var options = new PageGetOptions {
-				SchemaName = schemaName,
-				Environment = environment,
-				Uri = uri,
-				Login = login,
-				Password = password,
+				SchemaName = context.SchemaName,
+				Environment = context.Environment,
+				Uri = context.Uri,
+				Login = context.Login,
+				Password = context.Password,
 				ExcludeOwnBody = excludeOwnBody
 			};
-			PageGetCommand command = commandResolver.Resolve<PageGetCommand>(options);
+			PageGetCommand command = context.CommandResolver.Resolve<PageGetCommand>(options);
 			if (command.TryGetPage(options, out PageGetResponse response)
 				&& response?.Success == true
 				&& response.Bundle is { } bundle) {
@@ -153,8 +142,8 @@ internal static class MobilePageMergedConfigResolver {
 			// The read did not yield a usable bundle. Leave a diagnostic trail (when a logger is available) so the
 			// fallback to the permissive insert-path-seeded base is not mistaken for a genuine successful resolution
 			// when a later validation result looks off.
-			logger?.WriteWarning(
-				$"Mobile validation base for '{schemaName}' could not be resolved ({response?.Error ?? "no bundle returned"}); " +
+			context.Logger?.WriteWarning(
+				$"Mobile validation base for '{context.SchemaName}' could not be resolved ({response?.Error ?? "no bundle returned"}); " +
 				"falling back to the insert-path-seeded base.");
 		} catch (OperationCanceledException) {
 			// A cancelled validation must propagate, not silently degrade to the seeded base.
@@ -162,8 +151,8 @@ internal static class MobilePageMergedConfigResolver {
 		} catch (Exception ex) {
 			// Best-effort: any other read failure falls back to the oracle's seeded empty base — but record why,
 			// so a transient auth/network failure is distinguishable from a real resolution during triage.
-			logger?.WriteWarning(
-				$"Mobile validation base for '{schemaName}' failed to resolve: {ex.Message}; " +
+			context.Logger?.WriteWarning(
+				$"Mobile validation base for '{context.SchemaName}' failed to resolve: {ex.Message}; " +
 				"falling back to the insert-path-seeded base.");
 		}
 		return (null, null);

@@ -484,7 +484,7 @@ public sealed class PageSyncTool(
 			}
 			// Replace semantics — sync-pages writes the body verbatim, so the base excludes the page's own body.
 			(string vmc, string mc) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-				commandResolver, page.SchemaName, environmentName, null, null, null, mode: "replace");
+				new MobilePageMergedConfigContext(commandResolver, page.SchemaName, environmentName, null, null, null, Mode: "replace"));
 			if (vmc is not null || mc is not null) {
 				bases[index] = (vmc, mc);
 			}
