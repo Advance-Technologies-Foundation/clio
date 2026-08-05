@@ -151,8 +151,11 @@ instance), taking **inline `cssContent` only** (no file variant). They fall thro
   `ListThemesCommand.TryGetAvailableThemes` pattern) and returns a **structured `CreateThemeResult
   { success, id, error? }`** so the agent learns the generated id. `update`/`delete` use the standard log
   envelope (`CommandExecutionResult`) — the id is caller-supplied.
-- Safety flags (`OpenWorld=false` on all): create `false/false/false`; update `false/false/true`; delete
-  `false/**true**/false`. Auto-discovered via `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
+- Safety flags (`ReadOnly/Destructive/Idempotent`): create `false/false/false`; update `false/false/true`;
+  delete `false/**true**/false`. `OpenWorld` was `false` on all three; _amended (ENG-93989)_ —
+  `create-theme` is `OpenWorld=true` because its brand mode reaches Google Fonts through the shared build
+  engine (see the amendment below); `update`/`delete` stay `false`. Auto-discovered via
+  `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
 
 _Amended (ENG-93989, 2026-07-30):_ the `create-theme` **MCP tool** gains a **brand mode** alongside
 inline `cssContent`: the caller passes the brand inputs (`primary` plus optional
@@ -203,7 +206,9 @@ the `@creatio/theming` npm package. A new `Clio.Theming` namespace holds the por
 math; a `build-theme` CLI verb + MCP tool expose it; the template ships bundled in-tool.
 
 **C-D1 — `build-theme` is a compute tool with an optional local-write mode — NOT combined with create.**
-Flags `ReadOnly=false, Destructive=false, Idempotent=true, OpenWorld=false`. Two modes:
+Flags `ReadOnly=false, Destructive=false, Idempotent=true`. `OpenWorld` was `false`; _amended
+(ENG-93985)_ — it is `true` now that each custom font family is checked against Google Fonts over the
+network (see `adr-ENG-93985-google-fonts-availability.md`). Two modes:
 - **Compute mode** (CLI stdout / MCP default) — returns the `theme.css` string + descriptor + warnings.
 - **Workspace-write mode** — CLI takes `--output`; the **MCP tool takes `workspaceDirectory` (absolute) +
   `packageName`** and resolves `<ws>/packages/<pkg>/Files/themes/<cssClassName>/` itself, writing

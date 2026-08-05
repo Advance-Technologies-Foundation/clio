@@ -29,6 +29,23 @@ public sealed class ThemingGuidanceResourceTests {
 	}
 
 	[Test]
+	[Description("The font rules are written about build-theme, but create-theme brand mode drives the same engine and returns the same warnings on its own result. Without this bridge a no-code agent reads rules addressed to a tool it never calls, and has nowhere to apply the suppression and could-not-verify outcomes it actually receives.")]
+	public void ThemingGuidanceResource_Should_Apply_The_Font_Rules_To_Brand_Mode_Too() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("applies to `create-theme` brand mode too",
+			because: "the font rules name build-theme throughout, so the no-code entry point needs an explicit bridge to them");
+		article.Text.Should().Contain("read those warnings off the create call",
+			because: "in brand mode there is no separate build step whose warnings the agent could read instead");
+	}
+
+	[Test]
 	[Description("The no-code create step keeps the retry protocol the ADR's B-D3 decision leans on: the create call is not idempotent, so the guide must tell agents to pass an explicit id when a retry is possible and to confirm with list-themes before retrying after a transport timeout. The sentence was dropped once as collateral of a prose trim; this pin keeps the ADR and the shipped guidance telling the same story.")]
 	public void ThemingGuidanceResource_Should_Instruct_The_Id_Retry_Protocol_For_NoCode_Create() {
 		// Arrange
