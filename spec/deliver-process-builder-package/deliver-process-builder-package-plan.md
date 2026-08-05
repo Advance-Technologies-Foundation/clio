@@ -1068,7 +1068,22 @@ they share a shape: the gate reads `SysPackage.Name`, and *nothing* connects tha
    takeover. Consequence: **TC-G-2 drops from hard blocker to a documented procedure step.** It can
    still be run later (the pre-rename `packages/clioprocessbuilder.gz` was deliberately kept for
    exactly that), but nothing waits on it. The runbook must state the uninstall step explicitly.
-5. **Netcore stand — PARKED (2026-08-04), reporter will clarify.** Factual position: .NET Core Creatio
+5. **CLOSED (2026-08-05): the source-only archive works on .NET 8, and the platform picks the target
+   framework itself.** Stand `http://ts1-infr-web02:8530` reports `frameworkKind: "Net"`,
+   `frameworkDescription: ".NET 8.0.29"`, core 10.1.443.0. The reporter installed the source-only
+   archive there through the Hub in ~35 s, and `/rest/ProcessDesignService/ListUserTasks` returns
+   `success: true` with the full 23-task catalog.
+   **Why that settles the target-framework question** even without that stand's build log (its logs are
+   not on the `Creatio_Logs\AutoTest` share): on a .NET host `FileContentStorage.GetBinDirectoryPath`
+   probes `Files/Bin/netstandard` (`UseSeparateDirectoryToLoadPackageAssemblies` defaults to true), and
+   the archive shipped **no assembly at all** — so the server must have compiled a netstandard-targeted
+   assembly and placed it there. Together with the observed `SetCustomProperties -
+   NetStandardCompatibilityMode = True` and server-chosen `TargetFramework [net472]` on the .NET
+   Framework stands, the platform demonstrably selects the target per host.
+   **Consequence: no per-framework artifact, no local .NET Core Creatio, and no netcore build
+   prerequisite (P0.0) are needed at all.**
+
+   *Superseded position, kept for the record:* .NET Core Creatio
    builds do exist, and `clio deploy-creatio --platform net6` can provision one locally, so this is a
    setup task rather than an external blocker. What is true today is narrower: **none of the 15
    environments registered in clio is `isNetCore`** (`krestov-test`, where P4.0 was measured, is a
