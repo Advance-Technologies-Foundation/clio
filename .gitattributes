@@ -1,3 +1,9 @@
+# Bundled Creatio package archives (clio/cliogate/*.gz, clio/CrtProcessBuilder/*.gz) are shipped
+# byte-for-byte inside the published tool and installed straight into a Creatio environment. They
+# survive today only because git's content sniffing happens to find a NUL early in the gzip header,
+# which is luck rather than intent on a machine with core.autocrlf=true. Say it explicitly.
+*.gz binary
+
 # Pin test fixtures that are compared byte-for-byte against serialized output to LF,
 # so the working-tree line endings do not depend on each machine's core.autocrlf.
 # The clio YAML serializer emits Environment.NewLine (CRLF on Windows); tests normalize
