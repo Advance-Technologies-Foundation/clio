@@ -22,7 +22,15 @@ DESCRIPTION
     The background is also bound into a package as data bindings, so
     installing that package elsewhere reproduces the same background instead
     of leaving it behind on this environment. Re-running after a background
-    change refreshes what the package carries.
+    change refreshes what the package carries. What is bound: the background
+    configuration, the image and its gallery membership, and the All-Users
+    off-state of the UsePanelIconBackground feature. Installing the package
+    merges onto the target's existing rows instead of duplicating them.
+
+    With --package omitted the bindings land in the package named by the
+    environment's CurrentPackageId system setting; when that setting points
+    at nothing resolvable the command stops and asks for an explicit package
+    rather than picking one.
 
     Read the run output: every gap between what was applied and what the
     package will actually deliver is reported as a warning. The command
@@ -55,6 +63,32 @@ OPTIONS
     --Environment       -e          Environment name
 
     --Maintainer        -m          Maintainer name
+
+NOTES
+    - The binding writes package data through the design-time schema-data
+      services, so the target package must be unlocked and the caller needs
+      rights to modify package configuration.
+    - The binding folder names are reserved: ownership is decided by folder
+      name plus entity schema, so a binding you created by hand under one of
+      them for the same schema is refreshed or dropped by this command as if
+      it were its own. Pick a different name for bindings you maintain
+      yourself.
+    - A setting defined as SecureText is never bound; its value is an
+      encrypted secret and a package must not carry a secret off the
+      environment that owns it.
+    - A gallery membership under a customized shell_background tag is not
+      bound, because the row references its tag by id and that id would not
+      resolve on the target. The image itself still ships.
+    - The background configuration is withheld when the image row is not
+      bound, because the configuration names the image by id; any
+      configuration folder an earlier run shipped is dropped along with it.
+    - The UsePanelIconBackground off-state ships only when the feature is
+      turned off on this environment. If it was never turned off here, or
+      the apply ran with --keep-icon-background, the off-state stays out of
+      the package and says so in a warning, and the panel can then still
+      hide the background on the install target. If the target defines this
+      feature on its own, the off-state may not take there either: brand one
+      environment and deliver outward.
 
 EXAMPLE
     clio set-background-image --file C:\brand\background.png -e myapp

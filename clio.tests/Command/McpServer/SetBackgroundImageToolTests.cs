@@ -18,7 +18,6 @@ public class SetBackgroundImageToolTests {
 
 	private static readonly Guid ImageId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
-	/// <summary>An arbitrary package the fake command reports back; the tool only relays whatever it resolved.</summary>
 	private const string BoundPackageName = "UsrBrandingPkg";
 
 	[Test]
@@ -427,7 +426,7 @@ public class SetBackgroundImageToolTests {
 		public FakeSetBackgroundImageCommand(SetBackgroundResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
-				Substitute.For<ISysImageUploader>(), Substitute.For<IPanelIconBackgroundFeatureManager>(),
+				Substitute.For<ISysImageUploader>(), Substitute.For<IFeatureStateService>(),
 				Substitute.For<IPackageDataBinder>()) {
 			_result = result ?? SetBackgroundResult.Successful(ImageId, BoundPackageName, []);
 		}

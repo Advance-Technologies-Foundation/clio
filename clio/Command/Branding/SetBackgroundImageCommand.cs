@@ -116,6 +116,9 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 
 	internal const string BackgroundConfigCode = "CrtBackgroundConfig";
 
+	/// <summary>The feature code that gates the panel's own icon background.</summary>
+	internal const string PanelIconBackgroundFeatureCode = "UsePanelIconBackground";
+
 	/// <summary>Error text shared by the CLI and MCP surfaces when both image sources are passed.</summary>
 	internal const string BothSourcesError = "Pass either a file or an image-id, not both.";
 
@@ -136,7 +139,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly ISysImageUploader _sysImageUploader;
-	private readonly IPanelIconBackgroundFeatureManager _panelIconBackgroundFeature;
+	private readonly IFeatureStateService _featureState;
 	private readonly IPackageDataBinder _packageDataBinder;
 
 	/// <summary>
@@ -144,13 +147,13 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// </summary>
 	public SetBackgroundImageCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, ISysSettingsManager sysSettingsManager,
-		ISysImageUploader sysImageUploader, IPanelIconBackgroundFeatureManager panelIconBackgroundFeature,
+		ISysImageUploader sysImageUploader, IFeatureStateService featureState,
 		IPackageDataBinder packageDataBinder)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_sysSettingsManager = sysSettingsManager;
 		_sysImageUploader = sysImageUploader;
-		_panelIconBackgroundFeature = panelIconBackgroundFeature;
+		_featureState = featureState;
 		_packageDataBinder = packageDataBinder;
 	}
 
@@ -175,7 +178,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		}
 		List<string> warnings = [];
 		if (options.KeepIconBackground) {
-			warnings.Add($"The {PanelIconBackgroundFeatureManager.FeatureCode} feature was left as is " +
+			warnings.Add($"The {PanelIconBackgroundFeatureCode} feature was left as is " +
 				"(keep-icon-background); while it is on, the panel's icon background can hide the shell background.");
 		} else {
 			DisablePanelIconBackground(warnings);
@@ -233,7 +236,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		RecordOutcome(config, "background-config", bound, warnings);
 
 		PackageDataBindingOutcome featureOffState =
-			_packageDataBinder.BindFeatureOffState(PanelIconBackgroundFeatureManager.FeatureCode);
+			_packageDataBinder.BindFeatureOffState(PanelIconBackgroundFeatureCode);
 		RecordOutcome(featureOffState, "panel-icon-off-state", bound, warnings);
 	}
 
@@ -286,10 +289,11 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 
 	private void DisablePanelIconBackground(List<string> warnings) {
 		try {
-			_panelIconBackgroundFeature.DisableForAllUsers();
+			_featureState.SetFeatureState(
+				PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, state: false);
 		} catch (Exception exception) {
 			warnings.Add(
-				$"The background image was applied, but turning off the {PanelIconBackgroundFeatureManager.FeatureCode} " +
+				$"The background image was applied, but turning off the {PanelIconBackgroundFeatureCode} " +
 				$"feature failed, so the panel may still hide it: {exception.Message}");
 		}
 	}

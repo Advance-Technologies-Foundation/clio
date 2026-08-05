@@ -1,4 +1,4 @@
-namespace Clio.Tests.Command;
+﻿namespace Clio.Tests.Command;
 
 using System;
 using Clio.Command.Branding;
@@ -13,7 +13,6 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgroundImageOptions>
 {
-	/// <summary>The package the substituted delivery target reports back as the resolved delivery target.</summary>
 	private const string TestPackageName = "UsrBrandingPkg";
 
 	private static readonly Guid ImageId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -23,7 +22,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ISysSettingsManager _sysSettingsManager;
 	private ISysImageUploader _sysImageUploader;
-	private IPanelIconBackgroundFeatureManager _panelIconBackgroundFeature;
+	private IFeatureStateService _featureState;
 	private IPackageDataBinder _packageDataBinder;
 	private ILogger _logger;
 	private SetBackgroundImageCommand _command;
@@ -54,7 +53,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_serviceUrlBuilder.ClearReceivedCalls();
 		_sysSettingsManager.ClearReceivedCalls();
 		_sysImageUploader.ClearReceivedCalls();
-		_panelIconBackgroundFeature.ClearReceivedCalls();
+		_featureState.ClearReceivedCalls();
 		_packageDataBinder.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -66,13 +65,13 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_sysImageUploader = Substitute.For<ISysImageUploader>();
-		_panelIconBackgroundFeature = Substitute.For<IPanelIconBackgroundFeatureManager>();
+		_featureState = Substitute.For<IFeatureStateService>();
 		_packageDataBinder = Substitute.For<IPackageDataBinder>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient<IServiceUrlBuilder>(_ => _serviceUrlBuilder);
 		containerBuilder.AddTransient<ISysSettingsManager>(_ => _sysSettingsManager);
 		containerBuilder.AddTransient<ISysImageUploader>(_ => _sysImageUploader);
-		containerBuilder.AddTransient<IPanelIconBackgroundFeatureManager>(_ => _panelIconBackgroundFeature);
+		containerBuilder.AddTransient<IFeatureStateService>(_ => _featureState);
 		containerBuilder.AddTransient<IPackageDataBinder>(_ => _packageDataBinder);
 	}
 
@@ -86,17 +85,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 	private static string Rows(bool withRow) =>
 		withRow ? $"{{\"value\":[{{\"Id\":\"{Guid.NewGuid()}\"}}]}}" : "{\"value\":[]}";
 
-	/// <summary>
-	/// Answers the consecutive gallery-membership GETs with one response per element of
-	/// <paramref name="sequence"/>. The command verifies a registration by reading back AFTER the insert POST, so
-	/// the number of elements is the number of membership reads that run — not an arbitrary length.
-	/// </summary>
-	/// <remarks>
-	/// The membership filter must use navigation paths (<c>Entity/Id</c>, <c>Tag/Id</c>): the flat
-	/// <c>EntityId</c>/<c>TagId</c> names fail on the platform in <c>$filter</c> with
-	/// "Column by path ... not found" (verified live), which is why this matcher pins the navigation form.
-	/// </remarks>
-	/// <param name="sequence">Whether each successive membership read answers with a row.</param>
 	private void ArrangeGalleryReads(params bool[] sequence) {
 		string[] responses = System.Linq.Enumerable.ToArray(
 			System.Linq.Enumerable.Select(sequence, withRow => Rows(withRow)));
@@ -106,11 +94,6 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 			.Returns(responses[0], System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Skip(responses, 1)));
 	}
 
-	/// <summary>
-	/// Arranges the gallery reads for the two states the command distinguishes: already registered answers the
-	/// single pre-check with a row, while not-yet-registered answers the pre-check empty and the post-insert
-	/// read-back with the new row.
-	/// </summary>
 	private void ArrangeGalleryState(bool alreadyRegistered) {
 		if (alreadyRegistered) {
 			ArrangeGalleryReads(true);
@@ -422,7 +405,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 
 		// Assert
 		exitCode.Should().Be(0, because: "the background was applied and the feature was turned off");
-		_panelIconBackgroundFeature.Received(1).DisableForAllUsers();
+		_featureState.Received(1).SetFeatureState(
+			SetBackgroundImageCommand.PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, false);
 	}
 
 	[Test, Category("Unit")]
@@ -439,7 +423,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_command.Execute(options);
 
 		// Assert
-		_panelIconBackgroundFeature.DidNotReceive().DisableForAllUsers();
+		_featureState.DidNotReceiveWithAnyArgs().SetFeatureState(default, default, default);
 	}
 
 	[Test, Category("Unit")]
@@ -450,7 +434,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		ArrangeGalleryState(alreadyRegistered: true);
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
-		_panelIconBackgroundFeature.When(feature => feature.DisableForAllUsers())
+		_featureState
+			.WhenForAnyArgs(feature => feature.SetFeatureState(default, default, default))
 			.Do(_ => throw new InvalidOperationException("feature service unavailable"));
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
 
@@ -460,7 +445,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		// Assert
 		exitCode.Should().Be(0, because: "the background is applied and cannot be cleanly rolled back, so a failed feature toggle is only a warning");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains(PanelIconBackgroundFeatureManager.FeatureCode)));
+			message.Contains(SetBackgroundImageCommand.PanelIconBackgroundFeatureCode)));
 	}
 
 	[Test, Category("Unit")]
@@ -471,7 +456,8 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		ArrangeGalleryState(alreadyRegistered: true);
 		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
 			.Returns(true);
-		_panelIconBackgroundFeature.When(feature => feature.DisableForAllUsers())
+		_featureState
+			.WhenForAnyArgs(feature => feature.SetFeatureState(default, default, default))
 			.Do(_ => throw new InvalidOperationException("feature service unavailable"));
 		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
 
@@ -479,7 +465,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		SetBackgroundResult result = _command.SetBackground(options);
 
 		// Assert
-		result.Warnings.Should().Contain(warning => warning.Contains(PanelIconBackgroundFeatureManager.FeatureCode),
+		result.Warnings.Should().Contain(warning => warning.Contains(SetBackgroundImageCommand.PanelIconBackgroundFeatureCode),
 			because: "this caveat used to be logged straight out, so an MCP caller was told the background was applied with no hint that the panel can still hide it — the result is the only channel both surfaces read");
 	}
 
@@ -498,7 +484,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 
 		// Assert
 		exitCode.Should().Be(0, because: "keeping the feature as is must not fail the apply");
-		_panelIconBackgroundFeature.DidNotReceive().DisableForAllUsers();
+		_featureState.DidNotReceiveWithAnyArgs().SetFeatureState(default, default, default);
 	}
 
 	[Test, Category("Unit")]

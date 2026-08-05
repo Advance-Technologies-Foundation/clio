@@ -30,10 +30,21 @@ while it is on it can cover the shell background. This is best-effort: if the wr
 background is still applied and a warning is logged. Pass `--keep-icon-background` when the panel icon
 background must stay.
 
-After a successful apply the command binds the background into a package as Creatio data bindings
-(`SysPackageSchemaData`), so installing that package elsewhere reproduces the same background. The
-bindings are created when they do not exist yet and updated in place when they do, so re-running after
-a background change refreshes what the package carries. See "Package delivery" below.
+After a successful apply the command binds the background into a package as Creatio data bindings, so
+installing that package elsewhere reproduces the same background. The bindings are created when they
+do not exist yet and updated in place when they do, so re-running after a background change refreshes
+what the package carries. What is bound: the background configuration, the image and its gallery
+membership, and the All-Users off-state of the `UsePanelIconBackground` feature. Installing the
+package **merges** onto the target's existing rows instead of duplicating them.
+
+With `--package` omitted the bindings land in the package named by the environment's `CurrentPackageId`
+system setting; when that setting points at nothing resolvable the command stops and asks for an
+explicit package rather than picking one.
+
+Read the run output: every gap between what was applied and what the package will actually deliver is
+reported as a warning. The command still succeeds — a warning means the package ships less than
+expected, not that the apply failed. When the binding itself fails, the error names both the cause and
+the parts that were already bound before the failure; those stay in the package.
 
 ## Synopsis
 
@@ -63,52 +74,24 @@ clio set-background-image [<image-id>] [options]
 --Maintainer        -m          Maintainer name
 ```
 
-## Package delivery
+## Notes
 
-When `--package` is omitted, the package named by the environment's `CurrentPackageId` system setting
-receives the bindings; when that setting points at nothing resolvable, the command stops and asks for
-an explicit package rather than picking one.
-
-The bound rows: the background configuration value, (for an image background) the image and its
-gallery membership, and the All-Users off-state of the `UsePanelIconBackground` feature plus (by id)
-its feature definition.
-
-Setting-value and feature-state bindings are keyed by their natural columns (setting/feature +
-admin unit) and force-update the value, so installing the package **merges** onto the target's
-existing All-Users row instead of inserting a duplicate whose id differs per environment. The image
-and gallery bindings are keyed by id (clio-generated ids that have no counterpart on the target, so
-a plain insert is correct).
-
-The run output names the package and reports every delivery gap as a warning — read them; the
-command still succeeds, but each warning means the package ships less than you may expect.
-Deliberate limits:
-
-- **The binding folder names are reserved.** Ownership is decided by folder name plus entity schema, so a
-  binding you created by hand under one of these names for the same schema is refreshed or dropped by this
+- The binding writes package data through the design-time schema-data services, so the target package
+  must be unlocked and the caller needs rights to modify package configuration.
+- The binding folder names are reserved: ownership is decided by folder name plus entity schema, so a
+  binding you created by hand under one of them for the same schema is refreshed or dropped by this
   command as if it were its own. Pick a different name for bindings you maintain yourself.
-- **A setting defined as `SecureText`** is never bound; its value is an encrypted secret and a
-  package must not carry a secret off the environment that owns it.
-- **A gallery membership under a customized `shell_background` tag** is not bound: the row
-  references its tag by id, which would not resolve on the target. The image itself still ships.
-- **The background configuration is withheld when the image row is not bound.** The configuration
-  names the image by id, so shipping it alone would install a background the target cannot render;
-  any configuration folder an earlier run shipped is dropped along with it.
-- **The feature definition is delivered by id.** The `UsePanelIconBackground` definition travels by
-  its own id so the state row referencing it resolves. If the target created that feature
-  independently the ids differ and the install can add a second row rather than merging, leaving the
-  target's own feature on. Brand one environment and deliver outward.
-- **The `UsePanelIconBackground` off-state** is bound only when the All-Users state row on this
-  environment is confirmed to read as off. A missing row (the feature was never toggled here), a row
-  that still reads as on (every apply ran with `--keep-icon-background`, or the toggle failed), and a
-  row whose `FeatureState` is no on/off answer at all are all reported as warnings, and any binding
-  an earlier run shipped for the slot is dropped. Its `Feature` definition folder follows the same
-  decision, because it exists only to keep the state row's reference resolvable.
-
-The binding writes package data through the design-time schema-data services, so the target package
-must be editable (unlocked) and the caller needs rights to modify package configuration. When the
-apply succeeds but the binding fails, the command exits with an error naming the applied image and
-the parts that were already bound before the failure — those stay in the package. Every part is
-written in place, so a later run refreshes what landed instead of duplicating it.
+- A setting defined as `SecureText` is never bound; its value is an encrypted secret and a package must
+  not carry a secret off the environment that owns it.
+- A gallery membership under a customized `shell_background` tag is not bound, because the row
+  references its tag by id and that id would not resolve on the target. The image itself still ships.
+- The background configuration is withheld when the image row is not bound, because the configuration
+  names the image by id; any configuration folder an earlier run shipped is dropped along with it.
+- The `UsePanelIconBackground` off-state ships only when the feature is turned off on this environment.
+  If it was never turned off here, or the apply ran with `--keep-icon-background`, the off-state stays
+  out of the package and says so in a warning, and the panel can then still hide the background on the
+  install target. If the target defines this feature on its own, the off-state may not take there
+  either: brand one environment and deliver outward.
 
 ## Examples
 

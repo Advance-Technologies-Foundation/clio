@@ -40,6 +40,21 @@ The environment and the package therefore never disagree — but a non-zero exit
 nothing changed, so read the `Applied:` line before re-running. When no slot applies at all, the
 run stops there and touches no package.
 
+Only the slots this run applied are bound, plus the splash-suppression setting, so a slot nobody
+branded stays out of the package and installing it cannot replace the target's own logo with this
+environment's stock image. Installing the package **merges** onto the target's existing values
+instead of duplicating them.
+
+With `--package` omitted the bindings land in the package named by the environment's
+`CurrentPackageId` system setting; when that setting points at nothing resolvable the command stops
+and asks for an explicit package rather than picking one.
+
+Read the run output: every gap between what was applied and what the package will actually deliver is
+reported as a warning. A warning means the package ships less than expected, not that the apply
+failed. When the binding itself fails, the error names both the cause and the slots that were already
+bound before the failure; those stay in the package. Every slot is written in place, so re-running
+refreshes what landed instead of duplicating it.
+
 ## Synopsis
 
 ```bash
@@ -72,39 +87,17 @@ clio set-logo [options]
 --Maintainer        -m          Maintainer name
 ```
 
-## Package delivery
+## Notes
 
-Every applied slot is bound into `--package` under its own binding (`SysSettingsValue_<setting code>`, the platform naming convention for sys-setting value bindings).
-When `--package` is omitted, the package named by the environment's `CurrentPackageId` system setting
-receives the bindings; when that setting points at nothing resolvable, the command stops and asks for
-an explicit package rather than picking one. A binding is created when it does not exist yet and
-updated in place when it does, so re-running with a new file refreshes both the environment and the
-packaged snapshot.
-
-Only the slots this run applied are bound, plus the splash-suppression setting. A slot nobody
-branded stays out of the package, so installing it cannot replace the target's own logo with this
-environment's stock image. A slot this run applied whose value row turns out to be unreadable is
-dropped from the package with a report line; a binding an earlier run shipped for a slot outside
-this run is left as it is.
-
-The binding folder names are reserved: ownership is decided by folder name plus entity schema, so a binding
-you created by hand under `SysSettingsValue_<setting code>` for the same schema is refreshed or dropped by this
-command as if it were its own. Pick a different name for bindings you maintain yourself.
-
-Setting-value bindings are keyed by their natural columns (setting + admin unit) and force-update
-the value, so installing the package **merges** onto the target's existing All-Users value instead
-of inserting a duplicate whose id differs per environment.
-
-The run output names the package and reports every delivery gap as a warning — read them; the run
-still delivered what it could, but each warning means the package ships less than you may expect. A
-setting defined as `SecureText` is never bound (a package must not carry a secret off its
-environment).
-
-The binding writes package data through the design-time schema-data services, so the target package
-must be editable (unlocked) and the caller needs rights to modify package configuration. When the
-apply succeeds but the binding fails, the command exits with an error naming the cause and the slots
-that were already bound before the failure — those stay in the package. Every slot is written in
-place, so re-running refreshes what landed instead of duplicating it.
+- The binding writes package data through the design-time schema-data services, so the target package
+  must be unlocked and the caller needs rights to modify package configuration.
+- The binding folder names are reserved: ownership is decided by folder name plus entity schema, so a
+  binding you created by hand under one of them for the same schema is refreshed or dropped by this
+  command as if it were its own. Pick a different name for bindings you maintain yourself.
+- A setting defined as `SecureText` is never bound; its value is an encrypted secret and a package must
+  not carry a secret off the environment that owns it.
+- A slot this run applied whose value row turns out to be unreadable is dropped from the package with a
+  warning. A binding an earlier run shipped for a slot outside this run is left as it is.
 
 ## Examples
 

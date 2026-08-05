@@ -11,6 +11,17 @@ DESCRIPTION
     bindings, so installing that package elsewhere reproduces the same logos
     instead of leaving them behind on this environment.
 
+    Only the slots this run applied are bound, plus the splash-suppression
+    setting, so a slot nobody branded stays out of the package and installing
+    it cannot replace the target's own logo with this environment's stock
+    image. Installing the package merges onto the target's existing values
+    instead of duplicating them.
+
+    With --package omitted the bindings land in the package named by the
+    environment's CurrentPackageId system setting; when that setting points
+    at nothing resolvable the command stops and asks for an explicit package
+    rather than picking one.
+
     Use --logo to brand every slot from one file. A slot option overrides it
     for that slot, so one run can set the whole product and still give the
     dark top panel its own file:
@@ -72,6 +83,22 @@ OPTIONS
     --Environment       -e          Environment name
 
     --Maintainer        -m          Maintainer name
+
+NOTES
+    - The binding writes package data through the design-time schema-data
+      services, so the target package must be unlocked and the caller needs
+      rights to modify package configuration.
+    - The binding folder names are reserved: ownership is decided by folder
+      name plus entity schema, so a binding you created by hand under one of
+      them for the same schema is refreshed or dropped by this command as if
+      it were its own. Pick a different name for bindings you maintain
+      yourself.
+    - A setting defined as SecureText is never bound; its value is an
+      encrypted secret and a package must not carry a secret off the
+      environment that owns it.
+    - A slot this run applied whose value row turns out to be unreadable is
+      dropped from the package with a warning. A binding an earlier run
+      shipped for a slot outside this run is left as it is.
 
 EXAMPLE
     clio set-logo --logo C:\brand\logo.svg -e myapp

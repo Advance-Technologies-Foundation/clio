@@ -127,7 +127,10 @@ public interface IPackageDataBinder {
 	/// Binds a feature's confirmed All-Users off-state — the <c>AdminUnitFeatureState</c> row matched on
 	/// the feature's natural key, into <c>AdminUnitFeatureState_&lt;code&gt;</c> — plus, defensively by Id,
 	/// its <c>Feature</c> definition row into <c>Feature_&lt;code&gt;</c>, which lands first so the package
-	/// never carries a state row whose feature it does not also ship. Only a state row this method itself
+	/// never carries a state row whose feature it does not also ship. The state row's key references the
+	/// feature by Id, so both folders land only on a target that already defines the feature under the same
+	/// Id: a product-shipped definition. A definition created per environment carries a different Id on every
+	/// install and cannot be delivered this way. Only a state row this method itself
 	/// confirmed to be off is ever delivered: the state binding force-updates the flag on install, so
 	/// shipping a row that is still on would turn the feature back on for the target. The state can never be
 	/// assumed from the caller's own turn-off attempt — the attempt may have been skipped or may have failed.

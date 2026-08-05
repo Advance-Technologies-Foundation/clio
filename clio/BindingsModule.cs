@@ -363,6 +363,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
@@ -775,7 +776,6 @@ public class BindingsModule {
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
 		services.AddTransient<ISysImageUploader, SysImageUploader>();
-		services.AddTransient<IPanelIconBackgroundFeatureManager, PanelIconBackgroundFeatureManager>();
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<SetLogoCommand>();
@@ -819,7 +819,7 @@ public class BindingsModule {
 		services.AddTransient<GetCreatioInfoCommand>();
 		services.AddTransient<SetApplicationVersionCommand>();
 		services.AddTransient<ApplyEnvironmentManifestCommand>();
-		services.AddTransient<EnvironmentManager>();
+		services.AddTransient<IEnvironmentManager, EnvironmentManager>();
 		services.AddTransient<GetWebServiceUrlCommand>();
 		services.AddTransient<MockDataCommand>();
 		services.AddTransient<AssertCommand>();
