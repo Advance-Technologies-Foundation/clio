@@ -121,7 +121,7 @@
       }
     }
   },
-  "insertValueOverrides": [
+  "componentPropertyOverrides": [
     {
       "type": "crt.GridContainer",
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }

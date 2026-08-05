@@ -228,7 +228,7 @@ public static class WebToMobileAnalysisService {
 		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
 		// merge twins the mobile template provides are never touched.
-		List<SpacingNormalizationEntry> spacingNormalization = ApplyInsertValueOverrides(elementMap, rules);
+		List<SpacingNormalizationEntry> spacingNormalization = ApplyComponentPropertyOverrides(elementMap, rules);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -2694,7 +2694,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT (spacing
+	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT (spacing
 	/// normalization). For each entry whose <c>mobileType</c> matches an override rule, the listed
 	/// properties are SET on the prebuilt <c>mobileValues</c> — replacing whatever the web page carried
 	/// (any shape: token, px number, CSS string, per-axis object; the web value is discarded, never
@@ -2705,15 +2705,15 @@ public static class WebToMobileAnalysisService {
 	/// absent/empty group is a no-op. Returns one advisory entry per normalized element for the guide's
 	/// <c>spacingNormalization</c> report section.
 	/// </summary>
-	private static List<SpacingNormalizationEntry> ApplyInsertValueOverrides(
+	private static List<SpacingNormalizationEntry> ApplyComponentPropertyOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
 		var normalized = new List<SpacingNormalizationEntry>();
-		IReadOnlyList<InsertValueOverrideRule> overrides = rules?.InsertValueOverrides;
+		IReadOnlyList<ComponentPropertyOverrideRule> overrides = rules?.ComponentPropertyOverrides;
 		if (overrides is not { Count: > 0 }) {
 			return normalized;
 		}
-		var byType = new Dictionary<string, InsertValueOverrideRule>(StringComparer.OrdinalIgnoreCase);
-		foreach (InsertValueOverrideRule rule in overrides) {
+		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
+		foreach (ComponentPropertyOverrideRule rule in overrides) {
 			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
 				byType[rule.Type] = rule;
 			}
@@ -2725,7 +2725,7 @@ public static class WebToMobileAnalysisService {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
 				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out InsertValueOverrideRule rule)) {
+				|| !byType.TryGetValue(entry.MobileType, out ComponentPropertyOverrideRule rule)) {
 				continue;
 			}
 			var properties = new List<string>();

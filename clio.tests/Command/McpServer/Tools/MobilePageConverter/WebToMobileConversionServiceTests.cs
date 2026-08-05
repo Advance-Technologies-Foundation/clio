@@ -2737,20 +2737,20 @@ public sealed class WebToMobileConversionServiceTests {
 			"crt.GridContainer", "crt.FlexContainer", "crt.Input", "crt.TabContainer"
 		};
 
-	private static readonly IReadOnlyList<InsertValueOverrideRule> SpacingOverrides = [
-		new InsertValueOverrideRule {
+	private static readonly IReadOnlyList<ComponentPropertyOverrideRule> SpacingOverrides = [
+		new ComponentPropertyOverrideRule {
 			Type = "crt.GridContainer",
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 				"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
 		},
-		new InsertValueOverrideRule {
+		new ComponentPropertyOverrideRule {
 			Type = "crt.FlexContainer",
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "gap": "medium" }""")
 		}
 	];
 
 	private static WebToMobilePageConversionRules RulesWithSpacingOverrides() => new() {
-		InsertValueOverrides = SpacingOverrides
+		ComponentPropertyOverrides = SpacingOverrides
 	};
 
 	private static MobilePageConversionGuide AnalyzeSpacing(PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
@@ -2813,7 +2813,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var rules = new WebToMobilePageConversionRules {
 			Components = baseRules.Components,
 			TabAreaLayers = baseRules.TabAreaLayers,
-			InsertValueOverrides = SpacingOverrides
+			ComponentPropertyOverrides = SpacingOverrides
 		};
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
@@ -2839,7 +2839,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var rules = new WebToMobilePageConversionRules {
 			Components = baseRules.Components,
 			TabAreaLayers = baseRules.TabAreaLayers,
-			InsertValueOverrides = SpacingOverrides
+			ComponentPropertyOverrides = SpacingOverrides
 		};
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
@@ -2851,7 +2851,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The pass is switched by DATA — with no insertValueOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
+	[Description("The pass is switched by DATA — with no componentPropertyOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
 	public void Analyze_SpacingNormalization_ShouldBeNoOp_WhenRulesGroupAbsent() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer",
@@ -2876,8 +2876,8 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
 			""");
 		var rules = new WebToMobilePageConversionRules {
-			InsertValueOverrides = [
-				new InsertValueOverrideRule {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
 					Type = "crt.GridContainer",
 					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 						"""{ "type": "crt.Label", "name": "Hijacked", "gap": { "rowGap": "medium", "columnGap": "medium" } }""")

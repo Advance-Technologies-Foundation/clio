@@ -53,8 +53,8 @@ public sealed class WebToMobilePageConversionRules {
 	/// synthesized inserts alike; merge twins the mobile template provides are never touched. Empty or
 	/// absent switches the pass off (the feature is data-driven, like <see cref="TabAreaLayers"/>).
 	/// </summary>
-	[JsonPropertyName("insertValueOverrides")]
-	public IReadOnlyList<InsertValueOverrideRule> InsertValueOverrides { get; init; } = [];
+	[JsonPropertyName("componentPropertyOverrides")]
+	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
 
 	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
@@ -223,7 +223,7 @@ public sealed class SynthesizedContainerRule {
 /// The element identity keys (<c>name</c>/<c>type</c>) can never be overridden — a rules file listing
 /// them is ignored for those keys.
 /// </summary>
-public sealed class InsertValueOverrideRule {
+public sealed class ComponentPropertyOverrideRule {
 	/// <summary>Mobile component type the override applies to (e.g. "crt.GridContainer").</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
