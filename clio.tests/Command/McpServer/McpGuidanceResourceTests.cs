@@ -327,8 +327,24 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should keep simple create flows on direct request wiring instead of custom handlers");
 		article.Text.Should().Contain("crt.CreateRecordRequest page-resolution note",
 			because: "handler guidance must carry the page-resolution note so callers know a CreateRecordRequest Add button needs a registered or explicit page");
+		article.Text.Should().Contain("use `crt.CreateRecordRequest` when the action should open a new record.",
+			because: "handler guidance must state the purpose of CreateRecordRequest explicitly");
+		article.Text.Should().Contain("`entityPageName` when the request must select a specific add `FormPage`",
+			because: "handler guidance must explain when entityPageName is the appropriate explicit page selector");
+		article.Text.Should().Contain("non-deprecated navigation parameter and takes priority for page resolution.",
+			because: "handler guidance must preserve the supported entityPageName navigation contract and its resolution priority");
+		article.Text.Should().Contain("does not replace that entity-resolution",
+			because: "handler guidance must not imply that entityPageName alone resolves an entity when the list/context supplies it");
 		article.Text.Should().Contain("There is no page for new or existing record",
 			because: "handler guidance must name the exact runtime error a section-less detail entity raises when CreateRecordRequest cannot resolve a page");
+		article.Text.Should().Contain("Typed-page menu caveat: the runtime preprocessor examines every `crt.Button` whose clicked",
+			because: "handler guidance must explain why a CreateRecordRequest button can become a typed-page dropdown");
+		article.Text.Should().Contain("`entityPageName` does not suppress this preprocessor.",
+			because: "handler guidance must prevent the incorrect assumption that selecting an entity page disables typed-page menu synthesis");
+		article.Text.Should().Contain("type-column attribute with a value.",
+			because: "handler guidance must identify the type-column default that suppresses typed-page menu synthesis");
+		article.Text.Should().Contain("Do not replace the button or add a custom handler solely to remove this generated menu.",
+			because: "handler guidance should keep intentional typed-page selection on direct CreateRecordRequest wiring");
 		article.Text.Should().Contain("| cancel unsaved edits on the current page | `crt.CancelRecordChangesRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should cover the built-in cancel-edits trigger directly in the decision table");
 		article.Text.Should().Contain("| delete the current or selected record | `crt.DeleteRecordRequest` | button/menu `clicked.request` | no |",

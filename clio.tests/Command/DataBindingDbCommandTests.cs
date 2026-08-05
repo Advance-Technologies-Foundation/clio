@@ -687,6 +687,11 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		}
 
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
+			requestBody.Contains("\"rootSchemaName\":\"SysPackage\",", StringComparison.Ordinal)) {
+			return $$"""{"success":true,"rows":[{"Name":"{{PackageName}}","UId":"{{PackageUId}}","InstallType":0}]}""";
+		}
+
+		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
 			!requestBody.Contains("\"rootSchemaName\":\"SysPackageSchemaData\"", StringComparison.Ordinal)) {
 			// FetchExistingEntityNameToId selects the Name column; RowExistsInTable selects only Id and filters
 			// by Id. Route the name-map fetch to the full response, and answer an Id-existence probe positively
@@ -807,7 +812,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Fails instead of reporting an empty projection when the binding record has no readable UId, because \"ships nothing\" is the worst possible wrong answer for this command.")]
+	[Description("Fails instead of reporting an empty projection when the binding record has an unusable UId, because \"ships nothing\" is the worst possible wrong answer for this command.")]
 	public void ReadDataBindingDb_Should_Fail_WhenTheBindingHasNoReadableUId() {
 		// Arrange
 		_bindingLookupResponseJson = """
@@ -819,7 +824,8 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		      "Name": "SysWorkplace_Todo",
 		      "EntitySchemaName": "SysWorkplace"
 		    }
-		  ]
+		  ],
+		  "success": true
 		}
 		""";
 		ReadDataBindingDbOptions options = new() {
@@ -834,7 +840,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		// Assert
 		result.Should().Be(1,
 			because: "an unidentifiable binding must not be reported as one that ships no columns");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("no readable UId")));
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("unusable UId")));
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.StartsWith("columns (0)")));
 	}
 
@@ -868,7 +874,8 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		      "Name": "{{bindingName ?? schemaName}}",
 		      "EntitySchemaName": "{{schemaName}}"
 		    }
-		  ]
+		  ],
+		  "success": true
 		}
 		""";
 	}
@@ -909,7 +916,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		""";
 
 		// Act
-		Action act = () => DataBindingDbService.ThrowIfUnsuccessful(response, "InsertQuery");
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "InsertQuery");
 
 		// Assert
 		string message = act.Should().Throw<InvalidOperationException>().Which.Message;
@@ -929,13 +936,107 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Fails on a non-empty body that is not a service envelope (an authentication redirect page), because accepting it would report a write that never reached the service as done.")]
+	public void ThrowIfUnsuccessful_Should_Fail_ForANonEnvelopeBody() {
+		// Arrange
+		const string response = "<html><body>Sign in to Creatio</body></html>";
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a binding reported as saved when nothing was registered is worse than a loud failure")
+			.WithMessage("*never reached the service*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails on a valid JSON body that is not an envelope object, so a bare scalar answer is reported in the same terms as any other non-response instead of an opaque element-type error.")]
+	public void ThrowIfUnsuccessful_Should_Fail_ForABareJsonValue() {
+		// Arrange
+		const string response = "true";
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "an answer that carries no envelope cannot confirm the write, and the framework's own " +
+					"element-type message tells the caller nothing")
+			.WithMessage("*never reached the service*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts an empty body, because an endpoint that answers nothing carries no failure signal to act on.")]
+	public void ThrowIfUnsuccessful_Should_Accept_AnEmptyBody() {
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(string.Empty, "SaveSchema");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an absent body is the documented no-content answer, not evidence of a failed write");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to the responseStatus message when errorInfo is JSON null, instead of failing on an opaque element-indexing error and losing the server's reason.")]
+	public void ThrowIfUnsuccessful_Should_FallBackToResponseStatus_WhenErrorInfoIsNull() {
+		// Arrange
+		const string response =
+			"""{"success":false,"errorInfo":null,"responseStatus":{"Message":"Package is locked"}}""";
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a permission or lock refusal is the actionable message this method exists to surface")
+			.WithMessage("*Package is locked*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails on an envelope whose success flag is present but not a true/false value, because an unreadable outcome must not be reported as a completed write.")]
+	public void ThrowIfUnsuccessful_Should_Fail_ForAnUnreadableSuccessFlag() {
+		// Arrange
+		const string response = """{"success":"false","errorInfo":{"message":"Access denied"}}""";
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the same method rejects a body that is not an envelope for this exact reason — an " +
+					"undetermined outcome on a write check must fail loudly, not default to success")
+			.WithMessage("*cannot be determined*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts an envelope whose success flag is absent, so an endpoint that answers a payload rather than a status envelope is not read as a failure.")]
+	public void ThrowIfUnsuccessful_Should_Accept_AnEnvelopeWithoutASuccessFlag() {
+		// Arrange
+		const string response = """{"rows":[]}""";
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "only an explicit success:false is a failure signal");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Leaves an ordinary binding failure message untouched, so the permission guidance does not become noise on unrelated errors.")]
 	public void ThrowIfUnsuccessful_Should_NotAppendGuidance_ForUnrelatedFailure() {
 		// Arrange
 		const string response = """{"success":false,"errorInfo":{"message":"Column 'Name' is required"}}""";
 
 		// Act
-		Action act = () => DataBindingDbService.ThrowIfUnsuccessful(response, "InsertQuery");
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(response, "InsertQuery");
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()

@@ -89,6 +89,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-request-info",
 		"get-schema-name-prefix",
 		"get-sys-setting",
+		"get-target-package",
 		"get-telemetry-consent",
 		"get-tool-contract",
 		"get-user-culture",

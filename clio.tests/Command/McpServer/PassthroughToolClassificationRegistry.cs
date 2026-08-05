@@ -299,6 +299,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
+			["get-target-package"] = PassthroughClassification.NotApplicable,
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
@@ -341,6 +342,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
+			["set-logo"] = PassthroughClassification.NotApplicable,
 			["set-record-rights"] = PassthroughClassification.NotApplicable,
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
