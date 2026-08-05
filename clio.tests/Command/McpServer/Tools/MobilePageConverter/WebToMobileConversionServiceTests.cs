@@ -873,6 +873,35 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The template-owned-collection scalar drop applies at ANY depth: a CHANGED scalar on an EXISTING named element several levels below the collection root (a column's own sub-object) is NOT re-emitted, matching the collection-scalar safeguard. Because the mobile template base carries only the collection's own config at these positions (never application content, which is always NEW relative to the template), the drop only ever suppresses a web-side override of the template's config, not authored content.")]
+	public void BuildTargetedDiff_ChangedScalarNestedInExistingCollectionElement_Dropped() {
+		// Arrange: an EXISTING column "Existing" inside the isCollection:true node has a nested scalar (caption)
+		// that differs between the web page and the mobile template base -- several levels below the collection root.
+		// Act
+		JsonArray diff = Btd(
+			page:    """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Web" } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Mobile" } } } } } }""");
+		// Assert
+		diff.Should().BeEmpty(
+			because: "a changed scalar on an existing element anywhere inside a template-owned collection is dropped so the mobile-correct value is not clobbered; a new column, by contrast, is absent from the template base and still flows through the new-key path");
+	}
+
+	[Test]
+	[Description("Sibling to the depth-drop test: a NEW element (absent from the template base) added at the same depth inside a template-owned collection IS emitted, proving the depth propagation drops only changed scalars, never new authored content.")]
+	public void BuildTargetedDiff_NewElementNestedInCollection_StillEmitted() {
+		// Arrange: alongside an unchanged existing column, the page adds a brand-new column deep inside the collection.
+		// Act
+		JsonArray diff = Btd(
+			page:    """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Same" }, "NewCol": { "caption": "Fresh" } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Same" } } } } } }""");
+		// Assert
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		op["values"]!.AsObject().Should().ContainKey("NewCol").And.NotContainKey("Existing",
+			because: "a new column deep inside the collection is carried whole; the unchanged existing one is not re-emitted");
+	}
+
+	[Test]
 	[Description("A named array element present in the base but with different content is a change no diff op can express -- it is reported as a conflict (not silently dropped) and no operation is emitted for it.")]
 	public void BuildTargetedDiff_ChangedNamedArrayElement_FlaggedNotDropped() {
 		// Arrange: filterAttributes has QuickFilterGroup_Filters in both, but loadOnChange differs.

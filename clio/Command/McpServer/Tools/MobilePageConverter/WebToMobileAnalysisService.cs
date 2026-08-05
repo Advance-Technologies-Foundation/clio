@@ -913,6 +913,18 @@ public static class WebToMobileAnalysisService {
 	/// the old split enforced (a template-owned collection's scalars are dropped rather than re-applied); genuinely
 	/// new keys and new array entries still flow through.
 	/// </para>
+	/// <para>
+	/// The flag propagates to the ENTIRE collection subtree at any depth, not just the collection node's immediate
+	/// scalars -- and that unbounded scope is deliberate, not an oversight. The differ runs against the mobile
+	/// TEMPLATE base, which at those positions carries only the collection's own mobile config (its
+	/// <c>modelConfig</c>, <c>pageSize</c>, <c>sortColumns</c>, etc.), never application content: a page's columns,
+	/// filter entries and other authored content are ABSENT from the template base, so they surface as NEW keys /
+	/// new array entries (carried whole) rather than as "changed scalars". The depth-wide drop therefore only ever
+	/// suppresses a web-side override of the template's own config -- it never drops content a user authored. (A
+	/// changed scalar on an EXISTING element several levels down is covered by
+	/// <c>BuildTargetedDiff_ChangedScalarNestedInExistingCollectionElement_Dropped</c>; a new element at the same
+	/// depth still emits, per <c>BuildTargetedDiff_NewElementNestedInCollection_StillEmitted</c>.)
+	/// </para>
 	/// </summary>
 	private static void DiffObject(
 		JsonObject page, JsonObject baseObj, List<string> path, JsonArray ops,
@@ -976,9 +988,18 @@ public static class WebToMobileAnalysisService {
 	/// an element already present by identity and deep-equal is a no-op. When an element is present in the base by
 	/// NAME identity but its content differs, or when the page modified a nameless element in place (leaving a base
 	/// nameless element the page no longer reproduces), it records a CONFLICT into
-	/// <paramref name="arrayConflicts"/> instead: no diff operation in the mobile vocabulary can edit an existing
-	/// array element, so the change would otherwise be lost silently (named case) or duplicated at runtime
-	/// (nameless case). Base identities are hoisted once (O(N+M), no per-candidate re-serialization).
+	/// <paramref name="arrayConflicts"/> instead of emitting an operation.
+	/// <para>
+	/// No diff operation in the mobile vocabulary can edit an existing array element IN PLACE, so a changed element
+	/// cannot be expressed as a targeted op: the mobile path applier (<see cref="JsonPathDiffApplier"/>) identifies
+	/// and merges elements by <c>_id</c>, while these config elements are keyed by <c>name</c> only -- so a
+	/// name-addressed <c>merge</c> has no <c>_id</c> to resolve, and an <c>insert</c> of the changed element would
+	/// DUPLICATE the name rather than replace it. The safeguard is therefore the same as the collection-scalar case:
+	/// the template's native value wins (the differing web value is a template-owned-config override, not authored
+	/// content) and the change is SURFACED as a conflict the caller raises in <c>guide.Constraints</c> -- not
+	/// silently dropped. For a nameless in-place edit the page's element is still inserted (nothing dropped) AND the
+	/// duplicate-at-runtime risk is flagged. Base identities are hoisted once (O(N+M), no per-candidate re-serialization).
+	/// </para>
 	/// </summary>
 	private static void DiffArray(
 		JsonArray pageArr, JsonArray baseArr, IReadOnlyList<string> path, string key,
