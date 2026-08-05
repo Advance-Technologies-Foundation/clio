@@ -415,10 +415,40 @@ Four traps that must be written into the runbook, not discovered later:
   that archive. `GetAppsInstallInfoWithoutAppDescriptor` explicitly synthesises one `AppInstallInfo`
   per package that has no app descriptor. So a plain package archive is a supported input, and the
   reporter confirms this package has always been installed that way.
-  Our `CrtProcessBuilder.gz` nonetheless yields zero `appInstallInfos`. Unresolved candidates:
-  the source-only shape (`Type: 1` assembly package with no `Files/Bin`), something the rename or
-  `set-pkg-version`'s descriptor rewrite changed, or a format detail of clio's writer that
-  `PackageStorage` rejects while `PackageInstallerService` accepts.
+  **NOT REPRODUCIBLE — do not conclude from the observation sequence (2026-08-05).** Three artifacts
+  were tried through the Hub in this order:
+
+  | # | Artifact | `Files/Bin` | marker schema | Hub result |
+  |---|---|---|---|---|
+  | 1 | `_nobin/CrtProcessBuilder.gz` | absent | present | **rejected** |
+  | 2 | `CrtProcessBuilder.gz` | present | absent | installs, 12 s |
+  | 3 | `_withbin_schema/CrtProcessBuilder.gz` | present | present | installs |
+  | 4 | `_nobin/CrtProcessBuilder.gz` *(same file as #1)* | absent | present | **installs** |
+
+  #1 and #4 are the **same bytes** with opposite outcomes, so the archive content alone does not
+  determine the result and any bisection over these runs is invalid. All three artifacts share a name,
+  a descriptor and the same `clio compress` writer, so the rename and the `set-pkg-version` descriptor
+  rewrite remain exonerated — but nothing else is settled.
+
+  **Prime suspect: server-side staging reuse.** `AppInstallerInfo.ExtractPackage` clears the storage
+  directory only when a global setting says not to reuse it:
+  ```csharp
+  if (!GlobalAppSettings.ReuseUnzippedPackagesOnInstallApp) {
+      _directory.CreateOrReplaceDirectory(TempRepositoryPath);   // TempRepositoryPath == storageDirectory
+  }
+  _packageExtractor.Extract(uploadingFilePath, PackageUnzipPath); // this path IS always recreated
+  ```
+  `TempRepositoryPath` is exactly the `storageDirectory` that `PackageStorage` loads packages **into**.
+  With reuse enabled, a package left there by run #2/#3 can still be present during run #4 — which
+  would make #4 a **false positive**: the dialog finds a package, but not the one in the uploaded
+  archive. That also fits #1 failing on a stand that had never had the package.
+
+  **Therefore the source-only question is still OPEN, and its apparent success must be verified by
+  outcome, not by the dialog:** on a stand where the package was never installed and with
+  `ReuseUnzippedPackagesOnInstallApp` known, install `_nobin` and then check that
+  `Files/Bin/CrtProcessBuilder.dll` was produced *by that install* and that
+  `/rest/ProcessDesignService/ListUserTasks` answers. Until then, neither "source-only works" nor
+  "source-only is rejected" is established.
   **Note the verification asymmetry that hid this:** the archive was written by `clio compress` and
   checked by `clio extract-pkg-zip` — a clio→clio round trip that proves nothing about Creatio's
   readers. And the two server paths are *different readers*: `push-pkg` →
