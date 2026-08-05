@@ -1,4 +1,4 @@
-﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
+#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;

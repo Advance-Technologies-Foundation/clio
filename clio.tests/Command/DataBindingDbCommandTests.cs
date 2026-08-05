@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -756,7 +756,6 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 					["displayValue"] = "Web"
 				}
 			},
-			// A second row missing Name and carrying an extra column: the report must union both key sets.
 			new Dictionary<string, object?> {
 				["Id"] = Guid.Parse("11111111-1111-1111-1111-111111111111"),
 				["Position"] = 23

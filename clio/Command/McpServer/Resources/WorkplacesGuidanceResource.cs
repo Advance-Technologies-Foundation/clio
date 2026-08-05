@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -68,9 +68,7 @@ public sealed class WorkplacesGuidanceResource {
 		       `SysAdminUnitInWorkplace`, or their bindings. `create-app` performs such a write itself (it creates
 		       `My applications` and the section placement), so for a NEW app the decision is due BEFORE
 		       `create-app` — ask it in the same turn you confirm the environment, and at the latest immediately
-		       after `create-app` and before anything further. Asking once the pages are built is a defect, not a
-		       late-but-equivalent order: it makes the user re-decide work you already finished. Offer these
-		       options:
+		       after `create-app` and before anything further. Offer these options:
 		       - a NEW workplace named for the app — recommend this when SCAFFOLDING a new app, because it keeps
 		         the app's navigation self-contained. Do NOT lead with it when adding a section to an app that
 		         already has its own workplace: `SysWorkplace`.`Name` is not unique, so a second workplace named
@@ -82,10 +80,10 @@ public sealed class WorkplacesGuidanceResource {
 		         it to administrators (see New apps start in a default workplace);
 		       - an existing workplace the user names (list the available `Name` values so the choice is real).
 		       When the app is being SCAFFOLDED, its SECTION and its HOME PAGE go in the SAME workplace and that is
-		       ONE question — ask it once for both, then apply both. Reproduced failure mode: asking only about the
-		       home page bound it to one workplace while the section stayed in `My applications`, so no single
-		       workplace showed a working app. `home-page` owns the home-page half of the write; this guide owns
-		       the section half; neither is finished alone.
+		       ONE question — ask it once for both, then apply both. Asking only about the home page binds it to one
+		       workplace while the section stays in `My applications`, so no single workplace shows a working app.
+		       `home-page` owns the home-page half of the write and this guide owns the section half —
+		       neither is finished alone.
 		       Then ask WHO SHOULD SEE IT, because placement alone does not answer that. A new workplace has no
 		       `SysAdminUnitInWorkplace` row and is invisible to everyone, so choosing one obliges you to grant an
 		       audience. Do NOT offer this as free text and do NOT reduce it to the two extremes
@@ -111,15 +109,14 @@ public sealed class WorkplacesGuidanceResource {
 		       pass it in BOTH writes — the `odata-create` payload AND the binding row. For the mobile flow read
 		       `mobile-page-modification`. The two writes fail differently, so do not generalise from one to the
 		       other:
-		       - LIVE row: omitting `SysApplicationClientTypeId` is survivable. The platform's live write path fills
-		         in the WEB client, identical to passing it explicitly (observed on the stand tested: the omitted
-		         row read back with the same client type, loader, and type as a product workplace — treat that as
-		         an observation, not a contract). Pass it anyway; it is the wrong value for mobile.
+		       - LIVE row: omitting `SysApplicationClientTypeId` is survivable — the platform's live write path
+		         fills in the WEB client. Treat that as an observation rather than a contract, and pass the value
+		         anyway; WEB is the wrong one for mobile.
 		       - BINDING row: omitting it is NOT survivable, and it fails silently. A binding ships only the columns
 		         you passed and install supplies no defaults, so the workplace arrives on the target environment
-		         with EMPTY `SysApplicationClientType`, `Type`, and `LoaderId`. That much is reproduced end to end
-		         on a real cross-environment transfer. An empty client type matches no client, so do not expect the
-		         workplace to render — but the verified fact is the empty columns, not the rendering failure.
+		         with EMPTY `SysApplicationClientType`, `Type`, and `LoaderId` — verified on a cross-environment
+		         transfer. An empty client type matches no client, so do not expect the workplace to render; the
+		         verified fact is the empty columns, not the rendering failure.
 		       `SysApplicationClientType` is not alone in this trap: `Type` and `LoaderId` are also platform-set
 		       on a live insert and silently absent from a hand-built binding. Ship all three — see Ship every
 		       change as a data binding for the full per-table column set.
@@ -131,10 +128,9 @@ public sealed class WorkplacesGuidanceResource {
 		       binding that already exists. Read `data-bindings` for those tool contracts and for how to inspect a
 		       package's existing bindings first.
 
-		       `remove-data-binding-row-db` is the exception and it is dangerous: it DELETES THE LIVE RECORD and
-		       then unbinds it, and it has no `confirm` gate. `data-bindings` owns that contract — read it. What
-		       matters here: there is no way to un-ship a workplace row without deleting the workplace, which is
-		       why New apps start in a default workplace tells you to leave the `My applications` bindings alone.
+		       `remove-data-binding-row-db` is the exception (see Confirmation gates). The consequence here: there
+		       is no way to un-ship a workplace row without deleting the workplace, which is why New apps start in
+		       a default workplace tells you to leave the `My applications` bindings alone.
 
 		       A binding ships ONLY the columns you passed (`data-bindings` owns the projection rule and the
 		       `IsForceUpdate: false` first-install-only consequence). For the three workplace tables that means:
@@ -144,10 +140,10 @@ public sealed class WorkplacesGuidanceResource {
 		         assigns it on insert and a shipped value is discarded (see Rules that bite). This applies to a
 		         binding you CREATE. When you MOVE a section, you are upserting over the binding `create-app`
 		         already shipped, and an upsert rewrites the columns you pass without dropping the ones already
-		         there — so `Position` stays in that binding and you cannot remove it with these tools. Verified
-		         and harmless: the target gets a possibly-meaningless order value, not an empty column. Do not
-		         chase it, and do not delete the binding to "clean" the column set — `remove-data-binding-row-db`
-		         would take the live placement row with it.
+		         there — so `Position` stays in that binding and you cannot remove it with these tools. That is
+		         harmless: the target gets a possibly-meaningless order value, not an empty column. Do not delete
+		         the binding to "clean" the column set — `remove-data-binding-row-db` would take the live
+		         placement row with it.
 		       - `SysAdminUnitInWorkplace` — `Id`, `SysWorkplace`, `SysAdminUnit`.
 		       `Type`, `LoaderId`, and the client-type GUID are set for you on the LIVE write, so you will not have
 		       them to hand — get them by READ-BACK: right after `odata-create`, `odata-read` `SysWorkplace` for the
@@ -269,9 +265,8 @@ public sealed class WorkplacesGuidanceResource {
 		         workplace's binding;
 		       - CHECK `My applications`.`HomePageUId` and clear it when it points at THIS app's home page. The
 		         `AppFreedomUI` template creates no home page and leaves it empty, but `AppWithHomePage` creates one
-		         AND points `My applications` at it — verified on a live stand, where the shared `My applications`
-		         was still opening a custom app's home page long after that app was built, and its
-		         `SysWorkplace_MyApps` binding shipped 7 columns carrying that `HomePageUId`. So the package
+		         AND points `My applications` at it, and its `SysWorkplace_MyApps` binding carries that
+		         `HomePageUId` — verified on a live stand. So the package
 		         EXPORTS a mutation of a workplace it does not own: installing it repoints `My applications` on
 		         every target environment. To clear it, `odata-update` `HomePageUId` to
 		         `00000000-0000-0000-0000-000000000000` and then `upsert-data-binding-row-db` the
@@ -310,8 +305,8 @@ public sealed class WorkplacesGuidanceResource {
 		         `odata-create` value is NORMALISED (verified: sent 91, stored 24 — the next free slot), while an
 		         `odata-update` value is stored exactly as sent (verified: 24 changed to 7). `Position` is also NOT
 		         unique — several workplaces routinely share one number — and the platform renumbers every
-		         workplace's `Position` whenever workplaces are added or removed: one install that created two
-		         workplaces renumbered all 22 pre-existing rows. So to place a workplace at a chosen position,
+		         workplace's `Position` whenever workplaces are added or removed. So to place a workplace at a
+		         chosen position,
 		         create it and then update it; always read back for the actual order, and never treat `Position` as
 		         an identifier.
 		       - A junction row whose `SysModuleId` or `SysWorkplaceId` is the zero GUID
@@ -351,9 +346,9 @@ public sealed class WorkplacesGuidanceResource {
 		       `Localization` folder, so `read-data-binding-db` shows one more column than `data.json` for the same
 		       binding — that is the same binding, not a discrepancy. Fall back to `download-application` plus
 		       extracting `Data/<Schema>_<Suffix>/data.json` only when you need the raw archive; it is several steps
-		       for the same answer. That is how the missing columns were found. Reading the workplace back after
-		       install (assert `SysApplicationClientTypeId`, `TypeId`, `LoaderId` are non-empty) CONFIRMS the
-		       result but does not protect you, because a wrong first install cannot be repaired by re-installing.
+		       for the same answer. Reading the workplace back after install (assert
+		       `SysApplicationClientTypeId`, `TypeId`, `LoaderId` are non-empty) CONFIRMS the result but does not
+		       protect you, because a wrong first install cannot be repaired by re-installing.
 		       """
 	};
 

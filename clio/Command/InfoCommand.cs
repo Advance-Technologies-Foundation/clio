@@ -1,4 +1,4 @@
-﻿using Clio.Common;
+using Clio.Common;
 using CommandLine;
 using System;
 using System.Reflection;

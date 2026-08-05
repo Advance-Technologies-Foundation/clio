@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -1074,8 +1074,6 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "tool-based retrieval should preserve move-not-add for a new app's section");
 		response.Article.Text.Should().Contain("NO unique constraint",
 			because: "tool-based retrieval should preserve the duplicate-section warning");
-		// Exhaustive text pinning lives in the unit layer; these two must survive the wire because an agent that
-		// loses them ships a workplace that cannot transfer, or deletes a workplace shared with other apps.
 		response.Article.Text.Should().Contain("`Id`, `Name`, `Position`, `SysApplicationClientType`, `Type`, `LoaderId`",
 			because: "tool-based retrieval should preserve the binding column set that keeps a transferred workplace usable");
 		response.Article.Text.Should().Contain("DELETES THE LIVE RECORD",

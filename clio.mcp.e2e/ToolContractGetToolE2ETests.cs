@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;

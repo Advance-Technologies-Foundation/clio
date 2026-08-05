@@ -1,4 +1,4 @@
-﻿using Clio.Command.McpServer.Resources;
+using Clio.Command.McpServer.Resources;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -36,7 +36,6 @@ public sealed class CoreRulesGuidanceResourceTests {
 		string coreRules = CoreRulesGuidanceResource.Guide.Text;
 
 		// Act
-		// Nothing to act on: the guide is static content and the assertions below are the contract.
 
 		// Assert
 		coreRules.Should().Contain("Navigation placement is decided BEFORE you create an app",
@@ -45,6 +44,8 @@ public sealed class CoreRulesGuidanceResourceTests {
 			because: "naming the turn is what makes this actionable — 'ask early' was already stated elsewhere and did not fire");
 		coreRules.Should().Contain("System administrators",
 			because: "the consequence of skipping the decision is that only administrators can open the app, which is the reason it cannot be deferred");
+		coreRules.Should().Contain("Asking late is not equivalent",
+			because: "an agent that treats the ordering as cosmetic will keep asking after the pages are built");
 		coreRules.Should().Contain("get-guidance name=workplaces",
 			because: "core-rules states the requirement and must route to the guide that owns the option set and the write recipes");
 		coreRules.Should().NotContain("SysModuleInWorkplace",

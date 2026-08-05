@@ -24,12 +24,9 @@ public class ReloadWorkplacesTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description(
 		 "Publishes navigation changes to users who are ALREADY signed in, so a new or changed workplace appears "
-		 + "after a plain page refresh instead of a log out and back in. Call it as the LAST step of any navigation "
-		 + "change — creating a workplace, moving a section, granting a role, or pointing HomePageUId at a home page "
-		 + "— then tell the user to refresh. Workplace, section, and edit-page lists are cached per SESSION, and the "
-		 + "platform invalidates them only on SysAdminUnitInWorkplace / SysUserInRole entity events, so a section "
-		 + "move or a home-page binding leaves every signed-in session stale. Requires cliogate. Read "
-		 + "get-guidance name=workplaces for the write recipes this completes.")]
+		 + "after a page refresh instead of a re-login. Navigation is cached per session, so call this as the LAST "
+		 + "step of any navigation change — workplace, section placement, role grant, or home page — then tell the "
+		 + "user to refresh. Requires cliogate. Read get-guidance name=workplaces for the recipes it completes.")]
 	public CommandExecutionResult ReloadWorkplaces(
 		[Description("Target Environment name")] [Required] string environmentName
 	){

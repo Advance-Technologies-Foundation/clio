@@ -1,4 +1,4 @@
-﻿using Allure.NUnit;
+using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -10,10 +10,6 @@ using System.Text.Json;
 
 namespace Clio.Mcp.E2E;
 
-/// <summary>
-///     End-to-end coverage for the <c>reload-workplaces</c> MCP tool. The live cache reload needs a stand with
-///     cliogate, so these cover the environment-free surface: dispatch through <c>clio-run</c> and contract discovery.
-/// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
@@ -30,7 +26,7 @@ public sealed class ReloadWorkplacesToolE2ETests : McpContractFixtureBase {
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string unknownEnvironment = $"{nameof(ReloadWorkplaces_ShouldBeReachable_ThroughClioRun)}-missing";
 
-		// Act — an unknown environment is deliberate: it exercises dispatch without touching a live stand.
+		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ClioRunTool.ToolName,
 			new Dictionary<string, object?> {
@@ -79,8 +75,6 @@ public sealed class ReloadWorkplacesToolE2ETests : McpContractFixtureBase {
 	}
 
 
-	// Serializes the tool result (structured content plus content blocks) to a JSON string so assertions can inspect
-	// the payload without coupling to the response DTO shape.
 	private static string SerializeResult(CallToolResult callResult) =>
 		JsonSerializer.Serialize(callResult.StructuredContent) + JsonSerializer.Serialize(callResult.Content);
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -154,15 +154,15 @@ public class ReadDataBindingDbCommand(IDataBindingDbService dataBindingDbService
 	: Command<ReadDataBindingDbOptions> {
 
 	/// <inheritdoc />
-	public override int Execute(ReadDataBindingDbOptions options){
+	public override int Execute(ReadDataBindingDbOptions options) {
 		try {
 			BoundBindingProjection projection = dataBindingDbService.ReadBinding(options);
 			logger.WriteInfo($"binding: {projection.BindingName}");
 			logger.WriteInfo($"schema:  {projection.EntitySchemaName}");
 			logger.WriteInfo($"uId:     {projection.BindingUId}");
 			logger.WriteInfo($"rows:    {projection.Rows.Count}");
-				IReadOnlyList<string> columns = projection.GetColumns();
-				logger.WriteInfo($"columns ({columns.Count}): {string.Join(", ", columns)}");
+			IReadOnlyList<string> columns = projection.GetColumns();
+			logger.WriteInfo($"columns ({columns.Count}): {string.Join(", ", columns)}");
 			for (int index = 0; index < projection.Rows.Count; index++) {
 				IReadOnlyDictionary<string, string> row = projection.Rows[index];
 				string values = string.Join(", ", row.OrderBy(pair => pair.Key, StringComparer.Ordinal)
@@ -203,10 +203,8 @@ public interface IDataBindingDbService {
 	/// bound columns.
 	/// </summary>
 	/// <remarks>
-	///     A binding ships ONLY the columns it was created with, and that projection is the transfer contract —
-	///     a workplace bound without its client type installs on the next environment as an unreachable empty
-	///     entry. Reading the live record proves nothing about it, so this is the check that matters. It replaces
-	///     exporting the whole package and parsing <c>Data/&lt;binding&gt;/data.json</c>.
+	///     A binding ships ONLY the columns it was created with, and that projection — not the live record — is what
+	///     transfers to the next environment.
 	/// </remarks>
 	/// <exception cref="InvalidOperationException">The package or the binding does not exist on the environment.</exception>
 	BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options);
@@ -228,10 +226,6 @@ public sealed record BoundBindingProjection(
 	/// <summary>
 	///     Every column name the binding ships, across all rows, in stable order.
 	/// </summary>
-	/// <remarks>
-	///     A method rather than a property: the set is derived from <see cref="Rows" /> on each call, and a property
-	///     that builds and copies a collection hides that cost from the caller.
-	/// </remarks>
 	public IReadOnlyList<string> GetColumns() =>
 		Rows.SelectMany(row => row.Keys).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)
 			.ToArray();
@@ -697,9 +691,6 @@ internal sealed class DataBindingDbService(
 		PackageRef packageRef = ResolvePackageRef(options.PackageName);
 		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
 		if (bindingUId == Guid.Empty) {
-			// FetchBoundRows would answer "no rows" for an empty UId, and this command's whole purpose is to prove a
-			// projection — reporting "ships nothing" for a binding we simply failed to identify is the worst possible
-			// wrong answer.
 			throw new InvalidOperationException(
 				$"Binding '{options.BindingName}' in package '{options.PackageName}' has no readable UId, so its "
 				+ "shipped columns cannot be determined.");
@@ -715,14 +706,8 @@ internal sealed class DataBindingDbService(
 	}
 
 	/// <summary>
-	///     Renders a bound value compactly.
+	///     Renders a bound value as text, collapsing a lookup envelope to <c>displayValue (value)</c>.
 	/// </summary>
-	/// <remarks>
-	///     A lookup column comes back as a <c>LookupValue</c> envelope carrying <c>__type</c>, <c>value</c>, and
-	///     <c>displayValue</c>. Emitting that verbatim buries the answer in JSON, and the reason this read exists is
-	///     to be a cheap substitute for exporting the package — so a lookup collapses to
-	///     <c>displayValue (value)</c> and every other value to its plain text.
-	/// </remarks>
 	private static string FormatBoundValue(JsonNode? value) {
 		if (value is null) {
 			return string.Empty;
@@ -730,20 +715,16 @@ internal sealed class DataBindingDbService(
 		if (value is not JsonObject envelope) {
 			return value.ToString();
 		}
-		string? displayValue = envelope.TryGetPropertyValue("displayValue", out JsonNode? display)
-			? display?.ToString()
-			: null;
-		string? rawValue = envelope.TryGetPropertyValue("value", out JsonNode? raw)
-			? raw?.ToString()
-			: null;
-		bool hasLookupShape = envelope.ContainsKey("displayValue") || envelope.ContainsKey("value");
-		if (!hasLookupShape) {
+		bool hasDisplayValue = envelope.TryGetPropertyValue("displayValue", out JsonNode? display);
+		bool hasRawValue = envelope.TryGetPropertyValue("value", out JsonNode? raw);
+		if (!hasDisplayValue && !hasRawValue) {
 			return envelope.ToJsonString();
 		}
+		string displayValue = display?.ToString() ?? string.Empty;
+		string rawValue = raw?.ToString() ?? string.Empty;
 		if (string.IsNullOrEmpty(displayValue)) {
-			return rawValue ?? string.Empty;
+			return rawValue;
 		}
-		// A cleared lookup can carry a caption with no id; "Name ()" reads like corrupted data.
 		return string.IsNullOrEmpty(rawValue) ? displayValue : $"{displayValue} ({rawValue})";
 	}
 
@@ -851,9 +832,8 @@ internal sealed class DataBindingDbService(
 	///     Builds a DataService DeleteQuery body for one row of a schema.
 	/// </summary>
 	/// <remarks>
-	///     Both arguments are JSON-escaped rather than interpolated raw. <paramref name="keyValue" /> arrives straight
-	///     from a CLI option or an MCP argument and is never validated as a GUID, so an embedded quote would malform
-	///     the body and a crafted value could close the string and inject sibling properties into the filter.
+	///     Both arguments are caller-controlled and never validated as a GUID, so they are JSON-escaped: a crafted
+	///     value could otherwise close the string and inject sibling properties into the filter.
 	/// </remarks>
 	private static string BuildDeleteQueryBody(string rootSchemaName, string keyValue) {
 		string escapedRootSchemaName = JsonEncodedText.Encode(rootSchemaName ?? string.Empty).ToString();
@@ -898,9 +878,8 @@ internal sealed class DataBindingDbService(
 	///     Builds the SysPackageSchemaData lookup body for a binding name.
 	/// </summary>
 	/// <remarks>
-	///     <paramref name="bindingName" /> reaches this method straight from a CLI option or an MCP argument, so it
-	///     is JSON-escaped rather than interpolated raw: an embedded quote would otherwise malform the body, and a
-	///     crafted value could close the string and inject sibling properties into the filters object.
+	///     <paramref name="bindingName" /> is caller-controlled, so it is JSON-escaped: a crafted value could
+	///     otherwise close the string and inject sibling properties into the filters object.
 	/// </remarks>
 	private static string BuildLookupBindingRequestBody(Guid packageUId, string bindingName) {
 		string escapedBindingName = JsonEncodedText.Encode(bindingName ?? string.Empty).ToString();

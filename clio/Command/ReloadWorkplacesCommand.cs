@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text.Json;
 using Clio.Common;
 using CommandLine;
@@ -32,9 +32,6 @@ public interface IWorkplaceCacheReloader {
 	/// <summary>
 	///     Reloads the platform navigation caches on the target environment.
 	/// </summary>
-	/// <remarks>
-	///     Navigation is cached per session, so a refresh alone does not surface a workplace changed after sign-in.
-	/// </remarks>
 	/// <exception cref="InvalidOperationException">
 	///     The reload did not happen; the message states why, so the caller can fall back to prescribing a re-login.
 	/// </exception>
@@ -110,15 +107,8 @@ public class WorkplaceCacheReloader : IWorkplaceCacheReloader {
 
 	#region Class: BaseGateResponse
 
-	/// <summary>
-	///     Wire shape of the cliogate <c>BaseResponse</c> envelope. Positional so the values are visibly assigned by
-	///     the deserializer's constructor call rather than looking like never-written auto-properties.
-	/// </summary>
 	private sealed record BaseGateResponse(bool Success, GateErrorInfo ErrorInfo);
 
-	/// <summary>
-	///     Wire shape of the cliogate <c>ErrorInfo</c> block.
-	/// </summary>
 	private sealed record GateErrorInfo(string Message);
 
 	#endregion
@@ -158,9 +148,6 @@ public class ReloadWorkplacesCommand : Command<ReloadWorkplacesOptions> {
 	public override int Execute(ReloadWorkplacesOptions options){
 		try {
 			_reloader.Reload();
-			// Deliberately hedged: what is verified is that the platform's workplace-cache reload ran. Whether a
-			// given session then needs only a refresh is platform behaviour, and the section/edit-page caches are
-			// separate from the workplace cache — so this must not promise more than was measured.
 			_logger.WriteInfo("Navigation caches reloaded. Tell users to refresh the page; a re-login should not be "
 				+ "needed. If the change is still not visible, have them log out and back in.");
 			return 0;

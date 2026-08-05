@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -7,18 +7,12 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-/// <summary>
-///     Covers <see cref="WorkplaceCacheReloader" />: every failure branch must throw, because a silent one makes the
-///     command exit 0 and promise a refresh while the caches are still stale.
-/// </summary>
 [TestFixture]
 [Property("Module", "Command")]
 public class WorkplaceCacheReloaderTests {
 
 	private static (WorkplaceCacheReloader reloader, IApplicationClient applicationClient) CreateReloader(
 		bool isNetCore = false){
-		// Real ServiceUrlBuilder so the route mapping and the .NET Framework prefix are exercised; only the I/O
-		// boundary is faked.
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
 		EnvironmentSettings settings = new() {

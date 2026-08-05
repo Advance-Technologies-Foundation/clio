@@ -1,4 +1,4 @@
-﻿using Clio.Command;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -7,10 +7,6 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
-/// <summary>
-///     The read must resolve against the environment of the current MCP call: reading another stand's binding would
-///     "confirm" a projection that was never shipped to the target.
-/// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
 public class ReadDataBindingDbToolTests {

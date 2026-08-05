@@ -1,4 +1,4 @@
-﻿using Clio.Command;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -7,10 +7,6 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
-/// <summary>
-///     The publish must run against the environment of the current MCP call, or it reloads the caches of a different
-///     stand and reports a publish that never reached the target.
-/// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
 public class ReloadWorkplacesToolTests {
