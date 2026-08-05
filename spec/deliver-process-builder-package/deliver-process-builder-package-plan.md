@@ -415,40 +415,33 @@ Four traps that must be written into the runbook, not discovered later:
   that archive. `GetAppsInstallInfoWithoutAppDescriptor` explicitly synthesises one `AppInstallInfo`
   per package that has no app descriptor. So a plain package archive is a supported input, and the
   reporter confirms this package has always been installed that way.
-  **NOT REPRODUCIBLE — do not conclude from the observation sequence (2026-08-05).** Three artifacts
-  were tried through the Hub in this order:
+  **RESOLVED (2026-08-05): the source-only archive installs on BOTH readers and the service works.**
+  Every run below was verified by *outcome* — `/rest/ProcessDesignService/ListUserTasks` returning
+  `success: true` with the full 23-task catalog — not by the install dialog's own report.
 
-  | # | Artifact | `Files/Bin` | marker schema | Hub result |
-  |---|---|---|---|---|
-  | 1 | `_nobin/CrtProcessBuilder.gz` | absent | present | **rejected** |
-  | 2 | `CrtProcessBuilder.gz` | present | absent | installs, 12 s |
-  | 3 | `_withbin_schema/CrtProcessBuilder.gz` | present | present | installs |
-  | 4 | `_nobin/CrtProcessBuilder.gz` *(same file as #1)* | absent | present | **installs** |
+  | Artifact | `Files/Bin` | schema | Reader | Stand | Time | Outcome |
+  |---|---|---|---|---|---|---|
+  | `CrtProcessBuilder.gz` | present | — | Hub | studioenu-15832585 | 12 s | installs |
+  | `_withbin_schema/…` | present | present | Hub | studioenu-15832585 | 25 s | installs |
+  | `_nobin/…` | **absent** | present | Hub | studioenu-15832585 | — | **rejected once, then the same bytes installed** |
+  | `_nobin/…` | **absent** | present | **Hub** | **studioenu-15832842 (never had the package)** | **20 s** | **installs, service answers, 23 tasks** |
+  | `_nobin/…` | **absent** | present | `push-pkg` | sae-m-seeenu-15832383 | 74 s (~48 s compile) | installs, service answers, `BuildProcess`→`DescribeProcess` round-trip green, **no restart** |
 
-  #1 and #4 are the **same bytes** with opposite outcomes, so the archive content alone does not
-  determine the result and any bisection over these runs is invalid. All three artifacts share a name,
-  a descriptor and the same `clio compress` writer, so the rename and the `set-pkg-version` descriptor
-  rewrite remain exonerated — but nothing else is settled.
+  The `push-pkg` run is the airtight one: the archive contained **no assembly at all**, the server
+  logged `Compiling configuration dll`, and the service answered afterwards — which is only possible
+  if the target compiled the assembly itself.
 
-  **Prime suspect: server-side staging reuse.** `AppInstallerInfo.ExtractPackage` clears the storage
-  directory only when a global setting says not to reuse it:
-  ```csharp
-  if (!GlobalAppSettings.ReuseUnzippedPackagesOnInstallApp) {
-      _directory.CreateOrReplaceDirectory(TempRepositoryPath);   // TempRepositoryPath == storageDirectory
-  }
-  _packageExtractor.Extract(uploadingFilePath, PackageUnzipPath); // this path IS always recreated
-  ```
-  `TempRepositoryPath` is exactly the `storageDirectory` that `PackageStorage` loads packages **into**.
-  With reuse enabled, a package left there by run #2/#3 can still be present during run #4 — which
-  would make #4 a **false positive**: the dialog finds a package, but not the one in the uploaded
-  archive. That also fits #1 failing on a stand that had never had the package.
+  **Cost: 20–74 s, and the spread is stand performance, not approach.** The same source-only archive
+  cost 20 s on one stand and 74 s on another.
 
-  **Therefore the source-only question is still OPEN, and its apparent success must be verified by
-  outcome, not by the dialog:** on a stand where the package was never installed and with
-  `ReuseUnzippedPackagesOnInstallApp` known, install `_nobin` and then check that
-  `Files/Bin/CrtProcessBuilder.dll` was produced *by that install* and that
-  `/rest/ProcessDesignService/ListUserTasks` answers. Until then, neither "source-only works" nor
-  "source-only is rejected" is established.
+  **Hypotheses raised during this investigation and now dead** — recorded so they are not re-proposed:
+  archive-name vs descriptor-`Name` mismatch; "the Hub cannot install packages"; "the Hub rejects an
+  archive with no assembly"; server-side staging reuse (`ReuseUnzippedPackagesOnInstallApp`) making a
+  later run a false positive. Each was refuted by a subsequent run.
+
+  **One residual unknown, deliberately not swept away:** the single early rejection of `_nobin` on
+  studioenu-15832585 is unexplained and was not reproducible. It sits on the reporter's manual install
+  path, so if it recurs it matters — capture the exact dialog state and stand if so.
   **Note the verification asymmetry that hid this:** the archive was written by `clio compress` and
   checked by `clio extract-pkg-zip` — a clio→clio round trip that proves nothing about Creatio's
   readers. And the two server paths are *different readers*: `push-pkg` →
