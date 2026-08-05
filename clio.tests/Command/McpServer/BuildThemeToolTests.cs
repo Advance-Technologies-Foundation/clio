@@ -639,7 +639,7 @@ public sealed class BuildThemeToolTests
 
 		// Act
 		BuildThemeArgs kebab = JsonSerializer.Deserialize<BuildThemeArgs>(
-			"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
+			"""{"primary":"#004fd6","css-class-name":"MyTheme","secondary":"#101820","accent":"#ff5a00","success":"#0b8500","error":"#d2310d","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
 			options)!;
 		BuildThemeArgs camel = JsonSerializer.Deserialize<BuildThemeArgs>(
 			"""{"fontWeights":[400,700]}""", options)!;
@@ -647,6 +647,10 @@ public sealed class BuildThemeToolTests
 		// Assert
 		kebab.Primary.Should().Be("#004fd6", because: "the advertised primary field must bind");
 		kebab.CssClassName.Should().Be("MyTheme", because: "the advertised kebab-case css-class-name field must bind");
+		kebab.Secondary.Should().Be("#101820", because: "the secondary field inherited from ThemeBrandArgs must bind through the real serializer");
+		kebab.Accent.Should().Be("#ff5a00", because: "the accent field inherited from ThemeBrandArgs must bind through the real serializer");
+		kebab.Success.Should().Be("#0b8500", because: "the success field inherited from ThemeBrandArgs must bind through the real serializer");
+		kebab.Error.Should().Be("#d2310d", because: "the error field inherited from ThemeBrandArgs must bind through the real serializer");
 		kebab.HeadingFont.Should().Be("Inter", because: "the advertised kebab-case heading-font field must bind");
 		kebab.BodyFont.Should().Be("Roboto", because: "the advertised kebab-case body-font field must bind");
 		kebab.FontWeights.Should().BeEquivalentTo(new[] { 400, 700 },

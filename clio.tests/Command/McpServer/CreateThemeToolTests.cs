@@ -1461,6 +1461,47 @@ public class CreateThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("With css-class-name omitted, the class the brand build embeds in the CSS selectors and the class the create path registers cannot diverge: both sides resolve it through the same ThemeParameterValidator. The build side is proven here over the real engine; the create side's use of that same validator is pinned by CreateThemeCommandTests.CreateTheme_ShouldDeriveCssClassNameFromCaption_WhenCssClassNameOmitted — together they close the divergence a reviewer flagged, where a visually inert theme would still return success.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldEmbedTheClassTheCreatePathRegisters_WhenCssClassNameOmitted() {
+		// Arrange — the real bundled template, real ThemeCssBuilder; caption only, no css-class-name, no id.
+		ConsoleLogger.Instance.ClearMessages();
+		string template = File.ReadAllText(
+			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
+		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
+		templateProvider.GetCssTemplate("10.0").Returns(template);
+		templateProvider.GetJsonTemplate(Arg.Any<string>())
+			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
+		BuildThemeCommand realBuildCommand = new(new ThemeCssBuilder(), templateProvider,
+			Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>(),
+			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(realBuildCommand);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", Caption: "Ocean Breeze", Primary: "#004fd6", Version: "10.0"));
+
+		// Assert — the single derivation both commands share, computed here as the oracle.
+		ThemeParameterValidator.TryResolveCssClassName(null, "Ocean Breeze", out string registeredClass, out _)
+			.Should().BeTrue(because: "a caption-only request is valid for the shared resolver");
+		result.Success.Should().BeTrue(because: "a caption-only brand request is a documented, valid call");
+		resolvedCommand.CapturedOptions.CssClassName.Should().BeNull(
+			because: "the tool forwards the omission untouched — the create command derives the class through the same validator, pinned on the command's own tests");
+		resolvedCommand.CapturedOptions.Caption.Should().Be("Ocean Breeze",
+			because: "the caption is the derivation input, so it must reach the create command verbatim");
+		resolvedCommand.CapturedOptions.CssContent.Should().Contain("." + registeredClass,
+			because: "the selector the build embeds must be exactly the class the create path registers, or the created theme would be visually inert while still returning success");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private static (string[] Properties, string[] Required) GetGeneratedArgsSchema(object toolInstance,
 		System.Reflection.MethodInfo toolMethod) {
 		McpServerTool sdkTool = McpServerTool.Create(toolMethod, target: toolInstance,

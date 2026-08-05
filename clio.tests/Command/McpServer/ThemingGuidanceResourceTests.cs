@@ -29,6 +29,23 @@ public sealed class ThemingGuidanceResourceTests {
 	}
 
 	[Test]
+	[Description("The no-code create step keeps the retry protocol the ADR's B-D3 decision leans on: the create call is not idempotent, so the guide must tell agents to pass an explicit id when a retry is possible and to confirm with list-themes before retrying after a transport timeout. The sentence was dropped once as collateral of a prose trim; this pin keeps the ADR and the shipped guidance telling the same story.")]
+	public void ThemingGuidanceResource_Should_Instruct_The_Id_Retry_Protocol_For_NoCode_Create() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("pass an explicit `id` whenever a retry is possible",
+			because: "an omitted id leaves a transport-timeout retry free to create a duplicate theme");
+		article.Text.Should().Contain("confirm with `list-themes` before retrying",
+			because: "the recovery path is to look before calling again, not to call again blindly");
+	}
+
+	[Test]
 	[Description("The theming guide directs the agent to auto-apply a newly created no-code theme to the current user via set-user-theme, satisfying FR-4.")]
 	public void ThemingGuidanceResource_Should_Instruct_AutoApply_After_NoCode_Create() {
 		// Arrange
