@@ -30,53 +30,34 @@ public static class BundledPackages {
 	public const string ProcessBuilderPackageName = "CrtProcessBuilder";
 
 	/// <summary>
-	/// Minimum process-builder version the consuming commands require on a target environment — the floor
-	/// enforced by <c>[RequiresPackage]</c> against the version the PLATFORM reports.
+	/// Version of the package inside the bundled archive.
 	/// </summary>
 	/// <remarks>
-	/// <b>Effectively frozen. Do not raise this to match a rebundled archive.</b> Creatio does not update the
-	/// recorded version when it re-installs a package it already has (it matches by <c>UId</c>), so the
-	/// version clio reads back stays whatever the FIRST install wrote. Verified on both runtimes on
-	/// 2026-08-05: after installing an archive whose descriptor said <c>1.1.0.0</c>,
-	/// <c>ProcessDesignService.GetVersion</c> reported <c>1.1.0.0</c> — the new build was serving — while
-	/// <c>clio list-packages</c> still reported <c>1.0.0.0</c> on both stands.
+	/// <b>Descriptive, not a gate.</b> It is what <c>clio info</c> reports and what
+	/// <c>BundledProcessBuilderPackageTests</c> compares against the archive descriptor, so a rebundle that
+	/// forgets to move one of the two fails there. It is deliberately NOT the floor of the
+	/// <c>[RequiresPackage]</c> gates: those are PRESENCE-ONLY.
 	/// <para>
-	/// Raising this floor would therefore refuse the five gated commands FOREVER on every environment that
-	/// already carries the package, no matter how correctly it was upgraded, and would make
-	/// <c>install-process-builder</c> reinstall on every invocation because its short-circuit could never
-	/// fire. Both were observed before this was understood. In practice the floor can only move when the
-	/// package <c>UId</c> changes, i.e. for a genuinely different package.
+	/// A version floor cannot work here. Creatio does not rewrite a package's <c>SysPackage</c> row when it
+	/// re-installs a package it already has: the archive arrives with <c>PackageStorageObjectState.NotChanged</c>
+	/// (nothing on the zip-install path compares it against the database), so
+	/// <c>PackageDBStorage.SavePackageDescriptor</c> returns early at its
+	/// <c>GetIsPackageDescriptorModified</c> guard and never reaches the <c>SysPackage.Version</c> assignment.
+	/// Verified on both runtimes on 2026-08-05: after installing a 1.1.0.0 archive the row still held 1.0.0.0
+	/// AND the original <c>ModifiedOn</c> — the row was not touched at all. Bumping the descriptor's
+	/// <c>ModifiedOnUtc</c> does not help; that comparison lives in <c>PackageStorageComposer</c>, which the
+	/// zip-install path does not use.
 	/// </para>
 	/// <para>
-	/// So this constant answers "is a compatible package installed at all", and
-	/// <see cref="ProcessBuilderBuildVersion"/> answers "did the target compile the build we ship". Those are
-	/// different questions with different sources — the database versus the running assembly — which is why
-	/// they are two constants and not one.
-	/// </para>
-	/// <para>
-	/// Must stay four-part: <c>RequiredPackageChecker.IsCompatible</c> compares through
-	/// <see cref="System.Version"/>, which gives a three-part string a <c>Revision</c> of <c>-1</c>, so a
-	/// four-part floor against a three-part installed version compares as installed &lt; required.
+	/// So a raised floor would refuse the five gated commands FOREVER on every environment that already
+	/// carries the package, however correctly it was upgraded. Presence-only sidesteps that instead of
+	/// documenting it. Whether the shipped build actually compiled is a different question, answered
+	/// package-agnostically in clio from the platform's own signals (the installation log clio already
+	/// receives, and the <c>ConfActivityLog</c> Compilation record) — not by a per-package endpoint, which
+	/// would have to be re-implemented in every bundled package.
 	/// </para>
 	/// </remarks>
 	public const string ProcessBuilderVersion = "1.0.0.0";
-
-	/// <summary>
-	/// Version of the build inside the bundled archive — what <c>ProcessDesignService.GetVersion</c> must
-	/// report after a successful install.
-	/// </summary>
-	/// <remarks>
-	/// Moves with every rebundle, unlike <see cref="ProcessBuilderVersion"/>. Must equal BOTH the archive
-	/// descriptor's <c>PackageVersion</c> and the <c>ProcessDesignConstants.PackageVersion</c> constant
-	/// compiled into the shipped sources; <c>BundledProcessBuilderPackageTests</c> asserts both.
-	/// <para>
-	/// This is the value that detects a failed upgrade. The platform records a descriptor version when it
-	/// ACCEPTS an archive and keeps serving the assembly from its last successful configuration build, so
-	/// after a build failure the database and the running code disagree — and only the running code can be
-	/// asked which it is.
-	/// </para>
-	/// </remarks>
-	public const string ProcessBuilderBuildVersion = "1.1.0.0";
 
 	/// <summary>
 	/// File name of the bundled process-builder archive, inside the folder of the same name.

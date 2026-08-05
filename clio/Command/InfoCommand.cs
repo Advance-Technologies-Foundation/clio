@@ -80,7 +80,7 @@ namespace Clio.Command
 				// The BUILD version, not the [RequiresPackage] floor: this line answers "what does my clio
 				// carry", and the floor is frozen at 1.0.0.0 for reasons that have nothing to do with the
 				// bundled artifact (see BundledPackages.ProcessBuilderVersion).
-				_logger.WriteInfo($"process-builder:   {BundledPackages.ProcessBuilderBuildVersion}");
+				_logger.WriteInfo($"process-builder:   {BundledPackages.ProcessBuilderVersion}");
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;

@@ -186,142 +186,24 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		BundledPackages.ProcessBuilderArchiveFileName);
 
 	/// <summary>
-	/// Determines whether the environment is ALREADY RUNNING the build this clio bundles.
-	/// </summary>
-	/// <returns><c>true</c> only when the service confirmed it; otherwise <c>false</c>.</returns>
-	/// <remarks>
-	/// Asks the service, not the database, and that is a correction rather than a preference. The obvious
-	/// implementation — <c>IRequiredPackageChecker.IsCompatible</c> against the recorded package version —
-	/// cannot answer this question, because Creatio does not update the recorded version when it re-installs a
-	/// package it already has (it matches by <c>UId</c>). Verified on both runtimes: after installing the
-	/// 1.1.0.0 archive, <c>GetVersion</c> reported 1.1.0.0 while <c>list-packages</c> still reported 1.0.0.0.
-	/// A database-based short-circuit therefore either never fires (floor raised) or fires on an environment
-	/// still running an old build (floor left alone) — the second being worse, since it reports "nothing to
-	/// do" for exactly the environment that needs upgrading.
-	/// <para>
-	/// Fails OPEN, like the check it replaces: an unreachable host, an absent route, or a package too old to
-	/// offer <c>GetVersion</c> all yield <c>false</c> here and fall through to installing, rather than
-	/// aborting an explicitly requested install.
-	/// </para>
-	/// </remarks>
-	private bool IsAlreadyRunningBundledBuild() =>
-		DoesServiceReportCurrentBuild(reportOlderAsError: false, maxAttempts: 1, out _) == true;
-
-	/// <summary>
-	/// Proves that the <c>ProcessDesignService</c> build now serving is the one just shipped.
-	/// </summary>
-	/// <returns><c>true</c> when the service confirms it; otherwise <c>false</c>.</returns>
-	/// <remarks>
-	/// Fails CLOSED, unlike <see cref="IsAlreadyRunningBundledBuild"/> — this check IS the point of the
-	/// command's contract. A successful install proves the package was accepted, not that the target compiled
-	/// it: no assembly ships in the archive, so the only proof that the code exists and is loaded comes from
-	/// the service itself.
-	/// <para>
-	/// Two-tier by necessity. <see cref="DoesServiceReportCurrentBuild"/> is the real check — it compares the
-	/// version compiled INTO the serving assembly against the bundled one, which is the only thing that
-	/// detects a failed upgrade. It returns <see langword="null"/> when the environment's package predates
-	/// that operation, and only then does <see cref="DoesListUserTasksAnswer"/> supply the weaker
-	/// proof-of-life.
-	/// </para>
-	/// <para>
-	/// MUST be called only after <see cref="WaitForPlatformRestart"/>. Installing a package whose assembly
-	/// changed makes the platform restart ITSELF — observed in a stand's <c>Application.log</c> as
-	/// "Workspace assembly changed - Run restart application", with <c>Application_Start</c> following
-	/// AFTER the install call had already returned success. Probing immediately therefore races the
-	/// restart in both directions: it can fail while the app is still warming up (a false "did not
-	/// compile"), and on an UPGRADE it can be answered by the outgoing app domain still serving the OLD
-	/// assembly (a false pass).
-	/// </para>
-	/// </remarks>
-	private bool DoesServiceAnswer(out string diagnosis) {
-		bool? current = DoesServiceReportCurrentBuild(
-			reportOlderAsError: true, maxAttempts: PostInstallProbeAttempts, out diagnosis);
-		return current ?? DoesListUserTasksAnswer(out diagnosis);
-	}
-
-	/// <summary>
-	/// Asks the service which BUILD is serving, and compares it against the bundled version.
-	/// </summary>
-	/// <returns>
-	/// <c>true</c> when the serving build is at least the bundled version; <c>false</c> when it is older;
-	/// <see langword="null"/> when the environment carries a package too old to answer at all, so the caller
-	/// must fall back.
-	/// </returns>
-	/// <remarks>
-	/// This is the only check that can catch a failed UPGRADE. The platform records a descriptor version when
-	/// it ACCEPTS an archive and keeps serving the assembly it last built successfully, so after an upgrade
-	/// whose configuration build failed the database and the running code disagree. No database read can see
-	/// it: both sides of any such comparison come from the descriptor — and worse, the record is not even
-	/// refreshed on a re-install (Creatio matches by <c>UId</c>), so it is inert rather than merely lagging. <c>GetVersion</c> returns a constant compiled INTO the
-	/// assembly, which only a build that actually compiled can carry.
-	/// <para>
-	/// Returns <see langword="null"/> rather than <c>false</c> for a missing route, and that distinction is
-	/// the whole reason this method is nullable: <c>GetVersion</c> shipped in package 1.1.0.0, so an
-	/// environment carrying 1.0.0.0 — including every environment installed before this clio — has no such
-	/// operation and answers with an IIS error page. Treating that as a failure would refuse to upgrade
-	/// exactly the environments that need upgrading.
-	/// </para>
-	/// </remarks>
-	private bool? DoesServiceReportCurrentBuild(bool reportOlderAsError, int maxAttempts,
-		out string diagnosis) {
-		diagnosis = null;
-		string reported;
-		try {
-			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetProcessBuilderVersion);
-			// ProcessDesignService uses BodyStyle=Wrapped: a parameterless operation accepts an empty object.
-			string response = _applicationClient.ExecutePostRequest(
-				url, "{}", ProbeTimeoutMs, maxAttempts, PostInstallProbeDelaySec);
-			using JsonDocument document = JsonDocument.Parse(response);
-			if (!document.RootElement.TryGetProperty("GetVersionResult", out JsonElement result)
-				|| !result.TryGetProperty("version", out JsonElement version)
-				|| version.ValueKind != JsonValueKind.String) {
-				return null;
-			}
-			reported = version.GetString();
-		} catch (Exception) {
-			// Absent route, HTML error page, unparseable body — all indistinguishable here from "this package
-			// predates GetVersion", so all fall back rather than failing the install.
-			return null;
-		}
-		if (!Version.TryParse(reported, out Version servingVersion)
-			|| !Version.TryParse(BundledPackages.ProcessBuilderBuildVersion, out Version bundledVersion)) {
-			_logger.WriteInfo(
-				$"ProcessDesignService reported an unparseable version ('{reported}'); falling back to the "
-				+ "ListUserTasks check.");
-			return null;
-		}
-		if (servingVersion >= bundledVersion) {
-			return true;
-		}
-		if (!reportOlderAsError) {
-			// Pre-install: an older serving build is the NORMAL reason to be here, not a failure. Reporting it
-			// as one would open every ordinary upgrade with an alarming "the build FAILED" error.
-			return false;
-		}
-		// Returned rather than logged, so Execute emits exactly ONE message. Logging here and letting Execute
-		// add its generic "does not answer" line produced two contradicting diagnoses for the same outcome —
-		// and the generic one is the wrong of the two: the service DID answer, with the wrong version.
-		diagnosis =
-			$"{BundledPackages.ProcessBuilderPackageName} {BundledPackages.ProcessBuilderBuildVersion} was " +
-			$"installed, but ProcessDesignService is still serving {reported}. The environment accepted the " +
-			"package and then kept running the assembly from its last successful configuration build — so " +
-			"the build of the new sources FAILED. Check the environment's configuration build log. " +
-			"The package list cannot show this: it reports the version recorded at the FIRST install, which " +
-			"Creatio does not update on a re-install, so it looks the same either way.";
-		return false;
-	}
-
-	/// <summary>
-	/// Fallback proof of life for a package that predates <c>GetVersion</c>.
+	/// Proves that <c>ProcessDesignService</c> answers on the target after the install.
 	/// </summary>
 	/// <returns><c>true</c> only when the service returned a successful <c>ListUserTasks</c> envelope.</returns>
 	/// <remarks>
-	/// Weaker than <see cref="DoesServiceReportCurrentBuild"/> in two ways worth naming. It cannot tell WHICH
+	/// Weak in two ways worth naming. It cannot tell WHICH
 	/// build answered, so on an upgrade a still-serving old assembly passes it. And <c>ListUserTasks</c> is
-	/// gated on <c>CanManageProcessDesign</c> inside the package, and the package returns a guard rejection as
-	/// an UNSUCCESSFUL envelope — so an installer who may deploy packages but was never granted process-design
-	/// rights fails this check on a perfectly good install. Both are why <c>GetVersion</c> exists and is
-	/// ungated; this path only runs against a package too old to offer it.
+	/// gated on <c>CanManageProcessDesign</c> inside the package, which returns the guard's rejection as an
+	/// UNSUCCESSFUL envelope — so an installer who may deploy packages but was never granted process-design
+	/// rights would fail this check on a perfectly good install. The <c>errorMessage</c> branch below exists
+	/// to keep that from being reported as a build failure.
+	/// <para>
+	/// A per-package <c>GetVersion</c> operation answering "which build is serving" was tried and REVERTED:
+	/// it does not scale (every bundled package would have to re-implement it) and it duplicates two
+	/// mechanisms the platform already has — <c>SysPackage.Version</c> and the <c>ConfActivityLog</c>
+	/// Compilation record. The package-agnostic replacement belongs in clio, reading the platform's own
+	/// signals: the installation log clio already receives, and <c>ConfActivityLog</c>. Until that lands this
+	/// probe is the whole outcome check, and its weakness is stated above rather than hidden.
+	/// </para>
 	/// <para>
 	/// The response is parsed rather than pattern-matched, because the interesting failure is an HTML error
 	/// page from IIS when the route does not resolve — that fails <see cref="JsonDocument.Parse"/> and is
@@ -385,32 +267,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// probe would have landed inside the restart.
 	/// </para>
 	/// </remarks>
-	/// <summary>
-	/// Reports success for a target already SERVING the bundled build, WITHOUT installing.
-	/// </summary>
-	/// <returns>Always <c>0</c>.</returns>
-	/// <remarks>
-	/// Reached only when the service itself reported the bundled build, which is why this can be an
-	/// unconditional success. The earlier shape of this method short-circuited on the RECORDED package version
-	/// instead and had to re-probe to stay honest: a version in <c>SysPackage</c> proves the archive was
-	/// accepted at some point, not that the target ever compiled it. Asking the service up front collapses
-	/// both problems — an environment whose build failed no longer satisfies the short-circuit at all, so it
-	/// falls through and gets reinstalled rather than being told "nothing to do".
-	/// <para>
-	/// No readiness wait on this path: nothing was installed, so nothing restarted.
-	/// </para>
-	/// </remarks>
-	private int ReportAlreadyInstalled() {
-		// No probe here, deliberately: this method is only reached because IsAlreadyRunningBundledBuild ALREADY
-		// asked the service and got the bundled build back. That answer IS the proof — re-asking would spend a
-		// second round-trip to learn what the caller of this method already established.
-		_logger.WriteInfo(
-			$"{BundledPackages.ProcessBuilderPackageName} " +
-			$"{BundledPackages.ProcessBuilderBuildVersion} is already installed and serving on this " +
-			"environment. Nothing to do.");
-		return 0;
-	}
-
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = _environmentSettings.Uri,
@@ -443,9 +299,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 					"will not help — reinstall or update clio itself.");
 				return 1;
 			}
-			if (!options.Force && IsAlreadyRunningBundledBuild()) {
-				return ReportAlreadyInstalled();
-			}
+			// No short-circuit. There is no cheap, trustworthy way to ask "is this environment already
+			// serving what I ship": the recorded package version is inert (Creatio does not rewrite the
+			// SysPackage row on re-install), and asking the service costs a round-trip that cannot answer it
+			// either. So an explicitly requested install always installs. It is invoked as remediation, the
+			// install is backed up, and the cost of a needless run is one configuration build.
 			bool success = _packageInstaller.Install(
 				packagePath,
 				CreateInstallEnvironmentSettings(),
@@ -469,7 +327,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			}
 			// The install only proves the archive was accepted. The assembly is compiled BY THE TARGET, so
 			// the service answering is the only proof the code exists and is loaded.
-			if (!DoesServiceAnswer(out string diagnosis)) {
+			if (!DoesListUserTasksAnswer(out string diagnosis)) {
 				_logger.WriteError(diagnosis ??
 					$"{BundledPackages.ProcessBuilderPackageName} was installed, but ProcessDesignService " +
 					"does not answer, which means the environment did not compile the package. Check the " +

@@ -25,17 +25,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		"{\"ListUserTasksResult\":{\"errorMessage\":null,\"success\":true,"
 		+ "\"userTasks\":[{\"name\":\"ActivityUserTask\",\"uid\":\"b5c726f2-af5b-4381-bac6-913074144308\"}]}}";
 
-	/// <summary>A build older than the bundled one — what an environment reports before an upgrade.</summary>
-	private const string PreviousBuildVersion = "1.0.0.0";
-
-	private int _getVersionCallCount;
-
 	private const string ListUserTasksUrl = "http://localhost/0/rest/ProcessDesignService/ListUserTasks";
-	private const string GetVersionUrl = "http://localhost/0/rest/ProcessDesignService/GetVersion";
-
-	/// <summary>A GetVersion envelope, as ProcessDesignService returns it.</summary>
-	private static string BuildVersionResponse(string version) =>
-		$"{{\"GetVersionResult\":{{\"success\":true,\"version\":\"{version}\"}}}}";
 
 	private IPackageInstaller _packageInstaller;
 	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -73,21 +63,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_serviceUrlBuilder
 			.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks)
 			.Returns(ListUserTasksUrl);
-		_serviceUrlBuilder
-			.Build(ServiceUrlBuilder.KnownRoute.GetProcessBuilderVersion)
-			.Returns(GetVersionUrl);
-		// Route-specific, because the two checks are a preference order and not interchangeable: GetVersion is
-		// asked first and ListUserTasks only answers for a package too old to offer it. A single any-URL stub
-		// would make every test exercise the fallback.
-		// GetVersion is asked TWICE on the happy path — before installing (may I skip?) and after (did it
-		// compile?) — against the same route, so the default answers by call order: BEHIND first, CURRENT
-		// after. A single fixed answer would make every test either short-circuit or report a failed upgrade.
-		_getVersionCallCount = 0;
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(_ => BuildVersionResponse(++_getVersionCallCount == 1
-				? PreviousBuildVersion
-				: BundledPackages.ProcessBuilderBuildVersion));
+		// One probe, one route: the outcome check is ListUserTasks and nothing else.
 		_applicationClient
 			.ExecutePostRequest(ListUserTasksUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(ServiceAnswersResponse);
@@ -151,72 +127,13 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			because: "installing must not unlock maintainer packages, whose unlock step routes through cliogate");
 		_applicationClient.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(2,
-				because: "GetVersion is asked twice and both are load-bearing: BEFORE installing (may this be "
-					+ "skipped?) and AFTER (did the target actually compile it?). Neither falls back to "
-					+ "ListUserTasks, because GetVersion answered both times");
-		_serviceUrlBuilder.Received().Build(ServiceUrlBuilder.KnownRoute.GetProcessBuilderVersion);
+			.Should().Be(1,
+				because: "one probe, and only after the install: the package ships without an assembly, so the "
+					+ "service answering is the only proof the target compiled it. There is no pre-install "
+					+ "probe, because the command always installs");
+		_serviceUrlBuilder.Received().Build(ServiceUrlBuilder.KnownRoute.ListUserTasks);
 		_serverReadinessWaiter.Received(1).WaitForReady(Arg.Is<ServerReadinessOptions>(o =>
 			o.Uri == EnvironmentSettings.Uri && o.IsNetCore == EnvironmentSettings.IsNetCore));
-	}
-
-	[Test]
-	[Description("Fails when the service reports an older serving version than the one installed, which is the only detectable signature of an upgrade whose configuration build failed.")]
-	public void Execute_ShouldFail_WhenServiceReportsAnOlderServingBuild() {
-		// Arrange
-		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
-			Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(BuildVersionResponse(PreviousBuildVersion));
-
-		// Act
-		int result = _command.Execute(new InstallProcessBuilderOptions());
-
-		// Assert
-		result.Should().Be(1,
-			because: "the platform recorded the new version when it ACCEPTED the archive and then kept serving "
-				+ "the assembly from its last successful build, so the package list will show the new version "
-				+ "either way — reporting success here would leave the gate satisfied while the old code runs");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(2,
-				because: "the version is asked once BEFORE installing (an older build is the normal reason to "
-					+ "install, so that call is silent) and once after; a definite older version is an answer "
-					+ "rather than a missing route, so neither call falls back to ListUserTasks, which the old "
-					+ "assembly would happily pass");
-		_logger.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
-			.Should().Be(1,
-				because: "only the POST-install mismatch is a failure worth reporting; the pre-install one must "
-					+ "stay silent or every ordinary upgrade would open with 'the build FAILED'");
-	}
-
-	[Test]
-	[Description("Falls back to the ListUserTasks check when the environment carries a package that predates GetVersion, so upgrading the very environments that need it is not refused.")]
-	public void Execute_ShouldFallBackToListUserTasks_WhenGetVersionRouteIsAbsent() {
-		// Arrange
-		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
-			Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("<html><body>404 Not Found</body></html>");
-
-		// Act
-		int result = _command.Execute(new InstallProcessBuilderOptions());
-
-		// Assert
-		result.Should().Be(0,
-			because: "GetVersion shipped in package 1.1.0.0, so every environment installed before it answers "
-				+ "the route with an IIS error page; treating that as a failure would refuse to upgrade exactly "
-				+ "the environments that need upgrading");
-		_serviceUrlBuilder.Received().Build(ServiceUrlBuilder.KnownRoute.ListUserTasks);
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(3,
-				because: "the version route is asked before installing and again after (2), and only the second "
-					+ "one falls back to the weaker proof-of-life (3) — the pre-install probe has nothing to "
-					+ "fall back to, since an unanswerable route there just means 'install'");
 	}
 
 	[Test]
@@ -240,8 +157,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		result.Should().Be(1, because: "an instance that never came back cannot be reported as a success");
 		_applicationClient.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(1,
-				because: "only the PRE-install version probe may have run; the outcome probe must not, because "
+			.Should().Be(0,
+				because: "the outcome probe must not run: "
 					+ "probing a restarting instance races the restart in both directions: it can fail while "
 					+ "the app warms up, and on an upgrade the outgoing app domain can answer with the OLD "
 					+ "assembly and produce a false pass");
@@ -330,38 +247,11 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("Execute should skip the install when the environment is already running the build clio bundles, as reported by the service itself.")]
-	public void Execute_ShouldSkipInstall_WhenEnvironmentAlreadyRunsTheBundledBuild() {
-		// Arrange — override the by-call-order default: this environment is current from the first probe
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(BuildVersionResponse(BundledPackages.ProcessBuilderBuildVersion));
-
-		// Act
-		int result = _command.Execute(new InstallProcessBuilderOptions());
-
-		// Assert
-		result.Should().Be(0, because: "an already-current environment whose service answers needs no work");
-		_packageInstaller.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstaller.Install))
-			.Should().Be(0,
-				because: "reinstalling an identical package would make the environment recompile it for nothing");
-		_serverReadinessWaiter.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IServerReadinessWaiter.WaitForReady))
-			.Should().Be(0,
-				because: "nothing was installed on this path, so nothing restarted and there is nothing to wait "
-					+ "for — paying the readiness InitialDelay here would add 10 seconds to a no-op");
-	}
-
-	[Test]
 	[Description("Reports a failure when an install succeeds but the service still does not answer at all, pointing the caller at the configuration build log.")]
 	public void Execute_ShouldFail_WhenServiceDoesNotAnswerAtAll() {
 		// Arrange
 		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
 			Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("<html>404</html>");
 		_applicationClient
 			.ExecutePostRequest(ListUserTasksUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html>404</html>");
@@ -382,70 +272,6 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		// and simply gets reinstalled on the next run without any flag.)
 		_logger.Received().WriteError(Arg.Is<string>(message =>
 			message.Contains("configuration build log")));
-	}
-
-	[Test]
-	[Description("Installs even when the environment already runs the bundled build, when force is requested, so a broken installation can be repaired.")]
-	public void Execute_ShouldInstall_WhenForceRequestedDespiteCurrentBuild() {
-		// Arrange — the environment is already current, so the short-circuit WOULD fire without force
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(BuildVersionResponse(BundledPackages.ProcessBuilderBuildVersion));
-		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
-			Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
-		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
-
-		// Act
-		int result = _command.Execute(new InstallProcessBuilderOptions { Force = true });
-
-		// Assert
-		result.Should().Be(0, because: "the forced reinstall succeeded and the service answers afterwards");
-		_packageInstaller.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstaller.Install))
-			.Should().Be(1,
-				because: "force exists precisely to bypass the compatible-version short-circuit; if it did not "
-					+ "reach the installer the flag would parse, be accepted, and silently do nothing");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(1,
-				because: "force skips the pre-install version QUESTION, not just its answer — one probe is left, "
-					+ "the post-install one; asking first would cost a round-trip whose result cannot change "
-					+ "anything");
-	}
-
-	[Test]
-	[Description("Execute should install anyway when the pre-install version probe throws, because that check fails open: it must never block an explicitly requested install.")]
-	public void Execute_ShouldInstallAnyway_WhenPreInstallVersionProbeThrows() {
-		// Arrange
-		bool firstProbe = true;
-		_applicationClient
-			.ExecutePostRequest(GetVersionUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(_ => {
-				if (firstProbe) {
-					firstProbe = false;
-					throw new InvalidOperationException("host unreachable");
-				}
-				return BuildVersionResponse(BundledPackages.ProcessBuilderBuildVersion);
-			});
-		_packageInstaller
-			.Install(
-				ExpectedPackagePath,
-				Arg.Any<EnvironmentSettings>(),
-				packageInstallOptions: null,
-				reportPath: null,
-				createBackup: true)
-			.Returns(true);
-
-		// Act
-		int result = _command.Execute(new InstallProcessBuilderOptions());
-
-		// Assert
-		result.Should().Be(0,
-			because: "an unreachable host during the pre-install probe must not block an explicitly "
-				+ "requested install");
-		_packageInstaller.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstaller.Install))
-			.Should().Be(1, because: "the version check fails open, so the install still proceeds");
 	}
 
 	[Test]
@@ -489,8 +315,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		result.Should().Be(1, because: "a failed package installation should make the command fail");
 		_applicationClient.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(1,
-				because: "only the PRE-install version probe may have run; there is nothing to verify once the "
+			.Should().Be(0,
+				because: "there is nothing to verify once the "
 					+ "package never installed, and probing anyway would report the install failure as a "
 					+ "service failure");
 		_logger.ReceivedCalls()
@@ -530,8 +356,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				+ "bare stack, which is the behaviour this ordering exists to avoid");
 		_applicationClient.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
-			.Should().Be(1,
-				because: "only the PRE-install version probe may have run; a throwing install must not proceed "
+			.Should().Be(0,
+				because: "a throwing install must not proceed "
 					+ "to the outcome check");
 	}
 

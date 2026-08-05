@@ -67,7 +67,7 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"8A5945D5DD0B75BD3F7E19A15CE9348CF1EFFA007BCF9D789A2101F9C7A4C633";
+		"8BA3B0A3FDEBB81AE6707AED0B6F7AE2B3F7FFEDAED69FB8E238E7BB201D645F";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -224,28 +224,11 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain($"\"UId\": \"{ExpectedPackageUId}\"",
 			because: "Creatio identifies a package by UId, so a changed UId would install a SECOND package "
 				+ "instead of upgrading this one");
-		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderBuildVersion}\"",
-			because: "the descriptor version identifies the BUILD clio ships, which is what the post-install "
-				+ "check compares the serving assembly against. Note it is deliberately NOT compared against "
-				+ "ProcessBuilderVersion (the [RequiresPackage] floor): Creatio does not update the recorded "
-				+ "version when it re-installs a package it already has, so that floor is frozen at what the "
-				+ "first install wrote and the two constants legitimately differ");
-	}
-
-	[Test]
-	[Description("The version compiled into the shipped sources must equal the archive descriptor's version, because the post-install check compares the SERVING build against it to detect an upgrade whose configuration build failed.")]
-	public void BundledArchive_ShouldCarryASourceVersionMatchingItsDescriptor() {
-		// Arrange
-		string archive = ReadBundledArchiveAsText();
-
-		// Act & Assert
-		archive.Should().Contain(
-			$"PackageVersion = \"{BundledPackages.ProcessBuilderBuildVersion}\"",
-			because: "the two values answer different questions and that is the point. The descriptor's version "
-				+ "is written to SysPackage when the archive is ACCEPTED; this constant exists only in a build "
-				+ "that actually COMPILED, which is why install-process-builder asks the service for it. Let "
-				+ "them drift and that check either rejects a correct install forever (constant lower than the "
-				+ "floor) or accepts a stale assembly forever (constant higher)");
+		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderVersion}\"",
+			because: "the constant and the descriptor must agree, since clio info reports the constant as the "
+				+ "version it ships. Neither is a gate floor - the [RequiresPackage] gates are presence-only "
+				+ "because Creatio does not rewrite a package's SysPackage row on re-install, so a floor could "
+				+ "never be satisfied by an upgraded environment");
 	}
 
 	[Test]

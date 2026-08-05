@@ -11,8 +11,9 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
-	Hint = BundledPackages.ProcessBuilderInstallHint)]
+// PRESENCE-ONLY, no version floor: Creatio does not rewrite a package's SysPackage row on re-install,
+// so a floor could never be satisfied by an upgraded environment. See BundledPackages.ProcessBuilderVersion.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
 	public string DescriptorJson { get; set; } = string.Empty;

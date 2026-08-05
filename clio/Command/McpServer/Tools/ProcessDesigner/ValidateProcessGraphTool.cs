@@ -98,8 +98,9 @@ public sealed class ValidateProcessGraphTool {
 }
 
 /// <summary>Request arguments for <c>validate-process-graph</c>.</summary>
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
-	Hint = BundledPackages.ProcessBuilderInstallHint)]
+// PRESENCE-ONLY, no version floor: Creatio does not rewrite a package's SysPackage row on re-install,
+// so a floor could never be satisfied by an upgraded environment. See BundledPackages.ProcessBuilderVersion.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed record ValidateProcessGraphArgs(
 	[property:JsonPropertyName("environment-name")]
 	[property:Description("Creatio environment name")]

@@ -66,34 +66,6 @@ public sealed class InstallProcessBuilderToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps force=true onto the command options, so the documented remedy for a present-but-uncompiled package is reachable over MCP.")]
-	public async Task InstallProcessBuilder_Should_Map_Force_Onto_Options() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		FakeInstallProcessBuilderCommand resolvedCommand = new(exitCode: 0);
-		commandResolver.Resolve<InstallProcessBuilderCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(resolvedCommand);
-		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver);
-
-		try {
-			// Act
-			await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox", Force: true));
-
-			// Assert
-			resolvedCommand.CapturedOptions.Should().NotBeNull(
-				because: "the resolved command should run");
-			resolvedCommand.CapturedOptions!.Force.Should().BeTrue(
-				because: "without this mapping the tool would advertise force in its description while the "
-					+ "command kept taking the already-installed short-circuit, leaving an environment that "
-					+ "has the package but never compiled it with no remedy over MCP");
-		} finally {
-			ConsoleLogger.Instance.ClearMessages();
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Exposes non-destructive, idempotent MCP metadata and a remediation-oriented description naming the package and the tools it unblocks.")]
 	public void InstallProcessBuilder_Should_Expose_Expected_Mcp_Metadata() {
 		// Arrange
@@ -127,10 +99,13 @@ public sealed class InstallProcessBuilderToolTests {
 		description.Description.Should().Contain("create-business-process",
 			because: "the description should name a process-designer tool whose refusal motivates this one, "
 				+ "so an agent can connect the refusal to the remedy");
-		description.Description.Should().Contain("SERVING",
-			because: "the description must disclose that the tool verifies which BUILD is serving rather than "
-				+ "just that the install call returned, so a caller understands why a successful install can "
-				+ "still fail — and why list-packages showing the new version proves nothing");
+		description.Description.Should().Contain("ListUserTasks",
+			because: "the description must disclose that the tool verifies the OUTCOME rather than the install "
+				+ "call, so a caller understands why a successful install can still fail");
+		description.Description.Should().Contain("list-packages",
+			because: "an agent must be told NOT to decide from the recorded package version: Creatio does not "
+				+ "rewrite it when re-installing a package it already has, so it says nothing about what is "
+				+ "actually running");
 	}
 
 	[Test]

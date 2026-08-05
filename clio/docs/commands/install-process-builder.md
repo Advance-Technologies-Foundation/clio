@@ -25,8 +25,8 @@ The package is required by the process-designer capability:
 - validate-process-graph
 
 Those commands refuse to run against an environment where the package is
-missing or older than the version bundled with clio, and name this command in
-the refusal.
+missing, and name this command in the refusal. The requirement is
+**presence-only** — see Notes for why there is no version floor.
 
 The package ships as source, without a compiled assembly, and the target
 environment compiles it during installation against its own core. One archive
@@ -46,39 +46,18 @@ would either fail while the app warms up or, when upgrading, be answered by the
 outgoing app domain still serving the old assembly.
 
 Because the assembly is produced by the target rather than shipped, installing and
-working are different states. After a successful install the command asks
-ProcessDesignService which build is **serving** (`GetVersion`) and fails if that is
-older than the version just installed. That is the only way to see a failed
-upgrade: the platform records the new version when it *accepts* the archive and
-then keeps running the assembly from its last successful configuration build, so
-`clio list-packages` shows the new version either way.
+working are different states. After a successful install the command calls
+`ListUserTasks` and fails if ProcessDesignService does not answer, so an
+environment that accepted the package but never compiled it is reported instead of
+looking like a success.
 
-Environments carrying a package older than 1.1.0.0 have no `GetVersion` operation.
-For those the command falls back to calling `ListUserTasks` and only checks that
-the service answers at all — weaker, because it cannot tell which build answered,
-and because `ListUserTasks` needs the `CanManageProcessDesign` right while
-installing does not.
-
-Re-running the command asks the service the same question **before** installing, so
-an environment already serving this build is left alone and does not recompile. The
-skip decision deliberately does not use the recorded package version: Creatio does
-not update that record when it re-installs a package it already has (it matches by
-`UId`), so it stays at whatever the first install wrote and would report "nothing to
-do" for exactly the environment still running an old build.
+The command **always installs** — there is no skip. Re-running is safe; it costs one
+configuration build on the target.
 
 ## Options
 
     -e, --environment <ENVIRONMENT_NAME>
         Target environment name from your configuration
-
-    --force
-        Reinstall even when the environment already serves this exact build.
-        Rarely needed: the skip decision asks the SERVICE, not the database, so
-        an environment that has the package but never compiled it does not
-        satisfy it and is reinstalled on the next ordinary run without any flag.
-        Use --force when you want the sources on the target replaced regardless.
-        (The shared help text for this flag reads "Force restore"; for this
-        command it means "reinstall".)
 
     Environment options (can be used instead of -e):
         -u, --uri <URI>
@@ -114,8 +93,8 @@ clio update-process-builder -e dev
 
 - Permission to install a package on the target environment (the install itself
   runs a configuration build and restarts the instance).
-- Read access to SysPackage through DataService, which is how clio detects
-  whether the package is already installed.
+- Read access to SysPackage through DataService, which is how the process-designer
+  commands check that the package is present.
 
 Once installed, using the process-designer commands additionally requires the
 `CanManageProcessDesign` operation and a General (non-portal) user — the gate
@@ -130,11 +109,13 @@ connection type, so granting `CanManageSolution` does not grant process design.
 - Installation includes a configuration build on the target environment, so it
   takes longer than a plain package install — roughly 15 to 75 seconds depending
   on the environment's speed.
-- To verify what is actually **serving**, ask the service:
-  `clio call-service --service-path rest/ProcessDesignService/GetVersion -m POST -b "{}" -e <ENV>`.
-  `clio list-packages` is not a substitute: it reports the version recorded at the
-  *first* install, which Creatio does not update on a re-install, so it can
-  legitimately differ from the build that is running.
+- Do **not** use `clio list-packages` to decide whether the package needs
+  installing. Creatio does not rewrite a package's `SysPackage` row when it
+  re-installs a package it already has, so the recorded version stays whatever the
+  *first* install wrote and says nothing about what is running. That is also why the
+  process-designer commands require the package by **presence** only, with no
+  version floor: a floor could never be satisfied by an environment that was
+  upgraded correctly.
 - Installing does not unlock maintainer packages, even on an environment with
   developer mode enabled.
 - If the command reports that ProcessDesignService does not answer, the package

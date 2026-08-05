@@ -67,28 +67,24 @@ public sealed class InstallProcessBuilderTool(
 
 	             Run this when a process-designer tool (`create-business-process`, `modify-business-process`,
 	             `describe-business-process`, `list-user-tasks`, `validate-process-graph`) refuses with "you
-	             need to install the CrtProcessBuilder package" — whether it is missing entirely or older
-	             than the version this clio bundles. Then retry the original call.
+	             need to install the CrtProcessBuilder package". Then retry the original call.
 
 	             The package ships as source and the target environment compiles it during installation, so
 	             this takes longer than a plain package install (roughly 15-75 seconds depending on the
 	             environment). You never restart anything yourself, though a restart does happen - the platform
 	             recycles itself on .NET Framework, the installer issues it on .NET - and the tool waits for the
-	             instance to come back before judging it. It then
-	             verifies the outcome rather than the install call: it asks ProcessDesignService which build is
-	             SERVING and fails if that is older than the version installed. That is the only way to see a
-	             failed upgrade - the platform records the new version when it accepts the archive and keeps
-	             running its last successfully built assembly, so list-packages shows the new version either
-	             way. So "installed but not compiled" is reported instead of looking like success.
+	             instance to come back before judging it. It then verifies the OUTCOME rather than the install
+	             call: it queries ListUserTasks and fails if ProcessDesignService does not answer, so
+	             "installed but never compiled" is reported instead of looking like success.
 
-	             Re-running against an already-current environment does not reinstall, but it is still checked:
-	             the recorded package version proves the archive was accepted, not that the environment ever
-	             compiled it, so the service is queried on that path too. If it reports the package present but
-	             the service silent, call again with force=true - that is the one state force exists for.
+	             It always installs - there is no skip. Do NOT use `list-packages` to decide whether to call it:
+	             Creatio does not rewrite a package's recorded version when re-installing a package it already
+	             has, so that version is inert and says nothing about what is running. Re-running is safe and
+	             costs one configuration build on the target.
 
 	             Long-running: streams notifications/progress while working. If the MCP response deadline is
 	             reached first you get an in-progress note - the install is still running server-side. Do NOT
-	             retry immediately; check with list-packages, or call again later (it is idempotent).
+	             retry immediately; call again later instead (it is idempotent).
 	             """)]
 	public async Task<CommandExecutionResult> InstallProcessBuilder(
 		[Description("install-process-builder parameters")] [Required] InstallProcessBuilderArgs args,
@@ -96,8 +92,7 @@ public sealed class InstallProcessBuilderTool(
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default) {
 		InstallProcessBuilderOptions options = new() {
-			Environment = args.EnvironmentName,
-			Force = args.Force ?? false
+			Environment = args.EnvironmentName
 		};
 		try {
 			return await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
@@ -111,9 +106,8 @@ public sealed class InstallProcessBuilderTool(
 			return CommandExecutionResult.FromInfo(
 				$"The {BundledPackages.ProcessBuilderPackageName} install on '{args.EnvironmentName}' is still "
 				+ "running server-side: the target is compiling the package and will restart. Do NOT retry now "
-				+ "— that would queue behind this install. Check with list-packages, then re-run "
-				+ $"{InstallProcessBuilderToolName} to confirm ProcessDesignService answers (it is idempotent "
-				+ "and will report the package already installed once the build finished).");
+				+ "— that would queue behind this install. Wait, then re-run "
+				+ $"{InstallProcessBuilderToolName} to confirm ProcessDesignService answers (it is idempotent).");
 		}
 	}
 }
@@ -125,11 +119,5 @@ public sealed record InstallProcessBuilderArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
-	string EnvironmentName,
-	[property: JsonPropertyName("force")]
-	[property: Description(
-		"Install even when a compatible version is already recorded on the environment. Use it when the "
-		+ "package is present but ProcessDesignService does not answer, i.e. the environment has the package "
-		+ "and never compiled it. Default false.")]
-	bool? Force = null
+	string EnvironmentName
 );
