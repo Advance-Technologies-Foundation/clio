@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.Theming;
+using Clio.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -94,13 +95,15 @@ public class CreateThemeTool(
 		};
 
 	/// <summary>Creates the theme on the target environment and returns a structured result carrying the effective theme id.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true),
 	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, id, warnings?, error? } where id is the created theme's id, auto-generated when omitted. " +
 		"The theme CSS is supplied inline via css-content, OR built server-side from brand colours and fonts " +
 		"(primary, secondary, accent, success, error, heading-font, body-font, font-weights, version) and created " +
-		"in one call — provide exactly one of css-content / primary. " +
+		"in one call — provide exactly one of css-content / primary. In brand mode custom font families are " +
+		"checked against Google Fonts over the network (a short bounded probe): a family the catalog does not " +
+		"publish gets no @import plus a warning, and an unverifiable probe keeps the import plus a warning. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (inline mode) or primary (brand mode) — exactly one of the two, " +
@@ -229,7 +232,20 @@ public class CreateThemeTool(
 			EnvironmentName = null
 		};
 		BuildThemeCommand buildCommand = _commandResolver.Resolve<BuildThemeCommand>(environmentOptions);
-		return buildCommand.TryBuildTheme(buildOptions, resolvedSettings, out css, out _, out warnings, out error);
+		// The Google Fonts probe runs here, inside the per-tenant execution lock — deliberately NOT hoisted
+		// the way build-theme hoists it. build-theme's hoist exists because its env-less path takes the
+		// process-wide SharedFallbackKey that every env-less tool shares; this tool holds only its tenant's
+		// lock, which the create call's own HTTP round-trip occupies for longer than the bounded probe.
+		// Hoisting would also require resolving BuildThemeCommand before ExecuteResolved, breaking the pinned
+		// failure order (CreateTheme_ShouldFailBeforeTheExecutorBody_WhenEnvironmentCannotBeResolved asserts
+		// no other Resolve<T> runs when the environment cannot be resolved).
+		if (!buildCommand.TryResolveFontAvailability(buildOptions,
+				out IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability, out error)) {
+			css = null;
+			warnings = [];
+			return false;
+		}
+		return buildCommand.TryBuildTheme(buildOptions, resolvedSettings, out css, out _, out warnings, out error, fontAvailability);
 	}
 }
 

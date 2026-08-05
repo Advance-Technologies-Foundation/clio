@@ -41,7 +41,8 @@ public class CreateThemeToolTests {
 		attribute.ReadOnly.Should().BeFalse(because: "creating a theme writes to the environment");
 		attribute.Destructive.Should().BeFalse(because: "create adds a new theme without destroying existing state");
 		attribute.Idempotent.Should().BeFalse(because: "a repeated create yields a different theme (new auto-id) rather than the same end state");
-		attribute.OpenWorld.Should().BeFalse(because: "the tool only touches the addressed Creatio environment");
+		attribute.OpenWorld.Should().BeTrue(
+			because: "brand mode probes Google Fonts over the open network through the shared build engine, exactly like build-theme — the inline css-content path stays tenant-only, but the attribute describes the tool's whole surface");
 	}
 
 	[Test]
@@ -442,7 +443,7 @@ public class CreateThemeToolTests {
 		build.CapturedInput.Should().BeEquivalentTo(new BuildThemeInput {
 			Primary = "#004fd6", Secondary = "#0d2e4e", Accent = "#f94e11", Success = "#0b8500",
 			Error = "#d2310d", ThemeCssClass = "ocean-theme",
-			Fonts = new FontsInput("Inter", "Roboto", new List<int> { 400, 700 })
+			Fonts = new FontsInput("Inter", "Roboto", new List<int> { 400, 700 }, [])
 		}, because: "every brand argument must reach the palette engine unchanged");
 		build.ResolverFactory.Received(1).Create(resolvedSettings);
 		build.TemplateProvider.Received(1).GetCssTemplate("10.0.1");
@@ -1382,9 +1383,13 @@ public class CreateThemeToolTests {
 			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
 		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
 		templateProvider.GetCssTemplate("10.0").Returns(template);
+		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
+		publishedCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
 		BuildThemeCommand realBuildCommand = new(new ThemeCssBuilder(), templateProvider,
 			Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>(),
-			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>(),
+			publishedCatalog);
 		FakeCreateThemeCommand defaultCommand = new();
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1425,9 +1430,13 @@ public class CreateThemeToolTests {
 		templateProvider.GetCssTemplate("10.0").Returns(template);
 		templateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
+		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
+		publishedCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
 		BuildThemeCommand realBuildCommand = new(new ThemeCssBuilder(), templateProvider,
 			Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>(),
-			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>(),
+			publishedCatalog);
 		FakeCreateThemeCommand defaultCommand = new();
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "ocean");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1446,7 +1455,8 @@ public class CreateThemeToolTests {
 				Primary = "#004fd6", CssClassName = "ocean-theme", Caption = "Ocean", Id = "ocean",
 				HeadingFont = "Poppins", FontWeights = new[] { 400, 600 }, Version = "10.0"
 			},
-			null, out string expectedCss, out _, out _, out _);
+			null, out string expectedCss, out _, out _, out _,
+			new Dictionary<string, GoogleFontAvailability> { ["Poppins"] = GoogleFontAvailability.InCatalog });
 
 		// Assert
 		directOk.Should().BeTrue(because: "the pinned inputs are valid for the real engine");
@@ -1473,9 +1483,13 @@ public class CreateThemeToolTests {
 		templateProvider.GetCssTemplate("10.0").Returns(template);
 		templateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
+		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
+		publishedCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
 		BuildThemeCommand realBuildCommand = new(new ThemeCssBuilder(), templateProvider,
 			Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>(),
-			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>(),
+			publishedCatalog);
 		FakeCreateThemeCommand defaultCommand = new();
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1563,6 +1577,8 @@ public class CreateThemeToolTests {
 	private sealed class BuildThemeCommandHarness {
 		public IThemeCssBuilder CssBuilder { get; } = Substitute.For<IThemeCssBuilder>();
 
+		public IGoogleFontsCatalog GoogleFontsCatalog { get; } = Substitute.For<IGoogleFontsCatalog>();
+
 		public IThemeTemplateProvider TemplateProvider { get; } = Substitute.For<IThemeTemplateProvider>();
 
 		public IPlatformVersionResolverFactory ResolverFactory { get; } = Substitute.For<IPlatformVersionResolverFactory>();
@@ -1573,6 +1589,8 @@ public class CreateThemeToolTests {
 
 		public BuildThemeCommandHarness(string css = "built-css") {
 			TemplateProvider.GetCssTemplate(Arg.Any<string>()).Returns("template-css");
+			GoogleFontsCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+				.Returns(GoogleFontAvailability.InCatalog);
 			CssBuilder
 				.Build(Arg.Any<string>(), Arg.Do<BuildThemeInput>(input => CapturedInput = input))
 				.Returns(css);
@@ -1583,7 +1601,8 @@ public class CreateThemeToolTests {
 				Substitute.For<ISettingsRepository>(),
 				Substitute.For<IWorkspacePathBuilder>(),
 				Substitute.For<IFileSystem>(),
-				Substitute.For<ILogger>());
+				Substitute.For<ILogger>(),
+				GoogleFontsCatalog);
 		}
 	}
 }

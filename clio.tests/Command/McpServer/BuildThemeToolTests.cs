@@ -676,8 +676,7 @@ public sealed class BuildThemeToolTests
 			.Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Verdana"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") { HeadingFont = "Verdana" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "an unpublished family is advisory, not fatal");
@@ -695,8 +694,7 @@ public sealed class BuildThemeToolTests
 			.Returns(GoogleFontAvailability.Unverified);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Roboto"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") { HeadingFont = "Roboto" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "an unverifiable family must not fail the build");
@@ -710,8 +708,7 @@ public sealed class BuildThemeToolTests
 	[Description("Probes each requested family exactly once per call: the tool runs the probe before taking the shared execution lock and passes the verdicts into the build, so the build must not re-probe inside the lock.")]
 	public void BuildTheme_ShouldProbeEachFamilyOnce_WhenBuilding() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Inter", BodyFont: "Roboto"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") { HeadingFont = "Inter", BodyFont = "Roboto" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "two published families are valid input");
@@ -723,8 +720,7 @@ public sealed class BuildThemeToolTests
 	[Description("Rejects a malformed font family with INVALID_FONT_FAMILY as a structured failure rather than an exception escaping the pre-lock probe step.")]
 	public void BuildTheme_ShouldReturnFailure_WhenFontFamilyIsMalformed() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Evil'; }"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") { HeadingFont = "Evil'; }" });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a family that breaks the name contract cannot be applied");
@@ -741,8 +737,7 @@ public sealed class BuildThemeToolTests
 			.Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: " Open   Sans "));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") { HeadingFont = " Open   Sans " });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a padded family name is normalized, not rejected");
@@ -762,8 +757,7 @@ public sealed class BuildThemeToolTests
 		_fileSystem.ExistsDirectory(packagePath).Returns(true);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Inter", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme") { HeadingFont = "Inter" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a valid workspace target with a custom font is a valid write request");
@@ -774,8 +768,7 @@ public sealed class BuildThemeToolTests
 	[Description("Validates the request before probing: a malformed css-class-name fails with its own error and costs no outbound request, so a call that cannot build never sends font names to Google.")]
 	public void BuildTheme_ShouldFailWithoutProbing_WhenCssClassNameIsInvalid() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "1Theme {}",
-			HeadingFont: "Inter"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "1Theme {}") { HeadingFont = "Inter" });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the css class name is validated the same way regardless of the fonts requested");
@@ -788,8 +781,7 @@ public sealed class BuildThemeToolTests
 	[Description("Rejects an ambiguous version source before probing, so a request that can never build sends no font name to Google.")]
 	public void BuildTheme_ShouldFailWithoutProbing_WhenBothVersionAndEnvironmentProvided() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Inter", Version: "10.0", EnvironmentName: "dev"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", Version: "10.0", EnvironmentName: "dev") { HeadingFont = "Inter" });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the version source must be unambiguous");
@@ -811,8 +803,7 @@ public sealed class BuildThemeToolTests
 			.Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Verdana", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme") { HeadingFont = "Verdana" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "an unpublished family is advisory, not fatal, on the write path too");
@@ -846,8 +837,7 @@ public sealed class BuildThemeToolTests
 		_workspacePathBuilder.IsWorkspace.Returns(false);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-			HeadingFont: "Inter", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme") { HeadingFont = "Inter" });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the theme cannot be written outside a clio workspace");
@@ -872,8 +862,7 @@ public sealed class BuildThemeToolTests
 		Task<BuildThemeResult> build;
 		bool probedWhileLockHeld;
 		lock (sharedLock) {
-			build = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
-				HeadingFont: "Inter")));
+			build = Task.Run(() => _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme") { HeadingFont = "Inter" }));
 			probedWhileLockHeld = probeStarted.Wait(TimeSpan.FromSeconds(10));
 			releaseProbe.Set();
 		}
