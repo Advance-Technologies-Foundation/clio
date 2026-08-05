@@ -345,9 +345,8 @@ clio set-pkg-version ./packages/CrtProcessBuilder --PackageVersion <X.Y.Z.W>
 mkdir -p <clio-repo>/clio/CrtProcessBuilder
 
 # 5. Compress  (verb: generate-pkg-zip, aliases comp-pkg / compress)
-#    The .gz FILE NAME must equal the descriptor's Name — Creatio validates the pair on a
-#    manual install and refuses a mismatch ("The name of your *.gz archive does not match the
-#    name specified in the descriptor.json file"). See P1.4.
+#    Keep the .gz name equal to the descriptor's Name as a matter of hygiene — nothing enforces
+#    it (see P1.4), but a mismatched pair is exactly the silent failure P2.4b guards against.
 clio compress ./packages/CrtProcessBuilder --skip-pdb \
   -d <clio-repo>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
@@ -390,16 +389,31 @@ Four traps that must be written into the runbook, not discovered later:
   them and the stand keeps using its own. Verified by reading the ignore file. `ATF.Repository.dll` and
   `ErrorOr.dll` are *not* in the denylist, so they ship — which is correct. Re-verify once the
   netstandard leg is buildable.
-- **P1.4 The `.gz` file name must equal the descriptor `Name`** — established empirically (2026-08-04):
-  a manual install of an archive named `CrtProcessBuilder-nobin.gz` carrying
-  `"Name": "CrtProcessBuilder"` was refused with *"The name of your \*.gz archive does not match the
-  name specified in the descriptor.json file"*. So **Creatio itself validates the pair** on the manual
-  path, which is better than this plan originally assumed.
-  It does **not** remove the need for the P2.4b guard test, for two reasons: (a) nothing on the *clio*
-  side checks it — `PackageArchiver.Pack` never opens `descriptor.json` and `IPackageInstaller.Install`
-  merely uploads the file, so whether `push-pkg` enforces the same rule as the UI is unverified; and
-  (b) the guard test catches a stale *version* inside the archive, which no name check would ever see.
-  Catching it in clio's own build is still strictly earlier than catching it on a customer's stand.
+- **P1.4 Nothing validates the descriptor against the filename.** `PackageArchiver.Pack` never opens
+  `descriptor.json`, and `IPackageInstaller.Install` just uploads the file. A `.gz` *named*
+  `CrtProcessBuilder.gz` whose descriptor still says `clioprocessbuilder` installs fine, reports
+  success — and then the gate reports the package missing **forever**. Mitigated by the P2.4b guard
+  test; the runbook must still say to check.
+
+  > **Retracted claim, kept as a warning.** An earlier revision of this plan asserted that Creatio
+  > validates the archive name against the descriptor `Name`, on the strength of the Application Hub
+  > install dialog refusing an archive with *"The name of your \*.gz archive does not match the name
+  > specified in the descriptor.json file"*. **That message is misleading and the inference was wrong.**
+  > The client-side condition (bundle `3584.*.js`, `_openConfirmDialogWithCorrectApp`) is:
+  > ```js
+  > const t = e.appInstallInfos || [];
+  > if (t.length === 0) { … instant("AppInstallInfoDialog.OutOfSyncNames") … }
+  > ```
+  > — it fires when the server found **no APPLICATION** in the archive, regardless of any name. Renaming
+  > the file changed nothing, as expected in hindsight. The real lesson is about the install SURFACE, not
+  > about names (see P1.11).
+
+- **P1.11 A package archive cannot be installed through the Application Hub dialog.** That dialog
+  (`AppInstallInfoDialog`) accepts **application** archives only; handed a package it reports zero
+  `appInstallInfos` and shows the misleading name-mismatch message above. Install a package either
+  through the package-installation UI (Advanced settings → Configuration → Packages → install from
+  file) or with `clio push-pkg`, which is the path `IPackageInstaller.Install` — and therefore
+  `install-process-builder` — actually uses. Verified working via `push-pkg` on 2026-08-05.
 
 Runbook must also state:
 
