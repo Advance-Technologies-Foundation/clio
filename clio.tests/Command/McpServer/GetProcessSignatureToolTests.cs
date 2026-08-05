@@ -195,7 +195,7 @@ public class GetProcessSignatureToolTests {
 	}
 
 	// NOTE: the former GetProcessSignature_Should_Return_RequirementFailure_When_ProcessBuilderPackageMissing test
-	// was removed — get-process-signature no longer carries [RequiresPackage("clioprocessbuilder")] (it reads the
+	// was removed — get-process-signature no longer carries the process-builder [RequiresPackage] (it reads the
 	// built-in DataService, not ProcessDesignService — PR #715). The "not gated" invariant is locked in by
 	// ProcessDesignerRequiresPackageAttributeTests.GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_*.
 

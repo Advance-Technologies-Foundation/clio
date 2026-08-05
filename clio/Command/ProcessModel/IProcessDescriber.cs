@@ -21,7 +21,7 @@ public sealed record ProcessIdentity(string Code, string UId, string Caption);
 /// <summary>
 /// Reads an existing process into a structured graph via the server-side <c>ProcessDesignService</c> package.
 /// Element typing comes from the real object model (incl. the specific user-task schema name and parameter
-/// value sources), so it is universal — no client-side GUID taxonomy. Requires the <c>clioprocessbuilder</c>
+/// value sources), so it is universal — no client-side GUID taxonomy. Requires the <c>CrtProcessBuilder</c>
 /// package on the target environment.
 /// </summary>
 public interface IProcessDescriber {
@@ -208,7 +208,7 @@ public sealed class DescribedElement {
 	/// <summary>
 	/// Whether the element runs in background mode — a platform property of EVERY process element, so it is reported
 	/// for all of them and round-trips into a <c>create</c>/<c>modify</c> <c>useBackgroundMode</c>. Omitted (null) when
-	/// the server (an older <c>clioprocessbuilder</c>) does not report it. Effective only while the global
+	/// the server (an older <c>CrtProcessBuilder</c>) does not report it. Effective only while the global
 	/// <c>UseBackgroundProcessMode</c> application setting is enabled (it is by default).
 	/// </summary>
 	[JsonPropertyName("useBackgroundMode")]
@@ -393,7 +393,7 @@ public sealed class DescribedParameter {
 	/// <summary>
 	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>. Together with <see cref="IsResult"/>
 	/// lets a caller tell an element's output parameters (mappable as a source) from its inputs. Omitted when the
-	/// server (an older <c>clioprocessbuilder</c>) does not report it.
+	/// server (an older <c>CrtProcessBuilder</c>) does not report it.
 	/// </summary>
 	[JsonPropertyName("direction")]
 	public string Direction { get; set; }
@@ -401,7 +401,7 @@ public sealed class DescribedParameter {
 	/// <summary>
 	/// True when the parameter is a result (output) of its element. A parameter is an output — and therefore usable
 	/// as a mapping source — when <see cref="Direction"/> is <c>Out</c> OR this flag is true. Omitted when the server
-	/// (an older <c>clioprocessbuilder</c>) does not report it.
+	/// (an older <c>CrtProcessBuilder</c>) does not report it.
 	/// </summary>
 	[JsonPropertyName("isResult")]
 	public bool? IsResult { get; set; }

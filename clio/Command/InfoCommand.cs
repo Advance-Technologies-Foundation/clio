@@ -74,6 +74,10 @@ namespace Clio.Command
 			{
 				_logger.WriteInfo($"clio:   {Assembly.GetEntryAssembly().GetName().Version}");
 				_logger.WriteInfo($"gate:   {_gateVersion}");
+				// The bundled process-builder version, so "what does this clio carry" is answerable without
+				// unpacking the archive. Compare it against `clio list-packages -e <env>` to tell whether an
+				// environment is behind. Sourced from BundledPackages, which the same constant gates on.
+				_logger.WriteInfo($"process-builder:   {BundledPackages.ProcessBuilderVersion}");
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;

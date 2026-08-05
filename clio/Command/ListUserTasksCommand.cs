@@ -12,7 +12,9 @@ namespace Clio.Command;
 /// Options for listing the user-facing user tasks (the visual designer palette) available on an environment.
 /// Consumed by the MCP <c>list-user-tasks</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
+	Hint = "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
+	     + "MCP tool) to install or update " + BundledPackages.ProcessBuilderPackageName + ".")]
 public sealed class ListUserTasksOptions : EnvironmentOptions { }
 
 /// <summary>

@@ -229,7 +229,7 @@ public sealed class BaseToolTests {
 		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
 		checker
 			.When(c => c.EnsureRequirements(Arg.Any<object>()))
-			.Do(_ => throw new PackageRequirementException("Install the clioprocessbuilder package."));
+			.Do(_ => throw new PackageRequirementException("Install the CrtProcessBuilder package."));
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
@@ -241,7 +241,7 @@ public sealed class BaseToolTests {
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>()
-			.WithMessage("Install the clioprocessbuilder package.",
+			.WithMessage("Install the CrtProcessBuilder package.",
 				because: "the typed-response path that calls ResolveCommand directly must enforce the package gate and let the exception propagate to the tool's own catch");
 		// The checker must be resolved from the same environment-scoped resolver, bound to the per-call environment.
 		resolver.Received(1).Resolve<IRequiredPackageChecker>(

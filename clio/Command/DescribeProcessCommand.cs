@@ -7,14 +7,16 @@ using ErrorOr;
 namespace Clio.Command;
 
 // NOTE: process reading is delegated to the server-side ProcessDesignService package (universal element
-// typing incl. user-task schema names and parameter value sources). Requires the clioprocessbuilder package
+// typing incl. user-task schema names and parameter value sources). Requires the CrtProcessBuilder package
 // on the target environment.
 
 /// <summary>
 /// Options for reading an existing Creatio process into a structured graph ("read &amp; explain").
 /// Consumed by the MCP <c>describe-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
+	Hint = "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
+	     + "MCP tool) to install or update " + BundledPackages.ProcessBuilderPackageName + ".")]
 public class DescribeProcessOptions : EnvironmentOptions {
 
 	/// <summary>Process code (schema Name) as it appears in the process designer.</summary>

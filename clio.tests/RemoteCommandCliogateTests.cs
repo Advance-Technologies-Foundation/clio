@@ -151,16 +151,20 @@ namespace Clio.Tests
     [TestFixture]
     [Category("Unit")]
     [Property("Module", "Command")]
-    [Description("Reflection lock-in tests asserting the four process-designer command options classes are gated on the clioprocessbuilder package (presence-only), and that the MCP args record no longer carries a stray requirement.")]
+    [Description("Reflection lock-in tests asserting the four process-designer command options classes are gated on the bundled CrtProcessBuilder package at the bundled version, that the hint names the install command, and that the MCP args record carries the same requirement.")]
     public class ProcessDesignerRequiresPackageAttributeTests
     {
+        // The hint is the user-visible remediation channel, so it is pinned verbatim: it must name a verb
+        // that actually exists. It is deliberately NOT feature-gated, because a gated verb is filtered out
+        // of the parse array and the hint would then point at an unknown command.
         private const string ExpectedProcessBuilderHint =
-            "This experimental feature requires the clioprocessbuilder package on the target environment.";
+            "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder MCP tool) "
+            + "to install or update " + BundledPackages.ProcessBuilderPackageName + ".";
 
         private static RequiresPackageAttribute GetProcessBuilderRequirement(Type type)
             => (RequiresPackageAttribute[])type.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: false)
                 is { Length: > 0 } attrs
-                ? System.Array.Find(attrs, a => string.Equals(a.Name, "clioprocessbuilder", System.StringComparison.OrdinalIgnoreCase))
+                ? System.Array.Find(attrs, a => string.Equals(a.Name, BundledPackages.ProcessBuilderPackageName, System.StringComparison.OrdinalIgnoreCase))
                 : null;
 
         [TestCase(typeof(CreateBusinessProcessOptions))]
@@ -168,8 +172,8 @@ namespace Clio.Tests
         [TestCase(typeof(DescribeProcessOptions))]
         [TestCase(typeof(ListUserTasksOptions))]
         [Test]
-        [Description("Each process-designer command options class that actually calls ProcessDesignService must declare [RequiresPackage(\"clioprocessbuilder\")] with no version (presence-only) so the centralized BaseTool.ResolveCommand gate enforces the requirement uniformly. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
-        public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
+        [Description("Each process-designer command options class that actually calls ProcessDesignService must be gated on the bundled package NAME and VERSION, so the centralized BaseTool.ResolveCommand gate refuses both a missing and a stale package. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
+        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenProcessDesignerCommand(
             Type optionsType)
         {
             // Arrange & Act
@@ -177,15 +181,17 @@ namespace Clio.Tests
 
             // Assert
             requirement.Should().NotBeNull(
-                because: $"{optionsType.Name} must carry the declarative clioprocessbuilder requirement so the MCP gate fires");
-            requirement!.Version.Should().BeNullOrEmpty(
-                because: "the process-designer requirement is presence-only (any installed version satisfies it)");
+                because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
+            requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
+                because: "the floor must equal the version clio bundles: a lower floor would accept a stale "
+                    + "package whose server rejects operations this clio sends, and the refusal would come "
+                    + "from the server as an unexplained error instead of from the gate with an install hint");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }
 
         [Test]
-        [Description("get-process-signature must NOT carry [RequiresPackage(\"clioprocessbuilder\")]: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
+        [Description("get-process-signature must NOT be gated on the process-builder package: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
         public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()
         {
             // Arrange & Act
@@ -193,12 +199,12 @@ namespace Clio.Tests
 
             // Assert
             requirement.Should().BeNull(
-                because: "get-process-signature works against the built-in DataService on every Creatio; requiring clioprocessbuilder broke the public 'gps' verb on environments without the experimental package");
+                because: "get-process-signature works against the built-in DataService on every Creatio; requiring the process-builder package broke the public 'gps' verb on environments without it");
         }
 
         [Test]
-        [Description("The validate-process-graph args record must carry the presence-only clioprocessbuilder requirement, because the standalone tool manually calls EnsureRequirements(args) which reads the attribute off the args type.")]
-        public void ValidateProcessGraphArgs_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenStandaloneTool()
+        [Description("The validate-process-graph args record must carry the same versioned requirement, because the standalone tool manually calls EnsureRequirements(args) which reads the attribute off the args type rather than an options class.")]
+        public void ValidateProcessGraphArgs_ShouldDeclareVersionedProcessBuilderRequirement_WhenStandaloneTool()
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetProcessBuilderRequirement(
@@ -206,9 +212,11 @@ namespace Clio.Tests
 
             // Assert
             requirement.Should().NotBeNull(
-                because: "the standalone validator reads [RequiresPackage] off the args record to gate on clioprocessbuilder");
-            requirement!.Version.Should().BeNullOrEmpty(
-                because: "the validator requirement is presence-only, consistent with the BaseTool process tools");
+                because: "the standalone validator reads [RequiresPackage] off the args record, so the gate "
+                    + "would silently not fire if the attribute moved to an options class");
+            requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
+                because: "the validator floor must match the BaseTool process tools, or the same stale package "
+                    + "would be refused by some tools and accepted by others");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the validator hint must match the other process-designer gates");
         }
