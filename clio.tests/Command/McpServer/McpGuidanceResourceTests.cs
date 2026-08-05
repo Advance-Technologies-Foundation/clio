@@ -2592,6 +2592,16 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("neither is finished alone",
 			because: "the guide must say the section half and the home-page half are both required");
 
+		// Verified on a live stand: with the AppWithHomePage template, create-app points the SHARED My applications
+		// workplace at the new app's home page AND its binding ships that HomePageUId — so the package exports a
+		// mutation of a workplace the app does not own. The guide previously asserted the opposite as fact.
+		article.Text.Should().Contain("`AppWithHomePage` creates one",
+			because: "the behaviour is template-dependent, and stating it as never-happens is what let the hijack ship");
+		article.Text.Should().Contain("EXPORTS a mutation of a workplace it does not own",
+			because: "the agent must understand the blast radius is other environments, not just this one");
+		article.Text.Should().Contain("leave it alone and",
+			because: "a home page someone else set must not be cleared just because it is not empty");
+
 		// The junction binding cannot reference a workplace row that is not itself bound in the package.
 		article.Text.Should().Contain("must already have its OWN",
 			because: "moving a section fails at the binding step unless the target workplace is bound first");

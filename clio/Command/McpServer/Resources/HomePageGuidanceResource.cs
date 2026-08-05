@@ -114,6 +114,12 @@ public sealed class HomePageGuidanceResource {
 		       `00000000-0000-0000-0000-000000000000`. Do NOT use `remove-data-binding-row-db` for this: it
 		       DELETES the whole `SysWorkplace` row (the entire workplace), not just the home-page value.
 
+		       When you bind the page to a NEW workplace for a scaffolded app, check whether `My applications` is
+		       ALREADY pointing at that same page and clear it if so. The `AppWithHomePage` template creates a home
+		       page and points `My applications` at it, and its binding ships that `HomePageUId` — so the package
+		       exports a change to a workplace the app does not own. `workplaces` → Move a section owns that
+		       cleanup, including what still ships afterwards; do not improvise it here.
+
 		       ## Access / roles
 
 		       A home page is NOT role-secured on its own — a user sees it because they opened a workplace whose

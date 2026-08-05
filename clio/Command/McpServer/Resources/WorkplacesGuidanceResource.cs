@@ -244,9 +244,22 @@ public sealed class WorkplacesGuidanceResource {
 		       - move the section row's `SysWorkplaceId` to the target workplace, and update the binding so the
 		         new placement transfers — bind the target workplace FIRST (see Operations);
 		       - if you created a home page, point the TARGET workplace at it per `home-page` and update that
-		         workplace's binding. `create-app` does NOT create a home page and never sets `HomePageUId` on
-		         `My applications`, so there is normally nothing to unset there — unset it only if you pointed
-		         `My applications` at a home page yourself;
+		         workplace's binding;
+		       - CHECK `My applications`.`HomePageUId` and clear it when it points at THIS app's home page. The
+		         `AppFreedomUI` template creates no home page and leaves it empty, but `AppWithHomePage` creates one
+		         AND points `My applications` at it — verified on a live stand, where the shared `My applications`
+		         was still opening a custom app's home page long after that app was built, and its
+		         `SysWorkplace_MyApps` binding shipped 7 columns carrying that `HomePageUId`. So the package
+		         EXPORTS a mutation of a workplace it does not own: installing it repoints `My applications` on
+		         every target environment. To clear it, `odata-update` `HomePageUId` to
+		         `00000000-0000-0000-0000-000000000000` and then `upsert-data-binding-row-db` the
+		         `SysWorkplace_MyApps` row with that same zero GUID. Do NOT remove the binding to "clean" the
+		         column — `remove-data-binding-row-db` deletes the live shared workplace, and an upsert cannot drop
+		         a column that is already in a binding. Say plainly what remains: the package still ships a
+		         `My applications` row, so on install it clears whatever home page that environment had there.
+		         Leaving the app's own UId in place is strictly worse — that hijacks the shared workplace instead of
+		         emptying one field. If `HomePageUId` points at something you did not create, leave it alone and
+		         surface the conflict;
 		       - grant the agreed audience on the target workplace if it has none yet (see Grant / remove a role's
 		         access) — a workplace with no `SysAdminUnitInWorkplace` row is invisible to everyone;
 		       - verify `My applications` no longer lists the section.
