@@ -1,4 +1,4 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,6 +96,26 @@ internal class SysSettingsCommandTests : BaseCommandTests<SysSettingsOptions>
 		actual.Should().Be(0, because: "a value-bearing set-syssetting is a valid write");
 		_sysSettingsManager.Received(1).CreateSysSettingIfNotExists(options.Code, options.Code, options.Type);
 		_sysSettingsManager.Received(1).UpdateSysSetting(options.Code, options.Value);
+	}
+
+	[Test]
+	[Description("Execute reports an error and a non-zero exit code when the environment does not apply the value, so a refused write is not indistinguishable from a clean one")]
+	public void Execute_ShouldFail_WhenTheValueIsNotApplied() {
+		// Arrange
+		SysSettingsOptions options = new() {
+			Code = "Maintainer",
+			Value = "ATF",
+			Type = "Text"
+		};
+		_sysSettingsManager.UpdateSysSetting(options.Code, options.Value, options.Type).Returns(false);
+
+		// Act
+		int actual = _command.Execute(options);
+
+		// Assert
+		actual.Should().Be(1,
+			because: "the requested value never reached the environment, and only a non-zero code tells a script that apart from a successful write");
+		_logger.ReceivedWithAnyArgs().WriteError(default);
 	}
 
 	[Test]

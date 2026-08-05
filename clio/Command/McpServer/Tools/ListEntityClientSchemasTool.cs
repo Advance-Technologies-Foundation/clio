@@ -58,7 +58,7 @@ public sealed class ListEntityClientSchemasTool(
 					// get-classic-page-sources warning does), which would carry the same host/URI detail the Error
 					// path redacts. Redact here at the MCP boundary — parity with GetClassicPageSourcesTool — so the
 					// leak cannot be reintroduced silently, and the CLI keeps the full message.
-					response.Warnings = response.Warnings.Select(SensitiveErrorTextRedactor.Redact).ToList();
+					response.Warnings = SensitiveErrorTextRedactor.RedactAll(response.Warnings);
 				}
 				return response;
 			},
