@@ -36,7 +36,13 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 	private readonly SetWebServiceUrlCommand _setWebServiceUrlCommand;
 	private readonly IDataProvider _dataProvider;
 	private readonly EnvironmentSettings _environmentSettings;
-	private readonly ILogger _logger = ConsoleLogger.Instance;
+
+	#endregion
+
+	#region Properties: Public
+
+	/// <summary>Sink the report of unapplied manifest entries is written to.</summary>
+	public ILogger Logger { get; set; } = ConsoleLogger.Instance;
 
 	#endregion
 
@@ -51,7 +57,7 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 	public ApplyEnvironmentManifestCommand(IEnvironmentManager environmentManager,
 		IApplicationInstaller applicationInstaller, FeatureCommand featureCommand, SysSettingsCommand sysSettingCommand,
 		SetWebServiceUrlCommand setWebServiceUrlCommand, IDataProvider dataProvider,
-		EnvironmentSettings environmentSettings, ILogger logger){
+		EnvironmentSettings environmentSettings){
 		_environmentManager = environmentManager;
 		_applicationInstaller = applicationInstaller;
 		_featureCommand = featureCommand;
@@ -59,7 +65,6 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 		_setWebServiceUrlCommand = setWebServiceUrlCommand;
 		_dataProvider = dataProvider;
 		_environmentSettings = environmentSettings;
-		_logger = logger;
 	}
 
 	#endregion
@@ -87,10 +92,10 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 		}
 
 		List<SysInstalledApp> apps = _environmentManager.FindApplicationsInAppHub(options.ManifestFilePath);
-		foreach (SysInstalledApp app in apps) {
-			ApplyEntryOrRecordFailure(failures, $"installing application '{app.ZipFileName}'",
+		foreach (string zipFileName in apps.Select(app => app.ZipFileName)) {
+			ApplyEntryOrRecordFailure(failures, $"installing application '{zipFileName}'",
 				"the environment refused the installation",
-				() => _applicationInstaller.Install(app.ZipFileName, environmentInstance));
+				() => _applicationInstaller.Install(zipFileName, environmentInstance));
 		}
 	}
 
@@ -207,11 +212,11 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 		if (failures.Count == 0) {
 			return 0;
 		}
-		_logger.WriteError(failures.Count == 1
+		Logger.WriteError(failures.Count == 1
 			? "The manifest was applied except for 1 entry, so this run exits with code 1:"
 			: $"The manifest was applied except for {failures.Count} entries, so this run exits with code 1:");
 		foreach (string failure in failures) {
-			_logger.WriteError($"  - {failure}");
+			Logger.WriteError($"  - {failure}");
 		}
 		return 1;
 	}

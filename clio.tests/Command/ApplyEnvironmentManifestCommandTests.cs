@@ -83,8 +83,9 @@ public sealed class ApplyEnvironmentManifestCommandTests {
 			new SysSettingsCommand(_sysSettingsManager, _logger, Substitute.For<IFileSystem>()),
 			_setWebServiceUrlCommand,
 			provider,
-			environmentSettings,
-			_logger);
+			environmentSettings) {
+			Logger = _logger
+		};
 	}
 
 	[TearDown]
