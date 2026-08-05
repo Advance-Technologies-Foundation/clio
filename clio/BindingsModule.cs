@@ -23,6 +23,7 @@ using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -364,6 +365,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
@@ -657,6 +659,7 @@ public class BindingsModule {
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<UploadImageTool>();
 		services.AddTransient<SetBackgroundImageTool>();
+		services.AddTransient<SetLogoTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
@@ -666,6 +669,7 @@ public class BindingsModule {
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<GetTargetPackageTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
@@ -775,6 +779,10 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
+		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
+		services.AddTransient<IPackageDataBindingWriter, PackageDataBindingWriter>();
+		services.AddTransient<IPackageDataBinder, EnvironmentPackageDataBinder>();
+		services.AddTransient<GetTargetPackageCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();
@@ -828,6 +836,7 @@ public class BindingsModule {
 		services.AddTransient<ISysImageUploader, SysImageUploader>();
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
+		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
@@ -868,7 +877,7 @@ public class BindingsModule {
 		services.AddTransient<GetCreatioInfoCommand>();
 		services.AddTransient<SetApplicationVersionCommand>();
 		services.AddTransient<ApplyEnvironmentManifestCommand>();
-		services.AddTransient<EnvironmentManager>();
+		services.AddTransient<IEnvironmentManager, EnvironmentManager>();
 		services.AddTransient<GetWebServiceUrlCommand>();
 		services.AddTransient<MockDataCommand>();
 		services.AddTransient<AssertCommand>();

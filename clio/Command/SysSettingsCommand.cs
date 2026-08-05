@@ -193,7 +193,14 @@ namespace Clio.Command
 			_sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type);
 		}
 
-		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
+		/// <summary>
+		/// Writes the sys-setting value named by <paramref name="opts"/>, reading and Base64-encoding a Binary
+		/// value from disk when the value points at a file.
+		/// </summary>
+		/// <param name="opts">The setting code, value and value-type-name.</param>
+		/// <param name="settings">Unused; kept for the call shape the other command methods share.</param>
+		/// <returns><see langword="false"/> when the environment did not apply the value.</returns>
+		public bool UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			// For a Binary setting, a value that points at an existing file is read and Base64-encoded
 			// locally (the blob upload path, e.g. the logo); an inline Base64 string is passed through as-is.
 			string value = opts.Value;
@@ -219,6 +226,7 @@ namespace Clio.Command
 			} else {
 				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
 			}
+			return isUpdated;
 		}
 
 		public void TryUpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
@@ -330,7 +338,9 @@ namespace Clio.Command
 
 			try {
 				CreateSysSettingIfNotExists(opts);
-				UpdateSysSetting(opts);
+				if (!UpdateSysSetting(opts)) {
+					return 1;
+				}
 			} catch (Exception ex) {
 				_logger.WriteError($"Error during set setting '{opts.Code}' value occured with message: {ex.Message}");
 				return 1;

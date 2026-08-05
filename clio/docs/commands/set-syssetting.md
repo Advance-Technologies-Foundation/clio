@@ -34,6 +34,11 @@ Type (pos. 2)    Sys setting type (default: Text). Use Binary for blob-data sett
                  The get-syssetting alias implies this automatically.
 ```
 
+## Notes
+
+- Exit code 0 means the value reached the environment. When the environment does not apply it, the
+  command reports the setting and exits with code 1.
+
 ## Example
 
 ```bash

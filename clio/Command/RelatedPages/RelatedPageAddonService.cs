@@ -157,8 +157,8 @@ internal sealed class RelatedPageAddonService(
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> KnownPlatformRoleIds =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-			[EmployeesRoleName] = "a29a3ba5-4b0d-de11-9a51-005056c00008",
-			[PortalRoleName] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f"
+			[EmployeesRoleName] = SysAdminUnitIds.AllEmployees.ToString(),
+			[PortalRoleName] = SysAdminUnitIds.AllPortalUsers.ToString()
 		};
 
 	// Reverse of KnownPlatformRoleIds (UId -> name), used by the read path to surface friendly audience names
