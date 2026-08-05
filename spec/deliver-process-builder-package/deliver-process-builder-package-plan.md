@@ -490,6 +490,32 @@ Five consequences, each of which retires an open worry in this plan:
 weight** — the server rebuilds it regardless. That is what the 12 s / 25 s pair on studioenu-15832585
 was already saying: adding the schema to an archive that already had a DLL cost +13 s, because it
 turned a no-compile install into a compiling one.
+
+#### The inverted-blast-radius objection is largely answered: install is backed up and restorable
+
+This plan repeatedly warned that server-side compilation trades a contained failure (our assembly
+does not load, the environment is otherwise fine) for an uncontained one (a compile error breaks the
+environment's configuration build). That risk is **materially smaller than stated**, because a
+configuration backup is part of the install flow and restoring it is a first-class operation:
+
+- **Hub.** The install progress model has explicit stages
+  `Validate → CreateBackup → Install → Pending → OrderAppLicense → RestartApp → RestoreFromBackup`,
+  and the failure panel exposes `restoreFromBackup` alongside `getLog` (client bundle
+  `3330.*.js`). The stand's log shows the backup really happening before the install:
+  `Configuration backup started.` → `Configuration backup successfully created.`
+- **Server.** `PackageInstallerService.svc/RestoreFromBackup` is a published endpoint
+  (`IPackageInstallerService.RestoreFromBackup`), implemented by
+  `ZipPackageBackupManager.RestoreFromBackup`, which restores changed packages, app dependencies,
+  inactive-package state and `PackageInInstalledApp`, and records a `RestoreConfiguration` entry in the
+  configuration activity log.
+- **clio.** The same capability has a verb: `restore-configuration` (aliases `restore`, `rc`) —
+  "Restore configuration from last backup".
+
+So a failed compile on install is a *recoverable* event on both surfaces, by a supported operation,
+not a manual repair. What remains true — and is the honest residual — is that recovery is an explicit
+action rather than an automatic transaction rollback inside the install, so a failure still needs
+someone to notice and act. That is a materially weaker objection than "it can brick the environment's
+configuration build", which is how earlier revisions of this plan framed it.
   **Note the verification asymmetry that hid this:** the archive was written by `clio compress` and
   checked by `clio extract-pkg-zip` — a clio→clio round trip that proves nothing about Creatio's
   readers. And the two server paths are *different readers*: `push-pkg` →
