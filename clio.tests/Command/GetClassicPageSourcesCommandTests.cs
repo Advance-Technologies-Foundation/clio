@@ -25,6 +25,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private IPageDesignerHierarchyClient _hierarchyClient;
 	private IClassicSectionSchemaResolver _sectionResolver;
+	private IClassicDetailEditPageResolver _childPageResolver;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
 
@@ -49,6 +50,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		_sectionResolver = Substitute.For<IClassicSectionSchemaResolver>();
+		_childPageResolver = Substitute.For<IClassicDetailEditPageResolver>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://localhost/svc");
@@ -61,11 +63,19 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// conventions and the pre-existing tests keep asserting that path unchanged.
 		_sectionResolver.ResolveSectionSchemaNames(Arg.Any<string>())
 			.Returns(new ClassicSectionLookup(Array.Empty<string>(), null));
+		// Default: SysModuleEdit registers no child page for any detail entity, so child-page resolution falls through
+		// to the (secondary) detail-body scan and the pre-existing token-fixtured tests keep asserting that path
+		// unchanged. The metadata-route tests configure this explicitly.
+		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(ci => new ClassicChildPageLookup(
+				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), null,
+				ci.Arg<IReadOnlyCollection<string>>().ToList()));
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_columnManager);
 		containerBuilder.AddSingleton(_hierarchyClient);
 		containerBuilder.AddSingleton(_sectionResolver);
+		containerBuilder.AddSingleton(_childPageResolver);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
 	}
@@ -947,10 +957,12 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources caps detailSchemas at MaxDetails (50) and warns when the page body resolves more than fifty distinct details.")]
-	public void TryAssemblePageSources_ShouldCapDetailSchemasAtMaxDetails_WhenMoreThanFiftyDetailsResolve() {
-		// Arrange — 55 distinct, individually resolvable detail references on one page (55 < collectionCap 100)
-		const int detailReferenceCount = 55;
+	[Description("TryAssemblePageSources gathers EVERY resolvable detail with no numeric cap, so a page far wider than the old fifty-detail limit migrates whole (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldGatherEveryDetail_WhenPageReferencesFarMoreThanTheOldCap() {
+		// Arrange — 250 distinct, individually resolvable detail references on one page. 250 is over BOTH retired
+		// caps (the old MaxDetails=50 gather cap and the old collectionCap=100 name-collection cap), so a surviving
+		// cap of either kind would show up as a short detailSchemas block.
+		const int detailReferenceCount = 250;
 		var detailRefs = new List<string>();
 		for (int i = 0; i < detailReferenceCount; i++) {
 			string detail = "UsrDetail" + i;
@@ -970,21 +982,71 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		response.DetailCount.Should().Be(50,
-			because: "detail gathering is capped at MaxDetails (50) resolved schemas even when more resolve");
+		response.DetailCount.Should().Be(detailReferenceCount,
+			because: "detail gathering is uncapped, so all 250 referenced details resolve into the unit");
 		JObject manifest = JObject.Parse(ReadManifest(response));
-		((JObject)manifest["detailSchemas"]).Count.Should().Be(50,
-			because: "only the first fifty resolvable details are folded into the manifest");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
-		response.Warnings.Should().Contain(w => w.Contains("Detail gathering stopped at 50"),
-			because: "a logger warning does not reach an MCP caller, so the truncation must also surface in response.Warnings");
+		((JObject)manifest["detailSchemas"]).Count.Should().Be(detailReferenceCount,
+			because: "every gathered detail body belongs to the manifest — a migration unit is collected whole");
+		response.Warnings.Should().NotContain(w => w.Contains("stopped at") || w.Contains("remainder"),
+			because: "nothing was truncated, so no truncation gap may be reported");
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources stops collecting detail-schema references at collectionCap (100) and warns when a body names more references than the cap.")]
-	public void TryAssemblePageSources_ShouldStopDetailNameCollection_WhenMoreThanCollectionCapReferences() {
-		// Arrange — 105 distinct references, over collectionCap (MaxDetails * 2 = 100); none need to resolve
-		const int detailReferenceCount = 105;
+	[Description("TryAssemblePageSources splits batched layer enumeration into bounded chunks so an uncapped detail set cannot build one SelectQuery past the DBMS parameter ceiling.")]
+	public void TryAssemblePageSources_ShouldChunkBatchedLayerEnumeration_WhenManyDetailsAreCollected() {
+		// Arrange — 900 distinct resolvable details, i.e. more names than one batched query may carry. Every
+		// layer-enumeration request body is captured so the chunk sizes can be asserted afterwards.
+		const int detailReferenceCount = 900;
+		var batchNameCounts = new List<int>();
+		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => {
+			string body = ci.ArgAt<string>(1);
+			if (body != null && body.Contains("rootSchemaName")) {
+				JObject query = JObject.Parse(body);
+				if (query["filters"]?["items"] is JObject items) {
+					foreach (JProperty item in items.Properties()) {
+						if (item.Value["rightExpressions"] is JArray many && many.Count > 1) {
+							batchNameCounts.Add(many.Count);
+						}
+					}
+				}
+			}
+			return Route(body);
+		});
+		var detailRefs = new List<string>();
+		for (int i = 0; i < detailReferenceCount; i++) {
+			string detail = "UsrDetail" + i;
+			detailRefs.Add("schemaName: \"" + detail + "\"");
+			AddLayer(detail, "uid-" + detail, "UsrApp", 200);
+			AddSchema("uid-" + detail, "define(\"" + detail + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { " +
+			string.Join(", ", detailRefs) + " } }; });",
+			EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert — the unit is still whole, and no single batched query carried every name
+		response.DetailCount.Should().Be(detailReferenceCount,
+			because: "chunking is a transport concern — it may not drop a single detail from the unit");
+		batchNameCounts.Should().NotBeEmpty(because: "the details must be primed through batched enumeration");
+		batchNameCounts.Should().OnlyContain(count => count <= 400,
+			because: "one SelectQuery past the DBMS parameter ceiling would fail the whole batch, so each chunk "
+				+ "must stay bounded no matter how many details the page carries");
+		batchNameCounts.Sum().Should().BeGreaterThanOrEqualTo(detailReferenceCount,
+			because: "every collected name must be primed across the chunks, not just the first chunk's worth");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources collects EVERY distinct detail-schema reference named in a body with no collection cap, and reports no truncation when the referenced details do not exist (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldCollectEveryDetailReference_WithNoCollectionCap() {
+		// Arrange — 250 distinct references, over the retired collectionCap (100); none are registered, so none
+		// resolve. The point is that collection itself no longer stops early and reports no ignored remainder.
+		const int detailReferenceCount = 250;
 		var detailRefs = new List<string>();
 		for (int i = 0; i < detailReferenceCount; i++) {
 			detailRefs.Add("schemaName: \"UsrDetail" + i + "\"");
@@ -1001,17 +1063,21 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "an over-cap reference list truncates collection, it does not fail the collection");
+		ok.Should().BeTrue(because: "a long reference list is collected in full, and unresolved names are not failures");
 		response.DetailCount.Should().Be(0,
 			because: "none of the referenced details were registered, so none resolve into the manifest");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("More than 100 distinct detail-schema references")));
+		LoggedWarnings().Should().NotContain(w => w.Contains("distinct detail-schema references"),
+			because: "the collection cap is retired, so nothing warns about capping distinct detail-schema references");
+		response.Warnings.Should().NotContain(w => w.Contains("remainder is ignored"),
+			because: "collection no longer stops at a cap, so there is no ignored remainder to report");
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources bounds childPageSchemas at fifty because child pages come only from the (MaxDetails-capped) detail set, and the detail cap warning is emitted.")]
-	public void TryAssemblePageSources_ShouldCapChildPages_WhenManyDetailsEachReferenceAnEditPage() {
-		// Arrange — 55 distinct details, each naming its own resolvable child edit page
-		const int detailReferenceCount = 55;
+	[Description("TryAssemblePageSources nests a child edit page for EVERY detail that names one, with no fifty-child cap (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldNestEveryChildPage_WhenManyDetailsEachReferenceAnEditPage() {
+		// Arrange — 120 distinct details, each naming its own resolvable child edit page. Over both the old
+		// MaxChildPages=50 and the old MaxDetails=50 that structurally bounded it.
+		const int detailReferenceCount = 120;
 		var detailRefs = new List<string>();
 		for (int i = 0; i < detailReferenceCount; i++) {
 			string detail = "UsrDetail" + i;
@@ -1036,23 +1102,27 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		response.ChildPageCount.Should().Be(50,
-			because: "child pages come only from the fifty resolved details, so the set is bounded at MaxChildPages (50)");
+		response.ChildPageCount.Should().Be(detailReferenceCount,
+			because: "every detail that names an edit page contributes a nested child manifest — no child-page cap");
 		JObject manifest = JObject.Parse(ReadManifest(response));
-		((JObject)manifest["childPageSchemas"]).Count.Should().Be(50,
-			because: "exactly fifty child edit pages are nested into the manifest");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Detail gathering stopped at 50")));
+		((JObject)manifest["childPageSchemas"]).Count.Should().Be(detailReferenceCount,
+			because: "all 120 child edit pages are nested into the manifest");
+		response.Warnings.Should().NotContain(w => w.Contains("remainder is omitted"),
+			because: "no child page was dropped, so no omission may be reported");
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources warns that the parent-template walk stopped at the depth cap when the chain is deeper than MaxParentDepth (20) with a parent still to follow.")]
-	public void TryAssemblePageSources_ShouldWarnDepthCap_WhenParentWalkExceedsMaxParentDepth() {
-		// Arrange — a page whose parent chain is 21 distinct levels deep (uid-p1 -> ... -> uid-p21)
+	[Description("TryAssemblePageSources walks the parent-template chain to its base template with no depth cap, so a chain deeper than the retired twenty-level limit is seeded whole (ENG-94402).")]
+	public void TryAssemblePageSources_ShouldWalkFullParentChain_WhenDeeperThanTheOldDepthCap() {
+		// Arrange — a page whose parent chain is 30 distinct levels deep and ends cleanly at the base template
+		// (the last level's parent is EmptyGuid), i.e. 10 levels past the retired MaxParentDepth of 20.
+		const int chainDepth = 30;
 		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
 			"uid-p1", "UsrApp");
-		for (int i = 1; i <= 20; i++) {
-			AddSchema("uid-p" + i, "define(\"Tpl\", [], function() { return {}; });", "uid-p" + (i + 1), "Core");
+		for (int i = 1; i <= chainDepth; i++) {
+			string parent = i == chainDepth ? EmptyGuid : "uid-p" + (i + 1);
+			AddSchema("uid-p" + i, "define(\"Tpl\", [], function() { return {}; });", parent, "Core");
 		}
 		StubEntityColumns();
 		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
@@ -1061,12 +1131,121 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
 
 		// Assert
-		ok.Should().BeTrue(because: "a truncated seed still produces a usable manifest, it does not fail assembly");
-		response.SeedCount.Should().Be(20,
-			because: "exactly MaxParentDepth (20) parent levels are walked before the cap stops the walk");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("depth cap")));
-		response.Warnings.Should().Contain(w => w.Contains("depth cap"),
-			because: "the truncated seed must be visible to an MCP caller via response.Warnings, not only the logger");
+		ok.Should().BeTrue(because: "a full parent walk assembles successfully");
+		response.SeedCount.Should().Be(chainDepth,
+			because: "every parent-template level up to the base template is seeded, with no depth cap truncating it");
+		LoggedWarnings().Should().NotContain(w => w.Contains("depth cap"),
+			because: "a walk that reached the base template is complete, so no depth-cap warning is logged either");
+		response.Warnings.Should().NotContain(w => w.Contains("depth cap"),
+			because: "a walk that reached the base template is complete and must report no truncation");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when the parent-template walk stops because a parent schema cannot be loaded, so a truncated seed is never silent.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenParentWalkStopsOnUnloadableParent() {
+		// Arrange — the page's parent link points at a UId the designer does not return a schema for, so the walk
+		// stops one level in with a parent still ahead. Before ENG-94402 this exit only logged, so a seed missing
+		// every base container read as a page that simply has no more parents.
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-missing-parent", "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a truncated seed still yields a usable manifest, it does not fail assembly");
+		response.SeedCount.Should().Be(0, because: "the unloadable parent contributed no seed level");
+		LoggedWarnings().Should().Contain(w => w.Contains("Parent-template walk stopped at"),
+			because: "an interrupted parent walk must also be visible to a console caller, not only in response.Warnings");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Parent-template walk stopped at") && w.Contains("uid-missing-parent"),
+			because: "the logger does not reach an MCP caller, so the truncated seed must surface in response.Warnings");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when an enumerated parent-template sibling layer body cannot be loaded and is dropped from the seed.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenParentTemplateSiblingLayerFailsToLoad() {
+		// Arrange — the parent template "BaseTpl" enumerates two layers: the linked one (loadable) and a sibling
+		// whose body the designer does not return. The level still succeeds, so without a response warning the
+		// caller sees a complete-looking seed that is missing that sibling's containers.
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-tpl-linked", "UsrApp");
+		AddLayer("BaseTpl", "uid-tpl-linked", "Core", 100);
+		AddLayer("BaseTpl", "uid-tpl-broken", "UsrApp", 200); // enumerated, but never registered as a schema
+		AddSchema("uid-tpl-linked", "define(\"BaseTpl\", [], function() { return {}; });", EmptyGuid, "Core",
+			name: "BaseTpl");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a dropped sibling layer degrades the seed, it does not fail assembly");
+		response.SeedCount.Should().Be(1, because: "only the loadable linked layer of the level is seeded");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Could not load parent-template layer 'BaseTpl'") && w.Contains("missing from the seed"),
+			because: "an omitted seed layer is as invisible to the caller as a truncated walk unless it is reported");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when the parent template's layers cannot be enumerated and the level degrades to the linked layer alone.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenParentTemplateEnumerationFails() {
+		// Arrange — the layer-enumeration query for the parent template answers with a DataService failure
+		// envelope (routed by the template name appearing in the request body); every other request is served
+		// normally by the fake.
+		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => {
+			string body = ci.ArgAt<string>(1);
+			return body != null && body.Contains("BoomTpl") && body.Contains("rootSchemaName")
+				? """{ "errorInfo": { "errorCode": "AccessDenied", "message": "Access to SysSchema is denied" } }"""
+				: Route(body);
+		});
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });",
+			"uid-tpl", "UsrApp");
+		AddSchema("uid-tpl", "define(\"BoomTpl\", [], function() { return {}; });", EmptyGuid, "Core", name: "BoomTpl");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a level that degrades to its linked layer still yields a usable manifest");
+		response.SeedCount.Should().Be(1, because: "the linked layer is seeded even when its siblings cannot be enumerated");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Could not enumerate parent template 'BoomTpl' layers")
+				&& w.Contains("missing from the manifest"),
+			because: "the caller must be told that sibling layers of that template may be absent from the seed");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources reports a caller-visible gap when the merged localizable strings cannot be loaded, so resourceCount:0 is never mistaken for a page without captions.")]
+	public void TryAssemblePageSources_ShouldWarnInResponse_WhenResourcesCannotBeLoaded() {
+		// Arrange — the hierarchy path resolves topLayerUId to a layer the designer does not return a schema for,
+		// so the merged-resources load fails on its non-exception error path (the catch below it already warned).
+		AddLayer("UsrPage", "uid-page", "UsrApp", 200);
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("dp-uid");
+		_hierarchyClient.GetParentSchemas("uid-page", Arg.Any<string>()).Returns(new List<PageDesignerHierarchySchema> {
+			Hier("UsrPage", "pkgB", "uid-top-unregistered",
+				"define(\"UsrPage\", [], function() { return { entitySchemaName: \"UsrX\" }; });")
+		});
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "resources are an enricher — their absence degrades the unit, it does not fail it");
+		response.ResourceCount.Should().Be(0, because: "no merged localizable strings could be loaded");
+		response.Warnings.Should().Contain(
+			w => w.Contains("Could not gather merged localizable strings"),
+			because: "an empty resources block must be distinguishable from a page that declares no captions");
 	}
 
 	[Test]
@@ -1301,7 +1480,383 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "the child edit page is still nested as its own manifest via the fallback");
 	}
 
+	// --- child pages from SysModuleEdit metadata (ENG-94401) ---------------------------------------
+
+	[Test]
+	[Description("TryAssemblePageSources nests a child page resolved from SysModuleEdit metadata for a detail whose body carries NO edit-page token — the shape every shipped page has.")]
+	public void TryAssemblePageSources_ShouldNestChildPage_FromMetadata_WhenDetailBodyNamesNoEditPage() {
+		// Arrange — the product shape: the detail declares its entity but NO getEditPageName/editPageName token, so
+		// the body-scan route resolves nothing and only the SysModuleEdit lookup can answer.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		StubChildPages(("UsrNote", "UsrNotePage", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "resolving child pages from metadata does not change the assembly outcome");
+		response.ChildPageCount.Should().Be(1,
+			because: "the detail's entity registers an edit page in SysModuleEdit, which is the only route that can see it");
+		_childPageResolver.Received(1).ResolveChildPages(
+			Arg.Is<IReadOnlyCollection<string>>(entities => entities.Contains("UsrNote")));
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["childPageSchemas"]!["UsrNotePage"]!["schemas"].Should().NotBeNull(
+			because: "the metadata-resolved child page is nested as its own manifest keyed by the page name");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources nests BOTH the edit card and the add mini page a detail entity registers, so the migration plan carries the mini page too.")]
+	public void TryAssemblePageSources_ShouldNestCardAndMiniPage_FromMetadata() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		foreach (string child in new[] { "UsrNotePage", "UsrNoteMiniPage" }) {
+			AddLayer(child, "uid-" + child, "UsrApp", 200);
+			AddSchema("uid-" + child, "define(\"" + child + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		StubChildPages(("UsrNote", "UsrNotePage", false), ("UsrNote", "UsrNoteMiniPage", true));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		response.ChildPageCount.Should().Be(2, because: "the entity registers an edit card and an add mini page");
+		JObject childPages = (JObject)JObject.Parse(ReadManifest(response))["childPageSchemas"];
+		childPages.Properties().Select(p => p.Name).Should().BeEquivalentTo(new[] { "UsrNotePage", "UsrNoteMiniPage" },
+			because: "both registered pages are nested, each keyed by its own schema name");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources looks the child page up by the entity the PAGE's details config overrides to, not by the entity the detail body declares.")]
+	public void TryAssemblePageSources_ShouldUsePageDetailsConfigEntityOverride_OverDetailBodyEntity() {
+		// Arrange — the page binds the shared detail to UsrCaseFile; the detail's own default entity is UsrFile.
+		// Only the override decides whose SysModuleEdit rows apply.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: " +
+			"{ Files: { schemaName: \"UsrFileDetailV2\", entitySchemaName: \"UsrCaseFile\", filter: { masterColumn: \"Id\" } } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrFileDetailV2", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrFileDetailV2\", [], function() { return { entitySchemaName: \"UsrFile\" }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrCaseFilePage", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrCaseFilePage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		StubChildPages(("UsrCaseFile", "UsrCaseFilePage", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		_childPageResolver.Received(1).ResolveChildPages(
+			Arg.Is<IReadOnlyCollection<string>>(entities =>
+				entities.Contains("UsrCaseFile") && !entities.Contains("UsrFile")));
+		response.ChildPageCount.Should().Be(1,
+			because: "the override entity's registration resolves the child page the page actually shows");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources falls back to the detail body's edit-page token for a detail the SysModuleEdit lookup answered nothing for, and keeps the metadata answer for the others.")]
+	public void TryAssemblePageSources_ShouldFallBackToBodyToken_OnlyForDetailsMetadataDidNotAnswer() {
+		// Arrange — two details: one whose entity registers a page, one that names its page the legacy way only
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: " +
+			"{ A: { schemaName: \"UsrNoteDetail\" }, B: { schemaName: \"UsrLegacyDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail-a", "UsrApp", 200);
+		AddSchema("uid-detail-a", "define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrLegacyDetail", "uid-detail-b", "UsrApp", 200);
+		AddSchema("uid-detail-b",
+			"define(\"UsrLegacyDetail\", [], function() { return { entitySchemaName: \"UsrLegacy\", getEditPageName: function() { return \"UsrLegacyPage\"; } }; });",
+			EmptyGuid, "UsrApp");
+		foreach (string child in new[] { "UsrNotePage", "UsrLegacyPage" }) {
+			AddLayer(child, "uid-" + child, "UsrApp", 200);
+			AddSchema("uid-" + child, "define(\"" + child + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		StubChildPages(("UsrNote", "UsrNotePage", false)); // nothing registered for UsrLegacy
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		response.ChildPageCount.Should().Be(2,
+			because: "the metadata route answers for one detail and the body-scan fallback still covers the other");
+		JObject childPages = (JObject)JObject.Parse(ReadManifest(response))["childPageSchemas"];
+		childPages.Properties().Select(p => p.Name).Should().BeEquivalentTo(new[] { "UsrNotePage", "UsrLegacyPage" },
+			because: "both routes contribute, so a custom detail carrying the legacy token is not lost");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources does not nest the page inside its own manifest when a detail is bound to the page's own entity.")]
+	public void TryAssemblePageSources_ShouldSkipSelfReferencingChildPage() {
+		// Arrange — a self-detail (e.g. child accounts): its entity registers the very page being assembled
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrCaseDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrCaseDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrCaseDetail\", [], function() { return { entitySchemaName: \"UsrCase\" }; });",
+			EmptyGuid, "UsrApp");
+		StubChildPages(("UsrCase", "UsrCasePage", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		response.ChildPageCount.Should().Be(0,
+			because: "nesting the page being assembled inside its own manifest is never what the engine folds");
+		JObject.Parse(ReadManifest(response))["childPageSchemas"].Should().BeNull(
+			because: "with the only candidate skipped the block carries nothing and is omitted");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources surfaces a SysModuleEdit lookup failure as a response warning and still assembles, instead of reporting an empty childPageSchemas as complete.")]
+	public void TryAssemblePageSources_ShouldWarnAndDegrade_WhenChildPageLookupFails() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(new ClassicChildPageLookup(
+				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), "Access to SysModuleEdit is denied",
+				Array.Empty<string>()));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "child pages are an enricher, so a failed lookup must not fail the whole assembly");
+		response.ChildPageCount.Should().Be(0, because: "nothing resolved through either route");
+		response.Warnings.Should().Contain(w => w.Contains("Access to SysModuleEdit is denied"),
+			because: "an MCP caller never sees the logger, so the gap must travel in the response");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources warns when a detail's bound entity cannot be determined, so an unlooked-up detail does not read as one with no child page.")]
+	public void TryAssemblePageSources_ShouldWarn_WhenDetailEntityCannotBeDetermined() {
+		// Arrange — the detail body declares no entity and the page config overrides none
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrAnonDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrAnonDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrAnonDetail\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		response.Warnings.Should().Contain(w => w.Contains("UsrAnonDetail"),
+			because: "a detail whose entity is unknown was never looked up, which is not the same as having no child page");
+		_childPageResolver.DidNotReceive().ResolveChildPages(
+			Arg.Is<IReadOnlyCollection<string>>(entities => entities.Count > 0));
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources annotates each detail with its resolved entity and editPage, which is how the engine keys the nested child manifest — without it a *PageV2 card is unreachable.")]
+	public void TryAssemblePageSources_ShouldAnnotateDetailWithEntityAndEditPage() {
+		// Arrange — the engine resolves a child by [detail.editPage, detail.entity, detail.entity + "Page"], so a
+		// V2-named card (most of the product) is reachable ONLY through an explicit editPage on the detail entry.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePageV2", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrNotePageV2\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		StubChildPages(("UsrNote", "UsrNotePageV2", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JToken detail = JObject.Parse(ReadManifest(response))["detailSchemas"]!["UsrNoteDetail"]!;
+		detail["entity"]!.ToString().Should().Be("UsrNote",
+			because: "the resolved bound entity is one of the keys the engine looks the child page up by");
+		detail["editPage"]!.ToString().Should().Be("UsrNotePageV2",
+			because: "the explicit editPage is the only key that reaches a V2-named card, and it outranks the engine's own body scan");
+		((JObject)JObject.Parse(ReadManifest(response))["childPageSchemas"]).Should().ContainKey("UsrNotePageV2",
+			because: "the nested manifest must be keyed by exactly the name the annotation points at");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources records editPage:false for a detail whose entity verifiably registers no edit card, and omits editPage when nothing was verified.")]
+	public void TryAssemblePageSources_ShouldRecordVerifiedNoEditPage_OnlyWhenMetadataEstablishedIt() {
+		// Arrange — UsrFileDetail's entity resolves but registers nothing (the AccountFile shape); UsrAnonDetail's
+		// entity cannot be determined at all, so nothing was ever checked for it.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: " +
+			"{ A: { schemaName: \"UsrFileDetail\" }, B: { schemaName: \"UsrAnonDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrFileDetail", "uid-detail-a", "UsrApp", 200);
+		AddSchema("uid-detail-a", "define(\"UsrFileDetail\", [], function() { return { entitySchemaName: \"UsrFile\" }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrAnonDetail", "uid-detail-b", "UsrApp", 200);
+		AddSchema("uid-detail-b", "define(\"UsrAnonDetail\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		// The lookup RUNS (no error) and answers "UsrFile registers nothing".
+		StubChildPages();
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JToken details = JObject.Parse(ReadManifest(response))["detailSchemas"]!;
+		details["UsrFileDetail"]!["editPage"]!.Value<bool>().Should().BeFalse(
+			because: "the metadata ran and established this entity registers no edit card — a verified none, which lets " +
+				"a migration plan proceed instead of stalling on an unchecked detail");
+		details["UsrAnonDetail"]!["editPage"].Should().BeNull(
+			because: "its entity was never resolved, so nothing was checked; claiming a verified 'none' here would let " +
+				"the plan skip a child page that may well exist");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources names the entity's own card as the detail's editPage when several cards are registered, rather than whichever row came back first.")]
+	public void TryAssemblePageSources_ShouldPreferEntityNamedCard_WhenEntityRegistersSeveral() {
+		// Arrange — the Order/Case shape: a portal page is registered alongside the entity's own card, and neither row
+		// carries a distinguishing TypeColumnValue. Registration order alone would name the portal page.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrOrderDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrOrderDetail\", [], function() { return { entitySchemaName: \"UsrOrder\" }; });",
+			EmptyGuid, "UsrApp");
+		foreach (string child in new[] { "UsrPortalOrderPage", "UsrOrderPageV2" }) {
+			AddLayer(child, "uid-" + child, "UsrApp", 200);
+			AddSchema("uid-" + child, "define(\"" + child + "\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		}
+		StubChildPages(("UsrOrder", "UsrPortalOrderPage", false), ("UsrOrder", "UsrOrderPageV2", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["detailSchemas"]!["UsrOrderDetail"]!["editPage"]!.ToString().Should().Be("UsrOrderPageV2",
+			because: "the card named after the entity is the detail's own page; the portal variant is a sibling registration");
+		((JObject)manifest["childPageSchemas"]).Properties().Select(p => p.Name).Should().BeEquivalentTo(
+			new[] { "UsrPortalOrderPage", "UsrOrderPageV2" },
+			because: "the ranking only picks which card the annotation names — BOTH registered pages are still nested");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources omits editPage for a detail whose entity the lookup warned about, even though the lookup as a whole succeeded.")]
+	public void TryAssemblePageSources_ShouldNotClaimVerifiedNone_WhenOnlyThisDetailsEntityWasUnresolved() {
+		// Arrange — the ghost-entity case: the lookup returns no Error (so it "ran"), but it could not resolve
+		// UsrGhost and says so per entity. Nothing was ever checked for this detail.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrGhostDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrGhostDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrGhostDetail\", [], function() { return { entitySchemaName: \"UsrGhost\" }; });",
+			EmptyGuid, "UsrApp");
+		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(new ClassicChildPageLookup(
+				Array.Empty<ClassicChildPage>(),
+				new[] { "No entity metadata resolved for detail entity UsrGhost; its child pages are unaccounted for." },
+				null,
+				Array.Empty<string>()));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JToken detail = JObject.Parse(ReadManifest(response))["detailSchemas"]!["UsrGhostDetail"]!;
+		detail["editPage"].Should().BeNull(
+			because: "the batch ran but this entity's metadata did not answer, so 'no edit page' was never established — " +
+				"writing the verified-none signal here would let the engine plan around a child page that may exist");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources does not name the page being assembled as a detail's editPage, since that card is never nested; it records a verified none instead.")]
+	public void TryAssemblePageSources_ShouldNotAnnotateSelfReferencingCardAsEditPage() {
+		// Arrange — the self-detail shape again, this time watching the detail's annotation rather than the nesting:
+		// UsrCase's only registered card IS UsrCasePage, which the self-reference guard keeps out of childPageSchemas.
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrCaseDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrCaseDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrCaseDetail\", [], function() { return { entitySchemaName: \"UsrCase\" }; });",
+			EmptyGuid, "UsrApp");
+		StubChildPages(("UsrCase", "UsrCasePage", false));
+		StubEntityColumns();
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JToken detail = JObject.Parse(ReadManifest(response))["detailSchemas"]!["UsrCaseDetail"]!;
+		detail["editPage"]!.Value<bool>().Should().BeFalse(
+			because: "the only candidate is the page being assembled, which is never nested — naming it would point the " +
+				"engine at a page the manifest does not carry, so the metadata answer collapses to a verified none");
+	}
+
 	// --- fake-environment helpers ------------------------------------------------------------------
+
+	// Stubs the SysModuleEdit child-page lookup with the registrations the fake environment should report, grouped the
+	// way the real resolver returns them (one entry per entity+page, mini pages flagged).
+	private void StubChildPages(params (string Entity, string Page, bool IsMiniPage)[] registrations) {
+		List<ClassicChildPage> childPages = registrations
+			.Select(r => new ClassicChildPage(r.Entity, r.Page, r.IsMiniPage))
+			.ToList();
+		_childPageResolver.ResolveChildPages(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(ci => {
+				IReadOnlyCollection<string> requested = ci.Arg<IReadOnlyCollection<string>>();
+				return new ClassicChildPageLookup(
+					childPages.Where(page => requested.Contains(page.EntityName, StringComparer.OrdinalIgnoreCase)).ToList(),
+					Array.Empty<string>(),
+					null,
+					requested.ToList());
+			});
+	}
+
 
 	private static PageDesignerHierarchySchema Hier(string name, string pkg, string uid, string body) =>
 		new() { Name = name, PackageName = pkg, PackageUId = "pkguid-" + pkg, UId = uid, Body = body };
@@ -1357,6 +1912,15 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			clone["localizableStrings"] = localizable.DeepClone();
 		}
 		return new JObject { ["schema"] = clone }.ToString();
+	}
+
+	// Messages written through ILogger.WriteWarning, so warning expectations can be expressed as FluentAssertions
+	// assertions that carry a `because` explanation instead of bare NSubstitute Received/DidNotReceive checks.
+	private List<string> LoggedWarnings() {
+		return _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => call.GetArguments()[0] as string ?? string.Empty)
+			.ToList();
 	}
 
 	private void AddLayer(string name, string uid, string package, int hierarchyLevel) {
