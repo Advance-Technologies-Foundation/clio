@@ -77,7 +77,10 @@ namespace Clio.Command
 				// The bundled process-builder version, so "what does this clio carry" is answerable without
 				// unpacking the archive. Compare it against `clio list-packages -e <env>` to tell whether an
 				// environment is behind. Sourced from BundledPackages, which the same constant gates on.
-				_logger.WriteInfo($"process-builder:   {BundledPackages.ProcessBuilderVersion}");
+				// The BUILD version, not the [RequiresPackage] floor: this line answers "what does my clio
+				// carry", and the floor is frozen at 1.0.0.0 for reasons that have nothing to do with the
+				// bundled artifact (see BundledPackages.ProcessBuilderVersion).
+				_logger.WriteInfo($"process-builder:   {BundledPackages.ProcessBuilderBuildVersion}");
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;
