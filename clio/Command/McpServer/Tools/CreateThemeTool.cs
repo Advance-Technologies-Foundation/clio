@@ -180,6 +180,9 @@ public class CreateThemeTool(
 		return property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
 	}
 
+	// The nullable check and the ValueType arm are unreachable until ThemeBrandArgs gains a value-type
+	// property; without them boxing makes such a property read as always-supplied, so every request would
+	// look like a brand request. Do not drop them as dead code.
 	private static bool IsSupplied(PropertyInfo property, object value) {
 		if (Nullable.GetUnderlyingType(property.PropertyType) is not null) {
 			return value is not null;
