@@ -28,7 +28,7 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Declares the FR-12 safety flags on the create-theme tool method: a write that is not destructive, not idempotent, and closed-world.")]
+	[Description("Declares the FR-12 safety flags on the create-theme tool method: a write that is not destructive, not idempotent, and open-world (brand mode probes Google Fonts through the shared build engine).")]
 	public void CreateThemeTool_ShouldDeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CreateThemeTool)
