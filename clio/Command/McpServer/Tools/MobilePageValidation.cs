@@ -153,13 +153,30 @@ internal static class MobilePageMergedConfigResolver {
 			// Making the read token-cancellable would require threading a token through TryGetPage end to end.
 			throw;
 		} catch (Exception ex) {
-			// Best-effort: any other read failure falls back to the oracle's seeded empty base — but record why,
-			// so a transient auth/network failure is distinguishable from a real resolution during triage.
-			context.Logger?.WriteWarning(
-				$"Mobile validation base for '{context.SchemaName}' failed to resolve: {ex.Message}; " +
-				"falling back to the insert-path-seeded base.");
+			// Best-effort: any other read failure falls back to the oracle's seeded empty base — but record why, and
+			// distinguish an ACCESS-CONTROL failure (401/403) from a benign miss (unknown/unreachable template), so a
+			// permissions problem is not silently read as "template unavailable" during triage.
+			context.Logger?.WriteWarning(LooksLikeAccessDenied(ex)
+				? $"Mobile validation base for '{context.SchemaName}' could not be resolved: ACCESS DENIED ({ex.Message}) — "
+					+ "check the environment credentials/permissions. Falling back to the insert-path-seeded base."
+				: $"Mobile validation base for '{context.SchemaName}' failed to resolve: {ex.Message}; "
+					+ "falling back to the insert-path-seeded base.");
 		}
 		return (null, null);
+	}
+
+	/// <summary>
+	/// Heuristically classifies a read failure as an access-control (401/403) failure rather than a benign miss, so
+	/// the degraded-validation diagnostic names the likely cause. Message-based (the underlying HTTP client surfaces
+	/// status via the exception message), so it errs toward the generic path when unsure.
+	/// </summary>
+	private static bool LooksLikeAccessDenied(Exception ex) {
+		string message = ex.Message ?? string.Empty;
+		return message.Contains("401")
+			|| message.Contains("403")
+			|| message.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("access denied", StringComparison.OrdinalIgnoreCase);
 	}
 }
 
