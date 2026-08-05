@@ -67,7 +67,25 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"8BA3B0A3FDEBB81AE6707AED0B6F7AE2B3F7FFEDAED69FB8E238E7BB201D645F";
+		"0D33D9AFCA2077D76B5597FEC2272380A398E7D8B08B9D5ECDBE8DE56CBE989A";
+
+	/// <summary>
+	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
+	/// </summary>
+	/// <remarks>
+	/// Pinned for one reason: it is what makes a version bump take effect. Creatio decides whether to rewrite
+	/// a package's <c>SysPackage</c> row from THIS value, not from <c>PackageVersion</c>
+	/// (<c>PackageStorageComposer.ApplySourcePackageChanges</c> → <c>IsPackageDescriptorChanged</c> →
+	/// <c>PackageDBStorage.SavePackageDescriptor</c>'s guard). Bump the version without bumping this and the
+	/// install succeeds while the recorded version stays behind — which makes
+	/// <see cref="BundledPackages.ProcessBuilderVersion"/>, the <c>[RequiresPackage]</c> floor, unsatisfiable
+	/// on every environment that already carries the package.
+	/// <para>
+	/// So this pin sits beside the version and the SHA-256 on purpose: a rebundle has to touch all three, and
+	/// a one-sided bump fails here instead of on a customer's environment.
+	/// </para>
+	/// </remarks>
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1785957182431)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -224,11 +242,15 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain($"\"UId\": \"{ExpectedPackageUId}\"",
 			because: "Creatio identifies a package by UId, so a changed UId would install a SECOND package "
 				+ "instead of upgrading this one");
+		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedDescriptorModifiedOnUtc}\"",
+			because: "this is the value that makes the version bump take effect - Creatio rewrites the "
+				+ "SysPackage row only when it changes. If you bumped PackageVersion and this assertion still "
+				+ "passes, you forgot to bump ModifiedOnUtc and the [RequiresPackage] floor will refuse every "
+				+ "environment that already carries the package");
 		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderVersion}\"",
-			because: "the constant and the descriptor must agree, since clio info reports the constant as the "
-				+ "version it ships. Neither is a gate floor - the [RequiresPackage] gates are presence-only "
-				+ "because Creatio does not rewrite a package's SysPackage row on re-install, so a floor could "
-				+ "never be satisfied by an upgraded environment");
+			because: "the constant and the descriptor must agree: the constant is both what clio info reports "
+				+ "and the floor the five [RequiresPackage] gates enforce against the version the environment "
+				+ "reports, so a drift either refuses a correct installation or accepts a stale one");
 	}
 
 	[Test]

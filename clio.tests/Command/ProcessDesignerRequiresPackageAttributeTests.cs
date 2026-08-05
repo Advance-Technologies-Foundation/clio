@@ -38,8 +38,8 @@ namespace Clio.Tests
         [TestCase(typeof(DescribeProcessOptions))]
         [TestCase(typeof(ListUserTasksOptions))]
         [Test]
-        [Description("Each process-designer command options class that actually calls ProcessDesignService must be gated on the bundled package NAME only - presence-only, because the recorded package version is inert on a re-install and a floor could never be satisfied by an upgraded environment. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
-        public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
+        [Description("Each process-designer command options class that actually calls ProcessDesignService must be gated on the bundled package NAME and VERSION, so the gate refuses both a missing and a stale package. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
+        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenProcessDesignerCommand(
             Type optionsType)
         {
             // Arrange & Act
@@ -48,13 +48,17 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().BeNullOrEmpty(
-                because: "the requirement is PRESENCE-ONLY on purpose. A version floor is unsatisfiable here: "
-                    + "Creatio does not rewrite a package's SysPackage row when it re-installs a package it "
-                    + "already has, so the recorded version stays whatever the FIRST install wrote and a raised "
-                    + "floor would refuse this command forever on an environment that was upgraded correctly. "
-                    + "Verified on both runtimes 2026-08-05, with the mechanism in "
-                    + "PackageDBStorage.SavePackageDescriptor's GetIsPackageDescriptorModified guard");
+            requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
+                because: "the floor must equal the version clio bundles: a lower floor accepts a stale package "
+                    + "whose server rejects operations this clio sends, and the refusal then comes from the "
+                    + "server as an unexplained error instead of from the gate with an install hint");
+            System.Version.TryParse(requirement.Version, out System.Version floor).Should().BeTrue(
+                because: $"RequiredPackageChecker parses the floor through System.Version, so "
+                    + $"'{requirement.Version}' must be parseable or every gated command throws instead of gating");
+            floor!.Revision.Should().BeGreaterThanOrEqualTo(0,
+                because: $"'{requirement.Version}' must carry all four parts, matching the archive descriptor: "
+                    + "a part-count mismatch compares as installed < required and makes the gate unsatisfiable "
+                    + "by any successful install");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }
@@ -73,7 +77,7 @@ namespace Clio.Tests
 
         [Test]
         [Description("The validate-process-graph args record must carry the same versioned requirement, because the standalone tool manually calls EnsureRequirements(args) which reads the attribute off the args type rather than an options class.")]
-        public void ValidateProcessGraphArgs_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenStandaloneTool()
+        public void ValidateProcessGraphArgs_ShouldDeclareVersionedProcessBuilderRequirement_WhenStandaloneTool()
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetProcessBuilderRequirement(
@@ -83,13 +87,17 @@ namespace Clio.Tests
             requirement.Should().NotBeNull(
                 because: "the standalone validator reads [RequiresPackage] off the args record, so the gate "
                     + "would silently not fire if the attribute moved to an options class");
-            requirement!.Version.Should().BeNullOrEmpty(
-                because: "the requirement is PRESENCE-ONLY on purpose. A version floor is unsatisfiable here: "
-                    + "Creatio does not rewrite a package's SysPackage row when it re-installs a package it "
-                    + "already has, so the recorded version stays whatever the FIRST install wrote and a raised "
-                    + "floor would refuse this command forever on an environment that was upgraded correctly. "
-                    + "Verified on both runtimes 2026-08-05, with the mechanism in "
-                    + "PackageDBStorage.SavePackageDescriptor's GetIsPackageDescriptorModified guard");
+            requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
+                because: "the floor must equal the version clio bundles: a lower floor accepts a stale package "
+                    + "whose server rejects operations this clio sends, and the refusal then comes from the "
+                    + "server as an unexplained error instead of from the gate with an install hint");
+            System.Version.TryParse(requirement.Version, out System.Version floor).Should().BeTrue(
+                because: $"RequiredPackageChecker parses the floor through System.Version, so "
+                    + $"'{requirement.Version}' must be parseable or every gated command throws instead of gating");
+            floor!.Revision.Should().BeGreaterThanOrEqualTo(0,
+                because: $"'{requirement.Version}' must carry all four parts, matching the archive descriptor: "
+                    + "a part-count mismatch compares as installed < required and makes the gate unsatisfiable "
+                    + "by any successful install");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the validator hint must match the other process-designer gates");
         }

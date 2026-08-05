@@ -30,34 +30,34 @@ public static class BundledPackages {
 	public const string ProcessBuilderPackageName = "CrtProcessBuilder";
 
 	/// <summary>
-	/// Version of the package inside the bundled archive.
+	/// Version of the package inside the bundled archive, and the floor the <c>[RequiresPackage]</c> gates
+	/// enforce against the version the target environment reports.
 	/// </summary>
 	/// <remarks>
-	/// <b>Descriptive, not a gate.</b> It is what <c>clio info</c> reports and what
-	/// <c>BundledProcessBuilderPackageTests</c> compares against the archive descriptor, so a rebundle that
-	/// forgets to move one of the two fails there. It is deliberately NOT the floor of the
-	/// <c>[RequiresPackage]</c> gates: those are PRESENCE-ONLY.
-	/// <para>
-	/// A version floor cannot work here. Creatio does not rewrite a package's <c>SysPackage</c> row when it
-	/// re-installs a package it already has: the archive arrives with <c>PackageStorageObjectState.NotChanged</c>
-	/// (nothing on the zip-install path compares it against the database), so
-	/// <c>PackageDBStorage.SavePackageDescriptor</c> returns early at its
+	/// Raising this is safe ONLY if the archive's <c>descriptor.json</c> bumps <c>ModifiedOnUtc</c> in the
+	/// same change. Creatio decides whether to rewrite a package's <c>SysPackage</c> row from
+	/// <c>ModifiedOnUtc</c>, not from <c>PackageVersion</c>:
+	/// <c>PackageStorageComposer.ApplySourcePackageChanges</c> sets <c>IsPackageDescriptorChanged</c> when the
+	/// dates differ, and without it <c>PackageDBStorage.SavePackageDescriptor</c> returns early at its
 	/// <c>GetIsPackageDescriptorModified</c> guard and never reaches the <c>SysPackage.Version</c> assignment.
-	/// Verified on both runtimes on 2026-08-05: after installing a 1.1.0.0 archive the row still held 1.0.0.0
-	/// AND the original <c>ModifiedOn</c> — the row was not touched at all. Bumping the descriptor's
-	/// <c>ModifiedOnUtc</c> does not help; that comparison lives in <c>PackageStorageComposer</c>, which the
-	/// zip-install path does not use.
+	/// <para>
+	/// So a one-sided bump installs cleanly and leaves the RECORDED version at the old value — and this floor
+	/// then refuses the five gated commands on an environment that was upgraded correctly. Both halves were
+	/// observed live on 2026-08-05: with only <c>PackageVersion</c> moved the row kept <c>1.0.0.0</c>; once
+	/// <c>ModifiedOnUtc</c> moved too the row took the new version and the descriptor's own timestamp.
 	/// </para>
 	/// <para>
-	/// So a raised floor would refuse the five gated commands FOREVER on every environment that already
-	/// carries the package, however correctly it was upgraded. Presence-only sidesteps that instead of
-	/// documenting it. Whether the shipped build actually compiled is a different question, answered
-	/// package-agnostically in clio from the platform's own signals (the installation log clio already
-	/// receives, and the <c>ConfActivityLog</c> Compilation record) — not by a per-package endpoint, which
-	/// would have to be re-implemented in every bundled package.
+	/// <c>BundledProcessBuilderPackageTests</c> pins this value AND the descriptor's <c>ModifiedOnUtc</c>
+	/// beside the archive SHA-256, so a one-sided bump cannot pass review. The producing repository documents
+	/// the paired step in <c>docs/bundling-into-clio.md</c>.
+	/// </para>
+	/// <para>
+	/// Must stay four-part: <c>RequiredPackageChecker.IsCompatible</c> compares through
+	/// <see cref="System.Version"/>, which gives a three-part string a <c>Revision</c> of <c>-1</c>, so a
+	/// four-part floor against a three-part installed version compares as installed &lt; required.
 	/// </para>
 	/// </remarks>
-	public const string ProcessBuilderVersion = "1.0.0.0";
+	public const string ProcessBuilderVersion = "1.1.0.1";
 
 	/// <summary>
 	/// File name of the bundled process-builder archive, inside the folder of the same name.

@@ -67,7 +67,8 @@ public sealed class InstallProcessBuilderTool(
 
 	             Run this when a process-designer tool (`create-business-process`, `modify-business-process`,
 	             `describe-business-process`, `list-user-tasks`, `validate-process-graph`) refuses with "you
-	             need to install the CrtProcessBuilder package". Then retry the original call.
+	             need to install the CrtProcessBuilder package" - whether it is missing entirely or older than
+	             the version this clio bundles. Then retry the original call.
 
 	             The package ships as source and the target environment compiles it during installation, so
 	             this takes longer than a plain package install (roughly 15-75 seconds depending on the
@@ -77,10 +78,10 @@ public sealed class InstallProcessBuilderTool(
 	             call: it queries ListUserTasks and fails if ProcessDesignService does not answer, so
 	             "installed but never compiled" is reported instead of looking like success.
 
-	             It always installs - there is no skip. Do NOT use `list-packages` to decide whether to call it:
-	             Creatio does not rewrite a package's recorded version when re-installing a package it already
-	             has, so that version is inert and says nothing about what is running. Re-running is safe and
-	             costs one configuration build on the target.
+	             It always installs - there is no skip, and re-running is safe (it costs one configuration build
+	             on the target). Take the refusal itself as the signal to call this tool rather than comparing
+	             versions yourself: `list-packages` reports the version the environment RECORDED, which is what
+	             the gate already checks for you.
 
 	             Long-running: streams notifications/progress while working. If the MCP response deadline is
 	             reached first you get an in-progress note - the install is still running server-side. Do NOT

@@ -12,9 +12,8 @@ namespace Clio.Command;
 /// Options for listing the user-facing user tasks (the visual designer palette) available on an environment.
 /// Consumed by the MCP <c>list-user-tasks</c> tool, which sets these properties directly.
 /// </summary>
-// PRESENCE-ONLY, no version floor: Creatio does not rewrite a package's SysPackage row on re-install,
-// so a floor could never be satisfied by an upgraded environment. See BundledPackages.ProcessBuilderVersion.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, Hint = BundledPackages.ProcessBuilderInstallHint)]
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ListUserTasksOptions : EnvironmentOptions { }
 
 /// <summary>

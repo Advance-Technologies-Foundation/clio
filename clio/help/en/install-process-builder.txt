@@ -18,8 +18,8 @@ DESCRIPTION
     - validate-process-graph
 
     Those commands refuse to run against an environment where the package is
-    missing, and name this command in the refusal. The requirement is
-    presence-only - see NOTES for why there is no version floor.
+    missing or older than the version bundled with clio, and name this command in
+    the refusal.
 
     The package ships as source, without a compiled assembly, and the target
     environment compiles it during installation against its own core. One archive
@@ -88,13 +88,13 @@ NOTES
     - Installation includes a configuration build on the target environment, so it
       takes longer than a plain package install - roughly 15 to 75 seconds
       depending on the environment's speed.
-    - Do NOT use 'clio list-packages' to decide whether the package needs
-      installing. Creatio does not rewrite a package's SysPackage row when it
-      re-installs a package it already has, so the recorded version stays whatever
-      the FIRST install wrote and says nothing about what is running. That is also
-      why the process-designer commands require the package by PRESENCE only, with
-      no version floor: a floor could never be satisfied by an environment that was
-      upgraded correctly.
+    - 'clio list-packages' shows the version the environment RECORDED, which is
+      what the version floor is checked against. It updates on install only when the
+      archive's descriptor changed its ModifiedOnUtc - Creatio decides whether to
+      rewrite the row from that field, not from the version. A clio build whose
+      archive bumped the version without the date would therefore report a floor the
+      environment can never satisfy; clio's own guard tests pin both values so that
+      build cannot ship.
     - Installing does not unlock maintainer packages, even on an environment with
       developer mode enabled.
     - If the command reports that ProcessDesignService does not answer, the package

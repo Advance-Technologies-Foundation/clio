@@ -24,9 +24,9 @@ The package is required by the process-designer capability:
 - list-user-tasks
 - validate-process-graph
 
-Those commands refuse to run against an environment where the package is
-missing, and name this command in the refusal. The requirement is
-**presence-only** — see Notes for why there is no version floor.
+Those commands refuse to run against an environment where the package is missing
+**or older than the version bundled with clio**, and name this command in the
+refusal.
 
 The package ships as source, without a compiled assembly, and the target
 environment compiles it during installation against its own core. One archive
@@ -109,13 +109,14 @@ connection type, so granting `CanManageSolution` does not grant process design.
 - Installation includes a configuration build on the target environment, so it
   takes longer than a plain package install — roughly 15 to 75 seconds depending
   on the environment's speed.
-- Do **not** use `clio list-packages` to decide whether the package needs
-  installing. Creatio does not rewrite a package's `SysPackage` row when it
-  re-installs a package it already has, so the recorded version stays whatever the
-  *first* install wrote and says nothing about what is running. That is also why the
-  process-designer commands require the package by **presence** only, with no
-  version floor: a floor could never be satisfied by an environment that was
-  upgraded correctly.
+- `clio list-packages` shows the version the environment **recorded**, which is what
+  the version floor is checked against. It updates on install only when the archive's
+  descriptor changed its `ModifiedOnUtc`: Creatio decides whether to rewrite the row
+  from that field, not from `PackageVersion`
+  (`PackageStorageComposer.ApplySourcePackageChanges` → `IsPackageDescriptorChanged` →
+  `PackageDBStorage.SavePackageDescriptor`'s guard). A clio build whose archive bumped
+  the version without the date would advertise a floor the environment can never
+  satisfy; clio's guard tests pin both values so such a build cannot ship.
 - Installing does not unlock maintainer packages, even on an environment with
   developer mode enabled.
 - If the command reports that ProcessDesignService does not answer, the package

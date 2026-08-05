@@ -14,9 +14,8 @@ namespace Clio.Command;
 /// Options for reading an existing Creatio process into a structured graph ("read &amp; explain").
 /// Consumed by the MCP <c>describe-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// PRESENCE-ONLY, no version floor: Creatio does not rewrite a package's SysPackage row on re-install,
-// so a floor could never be satisfied by an upgraded environment. See BundledPackages.ProcessBuilderVersion.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, Hint = BundledPackages.ProcessBuilderInstallHint)]
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public class DescribeProcessOptions : EnvironmentOptions {
 
 	/// <summary>Process code (schema Name) as it appears in the process designer.</summary>
