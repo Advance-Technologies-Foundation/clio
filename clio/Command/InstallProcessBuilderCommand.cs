@@ -43,9 +43,11 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions { }
 /// framework for its own host. Verified with the same bytes on .NET Framework 4.8 and .NET 8.0.29.
 /// </description></item>
 /// <item><description>
-/// <b>No restart.</b> The configuration build that compiles the package also loads the result, so the
-/// service answers without one. cliogate needs a restart precisely because it ships a prebuilt assembly,
-/// which is only loaded at application start.
+/// <b>No restart of OURS, but one still happens — and from a different place on each runtime.</b> Unlike
+/// <see cref="InstallGateCommand"/> this command never asks for a restart, yet both live runs restarted:
+/// on .NET Framework the platform recycled itself once the workspace assembly changed, and on .NET the
+/// package installer issued the restart because the target is a .NET host. Both outlive the install call,
+/// which is why <see cref="WaitForPlatformRestart"/> sits between installing and judging the result.
 /// </description></item>
 /// <item><description>
 /// <b>The outcome is verified, not the install call.</b> Because the assembly is produced by the target

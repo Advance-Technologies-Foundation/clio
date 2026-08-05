@@ -5221,7 +5221,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildInstallProcessBuilder() {
 		return new ToolContractDefinition(
 			InstallProcessBuilderTool.InstallProcessBuilderToolName,
-			"Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio environment, making ProcessDesignService reachable there. The package ships as source and the TARGET compiles it during installation, so the call takes roughly 15-75 seconds and needs no application restart. The tool verifies the outcome rather than the install call: it queries ListUserTasks afterwards and fails if the service does not answer, so \"installed but never compiled\" is reported instead of looking like success. Re-running against an already-current environment does nothing.",
+			"Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio environment, making ProcessDesignService reachable there. The package ships as source and the TARGET compiles it during installation, so the call takes roughly 15-75 seconds. A restart does happen (the platform recycles itself on .NET Framework, the installer issues it on .NET) but you never trigger it yourself - the tool waits for the instance to answer its health check before judging the result. It verifies the outcome rather than the install call: it queries ListUserTasks afterwards and fails if the service does not answer, so \"installed but never compiled\" is reported instead of looking like success. Re-running against an already-current environment does nothing.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[

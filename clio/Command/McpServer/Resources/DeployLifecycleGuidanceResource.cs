@@ -89,7 +89,9 @@ public sealed class DeployLifecycleGuidanceResource {
 		          deployment: run it when a process-designer tool (`create-business-process`,
 		          `modify-business-process`, `describe-business-process`, `list-user-tasks`,
 		          `validate-process-graph`) refuses because the package is missing or older than required. It takes
-		          longer than a normal install (the target compiles the package, ~15-75 s) and needs no restart.
+		          longer than a normal install (the target compiles the package, ~15-75 s) and it restarts the
+		          instance - you never trigger that yourself and the tool waits the instance back out before it
+		          reports a result, so do not follow it with `restart-web-app`.
 		       4. `restore-workspace` / `push-workspace` - move packages between the environment and a local workspace.
 
 		       Failure policy

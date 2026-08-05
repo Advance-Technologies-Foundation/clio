@@ -269,7 +269,8 @@ Application Hub and `push-pkg`, verified by the service answering with the full 
 - Version decoupling from the core: the code compiles against the target's own `Terrasoft.*`.
 - The compiled path's worst failure — shipping the wrong framework flavour, which installs, satisfies
   the name-based gate and then 404s on every call — becomes structurally impossible.
-- No restart needed; artifact 44 % smaller (187 KB vs 336 KB).
+- Artifact 44 % smaller (187 KB vs 336 KB). (This line also claimed "no restart needed" — retracted, see
+  the Restart row in §5.)
 
 **What it costs — accept consciously**
 
@@ -401,7 +402,7 @@ Traps that survive the simplification:
   | `_withbin_schema/…` | present | present | Hub | studioenu-15832585 | 25 s | installs |
   | `_nobin/…` | **absent** | present | Hub | studioenu-15832585 | — | **rejected once, then the same bytes installed** |
   | `_nobin/…` | **absent** | present | **Hub** | **studioenu-15832842 (never had the package)** | **20 s** | **installs, service answers, 23 tasks** |
-  | `_nobin/…` | **absent** | present | `push-pkg` | sae-m-seeenu-15832383 | 74 s (~48 s compile) | installs, service answers, `BuildProcess`→`DescribeProcess` round-trip green, **no restart** |
+  | `_nobin/…` | **absent** | present | `push-pkg` | sae-m-seeenu-15832383 | 74 s (~48 s compile) | installs, service answers, `BuildProcess`→`DescribeProcess` round-trip green (~~no restart~~ — not checked in the log at the time; see the Restart row in §5) |
 
   The `push-pkg` run is the airtight one: the archive contained **no assembly at all**, the server
   logged `Compiling configuration dll`, and the service answered afterwards — which is only possible
@@ -668,7 +669,7 @@ no assembly in the archive at all, so it has no subject.*
 | Install | `IPackageInstaller.Install(path, settings, packageInstallOptions: **null**, reportPath: null, createBackup: true)` — `null` options keeps it on the plain `/ServiceModel/PackageInstallerService.svc/InstallPackage` route; a non-null value would switch to `/rest/ClioPackageInstallerService/Install`, which **is not implemented in cliogate** |
 | Settings | fresh `EnvironmentSettings` merged from the resolved one with `DeveloperModeEnabled = false`. Field-justified: on a developer-mode environment `push-pkg`'s unlock step routes through cliogate and threw, even though the package itself installed |
 | **Outcome check** | after a successful install, POST `{}` to `KnownRoute.ListUserTasks` and require a parsed `ListUserTasksResult.success == true`. **Fails CLOSED** — this IS the command's contract |
-| Restart | **none.** The configuration build that compiles the package also loads the result; observed on both a .NET Framework and a .NET 8 stand with the service answering and no restart at all |
+| Restart | **never requested by clio — but one happens anyway, from a different place on each runtime.** ~~none; the configuration build that compiles the package also loads the result~~ — **retracted 2026-08-05** by the live command runs: net472 (`studioenu-15832585`) logged the platform recycling *itself* (`Workspace assembly changed - Run restart application`), and .NET 8 (`studionet8enu-15832863`, web02:8530) restarted because `BasePackageInstaller` calls `IApplication.Restart()` under `DeveloperModeEnabled \|\| IsNetCore`. The earlier "no restart" reading came from *the service answered afterwards*, which is consistent with a restart having happened and finished — it was never log-verified. Consequence: `IServerReadinessWaiter` between install and probe is **not** belt-and-braces, it is required (P3 rework, commit `4017d42c` → `21adbf25`) |
 | On failure | `WriteError`, return 1; the catch logs `GetReadableMessageException()` **first**, then the stack (copy `InstallGateCommand`, not `PushPackageCommand`, whose catch drops the message) |
 | Compile | not requested by clio — the *target* compiles the package as part of installing it |
 
