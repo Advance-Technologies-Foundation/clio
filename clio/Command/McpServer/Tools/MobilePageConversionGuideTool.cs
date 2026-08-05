@@ -82,20 +82,12 @@ public sealed class MobilePageConversionGuideTool {
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
 		"plus requestConversions (component event-binding requests/actions for mobile — supported requests are kept/remapped inside " +
 		"elementMap[].mobileValues; ONLY a crt.Button whose request the mobile app does not support is DROPPED (dead button), appearing as an elementMap `drop` — other component types are NOT dropped for an unsupported request (some use system requests absent from the list): their binding is kept verbatim and flagged; advisory summary only), " +
-		"plus deterministic EMPTY-CONTAINER removal (a converter-created layout container — Flex/Grid/TabPanel/tab/ExpansionPanel — whose every child dropped " +
-		"is already removed by the converter and arrives as an elementMap `drop` with reason \"empty container\", sibling positional indexes already re-compacted; " +
-		"do NOT re-create such a container, do NOT re-parent anything into it, and do NOT ask the user about it — just report it with the other drops), " +
+		"plus deterministic empty-container removal (containers emptied by the conversion arrive as elementMap drops with reason \"empty container\"; the do/don't rules are in the conversion guide), " +
 		"plus adaptiveLayout (the responsive layout for each MULTI-column grid container - phone collapses to 1 column and stacks, " +
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
-			"plus tabAreaLayers (MANDATORY, not a proposal: every converter-created tab carries synthesized containers — the tab body grid, " +
-			"then its Area card — already baked into elementMap as ordinary inserts right after the tab's entry, with ALL of the tab's top-level children " +
-			"(expansion panels included) retargeted into the Area; " +
-			"the synthesized entries have no web counterpart so they carry no webName; apply the inserts in element-map " +
-			"order, never ask whether to apply it, never offer to skip it; tabs the mobile template provides get no layers), " +
-			"plus spacingNormalization (SILENT, not a gate question: every inserted Grid/Flex container — converted and synthesized alike — already carries gap Medium " +
-			"on all axes in its mobileValues; the web page's spacing is deliberately IGNORED, not translated; merge twins keep the template's spacing; " +
-			"report it as ONE aggregated line and never restore the web gap), " +
+			"plus tabAreaLayers (MANDATORY synthesized two-layer tab body, already baked into elementMap as ordinary inserts; semantics in the conversion guide), " +
+			"plus spacingNormalization (SILENT gap normalization on every inserted container; semantics in the conversion guide), " +
 			"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]
