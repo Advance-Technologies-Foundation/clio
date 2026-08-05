@@ -84,6 +84,11 @@ public static class WebToMobileAnalysisService {
 	/// <param name="mobileTemplateUnavailable">True when a mobile template was known but its bundle could not
 	/// be read (no active environment, read failure) - the data-section diffs fall back to a single root merge
 	/// and an explicit constraint warns that template-owned arrays may be replaced wholesale.</param>
+	/// <param name="nonConvertingContainers">Names of the web template's containers whose components are NOT
+	/// converted (recursively, including descendant containers) - e.g. the header action bar. A descendant that
+	/// has a conversion rule (a container twin in <paramref name="containerNameMap"/> or a component twin in
+	/// <paramref name="componentNameMap"/>) is carved out and still converts. Declarative, so it applies even
+	/// when <paramref name="templateComponentNames"/> is unavailable. Null/empty leaves the tree unchanged.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -104,7 +109,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileContainerParents = null,
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
-		bool mobileTemplateUnavailable = false) {
+		bool mobileTemplateUnavailable = false,
+		IReadOnlySet<string> nonConvertingContainers = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -122,6 +128,26 @@ public static class WebToMobileAnalysisService {
 		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
+
+		// 0a. Declarative, rule-driven exclusion: drop the components of the web template's non-converting
+		//     containers (e.g. MainHeader / its action bar) BEFORE chrome subtraction. It must run first
+		//     because chrome subtraction hoists page-added survivors up to the root, detaching them from the
+		//     container that designates them chrome — so the exclusion needs the intact nesting. A descendant
+		//     with a conversion rule (a container/component twin) is carved out and still converts.
+		var excludedContainers = nonConvertingContainers is { Count: > 0 }
+			? new HashSet<string>(nonConvertingContainers, StringComparer.OrdinalIgnoreCase)
+			: null;
+		bool nonConvertingPruned = false;
+		if (excludedContainers is not null) {
+			tree = PruneNonConvertingContainers(tree, map, componentMap, excludedContainers, insideExcluded: false);
+			nonConvertingPruned = true;
+		}
+
+		// 0b. Filter out the web template's own components at read time. The merged tree carries the
+		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
+		//    MainHeader / TitleContainer / BackButton / PageTitle / …) — the mobile template already
+		//    provides those (Scaffold + header). Only the page's DELTA over its web template is
+		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
 			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames);
@@ -244,7 +270,7 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, nonConvertingPruned ? excludedContainers : null),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -620,6 +646,64 @@ public static class WebToMobileAnalysisService {
 			}
 			if (items is not null) {
 				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline);
+			}
+			result.Add(node);
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Removes from the merged page tree the components of the web template's <paramref name="excluded"/>
+	/// containers (declared per template as <c>nonConvertingContainers</c>) — recursively, including any
+	/// descendant containers: once a node's name is in <paramref name="excluded"/>, every descendant is
+	/// dropped (<paramref name="insideExcluded"/> carries that state down). The one exception is a
+	/// CARVE-OUT: a node whose name is a container twin (<paramref name="containerNameMap"/>) or a component
+	/// twin (<paramref name="componentMap"/>) has its own conversion rule, so it is kept and its whole subtree
+	/// re-enters normal conversion — carve-out takes precedence over exclusion. Carved-out survivors under a
+	/// dropped container are hoisted up to the current parent (they are merge-by-name targets, so their tree
+	/// position is irrelevant downstream). Anonymous wrappers are recursed in place, preserving the excluded
+	/// state. Runs BEFORE inherited-chrome subtraction so the container→child nesting is still intact.
+	/// </summary>
+	private static JArray PruneNonConvertingContainers(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
+		IReadOnlySet<string> excluded,
+		bool insideExcluded) {
+		var result = new JArray();
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				// Preserve non-object tokens only outside an excluded subtree.
+				if (!insideExcluded) {
+					result.Add(token);
+				}
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			JArray items = node["items"] as JArray;
+			bool isCarveOut = !string.IsNullOrEmpty(name)
+				&& (containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name)));
+			if (isCarveOut) {
+				// Has its own conversion rule: keep it and convert its whole subtree normally (exit exclusion).
+				if (items is not null) {
+					node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false);
+				}
+				result.Add(node);
+				continue;
+			}
+			bool entersExclusion = !insideExcluded && !string.IsNullOrEmpty(name) && excluded.Contains(name);
+			if (insideExcluded || entersExclusion) {
+				// Drop this node; still recurse to hoist any carved-out (rule-mapped) survivors up to the parent.
+				if (items is not null) {
+					foreach (JToken survivor in PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: true)) {
+						result.Add(survivor);
+					}
+				}
+				continue;
+			}
+			// Outside any excluded subtree and no rule of its own: keep in place, recurse normally.
+			if (items is not null) {
+				node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false);
 			}
 			result.Add(node);
 		}
@@ -1205,7 +1289,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
-		IReadOnlyList<string> dataSectionArrayConflicts = null) {
+		IReadOnlyList<string> dataSectionArrayConflicts = null,
+		IReadOnlyCollection<string> nonConvertingContainers = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1249,6 +1334,13 @@ public static class WebToMobileAnalysisService {
 				"Components inherited from the source page's web template (and its base templates) are excluded " +
 				"from this guide — the mobile template already provides the equivalent header/scaffold chrome. " +
 				"Only the page's delta over its web template is converted; do NOT re-add the web header containers.");
+		}
+		if (nonConvertingContainers is { Count: > 0 }) {
+			constraints.Add(
+				"Components inside the web template's non-converting container(s) (" +
+				string.Join(", ", nonConvertingContainers) + ") are excluded — the mobile template provides the " +
+				"equivalent header/actions. A nested subtree with its own conversion rule (e.g. tabs) is still " +
+				"converted; do NOT re-add the excluded header/action components.");
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");

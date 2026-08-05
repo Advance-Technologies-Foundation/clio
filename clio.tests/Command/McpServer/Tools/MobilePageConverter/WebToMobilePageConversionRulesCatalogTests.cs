@@ -61,6 +61,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Bundled tabbed template declares MainHeader as a non-converting container so the web header's components are excluded from conversion.")]
+	public void LoadBundled_TabbedTemplateDeclaresNonConvertingContainers() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		TemplateMappingRule tabbed = rules.Templates.First(t =>
+			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
+		tabbed.NonConvertingContainers.Should().Contain("MainHeader",
+			because: "the web header chrome is excluded from mobile conversion (the mobile template provides the header/actions)");
+	}
+
+	[Test]
 	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem] and its note explains the crt.ListItem goes into the crt.List itemLayout.")]
 	public void LoadBundled_GridRuleMapsToListAndListItem() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

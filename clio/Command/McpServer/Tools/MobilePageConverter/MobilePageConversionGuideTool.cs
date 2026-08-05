@@ -186,6 +186,7 @@ public sealed class MobilePageConversionGuideTool {
 		TemplateMappingRule templateRule = ResolveTemplateRule(rules, effectiveTemplate);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
+		IReadOnlySet<string> nonConvertingContainers = BuildNonConvertingContainers(templateRule);
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
 
 		// Best-effort read of the mobile template's own bundle. Used for three independent probes: the
@@ -241,7 +242,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileContainerParents: mobileContainerParents,
 				mobileTemplateViewModelConfig: mobileTemplateProbe.ViewModelConfig,
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
-				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable);
+				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
+				nonConvertingContainers: nonConvertingContainers);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -419,6 +421,24 @@ public sealed class MobilePageConversionGuideTool {
 			}
 		}
 		return map.Count > 0 ? map : null;
+	}
+
+	/// <summary>
+	/// Builds the set of the template's non-converting container names (declared as
+	/// <c>nonConvertingContainers</c>) — the components inside them are excluded from conversion.
+	/// Returns null when there is no rule or the list is empty. Case-insensitive.
+	/// </summary>
+	internal static IReadOnlySet<string> BuildNonConvertingContainers(TemplateMappingRule rule) {
+		if (rule?.NonConvertingContainers is null || rule.NonConvertingContainers.Count == 0) {
+			return null;
+		}
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (string name in rule.NonConvertingContainers) {
+			if (!string.IsNullOrWhiteSpace(name)) {
+				set.Add(name.Trim());
+			}
+		}
+		return set.Count > 0 ? set : null;
 	}
 
 	/// <summary>
