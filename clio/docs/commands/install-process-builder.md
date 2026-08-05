@@ -28,10 +28,19 @@ Those commands refuse to run against an environment where the package is
 missing or older than the version bundled with clio, and name this command in
 the refusal.
 
-A compatible installation is detected and left alone, so re-running the
-command on an up-to-date environment does nothing and does not restart it.
-Otherwise the Creatio application is restarted after installation, because the
-package's assembly is only loaded at application start.
+The package ships as source, without a compiled assembly, and the target
+environment compiles it during installation against its own core. One archive
+therefore serves every runtime, and no application restart is needed: the
+configuration build that compiles the package also loads the result.
+
+Because the assembly is produced by the target rather than shipped, installing
+and working are different states. After a successful install the command calls
+ListUserTasks and fails if ProcessDesignService does not answer, so an
+environment that accepted the package but never compiled it is reported instead
+of looking like a success.
+
+A compatible installation is detected and left alone, so re-running the command
+on an up-to-date environment does nothing and does not make it recompile.
 
 ## Options
 
@@ -79,10 +88,17 @@ clio update-process-builder -e dev
 
 - The command installs the version of the package bundled with your current
   clio installation; it never downloads anything.
-- ProcessDesignService answers only after the application restart completes.
+- Installation includes a configuration build on the target environment, so it
+  takes longer than a plain package install — roughly 15 to 75 seconds depending
+  on the environment's speed.
 - Use 'clio list-packages -e <ENV>' to verify the installed version.
 - Installing does not unlock maintainer packages, even on an environment with
   developer mode enabled.
+- If the command reports that ProcessDesignService does not answer, the package
+  installed but the environment did not compile it. Check the environment's
+  configuration build log. The Application Hub can roll such an install back
+  through its own restore step; from the command line use
+  `clio restore-configuration`.
 
 ## See Also
 

@@ -4,7 +4,6 @@ using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
-using Clio.WebApplication;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -20,11 +19,18 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	#region Fields: Private
 
 	private const string ClioRoot = "clio-root";
+
+	/// <summary>A successful ListUserTasks envelope, as ProcessDesignService actually returns it.</summary>
+	private const string ServiceAnswersResponse =
+		"{\"ListUserTasksResult\":{\"errorMessage\":null,\"success\":true,"
+		+ "\"userTasks\":[{\"name\":\"ActivityUserTask\",\"uid\":\"b5c726f2-af5b-4381-bac6-913074144308\"}]}}";
+
 	private IPackageInstaller _packageInstaller;
-	private IApplication _application;
 	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private IFileSystem _fileSystem;
 	private IRequiredPackageChecker _requiredPackageChecker;
+	private IApplicationClient _applicationClient;
+	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
 	private InstallProcessBuilderCommand _command;
 
@@ -42,23 +48,31 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_packageInstaller = Substitute.For<IPackageInstaller>();
-		_application = Substitute.For<IApplication>();
 		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_requiredPackageChecker = Substitute.For<IRequiredPackageChecker>();
+		_applicationClient = Substitute.For<IApplicationClient>();
+		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
 		_workingDirectoriesProvider.ExecutingDirectory.Returns(ClioRoot);
-		// The bundled artifact is present and the environment carries nothing by default, so each test
-		// only has to arrange the deviation it is actually about.
+		// Happy-path defaults, so each test only arranges the deviation it is actually about: the bundled
+		// artifact is present, the environment carries nothing yet, and the service answers after install.
 		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
 		_requiredPackageChecker
 			.IsCompatible(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(false);
+		_serviceUrlBuilder
+			.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks)
+			.Returns("http://localhost/0/rest/ProcessDesignService/ListUserTasks");
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ServiceAnswersResponse);
 		containerBuilder.AddSingleton(_packageInstaller);
-		containerBuilder.AddSingleton(_application);
 		containerBuilder.AddSingleton(_workingDirectoriesProvider);
 		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton(_requiredPackageChecker);
+		containerBuilder.AddSingleton(_applicationClient);
+		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_logger);
 	}
 
@@ -75,15 +89,15 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	[TearDown]
 	public void TearDownCommand() {
 		_packageInstaller.ClearReceivedCalls();
-		_application.ClearReceivedCalls();
 		_fileSystem.ClearReceivedCalls();
 		_requiredPackageChecker.ClearReceivedCalls();
+		_applicationClient.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
-	[Description("Execute should install the bundled process-builder package and restart the application after success.")]
-	public void Execute_ShouldInstallPackageAndRestartApplication() {
+	[Description("Execute should install the bundled process-builder package and then prove ProcessDesignService answers.")]
+	public void Execute_ShouldInstallPackageAndVerifyTheServiceAnswers() {
 		// Arrange
 		EnvironmentSettings capturedEnvironmentSettings = null;
 		_packageInstaller
@@ -100,15 +114,70 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(0,
-			because: "a successful package installation should make install-process-builder succeed");
+			because: "a successful installation whose service answers should make the command succeed");
 		capturedEnvironmentSettings.Should().NotBeNull(
 			because: "the command should pass resolved environment settings to the package installer");
 		capturedEnvironmentSettings!.DeveloperModeEnabled.Should().BeFalse(
 			because: "installing must not unlock maintainer packages, whose unlock step routes through cliogate");
-		_application.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
+		_applicationClient.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
 			.Should().Be(1,
-				because: "the package assembly is only loaded at application start, so a restart is required");
+				because: "the package ships without an assembly, so the service answering is the only proof "
+					+ "the target actually compiled it");
+	}
+
+	[Test]
+	[Description("Execute should fail when the package installs but ProcessDesignService does not answer, because that means the target never compiled it.")]
+	public void Execute_ShouldFail_WhenPackageInstallsButServiceDoesNotAnswer() {
+		// Arrange
+		_packageInstaller
+			.Install(
+				Arg.Any<string>(),
+				Arg.Any<EnvironmentSettings>(),
+				packageInstallOptions: null,
+				reportPath: null,
+				createBackup: true)
+			.Returns(true);
+		// An IIS error page is exactly what an unbound route returns.
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><head><title>404 - Not Found</title></head></html>");
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "'installed' and 'working' are different states when the target compiles the package; "
+				+ "reporting success here would hide the one failure mode that is otherwise silent — the "
+				+ "package present, the name-based gate satisfied, and every service call failing");
+		_logger.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Should().Be(1, because: "the operator must be told the environment did not compile the package");
+	}
+
+	[Test]
+	[Description("Execute should fail when the service returns a well-formed envelope reporting failure.")]
+	public void Execute_ShouldFail_WhenServiceReportsUnsuccessfulEnvelope() {
+		// Arrange
+		_packageInstaller
+			.Install(
+				Arg.Any<string>(),
+				Arg.Any<EnvironmentSettings>(),
+				packageInstallOptions: null,
+				reportPath: null,
+				createBackup: true)
+			.Returns(true);
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"ListUserTasksResult\":{\"errorMessage\":\"boom\",\"success\":false}}");
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "a parseable response is not the same as a working service; only success:true proves it");
 	}
 
 	[Test]
@@ -140,8 +209,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("Execute should skip the install and the restart when a compatible version is already installed.")]
-	public void Execute_ShouldSkipInstallAndRestart_WhenCompatibleVersionAlreadyInstalled() {
+	[Description("Execute should skip both the install and the service check when a compatible version is already installed.")]
+	public void Execute_ShouldSkipInstall_WhenCompatibleVersionAlreadyInstalled() {
 		// Arrange
 		_requiredPackageChecker
 			.IsCompatible(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion)
@@ -154,10 +223,13 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		result.Should().Be(0, because: "an already-current environment needs no work and is not an error");
 		_packageInstaller.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstaller.Install))
-			.Should().Be(0, because: "reinstalling an identical package is pointless work");
-		_application.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
-			.Should().Be(0, because: "a healthy environment must not be restarted when nothing changed");
+			.Should().Be(0,
+				because: "reinstalling an identical package would make the environment recompile it for nothing");
+		_applicationClient.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Should().Be(0,
+				because: "the short-circuit reports what is already installed; probing a service this command "
+					+ "did not touch would turn an unrelated outage into a failure of this command");
 	}
 
 	[Test]
@@ -210,8 +282,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("Execute should return failure and skip the restart when package installation fails.")]
-	public void Execute_ShouldReturnFailureAndSkipRestart_WhenPackageInstallFails() {
+	[Description("Execute should return failure and skip the service check when package installation fails.")]
+	public void Execute_ShouldReturnFailureAndSkipServiceCheck_WhenPackageInstallFails() {
 		// Arrange
 		_packageInstaller
 			.Install(
@@ -227,9 +299,11 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(1, because: "a failed package installation should make the command fail");
-		_application.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
-			.Should().Be(0, because: "a failed install must not restart the environment");
+		_applicationClient.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Should().Be(0,
+				because: "there is nothing to verify when the package never installed, and probing anyway "
+					+ "would report the install failure as a service failure");
 		_logger.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
 			.Should().Be(1, because: "a failed install should report an error");
@@ -254,9 +328,9 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		// Assert
 		result.Should().Be(1, because: "an exception during installation should make the command fail");
 		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("upload rejected")));
-		_application.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
-			.Should().Be(0, because: "a throwing install must not restart the environment");
+		_applicationClient.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Should().Be(0, because: "a throwing install must not proceed to the service check");
 	}
 
 	[Test]
