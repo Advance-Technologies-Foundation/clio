@@ -25,11 +25,17 @@ DESCRIPTION
     environment compiles it during installation against its own core. One archive
     therefore serves every runtime.
 
-    You do not need to restart the application, because the PLATFORM restarts
-    itself: a changed workspace assembly makes Creatio recycle the instance
-    ("Workspace assembly changed - Run restart application" in its Application
-    log). That restart outlives the install call, so this command waits for the
-    instance to answer its health check before checking the service - probing
+    You never need to run a restart yourself, but a restart does happen - and it
+    comes from a different place on each runtime:
+
+      .NET Framework  the PLATFORM recycles itself, because the workspace assembly
+                      changed ("Workspace assembly changed - Run restart
+                      application" in its Application log).
+      .NET            the package installer issues the restart, because the target
+                      is a .NET host.
+
+    Either way that restart outlives the install call, so this command waits for
+    the instance to answer its health check before checking the service. Probing
     sooner would either fail while the app warms up or, when upgrading, be
     answered by the outgoing app domain still serving the old assembly.
 

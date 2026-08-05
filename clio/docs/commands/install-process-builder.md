@@ -32,13 +32,18 @@ The package ships as source, without a compiled assembly, and the target
 environment compiles it during installation against its own core. One archive
 therefore serves every runtime.
 
-You do not need to restart the application, because the **platform restarts
-itself**: a changed workspace assembly makes Creatio recycle the instance
-(`Workspace assembly changed - Run restart application` in its Application log).
-That restart outlives the install call, so this command waits for the instance to
-answer its health check before checking the service — probing sooner would either
-fail while the app warms up or, when upgrading, be answered by the outgoing app
-domain still serving the old assembly.
+You never need to run a restart yourself, but a restart does happen — and it comes
+from a different place on each runtime:
+
+| Runtime | Who restarts |
+|---|---|
+| .NET Framework | the **platform recycles itself**, because the workspace assembly changed (`Workspace assembly changed - Run restart application` in its Application log) |
+| .NET | the **package installer** issues the restart, because the target is a .NET host |
+
+Either way that restart outlives the install call, so this command waits for the
+instance to answer its health check before checking the service. Probing sooner
+would either fail while the app warms up or, when upgrading, be answered by the
+outgoing app domain still serving the old assembly.
 
 Because the assembly is produced by the target rather than shipped, installing
 and working are different states. After a successful install the command calls

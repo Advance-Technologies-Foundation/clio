@@ -215,10 +215,20 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </summary>
 	/// <returns><c>true</c> when the instance answered its health check within the budget.</returns>
 	/// <remarks>
-	/// The restart is the platform's, not ours: a changed workspace assembly makes Creatio recycle itself.
+	/// The restart is never ours, but it comes from a different place on each runtime — observed on both:
+	/// on .NET Framework the PLATFORM recycles itself because the workspace assembly changed
+	/// ("Workspace assembly changed - Run restart application"), while on .NET
+	/// <c>BasePackageInstaller</c> issues it because <c>IsNetCore</c> is true. Passing
+	/// <see cref="EnvironmentSettings.IsNetCore"/> below therefore matters twice: it selects the right
+	/// health-check flavour (WebHost vs WebAppLoader) for the wait itself.
+	/// <para>
 	/// Reusing <see cref="IServerReadinessWaiter"/> rather than retrying the service probe is deliberate —
 	/// its <c>InitialDelay</c> exists precisely because "the previous app domain may still answer briefly
-	/// after a restart request", which is the false-pass this command must not report.
+	/// after a restart request", which is the false-pass this command must not report. A live net472 run
+	/// showed the interleaving exactly: the platform logged its restart at 16:44:57,419, the install call
+	/// returned at 16:44:57,842, and <c>Application_Start</c> followed at 16:44:58,735 — so an immediate
+	/// probe would have landed inside the restart.
+	/// </para>
 	/// </remarks>
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {

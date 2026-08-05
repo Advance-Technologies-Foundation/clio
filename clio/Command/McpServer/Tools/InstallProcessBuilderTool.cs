@@ -40,8 +40,9 @@ public sealed class InstallProcessBuilderTool(
 
 	             The package ships as source and the target environment compiles it during installation, so
 	             this takes longer than a plain package install (roughly 15-75 seconds depending on the
-	             environment). You do not restart anything: the platform recycles itself when the workspace
-	             assembly changes, and the tool waits for the instance to come back before judging it. It then
+	             environment). You never restart anything yourself, though a restart does happen - the platform
+	             recycles itself on .NET Framework, the installer issues it on .NET - and the tool waits for the
+	             instance to come back before judging it. It then
 	             verifies the outcome rather than the install call - it queries ListUserTasks and fails if the
 	             service does not answer, so "installed but not compiled" is reported instead of looking like
 	             success. Re-running against an already-current environment does nothing.
