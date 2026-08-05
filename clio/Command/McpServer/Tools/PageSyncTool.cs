@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -20,6 +21,11 @@ namespace Clio.Command.McpServer.Tools;
 /// reducing MCP round-trips, lock acquisitions, and sleep overhead.
 /// </summary>
 [McpServerToolType]
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "DI composition root: sync-pages requires eight constructor-injected collaborators, including "
+		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page. A "
+		+ "parameter object would obscure the tool's injected contract; this mirrors the S107 suppressions on other "
+		+ "MCP entry points in this assembly.")]
 public sealed class PageSyncTool(
 	IToolCommandResolver commandResolver,
 	IFileSystem fileSystem,

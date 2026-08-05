@@ -958,6 +958,8 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
 		ILogger logger = Substitute.For<ILogger>();
+		string capturedWarning = null;
+		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => capturedWarning = ci.Arg<string>());
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()),
 			logger: logger);
@@ -971,7 +973,10 @@ public sealed class PageSyncToolTests {
 		await tool.SyncPages(args, null);
 
 		// Assert
-		logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrLeads_MobileFormPage")));
+		capturedWarning.Should().NotBeNull(
+			because: "a failed base pre-resolution on the sync batch path must leave a diagnostic trail")
+			.And.Contain("UsrLeads_MobileFormPage",
+			because: "the warning names the schema whose base could not be resolved");
 	}
 
 	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
