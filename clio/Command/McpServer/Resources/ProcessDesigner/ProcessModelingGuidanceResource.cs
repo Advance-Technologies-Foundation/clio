@@ -74,6 +74,13 @@ public sealed class ProcessModelingGuidanceResource {
 			  task is serialized but not end-to-end usable yet — only the `signalStart` filter is). Use the catalog
 			  below to reason about a solution and to READ existing processes (`describe-business-process`); don't
 			  expect to build those types in this increment.
+			- ORDER OF CHECKS — check the slice BEFORE proposing an install. The package gate fires before the
+			  descriptor is ever validated, so a request that needs a gateway or a timer produces this sequence:
+			  refusal -> "install CrtProcessBuilder" -> a 15-75 s install -> and only THEN "that element is not
+			  buildable". Confirm the requested process fits the slice above first, and if it does not, say so
+			  instead of sending the user through an install that cannot help. `validate-process-graph` does not
+			  rescue this: it is itself package-gated, and a pass there covers the full BPMN catalog rather than
+			  this slice.
 
 			== Descriptor (create-business-process) ==
 			{
