@@ -128,6 +128,10 @@ Deleting or invalidating the disk cache stops in-memory external serving on the 
 no verified active bundle, external guide lookups return typed `guidance-unavailable`; guidance that
 is unavailable from active knowledge libraries has no embedded article fallback. CLI help and other
 mechanical resources remain available from Clio itself.
+Reading a URI no active library resolves is refused with the protocol's resource-not-found code and a
+`guidance-not-found` message, the same classification `get-guidance` reports for an unknown name. A
+topic whose `requiredFeatures` are not all enabled is refused identically to an identifier nobody
+publishes, so a read cannot be used to discover that gated content exists.
 
 ## Synopsis
 

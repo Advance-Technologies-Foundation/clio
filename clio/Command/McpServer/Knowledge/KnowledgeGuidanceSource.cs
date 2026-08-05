@@ -168,6 +168,23 @@ internal sealed class KnowledgeGuidanceUnavailableException : InvalidOperationEx
 	}
 }
 
+/// <summary>
+/// Reports an identifier no active library resolves, whatever the reason it does not resolve.
+/// </summary>
+/// <remarks>
+/// A topic whose <c>requiredFeatures</c> are not all enabled resolves to
+/// <see cref="KnowledgeArticleLookupStatus.NotFound"/> exactly like an identifier nobody publishes, and
+/// this message must keep the two indistinguishable. Naming the gate — or even admitting one exists —
+/// would turn every refusal into an existence oracle for hidden content, which is what the gate is for.
+/// </remarks>
+internal sealed class KnowledgeGuidanceNotFoundException : InvalidOperationException {
+	internal const string ErrorCode = "guidance-not-found";
+
+	public KnowledgeGuidanceNotFoundException(string identifier)
+		: base($"[{ErrorCode}] Unknown guidance resource '{identifier}'. Use one of the URIs returned by resources/list.") {
+	}
+}
+
 internal sealed class KnowledgeGuidanceAmbiguousException : InvalidOperationException {
 	internal const string ErrorCode = "guidance-ambiguous";
 

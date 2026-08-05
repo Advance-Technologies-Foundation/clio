@@ -26,6 +26,17 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	/// <summary>Feature name the gated example requires; deliberately never registered or enabled.</summary>
 	internal const string GatedReferenceExampleFeature = "synthetic-never-enabled-feature";
 
+	/// <summary>
+	/// Guidance item gated behind <see cref="GatedReferenceExampleFeature"/>, so its canonical URI is
+	/// published in the manifest while the topic itself never resolves.
+	/// </summary>
+	/// <remarks>
+	/// A gated reference example proves the catalog listing stays clean. Only a gated guidance item can
+	/// prove what a client gets when it reads such a URI directly, which is the case a caller cannot be
+	/// allowed to distinguish from an identifier nobody publishes.
+	/// </remarks>
+	internal const string GatedGuideName = "synthetic-gated-guide";
+
 	private readonly string _root;
 	private readonly ECDsa _signingKey;
 
@@ -36,6 +47,7 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		PublicKeyPath = Path.Combine(root, "synthetic-public.pem");
 		File.WriteAllText(PublicKeyPath, signingKey.ExportSubjectPublicKeyInfoPem());
 		SelectedGuideUri = $"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{SelectedGuideName}";
+		GatedGuideUri = $"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{GatedGuideName}";
 	}
 
 	internal FakeNuGetV3Feed Feed { get; }
@@ -43,6 +55,9 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	internal string PublicKeyPath { get; }
 
 	internal string SelectedGuideUri { get; }
+
+	/// <summary>Canonical URI of the gated guidance item, published but never resolvable.</summary>
+	internal string GatedGuideUri { get; }
 
 	internal string KeyId => "synthetic-nuget-test-key";
 
@@ -93,6 +108,18 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 					Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
 			})
 			.ToList();
+		byte[] gatedGuideBytes = new UTF8Encoding(false, true).GetBytes(
+			$"synthetic::{revision}::gated-guide::sequence={sequence}\n");
+		resources.Add(new SyntheticResource(
+			GatedGuideName,
+			$"synthetic.{GatedGuideName}",
+			"guidance",
+			$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{GatedGuideName}",
+			"resources/synthetic-gated-guide.txt",
+			"text/plain",
+			gatedGuideBytes,
+			Convert.ToHexString(SHA256.HashData(gatedGuideBytes)).ToLowerInvariant(),
+			[GatedReferenceExampleFeature]));
 		byte[] referenceBytes = new UTF8Encoding(false, true).GetBytes(
 			$"synthetic::{revision}::reference-details::sequence={sequence}\n");
 		resources.Add(new SyntheticResource(

@@ -29,8 +29,19 @@ internal sealed class KnowledgeGuidanceResourceAdapter : IKnowledgeGuidanceResou
 			},
 			KnowledgeArticleLookupStatus.Unavailable => throw UnavailableResource(uri),
 			KnowledgeArticleLookupStatus.Ambiguous => throw AmbiguousResource(uri, lookup.Diagnostic),
+			KnowledgeArticleLookupStatus.NotFound => throw NotFoundResource(uri),
 			_ => throw new InvalidOperationException($"Unknown guidance resource '{uri}'.")
 		};
+	}
+
+	// An identifier no active library resolves is the client naming something that is not there, so it
+	// answers with the protocol's own resource-not-found code instead of the generic internal error a
+	// plain exception collapses into - a caller could not tell that apart from a server fault. The URI
+	// of a feature-gated topic lands here too, and deliberately produces the same answer as an
+	// identifier nobody publishes: see KnowledgeGuidanceNotFoundException.
+	private static McpProtocolException NotFoundResource(string uri) {
+		KnowledgeGuidanceNotFoundException notFound = new(uri);
+		return new McpProtocolException(notFound.Message, McpErrorCode.ResourceNotFound);
 	}
 
 	private static McpProtocolException UnavailableResource(string uri) {

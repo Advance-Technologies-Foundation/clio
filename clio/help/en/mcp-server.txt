@@ -88,8 +88,10 @@ DESCRIPTION
     and add/remove/enable/disable/list source commands. These commands are non-resident MCP tools
     callable through clio-run. The running MCP process hot
     reloads source updates and enablement without restart. Rejected updates retain last-known-good;
-    a cold invalid cache returns guidance-unavailable for external guides. info-knowledge reads only
-    local state unless CLI --check-updates or MCP checkUpdates=true is supplied.
+    a cold invalid cache returns guidance-unavailable for external guides. Reading a URI no active
+    library resolves is refused as resource-not-found with a guidance-not-found message, and a topic
+    gated behind a disabled feature is refused identically to one nobody publishes. info-knowledge
+    reads only local state unless CLI --check-updates or MCP checkUpdates=true is supplied.
     Clio owns delivery and resolution mechanics only. Article text, item/topic identity, titles,
     descriptions, and legacy URI declarations belong to the knowledge libraries.
 

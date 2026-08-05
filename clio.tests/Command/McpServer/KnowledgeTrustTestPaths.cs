@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 
 namespace Clio.Tests.Command.McpServer;
@@ -13,6 +14,13 @@ namespace Clio.Tests.Command.McpServer;
 /// fixture writing under <see cref="Path.GetTempPath"/> is refused for the platform's own reason
 /// rather than for anything the test arranged. Resolving the link once here keeps those fixtures
 /// runnable on macOS, Linux and Windows alike without relaxing the guard under test.
+/// <para>
+/// This mirrors <c>Clio.Mcp.E2E.Support.PhysicalPath</c>, which solves the same problem for the
+/// end-to-end fixtures; it is duplicated rather than shared because that type is internal to another
+/// test assembly. Keep the two in step: the recursion deliberately stops before the path root,
+/// because <see cref="Directory.ResolveLinkTarget"/> throws on a root such as <c>C:\</c> instead of
+/// answering "not a link".
+/// </para>
 /// </remarks>
 internal static class KnowledgeTrustTestPaths {
 	/// <summary>
@@ -22,20 +30,27 @@ internal static class KnowledgeTrustTestPaths {
 
 	private static string ResolveTempRoot() {
 		string root = Path.GetFullPath(Path.GetTempPath());
-		string? current = root;
-		while (!string.IsNullOrEmpty(current)) {
-			FileSystemInfo? target = Directory.Exists(current)
-				? Directory.ResolveLinkTarget(current, returnFinalTarget: true)
-				: null;
-			if (target is not null) {
-				string relative = Path.GetRelativePath(current, root);
-				return relative is "."
-					? Path.GetFullPath(target.FullName)
-					: Path.GetFullPath(Path.Combine(target.FullName, relative));
-			}
-			string? parent = Path.GetDirectoryName(current);
-			current = parent == current ? null : parent;
+		// A fixture must never fail in a type initializer: that surfaces as every test in the fixture
+		// erroring in SetUp with the resolution failure buried in a TypeInitializationException. An
+		// unresolvable root is not worth that, and the unresolved path is the correct answer wherever
+		// no ancestor is linked anyway.
+		try {
+			return Resolve(root);
+		} catch (Exception exception) when (exception is IOException
+				or UnauthorizedAccessException
+				or ArgumentException
+				or NotSupportedException) {
+			return root;
 		}
-		return root;
+	}
+
+	private static string Resolve(string path) {
+		string full = Path.GetFullPath(path);
+		string? parent = Path.GetDirectoryName(full);
+		if (parent is null) {
+			return full;
+		}
+		string candidate = Path.Combine(Resolve(parent), Path.GetFileName(full));
+		return Directory.ResolveLinkTarget(candidate, returnFinalTarget: true)?.FullName ?? candidate;
 	}
 }

@@ -105,7 +105,7 @@ internal sealed class GuidanceGetTool {
 			}
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
-				ErrorCode = "guidance-not-found",
+				ErrorCode = KnowledgeGuidanceNotFoundException.ErrorCode,
 				Error = $"Unknown guidance '{effectiveName}'. Use one of availableGuides.",
 				AvailableGuides = _guidanceSource.GetNames().ToList()
 			});
