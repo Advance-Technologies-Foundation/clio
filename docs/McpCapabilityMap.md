@@ -346,6 +346,7 @@ This area gives the AI a clean application-level view of the platform.
   Create a Creatio application and return its structured context.
 - `create-app-section`
   Add a section to an existing installed application; returns the created section, entity, and page readback.
+  Serialized per environment + application in-process; a detail-less `InsertQuery failed` is classified `contention` (parallel creation OR a server-side rejection — the server gives no detail to tell them apart) and auto-retried once with verification (create sections sequentially; a persistent single-create failure is server-side — ENG-93089).
 - `update-app-section`
   Update metadata (caption, description, icon) of an existing section; returns before/after readback.
 - `delete-app-section`
@@ -414,6 +415,35 @@ Why `sync-schemas` matters:
 - it reduces round trips
 - it batches create/update/seed actions
 - it is a better fit for agents that want one atomic plan execution instead of many tiny tool calls
+
+`sync-schemas` is **convergent (re-run-safe)**. `create-lookup`, `create-entity`, and `update-entity`
+read current server state first and apply only the missing delta (create-if-absent,
+add-only-missing-columns, per-column add/modify/remove; unlisted columns untouched), so re-submitting
+the identical batch after an ambiguous failure is safe. Details an external AI relies on:
+
+- **`outcome` discriminator** on each per-operation result: `created` | `reconciled` |
+  `already-satisfied` | `collision` (additive; omitted for `seed-data`). `reconciled` and
+  `already-satisfied` are successes, not failures.
+- **Collision failure** is pre-emptive: a same-name schema in a DIFFERENT package (or a same-package
+  schema whose parent/kind is incompatible with the request) fails that op with `success: false`,
+  `outcome: "collision"`, and `collision-info` (owning package); the batch stops on first failure.
+  Exceptions: a `create-entity` with `extend-parent: true` treats a same-name/other-package schema as
+  its replacement target (`created`, not a collision), and a per-column type mismatch is a
+  modify-conflict, not a collision.
+- **Seed-data `Name` contract**: a row is replay-safe only when the target schema has a `Name` column
+  AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are
+  non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay.
+
+**Per-operation `status`, transient retry, and resume-plan.** Each entry in `results` carries a
+machine-readable `status` (`completed` | `failed`), an `operation-index` (zero-based index into the
+request `operations`), and — only when the operation was retried for a transient network fault — an
+`attempts` count. Transient network failures (DNS/reset/timeout/gateway) are retried per operation
+(up to 3 attempts with short backoff) before the op fails. On a mid-batch abort the response carries
+a `resume-plan` (the failed op plus the not-run ops, in re-submittable shape). Because the schema ops
+are convergent, re-submitting the whole batch verbatim is safe; resubmitting only
+`resume-plan.operations` is the efficient path and is required for `seed-data` (NOT replay-safe),
+which the plan converts to a standalone op instead of recreating the schema.
+
 
 ### 4. User Task Engineering
 
@@ -652,11 +682,11 @@ All tools in this section except `get-process-signature` are gated behind the `p
 feature toggle and require the `clioprocessbuilder` (ProcessDesignService) package on the target
 environment.
 
-- `create-business-process` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — builds a NEW process from a declarative JSON descriptor (`name`, `caption`, `packageName`, `elements[]`, `flows[]`, `parameters[]`, `mappings[]`) and saves it server-side in one call; diagram layout is automatic. The buildable slice is startEvent/signalStart/endEvent/userTask joined by plain sequence flows; unsupported elements are rejected with a clear message, and a signal start carries no record filter (it fires for every record of its object).
-- `modify-business-process` (`ReadOnly=false`, `Destructive=true`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — edits an EXISTING process (by `process-name` or `process-uid`) with an ordered operations array: addElement / removeElement / addFlow / removeFlow / addParameter / addMapping / setParameter / removeParameter. Atomic: any failed operation aborts the whole edit (nothing is saved). Removals are not structurally validated and every edit re-lays-out the whole diagram; re-sending addMapping overwrites a binding in place (there is no removeMapping/clear op).
+- `create-business-process` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — builds a NEW process from a declarative JSON descriptor (`name`, `caption`, `packageName`, `elements[]`, `flows[]`, `parameters[]`, `mappings[]`) and saves it server-side in one call; diagram layout is automatic. The buildable slice is startEvent/signalStart/endEvent/userTask joined by plain sequence flows; unsupported elements are rejected with a clear message. A `signalStart` carries its record trigger in `signal` (`entity` + `on` = added|modified|deleted), optionally narrowed two independent ways: a data source `filter` restricts WHICH records fire it, and `signal.changedColumns` (column names, valid only for `on:modified`) restricts WHICH column changes count. Any element may also carry `useBackgroundMode` — an element-level platform flag; omit it to keep that element kind's default (a `signalStart` defaults to background mode).
+- `modify-business-process` (`ReadOnly=false`, `Destructive=true`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — edits an EXISTING process (by `process-name` or `process-uid`) with an ordered operations array: addElement / removeElement / addFlow / removeFlow / addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter / setSignal / setElement (the last two edit an existing element in place, preserving it and its flows: `setSignal` reconfigures a signalStart's record trigger and tracked-change columns, `setElement` changes element-level fields such as `useBackgroundMode` on any element kind). Atomic: any failed operation aborts the whole edit (nothing is saved). Removals are not structurally validated and every edit re-lays-out the whole diagram; re-sending addMapping overwrites a binding in place (there is no removeMapping/clear op).
 - `list-user-tasks` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — returns the environment's user-task palette (built-in + custom; name + UId) for `userTaskName` selection when building a process.
 - `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
-- `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters,signal?}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted.
+- `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,useBackgroundMode,parameters,signal?,filter?}]` — where `signal` carries `entity`/`on` plus `changedColumns` for a column-restricted `modified` trigger — `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted.
 - `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: authoring crt.RunBusinessProcessRequest via the request catalog (get-request-info).
 
 What an external AI can practically do here:
@@ -672,10 +702,10 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline, and `build-theme` needs no environment but does reach fonts.google.com for a short bounded availability probe per custom font family (it still works without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
-  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment. Each custom font family is checked against Google Fonts: one the catalogue does not publish gets NO `@import` plus a warning (it then renders only where installed locally), and an unverifiable probe keeps the import plus a warning — so the emitted CSS can vary with probe outcomes, which the warnings always disclose.
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
@@ -701,7 +731,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 
 What an external AI can practically do here:
 
-- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push; or skip the offline build and pass the palette straight to `create-theme` (brand mode), which builds the CSS and creates the theme server-side in one call
+- build a theme without an environment (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)

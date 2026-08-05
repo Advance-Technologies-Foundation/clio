@@ -534,6 +534,20 @@ public sealed class ApplicationToolE2ETests {
 			"schema synchronization",
 			arrangeContext.CancellationTokenSource.Token);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
+		// The two arrange preconditions are asserted HERE rather than in the Assert block below, because
+		// everything after this point only makes sense once sync-schemas actually applied the mutation. When
+		// it did not, the readback poll below spends its full timeout waiting for an entity that will never
+		// appear and the run then reports the arrange failure three minutes late, with no per-operation error
+		// to act on — which is exactly how a `success: false` here read as an unexplained flake.
+		createResult.Result.Success.Should().BeTrue(
+			because: "the regression scenario requires a successfully created application before sync-schemas mutates the canonical main entity");
+		schemaSyncCallResult.IsError.Should().NotBeTrue(
+			because: $"sync-schemas should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
+		// The raw payload is inlined in the reason on purpose: sync-schemas reports WHY it failed per
+		// operation in `results[].error`, and without it the failure message is only "found False".
+		schemaSyncResponse.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the minimal sync-schemas update should succeed before get-app-info readback is validated. "
+				+ $"Actual sync-schemas payload: {schemaSyncResponse.GetRawText()}");
 		// sync-schemas triggers an asynchronous server-side schema recompile; the canonical main
 		// entity can be momentarily absent from get-app-info until that settles. Poll the readback so
 		// the regression assertions below test the settled state instead of racing the recompile.
@@ -553,12 +567,6 @@ public sealed class ApplicationToolE2ETests {
 			.FirstOrDefault(entity => string.Equals(entity.Name, virtualSchemaName, StringComparison.OrdinalIgnoreCase));
 
 		// Assert
-		createResult.Result.Success.Should().BeTrue(
-			because: "the regression scenario requires a successfully created application before sync-schemas mutates the canonical main entity");
-		schemaSyncCallResult.IsError.Should().NotBeTrue(
-			because: $"sync-schemas should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
-		schemaSyncResponse.GetProperty("success").GetBoolean().Should().BeTrue(
-			because: "the minimal sync-schemas update should succeed before get-app-info readback is validated");
 		canonicalMainEntity.Should().NotBeNull(
 			because: "get-app-info should continue to return the canonical main entity after sync-schemas mutations");
 		canonicalMainEntity!.Caption.Should().Be(applicationName,

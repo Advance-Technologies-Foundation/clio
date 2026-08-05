@@ -46,6 +46,37 @@ Example use cases:
 - attach temporary callbacks
 - tweak command instance state before `Execute`
 
+## Read-response deadline (retry-safe tools)
+
+Retry-safe tools (read-only, or the `get-page` local-write read; never idempotent server writes) are bounded by a wall-clock response
+deadline so a stalled Creatio round-trip can never hang the call indefinitely (ENG-93373). This is
+NOT wired per tool — it lives at the call-tool pipeline layer, so it is shape-agnostic and covers
+every retry-safe tool regardless of its return type:
+
+- `McpReadDeadlineGate.IsRetrySafe(toolName, readOnly, destructive)` is the single authority:
+  `!destructive && !isProgressStreamingRead && (readOnly || isGetPage)`. `get-page` is admitted by NAME
+  (ReadOnly=false because it writes local `.clio-pages` files, but it reads from Creatio and a retry
+  re-reads + overwrites). `get-app-info` is EXCLUDED by name (`isProgressStreamingRead`): it is
+  ReadOnly=true but streams `notifications/progress` under the write-path heartbeat and its contract is
+  "await completion, do not retry" — so the read deadline must never bound it. The
+  `Idempotent` hint is deliberately NOT in the predicate: an idempotent SERVER write (`install-gate`,
+  `generate-source-code`, `add-package-dependency`, …) is safe only for sequential re-runs, not for a
+  retry issued while an abandoned first call is still mutating the server — so the deadline covers reads
+  only, never server writes.
+- `McpReadResponseDeadline.RunAsync(...)` races the work against the deadline
+  (default 120s, override `CLIO_MCP_READ_DEADLINE_SECONDS`; separate from the write path's
+  `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`). On expiry it returns a structured `CallToolResult` with
+  `error-class: creatio-timeout` + `read-response-timed-out: true` + `retry-guidance`, and abandons
+  the read (safe — the caller simply retries).
+- Wiring: `McpToolErrorFilter.HandleCallToolErrors` applies it to MATCHED (advertised) retry-safe
+  tools (annotations read from `MatchedPrimitive`); `McpDurableCallToolHandler` applies it to
+  UNMATCHED long-tail retry-safe tools via `IMcpToolInvokerRegistry.IsRetrySafe`.
+
+Do NOT add a per-tool `error-class`/`retry-guidance` field to a read response for timeout purposes —
+the pipeline mechanism already covers it. Destructive tools own their own timeout contract (e.g.
+`create-app-section`'s `section-created: in-progress`); never route a destructive tool through the
+read deadline. See `spec/adr/adr-read-only-mcp-response-deadline.md`.
+
 ## Uniformity rules
 
 - New MCP tools should inherit from `BaseTool<TOptions>` unless there is a strong reason not to.

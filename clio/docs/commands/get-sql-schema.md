@@ -20,7 +20,9 @@ workspace files are created or modified.
 When `--output-file` is set, the schema body is written to the specified file and the body
 field is omitted from the response JSON printed to stdout. This keeps the terminal output
 small and makes it easy to edit the body locally before piping it back through
-`update-sql-schema`.
+`update-sql-schema`. The output path is confined to the workspace or the OS temp directory
+(symlinks are resolved; a path resolving outside both, or one that already exists, is rejected before
+any write), because this command is MCP-callable and its path can be agent-supplied.
 
 ## Synopsis
 
@@ -35,7 +37,8 @@ clio get-sql-schema [options]
 
 --output-file                      Optional absolute path. When set, the schema body is
                                    written to this file and the body field is omitted
-                                   from the response JSON
+                                   from the response JSON. Confined to the workspace or
+                                   the OS temp directory
 
 --uri                    -u       Application uri
 

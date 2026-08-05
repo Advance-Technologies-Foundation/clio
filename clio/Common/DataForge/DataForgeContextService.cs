@@ -81,18 +81,21 @@ internal sealed class DataForgeContextService(
 		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> warnings = [];
+		// Tracks the collapsed state per distinct (category, message) cause so repeats collapse into one warning.
+		Dictionary<string, CollapsedWarning> firstIndexByCause = new(StringComparer.Ordinal);
 		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
 		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
-		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, cancellationToken);
+		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, firstIndexByCause, cancellationToken);
 
 		List<string> lookupTerms = NormalizeTerms(request.LookupHints, null);
-		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings, cancellationToken);
+		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings, firstIndexByCause, cancellationToken);
 
 		Dictionary<string, IReadOnlyList<string>> relations = GetRelations(
 			request.RelationPairs,
 			warnings,
+			firstIndexByCause,
 			cancellationToken);
 
 		List<SimilarTableResult> distinctTables = GetDistinctTables(similarTables);
@@ -100,6 +103,7 @@ internal sealed class DataForgeContextService(
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(
 			distinctTables,
 			warnings,
+			firstIndexByCause,
 			cancellationToken);
 
 		List<SimilarLookupResult> distinctLookups = GetDistinctLookups(similarLookups);
@@ -123,6 +127,64 @@ internal sealed class DataForgeContextService(
 			relations,
 			columns,
 			coverage);
+	}
+
+	/// <summary>
+	/// Records a per-item read failure, collapsing repeats of the SAME underlying error into one warning that
+	/// names the affected items instead of emitting one line per item.
+	/// </summary>
+	/// <remarks>
+	/// When the Data Forge subsystem is unconfigured on an environment every read fails identically, so an
+	/// N-term request produced N copies of the same message and buried the one fact the caller needed
+	/// (issue #948). Collapsing at the reporting layer — rather than skipping the reads on a health probe —
+	/// is deliberate: the probe's liveness is NOT a reliable predictor of whether the reads work. The
+	/// sandbox proves it, running with liveness false while table-column reads (which go through the
+	/// runtime schema reader, not Data Forge) succeed, so short-circuiting on it would discard real results.
+	/// </remarks>
+	/// <param name="warnings">The accumulating warning list, mutated in place.</param>
+	/// <param name="firstIndexByCause">Maps an already-seen (category, message) cause to its collapsed state.</param>
+	/// <param name="category">Read category (<c>tables</c>, <c>lookups</c>, <c>relations</c>, <c>columns</c>).</param>
+	/// <param name="item">The term, pair key, or table name the read was for.</param>
+	/// <param name="message">The failure message used as the dedup key.</param>
+	private static void AddDedupedWarning(
+		List<string> warnings,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
+		string category,
+		string item,
+		string message) {
+		// NUL-joined so a message containing ':' cannot collide with another category's key.
+		string causeKey = $"{category}\0{message}";
+		if (!firstIndexByCause.TryGetValue(causeKey, out CollapsedWarning? collapsed)) {
+			// The first occurrence keeps the ORIGINAL `category:item:message` shape byte for byte, so a
+			// single-failure payload is unchanged for existing consumers; only repeats are collapsed.
+			collapsed = new CollapsedWarning(warnings.Count, category, item, message);
+			firstIndexByCause[causeKey] = collapsed;
+			warnings.Add(collapsed.Render());
+			return;
+		}
+		// Collapsed state is tracked STRUCTURALLY and the line re-rendered from it. Inferring "already
+		// collapsed" by parsing the emitted line (`EndsWith(")") && Contains(" (also: ")`) could not tell
+		// clio's own marker from the same substring occurring inside an exception message, so a cause like
+		// `Load failed (also: check config)` had the next item spliced into the message's own parenthetical.
+		collapsed.AlsoItems.Add(item);
+		warnings[collapsed.Index] = collapsed.Render();
+	}
+
+	/// <summary>
+	/// Structural state of one collapsed warning: where it sits in the warning list, the cause it reports, and
+	/// every item that hit that same cause. The emitted line is always rendered from this, never parsed back.
+	/// </summary>
+	private sealed class CollapsedWarning(int index, string category, string firstItem, string message) {
+		public int Index { get; } = index;
+
+		public List<string> AlsoItems { get; } = [];
+
+		public string Render() {
+			string head = $"{category}:{firstItem}:{message}";
+			return AlsoItems.Count == 0
+				? head
+				: $"{head} (also: {string.Join(", ", AlsoItems)})";
+		}
 	}
 
 	private static DataForgeCoverage CreateCoverage(
@@ -165,6 +227,7 @@ internal sealed class DataForgeContextService(
 	private List<SimilarTableResult> FindSimilarTables(
 		IReadOnlyList<string> tableTerms,
 		List<string> warnings,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		List<SimilarTableResult> similarTables = [];
 		foreach (string term in tableTerms) {
@@ -173,7 +236,7 @@ internal sealed class DataForgeContextService(
 				similarTables.AddRange(readClient.FindSimilarTables(term));
 			}
 			catch (Exception ex) {
-				warnings.Add($"tables:{term}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "tables", term, ex.Message);
 			}
 		}
 
@@ -183,6 +246,7 @@ internal sealed class DataForgeContextService(
 	private List<SimilarLookupResult> FindSimilarLookups(
 		IReadOnlyList<string> lookupTerms,
 		List<string> warnings,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		List<SimilarLookupResult> similarLookups = [];
 		foreach (string hint in lookupTerms) {
@@ -191,7 +255,7 @@ internal sealed class DataForgeContextService(
 				similarLookups.AddRange(readClient.FindSimilarLookups(hint));
 			}
 			catch (Exception ex) {
-				warnings.Add($"lookups:{hint}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "lookups", hint, ex.Message);
 			}
 		}
 
@@ -201,6 +265,7 @@ internal sealed class DataForgeContextService(
 	private Dictionary<string, IReadOnlyList<string>> GetRelations(
 		IReadOnlyList<DataForgeRelationPair>? relationPairs,
 		List<string> warnings,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
 		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
@@ -210,7 +275,7 @@ internal sealed class DataForgeContextService(
 				relations[key] = readClient.GetTableRelationships(pair.SourceTable, pair.TargetTable);
 			}
 			catch (Exception ex) {
-				warnings.Add($"relations:{key}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "relations", key, ex.Message);
 			}
 		}
 
@@ -220,6 +285,7 @@ internal sealed class DataForgeContextService(
 	private Dictionary<string, IReadOnlyList<DataForgeColumnResult>> GetColumns(
 		IReadOnlyList<SimilarTableResult> distinctTables,
 		List<string> warnings,
+		Dictionary<string, CollapsedWarning> firstIndexByCause,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string tableName in distinctTables.Select(table => table.Name)) {
@@ -229,7 +295,7 @@ internal sealed class DataForgeContextService(
 				columns[tableName] = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
 			}
 			catch (Exception ex) {
-				warnings.Add($"columns:{tableName}:{ex.Message}");
+				AddDedupedWarning(warnings, firstIndexByCause, "columns", tableName, ex.Message);
 			}
 		}
 

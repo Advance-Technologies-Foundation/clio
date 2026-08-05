@@ -175,7 +175,7 @@ internal sealed class CommandHelpCatalog {
 	private static readonly IReadOnlyDictionary<string, string[]> RelatedCommands =
 		new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase) {
 			["add-data-binding-row"] = ["create-data-binding", "remove-data-binding-row"],
-			["create-data-binding"] = ["add-data-binding-row", "remove-data-binding-row", CallService],
+			["create-data-binding"] = ["add-data-binding-row", "remove-data-binding-row", CallService, "create-data-binding-db"],
 			["create-entity-schema"] = [GetEntitySchemaProperties, ModifyEntitySchemaColumn],
 			[GetEntitySchemaColumnProperties] = [GetEntitySchemaProperties, ModifyEntitySchemaColumn],
 			[GetEntitySchemaProperties] = [GetEntitySchemaColumnProperties, ModifyEntitySchemaColumn],
@@ -270,6 +270,8 @@ internal sealed class CommandHelpCatalog {
 			"create-lookup",
 			"dataservice",
 			"delete-schema",
+			"get-classic-page-sources",
+			"list-entity-client-schemas",
 			"download-configuration",
 			"externalLink",
 			"generate-process-model",

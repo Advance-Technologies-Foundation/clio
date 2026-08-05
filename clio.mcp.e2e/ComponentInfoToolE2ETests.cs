@@ -552,6 +552,76 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Test]
+	[Description("Type-reference closure over the wire on the component flavor: a component detail must inline a type definition reachable ONLY through a keyType/valueType string. The fixture's input is a Record whose valueType names AttributeConfigProbe, a shape the live catalog uses for attribute-config and filter maps, so a response that omits that definition would name a type it never defines. UnreferencedProbe is published but unreachable, pinning that the closure stays scoped. Mandatory MCP e2e for the changed tool result content (AGENTS.md).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info inlines valueType-referenced type definitions over the wire")]
+	[AllureDescription("Points the real clio process at a local component-registry fixture whose input references a type only through a valueType union, then verifies references.typeDefinitions inlines it while an unreferenced global stays out.")]
+	public async Task ComponentInfoTool_Should_Inline_ValueType_Referenced_TypeDefinitions_Over_The_Wire() {
+		// Arrange — a wrapped-shape catalog: the component's only type reference to
+		// AttributeConfigProbe lives in a valueType string, never in a `type` one.
+		string fixturePath = Path.Combine(Path.GetTempPath(), $"clio-e2e-valuetype-closure-{Guid.NewGuid():N}.json");
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.ValueTypeProbe",
+		      "category": "containers",
+		      "description": "Fixture component whose attribute map names its value type through valueType.",
+		      "inputs": {
+		        "attributes": { "type": "Record", "keyType": "string", "valueType": "AttributeConfigProbe" }
+		      },
+		      "outputs": {}
+		    }
+		  ],
+		  "references": {
+		    "typeDefinitions": {
+		      "AttributeConfigProbe": {
+		        "fields": {
+		          "path": { "type": "string", "required": true }
+		        }
+		      },
+		      "UnreferencedProbe": {
+		        "fields": {
+		          "unused": { "type": "string" }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
+		await File.WriteAllTextAsync(fixturePath, registryJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			// Documented Tier-0 override, read before the disk cache and CDN.
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			using CancellationTokenSource closureCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession closureSession = await McpServerSession.StartAsync(settings, closureCts.Token);
+
+			// Act
+			ComponentInfoResponse response = await CallComponentInfoAsync(
+				closureSession,
+				closureCts.Token,
+				new Dictionary<string, object?> { ["component-type"] = "crt.ValueTypeProbe" });
+
+			// Assert
+			response.Success.Should().BeTrue(
+				because: "the fixture publishes crt.ValueTypeProbe, so the detail lookup succeeds over the wire");
+			response.References.Should().NotBeNull(
+				because: "the component references a named type, so the detail carries a typeDefinitions block");
+			response.References!.TypeDefinitions.Should().NotBeNull(
+				because: "the resolved closure is what the response surfaces as references.typeDefinitions");
+			response.References.TypeDefinitions!.Should().ContainKey("AttributeConfigProbe",
+				because: "the input names it only through a valueType string - the hop this closure follows");
+			response.References.TypeDefinitions.Should().NotContainKey("UnreferencedProbe",
+				because: "no input or output reaches it, so the closure must leave it out of the response");
+		}
+		finally {
+			TryDeleteFixture(fixturePath);
+		}
+	}
+
 	private static async Task<ComponentInfoResponse> CallComponentInfoAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

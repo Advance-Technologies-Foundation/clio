@@ -23,7 +23,17 @@ public enum ApplicationSectionCreateFailureClass {
 	/// Creatio responded with an error (HTTP error status, non-JSON body, or a rejected insert).
 	/// Retrying the same arguments will most likely fail again.
 	/// </summary>
-	ServerError
+	ServerError,
+
+	/// <summary>
+	/// Creatio aborted the insert with a detail-less <c>InsertQuery failed</c> rejection (empty or opaque
+	/// server message). This is the signature of lock/contention when sections are created in one application
+	/// in parallel — but, because the server returns no distinguishing detail, it can equally be a server-side
+	/// rejection unrelated to concurrency (ENG-93089). No section was created (verified by the generated
+	/// section id), so it is safe for clio to auto-retry once; a persistent failure is surfaced with guidance
+	/// that covers both the serialize-and-retry and the server-side diagnosis paths.
+	/// </summary>
+	Contention
 }
 
 /// <summary>
@@ -33,12 +43,21 @@ public static class ApplicationSectionCreateFailureClassExtensions {
 	/// <summary>
 	/// Maps the failure class to the kebab-case value carried by the MCP error envelope.
 	/// </summary>
+	/// <remarks>
+	/// The explicit arms keep the MCP <c>error-class</c> contract in sync with the failure classes. This
+	/// method is called from inside a <c>catch (ApplicationSectionCreateException)</c> while the tool is
+	/// already surfacing an error, so it must never throw — a throw there would escape the sibling
+	/// <c>catch (Exception)</c> and crash the tool. Any unmapped value therefore degrades to
+	/// <c>server-error</c> (the safe, most conservative class) instead of throwing.
+	/// </remarks>
 	/// <param name="failureClass">Failure class to map.</param>
-	/// <returns><c>transport</c>, <c>creatio-timeout</c>, or <c>server-error</c>.</returns>
+	/// <returns><c>transport</c>, <c>creatio-timeout</c>, <c>contention</c>, or <c>server-error</c>.</returns>
 	public static string ToWireValue(this ApplicationSectionCreateFailureClass failureClass) =>
 		failureClass switch {
 			ApplicationSectionCreateFailureClass.Transport => "transport",
 			ApplicationSectionCreateFailureClass.CreatioTimeout => "creatio-timeout",
+			ApplicationSectionCreateFailureClass.Contention => "contention",
+			ApplicationSectionCreateFailureClass.ServerError => "server-error",
 			_ => "server-error"
 		};
 }
