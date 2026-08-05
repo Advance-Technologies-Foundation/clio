@@ -111,24 +111,15 @@ public class WorkplaceCacheReloader : IWorkplaceCacheReloader {
 	#region Class: BaseGateResponse
 
 	/// <summary>
-	///     Wire shape of the cliogate <c>BaseResponse</c> envelope.
+	///     Wire shape of the cliogate <c>BaseResponse</c> envelope. Positional so the values are visibly assigned by
+	///     the deserializer's constructor call rather than looking like never-written auto-properties.
 	/// </summary>
-	private sealed record BaseGateResponse {
-
-		public bool Success { get; init; }
-
-		public GateErrorInfo ErrorInfo { get; init; }
-
-	}
+	private sealed record BaseGateResponse(bool Success, GateErrorInfo ErrorInfo);
 
 	/// <summary>
 	///     Wire shape of the cliogate <c>ErrorInfo</c> block.
 	/// </summary>
-	private sealed record GateErrorInfo {
-
-		public string Message { get; init; }
-
-	}
+	private sealed record GateErrorInfo(string Message);
 
 	#endregion
 

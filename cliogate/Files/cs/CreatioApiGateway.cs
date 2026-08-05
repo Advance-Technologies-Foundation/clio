@@ -547,7 +547,9 @@ namespace cliogate.Files.cs
 		private static object[] BuildEmptyArguments(MethodInfo method){
 			ParameterInfo[] parameters = method.GetParameters();
 			if (parameters.Length == 0) {
-				return null;
+				// An empty argument array is what Invoke expects for a parameterless method; returning null would
+				// work too but makes every caller re-derive that.
+				return new object[0];
 			}
 			return new object[] {Array.CreateInstance(parameters[0].ParameterType.GetElementType(), 0)};
 		}

@@ -161,7 +161,8 @@ public class ReadDataBindingDbCommand(IDataBindingDbService dataBindingDbService
 			logger.WriteInfo($"schema:  {projection.EntitySchemaName}");
 			logger.WriteInfo($"uId:     {projection.BindingUId}");
 			logger.WriteInfo($"rows:    {projection.Rows.Count}");
-			logger.WriteInfo($"columns ({projection.Columns.Count}): {string.Join(", ", projection.Columns)}");
+				IReadOnlyList<string> columns = projection.GetColumns();
+				logger.WriteInfo($"columns ({columns.Count}): {string.Join(", ", columns)}");
 			for (int index = 0; index < projection.Rows.Count; index++) {
 				IReadOnlyDictionary<string, string> row = projection.Rows[index];
 				string values = string.Join(", ", row.OrderBy(pair => pair.Key, StringComparer.Ordinal)
@@ -227,7 +228,11 @@ public sealed record BoundBindingProjection(
 	/// <summary>
 	///     Every column name the binding ships, across all rows, in stable order.
 	/// </summary>
-	public IReadOnlyList<string> Columns =>
+	/// <remarks>
+	///     A method rather than a property: the set is derived from <see cref="Rows" /> on each call, and a property
+	///     that builds and copies a collection hides that cost from the caller.
+	/// </remarks>
+	public IReadOnlyList<string> GetColumns() =>
 		Rows.SelectMany(row => row.Keys).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)
 			.ToArray();
 }
