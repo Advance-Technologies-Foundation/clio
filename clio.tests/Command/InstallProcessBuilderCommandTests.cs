@@ -249,21 +249,78 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_requiredPackageChecker
 			.IsCompatible(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion)
 			.Returns(true);
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(ServiceAnswersResponse);
 
 		// Act
 		int result = _command.Execute(new InstallProcessBuilderOptions());
 
 		// Assert
-		result.Should().Be(0, because: "an already-current environment needs no work and is not an error");
+		result.Should().Be(0, because: "an already-current environment whose service answers needs no work");
 		_packageInstaller.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstaller.Install))
 			.Should().Be(0,
 				because: "reinstalling an identical package would make the environment recompile it for nothing");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+		_serverReadinessWaiter.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IServerReadinessWaiter.WaitForReady))
 			.Should().Be(0,
-				because: "the short-circuit reports what is already installed; probing a service this command "
-					+ "did not touch would turn an unrelated outage into a failure of this command");
+				because: "nothing was installed on this path, so nothing restarted and there is nothing to wait "
+					+ "for — paying the readiness InitialDelay here would add 10 seconds to a no-op");
+	}
+
+	[Test]
+	[Description("Reports a failure when the package version is already recorded but ProcessDesignService does not answer, because the recorded version proves the archive was accepted and not that the target ever compiled it.")]
+	public void Execute_ShouldFail_WhenAlreadyInstalledButServiceDoesNotAnswer() {
+		// Arrange
+		_requiredPackageChecker
+			.IsCompatible(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion)
+			.Returns(true);
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("<html>404</html>");
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "this is the state the whole command exists to detect — a previous install whose "
+				+ "configuration build failed leaves the version recorded, so the name-and-version gate stops "
+				+ "emitting its hint and the designer commands fail with raw service errors. Reporting 0 here "
+				+ "made the documented remediation a dead end");
+		// NSubstitute's Received() takes no `because`; the reason is stated here instead. The message must
+		// name the only lever that gets past the short-circuit, or the caller is told about a problem with
+		// no way to act on it.
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("--force")));
+	}
+
+	[Test]
+	[Description("Installs even when a compatible version is recorded, when force is requested, so a present-but-uncompiled package can be repaired.")]
+	public void Execute_ShouldInstall_WhenForceRequestedDespiteCompatibleVersion() {
+		// Arrange
+		_requiredPackageChecker
+			.IsCompatible(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion)
+			.Returns(true);
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
+			Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
+		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(ServiceAnswersResponse);
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions { Force = true });
+
+		// Assert
+		result.Should().Be(0, because: "the forced reinstall succeeded and the service answers afterwards");
+		_packageInstaller.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstaller.Install))
+			.Should().Be(1,
+				because: "force exists precisely to bypass the compatible-version short-circuit; if it did not "
+					+ "reach the installer the flag would parse, be accepted, and silently do nothing");
+		_requiredPackageChecker.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IRequiredPackageChecker.IsCompatible))
+			.Should().Be(0,
+				because: "force short-circuits the CHECK, not just its result — an environment being repaired "
+					+ "may be one whose DataService read is exactly what is unreliable");
 	}
 
 	[Test]

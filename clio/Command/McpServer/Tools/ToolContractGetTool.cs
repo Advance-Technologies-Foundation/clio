@@ -5248,7 +5248,8 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"A process-designer tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) reported that the CrtProcessBuilder package is missing or older than required.",
-				"The caller has CanManageSolution on the target environment, and DataService read access to SysPackage so the installed version can be detected."
+				"The caller can install a package on the target environment, and has DataService read access to SysPackage so the installed version can be detected.",
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
 			]);
 	}
 

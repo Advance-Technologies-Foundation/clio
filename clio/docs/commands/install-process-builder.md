@@ -51,13 +51,23 @@ ListUserTasks and fails if ProcessDesignService does not answer, so an
 environment that accepted the package but never compiled it is reported instead
 of looking like a success.
 
-A compatible installation is detected and left alone, so re-running the command
-on an up-to-date environment does nothing and does not make it recompile.
+A compatible installation is detected and left alone, so re-running the command on
+an up-to-date environment does not make it recompile. It is still checked, not
+merely reported: the recorded version proves the archive was accepted, not that the
+environment ever compiled it, so the command calls ProcessDesignService on this path
+too and fails if it does not answer. That is the state `--force` exists for.
 
 ## Options
 
     -e, --environment <ENVIRONMENT_NAME>
         Target environment name from your configuration
+
+    --force
+        Install even when a compatible version is already recorded on the
+        environment. Use it when the package is present but ProcessDesignService
+        does not answer - the environment has the package and never compiled it.
+        (The shared help text for this flag reads "Force restore"; for this
+        command it means "reinstall".)
 
     Environment options (can be used instead of -e):
         -u, --uri <URI>
@@ -91,10 +101,16 @@ clio update-process-builder -e dev
 
 ## Prerequisites
 
-- Administrator permissions on the target environment. Every
-  ProcessDesignService method is gated on CanManageSolution.
+- Permission to install a package on the target environment (the install itself
+  runs a configuration build and restarts the instance).
 - Read access to SysPackage through DataService, which is how clio detects
   whether the package is already installed.
+
+Once installed, using the process-designer commands additionally requires the
+`CanManageProcessDesign` operation and a General (non-portal) user — the gate
+ProcessDesignService enforces in its own handlers. That is deliberately stricter
+than cliogate's `CanManageSolution`, which is broader and does not check the
+connection type, so granting `CanManageSolution` does not grant process design.
 
 ## Notes
 

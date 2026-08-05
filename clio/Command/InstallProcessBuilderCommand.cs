@@ -232,6 +232,39 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// probe would have landed inside the restart.
 	/// </para>
 	/// </remarks>
+	/// <summary>
+	/// Reports the outcome for a target that already carries a compatible version, WITHOUT installing.
+	/// </summary>
+	/// <returns><c>0</c> when the service also answers; otherwise <c>1</c>.</returns>
+	/// <remarks>
+	/// The probe here is the point. A compatible version in <c>SysPackage</c> proves the archive was accepted
+	/// at some point, NOT that the target ever compiled it — and those are different states precisely because
+	/// no assembly ships in the archive. Reporting "nothing to do" on the strength of the version alone made
+	/// the one failure mode this command exists to detect UNREACHABLE through the command: a previous install
+	/// whose configuration build failed leaves the version recorded, so the name-and-version
+	/// <c>[RequiresPackage]</c> gate stops emitting its hint, the process-designer commands fail with raw
+	/// service errors, and the remediation they used to point at answered "already installed" with exit 0.
+	/// <para>
+	/// No readiness wait on this path: nothing was installed, so nothing restarted.
+	/// </para>
+	/// </remarks>
+	private int ReportAlreadyInstalled() {
+		if (DoesServiceAnswer()) {
+			_logger.WriteInfo(
+				$"{BundledPackages.ProcessBuilderPackageName} " +
+				$"{BundledPackages.ProcessBuilderVersion} or higher is already installed and " +
+				"ProcessDesignService answers. Nothing to do.");
+			return 0;
+		}
+		_logger.WriteError(
+			$"{BundledPackages.ProcessBuilderPackageName} " +
+			$"{BundledPackages.ProcessBuilderVersion} or higher is recorded as installed, but " +
+			"ProcessDesignService does not answer — the environment has the package but never compiled it. " +
+			"Re-run with --force to reinstall it, and if it still does not answer check the environment's " +
+			"configuration build log.");
+		return 1;
+	}
+
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = _environmentSettings.Uri,
@@ -259,12 +292,8 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 					$"'{packagePath}'. This clio installation does not carry the package archive.");
 				return 1;
 			}
-			if (IsAlreadyInstalledAndCompatible()) {
-				_logger.WriteInfo(
-					$"{BundledPackages.ProcessBuilderPackageName} " +
-					$"{BundledPackages.ProcessBuilderVersion} or higher is already installed. " +
-					"Nothing to do.");
-				return 0;
+			if (!options.Force && IsAlreadyInstalledAndCompatible()) {
+				return ReportAlreadyInstalled();
 			}
 			bool success = _packageInstaller.Install(
 				packagePath,

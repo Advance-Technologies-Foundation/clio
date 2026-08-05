@@ -295,7 +295,23 @@ Application Hub and `push-pkg`, verified by the service answering with the full 
   > settings **or a colliding type name in another package**" and "a broken configuration build on their
   > side" as exposures. The last two are false — §3.2 shows the regenerated project compiles only our own
   > sources and does not reference `Terrasoft.Configuration` or any other package.
-- We can never test the bits that actually run; testing shifts to representative platform versions.
+- We cannot test **the binary the customer will run**, because it does not exist until they install.
+  What we test is a *different compilation of the same sources* by a different toolchain against a
+  different core, so the residual risk is an untested (toolchain × core version) combination rather than
+  untested code. Two things bound it, and neither is theoretical:
+  - **Install-and-verify is testable and is tested** — `InstallProcessBuilderToolE2ETests` installs the
+    bundled archive on a live stand through the real MCP path and asserts the outcome (P4.12).
+  - **Variant A only removes one axis of this, not the problem.** Its DLL is fixed, but the core that
+    LOADS it is still the customer's, so the combination is untested there too. Compiled delivery pins
+    the compiler; it does not pin the runtime.
+  - And the failure directions differ in our favour: a compile failure here is **loud** (the install
+    fails, and the outcome check catches it), whereas variant A's wrong-flavour DLL is **silent** until
+    the first call 404s.
+
+  > **Retracted:** the first revision said "we can never test the bits that actually run; testing shifts
+  > to representative platform versions." The first clause is false as written and the second undersold
+  > the mitigation — the outcome check runs on EVERY real install at EVERY customer, which is continuous
+  > verification rather than CI sampling.
 - **The marker schema becomes load-bearing and fails silently if lost** — without it the package
   installs, never compiles, and the gate reports it present while every call 404s. This re-opens the
   exact failure mode the decision closes, through another door.
@@ -307,6 +323,19 @@ Application Hub and `push-pkg`, verified by the service answering with the full 
 3. **`install-process-builder` verifies the OUTCOME, not the install call** — after installing it calls
    `ListUserTasks` and fails if the service does not answer (P3.6). This is the single most valuable
    mitigation: it makes "installed but never compiled" loud on the one path that has no restore button.
+
+**Ranked AFTER the mitigations** (raised by the reporter, who pushed back on the marker schema being
+called the main cost — correctly). The list above states each cost *before* mitigation; what remains is:
+
+| Cost | Residual |
+|---|---|
+| Compile time | **Low.** The compile is 2.5–12.7 s (one package, not the configuration); the rest of the phase is csproj regeneration + `DownloadSources` + restore, inside a one-off 71–78 s install |
+| Lost marker schema | **Low — guarded at the delivery boundary.** P2.4d asserts the schema is inside the committed `.gz` and runs on every clio build, so any route by which it could leave the artifact ends in a failing test before release. It was singled out for its uniquely bad failure *signature* (the gate reports the package present while every call 404s), not for its likelihood. **Do not drop the guard on the grounds that the schema is obviously load-bearing — that reasoning is what the guard exists to survive** |
+| Untestable customer binary | **Low.** Verified continuously rather than sampled — the outcome check runs on every real install |
+| No control over the target's toolchain | **Largest residual, still mild.** The only cost we neither control nor can pre-test with a test we own; we would hear it from a customer. The failure is LOUD (the install fails) and the environment is restorable |
+| Non-transactional recovery | **Low but real.** Needs someone to act; fine interactively, a gap unattended |
+
+That every remaining cost lands on "low, and loud when it fails" is the argument — not any single row.
 
 **Explicitly not doing:** converting the 69 sources into Source Code schemas. The current shape —
 plain files compiled through the package's own csproj — is what was validated; moving them would be a

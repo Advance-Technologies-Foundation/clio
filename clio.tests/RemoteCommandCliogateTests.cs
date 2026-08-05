@@ -167,6 +167,29 @@ namespace Clio.Tests
                 ? System.Array.Find(attrs, a => string.Equals(a.Name, BundledPackages.ProcessBuilderPackageName, System.StringComparison.OrdinalIgnoreCase))
                 : null;
 
+        /// <summary>
+        /// Asserts the declared floor is a version <see cref="RequiredPackageChecker"/> can actually satisfy.
+        /// </summary>
+        /// <remarks>
+        /// Unlike comparing the attribute's version to the constant it is declared with, this checks the
+        /// VALUE. <see cref="System.Version"/> gives an omitted part <c>-1</c>, so a three-part floor of
+        /// <c>1.1.0</c> against a three-part installed <c>1.1.0</c> is fine, but any part-count mismatch
+        /// between the floor and the archive descriptor makes the gate permanently unsatisfiable: the five
+        /// commands refuse forever after a successful install, while install-process-builder reinstalls on
+        /// every invocation because its own short-circuit never fires either. Four parts on both sides is the
+        /// shipped shape; this pins the floor half of it.
+        /// </remarks>
+        private static void AssertFloorIsUsable(string declaredVersion)
+        {
+            System.Version.TryParse(declaredVersion, out System.Version floor).Should().BeTrue(
+                because: $"RequiredPackageChecker parses the floor through System.Version, so '{declaredVersion}' "
+                    + "must be parseable or every gated command throws instead of gating");
+            floor!.Revision.Should().BeGreaterThanOrEqualTo(0,
+                because: $"'{declaredVersion}' must carry all four parts, matching the archive descriptor: a "
+                    + "part-count mismatch between the floor and the installed version compares as "
+                    + "installed < required and makes the gate unsatisfiable by any successful install");
+        }
+
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [TestCase(typeof(DescribeProcessOptions))]
@@ -183,9 +206,12 @@ namespace Clio.Tests
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
             requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
-                because: "the floor must equal the version clio bundles: a lower floor would accept a stale "
-                    + "package whose server rejects operations this clio sends, and the refusal would come "
-                    + "from the server as an unexplained error instead of from the gate with an install hint");
+                because: "every gate must read the floor from the shared constant; this catches a site that "
+                    + "hardcodes a literal instead. It is NOT a check that the floor matches the shipped "
+                    + "archive - the attributes are DECLARED with this constant, so comparing them to it "
+                    + "cannot fail on the constant's own value. That invariant lives in "
+                    + "BundledProcessBuilderPackageTests.BundledArchive_ShouldCarryADescriptorMatchingBundledPackages");
+            AssertFloorIsUsable(requirement.Version);
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }
@@ -217,6 +243,7 @@ namespace Clio.Tests
             requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
                 because: "the validator floor must match the BaseTool process tools, or the same stale package "
                     + "would be refused by some tools and accepted by others");
+            AssertFloorIsUsable(requirement.Version);
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the validator hint must match the other process-designer gates");
         }

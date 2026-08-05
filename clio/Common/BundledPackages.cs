@@ -34,10 +34,18 @@ public static class BundledPackages {
 	/// commands require on a target environment.
 	/// </summary>
 	/// <remarks>
-	/// MUST stay four-part. <c>RequiredPackageChecker.IsCompatible</c> compares through
-	/// <see cref="System.Version"/>, which gives a three-part string a <c>Revision</c> of <c>-1</c> — so a
-	/// four-part floor would compare GREATER than a three-part installed version and refuse a correctly
-	/// installed package.
+	/// This constant and the archive descriptor's <c>PackageVersion</c> MUST have the SAME NUMBER OF PARTS.
+	/// <c>RequiredPackageChecker.IsCompatible</c> compares through <see cref="System.Version"/>, which gives
+	/// a three-part string a <c>Revision</c> of <c>-1</c>: so a four-part floor of <c>1.0.0.0</c> against a
+	/// three-part installed <c>1.0.0</c> evaluates as installed &lt; required, and the five gated commands
+	/// refuse forever after a SUCCESSFUL install — while this command reinstalls (and forces the target to
+	/// recompile) on every invocation, because its own short-circuit never fires either.
+	/// <para>
+	/// Both are four-part today. Changing the part count here without changing the descriptor — or the other
+	/// way round — creates that unsatisfiable gate, which is why
+	/// <c>BundledProcessBuilderPackageTests.BundledArchive_ShouldCarryADescriptorMatchingBundledPackages</c>
+	/// compares the two.
+	/// </para>
 	/// </remarks>
 	public const string ProcessBuilderVersion = "1.0.0.0";
 

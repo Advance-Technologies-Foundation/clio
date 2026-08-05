@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -31,7 +32,7 @@ public sealed class InstallProcessBuilderToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Resolves InstallProcessBuilderCommand for the requested environment and returns the real command exit code.")]
-	public void InstallProcessBuilder_Should_Resolve_Command_For_Environment_And_Return_Exit_Code() {
+	public async Task InstallProcessBuilder_Should_Resolve_Command_For_Environment_And_Return_Exit_Code() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -43,7 +44,7 @@ public sealed class InstallProcessBuilderToolTests {
 		try {
 			// Act
 			CommandExecutionResult result =
-				tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox"));
+				await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox"));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -55,6 +56,37 @@ public sealed class InstallProcessBuilderToolTests {
 				because: "the resolved command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("sandbox",
 				because: "the environment-name argument should map into InstallProcessBuilderOptions");
+			resolvedCommand.CapturedOptions.Force.Should().BeFalse(
+				because: "force must default to false when the argument is omitted, so an agent following the "
+					+ "refusal hint cannot accidentally force a recompile on a healthy environment");
+		} finally {
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps force=true onto the command options, so the documented remedy for a present-but-uncompiled package is reachable over MCP.")]
+	public async Task InstallProcessBuilder_Should_Map_Force_Onto_Options() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		FakeInstallProcessBuilderCommand resolvedCommand = new(exitCode: 0);
+		commandResolver.Resolve<InstallProcessBuilderCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver);
+
+		try {
+			// Act
+			await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox", Force: true));
+
+			// Assert
+			resolvedCommand.CapturedOptions.Should().NotBeNull(
+				because: "the resolved command should run");
+			resolvedCommand.CapturedOptions!.Force.Should().BeTrue(
+				because: "without this mapping the tool would advertise force in its description while the "
+					+ "command kept taking the already-installed short-circuit, leaving an environment that "
+					+ "has the package but never compiled it with no remedy over MCP");
 		} finally {
 			ConsoleLogger.Instance.ClearMessages();
 		}
@@ -80,8 +112,14 @@ public sealed class InstallProcessBuilderToolTests {
 			because: "the metadata should reuse the production tool-name constant");
 		attribute.ReadOnly.Should().BeFalse(
 			because: "installing the package changes the target environment's package state");
-		attribute.Destructive.Should().BeFalse(
-			because: "installing or updating the package is an additive provisioning step");
+		attribute.Destructive.Should().BeTrue(
+			because: "the flag is what clio's core-rules guidance ties 'confirm the target environment with "
+				+ "the user first' to, and this tool runs a configuration build on a live instance and "
+				+ "restarts it, with recovery from a failed compile being an explicit RestoreFromBackup "
+				+ "rather than a rollback. It is additive in what it ADDS, which argued for false at first, "
+				+ "but compile-creatio and restart-by-environment-name are both true and this tool causes "
+				+ "the effects of both. install-gate's false is not the precedent: it ships a prebuilt "
+				+ "assembly and never makes the target rebuild");
 		attribute.Idempotent.Should().BeTrue(
 			because: "the command short-circuits on an already-current environment, so re-running is safe");
 		description.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,

@@ -1,7 +1,11 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -25,9 +29,37 @@ public sealed class InstallProcessBuilderTool(
 	internal const string InstallProcessBuilderToolName = "install-process-builder";
 
 	/// <summary>
+	/// Test seam overriding the MCP response deadline. <see langword="null"/> in production (the default
+	/// <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> applies); unit tests set a tiny value to
+	/// exercise the deadline-exceeded in-progress branch deterministically.
+	/// </summary>
+	internal TimeSpan? ResponseDeadlineOverride { get; set; }
+
+	/// <summary>
 	/// Installs (or updates) the bundled process-builder package into a registered Creatio environment.
 	/// </summary>
-	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = false,
+	/// <remarks>
+	/// Runs under the heartbeat+deadline helper because the call is minutes long: the target compiles the
+	/// package, restarts, and the command waits the instance back out before judging the result. Without it
+	/// a client with a per-request timeout reports the tool as failed while the install is still running.
+	/// <para>
+	/// UNLIKE <see cref="RestartTool"/>, the work stays under the per-tenant execution lock for its whole
+	/// duration rather than being split into a locked request plus a lock-free poll. That is deliberate:
+	/// RestartTool's phase 2 is a read-only poll AFTER its write returned, whereas here the install itself is
+	/// the long part and it is a WRITE — letting another same-tenant call interleave with a package install
+	/// and a restart would be worse than making it wait. The cost is that a same-tenant call does serialize
+	/// behind this one; the deadline bounds what the CALLER waits for, not the lock.
+	/// </para>
+	/// </remarks>
+	// Destructive = true. It only ADDS a package, which is what argued for false at first, but the annotation
+	// is what clio's own core-rules guidance ties the "confirm the target environment with the user first"
+	// requirement to — and a client with an auto-approve policy for non-destructive tools would install into
+	// a live instance, run a configuration build on it and restart it with no human in the loop. Recovery
+	// from a failed compile is an explicit RestoreFromBackup, not a rollback. compile-creatio and
+	// restart-by-environment-name are both Destructive = true and this tool causes the effects of both.
+	// install-gate is Destructive = false and is NOT the precedent: it ships a prebuilt assembly and never
+	// makes the target rebuild its configuration.
+	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = true,
 		Idempotent = true, OpenWorld = false)]
 	[Description("""
 	             Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio
@@ -45,14 +77,42 @@ public sealed class InstallProcessBuilderTool(
 	             instance to come back before judging it. It then
 	             verifies the outcome rather than the install call - it queries ListUserTasks and fails if the
 	             service does not answer, so "installed but not compiled" is reported instead of looking like
-	             success. Re-running against an already-current environment does nothing.
+	             success.
+
+	             Re-running against an already-current environment does not reinstall, but it is still checked:
+	             the recorded package version proves the archive was accepted, not that the environment ever
+	             compiled it, so the service is queried on that path too. If it reports the package present but
+	             the service silent, call again with force=true - that is the one state force exists for.
+
+	             Long-running: streams notifications/progress while working. If the MCP response deadline is
+	             reached first you get an in-progress note - the install is still running server-side. Do NOT
+	             retry immediately; check with list-packages, or call again later (it is idempotent).
 	             """)]
-	public CommandExecutionResult InstallProcessBuilder(
-		[Description("install-process-builder parameters")] [Required] InstallProcessBuilderArgs args) {
+	public async Task<CommandExecutionResult> InstallProcessBuilder(
+		[Description("install-process-builder parameters")] [Required] InstallProcessBuilderArgs args,
+		global::ModelContextProtocol.Server.McpServer server = null,
+		RequestContext<CallToolRequestParams> requestContext = null,
+		CancellationToken cancellationToken = default) {
 		InstallProcessBuilderOptions options = new() {
-			Environment = args.EnvironmentName
+			Environment = args.EnvironmentName,
+			Force = args.Force ?? false
 		};
-		return InternalExecute<InstallProcessBuilderCommand>(options);
+		try {
+			return await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				InstallProcessBuilderToolName,
+				() => InternalExecute<InstallProcessBuilderCommand>(options),
+				deadline: ResponseDeadlineOverride,
+				cancellationToken: cancellationToken).ConfigureAwait(false);
+		} catch (McpResponseDeadlineExceededException) {
+			return CommandExecutionResult.FromInfo(
+				$"The {BundledPackages.ProcessBuilderPackageName} install on '{args.EnvironmentName}' is still "
+				+ "running server-side: the target is compiling the package and will restart. Do NOT retry now "
+				+ "— that would queue behind this install. Check with list-packages, then re-run "
+				+ $"{InstallProcessBuilderToolName} to confirm ProcessDesignService answers (it is idempotent "
+				+ "and will report the package already installed once the build finished).");
+		}
 	}
 }
 
@@ -63,5 +123,11 @@ public sealed record InstallProcessBuilderArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
-	string EnvironmentName
+	string EnvironmentName,
+	[property: JsonPropertyName("force")]
+	[property: Description(
+		"Install even when a compatible version is already recorded on the environment. Use it when the "
+		+ "package is present but ProcessDesignService does not answer, i.e. the environment has the package "
+		+ "and never compiled it. Default false.")]
+	bool? Force = null
 );
