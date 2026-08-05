@@ -29,6 +29,57 @@ public sealed class ThemingGuidanceResourceTests {
 	}
 
 	[Test]
+	[Description("The theming guide keeps the explicit user confirmation before building with a family Google Fonts does not publish, and hands the user the catalogue search as the resolver. With --local-font-families gone, this prose is the only control for that gate.")]
+	public void ThemingGuidanceResource_Should_Keep_NonGoogleFamily_Confirmation_Gated() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("explicit confirmation",
+			because: "an unpublished family renders only where it is installed, so the agent must not decide that for the user");
+		article.Text.Should().Contain("https://fonts.google.com/?query=",
+			because: "the user is the resolver for a spelling the agent could not settle, so the guide hands them the catalogue search");
+	}
+
+	[Test]
+	[Description("The theming guide describes the fail-open behaviour for an unverifiable family: the import is kept, and the remedy is to restyle once connectivity is back.")]
+	public void ThemingGuidanceResource_Should_Describe_The_Unverified_FailOpen() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("could not verify",
+			because: "the agent branches on this warning text, so the guide must name it verbatim");
+		article.Text.Should().Contain("restyle once connectivity is back",
+			because: "a kept import for a family that turns out to be local is fixed by rebuilding once the catalogue is reachable — the bare verb also appears in unrelated flow prose, so it would pin nothing");
+	}
+
+	[Test]
+	[Description("The theming guide states the family-name contract and that a malformed name FAILS the build, unlike the availability outcomes which only warn.")]
+	public void ThemingGuidanceResource_Should_State_The_FamilyName_Contract() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("INVALID_FONT_FAMILY",
+			because: "the agent must know which font outcome is fatal rather than advisory");
+		article.Text.Should().Contain("100 characters",
+			because: "the guide states the same cap the builder enforces, so the agent checks the name before probing it");
+	}
+
+	[Test]
 	[Description("The theming guide directs the agent to auto-apply a newly created no-code theme to the current user via set-user-theme, satisfying FR-4.")]
 	public void ThemingGuidanceResource_Should_Instruct_AutoApply_After_NoCode_Create() {
 		// Arrange

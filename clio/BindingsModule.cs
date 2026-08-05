@@ -89,6 +89,9 @@ public class BindingsModule {
 
 	#region Constructors: Public
 
+	private static readonly Clio.Theming.IGoogleFontsAvailabilityCache SharedGoogleFontsAvailabilityCache =
+		new Clio.Theming.GoogleFontsAvailabilityCache(TimeProvider.System);
+
 	public BindingsModule(IFileSystem fileSystem = null){
 		_fileSystem = fileSystem;
 	}
@@ -239,6 +242,16 @@ public class BindingsModule {
 		services.AddTransient<IRingDistributionService, RingDistributionService>();
 		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		services.AddSingleton(SharedGoogleFontsAvailabilityCache);
+		services.AddHttpClient<Clio.Theming.IGoogleFontsCatalog, Clio.Theming.GoogleFontsCatalog>()
+			.ConfigureHttpClient(client => {
+				client.Timeout = Clio.Theming.GoogleFontsCatalog.ProbeTimeout;
+				client.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+			})
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
 		// (avoids `InvalidOperationException` on reused instances and races on a shared
@@ -1138,7 +1151,6 @@ public class BindingsModule {
 			}
 		}
 	}
-	
 	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
