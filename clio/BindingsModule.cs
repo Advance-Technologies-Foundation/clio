@@ -672,6 +672,7 @@ public class BindingsModule {
 		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
+		services.AddTransient<InstallProcessBuilderCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
