@@ -235,3 +235,5 @@ These files are used on local dev environment only
 .serena
 .clio-pages/
 graphify-out
+# cliogate build scratch directory (build.ps1 creates and deletes it; never commit its output)
+cliogate/.temp/
