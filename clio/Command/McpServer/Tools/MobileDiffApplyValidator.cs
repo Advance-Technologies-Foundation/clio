@@ -39,8 +39,10 @@ internal static class MobileDiffApplyValidator {
 	/// <summary>
 	/// Applies the body's diff sections and reports any differ exception. Returns a valid result when the body
 	/// cannot be parsed (the malformed-JSON case is already reported by <c>ValidateMobileBody</c>) or when every
-	/// section applies cleanly. Never throws — an unexpected (non-differ) apply failure is swallowed, since
-	/// malformed diff shapes are already covered by the structural mobile validators.
+	/// section applies cleanly. This EAGER overload never throws: an unexpected (non-differ) apply failure is
+	/// swallowed (malformed diff shapes are already covered by the structural mobile validators), and its base is
+	/// pre-held, so its base provider cannot raise. (The lazy overload differs — its resolver may propagate a
+	/// cancellation; see below.)
 	/// <paramref name="templateViewModelConfigJson"/> / <paramref name="templateModelConfigJson"/> are the target
 	/// page's own merged <c>viewModelConfig</c> / <c>modelConfig</c> (the base the page's diff layers over at
 	/// runtime), as JSON. When null the path-diff base falls back to an insert-path-seeded empty object; see the
@@ -58,6 +60,13 @@ internal static class MobileDiffApplyValidator {
 	/// <c>viewModelConfigDiff</c> / <c>modelConfigDiff</c> carries no own base object — so a
 	/// <c>viewConfigDiff</c>-only body (or one with an inline base) triggers no resolution (no get-page read). A
 	/// null delegate means "no base available"; the oracle then seeds its own from the insert paths.
+	/// <para>
+	/// The provided delegate is the one thing that may throw: a cancellation (<see cref="OperationCanceledException"/>)
+	/// it raises during resolution is NOT swallowed — it propagates out of this method, mirroring
+	/// <c>MobilePageMergedConfigResolver</c>'s deliberate rethrow-on-cancellation contract (a cancelled validation
+	/// must not silently degrade to the seeded base). Every other resolver/apply failure is still swallowed and the
+	/// section treated as valid.
+	/// </para>
 	/// </summary>
 	public static SchemaValidationResult Validate(
 		string body, Func<(string ViewModelConfigJson, string ModelConfigJson)> resolveTemplateBase) {

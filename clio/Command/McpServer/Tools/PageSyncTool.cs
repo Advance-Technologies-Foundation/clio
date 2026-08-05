@@ -27,7 +27,12 @@ public sealed class PageSyncTool(
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
-	IPlatformVersionResolverFactory? resolverFactory = null) {
+	IPlatformVersionResolverFactory? resolverFactory = null,
+	// Injected by DI (Clio.Common.ILogger is registered in the container) so a failed mobile-base pre-resolution
+	// during a sync-pages batch leaves the same diagnostic trail update-page has (ENG-94418 review parity).
+	// Optional with a null default only so the existing target-typed test instantiations keep compiling; in
+	// production the container supplies the real logger.
+	Clio.Common.ILogger? logger = null) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -471,6 +476,14 @@ public sealed class PageSyncTool(
 	// does no network I/O. Only a mobile page whose path diff needs an external base is read (mirrors the oracle's
 	// lazy guard) — a viewConfigDiff-only body or one that inlines its own base is skipped. Best-effort: a failed
 	// resolution (null base) is omitted so validation falls back to the oracle's seeded base, exactly as before.
+	// <para>
+	// The reads run SEQUENTIALLY here (one get-page per qualifying mobile page). This is an accepted trade-off,
+	// not an oversight: the count is bounded by the batch's pending mobile pages that actually need a base
+	// (typically a handful), and — crucially — it runs OFF the per-tenant lock, so it no longer serializes other
+	// tenants' work (the lock-contention Major this pre-pass fixed). Parallelizing with a concurrency cap is a
+	// possible future optimization, but sequential keeps the get-page reads ordered and simple, and the batch's
+	// dominant cost is the locked per-page save loop, not this pre-pass.
+	// </para>
 	private IReadOnlyDictionary<int, (string? Vmc, string? Mc)> PreResolveMobileBases(
 		IReadOnlyList<PageSyncPageInput> pages,
 		IReadOnlyList<int> pendingIndices,
@@ -483,8 +496,11 @@ public sealed class PageSyncTool(
 				continue;
 			}
 			// Replace semantics — sync-pages writes the body verbatim, so the base excludes the page's own body.
+			// The logger is threaded so a failed resolution leaves a diagnostic trail (parity with update-page).
 			(string vmc, string mc) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-				new MobilePageMergedConfigContext(commandResolver, page.SchemaName, environmentName, null, null, null, Mode: "replace"));
+				new MobilePageMergedConfigContext(
+					commandResolver, page.SchemaName, environmentName,
+					Uri: null, Login: null, Password: null, Mode: "replace", Logger: logger));
 			if (vmc is not null || mc is not null) {
 				bases[index] = (vmc, mc);
 			}

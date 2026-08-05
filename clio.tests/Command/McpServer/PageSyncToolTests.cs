@@ -936,6 +936,44 @@ public sealed class PageSyncToolTests {
 			because: "sync-pages writes the body verbatim (replace semantics), so the base excludes the page's own body");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("When a mobile base pre-resolution FAILS on the sync-pages batch path, the injected logger records a warning (parity with update-page) so the degraded validation is not silent.")]
+	public async Task SyncPages_PreResolveMobileBaseFailure_LogsWarning() {
+		// Arrange — same mobile body needing a base, but the get-page read fails (empty rows), so the resolver
+		// degrades to (null, null). With a logger injected into PageSyncTool it must leave a diagnostic trail.
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
+		ILogger logger = Substitute.For<ILogger>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()),
+			logger: logger);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		await tool.SyncPages(args, null);
+
+		// Assert
+		logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrLeads_MobileFormPage")));
+	}
+
 	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
 		CreateSuccessfulPageUpdateCommandWithClient(out _, schemaType);
 

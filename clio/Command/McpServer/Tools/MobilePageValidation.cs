@@ -146,7 +146,11 @@ internal static class MobilePageMergedConfigResolver {
 				$"Mobile validation base for '{context.SchemaName}' could not be resolved ({response?.Error ?? "no bundle returned"}); " +
 				"falling back to the insert-path-seeded base.");
 		} catch (OperationCanceledException) {
-			// A cancelled validation must propagate, not silently degrade to the seeded base.
+			// A cancelled validation must propagate, not silently degrade to the seeded base. NOTE: the context
+			// carries no CancellationToken and PageGetCommand.TryGetPage takes none, so the synchronous get-page
+			// read is not itself cancellable from RunAsync's token -- this guard only re-raises an AMBIENT
+			// cancellation that surfaces during the read (rather than swallowing it into the seeded-base fallback).
+			// Making the read token-cancellable would require threading a token through TryGetPage end to end.
 			throw;
 		} catch (Exception ex) {
 			// Best-effort: any other read failure falls back to the oracle's seeded empty base — but record why,

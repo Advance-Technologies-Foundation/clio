@@ -145,9 +145,9 @@ public sealed class MobilePageMergedConfigResolverTests {
 	}
 
 	[Test]
-	[Description("A cancellation during resolution propagates rather than being swallowed into the seeded-base fallback.")]
-	public void ResolveMergedConfig_Cancellation_Propagates() {
-		// Arrange — the command resolution itself is cancelled.
+	[Description("Verifies the exception-passthrough CONTRACT (not token wiring): an OperationCanceledException surfacing during resolution propagates rather than being swallowed into the seeded-base fallback. The resolver threads no CancellationToken into the get-page read, so this pins the re-raise behavior for an ambient cancellation, not caller-token cancellation.")]
+	public void ResolveMergedConfig_AmbientCancellation_Propagates() {
+		// Arrange — an ambient cancellation surfaces during resolution (simulated at the command-resolution step).
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<PageGetCommand>(Arg.Any<EnvironmentOptions>()).Returns(_ => throw new OperationCanceledException());
 
@@ -157,7 +157,7 @@ public sealed class MobilePageMergedConfigResolverTests {
 
 		// Assert
 		act.Should().Throw<OperationCanceledException>(
-			because: "a cancelled validation must not silently degrade to the seeded base");
+			because: "a cancelled validation must not silently degrade to the seeded base — the re-raise contract holds regardless of token wiring");
 	}
 
 	[Test]

@@ -298,9 +298,12 @@ public class PageGetCommand : Command<PageGetOptions> {
 		IReadOnlyList<PageSchemaBundlePart> baseParts = editableSchema is null
 			? parts
 			: parts.Where(p => !string.Equals(p.Schema.UId, editableSchema.UId, StringComparison.OrdinalIgnoreCase)).ToList();
-		if (baseParts.Count == 0) {
-			baseParts = parts;
-		}
+		// baseParts may be EMPTY when the editable schema is the only entry in the chain (no ancestors — a
+		// standalone schema, or a chain collapsed by the ENG-94418 recovery path). Do NOT fall back to the full
+		// `parts` there: that would re-include the very own body this method exists to exclude and re-open the
+		// replace-mode false-positive (an insert into an array that lived only in the soon-to-be-overwritten own
+		// body would validate OK and then fail at runtime). Build([]) yields an explicitly EMPTY base, which
+		// correctly fails such an insert (the array does not exist in the base the replace write layers over).
 		PageBundleInfo baseBundle = _bundleBuilder.Build(baseParts);
 		return (baseBundle.ViewModelConfig, baseBundle.ModelConfig);
 	}
