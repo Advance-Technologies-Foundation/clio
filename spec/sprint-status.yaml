@@ -2500,17 +2500,3 @@ stories:
       - story-sync-schemas-verify-resume-1
       - story-sync-schemas-verify-resume-2
     blocks: []
-
-  - id: story-mobile-converter-property-normalization-1
-    title: "Stamp and report the property standards the conversion rules declare (ENG-94230 metric is the first)"
-    feature: "mobile-converter-property-normalization"
-    repo: "clio"
-    size: S
-    status: review
-    file: spec/stories/story-mobile-converter-property-normalization-1.md
-    prd: spec/prd/spec-mobile-converter-property-normalization.md
-    jira: ENG-94230
-    status_note: "PR #1010 open against the ENG-91228 branch; two review rounds addressed, reporting fully data-driven. Guidance wording published separately as clio-knowledge#39 (generation 16) after clio#927 externalized the articles"
-    fr: [CAP-01, CAP-02, CAP-03, CAP-04, CAP-05, CAP-06, CAP-07]
-    depends_on: []
-    blocks: []
