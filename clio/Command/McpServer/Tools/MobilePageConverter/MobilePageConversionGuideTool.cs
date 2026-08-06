@@ -76,15 +76,18 @@ public sealed class MobilePageConversionGuideTool {
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
 		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
 		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding; " +
-		"on a tabbed record page every web tab inserts as its own new mobile tab (elementMap parentName Tabs), and a positional insert carries an `index` to sit above/below the mobile Tabs; " +
+		"on a tabbed record page every web tab inserts as its own new mobile tab (elementMap parentName Tabs) with an explicit `index` right after the template's general tab — apply indexes verbatim, never reorder tabs, and the template's Feed/Attachments tabs stay LAST; a positional insert carries an `index` to sit above/below the mobile Tabs; " +
 		"localized strings (captions AND nested ones like config.title/text.template) are carried verbatim in mobileValues as #ResourceString tokens and collected+resolved into guide.resourceStrings ({key: en-US text}) — register that whole map via update-page resources so every token renders), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
 		"plus requestConversions (component event-binding requests/actions for mobile — supported requests are kept/remapped inside " +
 		"elementMap[].mobileValues; ONLY a crt.Button whose request the mobile app does not support is DROPPED (dead button), appearing as an elementMap `drop` — other component types are NOT dropped for an unsupported request (some use system requests absent from the list): their binding is kept verbatim and flagged; advisory summary only), " +
+		"plus deterministic empty-container removal (containers emptied by the conversion arrive as elementMap drops with reason \"empty container\"; the do/don't rules are in the conversion guide), " +
 		"plus adaptiveLayout (the responsive layout for each MULTI-column grid container - phone collapses to 1 column and stacks, " +
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
+			"plus tabAreaLayers (MANDATORY synthesized two-layer tab body, already baked into elementMap as ordinary inserts; semantics in the conversion guide), " +
+			"plus spacingNormalization (SILENT gap normalization on every inserted container; semantics in the conversion guide), " +
 			"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]
