@@ -50,15 +50,14 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions { }
 /// which is why <see cref="WaitForPlatformRestart"/> sits between installing and judging the result.
 /// </description></item>
 /// <item><description>
-/// <b>The outcome is verified against the RUNNING assembly, not the install call and not the database.</b>
-/// Because the assembly is produced by the target rather than shipped, "installed" and "working" are
-/// genuinely different states, and the database cannot tell them apart: Creatio records a version when it
-/// ACCEPTS an archive, keeps serving the assembly from its last successful configuration build, and does not
-/// even update that record when re-installing a package it already has. So this command asks
-/// <c>ProcessDesignService.GetVersion</c> which build is serving and fails when it is older than
-/// <see cref="BundledPackages.ProcessBuilderBuildVersion"/>. The Application Hub can recover that class of
-/// failure through its own <c>RestoreFromBackup</c> stage; this path has no such button, which is exactly why
-/// the check belongs here.
+/// <b>The OUTCOME is verified, not the install call.</b> Because the assembly is produced by the target
+/// rather than shipped, "installed" and "working" are genuinely different states: accepting the archive and
+/// compiling it are separate events, and only the second yields something that can serve. So after the
+/// readiness wait this command calls <c>ProcessDesignService.ListUserTasks</c> and fails when the service
+/// does not answer. What that probe can and cannot prove — in particular that it cannot tell WHICH build
+/// answered — is documented on <see cref="DoesListUserTasksAnswer"/>. The Application Hub can recover a
+/// failed compile through its own <c>RestoreFromBackup</c> stage; this path has no such button, which is
+/// exactly why the check belongs here.
 /// </description></item>
 /// <item><description>
 /// <b>The bundled artifact's presence is checked first</b>, so a distribution that failed to carry it
@@ -66,11 +65,8 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions { }
 /// existence pre-check of its own.
 /// </description></item>
 /// </list>
-/// An environment already RUNNING the bundled build short-circuits, so re-running the command does no work —
-/// and in particular does not make the environment recompile the package for nothing. That test is the
-/// service's own report rather than the recorded package version, for the reason above: the record does not
-/// move on a re-install, so a database-based short-circuit would report "nothing to do" for exactly the
-/// environment still running an old build.
+/// <b>There is no short-circuit</b>: an explicitly requested install always installs. See the comment at the
+/// install site for the reasoning and for the one part of it that is now open again.
 /// </remarks>
 public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions> {
 
@@ -299,11 +295,19 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 					"will not help — reinstall or update clio itself.");
 				return 1;
 			}
-			// No short-circuit. There is no cheap, trustworthy way to ask "is this environment already
-			// serving what I ship": the recorded package version is inert (Creatio does not rewrite the
-			// SysPackage row on re-install), and asking the service costs a round-trip that cannot answer it
-			// either. So an explicitly requested install always installs. It is invoked as remediation, the
-			// install is backed up, and the cost of a needless run is one configuration build.
+			// No short-circuit: an explicitly requested install always installs. It is invoked as
+			// remediation, the install is backed up, and the cost of a needless run is one configuration
+			// build. What survives of the original reasoning is that asking the SERVICE cannot answer the
+			// question — ListUserTasks proves something answers, not which build, so it would happily report
+			// "nothing to do" for an environment still serving an old assembly.
+			//
+			// OPEN: the other half of that reasoning has been retracted. It said the recorded package version
+			// is inert because Creatio does not rewrite the SysPackage row on re-install. It does — the row
+			// is rewritten when the descriptor's ModifiedOnUtc moves, and `clio set-pkg-version` stamps it
+			// alongside PackageVersion (see BundledPackages.ProcessBuilderVersion). So a database short-circuit
+			// via IRequiredPackageChecker.IsCompatible is viable again and would save a needless configuration
+			// build on an up-to-date environment. Left unbuilt deliberately rather than by oversight: it is a
+			// behaviour change, not a doc fix.
 			bool success = _packageInstaller.Install(
 				packagePath,
 				CreateInstallEnvironmentSettings(),
