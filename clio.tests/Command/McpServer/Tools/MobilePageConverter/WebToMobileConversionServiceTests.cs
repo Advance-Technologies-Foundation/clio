@@ -3197,6 +3197,30 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("Only leaves the stamp actually CHANGED are reported: a metric already authored at the standard is left alone and does not appear as normalized, because the section tells the user its web values were ignored — which would not be true of it.")]
+	public void Analyze_MetricStyleNormalization_ShouldReportOnlyGenuinelyChangedLeaves() {
+		// Arrange — the widget already carries extra-small text; only the border is off-standard
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "AlreadyStyled", "type": "crt.IndicatorWidget", "config": {
+					"text": { "template": "{0}", "fontSizeMode": "extra-small" },
+					"layout": { "color": "green", "border": { "hidden": false } },
+					"data": { "providing": { "schemaName": "Lead" } } } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		guide.MetricStyleNormalization!.Normalized.Single().Properties.Should().BeEquivalentTo(
+			["config.layout.border.hidden"],
+			because: "config.text.fontSizeMode was already extra-small, so claiming it was normalized would "
+				+ "tell the user a web value was ignored when nothing about it changed");
+		Element(guide, "AlreadyStyled").MobileValues!["config"]!["text"]!["fontSizeMode"]!.GetValue<string>()
+			.Should().Be("extra-small", because: "the value is still correct — it simply was not rewritten");
+	}
+
+	[Test]
 	[Description("The rule's own note is surfaced into the report section verbatim, so the explanation of a standard lives once — in the rules file, which is resolved at runtime — instead of being restated in compiled prose that can drift from it.")]
 	public void Analyze_MetricStyleNormalization_ShouldSurfaceTheRulesOwnNote() {
 		// Arrange

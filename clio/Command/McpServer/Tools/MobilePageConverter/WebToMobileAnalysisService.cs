@@ -2879,7 +2879,11 @@ public static class WebToMobileAnalysisService {
 	/// key (typically a whole-value binding); an ABSENT key is created and descended into. This is the same
 	/// guard <see cref="StampOverrideValue"/> applies to the top-level key, enforced at every depth so a
 	/// nested binding cannot be clobbered. Leaves are written with a detached clone (a
-	/// <see cref="JsonNode"/> already owned by another parent cannot be re-attached).
+	/// <see cref="JsonNode"/> already owned by another parent cannot be re-attached), and ONLY when the
+	/// value actually differs — an element already at the standard is left alone and is not reported as
+	/// normalized, since the section's wording ("the web value was ignored") would then be untrue of it.
+	/// The replace path deliberately keeps reporting unconditionally: narrowing it would change what the
+	/// long-standing spacing section lists.
 	/// </summary>
 	private static void MergeJsonObject(
 		JsonObject target, JsonObject source, string prefix, List<string> stamped, List<string> skipped) {
@@ -2896,7 +2900,11 @@ public static class WebToMobileAnalysisService {
 				}
 				continue;
 			}
-			target[pair.Key] = pair.Value?.DeepClone();
+			JsonNode incomingLeaf = pair.Value?.DeepClone();
+			if (JsonNode.DeepEquals(target[pair.Key], incomingLeaf)) {
+				continue; // already at the standard — writing it would be a no-op, reporting it a false claim
+			}
+			target[pair.Key] = incomingLeaf;
 			stamped.Add(path);
 		}
 	}
