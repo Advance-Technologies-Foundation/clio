@@ -125,13 +125,10 @@ public sealed class CreateEntitySchemaTool(
 			Title = titleNormalization.EffectiveTitle
 				?? EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context),
 			TitleLocalizations = titleNormalization.Localizations ?? titleLocalizations,
-			// Mapping-layer default kept intentionally alongside the authoritative one in
-			// CreateEntitySchemaCommand.NormalizeParentSchema: it makes the MCP contract explicit (and is asserted
-			// by CreateEntitySchemaToolTests against the captured options), so the two share DefaultParentSchemaName
-			// to stay in lockstep. The command default no-ops when this already filled the parent.
-			ParentSchemaName = (!extendParent && string.IsNullOrWhiteSpace(parentSchemaName))
-				? CreateEntitySchemaOptions.DefaultParentSchemaName
-				: parentSchemaName,
+			// Forward the parent unchanged. Defaulting an omitted parent to BaseEntity is applied in exactly one
+			// place — CreateEntitySchemaCommand.NormalizeParentSchema, which every execution path (CLI and MCP)
+			// runs — so the mapping layer must not re-implement the predicate and risk diverging from it.
+			ParentSchemaName = parentSchemaName,
 			ExtendParent = extendParent,
 			IsVirtual = isVirtual,
 			Columns = SerializeColumns(args.Columns, context),
