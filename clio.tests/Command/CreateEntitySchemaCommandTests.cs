@@ -33,36 +33,39 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
-	[Test]
-	[Description("Forwards valid options to the remote entity schema creator and reports success.")]
-	public void Execute_CallsRemoteCreator_WhenOptionsAreValid()
+	[TearDown]
+	public void ClearReceivedCalls()
 	{
-		// Arrange
-		var options = new CreateEntitySchemaOptions {
-			Package = "UsrPkg",
-			SchemaName = "UsrVehicle",
-			Title = "Vehicle"
-		};
-
-		// Act
-		var result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(0,
-			because: "valid options should produce a successful create-entity-schema run");
-		_creator.Received(1).Create(options);
+		_creator.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
 	}
 
-	[Test]
-	[Description("Defaults the parent schema to BaseEntity when --parent is omitted so the created root schema keeps an Id primary column and is reachable over OData (ENG-94424).")]
-	public void Execute_DefaultsParentToBaseEntity_WhenParentOmitted()
+	// Captures the parent schema name AT THE MOMENT the creator is invoked (not read off the mutable options
+	// object after Execute returns), so a test can pin the Validate -> NormalizeParentSchema -> Create ordering:
+	// if normalization ever moved after the Create call, the captured value would be the un-normalized parent
+	// and the assertion would fail.
+	private List<string?> CaptureParentSchemaNamesAtCreateTime()
+	{
+		List<string?> capturedParents = [];
+		_creator.When(creator => creator.Create(Arg.Any<CreateEntitySchemaOptions>()))
+			.Do(callInfo => capturedParents.Add(callInfo.Arg<CreateEntitySchemaOptions>().ParentSchemaName));
+		return capturedParents;
+	}
+
+	[TestCase(null, TestName = "Execute_Should_DefaultParentToBaseEntity_WhenParentIsNull")]
+	[TestCase("", TestName = "Execute_Should_DefaultParentToBaseEntity_WhenParentIsEmpty")]
+	[TestCase("   ", TestName = "Execute_Should_DefaultParentToBaseEntity_WhenParentIsWhitespace")]
+	[Description("Defaults the parent to BaseEntity when --parent is null, empty, or whitespace-only, so the created root schema keeps an Id primary column and is reachable over OData (ENG-94424).")]
+	public void Execute_Should_DefaultParentToBaseEntity_WhenParentOmitted(string parentSchemaName)
 	{
 		// Arrange
 		var options = new CreateEntitySchemaOptions {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
-			Title = "Vehicle"
+			Title = "Vehicle",
+			ParentSchemaName = parentSchemaName
 		};
+		List<string?> parentAtCreateTime = CaptureParentSchemaNamesAtCreateTime();
 
 		// Act
 		var result = _command.Execute(options);
@@ -70,14 +73,42 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 		// Assert
 		result.Should().Be(0,
 			because: "creating a root schema with the defaulted parent should succeed");
-		options.ParentSchemaName.Should().Be(CreateEntitySchemaOptions.DefaultParentSchemaName,
-			because: "an omitted --parent must default to BaseEntity to avoid a parentless, OData-unusable schema");
-		_creator.Received(1).Create(options);
+		parentAtCreateTime.Should().ContainSingle(
+			because: "the remote creator must be invoked exactly once")
+			.Which.Should().Be(CreateEntitySchemaOptions.DefaultParentSchemaName,
+			because: "an absent, empty, or whitespace-only --parent must be defaulted to BaseEntity BEFORE the schema reaches the creator, otherwise it would produce a parentless, OData-unusable schema");
+	}
+
+	[Test]
+	[Description("Defaults a virtual schema's parent to BaseEntity when --parent is omitted, matching the create-entity-schema MCP tool; --is-virtual suppresses only the physical table, not parent defaulting (ENG-94424).")]
+	public void Execute_Should_DefaultParentToBaseEntity_WhenVirtualAndParentOmitted()
+	{
+		// Arrange
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrExternalVehicle",
+			Title = "External vehicle",
+			IsVirtual = true
+		};
+		List<string?> parentAtCreateTime = CaptureParentSchemaNamesAtCreateTime();
+
+		// Act
+		var result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "creating a virtual schema with the defaulted parent should succeed");
+		parentAtCreateTime.Should().ContainSingle(
+			because: "the remote creator must be invoked exactly once")
+			.Which.Should().Be(CreateEntitySchemaOptions.DefaultParentSchemaName,
+			because: "a virtual schema with an omitted --parent must also default to BaseEntity to stay consistent with the MCP tool; the virtual flag only controls physical-table materialization");
+		options.IsVirtual.Should().BeTrue(
+			because: "defaulting the parent must not disturb the virtual flag");
 	}
 
 	[Test]
 	[Description("Keeps an explicitly supplied --parent instead of overriding it with the BaseEntity default.")]
-	public void Execute_PreservesExplicitParent_WhenParentSupplied()
+	public void Execute_Should_PreserveExplicitParent_WhenParentSupplied()
 	{
 		// Arrange
 		var options = new CreateEntitySchemaOptions {
@@ -86,6 +117,7 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 			Title = "Vehicle",
 			ParentSchemaName = "Contact"
 		};
+		List<string?> parentAtCreateTime = CaptureParentSchemaNamesAtCreateTime();
 
 		// Act
 		var result = _command.Execute(options);
@@ -93,14 +125,41 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 		// Assert
 		result.Should().Be(0,
 			because: "creating a schema with an explicit parent should succeed");
-		options.ParentSchemaName.Should().Be("Contact",
-			because: "an explicitly supplied parent must not be replaced by the BaseEntity default");
-		_creator.Received(1).Create(options);
+		parentAtCreateTime.Should().ContainSingle(
+			because: "the remote creator must be invoked exactly once")
+			.Which.Should().Be("Contact",
+			because: "an explicitly supplied parent must reach the creator unchanged, not be replaced by the BaseEntity default");
+	}
+
+	[Test]
+	[Description("Replacement schema (--extend-parent with --parent) passes validation, NormalizeParentSchema no-ops, and the creator receives the original parent intact.")]
+	public void Execute_Should_SkipNormalizationAndCallCreator_WhenExtendParentIsTrue()
+	{
+		// Arrange
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			ExtendParent = true,
+			ParentSchemaName = "Contact"
+		};
+		List<string?> parentAtCreateTime = CaptureParentSchemaNamesAtCreateTime();
+
+		// Act
+		var result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a replacement schema with an explicit parent must complete successfully");
+		parentAtCreateTime.Should().ContainSingle(
+			because: "the remote creator must be invoked exactly once")
+			.Which.Should().Be("Contact",
+			because: "NormalizeParentSchema must not overwrite the explicit parent when ExtendParent is true; a future guard regression that drops the ExtendParent check would overwrite it with BaseEntity and fail here");
 	}
 
 	[Test]
 	[Description("Rejects --extend-parent without an explicit --parent and does not call the remote creator.")]
-	public void Execute_ReturnsFailure_WhenExtendParentIsUsedWithoutParent()
+	public void Execute_Should_ReturnFailure_WhenExtendParentIsUsedWithoutParent()
 	{
 		// Arrange
 		var options = new CreateEntitySchemaOptions {

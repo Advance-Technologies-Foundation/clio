@@ -112,7 +112,10 @@ NOTES
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
     - A schema with a parent keeps the parent's primary column; custom Guid columns
       remain ordinary columns
-    - --is-virtual is independent of parent and replacement-schema settings
+    - --is-virtual controls only whether a physical database table is created; it
+      does not change parent defaulting. A virtual schema created without --parent
+      still inherits BaseEntity (and remains tableless), and --is-virtual combines
+      with an explicit --parent or --extend-parent
     - If no display column is set, the first text-like column is used as primary display column
     - Prefer default-value-config for Settings, SystemValue, or Sequence; keep
       default-value-source/default-value as shorthand only for Const and None
