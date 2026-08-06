@@ -87,9 +87,18 @@ internal class RemoteEntitySchemaDesignerClientTests
 		}, new RemoteCommandOptions());
 
 		// Assert
-		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
-				because: "an HTML error page is never a valid designer payload and must fail loudly")
-			.Which;
+		// Asserted on the exact type, not on the InvalidOperationException base it derives from: the base
+		// assertion passes either way, so reverting the throw would silently drop the
+		// IAuthoritativeErrorMessage marker and let the MCP boundary unwrap this recovery guidance back to the
+		// raw parser text (ENG-93365).
+		Clio.Package.NonJsonServiceResponseException exception =
+			act.Should().Throw<Clio.Package.NonJsonServiceResponseException>(
+					because: "an HTML error page is never a valid designer payload and must fail loudly as the classified non-JSON type")
+				.Which;
+		exception.Should().BeAssignableTo<IAuthoritativeErrorMessage>(
+			because: "the marker is what stops the MCP unwrap from replacing this guidance with the parser message");
+		exception.Should().BeAssignableTo<InvalidOperationException>(
+			because: "existing catch clauses on InvalidOperationException must keep working");
 		exception.Message.Should().Contain("add-package-dependency",
 			because: "the missing-dependency cause is the most common one and the message must point the caller at the one-call fix");
 		exception.Message.Should().Contain("MISSING A DEPENDENCY",
