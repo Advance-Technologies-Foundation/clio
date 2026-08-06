@@ -77,20 +77,24 @@ public sealed class ToolContractGetToolLegacyClientE2ETests : McpContractFixture
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("legacy stdio client identity can still make an ordinary tool call after get-tool-contract")]
 	public async Task ToolContractGet_Should_Not_Break_Ordinary_Tool_Calls_For_Legacy_Stdio_Client() {
-		// Arrange
+		// Arrange — an expanded single-tool contract is the follow-up call: it is no-environment and,
+		// unlike get-guidance, does not depend on an active knowledge bundle, which a CI agent that
+		// cannot reach the curated Git source inside the startup deadline will not have.
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		GuidanceGetResponse guidanceResponse = await CallGuidanceAsync(
+		ToolContractGetResponse response = await CallContractAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
-			"page-schema-handlers");
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { GuidanceGetTool.ToolName }
+			});
 
 		// Assert
-		guidanceResponse.Success.Should().BeTrue(
+		response.Success.Should().BeTrue(
 			because: "an ordinary no-environment tool call should still succeed normally for the legacy stdio client identity");
-		guidanceResponse.Article.Should().NotBeNull(
-			because: "a successful guidance lookup should still return the resolved article payload for this client");
+		response.Tools.Should().ContainSingle(tool => tool.Name == GuidanceGetTool.ToolName,
+			because: "the expanded contract for the requested tool must come back to this client unchanged");
 	}
 
 	private static async Task<ToolContractGetResponse> CallContractAsync(
@@ -104,20 +108,5 @@ public sealed class ToolContractGetToolLegacyClientE2ETests : McpContractFixture
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-tool-contract should return a normal MCP tool result envelope for the legacy stdio client identity");
 		return EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
-	}
-
-	private static async Task<GuidanceGetResponse> CallGuidanceAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string guidanceName) {
-		CallToolResult callResult = await session.CallToolAsync(
-			GuidanceGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> { ["name"] = guidanceName }
-			},
-			cancellationToken);
-		callResult.IsError.Should().NotBeTrue(
-			because: "get-guidance should return a normal MCP tool result envelope");
-		return EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
 	}
 }
