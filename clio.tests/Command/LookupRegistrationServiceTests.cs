@@ -27,7 +27,7 @@ public sealed class LookupRegistrationServiceTests {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = CreateServiceUrlBuilder();
-		IApplicationPackageListProvider packageListProvider = CreatePackageListProvider();
+		IPackageTargetResolver targetResolver = CreateTargetResolver();
 		IDataBindingSchemaClient schemaClient = CreateSchemaClient();
 		ILogger logger = Substitute.For<ILogger>();
 		string? insertBody = null;
@@ -41,8 +41,7 @@ public sealed class LookupRegistrationServiceTests {
 		LookupRegistrationService sut = new(
 			applicationClient,
 			serviceUrlBuilder,
-			packageListProvider,
-			schemaClient,
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient),
 			logger);
 
 		// Act
@@ -81,7 +80,7 @@ public sealed class LookupRegistrationServiceTests {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = CreateServiceUrlBuilder();
-		IApplicationPackageListProvider packageListProvider = CreatePackageListProvider();
+		IPackageTargetResolver targetResolver = CreateTargetResolver();
 		IDataBindingSchemaClient schemaClient = CreateSchemaClient();
 		ILogger logger = Substitute.For<ILogger>();
 		string? updateBody = null;
@@ -95,8 +94,7 @@ public sealed class LookupRegistrationServiceTests {
 		LookupRegistrationService sut = new(
 			applicationClient,
 			serviceUrlBuilder,
-			packageListProvider,
-			schemaClient,
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient),
 			logger);
 
 		// Act
@@ -138,18 +136,10 @@ public sealed class LookupRegistrationServiceTests {
 		return serviceUrlBuilder;
 	}
 
-	private static IApplicationPackageListProvider CreatePackageListProvider() {
-		IApplicationPackageListProvider packageListProvider = Substitute.For<IApplicationPackageListProvider>();
-		packageListProvider.GetPackages().Returns([
-			new PackageInfo(
-				new PackageDescriptor {
-					Name = PackageName,
-					UId = PackageUId
-				},
-				string.Empty,
-				Enumerable.Empty<string>())
-		]);
-		return packageListProvider;
+	private static IPackageTargetResolver CreateTargetResolver() {
+		IPackageTargetResolver targetResolver = Substitute.For<IPackageTargetResolver>();
+		targetResolver.Resolve(PackageName).Returns(PackageTargetResolution.Resolved(PackageName, PackageUId));
+		return targetResolver;
 	}
 
 	private static IDataBindingSchemaClient CreateSchemaClient() {
@@ -174,6 +164,49 @@ public sealed class LookupRegistrationServiceTests {
 				new DataBindingSchemaColumn(Guid.Parse("cd07fd0e-2ca4-4d20-93b4-eb5a795ea03f"), "Name", 28, null)
 			]));
 		return schemaClient;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses to reuse a same-name binding whose entity schema the environment does not report, because a registration this run cannot identify as the Lookup folder must not be overwritten.")]
+	public void EnsureLookupRegistration_Should_Throw_When_The_Existing_Binding_Schema_Is_Unreported() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = CreateServiceUrlBuilder();
+		IPackageTargetResolver targetResolver = CreateTargetResolver();
+		IDataBindingSchemaClient schemaClient = CreateSchemaClient();
+		ILogger logger = Substitute.For<ILogger>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(callInfo => BuildUnreportedSchemaResponse(callInfo.ArgAt<string>(0), callInfo.ArgAt<string>(1)));
+		LookupRegistrationService sut = new(
+			applicationClient,
+			serviceUrlBuilder,
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient),
+			logger);
+
+		// Act
+		Action act = () => sut.EnsureLookupRegistration(PackageName, "UsrOrderStatus", "Order status");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "an unidentifiable same-name registration must stop the run rather than be silently replaced")
+			.WithMessage("*did not report which entity schema*");
+	}
+
+	private static string BuildUnreportedSchemaResponse(string url, string body) {
+		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
+			body.Contains("\"rootSchemaName\":\"Lookup\"", StringComparison.Ordinal)) {
+			return """{"success":true,"rows":[]}""";
+		}
+		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
+			body.Contains("\"rootSchemaName\":\"SysPackageSchemaData\"", StringComparison.Ordinal)) {
+			return $$"""{"success":true,"rows":[{"UId":"{{ExistingBindingUId}}"}]}""";
+		}
+		if (url.Contains("InsertQuery", StringComparison.Ordinal)) {
+			return """{"success":true,"rowsAffected":1}""";
+		}
+
+		throw new InvalidOperationException($"Unexpected request URL: {url}");
 	}
 
 	private static string BuildResponse(

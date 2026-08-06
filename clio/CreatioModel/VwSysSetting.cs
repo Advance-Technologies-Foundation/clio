@@ -4,6 +4,7 @@ using System;
 using ATF.Repository;
 using ATF.Repository.Attributes;
 using System.Diagnostics.CodeAnalysis;
+using Clio.Common;
 using Terrasoft.Core.Configuration;
 using System.Collections.Generic;
 using System.Globalization;
@@ -87,10 +88,10 @@ namespace CreatioModel
 			}
 		}
 
-		private Guid AllUsersId = new Guid("a29a3ba5-4b0d-de11-9a51-005056c00008");
-
 		private string GetDefaultValue(string adminUnitName = null) {
-			var sysSettingsValue = SysSettingsValues?.Where(x => x.SysAdminUnitId == AllUsersId)?.FirstOrDefault();
+			var sysSettingsValue = SysSettingsValues
+				?.Where(x => x.SysAdminUnitId == SysAdminUnitIds.AllEmployees)
+				?.FirstOrDefault();
 			if (sysSettingsValue != null) {
 				switch (ValueTypeName) {
 					case "Boolean":

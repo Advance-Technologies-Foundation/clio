@@ -28,10 +28,12 @@ namespace Clio.Command.McpServer.Tools;
 /// identically.
 /// </summary>
 /// <remarks>
-/// Execution goes through <see cref="BaseTool{T}.ExecuteWithCleanLog{TResponse}"/> so it holds the shared
-/// MCP execution lock: the workspace-write mode mutates the singleton <c>IWorkspacePathBuilder.RootPath</c>
-/// inside <see cref="BuildThemeCommand"/>, which must not race with concurrent tool invocations in a
-/// long-lived MCP server.
+/// Execution goes through <see cref="BaseTool{T}.ExecuteWithCleanLogUnderToolLock{TResponse}"/>, so it is
+/// serialized against other <c>build-theme</c> calls only: the workspace-write mode mutates the singleton
+/// <c>IWorkspacePathBuilder.RootPath</c> inside <see cref="BuildThemeCommand"/>, which must not race with
+/// concurrent invocations in a long-lived MCP server. The tool resolves no environment and acquires no
+/// session container, so it deliberately does NOT take the shared fallback lock — its bounded Google Fonts
+/// probe would otherwise stall every other environment-less tool for the probe budget.
 /// </remarks>
 /// <remarks>
 /// Pattern B (ADR verification #5, ENG-93347): <see cref="BuildThemeOptions"/> is not
@@ -76,11 +78,12 @@ public sealed class BuildThemeTool(
 	/// into that workspace package and returns the written path.
 	/// </summary>
 	/// <returns>A structured result carrying the built CSS (compute mode) or the written path (workspace-write mode), or a failure message.</returns>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
 		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
-		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical. " +
+		"Custom font families are checked against Google Fonts over the network (a short bounded probe): a family the catalog does not publish gets NO @import (it renders only where installed locally) plus a warning, and an unverifiable probe keeps the import plus a warning — so the css can vary with probe outcomes, which the warnings always disclose. " +
+		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical (given the same probe outcomes). " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
 	public BuildThemeResult BuildTheme(
 		[Description("Parameters: primary (required), css-class-name, caption, id, secondary, accent, success, error, " +
@@ -116,7 +119,7 @@ public sealed class BuildThemeTool(
 			EnvironmentName = args.EnvironmentName
 		};
 		EnvironmentSettings resolvedSettings = ResolveVersionSettings(args, out string environmentFallbackWarning);
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLogUnderToolLock(() => {
 			if (writeToPackage) {
 				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
 					return BuildThemeResult.Failure(writeError);
@@ -242,11 +245,11 @@ public sealed record BuildThemeArgs(
 	string? Error = null,
 
 	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family; Montserrat when omitted.")]
+	[property: Description("Heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
 	string? HeadingFont = null,
 
 	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family; Montserrat when omitted.")]
+	[property: Description("Body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
 	string? BodyFont = null,
 
 	[property: JsonPropertyName("font-weights")]
