@@ -108,6 +108,14 @@ public sealed class InstallProcessBuilderToolTests {
 			because: "the description must disclose HOW the outcome is checked, not just that it is: the tool "
 				+ "asks the package's own service whether it is serving, which is why a successful install call "
 				+ "can still fail — and naming the operation lets a caller reproduce the check by hand");
+		description.Description.Should().NotMatchRegex(@"(?i)\d+\s*(-|–|to)\s*\d+\s*(s|sec|seconds)",
+			because: "a duration range must never appear here. It was measured on two stands and does NOT "
+				+ "generalise — elapsed time is a property of the TARGET (configuration size, host, load), not "
+				+ "of clio. And on this surface a range does not stay an estimate: an agent read '~15-75 s' out "
+				+ "of this description and repeated it to a user as a promise. Say the call is slow and that the "
+				+ "duration depends on the environment; never quote one");
+		description.Description.Should().NotMatchRegex(@"(?i)\d+\s*(seconds|minutes)",
+			because: "a single figure is the same promise as a range, only harder to spot");
 		description.Description.Should().Contain("liveness, not identity",
 			because: "the check's LIMIT is part of its contract: on an upgrade a stale assembly that still "
 				+ "answers passes, so an agent must not read a successful install of a new version as proof the "

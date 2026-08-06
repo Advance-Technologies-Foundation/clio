@@ -16,7 +16,7 @@ Read it before touching any of:
 | | `cliogate` | `CrtProcessBuilder` |
 |---|---|---|
 | Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all |
-| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation (~15–75 s) |
+| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation (observed 15–75 s on the net472 and .NET 8 stands used during ENG-94385 — an observation, not a budget: it scales with the target's configuration size and load) |
 | Archives | one per framework, chosen by `IsNetCore` | one, for every runtime |
 | Install verb | `install-gate` | `install-process-builder` |
 | Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand |

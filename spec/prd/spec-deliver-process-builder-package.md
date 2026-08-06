@@ -93,8 +93,13 @@ built anyway.
 
 ## 4. Non-functional requirements
 
-- **NFR-01** Install takes roughly 15–75 s depending on the environment: the target runs a configuration
-  build. Documented on every surface (help, docs, MCP description, deploy-lifecycle guidance).
+- **NFR-01** Install is long-running because the target runs a configuration build, and every surface says
+  so WITHOUT quoting a duration (help, docs, MCP tool description and contract, deploy-lifecycle and
+  process-modeling guidance). Deliberately not a time budget: the elapsed time is a property of the target
+  environment, not of clio, so a stated range cannot be satisfied in general — and on the MCP surface a stated
+  range became a promise an agent repeated to the user. Completion is defined by the instance answering its
+  health check and then the package's own service answering, never by a clock. Observed 15–75 s on the stands
+  used during this work; that figure lives in the maintainer notes as an observation only.
 - **NFR-02** Failure diagnostics carry the readable message FIRST (HTTP status / WebException), then the
   stack — a 401 must be distinguishable from a connect timeout.
 - **NFR-03** Recovery from a failed compile is documented: the Application Hub's own restore step, or

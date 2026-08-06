@@ -78,8 +78,9 @@ public sealed class InstallProcessBuilderTool(
 	             the version this clio bundles. Then retry the original call.
 
 	             The package ships as source and the target environment compiles it during installation, so
-	             this takes longer than a plain package install (roughly 15-75 seconds depending on the
-	             environment). You never restart anything yourself, though a restart does happen - the platform
+	             this takes substantially longer than a plain package install. How long depends entirely on
+	             the target - its configuration size, host and current load - so do NOT quote a duration to
+	             the user or treat an overrun as a failure. You never restart anything yourself, though a restart does happen - the platform
 	             recycles itself on .NET Framework, the installer issues it on .NET - and the tool waits for the
 	             instance to come back before judging it. It then checks the OUTCOME rather than the install
 	             call: it asks the package's own service whether it is serving (Ping, ungated) and fails unless

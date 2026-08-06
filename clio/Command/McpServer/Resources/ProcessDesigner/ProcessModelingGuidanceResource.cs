@@ -34,7 +34,8 @@ public sealed class ProcessModelingGuidanceResource {
 			  ProcessDesignService. If a tool below refuses because it is missing or older than required, run
 			  `install-process-builder -e <environment>` and retry the original call — that is the whole remedy;
 			  do not work around it. The package ships inside clio, so nothing is downloaded, but the target
-			  compiles it during installation (~15-75 s) and the install verifies the service answers afterwards.
+			  compiles it during installation - slow, and how slow depends on the target - and the install verifies the
+			  service answers afterwards.
 			- clio makes no LLM call. You own the intent->BPMN translation: decide which elements the process
 			  needs, their parameters, and how they connect. The server-side ProcessDesignService package owns
 			  metadata serialization — you NEVER hand-author process metadata, filters, or column mappings.
@@ -76,7 +77,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  expect to build those types in this increment.
 			- ORDER OF CHECKS — check the slice BEFORE proposing an install. The package gate fires before the
 			  descriptor is ever validated, so a request that needs a gateway or a timer produces this sequence:
-			  refusal -> "install CrtProcessBuilder" -> a 15-75 s install -> and only THEN "that element is not
+			  refusal -> "install CrtProcessBuilder" -> a slow install -> and only THEN "that element is not
 			  buildable". Confirm the requested process fits the slice above first, and if it does not, say so
 			  instead of sending the user through an install that cannot help. `validate-process-graph` does not
 			  rescue this: it is itself package-gated, and a pass there covers the full BPMN catalog rather than
