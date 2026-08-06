@@ -96,6 +96,28 @@ dotnet run --project clio/clio.csproj --framework net8.0 -- get-info -e <env>
 
 The install command is `push-pkg`, **not** `push-package` (that verb does not exist).
 
+# Bundled Creatio packages
+
+clio ships two Creatio packages inside its own distribution — `cliogate` (prebuilt assembly) and
+`CrtProcessBuilder` (source only, compiled by the target) — and installs them on request.
+
+**Before changing any of the following, read [docs/agent-instructions/bundled-packages.md](docs/agent-instructions/bundled-packages.md):**
+
+- `clio/CrtProcessBuilder/*.gz` or `clio/cliogate/*.gz` — the committed archives
+- `clio/Common/BundledPackages.cs` — the identity constants
+- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the SHA-256 / version / `ModifiedOnUtc` pins
+- a `[RequiresPackage]` version floor
+
+That article carries the rebundle procedure and the three platform facts whose failure modes are SILENT:
+a package is matched by `UId` (never change it); the descriptor's `ModifiedOnUtc` — not `PackageVersion` —
+decides whether the recorded version is rewritten at all (so bump versions with `clio set-pkg-version`,
+never by editing `descriptor.json`); and for a source-only package "installed" and "compiled" are different
+states that no database read distinguishes.
+
+One trap worth repeating here because it invalidates any local verification: an install command resolves the
+bundled archive from the **build output** directory, so `clio compress -d <repo path>` has no effect until
+clio is rebuilt.
+
 ## Common clio command names (easily confused)
 
 | Intent | Correct verb |
