@@ -305,6 +305,45 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("a blind same-id create retry leaves exactly one theme in the catalog")]
+	[AllureDescription("Pins the server-side invariant the theming guidance's retry protocol rests on (ENG-93989): create-theme is non-idempotent by design (ADR B-D3), so the guidance tells agents to pass an explicit id and confirm with list-themes before retrying after a transport timeout. This test performs the blind retry that protocol warns against — a second create-theme call with the SAME explicit id and arguments, in brand mode — and asserts the live catalog holds exactly ONE theme under that id afterwards. The second call's verdict is logged, not asserted: the pinned invariant is no-duplication, not the server's rejection shape. Ignored when the stand lacks theming access.")]
+	public async Task CreateTheme_ShouldNotCreateDuplicate_WhenSameIdIsRetried() {
+		// Arrange
+		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await EnsureThemingAccessAsync(context, environmentName);
+		string themeId = $"e2e-retry-theme-{Guid.NewGuid():N}";
+		_environmentNameForCleanup = environmentName;
+		Dictionary<string, object?> createArgs = new() {
+			["environment-name"] = environmentName,
+			["id"] = themeId,
+			["caption"] = "Clio MCP E2E retry",
+			["css-class-name"] = themeId,
+			["primary"] = "#004fd6"
+		};
+
+		// Act / Assert — the first create must succeed
+		CreateThemeResult first = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+			await CallToolAsync(context, CreateThemeTool.ToolName, createArgs));
+		first.Success.Should().BeTrue(
+			because: $"a stand with theming access must accept the first brand-mode creation (error: {first.Error})");
+		_createdThemeId = themeId;
+
+		// Act — the blind same-id retry the guidance tells agents not to make without a list-themes check
+		CreateThemeResult retried = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+			await CallToolAsync(context, CreateThemeTool.ToolName, createArgs));
+		TestContext.Out.WriteLine(
+			$"same-id retry verdict: success={retried.Success}, error={retried.Error ?? "<none>"}");
+
+		// Assert — the no-duplication invariant
+		ListThemesResult catalog = await ListThemesAsync(context, environmentName);
+		catalog.Themes.Should().ContainSingle(theme => theme.Id == themeId,
+			because: "a same-id retry must never leave two catalog entries under one id — the explicit-id retry "
+				+ "protocol in the theming guidance depends on this invariant");
+	}
+
+	[Test]
 	[AllureTag(ClearThemesCacheTool.ToolName)]
 	[AllureName("clear-themes-cache refreshes the live theme catalog cache on the sandbox environment")]
 	[Description("Calls clear-themes-cache against the configured sandbox environment and verifies the refresh completes with exit code 0. Ignored when the stand lacks theming access.")]
