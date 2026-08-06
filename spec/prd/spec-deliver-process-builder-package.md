@@ -45,24 +45,22 @@ it during installation. No `IsNetCore` branch, no per-framework artifact. (ADR: 
 **FR-04 — Bundled-artifact pre-check.** A distribution that failed to carry the archive says so plainly,
 naming the expected path, instead of surfacing as a generic failure from inside the installer.
 
-**FR-05 — Already-current short-circuit.** An environment already serving the bundled build is left alone;
-re-running does no work and does not make it recompile. `--force` reinstalls regardless. The check fails
-OPEN: an unreachable host must not block an explicitly requested install.
+**FR-05 — No short-circuit.** The command always installs. There is no cheap trustworthy way to ask "is this
+environment already serving what I ship", so an explicitly requested install is performed: it is invoked as
+remediation, the install is backed up, and a needless run costs one configuration build.
 
 **FR-06 — Restart is waited out, never requested.** The command issues no restart, but one happens on
 both runtimes and outlives the install call. The command waits for the instance to answer its health
 check before judging the result. (ADR: Consequences, mitigation 3.)
 
-**FR-07 — Outcome verification against the running assembly.** After a successful install the command asks
-`ProcessDesignService.GetVersion` which build is SERVING and fails when it is older than the bundled build.
-Fails CLOSED. The database cannot answer this: the platform records a version when it ACCEPTS an archive,
-keeps serving its last successfully built assembly, and does not update that record on a re-install at all.
-Packages predating `GetVersion` fall back to a weaker `ListUserTasks` proof-of-life.
-
-**FR-07a — The skip decision asks the service, not the database.** Re-running must leave an environment
-already serving the bundled build alone, and must NOT skip one that merely has the package recorded — the
-record is frozen at the first install, so a database-based skip reports "nothing to do" for exactly the
-environment still running an old build.
+**FR-07 — Outcome verification.** After a successful install the command calls `ListUserTasks` and fails when
+`ProcessDesignService` does not answer, so an environment that accepted the package but never compiled it is
+reported instead of looking like success. Fails CLOSED. Two weaknesses are stated in the code: it cannot tell
+WHICH build answered, and `ListUserTasks` needs `CanManageProcessDesign`, which installing does not grant — an
+authorization rejection must not be reported as a build failure. A per-package `GetVersion` endpoint that
+answered "which build is serving" was built and reverted (see ADR): it does not scale to the next bundled
+package and duplicates platform mechanisms. The package-agnostic replacement (installation log +
+`ConfActivityLog`, in clio) is follow-up work.
 
 **FR-08 — Detection and offer.** The five consuming commands
 (`create-business-process`, `modify-business-process`, `describe-business-process`, `list-user-tasks`,
@@ -76,8 +74,7 @@ nor `[FeatureToggle]`, so it cannot be filtered out by the gate it exists to sat
 `DeveloperModeEnabled = false`: on a developer-mode environment `push-pkg`'s unlock step routes through
 cliogate and fails even when the package itself installed correctly.
 
-**FR-11 — MCP shape.** `install-process-builder` takes one required argument, `environment-name`, plus an
-optional `force`; flags `ReadOnly=false, Destructive=true, Idempotent=true, OpenWorld=false`. Destructive is
+**FR-11 — MCP shape.** `install-process-builder` takes one required argument, `environment-name`; flags `ReadOnly=false, Destructive=true, Idempotent=true, OpenWorld=false`. Destructive is
 `true` because that flag is what clio's core-rules guidance ties "confirm the target environment with the
 user first" to, and this tool runs a configuration build on a live instance and restarts it. It is long-tail
 (not resident in `tools/list`), reachable through the `get-tool-contract` compact index, and runs under the
@@ -101,15 +98,13 @@ built anyway.
 - **AC-01** On an environment without the package, a process-designer command refuses with a message
   naming `install-process-builder`, and the install then makes the same command succeed.
 - **AC-02** The same archive bytes install and work on .NET Framework 4.8 and on .NET 8.
-- **AC-03** `install-process-builder` returns 0 only when the service reports it is SERVING the bundled
-  build (or, for a package predating `GetVersion`, at least answers); an environment that accepted the
-  package without compiling it returns 1 with an actionable message.
-- **AC-04** Re-running against an environment already serving the bundled build returns 0, says so, and
-  triggers no configuration build — while an environment that merely has the package recorded is
-  reinstalled rather than skipped.
-- **AC-07** The `[RequiresPackage]` floor is satisfied on an environment upgraded in place, i.e. raising it
-  in step with the archive is NOT required and must not be done (the recorded version is frozen at the
-  first install).
+- **AC-03** `install-process-builder` returns 0 only when `ProcessDesignService` answers afterwards; an
+  environment that accepted the package without compiling it returns 1 with an actionable message.
+- **AC-04** Re-running is safe and installs again; it never reports "nothing to do" for an environment whose
+  package is present but not working.
+- **AC-07** The `[RequiresPackage]` floor is satisfied on an environment upgraded in place — which requires
+  the rebundle to move the descriptor's `ModifiedOnUtc` together with `PackageVersion` (use
+  `clio set-pkg-version`), because Creatio rewrites the recorded version only when the date changed.
 - **AC-05** With `process-designer` OFF, the MCP server still advertises `install-process-builder` while
   the five gated tools are invisible.
 - **AC-06** `clio info` reports the bundled package version.

@@ -102,34 +102,35 @@ silent failure:
 1. **The compile-marker schema must stay in the archive and must stay empty.** Lose it and the package
    installs, satisfies the name-based gate, and never compiles.
    `clio.tests/Common/BundledProcessBuilderPackageTests.cs` pins its presence in the shipped `.gz`.
-2. **The command verifies the outcome against the RUNNING assembly, and the database cannot substitute.**
-   Because the assembly is produced by the target rather than shipped, "installed" and "working" are
-   genuinely different states. After a successful install the command asks
-   `ProcessDesignService.GetVersion` — an operation that returns a constant compiled INTO the assembly —
-   and fails when the reported version is older than `BundledPackages.ProcessBuilderBuildVersion`. This
-   check fails CLOSED; the pre-install probe fails OPEN, because an unreachable host must not block an
-   explicitly requested install.
+2. **The command verifies the outcome, because "installed" and "working" are different states.**
+   The assembly is produced by the target rather than shipped, so a successful install proves the archive
+   was accepted, not that anything compiled. After installing, the command calls `ListUserTasks` and fails
+   when `ProcessDesignService` does not answer. This check fails CLOSED.
 
-   Two platform behaviours make this the only workable shape, both established on stands on 2026-08-05:
+   Its two weaknesses are stated in the code rather than hidden: it cannot tell WHICH build answered (on an
+   upgrade whose build failed, the last successfully built assembly answers), and `ListUserTasks` is gated on
+   `CanManageProcessDesign` inside the package, which installing a package does not grant — so the
+   `errorMessage` branch exists to keep an authorization rejection from being reported as a build failure.
 
-   - **A failed configuration build is invisible from the database.** The platform records the new version
-     when it ACCEPTS the archive and keeps serving the assembly it last built successfully, so after a
-     build failure the database and the running code disagree — and both sides of any database-only
-     comparison come from the descriptor. `GlobalContext.FailOnError` is NOT an alternative: it switches
-     install success to a log-substring match on "application installed successfully", which the observed
-     package installs never emit, so setting it would report failure on a successful install.
-   - **The recorded version is frozen at the first install.** Creatio does not update it when re-installing
-     a package it already has (it matches by `UId`). Verified on both runtimes: after installing the
-     1.1.0.0 archive, `GetVersion` reported `1.1.0.0` while `clio list-packages` still reported `1.0.0.0`.
+   **A per-package `GetVersion` endpoint was built for this and then REVERTED.** It answered "which build is
+   serving" from a constant compiled into the assembly, which is the only thing that detects a failed
+   upgrade. It was reverted because it does not scale — the next bundled package would re-implement the same
+   constant, endpoint and guard test — and because it duplicates mechanisms the platform already has:
+   `SysPackage.Version` for "what is installed" and the `ConfActivityLog` `Compilation` record (readable via
+   plain DataService, with a `Status` of Success/Error/Warning) for "how the operation ended". The
+   replacement therefore belongs in clio, once, package-agnostic: the installation log clio already receives
+   plus `ConfActivityLog`. That is follow-up work; until it lands, `ListUserTasks` is the whole check.
 
-   Hence two constants, not one. `ProcessBuilderVersion` (the `[RequiresPackage]` floor, read from the
-   database) is **effectively frozen** — raising it would refuse the five gated commands forever on every
-   environment that already carries the package, and in practice it can only move when the `UId` changes.
-   `ProcessBuilderBuildVersion` (read from the service) moves with every rebundle. `GetVersion` is
-   deliberately UNGATED on the package side: installing a package and designing processes are different
-   rights, and the guard's rejection is returned as an unsuccessful envelope, i.e. indistinguishable from
-   "never compiled". Packages predating `GetVersion` fall back to a `ListUserTasks` proof-of-life, which is
-   weaker on both counts — it cannot tell which build answered, and it needs `CanManageProcessDesign`.
+   Two related things are worth recording so they are not re-derived:
+
+   - **`GlobalContext.FailOnError` is not a substitute.** It switches clio's install-success decision to a
+     log-substring match on "application installed successfully", which the observed package installs never
+     emit — setting it would report failure on a successful install. That is a clio-side defect
+     (`BasePackageInstaller`), not a platform one.
+   - **Whether a failed configuration build is reported at all is UNVERIFIED.** The experiment that would
+     settle it did not run: the deliberately-broken archive was rejected earlier, at
+     `AppInstallInfoResolver.ValidateInstallInfos`, before compilation.
+
 3. **The restart must be waited out before the outcome is judged.** Installing a package whose assembly
    changed restarts the instance, and the restart comes from a DIFFERENT place on each runtime: on .NET
    Framework the platform recycles itself once the workspace assembly changes; on .NET
@@ -160,8 +161,20 @@ first, propose the install second.
   `process-designer` — the capability it unblocks — is off by default. The alternative considered was
   gating only the MCP tool and keeping the CLI verb open; that would invalidate the "not feature-gated"
   test and split the two surfaces. Carried, not resolved.
-- The two `InternalsVisibleTo` attributes in the package source ship into the customer-compiled
-  assembly. Conditioning them out was offered and not taken.
+- The two `InternalsVisibleTo` attributes were conditioned out of the customer build (ProcessBuilder
+  `3d6783b`), and a guard test pins that the shipped project no longer carries an unconditioned visibility
+  group. Closed.
+- **Version bumps require the descriptor's `ModifiedOnUtc` to move too**, and that is the one operational
+  rule this delivery adds. Creatio treats `ModifiedOnUtc` — not `PackageVersion` — as "this descriptor
+  changed" (`PackageStorageComposer.ApplySourcePackageChanges` → `IsPackageDescriptorChanged` →
+  `PackageDBStorage.SavePackageDescriptor`'s guard), so a version moved alone installs cleanly and leaves the
+  RECORDED version behind, making the `[RequiresPackage]` floor unsatisfiable. `clio set-pkg-version` writes
+  both fields, so the rule costs nothing when the supported command is used; because this archive is
+  hand-produced, the guard fixture additionally pins the version, the date and the archive SHA-256 side by
+  side. Not an open question — a documented constraint.
+- **Whether a failed configuration build is reported at all is unverified**, and a package-agnostic outcome
+  check in clio (installation log + `ConfActivityLog`) is the follow-up that would replace the current
+  `ListUserTasks` probe for every bundled package, not just this one.
 - `BundledPackages` deliberately does NOT yet hold the cliogate version, which is still spread across a
   constant in `InfoCommand`, `cliogate/descriptor.json` and a stale `cliogate/version.txt` that nothing
   writes. Collapsing that triple is separate work; do not add a fourth copy.

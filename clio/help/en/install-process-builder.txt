@@ -89,12 +89,12 @@ NOTES
       takes longer than a plain package install - roughly 15 to 75 seconds
       depending on the environment's speed.
     - 'clio list-packages' shows the version the environment RECORDED, which is
-      what the version floor is checked against. It updates on install only when the
-      archive's descriptor changed its ModifiedOnUtc - Creatio decides whether to
-      rewrite the row from that field, not from the version. A clio build whose
-      archive bumped the version without the date would therefore report a floor the
-      environment can never satisfy; clio's own guard tests pin both values so that
-      build cannot ship.
+      what the version floor is checked against. It moves on install only when the
+      archive's descriptor also changed its ModifiedOnUtc: that field is what
+      Creatio treats as "this descriptor changed", and the version alone does not
+      trigger the rewrite. This matters only to whoever BUILDS a package archive,
+      and only if they edit descriptor.json by hand - 'clio set-pkg-version' writes
+      both fields, so a version bump through it always takes effect.
     - Installing does not unlock maintainer packages, even on an environment with
       developer mode enabled.
     - If the command reports that ProcessDesignService does not answer, the package

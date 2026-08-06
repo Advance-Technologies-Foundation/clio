@@ -34,22 +34,30 @@ public static class BundledPackages {
 	/// enforce against the version the target environment reports.
 	/// </summary>
 	/// <remarks>
-	/// Raising this is safe ONLY if the archive's <c>descriptor.json</c> bumps <c>ModifiedOnUtc</c> in the
-	/// same change. Creatio decides whether to rewrite a package's <c>SysPackage</c> row from
-	/// <c>ModifiedOnUtc</c>, not from <c>PackageVersion</c>:
-	/// <c>PackageStorageComposer.ApplySourcePackageChanges</c> sets <c>IsPackageDescriptorChanged</c> when the
-	/// dates differ, and without it <c>PackageDBStorage.SavePackageDescriptor</c> returns early at its
-	/// <c>GetIsPackageDescriptorModified</c> guard and never reaches the <c>SysPackage.Version</c> assignment.
+	/// Bump it with <c>clio set-pkg-version &lt;package-path&gt; --PackageVersion X.Y.Z.W</c> rather than by
+	/// editing <c>descriptor.json</c> by hand. That command writes <c>PackageVersion</c> AND stamps
+	/// <c>ModifiedOnUtc</c>, and both are needed for a bump to take effect: the date decides WHETHER Creatio
+	/// rewrites the package's <c>SysPackage</c> row at all, the version decides WHAT lands there.
 	/// <para>
-	/// So a one-sided bump installs cleanly and leaves the RECORDED version at the old value — and this floor
-	/// then refuses the five gated commands on an environment that was upgraded correctly. Both halves were
-	/// observed live on 2026-08-05: with only <c>PackageVersion</c> moved the row kept <c>1.0.0.0</c>; once
-	/// <c>ModifiedOnUtc</c> moved too the row took the new version and the descriptor's own timestamp.
+	/// The mechanism, for anyone auditing a version that did not move:
+	/// <c>PackageStorageComposer.ApplySourcePackageChanges</c> sets <c>IsPackageDescriptorChanged</c> when the
+	/// descriptor's <c>ModifiedOnUtc</c> (or repository revision) differs — <c>PackageVersion</c> is not part
+	/// of that comparison — and without that flag <c>PackageDBStorage.SavePackageDescriptor</c> returns early
+	/// at its <c>GetIsPackageDescriptorModified</c> guard, never reaching the <c>SysPackage.Version</c>
+	/// assignment. This is coherent platform behaviour, not a defect: <c>ModifiedOnUtc</c> IS the field that
+	/// means "this descriptor changed", and the supported tooling maintains it. Only a hand edit can leave it
+	/// stale while the version moves.
 	/// </para>
 	/// <para>
-	/// <c>BundledProcessBuilderPackageTests</c> pins this value AND the descriptor's <c>ModifiedOnUtc</c>
-	/// beside the archive SHA-256, so a one-sided bump cannot pass review. The producing repository documents
-	/// the paired step in <c>docs/bundling-into-clio.md</c>.
+	/// Both halves were observed live on 2026-08-05: with only <c>PackageVersion</c> moved the row kept
+	/// <c>1.0.0.0</c>; once <c>ModifiedOnUtc</c> moved too the row took the new version and the descriptor's
+	/// own timestamp, on both .NET Framework and .NET.
+	/// </para>
+	/// <para>
+	/// Because THIS archive is hand-produced, <c>BundledProcessBuilderPackageTests</c> pins this value and the
+	/// descriptor's <c>ModifiedOnUtc</c> beside the archive SHA-256 — cheap insurance against exactly the hand
+	/// edit that cannot happen through <c>set-pkg-version</c>. The producing repository documents the step in
+	/// <c>docs/bundling-into-clio.md</c>.
 	/// </para>
 	/// <para>
 	/// Must stay four-part: <c>RequiredPackageChecker.IsCompatible</c> compares through

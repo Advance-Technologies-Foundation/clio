@@ -110,13 +110,14 @@ connection type, so granting `CanManageSolution` does not grant process design.
   takes longer than a plain package install — roughly 15 to 75 seconds depending
   on the environment's speed.
 - `clio list-packages` shows the version the environment **recorded**, which is what
-  the version floor is checked against. It updates on install only when the archive's
-  descriptor changed its `ModifiedOnUtc`: Creatio decides whether to rewrite the row
-  from that field, not from `PackageVersion`
+  the version floor is checked against. It moves on install only when the archive's
+  descriptor also changed its `ModifiedOnUtc` — that field is what Creatio treats as
+  "this descriptor changed", and `PackageVersion` is not part of the comparison
   (`PackageStorageComposer.ApplySourcePackageChanges` → `IsPackageDescriptorChanged` →
-  `PackageDBStorage.SavePackageDescriptor`'s guard). A clio build whose archive bumped
-  the version without the date would advertise a floor the environment can never
-  satisfy; clio's guard tests pin both values so such a build cannot ship.
+  `PackageDBStorage.SavePackageDescriptor`'s guard). This concerns whoever *builds* a
+  package archive, not whoever installs one, and only if they edit `descriptor.json`
+  by hand: `clio set-pkg-version` writes both fields, so a bump through it always
+  takes effect.
 - Installing does not unlock maintainer packages, even on an environment with
   developer mode enabled.
 - If the command reports that ProcessDesignService does not answer, the package

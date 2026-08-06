@@ -53,7 +53,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>58dc0ea</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>55f423e</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -73,16 +73,17 @@ public class BundledProcessBuilderPackageTests {
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
 	/// </summary>
 	/// <remarks>
-	/// Pinned for one reason: it is what makes a version bump take effect. Creatio decides whether to rewrite
-	/// a package's <c>SysPackage</c> row from THIS value, not from <c>PackageVersion</c>
-	/// (<c>PackageStorageComposer.ApplySourcePackageChanges</c> → <c>IsPackageDescriptorChanged</c> →
-	/// <c>PackageDBStorage.SavePackageDescriptor</c>'s guard). Bump the version without bumping this and the
-	/// install succeeds while the recorded version stays behind — which makes
-	/// <see cref="BundledPackages.ProcessBuilderVersion"/>, the <c>[RequiresPackage]</c> floor, unsatisfiable
-	/// on every environment that already carries the package.
+	/// Pinned because it is what makes a version bump take effect. Creatio treats this field — not
+	/// <c>PackageVersion</c> — as "this descriptor changed", and rewrites the package's <c>SysPackage</c> row
+	/// only when it differs (<c>PackageStorageComposer.ApplySourcePackageChanges</c> →
+	/// <c>IsPackageDescriptorChanged</c> → <c>PackageDBStorage.SavePackageDescriptor</c>'s guard). So the date
+	/// decides WHETHER the row is updated and the version decides WHAT lands there; a version moved without
+	/// the date installs cleanly and leaves the recorded version — the <c>[RequiresPackage]</c> floor — behind.
 	/// <para>
-	/// So this pin sits beside the version and the SHA-256 on purpose: a rebundle has to touch all three, and
-	/// a one-sided bump fails here instead of on a customer's environment.
+	/// That state is unreachable through <c>clio set-pkg-version</c>, which writes both fields. It is
+	/// reachable by hand-editing <c>descriptor.json</c>, which is precisely how THIS archive is produced, so
+	/// this pin sits beside the version and the SHA-256: a rebundle touches all three, and a hand edit that
+	/// skipped the date fails here rather than on a customer's environment.
 	/// </para>
 	/// </remarks>
 	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1785957182431)/";
@@ -244,9 +245,10 @@ public class BundledProcessBuilderPackageTests {
 				+ "instead of upgrading this one");
 		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedDescriptorModifiedOnUtc}\"",
 			because: "this is the value that makes the version bump take effect - Creatio rewrites the "
-				+ "SysPackage row only when it changes. If you bumped PackageVersion and this assertion still "
-				+ "passes, you forgot to bump ModifiedOnUtc and the [RequiresPackage] floor will refuse every "
-				+ "environment that already carries the package");
+				+ "SysPackage row only when it changes. If this assertion fails together with the version one, "
+				+ "the bump was done properly (clio set-pkg-version writes both); if only the version "
+				+ "assertion fails, descriptor.json was hand-edited and the [RequiresPackage] floor would "
+				+ "refuse every environment that already carries the package");
 		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderVersion}\"",
 			because: "the constant and the descriptor must agree: the constant is both what clio info reports "
 				+ "and the floor the five [RequiresPackage] gates enforce against the version the environment "
@@ -268,6 +270,29 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain("\"ManagerName\": \"SourceCodeSchemaManager\"",
 			because: "only a Source Code schema drags the package into the configuration build; an entity "
 				+ "or client schema would not");
+	}
+
+	[Test]
+	[Description("The bundled archive must carry NO compiled assembly of its own, because a shipped DLL survives a failed target-side compile and then serves stale code that the install command's own outcome check would accept as success.")]
+	public void BundledArchive_ShouldNotCarryACompiledAssembly() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		archive.Should().NotContain($"{BundledPackages.ProcessBuilderPackageName}.dll",
+			because: "shipping the assembly DEFEATS the outcome check that makes source-only delivery safe. "
+				+ "Installing materialises Files/Bin into the deployed package folder (that is how cliogate's "
+				+ "prebuilt assembly gets loaded at all), and the server's regenerated csproj outputs to that "
+				+ "same path — so a SUCCESSFUL build overwrites ours and it was merely dead weight. A FAILED "
+				+ "build overwrites nothing: our DLL stays, the platform resolves the package assembly by name "
+				+ "as '<packageName>.dll' and serves it, and GetVersion then returns the version constant WE "
+				+ "compiled in — so install-process-builder reports success on an environment that never "
+				+ "compiled the shipped sources. Note this cannot be a blanket '.dll' ban: the csproj "
+				+ "legitimately names ~60 Terrasoft.* and third-party assemblies in HintPath references, so "
+				+ "only the package's OWN assembly name is forbidden");
+		archive.Should().NotContain($"{BundledPackages.ProcessBuilderPackageName}.pdb",
+			because: "symbols travel with a leaked build output and are the same accident by a different name; "
+				+ "the bundling runbook passes --skip-pdb, and this asserts it actually happened");
 	}
 
 	[Test]
