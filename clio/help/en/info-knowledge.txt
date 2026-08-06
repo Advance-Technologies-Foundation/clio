@@ -1,0 +1,33 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    info-knowledge - Show configured knowledge sources, installed generations, and update status
+
+SYNOPSIS
+    clio info-knowledge [--source <alias>] [--check-updates] [--json]
+
+DESCRIPTION
+    Shows knowledge.root-path, the visible settings file, source configuration,
+    installed generation, resolved transport revision, validation, update availability,
+    and safe diagnostics. Omit --source to inspect all configured sources, including
+    disabled sources. The command reads local configuration and caches by default.
+    --check-updates performs bounded transport checks without installing content or
+    changing Git source configuration. Output never includes credentials or tokens.
+
+OPTIONS
+    --source <alias>    Show only this source; omit for every configured source
+    --check-updates     Contact eligible transports to check for available updates
+    --json              Emit indented JSON
+
+EXAMPLES
+    clio info-knowledge
+    clio info-knowledge --source partner --check-updates
+    clio info-knowledge --json
+
+EXIT CODES
+    0   The requested source state was reported
+    1   The source selector or knowledge root could not be resolved
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
