@@ -1,51 +1,46 @@
 namespace Clio.Package;
 
 /// <summary>
-/// Answers the question an install cannot answer for itself: after the target ACCEPTED a package, did that
-/// package actually become operational there?
+/// Answers the question an install cannot answer for itself: after the target ACCEPTED a package, did it also
+/// COMPILE it, so that the package's own code is now serving?
 /// </summary>
 /// <remarks>
 /// The distinction is not pedantic, and it is the whole reason this abstraction exists. For a package that
-/// ships as source, accepting the archive and compiling it are separate events: the platform records the
-/// descriptor version on ACCEPT and keeps serving the assembly it last built successfully, so a failed
-/// configuration build leaves an environment where the package is present, a name-based
-/// <c>[RequiresPackage]</c> gate is satisfied, and every call into the package fails. No database read
-/// distinguishes those two states.
+/// ships as source, accepting the archive and compiling it are separate events, and NO database read
+/// distinguishes them: <c>SysPackage.Version</c> records what was accepted either way, so a package can be
+/// present, satisfy a name- or version-based <c>[RequiresPackage]</c> gate, and still have no compiled assembly
+/// behind it. Only the package's own code, answering a request, is evidence that it was compiled. This was
+/// observed on a stand, not reasoned about: an install reported <c>Configuration build finished</c> with no
+/// errors while the service route was absent.
 /// <para>
-/// Deliberately named for the QUESTION rather than for how it is answered today, so a better answer can be
-/// swapped in without touching the callers.
-/// <para>
-/// Today's implementation probes the installed package's own service. That establishes the part that matters
-/// most to a caller — the capability is usable BY IT, with its own credentials, through the whole path — and
-/// it is the part a build-log read cannot establish at all. What it cannot establish is WHICH build answered,
-/// so on an upgrade a still-serving old assembly passes it. Closing that needs the platform's own signals:
-/// the installation log clio already receives, plus the <c>ConfActivityLog</c> compilation record (a normal
-/// entity schema, readable through DataService, carrying <c>Operation</c>, <c>Status</c>, <c>PackageName</c>
-/// and <c>CreatedOn</c>), which additionally work for a package that triggers no compilation at all.
+/// The verdict is deliberately LIVENESS ONLY — it does not establish that the serving build came from the
+/// sources of this particular install. Doing that requires the shipped version to be readable back out of the
+/// running code, which for a source-only package means a hand-maintained copy of it inside the sources: the
+/// assembly version is not ours (a stand measured the platform stamping its own over the csproj's), and
+/// <c>descriptor.json</c> is not present in the target's build directory. That copy would only have bought
+/// detection of a stale build on an UPGRADE — on a first install, serving at all IS the proof — and the
+/// duplicate was judged the more expensive of the two. Revisit if stale-build upgrades prove common.
 /// </para>
 /// <para>
-/// So the two are COMPLEMENTS, not a replacement and a legacy: "did the target build it" and "can this caller
-/// use it" are different questions, and answering only the first would report success to a caller that still
-/// cannot do its job.
+/// Deliberately named for the QUESTION rather than for how it is answered today, so a package that triggers no
+/// compilation, or a future platform-side signal, can be served by the same seam.
 /// </para>
 /// </remarks>
 public interface IPackageInstallOutcomeVerifier {
 
 	/// <summary>
-	/// Determines whether <paramref name="packageName"/> is operational on the target environment.
+	/// Determines whether <paramref name="packageName"/>'s own code is serving on the target environment.
 	/// </summary>
 	/// <param name="packageName">Name of the package whose outcome is being verified.</param>
 	/// <param name="diagnosis">
-	/// When the verdict is <see langword="false"/> and the cause is known more precisely than "it does not
-	/// work", the caller-facing explanation; otherwise <see langword="null"/>, leaving the caller to report
-	/// its own generic message. It exists because the interesting negative answers are not all the same
-	/// failure: "the package never compiled" and "the package is serving but refused the check" send the
-	/// reader to different places, and only the verifier can tell them apart.
+	/// When the verdict is <see langword="false"/>, the caller-facing explanation; otherwise
+	/// <see langword="null"/>. It exists because a negative answer has more than one cause — never compiled, a
+	/// route answered by something else, an unreachable instance — and only the verifier can tell them apart.
 	/// </param>
 	/// <returns>
-	/// <see langword="true"/> only on positive evidence that the package works. Fails CLOSED: an
-	/// unparseable, unreachable or ambiguous answer is <see langword="false"/>, because reporting success
-	/// here is what makes an uncompiled package look like a healthy install.
+	/// <see langword="true"/> only on positive evidence that the package's service answered. Fails CLOSED: an
+	/// unparseable, unreachable or ambiguous answer is <see langword="false"/>, because reporting success is
+	/// what makes an uncompiled package look like a healthy install.
 	/// </returns>
 	bool IsPackageOperational(string packageName, out string diagnosis);
 

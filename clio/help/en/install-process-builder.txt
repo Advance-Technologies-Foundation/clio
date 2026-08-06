@@ -40,19 +40,30 @@ DESCRIPTION
     answered by the outgoing app domain still serving the old assembly.
 
     Because the assembly is produced by the target rather than shipped, installing
-    and working are different states. After a successful install the command calls
-    ListUserTasks and fails if ProcessDesignService does not answer, so an
-    environment that accepted the package but never compiled it is reported
-    instead of looking like a success.
+    and working are different states. After a successful install the command asks
+    the package's own service whether it is serving - Ping, ungated - and fails
+    unless it answers. No database read can establish this: SysPackage records the
+    version the environment ACCEPTED whether or not anything compiled.
 
-    How much a success proves depends on the case:
-      - FIRST install - conclusive. Nothing served before, and Creatio
-        registers service routes by reflecting over LOADED types, so with no
-        compiled assembly there is no route to answer at all.
-      - UPGRADE - not conclusive. A failed configuration build leaves the
-        previously built assembly loaded and serving, and it answers this
-        check, so success means the service works, not that the new sources
-        compiled.
+    What that decides, and what it does not:
+      - FIRST install, build failed - CAUGHT. Nothing answers. Creatio registers
+        service routes by reflecting over LOADED types, so with no compiled
+        assembly there is no route at all.
+      - RE-INSTALL of the same version - passes, as it should: the package is
+        compiled and serving, which is the whole question.
+      - UPGRADE, build failed - NOT caught. The previously built assembly is
+        still loaded and answers, so the check passes while old code serves.
+
+    The last case is a deliberate limit, not an oversight. Catching it needs the
+    shipped version readable back out of the running code, which for a source-only
+    package means a hand-maintained copy of it inside the sources: the assembly
+    version belongs to the platform (a stand reported 10.1.453.0 for a package
+    installed as 1.1.0.1) and descriptor.json is absent from the target's build
+    directory. After an upgrade, treat the functionality working as the proof.
+
+    'clio list-packages' cannot substitute for this: it reads the version the
+    environment RECORDED, which moves when the archive is accepted whether or not
+    anything compiled.
 
     The command ALWAYS installs - there is no skip. Re-running is safe; it costs
     one configuration build on the target.

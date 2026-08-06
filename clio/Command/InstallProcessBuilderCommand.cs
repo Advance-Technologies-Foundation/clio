@@ -227,13 +227,12 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 				return 1;
 			}
 			// No short-circuit: an explicitly requested install always installs. It is invoked as
-			// remediation, the install is backed up, and the cost of a needless run is one configuration
-			// build. What survives of the original reasoning is that asking the SERVICE cannot answer the
-			// question — ListUserTasks proves something answers, not which build, so it would happily report
-			// "nothing to do" for an environment still serving an old assembly.
-			// A version-based skip IS viable (the recorded version does move — see
-			// BundledPackages.ProcessBuilderVersion) and is left unbuilt deliberately, not by oversight: it is a
-			// behaviour change. Recorded as an open item in spec/adr/adr-deliver-process-builder-package.md.
+			// remediation, the install is backed up, and the cost of a needless run is one configuration build.
+			// A version-based skip via the database is viable — the recorded version does move — and is left
+			// unbuilt deliberately, not by oversight: it is a behaviour change, recorded as an open item in
+			// spec/adr/adr-deliver-process-builder-package.md. A skip via the SERVICE is not viable, and that
+			// is by design: Ping answers "this package is compiled and serving", not "which build" — so it
+			// cannot tell a current assembly from a stale one, and would skip an install that is needed.
 			bool success = _packageInstaller.Install(
 				packagePath,
 				CreateInstallEnvironmentSettings(),
@@ -252,13 +251,16 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 					$"{BundledPackages.ProcessBuilderPackageName} was installed, but the environment did not "
 					+ "become ready within the timeout after the platform's post-install restart. Check the "
 					+ "instance, then verify with 'clio call-service --service-path "
-					+ "rest/ProcessDesignService/ListUserTasks -m POST -b {} -e <environment>'.");
+					+ "rest/ProcessDesignService/Ping -m POST -b {} -e <environment>'.");
 				return 1;
 			}
-			// The install only proves the archive was accepted. The assembly is compiled BY THE TARGET, so
-			// something has to establish that the code exists and is loaded — the question the verifier owns.
+			// The install only proves the archive was ACCEPTED. The assembly is compiled BY THE TARGET, and a
+			// configuration build can report success while leaving no route behind (observed on a stand), so
+			// something has to establish that the package's own code answers — which no database read can say,
+			// since SysPackage records the accepted version whether anything compiled or not.
 			if (!_outcomeVerifier.IsPackageOperational(
-					BundledPackages.ProcessBuilderPackageName, out string diagnosis)) {
+					BundledPackages.ProcessBuilderPackageName,
+					out string diagnosis)) {
 				_logger.WriteError(diagnosis ??
 					$"{BundledPackages.ProcessBuilderPackageName} was installed, but ProcessDesignService " +
 					"does not answer, which means the environment did not compile the package. Check the " +

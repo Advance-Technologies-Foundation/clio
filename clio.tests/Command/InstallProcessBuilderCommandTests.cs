@@ -123,8 +123,9 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				because: "the question is asked once, and only after the install: the package ships without an "
 					+ "assembly, so nothing before the install can answer it. There is no pre-install check, "
 					+ "because the command always installs");
-		// NSubstitute's Received() takes no `because`; stated here: the verifier is package-agnostic, so the
-		// command must name the package whose outcome it is asking about.
+		// NSubstitute's Received() takes no `because`; stated here. The command must name the package it is
+		// asking about, because the diagnosis the verifier writes on failure quotes it — the verdict itself is
+		// liveness, so no version is passed: what the target compiled is not readable back out of it.
 		_outcomeVerifier.Received().IsPackageOperational(
 			BundledPackages.ProcessBuilderPackageName, out string _);
 		// Target only, not the timing budget: the command deliberately takes ServerReadinessOptions' default,

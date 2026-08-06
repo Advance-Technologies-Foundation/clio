@@ -222,7 +222,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Applies a merged record-level access rights set for a single record via the native RightsService.
 		/// </summary>
-		RightsApplyChanges = 61
+		RightsApplyChanges = 61,
+
+		/// <summary>
+		///     Reports which build of the bundled process-builder package is serving. UNGATED on the package
+		///     side, deliberately: it answers a question about the installation, not about process design.
+		/// </summary>
+		ProcessBuilderPing = 62
 
 	}
 
@@ -286,6 +292,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
+		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
 		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},

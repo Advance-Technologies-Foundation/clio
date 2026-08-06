@@ -187,13 +187,18 @@ when it does not answer.
 - **clio's own log check is inert.** `BasePackageInstaller` consults the installation log only under
   `GlobalContext.FailOnError` (`--fail-on-error`), and then matches "application installed successfully" —
   a phrase package installs do not emit. So the check is either off or wrong.
-- **The outcome check is per-package, and half of it is missing.** `install-process-builder` probes
-  `ListUserTasks`, which establishes that the capability is usable BY THE CALLER — the half a build-log read
-  cannot establish — but not WHICH build answered. The missing half is package-agnostic and belongs in clio,
-  serving every bundled package: the installation log clio already receives, plus the `ConfActivityLog`
-  `Compilation` record (a normal entity schema readable through DataService, carrying `Operation`, `Status`,
-  `PackageName`, `CreatedOn`). They are complements: "did the target build it" and "can this caller use it"
-  are different questions.
+- **The outcome check is per-package, and it is LIVENESS only.** `install-process-builder` asks the package's
+  own ungated `Ping` whether it is serving, and fails unless it answers. That decides "did the target build it"
+  on a FIRST install — with no assembly there is no type, no route, nothing to answer. It does NOT decide an
+  UPGRADE: a stale assembly still answers. Reporting the version back would need a hand-maintained copy of it
+  in the shipped sources, because the assembly version belongs to the platform and `descriptor.json` never
+  reaches the target's build directory (both measured — see the ADR). What the check also does not establish is
+  whether the CALLER may use the package; that surfaces at the caller's next call, from the guard's own
+  message. A package-agnostic
+  alternative would read the installation log clio already receives plus the `ConfActivityLog` `Compilation`
+  record (a normal entity schema readable through DataService, carrying `Operation`, `Status`, `PackageName`,
+  `CreatedOn`) — useful for a package that exposes no service of its own, and untested so far because it is
+  unknown whether the platform reports a FAILED configuration build at all.
 - **This is NOT a gap in `install-gate`, and copying it there would be symmetry for its own sake.**
   `install-gate` verifies neither half — it returns success once the archive is accepted, without even waiting
   for the restart it triggers — and that has been fine for years, because cliogate ships a PREBUILT assembly:

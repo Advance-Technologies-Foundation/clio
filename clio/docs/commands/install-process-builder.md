@@ -46,22 +46,29 @@ would either fail while the app warms up or, when upgrading, be answered by the
 outgoing app domain still serving the old assembly.
 
 Because the assembly is produced by the target rather than shipped, installing and
-working are different states. After a successful install the command calls
-`ListUserTasks` and fails if ProcessDesignService does not answer, so an
-environment that accepted the package but never compiled it is reported instead of
-looking like a success.
+working are different states. After a successful install the command asks the package's
+own service whether it is serving — `Ping`, ungated — and fails unless it answers. No
+database read can establish this: `SysPackage` records the version the environment
+ACCEPTED whether or not anything compiled.
 
-How much a success proves depends on the case, and the difference is worth knowing:
-
-| Case | What a passing check establishes |
+| Case | Outcome |
 |---|---|
-| First install | **The package installed and compiled.** Nothing served before, so an answer can only come from a fresh build |
-| Upgrade | Only that the service answers and you may call it. A failed configuration build leaves the previously built assembly loaded and serving, and it answers this check — so the new sources may never have compiled |
+| First install, build failed | **Caught.** Nothing answers. Creatio registers service routes by reflecting over LOADED types, so with no compiled assembly there is no `ProcessDesignService` type and no route |
+| Re-install of the same version | **Passes**, as it should — the package is compiled and serving, which is the whole question |
+| Upgrade, build failed | **Not caught.** The previously built assembly is still loaded and answers, so the check passes while old code serves |
 
-Route registration is what makes the first row hold: Creatio discovers services by
-reflecting over loaded types (`CustomServicesParser`), so with no compiled assembly
-there is no `ProcessDesignService` type and no route. The same mechanism is why the
-second row does not hold — on an upgrade the previous assembly is already loaded.
+The last row is a deliberate limit, not an oversight. Catching it requires the shipped
+version to be readable back out of the running code, and for a source-only package that
+means keeping a hand-maintained copy of the version inside the sources — the assembly
+version belongs to the platform (measured: a stand reported `10.1.453.0` for a package
+installed as `1.1.0.1`, because the platform stamps what it compiles) and
+`descriptor.json` is not present in the target's build directory (also measured). That
+duplicate was judged more expensive than the case it would catch; revisit if stale-build
+upgrades prove common. After an upgrade, treat the functionality working as the proof.
+
+`clio list-packages` cannot substitute for this: it reads the version the environment
+RECORDED, which moves when the archive is accepted whether or not anything compiled.
+Only the serving build can say which sources it came from.
 
 The command **always installs** — there is no skip. Re-running is safe; it costs one
 configuration build on the target.

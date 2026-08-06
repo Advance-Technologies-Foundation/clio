@@ -82,14 +82,12 @@ public sealed class InstallProcessBuilderTool(
 	             environment). You never restart anything yourself, though a restart does happen - the platform
 	             recycles itself on .NET Framework, the installer issues it on .NET - and the tool waits for the
 	             instance to come back before judging it. It then checks the OUTCOME rather than the install
-	             call: it queries ListUserTasks and fails if ProcessDesignService does not answer, so
-	             "installed but never compiled" is reported instead of looking like success.
-
-	             How much that proves depends on the case, so do not over-read a success. On a FIRST install it
-	             is conclusive: nothing served before, so an answer can only come from a fresh build. On an
-	             UPGRADE it is not: if the new sources fail to compile, the previously built assembly keeps
-	             serving and answers this check, so success means "the service works", not "your new version is
-	             the one running".
+	             call: it asks the package's own service whether it is serving (Ping, ungated) and fails unless
+	             it answers. So "installed but never compiled" is reported instead of looking like success -
+	             which no version reported by list-packages can distinguish, because the database records what
+	             was accepted, not what was built. Note the limit: the check is liveness, not identity, so on an
+	             UPGRADE a stale assembly that still answers will pass. Treat a successful install of a NEW
+	             version as authoritative only after the functionality you needed actually works.
 
 	             It always installs - there is no skip, and re-running is safe (it costs one configuration build
 	             on the target). Take the refusal itself as the signal to call this tool rather than comparing

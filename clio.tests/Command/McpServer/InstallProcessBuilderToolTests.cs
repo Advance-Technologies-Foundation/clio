@@ -104,13 +104,18 @@ public sealed class InstallProcessBuilderToolTests {
 		description.Description.Should().Contain("create-business-process",
 			because: "the description should name a process-designer tool whose refusal motivates this one, "
 				+ "so an agent can connect the refusal to the remedy");
-		description.Description.Should().Contain("ListUserTasks",
-			because: "the description must disclose that the tool verifies the OUTCOME rather than the install "
-				+ "call, so a caller understands why a successful install can still fail");
+		description.Description.Should().Contain("Ping",
+			because: "the description must disclose HOW the outcome is checked, not just that it is: the tool "
+				+ "asks the package's own service whether it is serving, which is why a successful install call "
+				+ "can still fail — and naming the operation lets a caller reproduce the check by hand");
+		description.Description.Should().Contain("liveness, not identity",
+			because: "the check's LIMIT is part of its contract: on an upgrade a stale assembly that still "
+				+ "answers passes, so an agent must not read a successful install of a new version as proof the "
+				+ "new code is running");
 		description.Description.Should().Contain("list-packages",
-			because: "an agent must be told to act on the refusal rather than compare versions itself: the "
-				+ "recorded version list-packages reports is exactly what the [RequiresPackage] gate already "
-				+ "checked, so a second opinion adds a round-trip and a chance to disagree with the gate");
+			because: "an agent must be told to act on the refusal rather than compare versions itself, AND that "
+				+ "the recorded version list-packages reports is not the same question: it moves when the "
+				+ "archive is accepted, whether or not the target compiled it");
 	}
 
 	[Test]

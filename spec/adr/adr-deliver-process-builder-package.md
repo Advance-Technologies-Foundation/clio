@@ -104,40 +104,85 @@ silent failure:
    `clio.tests/Common/BundledProcessBuilderPackageTests.cs` pins its presence in the shipped `.gz`.
 2. **The command verifies the outcome, because "installed" and "working" are different states.**
    The assembly is produced by the target rather than shipped, so a successful install proves the archive
-   was accepted, not that anything compiled. After installing, the command calls `ListUserTasks` and fails
-   when `ProcessDesignService` does not answer. This check fails CLOSED.
+   was accepted, not that anything compiled. After installing, the command asks the package's own service
+   whether it is SERVING — the ungated `Ping` — and fails unless it answers. Fails CLOSED.
 
-   Its ONE weakness is stated in the code rather than hidden: it cannot tell WHICH build answered (on an
-   upgrade whose build failed, the last successfully built assembly answers). What a pass proves therefore
-   splits by case, and the split follows from how routes are registered — `CustomServicesParser` reflects over
-   LOADED types, so a service exists only if its assembly does:
+   The check is LIVENESS, not identity. What that decides:
 
-   - **First install — conclusive.** Nothing served before, so an answer can only come from a build that
-     succeeded: a failed build produces no assembly, hence no `ProcessDesignService` type and no route.
-   - **Upgrade — not conclusive.** The previous assembly is already loaded and answers, so the check passes
-     whether or not the new sources compiled.
+   - **First install, build failed.** CAUGHT. Nothing answers: `CustomServicesParser` registers services by
+     reflecting over LOADED types, so with no assembly there is no `ProcessDesignService` type and no route.
+     Observed on a stand: an install logged `Configuration build finished` with no errors while the route was
+     absent, and the check turned that into exit 1 with a diagnosis instead of `Done`.
+   - **Re-install of an unchanged version.** Passes, correctly — the package is compiled and serving, which is
+     the entire question being asked.
+   - **Upgrade, build failed.** NOT caught. The previously built assembly is still loaded and answers, so old
+     code keeps serving behind a passing check.
 
-   That matters more than it sounds, because the refusal that sends callers here has two causes — the package
-   is ABSENT (first install) or OLDER than the floor (upgrade) — so roughly half the reasons to run the
-   command land in the case the check cannot decide.
+   The third row is an accepted limit, decided deliberately after the alternative was built and measured.
+   Catching it requires the shipped version to be readable back out of the RUNNING code, and for a source-only
+   package there is exactly one carrier for that — a hand-maintained literal in the shipped sources. Every
+   other candidate was measured and eliminated:
 
-   Its dependence on `CanManageProcessDesign` is NOT a weakness, though it was first written up as one. The
-   question this check answers is "is the capability usable", not "did the archive install", so a caller
-   lacking the right must be told it failed — and whoever installs is normally whoever uses it, since clio
-   holds one credential per environment and an agent installing the package mid-task cannot finish that task
-   without the right either. Reporting success would move the same verdict to the next call, where no
-   diagnosis exists. The `errorMessage` branch therefore explains the rejection and says a re-install cannot
-   fix it, rather than hiding it as a build failure. The corollary matters for the follow-up below: a
-   build-log signal answers a DIFFERENT question and cannot replace this one.
+   - **Not the assembly version.** A net472 stand: after installing 1.1.0.1 the serving build reported
+     `10.1.453.0`, the platform's own version, because the platform stamps what it compiles. The package DOES
+     get its own assembly (`probeAssembly = CrtProcessBuilder`, measured), and a literal `<AssemblyVersion>`
+     set in the shipped `Directory.Build.targets` DOES survive — but `$(Version)` from the csproj does not, so
+     the value would still be hand-maintained, in an MSBuild file instead of a `.cs` one, while additionally
+     making the assembly's identity depend on winning a property-precedence race with the platform.
+   - **Not generated at build time from the descriptor.** `descriptor.json` is NOT present in the target's
+     build directory (measured: two independent path forms, plus `$(PkgPath)` is empty there). The platform
+     reads the descriptor at install time and stores it in `SysPackage`; the configuration build never sees it.
+   - **Not `SysPackage.Version`, and not the descriptor.** Both record what was ACCEPTED — precisely the state
+     a failed build leaves behind.
+   - **Not a before/after delta of the serving build's identity** (e.g. the module MVID). A delta answers "did
+     something change", which is the wrong predicate: re-installing an unchanged version is a normal, frequent
+     operation, and a delta reports failure on it.
 
-   **A per-package `GetVersion` endpoint was built for this and then REVERTED.** It answered "which build is
-   serving" from a constant compiled into the assembly, which is the only thing that detects a failed
-   upgrade. It was reverted because it does not scale — the next bundled package would re-implement the same
-   constant, endpoint and guard test — and because it duplicates mechanisms the platform already has:
-   `SysPackage.Version` for "what is installed" and the `ConfActivityLog` `Compilation` record (readable via
-   plain DataService, with a `Status` of Success/Error/Warning) for "how the operation ended". The
-   replacement therefore belongs in clio, once, package-agnostic: the installation log clio already receives
-   plus `ConfActivityLog`. That is follow-up work; until it lands, `ListUserTasks` is the whole check.
+   So the trade was: one hand-maintained duplicate of the version inside the package sources, versus detecting
+   a stale build on an upgrade. The duplicate was judged the more expensive of the two — an upgrade of the
+   bundled package happens under our own supervision, whereas the duplicate is a permanent obligation on every
+   version bump and a silent-failure mode of its own if it drifts. **Revisit this if stale-build upgrades turn
+   out to be common in practice.** Callers are told the limit: the MCP tool description, the CLI help, and the
+   command docs all state that after an upgrade the proof is the functionality working.
+
+   The refusal that sends callers here still has two causes — the package is ABSENT (first install) or OLDER
+   than the floor (upgrade) — and the version that decides which lives in the descriptor, reaching clio through
+   `SysPackage` and the `[RequiresPackage]` floors. That path is unchanged and needs no carrier.
+
+   The check is also UNGATED on the package side, and that replaced an earlier design where the probe was a
+   gated functional call. The install command's question is "did the build take", not "may this caller design
+   processes"; the second surfaces at the caller's next call, from the guard's own message, which names the
+   right. Conflating them made one verdict out of two problems with different fixes.
+
+   **A per-package version endpoint was built, reverted, reinstated, and finally DROPPED.** Its history is
+   worth keeping because each turn was driven by a measurement, and the final answer contradicts the one this
+   ADR previously recorded:
+
+   1. Built as `GetVersion`, reporting a version compiled into the assembly — the only thing that detects a
+      failed upgrade.
+   2. Reverted on three arguments, then reinstated as `GetApiVersion` once each was examined. Two of those
+      arguments still hold: `SysPackage.Version` and the `ConfActivityLog` `Compilation` record answer "what was
+      accepted" and "did a compilation happen", never "which build is serving now"; and a functional probe
+      decides only the first install.
+   3. The third argument — "`cliogate` already ships exactly this, so the pattern is the house standard" — turned
+      out to be WRONG, and that is what unwound the rest. cliogate reports
+      `typeof(CreatioApiGateway).Assembly.GetName().Version`, and it can do so because cliogate ships a
+      PREBUILT assembly: we compile it, the target only copies it, and the attribute survives untouched. A
+      source-only package has no assembly we control. The parity is not merely superficial — it is
+      unavailable. (Confirming this also explained a failed experiment: setting
+      `<GenerateAssemblyInfo>false</GenerateAssemblyInfo>` on the package, exactly as cliogate's csproj does,
+      built successfully on a stand and left the service route ABSENT — because MSBuild materializes the
+      `<AssemblyAttribute Include="Terrasoft.Core.Attributes.PackageReferenceAssemblyAttribute">` item only
+      through the `GetAssemblyAttributes` path, which that switch disables. The package's own compiled assembly
+      lost the attribute Creatio recognizes it by.)
+   4. Dropped, and replaced by the ungated `Ping`. With no assembly of our own, the reported version could only
+      come from a hand-maintained literal in the shipped sources — a permanent obligation on every version bump,
+      with its own silent-failure mode if it drifts — bought against detecting a stale build on an upgrade of
+      a package that is upgraded under our own supervision. See decision 2 above for the full elimination of
+      every alternative carrier, each measured on a stand.
+
+   The `ConfActivityLog` route stays worth building for a package that exposes no service of its own, and is
+   still untested because it is unknown whether the platform reports a FAILED configuration build at all.
 
    Two related things are worth recording so they are not re-derived:
 
@@ -190,17 +235,16 @@ first, propose the install second.
   both fields, so the rule costs nothing when the supported command is used; because this archive is
   hand-produced, the guard fixture additionally pins the version, the date and the archive SHA-256 side by
   side. Not an open question — a documented constraint.
-- **Whether a failed configuration build is reported at all is unverified**, and a package-agnostic outcome
-  check in clio (installation log + `ConfActivityLog`) is the follow-up that would replace the current
-  `ListUserTasks` probe for every bundled package, not just this one. **The seam that replacement lands in
-  now exists**: `IPackageInstallOutcomeVerifier` is named for the question ("did the package become
-  operational after being accepted?") rather than for how it is answered today, and
-  `ProcessDesignServiceOutcomeVerifier` is named for the mechanism. So the follow-up swaps an
-  implementation instead of changing the command, and the command's tests keep their meaning.
-- **A version-based skip is viable and deliberately unbuilt.** The original argument for "always install" had
-  two halves; only one survives. What survives: asking the SERVICE cannot answer the question, because
-  `ListUserTasks` proves something answers, not which build — so it would report "nothing to do" for an
-  environment still serving the old assembly. What was RETRACTED: that the recorded package version is inert.
+- **Whether a failed configuration build is reported at all is unverified.** No longer blocking for THIS
+  package — the serving build now reports its own version, so a failed build is detected without the platform
+  saying anything — but it remains the open question for a package-agnostic check, which is what a bundled
+  package exposing no service of its own would need. The seam exists: `IPackageInstallOutcomeVerifier` is named
+  for the question, `ProcessDesignServiceOutcomeVerifier` for today's mechanism, so such a check swaps an
+  implementation rather than changing the command.
+- **A version-based skip via the database is viable and deliberately unbuilt.** A skip via the SERVICE is NOT
+  viable, and that is by design: `Ping` answers "this package is compiled and serving", not "which build", so
+  it cannot tell a current assembly from a stale one and would skip an install that is needed. The database
+  half of the original argument, however, was RETRACTED: that the recorded package version is inert.
   It is not — the `SysPackage` row is rewritten whenever the descriptor's `ModifiedOnUtc` moves (see the
   constraint above), so `IRequiredPackageChecker.IsCompatible` could gate the install and save a needless
   configuration build on an up-to-date environment. Left unbuilt because it is a behaviour change with its own

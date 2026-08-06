@@ -1,0 +1,45 @@
+@startuml
+title clio and CrtProcessBuilder - component view
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor "AI agent / developer" as User
+
+package "clio (client side)" {
+  component "MCP tools\ncreate-business-process\nmodify-business-process\ndescribe-business-process\nlist-user-tasks\n(FeatureToggle: process-designer)" as MCP
+  component "CLI verb\ninstall-process-builder" as VERB
+  component "RequiredPackageChecker\n[RequiresPackage\nCrtProcessBuilder 1.1.0.1]" as GATE
+  component "Command layer\nCreate/Modify services,\nServerProcessDescriber" as CMD
+  component "ServiceUrlBuilder\nKnownRoute ->\n/rest/ProcessDesignService/*" as URL
+  component "IApplicationClient\nauth / retry / timeout" as HTTP
+  artifact "Bundled archive\nCrtProcessBuilder.gz" as GZ
+}
+
+package "Creatio (target environment)" {
+  component "Package installer\n(push-pkg endpoint)" as INST
+  component "ProcessDesignService\nBuildProcess / ModifyProcess /\nDescribeProcess / ListUserTasks /\nPing" as PDS
+  component "Terrasoft.Core\nProcessSchema*, EntitySchemaManager,\nFilterGroup, validation" as CORE
+  database "SysSchema / SysPackage" as DB
+  component "Process Designer (UI)" as UI
+}
+
+User --> MCP
+User --> VERB
+MCP --> GATE
+GATE --> CMD
+CMD --> URL
+URL --> HTTP
+HTTP --> PDS : HTTP POST JSON
+VERB --> GZ : read from\nbuild output
+VERB --> INST : push-pkg
+INST --> CORE : configuration build\n(package is source only)
+PDS --> CORE
+CORE --> DB
+DB --> UI
+
+note bottom of MCP
+  clio makes no LLM call.
+  Intent belongs to the agent,
+  metadata serialization to the package.
+end note
+@enduml

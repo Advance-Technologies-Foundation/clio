@@ -6,31 +6,22 @@ using Clio.Common;
 namespace Clio.Package;
 
 /// <summary>
-/// Verifies a bundled package's outcome by asking <c>ProcessDesignService</c> — the service the
-/// <c>CrtProcessBuilder</c> package serves — whether it answers on the target.
+/// Verifies a bundled package's outcome by asking <c>ProcessDesignService.Ping</c> whether the package's own
+/// code is serving on the target.
 /// </summary>
 /// <remarks>
 /// The name says what it USES, while <see cref="IPackageInstallOutcomeVerifier"/> says what it ANSWERS.
 /// <para>
-/// One real weakness, worth naming rather than hiding: it cannot tell WHICH build answered, so on an upgrade
-/// a still-serving old assembly passes. That is the half a platform-generic signal (the installation log plus
-/// the <c>ConfActivityLog</c> compilation record) would add — see the interface.
+/// The operation it calls is UNGATED on the package side, which is what makes this check answer the install
+/// question and only the install question. An earlier version probed <c>ListUserTasks</c> instead — a real,
+/// gated operation — and that conflated two verdicts: "the build did not take" and "you may not design
+/// processes". The second is not this command's business. A caller lacking the right finds out at its next
+/// call, from the guard's own message, which names the right; a caller whose build failed finds out here.
 /// </para>
 /// <para>
-/// What is NOT a weakness, though it reads like one: <c>ListUserTasks</c> is gated on
-/// <c>CanManageProcessDesign</c> plus a General user inside the package, so a caller lacking that right fails
-/// this check even though the archive installed. That is the correct answer to the question this verifier
-/// exists to answer — not "did the archive install" but "is the capability usable". The identity that
-/// installs is the identity that will use it: clio carries one credential per environment, and an agent
-/// installing the package mid-task cannot complete that task without the right either. Reporting success
-/// would send it on to a process-designer call that fails with a raw service rejection, i.e. the same
-/// verdict from a place that carries no diagnosis. So the <c>errorMessage</c> branch below does not paper
-/// over the failure — it explains it, says a re-install cannot fix it, and names the right to grant.
-/// <para>
-/// The corollary for any package-agnostic replacement: a build-log signal answers "did it compile", which is
-/// NOT this question. It would report success to a caller that still cannot use the feature. The two
-/// checks are complements, not substitutes.
-/// </para>
+/// What this therefore does NOT establish: that the caller can USE the package, and that the package's
+/// dependencies resolve at runtime. The second is bounded — <c>ErrorOr</c> and <c>ATF.Repository</c> are
+/// compile references, so a successful build on the target already implies they are present.
 /// </para>
 /// </remarks>
 public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifier {
@@ -45,8 +36,8 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// is wrong for the one call that decides the install command's exit code: an instance that accepts the
 	/// connection right after its restart but stalls behind the configuration-build lock would hang the CLI
 	/// with no output and no way out but Ctrl+C. Every probe in <see cref="IServerReadinessWaiter"/> is
-	/// bounded for exactly this reason; the final probe must not be the only unbounded call in the flow. A
-	/// serving <c>ListUserTasks</c> answers in well under a second — it reads a task catalogue, nothing more.
+	/// bounded for exactly this reason; the final probe must not be the only unbounded call in the flow.
+	/// <c>Ping</c> returns a constant — it opens no scope, touches no database, and answers in milliseconds.
 	/// </remarks>
 	private const int ProbeTimeoutMs = 15_000;
 
@@ -103,41 +94,29 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// <remarks>
 	/// The response is parsed rather than pattern-matched, because the interesting failure is an HTML error
 	/// page from IIS when the route does not resolve — that fails <see cref="JsonDocument.Parse"/> and is
-	/// correctly reported as "not answering", whereas a substring search over it could accidentally match.
+	/// correctly reported as "nothing is serving", whereas a substring search over it could accidentally match.
+	/// Route resolution is what makes the no-assembly case decidable at all: Creatio registers services by
+	/// reflecting over LOADED types, so with no compiled assembly there is no type, no route, and nothing that
+	/// can answer.
+	/// <para>
+	/// The envelope is checked, not merely the HTTP status: a proxy, a login redirect or a 404 body that happens
+	/// to be JSON must not read as evidence. <c>success</c> must be present and <see langword="true"/>.
+	/// </para>
 	/// </remarks>
 	public bool IsPackageOperational(string packageName, out string diagnosis) {
 		diagnosis = null;
 		try {
-			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks);
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
 			string response = _applicationClient.ExecutePostRequest(
 				url, "{}", ProbeTimeoutMs, ProbeAttempts, ProbeDelaySec);
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (!document.RootElement.TryGetProperty("ListUserTasksResult", out JsonElement result)) {
+			if (!document.RootElement.TryGetProperty("PingResult", out JsonElement result)
+				|| !result.TryGetProperty("success", out JsonElement success)
+				|| success.ValueKind != JsonValueKind.True) {
+				// Parsed, but not our envelope: a proxy, a login redirect or another responder. Not evidence.
 				return false;
 			}
-			if (result.TryGetProperty("success", out JsonElement success)
-				&& success.ValueKind == JsonValueKind.True) {
-				return true;
-			}
-			// A PARSEABLE envelope saying success:false proves the assembly exists and is serving — the
-			// failure is INSIDE it, and errorMessage is the only field that says what. Discarding it and
-			// letting the caller print "the environment did not compile the package" sends the reader to a
-			// build log that is clean. The likeliest cause is authorization: the package returns the
-			// process-design guard's rejection this way, and installing a package does not grant
-			// CanManageProcessDesign.
-			if (result.TryGetProperty("errorMessage", out JsonElement message)
-				&& message.ValueKind == JsonValueKind.String
-				&& !string.IsNullOrWhiteSpace(message.GetString())) {
-				diagnosis =
-					$"{packageName} was installed and ProcessDesignService is responding, but it rejected the " +
-					$"check: {message.GetString()}. The package compiled — this is not a build failure, so " +
-					"re-installing will NOT help and only costs another configuration build. If the message is " +
-					"about permissions, note that ListUserTasks requires the CanManageProcessDesign operation " +
-					"and a General (non-portal) user, which installing a package does not grant — grant those, " +
-					"then verify with 'clio call-service --service-path " +
-					"rest/ProcessDesignService/ListUserTasks -m POST -b {} -e <environment>'.";
-			}
-			return false;
+			return true;
 		} catch (Exception e) {
 			// WriteError, not WriteInfo: this line carries the WebException status / HTTP code, i.e. the only
 			// statement of WHY the probe failed. The caller writes the summary at error level, so logging the

@@ -131,11 +131,18 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			because: "naming a [FeatureToggle]-gated tool in the flow of an ungated one is the drift this pins: "
 				+ "the two halves of this fixture would otherwise assert a contradiction and call it correct");
 		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)which\s+build\s+is\s+serving",
-			because: "that capability was a ProcessDesignService.GetVersion operation which was implemented and "
-				+ "then REVERTED. The probe left behind is ListUserTasks, which proves the service answers but "
-				+ "not which assembly answered, so a contract claiming otherwise tells an agent an upgrade is "
-				+ "verified when the outgoing build could have answered — the one failure this command exists "
-				+ "to catch");
+			because: "the tool cannot tell which build is serving, and must not imply it can. The probe is the "
+				+ "package's ungated Ping, which proves an assembly exists and answers — not which sources it "
+				+ "was built from. A version-reporting operation was built for that and DROPPED: for a "
+				+ "source-only package the reported version could only come from a hand-maintained duplicate in "
+				+ "the shipped sources, since the assembly version belongs to the platform and descriptor.json "
+				+ "never reaches the target's build directory (both measured). A contract claiming otherwise "
+				+ "tells an agent an UPGRADE is verified when the outgoing build could have answered");
+		contract.Description.Should().MatchRegex(@"(?i)liveness,\s+not\s+identity",
+			because: "the LIMIT is part of the contract, not a footnote: on an upgrade a stale assembly that "
+				+ "still answers passes the check, so an agent must not read a successful install of a new "
+				+ "version as proof the new code is running. Stating only the capability and omitting its "
+				+ "boundary is how an agent comes to trust a verdict the tool never gave");
 		contract.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the contract must name the package it installs so an agent can match it against the refusal "
 				+ "text of the tool that sent it here");

@@ -54,7 +54,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>6e24cc0</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>2971f76</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -68,7 +68,7 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"36710B1D3C031ED18FAA1272476FD1CBEC951E45A6A9838CC5096890D44997F2";
+		"D234B196C63746D2EBB210BA0F3E8466AD542EE0236B4DBEC9831D3B62883D3E";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -92,7 +92,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786001567000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786013657000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -297,9 +297,11 @@ public class BundledProcessBuilderPackageTests {
 				+ "assertion fails, descriptor.json was hand-edited and the [RequiresPackage] floor would "
 				+ "refuse every environment that already carries the package");
 		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderVersion}\"",
-			because: "the constant and the descriptor must agree: the constant is both what clio info reports "
-				+ "and the floor the five [RequiresPackage] gates enforce against the version the environment "
-				+ "reports, so a drift either refuses a correct installation or accepts a stale one");
+			because: "the descriptor is the ONLY place this package's version lives, and this is the single link "
+				+ "between it and clio: BundledPackages.ProcessBuilderVersion is what clio info reports and the "
+				+ "floor the [RequiresPackage] gates enforce against the version the environment recorded from "
+				+ "this very descriptor. A drift either refuses a correct installation or accepts a stale one, "
+				+ "and nothing else in the product compares the two");
 		ExpectedDescriptorModifiedOnUtc.Should().EndWith("000)/",
 			because: "it is the one provenance oracle available here. PackageDescriptor.ConvertToModifiedOnUtc "
 				+ "truncates to whole seconds, so milliseconds in the stamp prove the descriptor was written by "
