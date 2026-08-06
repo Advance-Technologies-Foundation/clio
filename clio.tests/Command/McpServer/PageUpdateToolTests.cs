@@ -170,4 +170,73 @@ public sealed class PageUpdateToolTests {
 		ReceivedChartValidationVersion().Should().Be("8.3.4",
 			because: "the write path and the version probe must resolve the SAME registered environment identically to the pre-change baseline");
 	}
+
+	[Test]
+	[Description("The update-page tool [Description] surfaces the single-sourced custom-CSS policy and routes it to the page-modification-components sub-guide (ENG-92541 RC-3/RB-A5/RB-A7).")]
+	public void UpdatePage_Description_Should_Carry_CustomCssPolicy_RoutedToComponentsSubGuide() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute descriptionAttribute =
+			typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+				.Cast<System.ComponentModel.DescriptionAttribute>()
+				.Single();
+
+		// Act
+		string description = descriptionAttribute.Description;
+
+		// Assert — pin the actual policy CONTENT, not `Contains(const)` (which is tautological because
+		// the description is composed from that const); a future edit that guts the const's wording
+		// must fail this test (ENG-92541, N-2).
+		description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "AC1: the description must state that custom CSS is a last resort, not a default");
+		description.Should().Contain("NATIVE inputs first",
+			because: "AC1: native-first must be stated in the surface the agent actually reads when calling update-page");
+		description.Should().Contain("already-inserted component",
+			because: "RC-3: the policy must explicitly cover the style-an-existing-component path, the real failure the PR targets");
+		description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles is custom CSS too and must be named so the agent does not treat it as native");
+		description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be stated before the agent applies CSS");
+		description.Should().Contain("explicit confirmation",
+			because: "AC5: the description must require explicit user confirmation before applying custom CSS");
+		description.Should().Contain("page-modification-components",
+			because: "the CSS trigger must route to the sub-guide that carries the STOP block — the entry page-modification guide's GATE table has no general visual-styling row, so pointing there would leave the policy unreachable on the style-an-existing-component path (RC-3)");
+	}
+
+	[Test]
+	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> templateBaseContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
+	public async Task UpdatePage_ThreadsMode_IntoGetPageExcludeOwnBody() {
+		// A mobile body whose viewModelConfigDiff needs an external base, so the oracle resolves it (invokes get-page).
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+
+		async Task<bool> CaptureExcludeOwnBodyForModeAsync(string mode) {
+			EnvironmentOptions captured = null;
+			IApplicationClient getClient = Substitute.For<IApplicationClient>();
+			getClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+				.Returns("""{"success":true,"rows":[]}""");
+			PageGetCommand getCommand = new(getClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+				Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+				new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+				Substitute.For<IPageFileWriter>());
+			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
+
+			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, "dev", null, null, null, SkipSampling: true, Mode: mode);
+			await _tool.UpdatePage(args, null);
+
+			captured.Should().BeOfType<PageGetOptions>(
+				because: "update-page must resolve the mobile base via get-page for a body that needs one");
+			return ((PageGetOptions)captured).ExcludeOwnBody;
+		}
+
+		// Act / Assert
+		(await CaptureExcludeOwnBodyForModeAsync("replace")).Should().BeTrue(
+			because: "replace mode overwrites the own body, so the base must exclude it");
+		(await CaptureExcludeOwnBodyForModeAsync(null)).Should().BeTrue(
+			because: "a null mode defaults to replace, so the base must still exclude the own body");
+		(await CaptureExcludeOwnBodyForModeAsync("append")).Should().BeFalse(
+			because: "append mode keeps the current own body, so the base must NOT exclude it");
+	}
 }

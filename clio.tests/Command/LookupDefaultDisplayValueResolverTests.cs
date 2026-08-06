@@ -189,6 +189,26 @@ internal sealed class LookupDefaultDisplayValueResolverTests
 	}
 
 	[Test]
+	[Description("Degrades to a GUID-only resolution (no marker) and warns when the SelectQuery answers with an HTML page — a non-JSON body states nothing about the record, so claiming not-found-or-no-access would be an invented claim (ENG-93365).")]
+	public void Resolve_ShouldDegradeSilentlyAndWarn_WhenSelectQueryReturnsHtmlPage() {
+		// Arrange — the guard promotes this body to NonJsonServiceResponseException, which derives from
+		// InvalidOperationException; without the dedicated catch it falls through to the generic
+		// InvalidOperationException handler and is reported as not-found-or-no-access instead.
+		ArrangeDisplayColumn("Name");
+		ArrangeSelectResponse("<!DOCTYPE html><html><body>Server Error in '/' Application.</body></html>");
+
+		// Act
+		LookupDefaultResolution result = _resolver.Resolve(ReferenceSchema, RecordId, new RemoteCommandOptions());
+
+		// Assert
+		result.DisplayValue.Should().BeNull(because: "an unusable response yields no display value");
+		result.RecordResolution.Should().BeNull(
+			because: "a non-JSON body says nothing about the record, so no not-found/no-access marker may be claimed");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("HTML page instead of JSON")));
+	}
+
+	[Test]
 	[Description("Warns and reports not-found-or-no-access when the SelectQuery fails with a non-security error.")]
 	public void Resolve_ShouldWarnAndReportNotFound_WhenSelectQueryFailsGenerically() {
 		// Arrange

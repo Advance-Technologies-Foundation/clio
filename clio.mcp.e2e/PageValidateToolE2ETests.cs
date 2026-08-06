@@ -561,6 +561,43 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance");
 	}
 
+	[Test]
+	[Description("validate-page returns a WARNING (not a hard failure) when a crt.EntityDataSource carries a config.filters block — the key is a silent runtime no-op, so the agent is advised to move the static filter to a _PredefinedFilter attribute while the body stays valid (ENG-93867). Proves the entity-data-source-static-filters lint rule surfaces through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about config.filters on a crt.EntityDataSource")]
+	[AllureDescription("Sends a body whose modelConfigDiff registers a crt.EntityDataSource with a config.filters block and verifies validate-page surfaces an advisory WARNING carrying entity-data-source-static-filters while keeping valid=true — the block is an invisible no-op, not a structural break.")]
+	public async Task PageValidateTool_Should_Warn_On_EntityDataSource_Config_Filters() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithDataSourceFilters = ValidPageBody.Replace(
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[" +
+				"{\"operation\":\"merge\",\"path\":[\"dataSources\"],\"values\":{" +
+				"\"EmailDS\":{\"type\":\"crt.EntityDataSource\",\"scope\":\"viewElement\",\"config\":{" +
+				"\"entitySchemaName\":\"Activity\",\"attributes\":{\"Title\":{\"path\":\"Title\"}}," +
+				"\"filters\":{\"items\":{},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6,\"rootSchemaName\":\"Activity\"}}}}}" +
+				"]/**SCHEMA_MODEL_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithDataSourceFilters);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "config.filters on a crt.EntityDataSource is a silent no-op, not a structural break — validate-page must advise rather than block so the page still saves");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a Warning-severity lint finding must not demote content-ok — only Error findings block");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must flag the ignored config.filters block as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("entity-data-source-static-filters", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the warning to the related-list static-filter guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -643,6 +680,39 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
 			because: "validate-page must surface the server-faithful differ exception so the agent fixes the diff before writing");
+	}
+
+	[Test]
+	[Description("Returns valid=true for a mobile JSON body whose viewModelConfigDiff is the ENG-94101 insert-delta shape: an 'insert' appends a new entry into a template-owned array (Items.modelConfig.filterAttributes) rather than a root merge replacing it. Proves the new merge+insert diff contract validates through the real MCP wire — the apply-oracle seeds a container at the insert path so a template-owned-array append does not false-positive as not-a-container.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts the ENG-94101 template-array insert-delta shape")]
+	[AllureDescription("Sends a mobile JSON body whose viewModelConfigDiff appends a filter entry via an insert at the array's own path (no own base section) and verifies validate-page accepts it end-to-end — the observable output shape the converter now emits.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Body_With_TemplateArray_InsertDelta() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithInsertDelta = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [
+			    { "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+			      "values": { "name": "QuickFilter_x_Items", "loadOnChange": true } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithInsertDelta);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an insert appending to a template-owned array is the ENG-94101 contract; the oracle seeds the container path so it resolves instead of false-positiving as not-a-container");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "the insert-delta shape is a valid mobile data-section diff and must pass content validation");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported for the canonical template-array insert-delta the converter now emits");
 	}
 
 	[Test]

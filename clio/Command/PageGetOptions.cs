@@ -26,6 +26,15 @@ public class PageGetOptions : EnvironmentOptions {
 	/// </summary>
 	[Option("output-directory", Required = false, HelpText = "Directory that anchors the .clio-pages output tree (body.js/bundle.json/meta.json). Defaults to the workspace root, or the clio home root when no workspace is found.")]
 	public string OutputDirectory { get; set; }
+
+	/// <summary>
+	/// When <c>true</c>, <see cref="PageGetCommand.TryGetPage"/> additionally computes the merged config
+	/// EXCLUDING the editable schema's own body and returns it in <see cref="PageGetResponse.BaseViewModelConfig"/>
+	/// / <see cref="PageGetResponse.BaseModelConfig"/> — the runtime base a REPLACE-mode write layers over
+	/// (replace overwrites the own body, so it is not part of that base). Set only by the internal mobile
+	/// replace-mode validation resolver; it is not a CLI/MCP option and does not change the main bundle.
+	/// </summary>
+	public bool ExcludeOwnBody { get; set; }
 }
 
 /// <summary>
@@ -113,16 +122,21 @@ public class PageGetCommand : Command<PageGetOptions> {
 				return false;
 			}
 
-			string designPackageUId = null;
+			string designPackageUId = ResolveDesignPackageUId(schemaUId, packageUId);
+			IReadOnlyList<PageDesignerHierarchySchema> initialHierarchy;
 			try {
-				designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
-			} catch {
-				designPackageUId = null;
+				initialHierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
+			} catch (Exception hierarchyEx) {
+				// Scope the phantom-cache recovery hint to the hierarchy READ only (mirrors
+				// PageUpdateCommand.TryGetHierarchy). The outer catch must NOT attach it, or an exception
+				// from any other step in this method could wrongly carry the "Restart Creatio" hint
+				// (ENG-94418 review).
+				response = new PageGetResponse {
+					Success = false,
+					Error = PageHierarchyRecoveryHint.Append($"Failed to load hierarchy for '{options.SchemaName}': {hierarchyEx.Message}")
+				};
+				return false;
 			}
-			if (string.IsNullOrWhiteSpace(designPackageUId)) {
-				designPackageUId = packageUId;
-			}
-			var initialHierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
 			if (initialHierarchy.Count == 0) {
 				response = new PageGetResponse {
 					Success = false,
@@ -136,25 +150,9 @@ public class PageGetCommand : Command<PageGetOptions> {
 
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
-			// Keep every hierarchy schema — including a freshly-created own schema that has no body
-			// yet — so schema-level metadata (optionalProperties, parameters, resources) and the
-			// bundle identity resolve from the actual page, not the first body-bearing ancestor. A
-			// body-less schema contributes an empty parsed body, whose empty diffs merge to no-ops.
-			var parts = hierarchy
-				.Select(schema => new PageSchemaBundlePart(
-					schema,
-					schema.Body != null ? _bodyParser.Parse(schema.Body) : new PageParsedSchemaBody()))
-				.ToList();
+			var parts = BuildBundleParts(hierarchy);
 			PageBundleInfo bundle = _bundleBuilder.Build(parts);
-			var schemaChain = hierarchy
-				.Select(s => new PageSchemaChainEntry {
-					SchemaUId = s.UId,
-					SchemaName = s.Name,
-					PackageUId = s.PackageUId,
-					PackageName = s.PackageName,
-					HasBody = s.Body != null
-				})
-				.ToList();
+			var schemaChain = BuildSchemaChain(hierarchy);
 			string designPackageName = PageSchemaMetadataHelper.QueryPackageName(
 				_applicationClient, _serviceUrlBuilder, designPackageUId);
 			PageDesignerHierarchySchema editableSchema = hierarchy.FirstOrDefault(
@@ -169,6 +167,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
 			PageEditableSchemaInfo editableInfo = BuildEditableSchemaInfo(editableSchema);
+			(System.Text.Json.Nodes.JsonObject baseViewModelConfig, System.Text.Json.Nodes.JsonObject baseModelConfig) =
+				BuildExcludedOwnBodyBase(options.ExcludeOwnBody, parts, editableSchema);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -204,6 +204,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 					Body = editableBody
 				},
 				Editable = editableInfo,
+				BaseViewModelConfig = baseViewModelConfig,
+				BaseModelConfig = baseModelConfig,
 				Error = null
 			};
 			return true;
@@ -216,6 +218,47 @@ public class PageGetCommand : Command<PageGetOptions> {
 			return false;
 		}
 	}
+
+	/// <summary>
+	/// Resolves the design (editable) package UId for a schema: the hierarchy client's design package,
+	/// or <paramref name="fallbackPackageUId"/> when it cannot be determined (client threw, or returned blank).
+	/// </summary>
+	private string ResolveDesignPackageUId(string schemaUId, string fallbackPackageUId) {
+		string designPackageUId;
+		try {
+			designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
+		} catch {
+			designPackageUId = null;
+		}
+		return string.IsNullOrWhiteSpace(designPackageUId) ? fallbackPackageUId : designPackageUId;
+	}
+
+	/// <summary>
+	/// Builds the bundle parts for every hierarchy schema — including a freshly-created own schema that has no
+	/// body yet — so schema-level metadata (optionalProperties, parameters, resources) and the bundle identity
+	/// resolve from the actual page, not the first body-bearing ancestor. A body-less schema contributes an
+	/// empty parsed body, whose empty diffs merge to no-ops.
+	/// </summary>
+	private List<PageSchemaBundlePart> BuildBundleParts(IReadOnlyList<PageDesignerHierarchySchema> hierarchy) =>
+		hierarchy
+			.Select(schema => new PageSchemaBundlePart(
+				schema,
+				schema.Body != null ? _bodyParser.Parse(schema.Body) : new PageParsedSchemaBody()))
+			.ToList();
+
+	/// <summary>
+	/// Projects the resolved hierarchy into the schema chain (HEAD→ROOT) surfaced on the response bundle.
+	/// </summary>
+	private static List<PageSchemaChainEntry> BuildSchemaChain(IReadOnlyList<PageDesignerHierarchySchema> hierarchy) =>
+		hierarchy
+			.Select(s => new PageSchemaChainEntry {
+				SchemaUId = s.UId,
+				SchemaName = s.Name,
+				PackageUId = s.PackageUId,
+				PackageName = s.PackageName,
+				HasBody = s.Body != null
+			})
+			.ToList();
 
 	/// <inheritdoc />
 	public override int Execute(PageGetOptions options) {
@@ -238,6 +281,31 @@ public class PageGetCommand : Command<PageGetOptions> {
 		}
 		_logger.WriteInfo(JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
+	}
+
+	// Replace-mode validation base: the merged config the incoming body layers over at runtime is the chain
+	// WITHOUT the editable schema's own body (replace overwrites that body, so it is not part of the base). When
+	// the editable schema is not in the resolved chain — a will-create-replacing case, where the new replacing
+	// layer sits on top of everything — exclude nothing: the full merged config IS the base. Built only on demand
+	// (validation), so the normal get-page read pays nothing.
+	private (System.Text.Json.Nodes.JsonObject ViewModelConfig, System.Text.Json.Nodes.JsonObject ModelConfig) BuildExcludedOwnBodyBase(
+		bool excludeOwnBody,
+		IReadOnlyList<PageSchemaBundlePart> parts,
+		PageDesignerHierarchySchema editableSchema) {
+		if (!excludeOwnBody) {
+			return (null, null);
+		}
+		IReadOnlyList<PageSchemaBundlePart> baseParts = editableSchema is null
+			? parts
+			: parts.Where(p => !string.Equals(p.Schema.UId, editableSchema.UId, StringComparison.OrdinalIgnoreCase)).ToList();
+		// baseParts may be EMPTY when the editable schema is the only entry in the chain (no ancestors — a
+		// standalone schema, or a chain collapsed by the ENG-94418 recovery path). Do NOT fall back to the full
+		// `parts` there: that would re-include the very own body this method exists to exclude and re-open the
+		// replace-mode false-positive (an insert into an array that lived only in the soon-to-be-overwritten own
+		// body would validate OK and then fail at runtime). Build([]) yields an explicitly EMPTY base, which
+		// correctly fails such an insert (the array does not exist in the base the replace write layers over).
+		PageBundleInfo baseBundle = _bundleBuilder.Build(baseParts);
+		return (baseBundle.ViewModelConfig, baseBundle.ModelConfig);
 	}
 
 	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(

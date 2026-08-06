@@ -18,10 +18,12 @@ using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -87,6 +89,9 @@ public class BindingsModule {
 	#endregion
 
 	#region Constructors: Public
+
+	private static readonly Clio.Theming.IGoogleFontsAvailabilityCache SharedGoogleFontsAvailabilityCache =
+		new Clio.Theming.GoogleFontsAvailabilityCache(TimeProvider.System);
 
 	public BindingsModule(IFileSystem fileSystem = null){
 		_fileSystem = fileSystem;
@@ -238,6 +243,16 @@ public class BindingsModule {
 		services.AddTransient<IRingDistributionService, RingDistributionService>();
 		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		services.AddSingleton(SharedGoogleFontsAvailabilityCache);
+		services.AddHttpClient<Clio.Theming.IGoogleFontsCatalog, Clio.Theming.GoogleFontsCatalog>()
+			.ConfigureHttpClient(client => {
+				client.Timeout = Clio.Theming.GoogleFontsCatalog.ProbeTimeout;
+				client.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+			})
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
 		// (avoids `InvalidOperationException` on reused instances and races on a shared
@@ -362,6 +377,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
@@ -445,6 +461,7 @@ public class BindingsModule {
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
+		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -599,6 +616,7 @@ public class BindingsModule {
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<UploadImageTool>();
 		services.AddTransient<SetBackgroundImageTool>();
+		services.AddTransient<SetLogoTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
@@ -608,6 +626,7 @@ public class BindingsModule {
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<GetTargetPackageTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
@@ -717,6 +736,10 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
+		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
+		services.AddTransient<IPackageDataBindingWriter, PackageDataBindingWriter>();
+		services.AddTransient<IPackageDataBinder, EnvironmentPackageDataBinder>();
+		services.AddTransient<GetTargetPackageCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();
@@ -770,6 +793,7 @@ public class BindingsModule {
 		services.AddTransient<ISysImageUploader, SysImageUploader>();
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
+		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
@@ -810,7 +834,7 @@ public class BindingsModule {
 		services.AddTransient<GetCreatioInfoCommand>();
 		services.AddTransient<SetApplicationVersionCommand>();
 		services.AddTransient<ApplyEnvironmentManifestCommand>();
-		services.AddTransient<EnvironmentManager>();
+		services.AddTransient<IEnvironmentManager, EnvironmentManager>();
 		services.AddTransient<GetWebServiceUrlCommand>();
 		services.AddTransient<MockDataCommand>();
 		services.AddTransient<AssertCommand>();
@@ -1130,11 +1154,16 @@ public class BindingsModule {
 		}
 	}
 	
-	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {
 			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
+				continue;
+			}
+			// An exception is never a service. Registering one (they carry a marker interface such as
+			// IAuthoritativeErrorMessage) makes DI try to construct it, and its `string message` ctor cannot be
+			// resolved — ValidateOnBuild then fails and the whole host, mcp-server included, refuses to start.
+			if (typeof(Exception).IsAssignableFrom(type)) {
 				continue;
 			}
 			foreach (Type implementedInterface in type.GetInterfaces()) {

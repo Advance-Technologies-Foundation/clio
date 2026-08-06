@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
-namespace Clio.Tests.Command.McpServer.Tools;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]

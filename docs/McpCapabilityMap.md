@@ -694,10 +694,10 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline, and `build-theme` needs no environment but does reach fonts.google.com for a short bounded availability probe per custom font family (it still works without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
-  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment. Each custom font family is checked against Google Fonts: one the catalogue does not publish gets NO `@import` plus a warning (it then renders only where installed locally), and an unverifiable probe keeps the import plus a warning — so the emitted CSS can vary with probe outcomes, which the warnings always disclose.
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
@@ -717,7 +717,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 
 What an external AI can practically do here:
 
-- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- build a theme without an environment (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
@@ -729,29 +729,77 @@ Companion surfaces:
 
 ### 13. Branding
 
-These tools brand a Creatio app: the product logos and the shell background image.
-Both act on a registered environment (`environment-name`) and require the `CanCustomizeBranding`
-license (precheck with `check-theming-access`). All tools take a single `args` object with
-kebab-case fields.
+These tools brand a Creatio app: the product logos and the shell background image. Each apply tool
+also binds the applied branding into a package (data bindings) so it travels with an install.
+All act on a registered environment (`environment-name`). Applying branding requires the
+`CanCustomizeBranding` license (precheck with `check-theming-access`); the binding side additionally
+needs an editable (unlocked) target package and rights to modify package configuration. All tools
+take a single `args` object with kebab-case fields.
 
 - `upload-image`
   Upload a local image file to the environment and return the created `image-id`. Additive only
   (`Destructive=false`) — each call stores a new image. Requires forms-auth credentials
   (login/password) on the environment.
 - `set-background-image`
-  Set an image as the environment's shell background for all users — pass exactly one of `file`
-  (a local image, uploaded and applied in one call) or `image-id` (an image already uploaded with
-  `upload-image`). A confirmed write (`Destructive=true`: it replaces the currently configured
-  background, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued
-  through `clio-run-destructive`). Idempotent — re-applying the same image converges to the same
-  state.
+  Set an image as the environment's shell background for all users and bind it into a package —
+  pass exactly one of `file` (a local image, uploaded and applied in one call) or `image-id` (an
+  image already uploaded with `upload-image`); `keep-icon-background=true` leaves the
+  `UsePanelIconBackground` feature untouched instead of turning it off. A confirmed write
+  (`Destructive=true`: it replaces the currently configured background, so the MCP host prompts
+  before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`).
+  Idempotent — re-applying the same image converges to the same state and refreshes the packaged
+  snapshot. The `warnings` entries on the result are where delivery gaps (a `SecureText` setting, a
+  customized gallery tag, a feature state that is not confirmed off) are surfaced.
+- `set-logo`
+  Apply the product logos from local image files and bind them into a package. `logo` brands **every**
+  slot from one file; a slot argument gives that slot its own file and overrides `logo` for it —
+  `login-logo` (login page), `menu-logo` (main menu), `configuration-logo` (configuration page),
+  `dark-logo` (the Freedom UI top panel — a dark surface, pass the white/light variant). At least one
+  of them is required, and passing `logo` alone brands all four slots, not just the login page.
+  The stock splash logo is suppressed automatically. A confirmed write (`Destructive=true`: the
+  logos change for all users and cannot be automatically reverted; re-issued through
+  `clio-run-destructive` on the lazy surface). Idempotent — re-applying the same files converges.
+  Only the slots this run applied are bound, so a slot nobody branded stays out of the package. When
+  the environment refuses one slot and accepts another, the result is `success: false` naming the
+  refused slot — but the accepted slots are already written and already bound, so read `applied` and
+  `bound` before retrying and re-run only the refused slot.
+
+  On both tools the `package` field on the result names the resolved delivery target. It is present as
+  soon as the run resolved one — including on a failure — and absent only when the run never got that
+  far, so its presence does NOT by itself mean anything was bound. What landed is in `bound` — the
+  settings or parts the delivery confirmed, omitted when it confirmed none — and the reason for each gap is in
+  `warnings`, which names every difference between what was applied and what the package will deliver,
+  and a mid-delivery failure names in `error` the parts that were bound before it and stay in the
+  package. Re-run only what those name as unfinished.
+
+  On both tools the `package` argument names the binding target. There is no default package: when it is
+  omitted the bindings land in the package the environment's `CurrentPackageId` system setting names,
+  and when that setting is unset or dangling the tool FAILS with an actionable error rather than
+  falling back to a well-known package. The apply runs first and the packaging second by design: an
+  unusable target (absent, locked) leaves the branding applied on the environment and fails naming the
+  package problem, so the fix is to resolve the package and re-run — not to expect a rollback. Resolve
+  the target with `get-target-package` first to stay out of that state.
+
+- **`get-target-package`** (read-only probe, non-resident — reachable via `clio-run`) answers which
+  package a run's design-time writes land in, without writing anything: pass `package` to check a name
+  the user gave, or omit it to resolve the `CurrentPackageId` package the agent cannot read for itself
+  (`get-sys-setting` returns the All-Users default, which that per-developer setting normally has
+  none of). It returns `package-name`, which the agent states to the user and then passes to
+  `create-theme` / `set-logo` / `set-background-image` so one branding operation lands in one package.
+  On failure it separates a definitive answer (`resolutionFailed: true` — absent, locked, or no current
+  package; ask the user for another one) from an unreachable environment (`resolutionFailed: false` —
+  retry; never report that no target package exists).
 
 What an external AI can practically do here:
 
 - apply a shell background in one call: `set-background-image` with the local file (or with the
-  `image-id` of an already-uploaded image)
-- write the four product logo slots as Binary sys settings (`update-sys-setting` +
-  `value-file-path`) — the slot list and rules live in the `branding` guidance
+  `image-id` of an already-uploaded image) — the background data lands in the target package in the
+  same call
+- apply the product logos in one call: `set-logo` with `logo` for the whole product, plus a slot
+  argument wherever a slot needs its own file (typically `dark-logo` with the light variant) — the
+  logo data lands in the target package in the same call; the slot list and rules live in the
+  `branding` guidance, including the package-notification contract (name the target package to the
+  user)
 
 Companion surfaces:
 

@@ -2,12 +2,13 @@ using System;
 using Clio;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace Clio.Tests.Command;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]

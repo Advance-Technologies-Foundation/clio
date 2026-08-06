@@ -2,7 +2,9 @@
 using System.IO;
 using System.Text;
 using System.Threading;
+using ATF.Repository.Mock;
 using ATF.Repository.Providers;
+using CreatioModel;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -24,7 +26,8 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 	public override void Setup(){
 		_sb.Clear();
 		_textWriter.Flush();
-		_sut = new FeatureCommand(_applicationClientMock, _envSettingsMock, _dataProviderMock, _serviceUrlBuilderMock);
+		_sut = new FeatureCommand(_applicationClientMock, _envSettingsMock, _dataProviderMock, _serviceUrlBuilderMock,
+			_featureStateMock);
 	}
 
 	#endregion
@@ -33,9 +36,10 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 
 	private FeatureCommand _sut;
 	private EnvironmentSettings _envSettingsMock;
-	private IDataProvider _dataProviderMock;
+	private DataProviderMock _dataProviderMock;
 	private IServiceUrlBuilder _serviceUrlBuilderMock;
 	private IApplicationClient _applicationClientMock;
+	private IFeatureStateService _featureStateMock;
 	private StringWriter _textWriter;
 	private StringBuilder _sb;
 	private TextWriter _originalTextWriter;
@@ -50,8 +54,9 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 		_applicationClientMock = Substitute.For<IApplicationClient>();
 
 		_envSettingsMock = Substitute.For<EnvironmentSettings>();
-		_dataProviderMock = Substitute.For<IDataProvider>();
+		_dataProviderMock = new DataProviderMock();
 		_serviceUrlBuilderMock = Substitute.For<IServiceUrlBuilder>();
+		_featureStateMock = Substitute.For<IFeatureStateService>();
 
 		_sb = new StringBuilder();
 		_textWriter = new StringWriter(_sb);
@@ -69,6 +74,27 @@ internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 	}
 
 	#endregion
+
+	[Test]
+	[Description("Reports an error and a non-zero exit code when no role carries the requested name, so a state that was never written is not reported as applied")]
+	public void Execute_ShouldFail_WhenTheRoleIsNotFound(){
+		// Arrange
+		_dataProviderMock.MockItems(nameof(SysAdminUnit)).Returns([]);
+		FeatureOptions options = new() {
+			Code = "UsePanelIconBackground",
+			State = 0,
+			SysAdminUnitName = "Ghost role"
+		};
+
+		// Act
+		int exitCode = _sut.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "the caller named a role the environment does not have, so nothing was written and the exit code has to say so");
+		_featureStateMock.DidNotReceiveWithAnyArgs()
+			.SetFeatureState(default, default, default, default);
+	}
 
 	[Description("Should clear cache for the given feature name and log the result")]
 	[TestCase("ActivateAdvancedModeForOriginalSchemas")]
