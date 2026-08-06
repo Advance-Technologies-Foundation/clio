@@ -11,6 +11,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaOptions>
 {
 	private FindEntitySchemaCommand _command;
@@ -251,6 +252,73 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 
 		// Assert
 		act.Should().NotThrow("a valid Guid is accepted without validation errors");
+	}
+
+	[Test]
+	[Description("FindSchemas surfaces a typed error naming the endpoint when DataService returns an HTML page.")]
+	public void FindSchemas_ThrowsTypedError_WhenDataServiceReturnsHtml() {
+		// Arrange — the ENG-93365 reproduction: an exact schema-name lookup whose endpoint answers with HTML.
+		FindEntitySchemaOptions options = new() { SchemaName = "Contact" };
+		_applicationClient
+			.ExecutePostRequest("http://localhost/select", Arg.Any<string>())
+			.Returns("<!DOCTYPE html><html><body>Runtime Error</body></html>");
+
+		// Act
+		Action act = () => _command.FindSchemas(options);
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+			"a non-JSON response is a reportable endpoint failure")
+			.Which;
+		exception.Message.Should().Contain("HTML page instead of JSON",
+			"the agent must be told what the endpoint actually returned");
+		exception.Message.Should().Contain("http://localhost/select",
+			"the message must name the endpoint that failed");
+		exception.Message.Should().NotContain("is an invalid start of a value",
+			"the raw System.Text.Json parser message must never reach the caller (ENG-93365)");
+	}
+
+	[Test]
+	[Description("FindSchemas surfaces a typed error with a response preview when DataService returns truncated JSON.")]
+	public void FindSchemas_ThrowsTypedErrorWithPreview_WhenDataServiceReturnsTruncatedJson() {
+		// Arrange
+		FindEntitySchemaOptions options = new() { SchemaName = "Contact" };
+		_applicationClient
+			.ExecutePostRequest("http://localhost/select", Arg.Any<string>())
+			.Returns("""{"success":tr""");
+
+		// Act
+		Action act = () => _command.FindSchemas(options);
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(
+			"a truncated body cannot be parsed and must be reported")
+			.Which.Message;
+		message.Should().Contain("unparseable response",
+			"the message must state that the body could not be parsed");
+		message.Should().Contain("Response preview:",
+			"the caller needs the actual body to diagnose the endpoint");
+		message.Should().NotContain("is an invalid start of a value",
+			"the raw System.Text.Json parser message must never reach the caller (ENG-93365)");
+	}
+
+	[Test]
+	[Description("Execute returns 1 and logs the typed endpoint error when DataService returns an HTML page.")]
+	public void Execute_ReturnsOneAndLogsTypedError_WhenDataServiceReturnsHtml() {
+		// Arrange
+		FindEntitySchemaOptions options = new() { SchemaName = "Contact" };
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("<html><body>Runtime Error</body></html>");
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, "an unusable endpoint response is a command failure");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("HTML page instead of JSON")
+			&& !message.Contains("is an invalid start of a value")));
 	}
 
 	private static string BuildSuccessJson(IEnumerable<FindSchemaRow> rows) {

@@ -17,7 +17,6 @@ internal sealed record FontFamilyEntry(string Family, IReadOnlyList<int> Weights
 internal static class FontImportBuilder {
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-	private static readonly Regex FontFamilyPattern = new(@"^[A-Za-z0-9][A-Za-z0-9 -]*\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled, RegexTimeout);
 	private static readonly int[] DefaultFontWeights = { 400, 500, 600 };
 
@@ -35,9 +34,7 @@ internal static class FontImportBuilder {
 	private static string BuildFamilyParam(FontFamilyEntry font) {
 		IReadOnlyList<int> weights = font.Weights ?? DefaultFontWeights;
 		string trimmed = font.Family.Trim();
-		if (!FontFamilyPattern.IsMatch(trimmed)) {
-			throw new ArgumentException($"INVALID_FONT_FAMILY: \"{font.Family}\"", nameof(font));
-		}
+		FontFamilyName.Validate(trimmed);
 		string name = WhitespaceRegex.Replace(trimmed, "+");
 		List<int> list = weights.Distinct().OrderBy(weight => weight).ToList();
 		return list.Count > 0

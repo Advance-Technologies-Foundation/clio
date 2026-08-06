@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
-using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -366,12 +365,11 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Cross-channel drift guard (RC-8): the 'standing consent' pre-compile invariant must appear in ALL four guaranteed MCP channels — the core-rules guide, the compile-creatio [Description], both compile prompt branches, and the get-tool-contract precondition — so an edit that drops it from any one channel fails the build.")]
-	public void CompileConsentInvariant_Should_Appear_In_All_Four_Channels()
+	[Description("Cross-channel drift guard (RC-8): the 'standing consent' pre-compile invariant must appear in the clio-owned guaranteed MCP channels — the compile-creatio [Description], both compile prompt branches, and the get-tool-contract precondition — so an edit that drops it from any one channel fails the build. (The core-rules guide moved to clio-knowledge under #927; its copy of the invariant is guarded there, not in clio.)")]
+	public void CompileConsentInvariant_Should_Appear_In_All_Clio_Channels()
 	{
 		// Arrange
 		const string invariant = "standing consent";
-		string coreRules = CoreRulesGuidanceResource.Guide.Text;
 		string description = ((System.ComponentModel.DescriptionAttribute)typeof(CompileCreatioTool)
 			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
 			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
@@ -383,8 +381,6 @@ public sealed class CompileCreatioToolTests
 			.Tools!.Single().Preconditions!);
 
 		// Assert
-		coreRules.Should().Contain(invariant,
-			because: "the core-rules guide must carry the anti-loophole invariant");
 		description.Should().Contain(invariant,
 			because: "the compile-creatio [Description] must carry the anti-loophole invariant");
 		fullPrompt.Should().Contain(invariant,

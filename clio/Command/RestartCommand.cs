@@ -85,7 +85,11 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 			// Clamp to a sane ceiling (Finding 3): this wait pins the session container for its whole duration,
 			// so an unbounded caller-chosen timeout is a hardening gap. Bounds both the CLI --ready-timeout and
 			// the MCP waitTimeoutSeconds paths, which both funnel through here.
-			Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ReadyTimeout, 1, RestartOptions.MaxReadyTimeoutSeconds))
+			Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ReadyTimeout, 1, RestartOptions.MaxReadyTimeoutSeconds)),
+			// A restart must not report ready on the liveness ping alone: after a restart the application layer
+			// can answer /api/HealthCheck/Ping while still serving a login page / a 25s+ login during warm-up
+			// (ENG-94417). Require an authenticated application-layer round-trip before declaring readiness.
+			RequireAuthenticatedReadiness = true
 		});
 
 	#endregion

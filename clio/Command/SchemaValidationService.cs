@@ -160,6 +160,26 @@ public static class SchemaValidationService
 		"schema or the current body may legitimately provide the attribute and resource.";
 
 	/// <summary>
+	/// Canonical native-first custom-CSS policy (ENG-92541). Authored ONCE here and reused verbatim by
+	/// the <c>update-page</c> and <c>sync-pages</c> tool [Description]s so both state the identical rule
+	/// (no drift between two hand-written copies). The full STOP block lives in the
+	/// <c>page-modification-components</c> guidance sub-guide — the entry <c>page-modification</c> guide
+	/// stays within its per-response byte budget (ENG-91556), so this summary points agents straight at
+	/// the sub-guide that carries the detail, including the common "style an already-inserted component"
+	/// path (not only fresh inserts). Keep this a <c>const</c> so it stays usable inside
+	/// <c>[Description]</c> attributes (which only accept compile-time constant expressions).
+	/// </summary>
+	internal const string CustomCssPolicySummary =
+		"CUSTOM CSS IS A LAST RESORT: a visual-styling requirement (color, background, font/typeface, " +
+		"size, spacing, border, alignment) — whether on a fresh insert or an already-inserted component — " +
+		"must be met with a component's NATIVE inputs first (get-component-info). A custom `styles` object, " +
+		"a `classes`/CSS class, or an `extraStyles` hook (e.g. extraStyles.toggle/label with " +
+		"color/fill/font-family) is custom CSS that is NOT covered by platform-upgrade compatibility " +
+		"guarantees and can break on a future upgrade — apply it ONLY after telling the user no native " +
+		"option exists, warning about the upgrade-compatibility risk, and getting explicit confirmation; " +
+		"on decline, offer the nearest native alternative. See get-guidance name `page-modification-components`.";
+
+	/// <summary>
 	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
 	/// localizable-string bindings, never as inline string literals. Enforced by
 	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
@@ -3158,7 +3178,7 @@ public static class SchemaValidationService
 
 	private static IReadOnlyDictionary<string, HashSet<string>> BuildValidatorParameterContracts(string jsBody) {
 		var contracts = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-		foreach ((string validatorType, string[] paramNames) in StandardValidatorContractParser.GetContracts()) {
+		foreach ((string validatorType, string[] paramNames) in StandardValidatorContracts.GetContracts()) {
 			contracts[validatorType] = new HashSet<string>(paramNames, StringComparer.OrdinalIgnoreCase);
 		}
 		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {

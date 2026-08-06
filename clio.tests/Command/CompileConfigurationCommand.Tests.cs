@@ -112,9 +112,10 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 
 	// NOTE (ENG-93157 AC-5 coverage limit): this proves "every time" only for the CLI command path
 	// (two Execute calls => two prompts). The AGENT/MCP-side "every time" guarantee is enforced by
-	// guidance text (core-rules + compile-creatio [Description]), which an LLM interprets — it is NOT
-	// unit-testable here. The repeat-in-session loophole is closed in guidance ("not standing consent"),
-	// asserted by CoreRulesGuidanceResourceTests / CompileCreatioToolTests, not by this test.
+	// guidance text (the compile-creatio [Description] in clio, and the core-rules article in
+	// clio-knowledge since #927), which an LLM interprets — it is NOT unit-testable here. The
+	// repeat-in-session loophole ("not standing consent") is asserted by CompileCreatioToolTests
+	// for the clio-owned channels, not by this test.
 	[Test]
 	[Description("The warning is shown on EVERY compilation, not once per session: two Execute calls on the same command instance prompt twice (ENG-93157 AC-5).")]
 	public void Execute_ShouldPromptEveryTime_WhenInvokedRepeatedlyInteractive() {
