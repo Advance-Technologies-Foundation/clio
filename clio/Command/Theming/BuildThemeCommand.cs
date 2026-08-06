@@ -519,8 +519,13 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// which is the one string channel there that is NOT passed through
 	/// <see cref="Clio.Command.McpServer.SensitiveErrorTextRedactor"/> — the error channel beside it is. Every advisory
 	/// added here must therefore be static text or a locally computed value: never an environment setting, a
-	/// path, a URI, or unvalidated caller input. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> pair
-	/// fails the moment one does.
+	/// path, a URI, or unvalidated caller input. The only caller-supplied text any advisory interpolates today
+	/// is a font family name, which is safe solely because <see cref="Clio.Theming.FontFamilyName.Validate"/>
+	/// has already rejected anything outside its letters/digits/spaces/hyphens grammar in
+	/// <see cref="ResolveFontAvailability"/> — an advisory must never interpolate input that has not passed an
+	/// equivalent gate. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
+	/// contract (including the font advisories); it cannot prove it for advisories added later, so review new
+	/// advisories against this doc rather than relying on the tests alone.
 	/// </summary>
 	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {

@@ -297,7 +297,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("No build advisory carries anything the sensitive-text redactor would rewrite, with every field an advisory could ever interpolate driven by redactor-tripping text. Accent, heading-font and body-font stay empty on purpose: the two advisories only fire when they are.")]
+	[Description("No build advisory carries anything the sensitive-text redactor would rewrite, with every option field that CAN carry trip text while these advisories fire driven with it. Accent stays empty on purpose (its advisory fires only then); heading-font and body-font stay empty here because their advisories fire only when they are set — the font advisories get their own arrangement below.")]
 	public void CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite() {
 		// Arrange
 		const string trip = "https://tenant.example/x?password=hunter2";
@@ -323,7 +323,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("Same guarantee with an environment name driving the build: environment settings are the first thing the advisory contract forbids, and environment-name is mutually exclusive with version, so it needs its own arrangement.")]
+	[Description("Same guarantee with an environment name driving the build: environment settings are the first thing the advisory contract forbids, and environment-name is mutually exclusive with version, so it needs its own arrangement. Fonts stay empty here too — the font advisories are sampled separately below.")]
 	public void CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite_WhenBuiltFromAnEnvironment() {
 		// Arrange
 		const string trip = "https://tenant.example:8443/app?password=hunter2";
@@ -346,6 +346,38 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Assert
 		error.Should().BeNull(because: "the environment resolves, so only the advisories are under test");
 		AssertBothAdvisoriesSurviveRedaction(warnings);
+	}
+
+	[Test, Category("Unit")]
+	[Description("The two Google-Fonts advisories are the only producers that interpolate caller-supplied text — the font family name, twice each — so they get their own arrangement: grammar-valid families chosen to look as redactor-adjacent as the font-family grammar allows, one probing NotInCatalog and one Unverified. The pair above cannot fire these advisories because their fonts stay empty; without this case the contract was sampled only for static and locally computed advisories.")]
+	public void CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite_WhenFontAdvisoriesFire() {
+		// Arrange — both names pass FontFamilyName's letters/digits/spaces/hyphens grammar, which is exactly
+		// why they must survive the redactor: the grammar admits no scheme, path, or key=value separator.
+		const string headingFamily = "https evil example com password hunter2";
+		const string bodyFamily = "C-Users-someone-secrets-txt 0123456789 A-B-C";
+		BuildThemeOptions options = new() {
+			Primary = "#7b1fa2",
+			CssClassName = "MyTheme",
+			HeadingFont = headingFamily,
+			BodyFont = bodyFamily,
+			FontWeights = [400, 700]
+		};
+		_googleFontsCatalog.LookupAsync(headingFamily, Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+		_googleFontsCatalog.LookupAsync(bodyFamily, Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.Unverified);
+
+		// Act
+		_command.TryBuildTheme(options, out _, out _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		error.Should().BeNull(because: "grammar-valid families and probe verdicts are advisory, not fatal");
+		warnings.Should().Contain(warning => warning.Contains("\"" + headingFamily + "\" was not found in Google Fonts"),
+			because: "the NotInCatalog advisory must be in the sample — it interpolates the caller's family name");
+		warnings.Should().Contain(warning => warning.Contains("could not verify \"" + bodyFamily + "\""),
+			because: "the Unverified advisory must be in the sample — it interpolates the caller's family name twice");
+		warnings.Should().OnlyContain(warning => SensitiveErrorTextRedactor.Redact(warning) == warning,
+			because: "a family name that passed the font-family grammar cannot carry a URI, path or credential pair, so even these advisories must survive the redactor unchanged");
 	}
 
 	private static void AssertBothAdvisoriesSurviveRedaction(IReadOnlyList<string> warnings) {

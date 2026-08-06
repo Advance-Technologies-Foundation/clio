@@ -164,8 +164,9 @@ builds the CSS server-side in the same call by composing the shared
 `BuildThemeCommand.TryBuildTheme(options, resolvedSettings, …)` overload — exactly one of the two CSS
 sources per call. Rationale: in the no-code flow the theme CSS no longer crosses the model boundary in
 either direction (the C-D1 token-cost concern, extended to create), and output identity with
-`build-theme` is guaranteed because both surfaces share `TryBuildTheme` + `ThemeParameterValidator` —
-no second engine. This is **MCP-only, with no CLI parity** — the precedent is `advise-theme-palette`
+`build-theme` is guaranteed given the same font-availability probe outcomes — a probe verdict can
+suppress a web-font `@import` (ENG-93985), so identity holds per verdict set — because both surfaces
+share `TryBuildTheme` + `ThemeParameterValidator` — no second engine. This is **MCP-only, with no CLI parity** — the precedent is `advise-theme-palette`
 (an MCP surface with no CLI verb); the CLI already covers the non-inline need via `--css-content-file`.
 Deliberately **not** added: a `css-content-file` argument on this MCP tool — it would knot a
 three-way XOR (`css-content` × file × brand inputs); do not add it without revisiting this amendment

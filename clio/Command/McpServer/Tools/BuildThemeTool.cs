@@ -51,6 +51,16 @@ public sealed class BuildThemeTool(
 
 	internal const string ToolName = "build-theme";
 
+	/// <summary>
+	/// The argument roster returned when a caller sends an unrecognised field name. Extracted to a field
+	/// (mirroring <see cref="CreateThemeTool.ValidArgumentNames"/>) so the drift test can assert every
+	/// <see cref="ThemeBrandArgs"/> wire name still appears here after the brand properties moved to the
+	/// shared base record.
+	/// </summary>
+	internal static readonly string ValidArgumentNames =
+		"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
+		"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.";
+
 	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
@@ -90,9 +100,7 @@ public sealed class BuildThemeTool(
 			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name (all optional).")]
 		[Required] BuildThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
-			"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.");
+			args.ExtensionData, LegacyAliases, ".", ValidArgumentNames);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return BuildThemeResult.Failure(aliasError);
 		}

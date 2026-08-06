@@ -166,6 +166,8 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 			because: "css-content and the brand parameters are mutually exclusive CSS sources");
 		result.Error.Should().Contain("theme-css-source-conflict",
 			because: "the stable kebab-case error code must travel in the message so the caller can branch on it");
+		result.Warnings.Should().BeNull(
+			because: "the guard fired before any build, so the parsed result must carry no advisories (the key-omission wire shape itself is pinned by CreateThemeResult_ShouldOmitWarningsKey_WhenThereAreNoAdvisories)");
 	}
 
 	[Test]
@@ -199,6 +201,8 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 			because: "the failure must name the inline source the caller can provide");
 		result.Error.Should().Contain("primary",
 			because: "the failure must name the brand-mode source the caller can provide");
+		result.Warnings.Should().BeNull(
+			because: "the guard fired before any build, so the parsed result must carry no advisories (the key-omission wire shape itself is pinned by CreateThemeResult_ShouldOmitWarningsKey_WhenThereAreNoAdvisories)");
 	}
 
 	private static async Task<ToolContractDefinition> GetToolContractAsync(ArrangeContext context, string toolName) {

@@ -365,6 +365,33 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("Pins the warnings field's wire shape through the real MCP serializer: the key is OMITTED when there are no advisories (agents branch on key presence, and the factories normalize empty to null exactly for this) and an array when there are. Dropping the conditional JsonIgnore, or the WhenWritingNull condition, would grow every result by a warnings:null nobody asserts on today.")]
+	public void CreateThemeResult_ShouldOmitWarningsKey_WhenThereAreNoAdvisories() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		string withoutWarnings = JsonSerializer.Serialize(CreateThemeResult.Successful("ocean"), options);
+		string withEmptyWarnings = JsonSerializer.Serialize(
+			CreateThemeResult.Successful("ocean", Array.Empty<string>()), options);
+		string withWarnings = JsonSerializer.Serialize(
+			CreateThemeResult.Successful("ocean", ["build-theme: font weights were ignored."]), options);
+		string failureWithWarnings = JsonSerializer.Serialize(
+			CreateThemeResult.Failure("theme-build-failed: boom", ["advisory"]), options);
+
+		// Assert
+		withoutWarnings.Should().NotContain("\"warnings\"",
+			because: "a result without advisories must omit the key entirely, not carry warnings:null");
+		withEmptyWarnings.Should().NotContain("\"warnings\"",
+			because: "the factory normalizes an empty list to null so an advisory-free build serializes identically to no build");
+		withWarnings.Should().Contain("\"warnings\":[\"build-theme: font weights were ignored.\"]",
+			because: "advisories must reach the wire as a JSON array under the documented key");
+		failureWithWarnings.Should().Contain("\"warnings\":[\"advisory\"]",
+			because: "the failure path documents the same warnings channel as success");
+	}
+
+	[Test]
 	[Description("Returns a structured failure carrying the version-requirement message and never creates the theme when the target environment does not satisfy the Creatio version floor.")]
 	[Category("Unit")]
 	public void CreateTheme_ShouldReturnFailure_WhenCreatioVersionRequirementIsUnmet() {
@@ -702,6 +729,33 @@ public class CreateThemeToolTests {
 			because: "the css-content property description ships in the per-property JSON schema — it is where a client renders the mutual-exclusion rule, so it must name the parameters the guard actually rejects");
 		CreateThemeTool.ValidArgumentNames.Should().Contain(expected,
 			because: "the corrective hint an agent reads after a rejected call must name the brand parameters contiguously and in the same order the guard renders them — a substring check would miss a reordered or comma-mangled roster");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("build-theme's hand-written rosters cannot drift from ThemeBrandArgs either: the seven shared brand properties now live on the base record in another file, while build-theme's args-parameter Description and its unknown-argument hint still list them as literals. A property added to ThemeBrandArgs would otherwise update create-theme's generated rosters and silently leave build-theme's stale — the exact asymmetry this guard exists to prevent.")]
+	public void BuildThemeAdvertisedRosters_ShouldListEveryThemeBrandArgsProperty() {
+		// Arrange
+		string[] sharedWireNames = typeof(ThemeBrandArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		sharedWireNames.Should().NotBeEmpty(because: "an empty set means this test pins nothing");
+
+		// Act
+		string argsDescription = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetParameters()[0]
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
+
+		// Assert
+		argsDescription.Should().NotBeNull(because: "the args wrapper is documented for the caller");
+		foreach (string wireName in sharedWireNames) {
+			argsDescription.Should().Contain(wireName,
+				because: $"'{wireName}' is declared on ThemeBrandArgs, so build-theme's caller-facing parameter roster must keep naming it");
+			BuildThemeTool.ValidArgumentNames.Should().Contain(wireName,
+				because: $"the corrective hint an agent reads after a rejected build-theme call must keep naming '{wireName}'");
+		}
 	}
 
 	[Test]
@@ -1070,6 +1124,8 @@ public class CreateThemeToolTests {
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an exception in the create phase is a failure");
+		result.Error.Should().NotStartWith(CreateThemeTool.ErrorCodes.BuildFailed,
+			because: "a create-phase fault is not a build failure — the build completed, so the phase boundary must keep the theme-build-failed code off this path");
 		result.Warnings.Should().ContainSingle(w => w.Contains("font weights"),
 			because: "advisories from the completed build must survive the exception failure channel exactly as they survive the returned-false channel");
 		ConsoleLogger.Instance.ClearMessages();
@@ -1160,11 +1216,48 @@ public class CreateThemeToolTests {
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "a swallowed probe failure would build against a different template than the caller asked for and still create the theme");
+		result.Error.Should().StartWith(CreateThemeTool.ErrorCodes.BuildFailed,
+			because: "a fault thrown out of the build phase must still carry the documented theme-build-failed code agents branch on");
 		result.Error.Should().Contain("ghost",
 			because: "the caller must learn which environment failed rather than getting a silently different theme");
 		build.CssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 		resolvedCommand.CapturedOptions.Should().BeNull(
 			because: "nothing may be created when the version the CSS targets could not be established");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A fault the build engine does not catch (here an unreadable bundled template surfacing as IOException from the command resolve) still reaches the caller inside the theme-build-failed taxonomy: TryBuildTheme's false-return channel is not the only way the build phase can fail, and a code-less generic message would fall outside the documented contract agents branch on. Version-gate and create-phase failures must stay unprefixed — see the sibling tests.")]
+	public void CreateTheme_ShouldPrefixBuildFailedCode_WhenTheBuildPhaseThrowsUnexpectedly() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new IOException("could not read the bundled theme template"));
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a faulted build phase must refuse the create");
+		result.Error.Should().StartWith(CreateThemeTool.ErrorCodes.BuildFailed,
+			because: "an exception escaping the build phase must land inside the documented error taxonomy, not as a bare redacted message");
+		result.Error.Should().Contain("could not read the bundled theme template",
+			because: "the underlying reason must survive so the caller can act on it");
+		result.Warnings.Should().BeNull(
+			because: "the fault fired before the build produced any advisories, and an empty list must not surface as a warnings key");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "no theme may be created when the CSS was never built");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -1239,6 +1332,8 @@ public class CreateThemeToolTests {
 			because: "the version-requirement message must be surfaced to the MCP caller");
 		result.Error.Should().Contain($"[{CreatioVersionRequirementException.VersionTooOldCode}]",
 			because: "the typed result carries no exit code, so the stable machine-readable ErrorCode must travel in the error message");
+		result.Error.Should().NotStartWith(CreateThemeTool.ErrorCodes.BuildFailed,
+			because: "the version gate fires before the build phase, so its failure must keep its own code — the theme-build-failed prefix belongs to build-phase faults only");
 		build.CssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 		resolvedCommand.CapturedOptions.Should().BeNull(
 			because: "the theme must never be created when the environment does not satisfy the version floor");
@@ -1458,6 +1553,59 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("AC3 identity ACROSS THE TOOLS: build-theme's compute-mode css equals the css-content create-theme's brand mode uploads, for the same brand inputs over the SAME real BuildThemeCommand. The direct-build test above proves only the create-side arg mapping — each tool hand-writes its own BuildThemeOptions initializer, so a field dropped or normalized differently in either one would break the advertised interchangeability while every per-tool test stayed green. This is the only test in which both initializers face each other.")]
+	public void ThemeTools_ShouldProduceIdenticalCss_WhenBrandInputsMatch() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string template = File.ReadAllText(
+			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
+		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
+		templateProvider.GetCssTemplate("10.0").Returns(template);
+		templateProvider.GetJsonTemplate(Arg.Any<string>())
+			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
+		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
+		publishedCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
+		BuildThemeCommand sharedBuildCommand = new(new ThemeCssBuilder(), templateProvider,
+			Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>(),
+			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>(),
+			publishedCatalog);
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "ocean");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(sharedBuildCommand);
+		CreateThemeTool createTool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		BuildThemeTool buildTool = new(sharedBuildCommand, ConsoleLogger.Instance);
+
+		// Act — every brand input set on both tools, so a field dropped from either hand-written
+		// BuildThemeOptions mapping shifts the CSS; explicit version keeps build-theme off its
+		// environment-name path (the two are mutually exclusive there) and create-theme off the probe.
+		CreateThemeResult createResult = createTool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", Caption: "Ocean", Id: "ocean",
+			Primary: "#004fd6", Version: "10.0") {
+			Secondary = "#0d2e4e", Accent = "#ff6f61", Success = "#2e7d32", Error = "#c62828",
+			HeadingFont = "Poppins", BodyFont = "Lato", FontWeights = [400, 600]
+		});
+		BuildThemeResult buildResult = buildTool.BuildTheme(new BuildThemeArgs(
+			CssClassName: "ocean-theme", Caption: "Ocean", Id: "ocean",
+			Primary: "#004fd6", Version: "10.0") {
+			Secondary = "#0d2e4e", Accent = "#ff6f61", Success = "#2e7d32", Error = "#c62828",
+			HeadingFont = "Poppins", BodyFont = "Lato", FontWeights = [400, 600]
+		});
+
+		// Assert
+		createResult.Success.Should().BeTrue(because: "the pinned inputs are valid for the real engine");
+		buildResult.Success.Should().BeTrue(because: "the same inputs must be valid on the sibling tool");
+		resolvedCommand.CapturedOptions.CssContent.Should().Be(buildResult.Css,
+			because: "brand mode is advertised as producing the same stylesheet as build-theme — the two hand-written BuildThemeOptions mappings must stay interchangeable");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("With css-class-name omitted, the class the brand build embeds in the CSS selectors and the class the create path registers cannot diverge: both sides resolve it through the same ThemeParameterValidator. The build side is proven here over the real engine; the create side's use of that same validator is pinned by CreateThemeCommandTests.CreateTheme_ShouldDeriveCssClassNameFromCaption_WhenCssClassNameOmitted — together they close the divergence a reviewer flagged, where a visually inert theme would still return success.")]
 	[Category("Unit")]
 	public void CreateTheme_ShouldEmbedTheClassTheCreatePathRegisters_WhenCssClassNameOmitted() {
@@ -1497,15 +1645,20 @@ public class CreateThemeToolTests {
 			because: "the tool forwards the omission untouched — the create command derives the class through the same validator, pinned on the command's own tests");
 		resolvedCommand.CapturedOptions.Caption.Should().Be("Ocean Breeze",
 			because: "the caption is the derivation input, so it must reach the create command verbatim");
-		resolvedCommand.CapturedOptions.CssContent.Should().Contain("." + registeredClass,
-			because: "the selector the build embeds must be exactly the class the create path registers, or the created theme would be visually inert while still returning success");
+		resolvedCommand.CapturedOptions.CssContent.Should().MatchRegex(
+			"\\." + System.Text.RegularExpressions.Regex.Escape(registeredClass) + "[\\s{.,:]",
+			because: "the selector the build embeds must be exactly the class the create path registers — a prefix "
+				+ "match (e.g. .ocean-breeze-dark) would also satisfy Contain, hiding a divergence that leaves "
+				+ "the created theme visually inert while still returning success");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private static (string[] Properties, string[] Required) GetGeneratedArgsSchema(object toolInstance,
 		System.Reflection.MethodInfo toolMethod) {
 		McpServerTool sdkTool = McpServerTool.Create(toolMethod, target: toolInstance,
-			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+			// The production serializer options, not JsonSerializerOptions.Default: a production-only
+			// serializer setting that renamed or hid a property would otherwise be invisible here.
+			new McpServerToolCreateOptions { SerializerOptions = Clio.BindingsModule.CreateMcpSerializerOptions() });
 		JsonElement argsSchema = sdkTool.ProtocolTool.InputSchema
 			.GetProperty("properties")
 			.GetProperty("args");

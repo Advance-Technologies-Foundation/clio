@@ -713,9 +713,12 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   Stable error codes travelling in the `error` message, on top of the version-gate codes above:
   `theme-css-source-conflict` (both CSS sources supplied), `theme-css-source-missing` (neither supplied),
   `theme-brand-primary-missing` (brand parameters without `primary`, which is what enables the brand mode),
-  and `theme-build-failed: <engine message>` (the server-side build rejected the brand inputs — raised before
-  any HTTP write, so nothing was created). Non-fatal build advisories travel in `warnings` on both the success
-  and the failure paths; `error` and `warnings` are redacted before they leave the tool.
+  and `theme-build-failed: <engine message>` (the server-side build rejected the brand inputs or the build
+  phase faulted — raised before any HTTP write, so nothing was created). Non-fatal build advisories travel in
+  `warnings` on both the success and the failure paths. `error` is redacted before it leaves the tool;
+  `warnings` are deliberately not redacted — every advisory is static or locally computed text by contract
+  (a font advisory carries only a family name the build has already validated against the font-family
+  grammar), pinned by the `CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite` tests.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`

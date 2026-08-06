@@ -63,6 +63,25 @@ public sealed class ThemingGuidanceResourceTests {
 	}
 
 	[Test]
+	[Description("The no-code create step states the exactly-one-CSS-source rule the tool enforces with theme-css-source-conflict/-missing: without this sentence an agent hitting either code finds it enforced in the contract but explained nowhere in the guide. Also pins the branding-package clause — when the theme is part of a branding operation the theme must land in the package that operation resolved; this clause was lost once in a step rewrite.")]
+	public void ThemingGuidanceResource_Should_State_The_Css_Source_Xor_And_Branding_Package_Rule() {
+		// Arrange
+		ThemingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the theming guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("exactly one of the two CSS sources per call",
+			because: "the guide must explain the XOR rule behind theme-css-source-conflict and theme-css-source-missing where the agent reads the create step");
+		article.Text.Should().Contain("pass it as inline `css-content` in place of the brand inputs",
+			because: "hand-authored CSS is the documented exception to brand mode, and the guide must say where it goes");
+		article.Text.Should().Contain("pass the package that operation resolved (`get-guidance name=branding`)",
+			because: "a theme created inside a branding operation must land in that operation's package, and this clause has been lost in a rewrite before");
+	}
+
+	[Test]
 	[Description("The theming guide keeps the explicit user confirmation before building with a family Google Fonts does not publish, and hands the user the catalogue search as the resolver. With --local-font-families gone, this prose is the only control for that gate.")]
 	public void ThemingGuidanceResource_Should_Keep_NonGoogleFamily_Confirmation_Gated() {
 		// Arrange

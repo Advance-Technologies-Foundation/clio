@@ -44,34 +44,44 @@ public class CreateThemeTool(
 	/// <summary>
 	/// The brand surface, derived from <see cref="ThemeBrandArgs"/> so a property added there cannot be
 	/// missed by the conflict guard. Ordered by metadata token because <c>Type.GetProperties()</c> gives no
-	/// order and <see cref="BrandParameterNames"/> renders a caller-facing contract string from this.
+	/// order and <see cref="BrandParameterNames"/> renders a caller-facing contract string from the same
+	/// derivation (<see cref="ResolveBrandProperties"/>).
 	/// </summary>
-	private static readonly PropertyInfo[] BrandProperties =
-		typeof(ThemeBrandArgs).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-			.OrderBy(property => property.MetadataToken)
-			.ToArray();
-
-
+	private static readonly PropertyInfo[] BrandProperties = ResolveBrandProperties();
 
 	/// <summary>
 	/// The parameter list the conflict message names, built from the same source as the guard so the two can
 	/// never disagree. <c>primary</c> and <c>version</c> bracket the reflective names because both are
 	/// declared on <see cref="CreateThemeArgs"/> and checked explicitly.
 	/// </summary>
-	private static readonly string BrandParameterNames = string.Join(", ",
-		new[] { "primary" }
-			.Concat(BrandProperties.Select(WireNameOf))
-			.Append("version"));
+	private static readonly string BrandParameterNames = RenderBrandParameterNames();
 
 	/// <summary>
 	/// The argument roster returned when a caller sends an unrecognised field name. Only the non-brand prefix
-	/// is hand-listed — the brand half is the generated <see cref="BrandParameterNames"/>, because this is the
-	/// corrective text an agent reads after a rejected call: a brand parameter missing from it is worse than
-	/// stale, it tells the caller a legitimate argument is invalid.
+	/// is hand-listed — the brand half is the generated <see cref="RenderBrandParameterNames"/> output, because
+	/// this is the corrective text an agent reads after a rejected call: a brand parameter missing from it is
+	/// worse than stale, it tells the caller a legitimate argument is invalid.
 	/// </summary>
 	internal static readonly string ValidArgumentNames =
 		"Valid: environment-name, css-content, css-class-name, caption, id, package-name, "
-		+ $"{BrandParameterNames}.";
+		+ $"{RenderBrandParameterNames()}.";
+
+	// Each initializer above derives its value through these methods instead of reading a sibling field:
+	// static field initializers run in textual order, so a field-on-field dependency would make an innocent
+	// declaration reorder fault the type (or silently truncate the roster) with no compiler signal. The
+	// method calls keep every initializer self-contained and the order irrelevant.
+	private static PropertyInfo[] ResolveBrandProperties() {
+		return typeof(ThemeBrandArgs).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.OrderBy(property => property.MetadataToken)
+			.ToArray();
+	}
+
+	private static string RenderBrandParameterNames() {
+		return string.Join(", ",
+			new[] { "primary" }
+				.Concat(ResolveBrandProperties().Select(WireNameOf))
+				.Append("version"));
+	}
 
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
@@ -122,7 +132,7 @@ public class CreateThemeTool(
 		if (!hasCssContent && !brandMode) {
 			return CreateThemeResult.Failure(HasAnyBrandParameter(args)
 				? $"{ErrorCodes.BrandPrimaryMissing}: primary is required for the brand mode — the other brand parameters " +
-					"only refine the palette derived from it. Pass primary, or provide css-content instead."
+					"only refine the palette derived from it or select the build template. Pass primary, or provide css-content instead."
 				: $"{ErrorCodes.CssSourceMissing}: provide either css-content (inline CSS) or primary (brand colours; " +
 					"clio builds the theme CSS server-side and creates the theme in one call).");
 		}
@@ -139,25 +149,35 @@ public class CreateThemeTool(
 
 	private CreateThemeResult ExecuteBrandMode(CreateThemeOptions options, CreateThemeArgs args) {
 		IReadOnlyList<string> buildWarnings = null;
+		// Tracks whether a thrown exception escaped the BUILD phase. TryBuildTheme reports input/template
+		// errors through its false-return channel (prefixed below), but an unexpected build-phase fault — an
+		// unreadable bundled template, a resolver wiring failure — propagates to ExecuteResolved's catch,
+		// which knows nothing about phases. Without this flag such a failure would reach the caller without
+		// the documented theme-build-failed code, outside the taxonomy agents branch on
+		// (docs/McpCapabilityMap.md). Version-gate and create-phase failures stay unprefixed.
+		bool buildPhase = false;
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
 			resolvedCommand => {
+				buildPhase = true;
 				if (!TryBuildBrandCss(args, out string css, out buildWarnings, out string buildError)) {
 					return CreateThemeResult.Failure(
 						$"{ErrorCodes.BuildFailed}: {SensitiveErrorTextRedactor.Redact(buildError)}", buildWarnings);
 				}
+				buildPhase = false;
 				options.CssContent = css;
-				return CreateTheme(resolvedCommand, options, buildWarnings);
+				return CreateOnEnvironment(resolvedCommand, options, buildWarnings);
 			},
-			error => CreateThemeResult.Failure(error, buildWarnings));
+			error => CreateThemeResult.Failure(
+				buildPhase ? $"{ErrorCodes.BuildFailed}: {error}" : error, buildWarnings));
 	}
 
 	private CreateThemeResult Execute(CreateThemeOptions options) {
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
-			resolvedCommand => CreateTheme(resolvedCommand, options, buildWarnings: null),
+			resolvedCommand => CreateOnEnvironment(resolvedCommand, options, buildWarnings: null),
 			error => CreateThemeResult.Failure(error));
 	}
 
-	private static CreateThemeResult CreateTheme(CreateThemeCommand command, CreateThemeOptions options,
+	private static CreateThemeResult CreateOnEnvironment(CreateThemeCommand command, CreateThemeOptions options,
 		IReadOnlyList<string> buildWarnings) {
 
 		if (!command.TryCreateTheme(options, out string createdId, out string errorMessage)) {
@@ -196,6 +216,14 @@ public class CreateThemeTool(
 		};
 	}
 
+	// Runs inside ExecuteResolved's per-tenant lock, which means the Google Fonts availability probe
+	// (TryBuildTheme -> ResolveFontAvailability) can hold that lock across network I/O. Accepted because the
+	// probe is tightly bounded: at most 2 distinct families per call, probed CONCURRENTLY (Task.WhenAll), so
+	// the worst case is one ProbeTimeout (~3s) total — zero for the default/Montserrat fonts — and verdicts
+	// are memoized process-wide (definitive ones for 5 minutes, unverified ones for 30 seconds). The
+	// ThemeService create round-trip already holds this same lock for longer. Hoisting the build out of
+	// ExecuteResolved would invert the post-gate ordering guarantee: the version gate must refuse a
+	// below-floor environment BEFORE any build work runs.
 	private bool TryBuildBrandCss(CreateThemeArgs args, out string css,
 		out IReadOnlyList<string> warnings, out string error) {
 		EnvironmentOptions environmentOptions = new() { Environment = args.EnvironmentName };
@@ -215,6 +243,10 @@ public class CreateThemeTool(
 			BodyFont = args.BodyFont,
 			FontWeights = args.FontWeights,
 			Version = args.Version,
+			// Must stay null: the environment reaches the build only as resolvedSettings. Copying it here
+			// alongside an explicit version trips ResolveVersion's version/environment mutual-exclusion
+			// guard on every version+environment call (pinned by
+			// CreateTheme_ShouldKeepBuildEnvironmentNameNull_WhenEnvironmentNameAndVersionBothSupplied).
 			EnvironmentName = null
 		};
 		BuildThemeCommand buildCommand = _commandResolver.Resolve<BuildThemeCommand>(environmentOptions);
