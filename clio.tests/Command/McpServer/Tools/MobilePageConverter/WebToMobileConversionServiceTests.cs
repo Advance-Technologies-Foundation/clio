@@ -3224,6 +3224,66 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A group that ONLY skipped still contributes its constraint and next step. That is precisely when the caller needs them: the element kept its web styling, and the rule's prose is the only thing telling the caller to read skipped[] and mention it separately.")]
+	public void Analyze_Normalizations_ShouldStillGuideTheCaller_WhenAGroupOnlySkipped() {
+		// Arrange — the page's only metric binds its whole config, so nothing can be stamped
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "BoundIndicator", "type": "crt.IndicatorWidget", "config": "$MetricConfig" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		guide.Normalizations!["metricStyle"].Normalized.Should().BeEmpty(
+			because: "nothing could be stamped on the only metric");
+		guide.Normalizations["metricStyle"].Skipped.Should().ContainSingle(
+			because: "the refusal is what the caller has to be told about");
+		guide.Constraints.Should().Contain(c => c.Contains("Metric style is NORMALIZED"),
+			because: "suppressing the constraint here would leave the caller with no pointer to skipped[] in "
+				+ "the one case where an element silently kept its web styling");
+		guide.NextSteps.Should().Contain(s => s.Contains("Metric style"),
+			because: "the next step carries the same instruction and must not be suppressed either");
+	}
+
+	[Test]
+	[Description("Section keys, their order and the wording a group carries all come from the RULES FILE, not from which element a page happens to contain first — otherwise the same rules would produce differently-keyed guides for different pages, and JSON keys are case-sensitive to the caller.")]
+	public void Analyze_Normalizations_ShouldTakeKeyAndProseFromRulesFileOrder() {
+		// Arrange — two rules feed one group with different casing and different prose
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "Style",
+					MergeNestedObjects = true,
+					ReportNote = "declared first, in the rules file",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "config": { "text": { "fontSizeMode": "extra-small" } } }""")
+				},
+				new ComponentPropertyOverrideRule {
+					Type = "crt.GridContainer",
+					ReportGroup = "style",
+					ReportNote = "declared second, must not win",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "gap": "medium" }""")
+				}
+			]
+		};
+
+		// Act — the grid is the first element on the page, the metric the second
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		guide.Normalizations!.Keys.Should().BeEquivalentTo(["Style"],
+			because: "the two casings are one group, keyed by the spelling the rules file declared FIRST — "
+				+ "not by the element that happened to come first on this page");
+		guide.Normalizations["Style"].Note.Should().Be("declared first, in the rules file",
+			because: "when several rules feed a group the wording comes from the first rule in the file");
+	}
+
+	[Test]
 	[Description("The rule's own note is surfaced into the report section verbatim, so the explanation of a standard lives once — in the rules file, which is resolved at runtime — instead of being restated in compiled prose that can drift from it.")]
 	public void Analyze_MetricStyleNormalization_ShouldSurfaceTheRulesOwnNote() {
 		// Arrange

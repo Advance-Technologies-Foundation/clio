@@ -2480,11 +2480,11 @@ stories:
     feature: "mobile-converter-metric-style-rule"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-mobile-converter-metric-style-rule-1.md
     prd: spec/prd/spec-mobile-converter-metric-style-rule.md
     jira: ENG-94230
-    status_note: "Branched off the ENG-91228 insertValueOverrides pass; needs deep-merge before a nested config value can be stamped"
+    status_note: "PR #1010 open against the ENG-91228 branch; review round 1 addressed, reporting made data-driven"
     fr: [CAP-01, CAP-02, CAP-03, CAP-04, CAP-05]
     depends_on: []
     blocks: []

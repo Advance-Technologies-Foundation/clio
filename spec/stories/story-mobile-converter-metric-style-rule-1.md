@@ -4,7 +4,7 @@
 **FR coverage**: CAP-01, CAP-02, CAP-03, CAP-04, CAP-05
 **SPEC**: [spec-mobile-converter-metric-style-rule.md](../prd/spec-mobile-converter-metric-style-rule.md)
 **Ticket**: ENG-94230
-**Status**: in-progress
+**Status**: review
 **Size**: S
 **Depends on**: ENG-91228 branch (insertValueOverrides pass)
 

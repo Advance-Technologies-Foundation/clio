@@ -239,13 +239,23 @@ public sealed class ComponentPropertyOverrideRule {
 	/// targeting a nested leaf (e.g. <c>config.text.fontSizeMode</c>) needs so the converter's sibling
 	/// subtrees (e.g. <c>config.data.providing</c>) survive.
 	/// <para>
-	/// A merging rule NEVER fabricates an object branch and never overwrites one that is not an object, at
-	/// ANY depth: when the element carries no object at that path, the branch is skipped and recorded in the
-	/// report's <c>skipped</c> list. A partial object assembled from the rule alone would be missing the
-	/// component's required fields (an indicator widget without <c>config.data</c> renders nothing, a
-	/// <c>layout</c> without its required <c>color</c> likewise) and would destroy a whole-value binding,
-	/// while still looking normalized. LEAVES are written — creating or overwriting — since that is the
-	/// normalization itself.
+	/// A merging rule NEVER overwrites a value that is PRESENT but is not an object, at ANY depth: such a
+	/// value is typically a whole-value binding, and replacing it with an object assembled from the rule
+	/// alone would destroy the binding and leave the component missing fields it needs (an indicator widget
+	/// whose <c>config</c> is replaced loses <c>config.data</c> and renders nothing) while still looking
+	/// normalized. Every branch refused this way is recorded in the report's <c>skipped</c> list.
+	/// </para>
+	/// <para>
+	/// An ABSENT branch is the opposite case and IS created, because that is the normalization itself: a
+	/// real converted metric carries <c>layout</c> with a colour and icon but no <c>border</c>, so refusing
+	/// to create would make the standard unreachable on every real page. A created branch holds ONLY what
+	/// the rule declares — so a rule may create a branch that is partial by the component's own schema. That
+	/// is accepted deliberately: the source element had no value there to preserve, and <c>validate-page</c>
+	/// is the backstop. Keep it in mind when authoring a rule whose branch may be absent.
+	/// </para>
+	/// <para>
+	/// LEAVES are written — creating or overwriting — but only when the value actually differs, so an
+	/// element already authored at the standard is left alone and is not reported as normalized.
 	/// </para>
 	/// <para>
 	/// Note the granularity: the flag is per-rule, but the effect is per-value-shape — an object value

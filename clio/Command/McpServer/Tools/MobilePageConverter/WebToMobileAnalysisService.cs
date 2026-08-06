@@ -2763,6 +2763,15 @@ public static class WebToMobileAnalysisService {
 		if (byType.Count == 0) {
 			return result;
 		}
+		// Declare the groups in RULES-FILE order, before any element is seen. That fixes three things the
+		// element order would otherwise decide: the canonical spelling of the emitted key, which rule's prose
+		// a group carries when several feed it, and the order the sections and their constraint lines appear
+		// in. A declared group stays out of the report until something is actually recorded against it.
+		foreach (ComponentPropertyOverrideRule rule in overrides) {
+			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
+				result.Declare(ParseReportGroup(rule.ReportGroup), rule);
+			}
+		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
@@ -2812,8 +2821,9 @@ public static class WebToMobileAnalysisService {
 	/// long-standing contract of this pass ("added when the web page carried none, so the converted body is
 	/// self-describing"). A real converted metric carries <c>layout</c> with a colour and icon but no
 	/// <c>border</c>, so refusing to create would make the standard unreachable on every real page. The
-	/// trade-off is knowing: a created branch holds only what the rule declares, so a rule must declare a
-	/// COMPLETE object for any branch it may have to create.
+	/// trade-off is knowing: a created branch holds ONLY what the rule declares, so it may be partial by the
+	/// component's own schema. Accepted deliberately — the source element had no value there to preserve,
+	/// and validate-page is the backstop.
 	/// Leaves are always written, creating or overwriting. A non-object rule value still replaces, so a
 	/// merging rule can carry flat
 	/// entries too.
@@ -2823,6 +2833,9 @@ public static class WebToMobileAnalysisService {
 		bool mergeNestedObjects, List<string> stamped, List<string> skipped) {
 		JsonNode incoming = JsonNode.Parse(ruleValue.GetRawText());
 		if (mergeNestedObjects && incoming is JsonObject incomingObject) {
+			if (incomingObject.Count == 0) {
+				return; // nothing to write: creating the branch would change the body and report nothing
+			}
 			if (!values.ContainsKey(key)) {
 				values[key] = new JsonObject(); // absent: same rule as any deeper branch
 			}
@@ -2912,7 +2925,7 @@ public static class WebToMobileAnalysisService {
 			return;
 		}
 		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in normalization.Groups) {
-			if (accumulator.Normalized.Count == 0) {
+			if (accumulator.Normalized.Count == 0 && accumulator.Skipped.Count == 0) {
 				continue;
 			}
 			string line = select(accumulator)
@@ -2969,27 +2982,48 @@ public static class WebToMobileAnalysisService {
 	private sealed class ComponentPropertyOverrideResult {
 		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
 
-		/// <summary>Report groups that normalized or skipped something, in first-seen order.</summary>
-		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups => _groups;
+		/// <summary>
+		/// Group keys in the order their rules appear in the rules file, holding the CANONICAL spelling —
+		/// the dictionary matches case-insensitively, so without this the emitted JSON key would be whichever
+		/// spelling a page happened to hit first. Also fixes the order of the sections and of their
+		/// constraint/nextStep lines, which must not depend on page content.
+		/// </summary>
+		private readonly List<string> _order = [];
+
+		/// <summary>Report groups that recorded something, in rules-file order.</summary>
+		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>
+			_order.Select(group => new KeyValuePair<string, GroupAccumulator>(group, _groups[group]))
+				.Where(pair => pair.Value.Normalized.Count > 0 || pair.Value.Skipped.Count > 0);
 
 		/// <summary>True when no group recorded anything — the guide then omits the section entirely.</summary>
-		public bool IsEmpty => _groups.Count == 0;
+		public bool IsEmpty => !Groups.Any();
 
 		/// <summary>The entries of one group, or an empty list when that group recorded nothing.</summary>
 		public IReadOnlyList<NormalizationEntry> EntriesOf(string group) =>
 			_groups.TryGetValue(group, out GroupAccumulator accumulator) ? accumulator.Normalized : [];
 
 		/// <summary>
-		/// Records one element under the group its rule declared, together with the caller-facing wording
-		/// that rule carries. Only a merging rule can skip — a replacing rule always writes its key.
+		/// Registers a group and takes its rule's caller-facing wording, BEFORE any element is stamped.
+		/// Called once per rule in rules-file order, so the wording a group carries and the spelling of its
+		/// key are decided by the rules file rather than by which element a page happens to contain first.
 		/// </summary>
-		public void Add(string group, ComponentPropertyOverrideRule rule, string name, string type,
-			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
+		public void Declare(string group, ComponentPropertyOverrideRule rule) {
 			if (!_groups.TryGetValue(group, out GroupAccumulator accumulator)) {
 				accumulator = new GroupAccumulator();
 				_groups[group] = accumulator;
+				_order.Add(group);
 			}
 			accumulator.Absorb(rule);
+		}
+
+		/// <summary>
+		/// Records one element under the group its rule declared. Only a merging rule can skip — a replacing
+		/// rule always writes its key.
+		/// </summary>
+		public void Add(string group, ComponentPropertyOverrideRule rule, string name, string type,
+			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
+			Declare(group, rule);
+			GroupAccumulator accumulator = _groups[group];
 			if (properties.Count > 0) {
 				accumulator.Normalized.Add(new NormalizationEntry {
 					Name = name, Type = type, Properties = properties
@@ -3015,8 +3049,9 @@ public static class WebToMobileAnalysisService {
 			public string NextStep { get; private set; }
 
 			/// <summary>
-			/// Takes the rule's caller-facing wording. First non-empty value wins, so several rules can feed
-			/// one group (Grid and Flex both feed spacing) without their notes fighting over the section.
+			/// Takes the rule's caller-facing wording. First non-empty value wins and the rules are absorbed in
+			/// rules-file order, so several rules can feed one group (Grid and Flex both feed spacing) and the
+			/// winner is the first rule in the FILE rather than whichever element a page carried first.
 			/// </summary>
 			public void Absorb(ComponentPropertyOverrideRule rule) {
 				Note ??= NullIfBlank(rule.ReportNote);
