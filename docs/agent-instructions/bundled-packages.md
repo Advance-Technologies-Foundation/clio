@@ -54,6 +54,15 @@ bumped alone installs cleanly and leaves the recorded version behind — which i
 floor reads, so the floor then refuses commands on an environment that was upgraded correctly. Verified on
 two stands (net472 and .NET 8) on 2026-08-05, in both directions.
 
+Re-measured on 2026-08-06 (net472, `ts1-web01-15837616`), which added one property worth knowing: the
+comparison is **"differs", not "is later"**. Installing an archive whose `ModifiedOnUtc` is EARLIER than the
+recorded one still rewrites the row — the recorded version went `1.1.0.2` -> `1.1.0.1` and the install
+reported success. So `SysPackage.Version` is not monotonic and carries no guarantee of being the highest
+version ever installed; it is simply whatever the last descriptor with a different timestamp said. Do not
+build a "has it been upgraded" check on the assumption that it only ever moves forward. The same run
+re-confirmed the silent half: an archive declaring `1.1.0.3` with an unchanged timestamp installed with
+exit 0 and left `1.1.0.2` recorded.
+
 `clio set-pkg-version` writes both fields, so this cannot happen through the supported path. Only a hand
 edit of `descriptor.json` can produce it.
 
