@@ -87,15 +87,17 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    ("spacing of N containers normalized to Medium; web spacing ignored"). Never restore the web gap.
 			    Null when nothing was normalized.
 			  - metricStyleNormalization — the metrics whose style the converter NORMALIZED to the mobile
-			    standard: every inserted crt.IndicatorWidget carries config.text.fontSizeMode "extra-small" and
-			    config.layout.border.hidden true in its mobileValues (the "plain white" look), and the web
-			    widget's own text size and border are deliberately IGNORED (discarded, not translated). The values
-			    are MERGED into the converted config, so config.data (the aggregation/providing subtree) and
-			    config.title survive untouched — never rebuild config from the rule values alone. The theme is
-			    left at its default. SILENT — never a gate question: state it in the plan and the final report as
-			    ONE aggregated line ("style of N metrics normalized to extra-small with hidden border; web values
-			    ignored"). Never restore the web text size or border. Null when no inserted metric was normalized
-			    (a dropped metric does not count as one).
+			    standard, and the branches it could not. The web widget's own styling is deliberately IGNORED
+			    (discarded, not translated); the exact properties and values are declared by the conversion
+			    rules, so READ THEM OFF THIS SECTION rather than assuming them — `normalized[].properties`
+			    lists the dotted paths actually written on each metric. The values are MERGED into the
+			    converted config, so config.data (the aggregation/providing subtree) and config.title survive
+			    untouched — never rebuild config from the rule values alone. `skipped[]` lists metrics whose
+			    config (or a branch of it) is a whole-value binding: those were NOT normalized and keep the web
+			    style, so mention them separately — they may need a manual pass in the designer. SILENT —
+			    never a gate question: state the normalized ones in the plan and the final report as ONE
+			    aggregated line, and never restore the web values. Null when there was nothing to normalize
+			    (a dropped metric does not count as an inserted one).
 			  - resourceStrings — every localized string the converted body references (top-level captions AND
 			    nested tokens like config.title / text.template), keyed by resource name and resolved to its
 			    en-US text. Register this whole map via update-page `resources` so every #ResourceString token renders.
@@ -337,13 +339,15 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  Like tabAreaLayers this is NOT a proposal — SILENT, never a gate question: state it as ONE
 			  aggregated line in the plan and the final report (guide.spacingNormalization lists the containers).
 			- METRIC STYLE IS NORMALIZED, NOT CONVERTED: mobile metrics follow the mobile design standard, so the
-			  web widget's text size and border are deliberately IGNORED — every inserted crt.IndicatorWidget
-			  already carries config.text.fontSizeMode "extra-small" and config.layout.border.hidden true in its
-			  mobileValues (the "plain white" look), even when the web widget set a larger size or a visible
-			  border. The stamp is a MERGE into the converted config, so config.data (the aggregation/providing
-			  subtree — the widget renders nothing without it) and config.title are preserved:
-			  never reconstruct config from the normalized keys alone.
-			  The theme stays at its default. Do NOT restore or translate
+			  web widget's own styling is deliberately IGNORED — every inserted metric already carries the
+			  standard's properties in its mobileValues, even when the web widget set something else. WHICH
+			  properties and values is declared by the conversion rules and reported per element in
+			  guide.metricStyleNormalization.normalized[].properties — read them there, do not assume them from
+			  this article. The stamp is a MERGE into the converted config, so config.data (the
+			  aggregation/providing subtree — the widget renders nothing without it) and config.title are
+			  preserved: never reconstruct config from the normalized keys alone. A branch that is a
+			  whole-value binding is NEVER overwritten; it appears in guide.metricStyleNormalization.skipped[]
+			  and keeps the web style. Do NOT restore or translate
 			  the web text size or border, and do NOT treat the difference from the web page as a defect. Like
 			  spacing this is NOT a proposal — SILENT, never a gate question: state it as ONE aggregated line in
 			  the plan and the final report (guide.metricStyleNormalization lists the metrics).

@@ -235,6 +235,7 @@ public static class WebToMobileAnalysisService {
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
 		List<SpacingNormalizationEntry> spacingNormalization = componentPropertyOverrides.Spacing;
 		List<MetricStyleNormalizationEntry> metricStyleNormalization = componentPropertyOverrides.MetricStyle;
+		List<MetricStyleNormalizationSkip> metricStyleSkips = componentPropertyOverrides.MetricStyleSkips;
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -304,15 +305,17 @@ public static class WebToMobileAnalysisService {
 					Normalized = spacingNormalization
 				}
 				: null,
-			MetricStyleNormalization = metricStyleNormalization.Count > 0
+			MetricStyleNormalization = metricStyleNormalization.Count > 0 || metricStyleSkips.Count > 0
 				? new MetricStyleNormalizationInfo {
-					Note = "Mobile metrics follow the mobile design standard: the web widget's text size and "
-						+ "border were IGNORED (not translated) and every inserted crt.IndicatorWidget carries "
-						+ "extra-small text (config.text.fontSizeMode) with its border hidden "
-						+ "(config.layout.border.hidden), already baked into elementMap[].mobileValues — nothing "
-						+ "separate to apply. Silent normalization, not a gate decision: report it as ONE "
-						+ "aggregated line and never restore the web text size or border.",
-					Normalized = metricStyleNormalization
+					Note = "Mobile metrics follow the mobile design standard: the web widget's own styling was "
+						+ "IGNORED (not translated) and the standard's properties are already baked into "
+						+ "elementMap[].mobileValues — nothing separate to apply. WHICH properties were written "
+						+ "is per element in normalized[].properties (the conversion rules declare them; do not "
+						+ "assume a fixed set). Silent normalization, not a gate decision: report it as ONE "
+						+ "aggregated line and never restore the web values. Anything under `skipped` was NOT "
+						+ "normalized and keeps the web style — call those out separately.",
+					Normalized = metricStyleNormalization,
+					Skipped = metricStyleSkips.Count > 0 ? metricStyleSkips : null
 				}
 				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
@@ -1366,13 +1369,14 @@ public static class WebToMobileAnalysisService {
 		if (normalization is { MetricStyle.Count: > 0 }) {
 			constraints.Add(
 				"Metric style is NORMALIZED, not converted: mobile metrics follow the mobile design standard, so " +
-				"the web widget's text size and border were deliberately IGNORED — every inserted " +
-				"crt.IndicatorWidget already carries config.text.fontSizeMode \"extra-small\" and " +
-				"config.layout.border.hidden true in its mobileValues, merged into the converted config so its " +
-				"data/aggregation subtree is untouched. Do NOT restore or translate the web text size or border, " +
-				"and do NOT treat the difference from the web page as a defect. This is SILENT — never a gate " +
-				"question: state it in the plan and the final report as ONE aggregated line " +
-				"(guide.metricStyleNormalization lists the metrics).");
+				"the web widget's own styling was deliberately IGNORED — the standard's properties are already " +
+				"in each metric's mobileValues, merged into the converted config so its data/aggregation subtree " +
+				"is untouched. guide.metricStyleNormalization.normalized[].properties is the authoritative list " +
+				"of what was written (the conversion rules declare it), and .skipped[] names metrics that could " +
+				"NOT be normalized because a branch is a whole-value binding — those keep the web style and are " +
+				"worth calling out. Do NOT restore or translate the web values, and do NOT treat the difference " +
+				"from the web page as a defect. This is SILENT — never a gate question: state it in the plan " +
+				"and the final report as ONE aggregated line.");
 		}
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
@@ -1405,7 +1409,7 @@ public static class WebToMobileAnalysisService {
 			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
 		}
 		if (normalization is { MetricStyle.Count: > 0 }) {
-			steps.Add("Metric style: every inserted crt.IndicatorWidget already carries extra-small text and a hidden border in its mobileValues — the web widget's text size and border are ignored by design (guide.metricStyleNormalization lists them). Do not restore them; mention the normalization as ONE aggregated line when you present the plan and the final report.");
+			steps.Add("Metric style: every inserted metric already carries the mobile standard's properties in its mobileValues — the web widget's own styling is ignored by design. Read guide.metricStyleNormalization.normalized[].properties for what was written and .skipped[] for what could not be, rather than assuming a fixed set. Do not restore the web values; mention the normalization as ONE aggregated line when you present the plan and the final report, and the skipped metrics separately.");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
@@ -2762,6 +2766,9 @@ public static class WebToMobileAnalysisService {
 		if (overrides is not { Count: > 0 }) {
 			return result;
 		}
+		// One rule per mobile type: a duplicate `type` in the rules file LAST-WINS, silently. That also means
+		// a type cannot carry two rules (e.g. replace one key, merge another) — a limit to lift here, in the
+		// pass, if a standard ever needs it, rather than by loosening the per-rule merge flag.
 		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
 		foreach (ComponentPropertyOverrideRule rule in overrides) {
 			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
@@ -2779,15 +2786,19 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			var properties = new List<string>();
+			var skippedPaths = new List<string>();
 			foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
 				if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
 					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
 					continue; // element identity is never overridable, whatever the rules file says
 				}
-				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties);
+				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 			}
-			if (properties.Count > 0) {
-				result.Add(ParseReportGroup(rule.ReportGroup), entry.MobileName, entry.MobileType, properties);
+			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
+			// so a caller can tell "nothing to normalize" from "could not normalize".
+			if (properties.Count > 0 || skippedPaths.Count > 0) {
+				result.Add(ParseReportGroup(rule.ReportGroup), entry.MobileName, entry.MobileType,
+					properties, skippedPaths);
 			}
 		}
 		return result;
@@ -2802,25 +2813,39 @@ public static class WebToMobileAnalysisService {
 	/// web value instead of translating it.
 	/// </para>
 	/// <para>
-	/// When the rule opts into merging, an object rule value is merged key-by-key into the element's
-	/// existing object so the converter's sibling subtrees survive, and the concrete LEAF PATHS are
-	/// reported (e.g. <c>config.text.fontSizeMode</c>) rather than the merged root — the root alone would
-	/// under-report which properties a rules file actually touched. If the element carries no object under
-	/// the key, NOTHING is stamped and nothing is reported: fabricating the container from the rule alone
-	/// would drop a whole-value binding and leave the component missing its required fields while still
-	/// appearing normalized. A non-object rule value still replaces, so a merging rule can carry flat
+	/// When the rule opts into merging, an object rule value is merged into the element's own object and
+	/// the concrete LEAF PATHS actually written are reported (e.g. <c>config.text.fontSizeMode</c>) rather
+	/// than the merged root, which alone would under-report what a rules file touched. Merging NEVER
+	/// overwrites a value that is PRESENT but is not an object — at ANY depth, not just at the top-level
+	/// key — because that value is typically a whole-value binding: replacing it with an object assembled
+	/// from the rule alone destroys the binding and leaves the component missing registry-required fields
+	/// (an indicator widget without <c>config.data</c> renders nothing). Such a branch is recorded in
+	/// <paramref name="skipped"/>, so the refusal is visible in the report instead of silent.
+	/// </para>
+	/// <para>
+	/// An ABSENT branch is the opposite case and IS created — that is the normalization itself, and the
+	/// long-standing contract of this pass ("added when the web page carried none, so the converted body is
+	/// self-describing"). A real converted metric carries <c>layout</c> with a colour and icon but no
+	/// <c>border</c>, so refusing to create would make the standard unreachable on every real page. The
+	/// trade-off is knowing: a created branch holds only what the rule declares, so a rule must declare a
+	/// COMPLETE object for any branch it may have to create.
+	/// Leaves are always written, creating or overwriting. A non-object rule value still replaces, so a
+	/// merging rule can carry flat
 	/// entries too.
 	/// </para>
 	/// </summary>
-	private static void StampOverrideValue(
-		JsonObject values, string key, JsonElement ruleValue, bool mergeNestedObjects, List<string> stamped) {
+	private static void StampOverrideValue(JsonObject values, string key, JsonElement ruleValue,
+		bool mergeNestedObjects, List<string> stamped, List<string> skipped) {
 		JsonNode incoming = JsonNode.Parse(ruleValue.GetRawText());
 		if (mergeNestedObjects && incoming is JsonObject incomingObject) {
+			if (!values.ContainsKey(key)) {
+				values[key] = new JsonObject(); // absent: same rule as any deeper branch
+			}
 			if (values[key] is not JsonObject existing) {
+				skipped.Add(key);
 				return;
 			}
-			MergeJsonObject(existing, incomingObject);
-			CollectLeafPaths(incomingObject, key, stamped);
+			MergeJsonObject(existing, incomingObject, key, stamped, skipped);
 			return;
 		}
 		values[key] = incoming;
@@ -2828,51 +2853,62 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Appends the dotted path of every LEAF the merge wrote (<c>config.layout.border.hidden</c>), so the
-	/// guide reports exactly which properties a rules file touched instead of the merged root.
+	/// Merges <paramref name="source"/> into <paramref name="target"/>, recording the dotted path of every
+	/// leaf written into <paramref name="stamped"/> and of every object branch refused into
+	/// <paramref name="skipped"/>. A branch is refused only when the target carries a NON-OBJECT at that
+	/// key (typically a whole-value binding); an ABSENT key is created and descended into. This is the same
+	/// guard <see cref="StampOverrideValue"/> applies to the top-level key, enforced at every depth so a
+	/// nested binding cannot be clobbered. Leaves are written with a detached clone (a
+	/// <see cref="JsonNode"/> already owned by another parent cannot be re-attached).
 	/// </summary>
-	private static void CollectLeafPaths(JsonObject source, string prefix, List<string> paths) {
+	private static void MergeJsonObject(
+		JsonObject target, JsonObject source, string prefix, List<string> stamped, List<string> skipped) {
 		foreach (KeyValuePair<string, JsonNode> pair in source) {
 			string path = $"{prefix}.{pair.Key}";
-			if (pair.Value is JsonObject child) {
-				CollectLeafPaths(child, path, paths);
-				continue;
-			}
-			paths.Add(path);
-		}
-	}
-
-	/// <summary>
-	/// Recursively merges <paramref name="source"/> into <paramref name="target"/>: an object-vs-object
-	/// key recurses, anything else is overwritten with a detached clone (a <see cref="JsonNode"/> already
-	/// owned by another parent cannot be re-attached).
-	/// </summary>
-	private static void MergeJsonObject(JsonObject target, JsonObject source) {
-		foreach (KeyValuePair<string, JsonNode> pair in source) {
-			if (target[pair.Key] is JsonObject existingChild && pair.Value is JsonObject sourceChild) {
-				MergeJsonObject(existingChild, sourceChild);
+			if (pair.Value is JsonObject sourceChild) {
+				if (!target.ContainsKey(pair.Key)) {
+					target[pair.Key] = new JsonObject(); // absent: creating is the normalization itself
+				}
+				if (target[pair.Key] is JsonObject existingChild) {
+					MergeJsonObject(existingChild, sourceChild, path, stamped, skipped);
+				} else {
+					skipped.Add(path); // present but NOT an object: never clobber it
+				}
 				continue;
 			}
 			target[pair.Key] = pair.Value?.DeepClone();
+			stamped.Add(path);
 		}
 	}
 
-	/// <summary>
-	/// Maps a rules-file <c>reportGroup</c> to its enum. An absent or unrecognized value falls back to
-	/// <see cref="ComponentPropertyOverrideReportGroup.Spacing"/> so a rules file written before the field
-	/// existed reports exactly where it used to. <see cref="Enum.IsDefined{T}"/> guards the numeric form
-	/// <see cref="Enum.TryParse{T}(string, bool, out T)"/> also accepts: the rules file is CDN-served, so
-	/// "7" must not become an undefined enum value that a later switch could route on.
-	/// </summary>
-	private static ComponentPropertyOverrideReportGroup ParseReportGroup(string reportGroup) =>
-		Enum.TryParse(reportGroup, ignoreCase: true, out ComponentPropertyOverrideReportGroup parsed)
-			&& Enum.IsDefined(parsed)
-				? parsed
-				: ComponentPropertyOverrideReportGroup.Spacing;
+	/// <summary>Rules-file <c>reportGroup</c> spelling → the section it routes to.</summary>
+	private static readonly IReadOnlyDictionary<string, ComponentPropertyOverrideReportGroup> ReportGroupsByName =
+		new Dictionary<string, ComponentPropertyOverrideReportGroup>(StringComparer.OrdinalIgnoreCase) {
+			["spacing"] = ComponentPropertyOverrideReportGroup.Spacing,
+			["metricStyle"] = ComponentPropertyOverrideReportGroup.MetricStyle
+		};
 
 	/// <summary>
-	/// Per-report-group output of the shared insert-value override pass. One pass stamps every standard,
-	/// but each standard reports through its own guide section because each carries its own
+	/// Maps a rules-file <c>reportGroup</c> to its section. An ABSENT value falls back to
+	/// <see cref="ComponentPropertyOverrideReportGroup.Spacing"/>, which is what a rules file written before
+	/// the field existed relies on. An explicit lookup rather than <see cref="Enum.TryParse{T}(string, bool, out T)"/>,
+	/// which also accepts numeric strings and comma-separated lists ("Spacing,MetricStyle") — the rules file
+	/// is CDN-served, so only the exact spellings above may route.
+	/// <para>
+	/// KNOWN LIMITATION: an unrecognized non-empty group also lands in the spacing section, where it
+	/// inherits the spacing note/constraint/nextStep. That is wrong for anything that is not a container,
+	/// and it cannot be fixed while the sections are a closed set — see the PR discussion on making
+	/// <c>reportGroup</c> a free-form key with its report prose carried by the rule.
+	/// </para>
+	/// </summary>
+	private static ComponentPropertyOverrideReportGroup ParseReportGroup(string reportGroup) =>
+		reportGroup is { Length: > 0 } && ReportGroupsByName.TryGetValue(reportGroup, out ComponentPropertyOverrideReportGroup parsed)
+			? parsed
+			: ComponentPropertyOverrideReportGroup.Spacing;
+
+	/// <summary>
+	/// Per-report-group output of the shared component-property override pass. One pass stamps every
+	/// standard, but each standard reports through its own guide section because each carries its own
 	/// caller-facing summary and constraint.
 	/// </summary>
 	private sealed class ComponentPropertyOverrideResult {
@@ -2882,16 +2918,35 @@ public static class WebToMobileAnalysisService {
 		/// <summary>Inserted metrics whose style was normalized (extra-small text, hidden border).</summary>
 		public List<MetricStyleNormalizationEntry> MetricStyle { get; } = [];
 
-		/// <summary>Records one normalized element under the group its rule declared.</summary>
-		public void Add(
-			ComponentPropertyOverrideReportGroup group, string name, string type, IReadOnlyList<string> properties) {
+		/// <summary>Metrics a merging rule could not fully normalize, with the branches it refused.</summary>
+		public List<MetricStyleNormalizationSkip> MetricStyleSkips { get; } = [];
+
+		/// <summary>
+		/// Records one element under the group its rule declared: the properties actually stamped, and any
+		/// branch the merge refused to enter. Only a merging rule can skip — a replacing rule always writes
+		/// its key — so skips are tracked for the metric section alone today.
+		/// </summary>
+		public void Add(ComponentPropertyOverrideReportGroup group, string name, string type,
+			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
 			if (group == ComponentPropertyOverrideReportGroup.MetricStyle) {
-				MetricStyle.Add(new MetricStyleNormalizationEntry {
-					Name = name, Type = type, Properties = properties
-				});
+				if (properties.Count > 0) {
+					MetricStyle.Add(new MetricStyleNormalizationEntry {
+						Name = name, Type = type, Properties = properties
+					});
+				}
+				if (skipped.Count > 0) {
+					MetricStyleSkips.Add(new MetricStyleNormalizationSkip {
+						Name = name, Type = type, Properties = skipped,
+						Reason = "the element carries no object at this path (a whole-value binding or an absent key), "
+							+ "and a merging rule never fabricates one — the component would be left missing "
+							+ "registry-required fields while appearing normalized"
+					});
+				}
 				return;
 			}
-			Spacing.Add(new SpacingNormalizationEntry { Name = name, Type = type, Properties = properties });
+			if (properties.Count > 0) {
+				Spacing.Add(new SpacingNormalizationEntry { Name = name, Type = type, Properties = properties });
+			}
 		}
 	}
 

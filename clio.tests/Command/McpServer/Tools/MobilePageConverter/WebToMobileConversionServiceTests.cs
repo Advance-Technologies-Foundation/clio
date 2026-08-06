@@ -3071,14 +3071,22 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "BoundIndicator").MobileValues!["config"]!.GetValue<string>().Should().Be("$MetricConfig",
 			because: "the binding must survive — replacing it with a partial object would silently break the widget");
-		guide.MetricStyleNormalization.Should().BeNull(
+		guide.MetricStyleNormalization!.Normalized.Should().BeEmpty(
 			because: "an element the pass deliberately skipped must not be reported as normalized");
+		MetricStyleNormalizationSkip skip = guide.MetricStyleNormalization.Skipped!.Single();
+		skip.Name.Should().Be("BoundIndicator",
+			because: "the skip must be visible in the report — a silent no-op leaves the caller unable to tell "
+				+ "\"nothing to normalize\" from \"could not normalize\"");
+		skip.Properties.Should().BeEquivalentTo(["config"],
+			because: "the report names the branch that was refused");
+		skip.Reason.Should().NotBeNullOrWhiteSpace(
+			because: "the caller needs to know the element keeps the web style and may need a manual pass");
 	}
 
 	[Test]
-	[Description("A rule that does NOT opt into merging keeps replacing outright, so the spacing rules still discard the web gap wholesale rather than translating it — a web gap key the rule does not name must not survive into the mobile body.")]
+	[Description("A rule that does NOT opt into merging keeps replacing outright: the whole value is discarded, so ANY key the rule does not name is gone. Pins the contract the spacing note states (the web gap is ignored, not translated) rather than a specific designer-authored key — the guarantee must hold whatever the web schema grows.")]
 	public void Analyze_SpacingNormalization_ShouldStillReplaceWholeGapObject_WhenRuleDoesNotOptIntoMerge() {
-		// Arrange — a web grid whose gap carries a third key beyond the two the rule sets
+		// Arrange — a web grid whose gap carries a key beyond the two the rule sets
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer",
 			    "gap": { "columnGap": "large", "rowGap": "none", "legacyGap": "xl" },
@@ -3100,7 +3108,128 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("An unrecognized reportGroup falls back to the spacing section rather than producing an undefined enum value, and a numeric string is not silently accepted as a group name — the rules file is CDN-served, so an authoring typo must degrade predictably.")]
+	[Description("The never-fabricate guard holds at EVERY depth, not just the top-level key: a nested whole-value binding is left intact instead of being clobbered by an object assembled from the rule, the sibling branch is still stamped, and the refused path is reported.")]
+	public void Analyze_MetricStyleNormalization_ShouldSkipNestedBranch_WhenItIsNotAnObject() {
+		// Arrange — config exists, but its `text` is a whole-value binding
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "TotalIndicator", "type": "crt.IndicatorWidget", "config": {
+					"text": "$TextCfg",
+					"layout": { "color": "green" },
+					"data": { "providing": { "schemaName": "Lead" } } } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["text"]!.GetValue<string>().Should().Be("$TextCfg",
+			because: "clobbering a nested binding is the same defect as clobbering the top-level one — "
+				+ "text.template would be destroyed and the widget would lose its label");
+		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
+			because: "a refused branch must not prevent the branches that ARE stampable");
+		guide.MetricStyleNormalization!.Normalized.Single().Properties
+			.Should().BeEquivalentTo(["config.layout.border.hidden"],
+				because: "only the leaf actually written may be reported — config.text.fontSizeMode was refused");
+		guide.MetricStyleNormalization.Skipped!.Single().Properties
+			.Should().BeEquivalentTo(["config.text"],
+				because: "the refused branch is named by its full path so the caller can find it");
+	}
+
+	[Test]
+	[Description("An ABSENT nested branch is created rather than refused — a real converted metric carries layout with a colour and icon but no border, so refusing to create would make hide-border unreachable on every real page. Distinct from the refusal case, which is about a branch that EXISTS as a non-object.")]
+	public void Analyze_MetricStyleNormalization_ShouldCreateNestedBranch_WhenItIsAbsent() {
+		// Arrange — config exists and carries text, but no layout at all
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "TotalIndicator", "type": "crt.IndicatorWidget", "config": {
+					"text": { "template": "{0}", "fontSizeMode": "large" },
+					"data": { "providing": { "schemaName": "Lead" } } } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
+			because: "the standard must apply to a widget that simply had no border configured — the common case");
+		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("extra-small",
+			because: "the branch that does exist is normalized in the same pass");
+		config["text"]!["template"]!.GetValue<string>().Should().Be("{0}",
+			because: "merging into an existing branch preserves its siblings");
+		config["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
+			because: "creating one branch must not disturb another");
+		guide.MetricStyleNormalization!.Skipped.Should().BeNull(
+			because: "creating an absent branch is not a refusal — nothing was skipped here");
+	}
+
+	[Test]
+	[Description("A merging rule may carry FLAT entries alongside its object one: a non-object rule value still replaces outright and is reported by its top-level key, which is what the mergeNestedObjects doc claims.")]
+	public void Analyze_MetricStyleNormalization_ShouldStillReplace_WhenAMergingRuleCarriesAFlatValue() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					MergeNestedObjects = true,
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "shape": "rounded", "config": { "text": { "fontSizeMode": "extra-small" } } }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		JsonObject values = Element(guide, "TotalIndicator").MobileValues!.AsObject();
+		values["shape"]!.GetValue<string>().Should().Be("rounded",
+			because: "a scalar rule value keeps replace semantics even inside a merging rule");
+		values["config"]!["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
+			because: "the object entry of the same rule still merges");
+		guide.MetricStyleNormalization!.Normalized.Single().Properties.Should().BeEquivalentTo(
+			["shape", "config.text.fontSizeMode"],
+			because: "a replaced key reports by its top-level name and a merged one by its leaf path");
+	}
+
+	[Test]
+	[Description("Two rules for the same mobile type silently LAST-WIN — one rule per type is a real limit of the pass, so it is pinned rather than left to be discovered by a rules-file author.")]
+	public void Analyze_ComponentPropertyOverrides_ShouldLastWin_WhenTwoRulesShareAType() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "shape": "default" }""")
+				},
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "shape": "rounded" }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		Element(guide, "TotalIndicator").MobileValues!["shape"]!.GetValue<string>().Should().Be("rounded",
+			because: "the later rule replaces the earlier one in the by-type index, with no diagnostic");
+		guide.MetricStyleNormalization!.Normalized.Single().Properties.Should().BeEquivalentTo(["shape"],
+			because: "only the surviving rule is applied, so only its keys are reported");
+	}
+
+	[Test]
+	[Description("Pins the CURRENT fallback for an unrecognized reportGroup: neither a numeric string nor a comma list may route, and anything unrecognized degrades to the spacing section. KNOWN LIMITATION, not a desirable outcome — such an element then inherits the spacing prose; making each group carry its own section and prose is tracked separately.")]
 	public void Analyze_ComponentPropertyOverrides_ShouldFallBackToSpacing_WhenReportGroupIsUnrecognized() {
 		// Arrange
 		PageBundleInfo bundle = MetricBundle();

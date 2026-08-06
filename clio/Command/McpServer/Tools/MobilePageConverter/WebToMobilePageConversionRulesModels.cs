@@ -239,10 +239,18 @@ public sealed class ComponentPropertyOverrideRule {
 	/// targeting a nested leaf (e.g. <c>config.text.fontSizeMode</c>) needs so the converter's sibling
 	/// subtrees (e.g. <c>config.data.providing</c>) survive.
 	/// <para>
-	/// A merging rule NEVER fabricates the container: when the element carries no object under the key,
-	/// the entry is skipped rather than stamped, because a partial object assembled from the rule alone
-	/// would be missing the component's required fields (an indicator widget without <c>config.data</c>
-	/// renders nothing) while still looking normalized in the report.
+	/// A merging rule NEVER fabricates an object branch and never overwrites one that is not an object, at
+	/// ANY depth: when the element carries no object at that path, the branch is skipped and recorded in the
+	/// report's <c>skipped</c> list. A partial object assembled from the rule alone would be missing the
+	/// component's required fields (an indicator widget without <c>config.data</c> renders nothing, a
+	/// <c>layout</c> without its required <c>color</c> likewise) and would destroy a whole-value binding,
+	/// while still looking normalized. LEAVES are written — creating or overwriting — since that is the
+	/// normalization itself.
+	/// </para>
+	/// <para>
+	/// Note the granularity: the flag is per-rule, but the effect is per-value-shape — an object value
+	/// merges, a scalar or array still replaces. One rule therefore cannot mix the two semantics for
+	/// different keys.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("mergeNestedObjects")]

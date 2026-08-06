@@ -40,6 +40,14 @@ stamp container spacing.
   says — the existing guard must survive the change.
 - **C4**: The mechanism stays switched by DATA. An absent or empty rule group remains a no-op, and
   adding a further component's style must not require another code change.
+  **NOT MET as delivered — restated after review (PR #1010).** What is data-driven is the *values*:
+  which component, which properties, which values, and replace-vs-merge all live in the rules file. What
+  is still code-driven is the *reporting*: the report sections are a closed enum, and each section's
+  note / constraint / nextStep is a string literal. A further standard therefore needs a new enum member,
+  a new guide model pair, three prose strings, a tool `[Description]` edit and a guidance-article edit.
+  Making `reportGroup` a free-form key whose prose is carried by the rule is tracked separately; the
+  prose in this change was rewritten to describe the mechanism and point at the report, so it no longer
+  restates values a rules file can change.
 - **C5**: Values must be the registry's literals, not the ticket's prose: `fontSizeMode` accepts
   `extra-small|small|medium|large|extra-large` (so "XS" is `"extra-small"`), and hide-border is
   `layout.border.hidden` (`WidgetBorderConfig`), not a top-level `hideBorder`.

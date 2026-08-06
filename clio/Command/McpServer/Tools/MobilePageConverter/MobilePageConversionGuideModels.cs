@@ -809,6 +809,39 @@ public sealed class MetricStyleNormalizationInfo {
 	/// <summary>One entry per normalized inserted metric.</summary>
 	[JsonPropertyName("normalized")]
 	public IReadOnlyList<MetricStyleNormalizationEntry> Normalized { get; init; } = [];
+
+	/// <summary>
+	/// Metrics the converter could NOT fully normalize, with the branch it refused to enter. Present only
+	/// when something was skipped. This exists so a silent no-op is visible: without it a metric whose
+	/// <c>config</c> (or a nested branch of it) is a whole-value binding would simply be missing from
+	/// <c>normalized</c>, and the caller could not tell that from "there was nothing to normalize". Report
+	/// these to the user — the element keeps the WEB style and may need a manual pass in the designer.
+	/// </summary>
+	[JsonPropertyName("skipped")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<MetricStyleNormalizationSkip> Skipped { get; init; }
+}
+
+/// <summary>One inserted metric whose style could not be stamped, and why.</summary>
+public sealed class MetricStyleNormalizationSkip {
+	/// <summary>The metric's mobile element name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The metric's mobile component type (i.e. "crt.IndicatorWidget").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The dotted paths the stamp refused to enter (e.g. <c>["config.text"]</c> when the element binds its
+	/// whole text config). Every other path of the same rule may still have been stamped.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+
+	/// <summary>Why the branch was refused, in caller-facing wording.</summary>
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
 }
 
 /// <summary>One inserted metric whose style was normalized to the mobile standard.</summary>
