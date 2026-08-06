@@ -61,9 +61,12 @@ Rewritten after two review rounds on PR #1010; this section describes what shipp
   stamping, deep-merge preservation, identity guard, empty-group no-op, spacing section unaffected.
 - `clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobilePageConversionRulesCatalogTests.cs` —
   the new rule parses, carries both values and its report grouping.
-- `clio.mcp.e2e/MobilePageConversionGuideToolE2ETests.cs` — the live guidance ARTICLE carries the
-  normalization contract. Deliberately the article and not the guide response: the E2E tier runs without a
-  stood-up Creatio, and pinning values there would go green while a rules-file update left the article
-  stale.
+- `clio.mcp.e2e` — no ENG-94230-specific case. ENG-94188 (#927) moved every guidance article out of this
+  repository into clio-knowledge, so the article wording this story changed is no longer ours to assert
+  here; and the tool is non-resident, so its `[Description]` is not observable over `tools/list`. The
+  article wording is handed off in
+  [guidance-wording-handoff.md](../mobile-converter-metric-style-rule/guidance-wording-handoff.md) and
+  needs its own clio-knowledge PR. The existing e2e cases (discoverability, failure envelope, feature-flag
+  gating) still cover the tool and are unaffected by this change.
 
 Validated with: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer"`

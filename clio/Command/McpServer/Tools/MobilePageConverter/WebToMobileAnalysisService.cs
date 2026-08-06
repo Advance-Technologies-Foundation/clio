@@ -994,6 +994,18 @@ public static class WebToMobileAnalysisService {
 	/// the old split enforced (a template-owned collection's scalars are dropped rather than re-applied); genuinely
 	/// new keys and new array entries still flow through.
 	/// </para>
+	/// <para>
+	/// The flag propagates to the ENTIRE collection subtree at any depth, not just the collection node's immediate
+	/// scalars -- and that unbounded scope is deliberate, not an oversight. The differ runs against the mobile
+	/// TEMPLATE base, which at those positions carries only the collection's own mobile config (its
+	/// <c>modelConfig</c>, <c>pageSize</c>, <c>sortColumns</c>, etc.), never application content: a page's columns,
+	/// filter entries and other authored content are ABSENT from the template base, so they surface as NEW keys /
+	/// new array entries (carried whole) rather than as "changed scalars". The depth-wide drop therefore only ever
+	/// suppresses a web-side override of the template's own config -- it never drops content a user authored. (A
+	/// changed scalar on an EXISTING element several levels down is covered by
+	/// <c>BuildTargetedDiff_ChangedScalarNestedInExistingCollectionElement_Dropped</c>; a new element at the same
+	/// depth still emits, per <c>BuildTargetedDiff_NewElementNestedInCollection_StillEmitted</c>.)
+	/// </para>
 	/// </summary>
 	private static void DiffObject(
 		JsonObject page, JsonObject baseObj, List<string> path, JsonArray ops,
@@ -1008,7 +1020,12 @@ public static class WebToMobileAnalysisService {
 					DiffArray(pageArr, baseArr, path, kv.Key, arrayInserts, arrayConflicts);
 					break;
 				case JsonObject pageChild when baseVal is JsonObject baseChild:
-					recurse.Add((pageChild, baseChild, kv.Key, insideCollection || IsCollectionNode(baseChild)));
+					// A node is a template-owned collection when EITHER side marks it: the merged template base, or
+					// the page's own converted body (isCollection). Consulting only the base would miss a page-marked
+					// collection whose base node lacks the flag, re-emitting its scalars and clobbering the
+					// mobile-correct template value at runtime — the ENG-89620 dual-signal safeguard.
+					recurse.Add((pageChild, baseChild, kv.Key,
+						insideCollection || IsCollectionNode(baseChild) || IsCollectionNode(pageChild)));
 					break;
 				case JsonObject:
 				case JsonArray:
@@ -1019,8 +1036,15 @@ public static class WebToMobileAnalysisService {
 					// Scalar (or JSON null): emit a new key always, but a CHANGED key only outside a
 					// template-owned collection (see the method remarks -- a changed collection scalar is
 					// template-owned and re-emitting the web value would clobber the mobile-correct one).
-					if (baseVal is null || (!insideCollection && !JsonNode.DeepEquals(baseVal, kv.Value))) {
+					bool changedScalar = baseVal is not null && !JsonNode.DeepEquals(baseVal, kv.Value);
+					if (baseVal is null || (!insideCollection && changedScalar)) {
 						mergeValues[kv.Key] = kv.Value?.DeepClone();
+					} else if (insideCollection && changedScalar) {
+						// The change is dropped (template config wins) — but surface it as a conflict rather than
+						// silently, so it flows through dataSectionArrayConflicts -> guide.Constraints exactly like
+						// DiffArray's named-element conflict. The code cannot tell template plumbing from authored
+						// content at this position, so the caller/developer is told the drop happened.
+						arrayConflicts.Add(ArrayConflictLabel(path, kv.Key, "changed scalar dropped: template-owned collection config"));
 					}
 					break;
 			}
@@ -1057,9 +1081,18 @@ public static class WebToMobileAnalysisService {
 	/// an element already present by identity and deep-equal is a no-op. When an element is present in the base by
 	/// NAME identity but its content differs, or when the page modified a nameless element in place (leaving a base
 	/// nameless element the page no longer reproduces), it records a CONFLICT into
-	/// <paramref name="arrayConflicts"/> instead: no diff operation in the mobile vocabulary can edit an existing
-	/// array element, so the change would otherwise be lost silently (named case) or duplicated at runtime
-	/// (nameless case). Base identities are hoisted once (O(N+M), no per-candidate re-serialization).
+	/// <paramref name="arrayConflicts"/> instead of emitting an operation.
+	/// <para>
+	/// No diff operation in the mobile vocabulary can edit an existing array element IN PLACE, so a changed element
+	/// cannot be expressed as a targeted op: the mobile path applier (<see cref="JsonPathDiffApplier"/>) identifies
+	/// and merges elements by <c>_id</c>, while these config elements are keyed by <c>name</c> only -- so a
+	/// name-addressed <c>merge</c> has no <c>_id</c> to resolve, and an <c>insert</c> of the changed element would
+	/// DUPLICATE the name rather than replace it. The safeguard is therefore the same as the collection-scalar case:
+	/// the template's native value wins (the differing web value is a template-owned-config override, not authored
+	/// content) and the change is SURFACED as a conflict the caller raises in <c>guide.Constraints</c> -- not
+	/// silently dropped. For a nameless in-place edit the page's element is still inserted (nothing dropped) AND the
+	/// duplicate-at-runtime risk is flagged. Base identities are hoisted once (O(N+M), no per-candidate re-serialization).
+	/// </para>
 	/// </summary>
 	private static void DiffArray(
 		JsonArray pageArr, JsonArray baseArr, IReadOnlyList<string> path, string key,
@@ -1383,7 +1416,7 @@ public static class WebToMobileAnalysisService {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
 			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
-			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type, EVERY source property the mobile component supports (including the field caption) AND the field's `control` binding. `control` is the data-source binding for EVERY mobile field component, lookups (crt.ComboBox) included — NEVER bind a field via `value` (a one-way setter: the field would show no Data source in Mobile Designer and would not save). Never drop a supported property. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
+			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
 		};
 		if (hasDataSections) {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is diffed against the mobile template's own base: a targeted merge for changed/new values and an insert per new element of an array the template already carries, so the template's native array entries are preserved — unless a constraint reports no template base was available, in which case it degrades to a single root merge). Do NOT rebuild them by hand or collapse targeted operations into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
@@ -1803,12 +1836,9 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element identity/type
-	/// (<c>name</c>/<c>type</c>) and the one-way <c>value</c> setter. <c>control</c> is NOT excluded — it is
-	/// the data-source binding for EVERY mobile field component, lookups (<c>crt.ComboBox</c>) included, and
-	/// the mobile binding property is the SAME as the web one, so it is carried verbatim. (Stock mobile pages
-	/// — e.g. Contact_MobileFormPage — and designer-built pages bind every field, ComboBox included, via
-	/// <c>control</c> without <c>items</c>; a field bound via <c>value</c> shows no Data source in Mobile
-	/// Designer and does not save its value.) <c>dataSourceName</c> is NOT excluded:
+	/// (<c>name</c>/<c>type</c>) and the value binding (<c>control</c>/<c>value</c>) — the binding is a
+	/// type-specific rename (e.g. a mobile ComboBox must bind via <c>value</c>; <c>control</c> needs
+	/// <c>items</c> or it crashes) and is left to the caller to add. <c>dataSourceName</c> is NOT excluded:
 	/// a surviving element only ever references the primary data source (foreign-DS elements are dropped
 	/// wholesale), so its <c>dataSourceName</c> is the valid primary DS and some components require it (e.g.
 	/// <c>crt.Feed</c> needs <c>dataSourceName</c> + <c>entitySchemaName</c>). NOTE: <c>items</c> is NOT here
@@ -1817,13 +1847,12 @@ public static class WebToMobileAnalysisService {
 	/// <c>items: "$Attr"</c>) and is carried like any other property. Everything else is carried verbatim.
 	/// </summary>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
-		"name", "type", "value"
+		"name", "type", "control", "value"
 	};
 
 	/// <summary>
 	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule: carry
-	/// EVERY source property verbatim — the <c>control</c> binding included — dropping only the element
-	/// identity/type and the one-way <c>value</c> setter (see
+	/// EVERY source property verbatim, dropping only the element identity/type and the value binding (see
 	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). A property is NOT dropped
 	/// because the mobile registry fails to declare it: the generated mobile registry is currently incomplete
 	/// (missing <c>inputs</c> for several components, e.g. <c>crt.Feed</c>, <c>crt.EntityStageProgressBar</c> —

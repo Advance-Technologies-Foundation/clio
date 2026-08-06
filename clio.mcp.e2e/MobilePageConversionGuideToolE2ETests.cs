@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -106,44 +107,6 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 			because: "only the profile island's children merge into the template's profile Area card, while the wrapper's other non-tab content fills the general tab's grid (CardContentWrapper→GeneralTabContainer)");
 	}
 
-	[Test]
-	[Description("ENG-94230: returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the NORMALIZATION contract — that standards are stamped rather than translated, that the guide response is the authoritative list of what was written, and that a refused branch is reported rather than silently skipped. Deliberately asserts the mechanism and not any stamped value or section name: the article is compiled in while the rules are resolved at runtime (env var -> cache -> CDN -> bundled), so pinning values here would let a legitimate rules-file update go green while the article silently went stale. Values are pinned where they live, in the rules-catalog test.")]
-	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance returns the conversion article with the metric style normalization contract")]
-	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the freedom-page-web-to-mobile-conversion article carrying the ENG-94230 metric style wording end to end.")]
-	public async Task GuidanceGet_Should_Return_Conversion_Guide_With_MetricStyleNormalization_Contract() {
-		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			GuidanceGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["name"] = "freedom-page-web-to-mobile-conversion"
-				}
-			},
-			context.CancellationTokenSource.Token);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "get-guidance should return a normal MCP tool result envelope for a registered guidance name");
-		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
-		response.Success.Should().BeTrue(
-			because: "freedom-page-web-to-mobile-conversion is a registered guidance name while mobile-page-converter is enabled");
-		response.Article.Should().NotBeNull(
-			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Text.Should().Contain("NORMALIZATION IS NOT CONVERSION",
-			because: "the article must state that a standard is stamped by the converter rather than translated from the web page");
-		response.Article.Text.Should().Contain("never reconstruct config from the normalized keys alone",
-			because: "the stamp is a merge — rebuilding config from the rule values would drop the aggregation subtree and the widget would render nothing");
-		response.Article.Text.Should().Contain("guide.normalizations",
-			because: "the article must point the caller at the report sections that list what was actually normalized");
-		response.Article.Text.Should().Contain("the set is OPEN",
-			because: "a build can meet a section declared by a runtime-resolved rules file that it has never heard of, so the caller must be told to read the sections rather than assume which exist");
-		response.Article.Text.Should().Contain("skipped[]",
-			because: "a refused branch must be reported to the caller rather than silently left un-normalized");
-	}
 
 	[Test]
 	[Description("Returns a structured failure (not a protocol error) when the target environment is not registered, so the caller can read why the source page could not be read.")]

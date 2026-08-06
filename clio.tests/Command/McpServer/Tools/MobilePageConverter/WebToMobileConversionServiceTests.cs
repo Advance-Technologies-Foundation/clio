@@ -878,6 +878,65 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The template-owned-collection scalar drop applies at ANY depth: a CHANGED scalar on an EXISTING named element several levels below the collection root (a column's own sub-object) is NOT re-emitted, matching the collection-scalar safeguard. Because the mobile template base carries only the collection's own config at these positions (never application content, which is always NEW relative to the template), the drop only ever suppresses a web-side override of the template's config, not authored content.")]
+	public void BuildTargetedDiff_ChangedScalarNestedInExistingCollectionElement_Dropped() {
+		// Arrange: an EXISTING column "Existing" inside the isCollection:true node has a nested scalar (caption)
+		// that differs between the web page and the mobile template base -- several levels below the collection root.
+		// Act
+		JsonArray diff = Btd(
+			page:    """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Web" } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Mobile" } } } } } }""");
+		// Assert
+		diff.Should().BeEmpty(
+			because: "a changed scalar on an existing element anywhere inside a template-owned collection is dropped so the mobile-correct value is not clobbered; a new column, by contrast, is absent from the template base and still flows through the new-key path");
+	}
+
+	[Test]
+	[Description("Sibling to the depth-drop test: a NEW element (absent from the template base) added at the same depth inside a template-owned collection IS emitted, proving the depth propagation drops only changed scalars, never new authored content.")]
+	public void BuildTargetedDiff_NewElementNestedInCollection_StillEmitted() {
+		// Arrange: alongside an unchanged existing column, the page adds a brand-new column deep inside the collection.
+		// Act
+		JsonArray diff = Btd(
+			page:    """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Same" }, "NewCol": { "caption": "Fresh" } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Same" } } } } } }""");
+		// Assert
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		op["values"]!.AsObject().Should().ContainKey("NewCol").And.NotContainKey("Existing",
+			because: "a new column deep inside the collection is carried whole; the unchanged existing one is not re-emitted");
+	}
+
+	[Test]
+	[Description("A changed scalar dropped inside a template-owned collection is NOT silent: it is recorded as a conflict (which flows to guide.Constraints) rather than vanishing, mirroring DiffArray's named-element conflict.")]
+	public void BuildTargetedDiff_ChangedScalarInCollection_RecordedAsConflict() {
+		// Arrange: modelConfig.path differs inside a template-owned collection (isCollection marked on the base).
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "MobileDS" } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the changed template-owned collection scalar is still dropped from the emitted diff");
+		conflicts.Should().Contain(c => c.Contains("path") && c.Contains("changed scalar dropped"),
+			because: "the drop is surfaced as a conflict instead of silently doing nothing (the array case already does this)");
+	}
+
+	[Test]
+	[Description("The collection safeguard is DUAL-SIGNAL: a subtree the PAGE marks isCollection (the base does NOT) still drops a changed scalar rather than re-emitting the web value — the ENG-89620 clobber guard, which a base-only check would miss.")]
+	public void BuildTargetedDiff_PageMarkedCollection_DropsChangedScalar() {
+		// Arrange: the base node is NOT marked isCollection, but the page's own converted body marks it; path differs.
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "path": "MobileDS" } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the page-side isCollection marker must trigger the collection-scalar drop even when the base node is unmarked, so the mobile-correct value is not clobbered");
+		conflicts.Should().Contain(c => c.Contains("path"),
+			because: "the dropped page-marked collection scalar is surfaced as a conflict");
+	}
+
+	[Test]
 	[Description("A named array element present in the base but with different content is a change no diff op can express -- it is reported as a conflict (not silently dropped) and no operation is emitted for it.")]
 	public void BuildTargetedDiff_ChangedNamedArrayElement_FlaggedNotDropped() {
 		// Arrange: filterAttributes has QuickFilterGroup_Filters in both, but loadOnChange differs.
@@ -1010,7 +1069,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("insert mobileValues carries the type, the field label, the control binding, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the one-way value setter is left out.")]
+	[Description("insert mobileValues carries the type, the field label, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the value binding is left out.")]
 	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -1057,18 +1116,12 @@ public sealed class WebToMobileConversionServiceTests {
 		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is carried");
 		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is carried");
 		// … including one the mobile registry does not declare (no registry-membership pruning while the
-		// registry is incomplete — ENG-91859).
+		// registry is incomplete — ENG-91859); only the value binding is left out.
 		leadVals.ContainsKey("usrWebOnly").Should().BeTrue(because: "registry-absent props are no longer dropped");
-		// The control binding is prebuilt verbatim: fields bind via `control` on mobile exactly as on web
-		// (ComboBox included) — see stock Contact_MobileFormPage and the mobile crt.ComboBox contract.
-		leadVals["control"]!.GetValue<string>().Should().Be("$LeadName",
-			because: "the control binding is the mobile field's data-source binding and is carried verbatim");
+		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
 
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
-		JsonObject jobVals = Element(guide, "JobTitle").MobileValues!.AsObject();
-		jobVals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
-		// A web `value` property is a one-way setter, not the field binding — it is still excluded.
-		jobVals.ContainsKey("value").Should().BeFalse(because: "the one-way value setter is never carried as a field binding");
+		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
 	}
 
 	[Test]
@@ -1109,9 +1162,8 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar");
 		vals["entityName"]!.GetValue<string>().Should().Be("Lead", because: "an empty mobile contract must not drop any property");
 		vals["shape"]!.GetValue<string>().Should().Be("rounded");
-		// The control binding is carried verbatim regardless of the contract completeness.
-		vals["control"]!.GetValue<string>().Should().Be("$Stage",
-			because: "the control binding is the mobile field's data-source binding and is carried verbatim");
+		// Structural keys / the value binding are still excluded regardless of the contract.
+		vals.ContainsKey("control").Should().BeFalse(because: "the value binding is always excluded");
 	}
 
 	[Test]

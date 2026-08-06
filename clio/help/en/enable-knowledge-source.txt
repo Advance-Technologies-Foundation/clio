@@ -1,0 +1,28 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    enable-knowledge-source - Enable one configured knowledge source
+
+SYNOPSIS
+    clio enable-knowledge-source --alias <alias> [--json]
+
+DESCRIPTION
+    Atomically enables one configured source. A valid retained generation becomes
+    eligible on the next runtime lookup. If no valid generation is installed, run
+    install-knowledge --source <alias> after enabling it.
+
+OPTIONS
+    --alias <alias>    Required configured source alias
+    --json             Emit indented JSON
+
+EXAMPLES
+    clio enable-knowledge-source --alias partner
+    clio install-knowledge --source partner
+
+EXIT CODES
+    0   Source was enabled or was already enabled
+    1   Source was not found or configuration persistence failed
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
