@@ -160,17 +160,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     FeedTab/AttachmentsTab staying last automatically — do NOT reorder tabs or invent indexes
 			     yourself.
 			     START from elementMap[].mobileValues: paste it as the component's values VERBATIM. It already
-			     carries the type, EVERY source property the mobile component supports AND the field's `control`
-			     binding — never drop any of them. `control` is the data-source binding for EVERY mobile field
-			     component, lookups (crt.ComboBox) included — the mobile binding property is the SAME as the web
-			     one. NEVER bind a field via `value`: it is a one-way setter, the field shows no Data source in
-			     Mobile Designer and does not save its value. It also already carries the CONVERTED event-binding
-			     requests (a button's `clicked`, a
+			     carries the type and EVERY source property the mobile component supports — never drop any of
+			     them. It also already carries the CONVERTED event-binding requests (a button's `clicked`, a
 			     field's `valueChange`/`updated`): supported requests are kept (remapped when the mobile name
 			     differs). A component whose request the mobile app does NOT support is not inserted at all — it
 			     was already DROPPED (see the elementMap `drop` entry), so you never see it here. Do NOT re-add or
 			     hand-edit these bindings — paste mobileValues as-is. Then add ONLY
 			     what mobileValues deliberately leaves out:
+			       • the value binding (control, or value for lookups) — type-specific, so it is not prebuilt;
 			       • for a structural mapping (grid → crt.List + crt.ListItem), build the row: add a crt.ListItem
 			         into the crt.List's itemLayout (title = first column, body = the rest); see the
 			         componentSuggestions note and the mobileContracts example. If the template already provides
@@ -328,9 +325,7 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  aggregated line in the plan and the final report (guide.spacingNormalization lists the containers).
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
 			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
-			  registry), the field's `control` binding included — paste it verbatim. Fields bind via `control`
-			  on mobile exactly as on web (ComboBox included); never rebind a field via `value`. validate-page
-			  is the backstop and
+			  registry) — paste it verbatim and add only the value binding. validate-page is the backstop and
 			  rejects an insert that drops a required property (e.g. a field's caption, or a lookup-path
 			  attribute's type), and update-page blocks the save.
 			- Mobile layout is a simplified vertical flow; complex multi-column desktop layout will likely

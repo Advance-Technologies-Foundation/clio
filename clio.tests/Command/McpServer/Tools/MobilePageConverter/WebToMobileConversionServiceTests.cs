@@ -1010,7 +1010,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("insert mobileValues carries the type, the field label, the control binding, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the one-way value setter is left out.")]
+	[Description("insert mobileValues carries the type, the field label, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the value binding is left out.")]
 	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -1057,18 +1057,12 @@ public sealed class WebToMobileConversionServiceTests {
 		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is carried");
 		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is carried");
 		// … including one the mobile registry does not declare (no registry-membership pruning while the
-		// registry is incomplete — ENG-91859).
+		// registry is incomplete — ENG-91859); only the value binding is left out.
 		leadVals.ContainsKey("usrWebOnly").Should().BeTrue(because: "registry-absent props are no longer dropped");
-		// The control binding is prebuilt verbatim: fields bind via `control` on mobile exactly as on web
-		// (ComboBox included) — see stock Contact_MobileFormPage and the mobile crt.ComboBox contract.
-		leadVals["control"]!.GetValue<string>().Should().Be("$LeadName",
-			because: "the control binding is the mobile field's data-source binding and is carried verbatim");
+		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
 
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
-		JsonObject jobVals = Element(guide, "JobTitle").MobileValues!.AsObject();
-		jobVals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
-		// A web `value` property is a one-way setter, not the field binding — it is still excluded.
-		jobVals.ContainsKey("value").Should().BeFalse(because: "the one-way value setter is never carried as a field binding");
+		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
 	}
 
 	[Test]
@@ -1109,9 +1103,8 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar");
 		vals["entityName"]!.GetValue<string>().Should().Be("Lead", because: "an empty mobile contract must not drop any property");
 		vals["shape"]!.GetValue<string>().Should().Be("rounded");
-		// The control binding is carried verbatim regardless of the contract completeness.
-		vals["control"]!.GetValue<string>().Should().Be("$Stage",
-			because: "the control binding is the mobile field's data-source binding and is carried verbatim");
+		// Structural keys / the value binding are still excluded regardless of the contract.
+		vals.ContainsKey("control").Should().BeFalse(because: "the value binding is always excluded");
 	}
 
 	[Test]

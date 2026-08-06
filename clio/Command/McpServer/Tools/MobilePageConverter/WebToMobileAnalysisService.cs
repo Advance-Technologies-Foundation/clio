@@ -1362,7 +1362,7 @@ public static class WebToMobileAnalysisService {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
 			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
-			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type, EVERY source property the mobile component supports (including the field caption) AND the field's `control` binding. `control` is the data-source binding for EVERY mobile field component, lookups (crt.ComboBox) included — NEVER bind a field via `value` (a one-way setter: the field would show no Data source in Mobile Designer and would not save). Never drop a supported property. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
+			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
 		};
 		if (hasDataSections) {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is diffed against the mobile template's own base: a targeted merge for changed/new values and an insert per new element of an array the template already carries, so the template's native array entries are preserved — unless a constraint reports no template base was available, in which case it degrades to a single root merge). Do NOT rebuild them by hand or collapse targeted operations into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
@@ -1783,12 +1783,9 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element identity/type
-	/// (<c>name</c>/<c>type</c>) and the one-way <c>value</c> setter. <c>control</c> is NOT excluded — it is
-	/// the data-source binding for EVERY mobile field component, lookups (<c>crt.ComboBox</c>) included, and
-	/// the mobile binding property is the SAME as the web one, so it is carried verbatim. (Stock mobile pages
-	/// — e.g. Contact_MobileFormPage — and designer-built pages bind every field, ComboBox included, via
-	/// <c>control</c> without <c>items</c>; a field bound via <c>value</c> shows no Data source in Mobile
-	/// Designer and does not save its value.) <c>dataSourceName</c> is NOT excluded:
+	/// (<c>name</c>/<c>type</c>) and the value binding (<c>control</c>/<c>value</c>) — the binding is a
+	/// type-specific rename (e.g. a mobile ComboBox must bind via <c>value</c>; <c>control</c> needs
+	/// <c>items</c> or it crashes) and is left to the caller to add. <c>dataSourceName</c> is NOT excluded:
 	/// a surviving element only ever references the primary data source (foreign-DS elements are dropped
 	/// wholesale), so its <c>dataSourceName</c> is the valid primary DS and some components require it (e.g.
 	/// <c>crt.Feed</c> needs <c>dataSourceName</c> + <c>entitySchemaName</c>). NOTE: <c>items</c> is NOT here
@@ -1797,13 +1794,12 @@ public static class WebToMobileAnalysisService {
 	/// <c>items: "$Attr"</c>) and is carried like any other property. Everything else is carried verbatim.
 	/// </summary>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
-		"name", "type", "value"
+		"name", "type", "control", "value"
 	};
 
 	/// <summary>
 	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule: carry
-	/// EVERY source property verbatim — the <c>control</c> binding included — dropping only the element
-	/// identity/type and the one-way <c>value</c> setter (see
+	/// EVERY source property verbatim, dropping only the element identity/type and the value binding (see
 	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). A property is NOT dropped
 	/// because the mobile registry fails to declare it: the generated mobile registry is currently incomplete
 	/// (missing <c>inputs</c> for several components, e.g. <c>crt.Feed</c>, <c>crt.EntityStageProgressBar</c> —
