@@ -154,6 +154,13 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 				return new LookupDefaultResolution(null, NotFoundMarker);
 			}
 			return new LookupDefaultResolution(NormalizeDisplayValue(row.DisplayValue), null);
+		} catch (NonJsonServiceResponseException ex) {
+			// The endpoint answered with a non-JSON or empty body, so it said nothing about this record.
+			// Degrade to a GUID-only resolution (no marker) exactly as a transport fault does — claiming
+			// not-found-or-no-access here would assert something the response never stated.
+			_logger.WriteWarning(
+				$"Could not resolve the lookup default display value for '{schemaName}' record '{recordId:D}'. {ex.Message}");
+			return new LookupDefaultResolution(null, null);
 		} catch (InvalidOperationException ex) when (IsAccessDenied(ex.Message)) {
 			return new LookupDefaultResolution(null, NoAccessMarker);
 		} catch (InvalidOperationException ex) {
