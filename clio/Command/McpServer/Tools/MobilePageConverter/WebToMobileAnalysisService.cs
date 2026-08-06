@@ -138,8 +138,9 @@ public static class WebToMobileAnalysisService {
 			? new HashSet<string>(nonConvertingContainers, StringComparer.OrdinalIgnoreCase)
 			: null;
 		bool nonConvertingPruned = false;
+		var excludedComponents = new List<ExcludedComponent>();
 		if (excludedContainers is not null) {
-			tree = PruneNonConvertingContainers(tree, map, componentMap, excludedContainers, insideExcluded: false);
+			tree = PruneNonConvertingContainers(tree, map, componentMap, excludedContainers, insideExcluded: false, excludedComponents, excludingContainer: null);
 			nonConvertingPruned = true;
 		}
 
@@ -252,6 +253,7 @@ public static class WebToMobileAnalysisService {
 			SourceType = SourceTypeFreedomWeb,
 			SourceTemplate = string.IsNullOrWhiteSpace(sourceTemplate) ? null : sourceTemplate,
 			SourceStructure = structure,
+			ExcludedComponents = excludedComponents.Count > 0 ? excludedComponents : null,
 			LayoutResolution = layoutResolution,
 			WebOnlySections = webOnly.Count > 0 ? webOnly : null,
 			DataSources = dataSources.Count > 0 ? dataSources : null,
@@ -663,13 +665,19 @@ public static class WebToMobileAnalysisService {
 	/// dropped container are hoisted up to the current parent (they are merge-by-name targets, so their tree
 	/// position is irrelevant downstream). Anonymous wrappers are recursed in place, preserving the excluded
 	/// state. Runs BEFORE inherited-chrome subtraction so the container→child nesting is still intact.
+	/// Every named component actually dropped (the descendants INSIDE an excluded container, not the declared
+	/// container node itself — that is already named in the constraint) is appended to <paramref name="collected"/>
+	/// so the guide can report exactly what was left out (<c>excludedComponents</c>). <paramref name="excludingContainer"/>
+	/// carries the declared top-level container name down for that report.
 	/// </summary>
 	private static JArray PruneNonConvertingContainers(
 		JArray nodes,
 		IReadOnlyDictionary<string, string> containerNameMap,
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
 		IReadOnlySet<string> excluded,
-		bool insideExcluded) {
+		bool insideExcluded,
+		List<ExcludedComponent> collected,
+		string excludingContainer) {
 		var result = new JArray();
 		foreach (JToken token in nodes) {
 			if (token is not JObject node) {
@@ -686,16 +694,27 @@ public static class WebToMobileAnalysisService {
 			if (isCarveOut) {
 				// Has its own conversion rule: keep it and convert its whole subtree normally (exit exclusion).
 				if (items is not null) {
-					node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false);
+					node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false, collected, excludingContainer: null);
 				}
 				result.Add(node);
 				continue;
 			}
 			bool entersExclusion = !insideExcluded && !string.IsNullOrEmpty(name) && excluded.Contains(name);
 			if (insideExcluded || entersExclusion) {
+				// Record only the components INSIDE the excluded container (descendants); the declared container
+				// node itself (entersExclusion) is already surfaced by name in the exclusion constraint.
+				if (insideExcluded && !string.IsNullOrEmpty(name)) {
+					collected.Add(new ExcludedComponent {
+						Name = name,
+						Type = node["type"]?.ToString(),
+						Container = excludingContainer,
+						IsContainer = items is not null
+					});
+				}
 				// Drop this node; still recurse to hoist any carved-out (rule-mapped) survivors up to the parent.
 				if (items is not null) {
-					foreach (JToken survivor in PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: true)) {
+					string childContainer = entersExclusion ? name : excludingContainer;
+					foreach (JToken survivor in PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: true, collected, excludingContainer: childContainer)) {
 						result.Add(survivor);
 					}
 				}
@@ -703,7 +722,7 @@ public static class WebToMobileAnalysisService {
 			}
 			// Outside any excluded subtree and no rule of its own: keep in place, recurse normally.
 			if (items is not null) {
-				node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false);
+				node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false, collected, excludingContainer: null);
 			}
 			result.Add(node);
 		}
@@ -1352,7 +1371,8 @@ public static class WebToMobileAnalysisService {
 				"Components inside the web template's non-converting container(s) (" +
 				string.Join(", ", nonConvertingContainers) + ") are excluded — the mobile template provides the " +
 				"equivalent header/actions. A nested subtree with its own conversion rule (e.g. tabs) is still " +
-				"converted; do NOT re-add the excluded header/action components.");
+				"converted; do NOT re-add the excluded header/action components. The exact components dropped are " +
+				"listed in excludedComponents — report them so the user can confirm nothing needed was lost.");
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");

@@ -1742,6 +1742,17 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the carved-out subtree re-enters normal conversion, so its field is inserted");
 		guide.Constraints.Should().Contain(c => c.Contains("non-converting container"),
 			because: "the guide announces the declarative exclusion");
+		// The dropped components inside the excluded container are enumerated (so the caller can confirm the loss);
+		// the declared container itself and the carved-out subtree are NOT listed.
+		guide.ExcludedComponents.Should().NotBeNull();
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "ActionButtonsContainer" && e.IsContainer && e.Container == "MainHeader",
+			because: "a dropped child container inside MainHeader is reported with its excluding container");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "OrderButton" && !e.IsContainer && e.Type == "crt.Button" && e.Container == "MainHeader",
+			because: "a dropped leaf inside MainHeader is reported with its type and excluding container");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "MainHeader",
+			because: "the declared non-converting container itself is already named in the constraint, not re-listed as a dropped child");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "CardToggleTabPanel" || e.Name == "UsrAmount",
+			because: "the carved-out (rule-mapped) subtree converts, so it is not reported as excluded");
 	}
 
 	[Test]
@@ -1839,6 +1850,8 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "no exclusion was declared, so the tree is unchanged");
 		guide.Constraints.Should().NotContain(c => c.Contains("non-converting container"),
 			because: "the exclusion constraint is only added when the pass runs");
+		guide.ExcludedComponents.Should().BeNull(
+			because: "nothing was excluded, so the report omits the excludedComponents list");
 	}
 
 	#endregion

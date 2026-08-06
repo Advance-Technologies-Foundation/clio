@@ -33,6 +33,34 @@ public sealed class SourceComponentInfo {
 }
 
 /// <summary>
+/// A source-page component that was NOT converted because it lives inside one of the web template's
+/// non-converting containers (declared per template as <c>nonConvertingContainers</c>, e.g. the header
+/// action bar with its Order/print buttons). The mobile template already provides the equivalent
+/// header/actions chrome, so this component is intentionally dropped. It is reported HERE (never in
+/// <see cref="MobilePageConversionGuide.ElementMap"/>, which only lists converted survivors) so the caller
+/// can see exactly what was left out and confirm nothing needed was lost — do NOT re-add these. A descendant
+/// subtree that has its own conversion rule (a container/component twin, e.g. nested tabs) is carved out and
+/// still converts, so it never appears here.
+/// </summary>
+public sealed class ExcludedComponent {
+	[JsonPropertyName("name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Name { get; init; }
+
+	[JsonPropertyName("type")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Type { get; init; }
+
+	/// <summary>The declared non-converting container (its ancestor in <c>nonConvertingContainers</c>) this component lived under.</summary>
+	[JsonPropertyName("container")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Container { get; init; }
+
+	[JsonPropertyName("isContainer")]
+	public bool IsContainer { get; init; }
+}
+
+/// <summary>
 /// A web→mobile container-name correspondence from the matched template pair. The model uses it
 /// to set each component's <c>parentName</c> to the correct mobile container.
 /// </summary>
@@ -307,6 +335,19 @@ public sealed class MobilePageConversionGuide {
 	/// <summary>Full resolved component tree (incl. inherited template components).</summary>
 	[JsonPropertyName("sourceStructure")]
 	public IReadOnlyList<SourceComponentInfo> SourceStructure { get; init; } = [];
+
+	/// <summary>
+	/// Components dropped from conversion because they live inside the web template's non-converting
+	/// container(s) (<c>nonConvertingContainers</c>) — e.g. the header action bar's Order/print buttons.
+	/// The mobile template already provides the equivalent header/actions chrome, so these are intentionally
+	/// excluded. Enumerated HERE (not in <see cref="ElementMap"/>) so the caller can confirm nothing needed
+	/// was lost; do NOT re-add them. A nested subtree with its own conversion rule (e.g. tabs) is carved out
+	/// and still converts, so it is absent from this list. Null when the matched template declares no
+	/// non-converting containers, or when none of their descendants were present on the source page.
+	/// </summary>
+	[JsonPropertyName("excludedComponents")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ExcludedComponent> ExcludedComponents { get; init; }
 
 	/// <summary>
 	/// Diagnostic set only when the converted layout came back empty despite the source page having
