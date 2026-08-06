@@ -187,11 +187,14 @@ when it does not answer.
 - **clio's own log check is inert.** `BasePackageInstaller` consults the installation log only under
   `GlobalContext.FailOnError` (`--fail-on-error`), and then matches "application installed successfully" —
   a phrase package installs do not emit. So the check is either off or wrong.
-- **The outcome check is per-package today.** `install-process-builder` probes `ListUserTasks`, which cannot
-  tell WHICH build answered and needs `CanManageProcessDesign` (installing does not grant it). A
-  package-agnostic replacement belongs in clio and would serve every bundled package: the installation log
-  clio already receives, plus the `ConfActivityLog` `Compilation` record — a normal entity schema readable
-  through DataService, carrying `Operation`, `Status` (Success/Error/Warning), `PackageName` and `CreatedOn`.
+- **The outcome check is per-package, and half of it is missing.** `install-process-builder` probes
+  `ListUserTasks`, which establishes that the capability is usable BY THE CALLER — the half a build-log read
+  cannot establish — but not WHICH build answered. The missing half is package-agnostic and belongs in clio,
+  serving every bundled package: the installation log clio already receives, plus the `ConfActivityLog`
+  `Compilation` record (a normal entity schema readable through DataService, carrying `Operation`, `Status`,
+  `PackageName`, `CreatedOn`). They are complements: "did the target build it" and "can this caller use it"
+  are different questions. Note `install-gate` verifies NEITHER today — it reports success on the archive
+  being accepted — while cliogate already exposes `GetApiVersion`, which answers the which-build half for it.
 
 ## See also
 

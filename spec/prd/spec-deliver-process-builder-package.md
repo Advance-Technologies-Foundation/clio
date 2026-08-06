@@ -55,9 +55,10 @@ check before judging the result. (ADR: Consequences, mitigation 3.)
 
 **FR-07 — Outcome verification.** After a successful install the command calls `ListUserTasks` and fails when
 `ProcessDesignService` does not answer, so an environment that accepted the package but never compiled it is
-reported instead of looking like success. Fails CLOSED. Two weaknesses are stated in the code: it cannot tell
-WHICH build answered, and `ListUserTasks` needs `CanManageProcessDesign`, which installing does not grant — an
-authorization rejection must not be reported as a build failure. A per-package `GetVersion` endpoint that
+reported instead of looking like success. Fails CLOSED. One weakness is stated in the code: it cannot tell
+WHICH build answered. That it needs `CanManageProcessDesign` is a PROPERTY, not a weakness — the check answers
+"is the capability usable", so a caller without the right must be told it failed; the `errorMessage` branch
+explains the rejection and says a re-install cannot fix it. A per-package `GetVersion` endpoint that
 answered "which build is serving" was built and reverted (see ADR): it does not scale to the next bundled
 package and duplicates platform mechanisms. The package-agnostic replacement (installation log +
 `ConfActivityLog`, in clio) is follow-up work.

@@ -81,11 +81,14 @@ PREREQUISITES
       stricter than cliogate's CanManageSolution, which is broader and does not
       check the connection type, so CanManageSolution alone does not grant
       process design.
-    - That same right also affects THIS command's verdict, not only the commands
-      that follow it: the post-install check calls ListUserTasks, which is behind
-      the gate. Without the right the install still succeeds and the command
-      still reports a failure - it says so explicitly, and names the right to
-      grant. Re-installing does not help in that case.
+    - That same right decides THIS command's verdict too, and deliberately so.
+      The post-install check calls ListUserTasks, which is behind the gate, so
+      without the right the command reports a failure even though the archive
+      installed - the question it answers is not "did the archive install" but
+      "is the capability usable". Whoever installs is normally whoever uses it:
+      clio holds one credential per environment. Reporting success would only
+      move the same verdict to the next call, where there is no diagnosis. The
+      message names the right to grant and says re-installing does not help.
 
 NOTES
     - The command installs the version of the package bundled with your current

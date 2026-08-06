@@ -10,15 +10,27 @@ namespace Clio.Package;
 /// <c>CrtProcessBuilder</c> package serves — whether it answers on the target.
 /// </summary>
 /// <remarks>
-/// The name says what it USES, while <see cref="IPackageInstallOutcomeVerifier"/> says what it ANSWERS,
-/// because this mechanism is the interim one: see the interface for the package-agnostic replacement that
-/// reads the installation log and <c>ConfActivityLog</c> instead.
+/// The name says what it USES, while <see cref="IPackageInstallOutcomeVerifier"/> says what it ANSWERS.
 /// <para>
-/// Two weaknesses worth naming rather than hiding. It cannot tell WHICH build answered, so on an upgrade a
-/// still-serving old assembly passes. And <c>ListUserTasks</c> is gated on <c>CanManageProcessDesign</c>
-/// inside the package, which returns the guard's rejection as an UNSUCCESSFUL envelope — so an operator who
-/// may deploy packages but was never granted process-design rights would fail this check on a perfectly good
-/// install. The <c>errorMessage</c> branch exists to keep that from being reported as a build failure.
+/// One real weakness, worth naming rather than hiding: it cannot tell WHICH build answered, so on an upgrade
+/// a still-serving old assembly passes. That is the half a platform-generic signal (the installation log plus
+/// the <c>ConfActivityLog</c> compilation record) would add — see the interface.
+/// </para>
+/// <para>
+/// What is NOT a weakness, though it reads like one: <c>ListUserTasks</c> is gated on
+/// <c>CanManageProcessDesign</c> plus a General user inside the package, so a caller lacking that right fails
+/// this check even though the archive installed. That is the correct answer to the question this verifier
+/// exists to answer — not "did the archive install" but "is the capability usable". The identity that
+/// installs is the identity that will use it: clio carries one credential per environment, and an agent
+/// installing the package mid-task cannot complete that task without the right either. Reporting success
+/// would send it on to a process-designer call that fails with a raw service rejection, i.e. the same
+/// verdict from a place that carries no diagnosis. So the <c>errorMessage</c> branch below does not paper
+/// over the failure — it explains it, says a re-install cannot fix it, and names the right to grant.
+/// <para>
+/// The corollary for any package-agnostic replacement: a build-log signal answers "did it compile", which is
+/// NOT this question. It would report success to a caller that still cannot use the feature. The two
+/// checks are complements, not substitutes.
+/// </para>
 /// </para>
 /// </remarks>
 public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifier {

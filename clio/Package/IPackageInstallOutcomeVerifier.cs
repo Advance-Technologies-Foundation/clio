@@ -12,14 +12,21 @@ namespace Clio.Package;
 /// <c>[RequiresPackage]</c> gate is satisfied, and every call into the package fails. No database read
 /// distinguishes those two states.
 /// <para>
-/// Deliberately named for the QUESTION rather than for how it is answered today. The current implementation
-/// probes the installed package's own service, which is the weakest form of the answer — it proves that
-/// something answers, not WHICH build answered, so on an upgrade a still-serving old assembly passes it. The
-/// planned replacement is package-agnostic and reads the platform's own signals instead: the installation log
-/// clio already receives, plus the <c>ConfActivityLog</c> compilation record (a normal entity schema,
-/// readable through DataService, carrying <c>Operation</c>, <c>Status</c>, <c>PackageName</c> and
-/// <c>CreatedOn</c>). That replacement swaps the implementation without touching this interface, and serves
-/// every bundled package rather than one.
+/// Deliberately named for the QUESTION rather than for how it is answered today, so a better answer can be
+/// swapped in without touching the callers.
+/// <para>
+/// Today's implementation probes the installed package's own service. That establishes the part that matters
+/// most to a caller — the capability is usable BY IT, with its own credentials, through the whole path — and
+/// it is the part a build-log read cannot establish at all. What it cannot establish is WHICH build answered,
+/// so on an upgrade a still-serving old assembly passes it. Closing that needs the platform's own signals:
+/// the installation log clio already receives, plus the <c>ConfActivityLog</c> compilation record (a normal
+/// entity schema, readable through DataService, carrying <c>Operation</c>, <c>Status</c>, <c>PackageName</c>
+/// and <c>CreatedOn</c>), which additionally work for a package that triggers no compilation at all.
+/// </para>
+/// <para>
+/// So the two are COMPLEMENTS, not a replacement and a legacy: "did the target build it" and "can this caller
+/// use it" are different questions, and answering only the first would report success to a caller that still
+/// cannot do its job.
 /// </para>
 /// </remarks>
 public interface IPackageInstallOutcomeVerifier {

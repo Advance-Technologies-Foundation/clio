@@ -107,10 +107,17 @@ silent failure:
    was accepted, not that anything compiled. After installing, the command calls `ListUserTasks` and fails
    when `ProcessDesignService` does not answer. This check fails CLOSED.
 
-   Its two weaknesses are stated in the code rather than hidden: it cannot tell WHICH build answered (on an
-   upgrade whose build failed, the last successfully built assembly answers), and `ListUserTasks` is gated on
-   `CanManageProcessDesign` inside the package, which installing a package does not grant — so the
-   `errorMessage` branch exists to keep an authorization rejection from being reported as a build failure.
+   Its ONE weakness is stated in the code rather than hidden: it cannot tell WHICH build answered (on an
+   upgrade whose build failed, the last successfully built assembly answers).
+
+   Its dependence on `CanManageProcessDesign` is NOT a weakness, though it was first written up as one. The
+   question this check answers is "is the capability usable", not "did the archive install", so a caller
+   lacking the right must be told it failed — and whoever installs is normally whoever uses it, since clio
+   holds one credential per environment and an agent installing the package mid-task cannot finish that task
+   without the right either. Reporting success would move the same verdict to the next call, where no
+   diagnosis exists. The `errorMessage` branch therefore explains the rejection and says a re-install cannot
+   fix it, rather than hiding it as a build failure. The corollary matters for the follow-up below: a
+   build-log signal answers a DIFFERENT question and cannot replace this one.
 
    **A per-package `GetVersion` endpoint was built for this and then REVERTED.** It answered "which build is
    serving" from a constant compiled into the assembly, which is the only thing that detects a failed

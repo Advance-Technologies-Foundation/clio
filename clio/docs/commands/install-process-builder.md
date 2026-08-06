@@ -102,11 +102,16 @@ ProcessDesignService enforces in its own handlers. That is deliberately stricter
 than cliogate's `CanManageSolution`, which is broader and does not check the
 connection type, so granting `CanManageSolution` does not grant process design.
 
-That right also affects **this** command's verdict, not only the commands that
-follow it. The post-install check calls `ListUserTasks`, which is behind the same
-gate, so an operator who may deploy packages but was never granted process-design
-rights gets a successful install reported as a failure. The message says so
-explicitly and names the right to grant; re-installing does not help.
+That right also decides **this** command's verdict, not only the commands that
+follow it, and that is deliberate. The post-install check calls `ListUserTasks`,
+which is behind the same gate, so without the right the command reports a failure
+even though the archive installed — because the question it answers is not "did the
+archive install" but "is the capability usable". Whoever installs is normally
+whoever uses it: clio holds one credential per environment, and an agent installing
+the package to get on with a task cannot finish that task without the right either.
+Reporting success would just move the same verdict to the next call, where there is
+no diagnosis. So the message names the right to grant and says that re-installing
+does not help.
 
 ## Notes
 
