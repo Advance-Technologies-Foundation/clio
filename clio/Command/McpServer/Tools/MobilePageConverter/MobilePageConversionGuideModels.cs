@@ -318,6 +318,13 @@ public sealed class SectionRegistrationInfo {
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
 /// </summary>
+/// <remarks>
+/// PUBLISHED CONTRACT: consumed field-by-field by the CAADT <c>creatio-mobile-page-conversion</c> skill
+/// (<c>references/page-to-mobile-conversion.md</c>). Adding / renaming / removing / repurposing a field here
+/// REQUIRES a matching skill update (the conversion plan + the step-8 report) in the same PR pair — otherwise
+/// the model never surfaces the new field to the user. See <c>clio/Command/McpServer/AGENTS.md</c> →
+/// "Consumer-facing tool outputs are a cross-repo contract".
+/// </remarks>
 public sealed class MobilePageConversionGuide {
 	// ── Source analysis ───────────────────────────────────────────────
 	[JsonPropertyName("sourcePage")]
