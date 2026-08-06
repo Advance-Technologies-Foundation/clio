@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;

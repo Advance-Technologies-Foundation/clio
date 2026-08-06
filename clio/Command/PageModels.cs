@@ -155,6 +155,24 @@ public sealed class PageGetResponse {
 	public PageEditableSchemaInfo Editable { get; init; }
 
 	/// <summary>
+	/// The merged <c>viewModelConfig</c> EXCLUDING the editable schema's own body — the runtime base a
+	/// replace-mode write layers over. Populated only when <see cref="PageGetOptions.ExcludeOwnBody"/> is set
+	/// (the mobile replace-mode validation base); <c>null</c> otherwise. An in-process validation channel only —
+	/// never serialized into the get-page payload.
+	/// </summary>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public JsonObject BaseViewModelConfig { get; init; }
+
+	/// <summary>
+	/// The merged <c>modelConfig</c> EXCLUDING the editable schema's own body — the replace-mode validation
+	/// base counterpart to <see cref="BaseViewModelConfig"/>. Same population and non-serialization rules.
+	/// </summary>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public JsonObject BaseModelConfig { get; init; }
+
+	/// <summary>
 	/// Gets or sets the error message for failed requests.
 	/// </summary>
 	[JsonProperty("error")]

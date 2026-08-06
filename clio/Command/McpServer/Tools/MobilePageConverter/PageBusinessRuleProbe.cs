@@ -8,7 +8,7 @@ using Clio.Command.BusinessRules;
 using Clio.Common;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Read-only environment probe that fetches the PAGE-level business rules of a source web page from

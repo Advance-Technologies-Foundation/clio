@@ -12,7 +12,7 @@ using Clio.Common;
 using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Detects a page's source type and returns an advisory mobile-conversion GUIDE (ENG-89620).
@@ -239,10 +239,9 @@ public sealed class MobilePageConversionGuideTool {
 				componentNameMap: componentNameMap,
 				positionalPlacements: positionalPlacements,
 				mobileContainerParents: mobileContainerParents,
-				mobileTemplateArraysByPath: mobileTemplateProbe.NativeArraysByPath,
-				mobileTemplateArraysUnavailable: mobileTemplateProbe.Unavailable,
-				mobileTemplateCollectionKeys: mobileTemplateProbe.CollectionKeys,
-				mobileTemplateModelArraysByPath: mobileTemplateProbe.NativeModelArraysByPath);
+				mobileTemplateViewModelConfig: mobileTemplateProbe.ViewModelConfig,
+				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
+				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -452,42 +451,33 @@ public sealed class MobilePageConversionGuideTool {
 
 	/// <summary>
 	/// Result of <see cref="LoadMobileTemplateProbe"/>: the mobile template's container-parent map
-	/// (positional inserts) and every array found anywhere in its own merged viewModelConfig, keyed by path
-	/// (array union — generic over filterAttributes, sortingConfig, or any other array). <c>Unavailable</c>
+	/// (positional inserts) plus the template's OWN merged <c>viewModelConfig</c> and <c>modelConfig</c> base,
+	/// which the converted page's configs are diffed against recursively (a shared subtree emits only the real
+	/// delta; an array the base already carries is augmented via insert rather than replaced). <c>Unavailable</c>
 	/// is true when a template schema name was known but its bundle could not be read (no active
 	/// environment, read failure) — the caller surfaces that as an explicit guide constraint instead of
-	/// silently emitting arrays that carry only this page's own entries.
+	/// silently falling back to a single root merge that may replace the template's arrays wholesale.
 	/// </summary>
 	private sealed record MobileTemplateProbe(
 		IReadOnlyDictionary<string, string> ContainerParents,
-		IReadOnlyDictionary<string, JsonArray> NativeArraysByPath,
-		IReadOnlyDictionary<string, JsonArray> NativeModelArraysByPath,
-		IReadOnlySet<string> CollectionKeys,
+		JsonNode ViewModelConfig,
+		JsonNode ModelConfig,
 		bool Unavailable);
 
 	/// <summary>
-	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle, used for several
-	/// independent probes: mapping each mobile container to its parent — resolving where a positional
-	/// (<c>:top</c> / <c>:bottom</c>) insert attaches; collecting the template's own list-collection keys; and
-	/// collecting EVERY array found anywhere in the template's own merged viewModelConfig AND modelConfig (the
-	/// latter from the config root, e.g. a data source's <c>dataSources/&lt;ds&gt;/config/…</c> array), so the
-	/// converted page's own arrays can be unioned with the template's natives rather than the mobile diff
-	/// engine's array-replace merge silently dropping one side. viewModelConfig example:
-	/// <c>Items/modelConfig/filterAttributes</c> ->
-	/// [QuickFilterGroup_Filters, FolderTreeActions_active_folder_filter] for BaseMobileListTemplate, but
-	/// equally any other array), so the converted page's own arrays can be unioned with the template's
-	/// natives rather than the mobile diff engine's array-replace merge silently dropping one side. Mirrors
-	/// <see cref="LoadTemplateComponentNames"/>: loads the template's merged bundle and never throws. Returns
-	/// empty maps (and <c>Unavailable = false</c>) when no template name is known; <c>Unavailable = true</c>
-	/// when a name was known but the read failed.
+	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
+	/// container to its parent — resolving where a positional (<c>:top</c> / <c>:bottom</c>) insert attaches —
+	/// and carries the template's OWN merged <c>viewModelConfig</c> and <c>modelConfig</c> so the converted
+	/// page's configs can be diffed recursively against that base (a shared subtree emits only the real delta;
+	/// an array the base already carries is augmented via insert rather than replaced by the mobile diff
+	/// engine's array-replace merge). Mirrors <see cref="LoadTemplateComponentNames"/>: loads the template's
+	/// merged bundle and never throws. Returns a null base (and <c>Unavailable = false</c>) when no template
+	/// name is known; <c>Unavailable = true</c> when a name was known but the read failed.
 	/// </summary>
 	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		var emptyArrays = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
-		var emptyModelArrays = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase);
-		var emptyCollections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
-			return new MobileTemplateProbe(emptyParents, emptyArrays, emptyModelArrays, emptyCollections, Unavailable: false);
+			return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: false);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -510,21 +500,12 @@ public sealed class MobilePageConversionGuideTool {
 				IReadOnlyDictionary<string, string> parents = bundle.ViewConfig is { } viewConfig
 					? WebToMobileAnalysisService.CollectParentByName(viewConfig)
 					: emptyParents;
-				IReadOnlyDictionary<string, JsonArray> natives = bundle.ViewModelConfig is { } viewModelConfig
-					? WebToMobileAnalysisService.CollectNativeArraysByPath(viewModelConfig)
-					: emptyArrays;
-				IReadOnlyDictionary<string, JsonArray> modelNatives = bundle.ModelConfig is { } modelConfig
-					? WebToMobileAnalysisService.CollectNativeArraysByPathFromRoot(modelConfig)
-					: emptyModelArrays;
-				IReadOnlySet<string> collectionKeys = bundle.ViewModelConfig is { } collectionsVmc
-					? WebToMobileAnalysisService.CollectTemplateCollectionKeys(collectionsVmc)
-					: emptyCollections;
-				return new MobileTemplateProbe(parents, natives, modelNatives, collectionKeys, Unavailable: false);
+				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig, Unavailable: false);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
-		return new MobileTemplateProbe(emptyParents, emptyArrays, emptyModelArrays, emptyCollections, Unavailable: true);
+		return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: true);
 	}
 
 	/// <summary>
