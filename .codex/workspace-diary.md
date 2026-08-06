@@ -6898,6 +6898,144 @@ Discovery: (1) get-tool-contract default `detail=full` set is gated by the hand-
 Files: clio/Command/McpServer/McpCoreToolProfile.cs, clio.tests/Command/McpServer/McpProfileGatingTests.cs (ratchet 30→22 count, 35328→30000 bytes, DataForge Contain→NotContain + PageListTool positive), clio.mcp.e2e/Support/Mcp/McpServerSession.cs (+CallDestructiveAsync), clio.mcp.e2e/Support/Mcp/DataForgeReadinessGate.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs
 Impact: Any future "move a resident tool to long-tail" follows this exact playbook: profile edit + gating-test ratchet + e2e destructive-executor routing; BC is free via the durable handler when no name changes. Verified live: dataforge resident=false in get-tool-contract, initialize direct call → confirmation-required. Ring does not consume dataforge.
 
+## 2026-07-18 13:18 – External knowledge bundle runtime prototype
+Context: Prove the safety-critical consumer half of moving MCP guidance out of Clio before choosing NuGet or npm transport.
+Decision: Added a transport-neutral signed v0 bundle verifier with forward-only atomic activation and typed active, not-found, and unavailable lookup states.
+Discovery: The compiled ESQ oracle from Clio commit baa34546 can be served byte-identically from the clio-knowledge conformance ZIP; rejected candidates leave the active sequence unchanged across signature, content, compatibility, capability, path, truncation, and replay failures.
+Files: clio/Command/McpServer/Knowledge/, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, spec/knowledge-bundle-runtime/
+Impact: NuGet or another transport can supply candidate streams without owning verification or last-known-good serving semantics.
+
+## 2026-07-18 15:05 – External knowledge serving proof
+Context: Prove that Clio can serve guidance owned by clio-knowledge without embedded fallback content.
+Decision: Keep the Clio delivery implementation on `krylov/knowledge-bundle-poc` until the Monday architecture review; do not merge it.
+Discovery: A verified ESQ bundle is served byte-identically through the real `get-guidance` and `docs://` surfaces on .NET 8 and .NET 10, while a cold process returns typed `guidance-unavailable`.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Resources/KnowledgeGuidanceResourceAdapter.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs
+Impact: Clio can retain mechanics-only tests while content and content validation migrate to clio-knowledge.
+
+## 2026-07-18 17:06 – Replace guidance snapshots with synthetic delivery tests
+Context: Complete clio-knowledge MIG6 by removing Clio assertions that owned article wording, headings, examples, sizes, or frozen oracle bytes.
+Decision: Retain only synthetic bundle mechanics, stable get-guidance/docs routing, typed lookup states, and executable destructive metadata when external guidance is cold.
+Discovery: Generated ECDSA-signed ZIP fixtures exercise the real MCP process on .NET 8 and .NET 10 without a clio-knowledge checkout; review also required absolute trust paths, public-key-only PEM, bounded ZIP preflight, and stable catalog URI matching.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, clio.tests/Command/McpServer/KnowledgeBundleDiscoveryTests.cs, clio.tests/Command/McpServer/KnowledgeGuidanceSurfaceTests.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs
+Impact: Clio validates delivery and fail-closed behavior while clio-knowledge remains the sole owner of content assertions and oracle bytes.
+
+## 2026-07-18 17:43 – Harden synthetic knowledge activation gates
+Context: Comprehensive quality, security, and performance review of the MIG6 mechanics-only migration found fail-closed gaps hidden by the original one-resource fixture.
+Decision: Require exact external-catalog coverage, exact central-directory bounds, absolute trust paths, public-only SPKI trust material, all required manifest fields, and three-part product-version comparison.
+Discovery: A successful real-process fixture must synthesize every stable external guide route; known catalog omissions are unavailable, never not-found, and four-part assembly revisions do not participate in bundle compatibility.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeGuidanceSource.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs
+Impact: Reviewer-identified trust substitution, archive-allocation, partial-catalog, schema, and version-range bypasses now have synthetic regressions without reintroducing guidance wording ownership.
+
+## 2026-07-18 19:01 – Prove synthetic NuGet knowledge renewal
+Context: Amend the external-knowledge prototype with a mechanics-only real-process NuGet E2E and no assertions over owned guidance content.
+Decision: Use a bounded same-origin NuGet v3 adapter, bind signed bundle version to immutable package version, serve active guidance during single-flight background renewal, and retain a bounded FIFO window of rejected versions without halting later recovery.
+Discovery: Transient transport failures must remain retryable; successful activation establishes a forward-only package floor; cold discovery needs the same single-flight cooldown; exact package-response completion is required before last-known-good retention can be asserted.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.mcp.e2e/Support/Knowledge/SyntheticKnowledgeNuGetFixture.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs
+Impact: Clio now proves production NuGet discovery, extraction, verification, renewal, and invalid-newer retention with complete-catalog synthetic payloads while clio-knowledge remains untouched.
+
+## 2026-07-18 19:53 – Bound NuGet renewal and fallback generations
+Context: Final adversarial review of the mechanics-only NuGet proof found timeout, scan-cursor, catalog-generation, allocation, and completion-proof edge cases.
+Decision: Apply one deadline through response bodies, cap version catalogs before parsing, bind package and signed bundle versions, reset cursors on catalog fingerprints, and preserve a forward active-package floor with bounded recent rejection memory.
+Discovery: A descending ceiling avoids a carousel when more invalid versions exist than the rejection cache; E2E retention is proven only after the invalid package response and one subsequent completed version scan.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs
+Impact: NuGet renewal stays bounded, nonblocking, recoverable, and last-known-good safe under hostile or malformed feeds without asserting external guidance content.
+
+## 2026-07-18 20:03 – Normalize source-build knowledge compatibility
+Context: PR review identified that unversioned source builds expose assembly version 0.0.0.0 and would reject product-version knowledge bundles.
+Decision: Map only all-zero development assembly versions to the existing 8.1.0 compatibility fallback while preserving published versions unchanged.
+Discovery: The csproj intentionally uses 0.0.0.0 when neither CI nor a git tag supplies a version, so non-null assembly metadata is not sufficient evidence of a product version.
+Files: clio/BindingsModule.cs, clio.tests/Command/BindingsModuleMcpHostGateTests.cs
+Impact: Local source-built MCP hosts can activate trusted external knowledge without weakening compatibility checks for released binaries.
+
+## 2026-07-19 09:41 – Persist and hot-reload installed knowledge
+Context: Replace per-session NuGet discovery with an explicit, inspectable knowledge lifecycle while keeping Clio tests content-agnostic.
+Decision: Added install, update, info, and confirmed delete commands backed by an owned versioned disk store; MCP reads only the active disk marker and revalidates changed generations on demand.
+Discovery: Safe recovery requires atomic ownership and activation markers, compare-and-swap updates, exact-version repair, bounded candidate fallback, reparse-point rejection, and reconciliation of interrupted delete quarantines.
+Files: clio/Command/KnowledgeCommands.cs, clio/Command/McpServer/Knowledge/, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.tests/Command/McpServer/, spec/knowledge-bundle-runtime/
+Impact: MCP sessions can observe verified knowledge updates without restart or repeated downloads, while Clio owns only delivery mechanics and clio-knowledge owns content assertions.
+
+## 2026-07-19 10:46 – Add multi-source knowledge CLI surface
+Context: Expose the accepted multi-source knowledge contract through ordinary Clio commands without coupling commands to transport or runtime implementations.
+Decision: Added one command-layer management interface, alias-aware lifecycle commands, confirmed destructive operations, JSON and human reporting, and five source-management verbs with synchronized documentation.
+Discovery: Registering CLI verbs in Program does not currently make them executable through clio-run; the MCP durable handler classifies unresolved CLI verbs as terminal-only, so the root integration needs a generic CLI bridge or nonresident adapter.
+Files: clio/Command/KnowledgeCommands.cs, clio/Command/KnowledgeSourceManagementContracts.cs, clio/Program.cs, clio.tests/Command/KnowledgeCommandTests.cs, clio/docs/commands/*knowledge*.md, clio/help/en/*knowledge*.txt, clio/Commands.md, clio/Wiki/WikiAnchors.txt
+Impact: Operators can select one source or safely target all enabled sources, while core implementation and DI can evolve behind a narrow command-facing contract.
+
+## 2026-07-19 12:34 – Align multi-source knowledge documentation
+Context: Reconcile the command and architecture documentation with the hardened proof-of-concept behavior after adversarial review.
+Decision: Make information queries local-first, require explicit update checks and signed v1 sources, limit supported transports to public HTTPS, and document post-success Git branch persistence and safe source removal order.
+Discovery: The unreleased v0 cache cannot be described as an implicit multi-source compatibility library; signed legacyUris provide the supported exact-alias migration mechanism instead.
+Files: clio/docs/commands/*knowledge*.md, clio/help/en/*knowledge*.txt, clio/docs/commands/mcp-server.md, clio/help/en/mcp-server.txt, clio/Commands.md, spec/knowledge-bundle-runtime/knowledge-bundle-runtime-multi-source-contract.md
+Impact: Operators and agents now receive one consistent contract for network access, bundle compatibility, Git provenance, alias resolution, and cleanup behavior.
+## 2026-07-19 12:40 – Multi-source trust boundary hardening
+Context: Security review found configured sources could admit legacy v0 bundles and trusted-key paths were not a sufficiently stable local trust boundary.
+Decision: Require v1 library-bound validation before publication, validate one bounded local P-256 public-key PEM with no network/device/reparse path, and include effective key fingerprint plus configured library ID in activation identity. MCP source add/remove are destructive; add also requires explicit confirmation. info-knowledge stays local unless checkUpdates=true.
+Discovery: Hot trust revocation must hash SubjectPublicKeyInfo bytes rather than the path so same-path key replacement or deletion forces runtime revalidation. Synthetic v1 E2E commits must be valid full hexadecimal object IDs.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio/Command/McpServer/Knowledge/KnowledgeMultiSourceActivator.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs
+Impact: Configured-source publication and activation can no longer fall back to legacy environment trust, and trust changes are observed without restarting MCP.
+
+## 2026-07-19 13:20 – Isolate Git transport process environment
+Context: Final security review found that inherited Git variables could redirect helpers or inject command-valued configuration during knowledge retrieval.
+Decision: Added opt-in process environment clearing with an inherited-variable allowlist and absolute executable resolution; Git now inherits only OS, locale, proxy, and CA variables plus its explicit disabled configuration.
+Discovery: Clearing `GIT_*` variables is insufficient if the executable remains a bare name resolved from the child working directory; resolution must occur before launch and ignore relative PATH entries.
+Files: clio/Common/ProcessExecutor.cs, clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio.tests/Common/ProcessExecutorTests.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs
+Impact: Knowledge retrieval cannot inherit `GIT_EXEC_PATH`, injected configuration, askpass, or helper settings, and launches a pinned absolute Git executable.
+
+## 2026-07-19 13:25 – Distinguish NuGet outages from current catalogs
+Context: Final correctness review found NuGet feed and package failures were reported as successful up-to-date checks when a generation was already installed.
+Decision: Added an explicit failed retrieval status with a bounded diagnostic; update fails and info reports unknown, while a successfully checked catalog with no newer revision remains no-candidate.
+Discovery: Transport failure must not blacklist an immutable version, but it also cannot be treated as evidence that no update exists.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeTransportContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs, clio.tests/Command/McpServer/KnowledgeSourceManagementServiceTests.cs
+Impact: Operators no longer receive false up-to-date results during NuGet outages, timeouts, or invalid remote responses.
+
+## 2026-07-19 14:05 – Bound Git retrieval across subprocesses
+Context: Final performance review found each sequential Git command received a fresh transport timeout, allowing one retrieval to exceed its advertised operation deadline.
+Decision: Start one stopwatch per retrieval, pass only the remaining budget to every Git subprocess, and classify shared-deadline exhaustion as a failed retrieval. Explicit info update checks now pass the same bounded deadline.
+Discovery: Per-process timeouts do not establish an operation-wide bound when branch discovery, initialization, fetch, inspection, and archive commands run sequentially.
+Files: clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs, clio.tests/Command/McpServer/KnowledgeSourceManagementServiceTests.cs
+Impact: Git-backed install, update, repair, and update-info checks cannot multiply the configured timeout by the number of Git subprocesses.
+
+## 2026-07-19 14:10 – Complete multi-source knowledge POC hardening
+Context: Final parallel review of the coordinated Clio and clio-knowledge POC found package-version, interrupted-publication, transport-failure, process-environment, and MCP mutation-classification gaps.
+Decision: Bind NuGet package and signed library versions, fail closed on transport outages, reconcile only exact high-water orphan generations under both locks, use one Git operation deadline, isolate Git process state, and require destructive confirmation for install/update tools.
+Discovery: A replay ledger written before an activation marker needs autonomous exact-orphan reconciliation; otherwise the correct cold-start high-water guard can make an interrupted update unrecoverable. A transport outage is not evidence that a source is up to date.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio/Common/ProcessExecutor.cs, clio.tests/Command/McpServer/, clio.tests/Common/ProcessExecutorTests.cs, clio.mcp.e2e/KnowledgeManagementToolE2ETests.cs
+Impact: The draft POC now supports bounded, crash-recoverable, multi-source Git/NuGet delivery and live MCP reload while keeping content assertions in clio-knowledge.
+
+## 2026-07-19 17:00 – Remove redundant v1 knowledge timestamps
+Context: The Git source manifest duplicated provenance, signing, and publication time already supplied by Git or NuGet mechanics.
+Decision: V1 no longer emits or requires `issuedAt`; the Clio consumer still accepts the field for existing v1 bundles and continues requiring it only for frozen v0 compatibility.
+Discovery: Git-backed knowledge already has an authoritative commit timestamp, so a second publisher-authored timestamp can drift without improving resolution or trust.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleManifest.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, clio.mcp.e2e/Support/Knowledge/SyntheticKnowledgeNuGetFixture.cs
+Impact: Direct Git and newly generated NuGet knowledge use one provenance clock while older v1 artifacts remain readable.
+
+## 2026-07-19 20:31 – Finalize multi-source knowledge merge candidate
+Context: PR #927 needed final cross-repository review, simplification, contract alignment, and release-grade validation while remaining draft.
+Decision: Unified artifact and repository transport discovery, bounded parallel source operations by the remaining batch budget, moved remote Git update checks outside mutation locks, bound content roles to canonical repository directories, and surfaced transient activation diagnostics instead of false empty catalogs.
+Discovery: A non-blocking activator can legitimately miss a source during concurrent synchronization; catalog discovery must propagate that state so agents retry rather than infer that no examples exist.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio.tests/Command/McpServer/, clio.mcp.e2e/, clio/tpl/jsonschema/schema.json.tpl, C:/Projects/clio-knowledge/.worktrees/pr927-compat/schemas/v1/knowledge-repository.schema.json
+Impact: The draft PR now has matching producer/consumer contracts, mechanics-only Clio E2E coverage, live Git example discovery, and no unresolved Blocker/High review findings.
+
+## 2026-07-20 11:56 – Bootstrap the built-in curated knowledge source
+Context: A released Clio must not lose its official guidance when guidance content moves out of the binary, and operators need a persistent opt-out.
+Decision: Reserve `creatio-curated` for `com.creatio.clio`, restore its canonical public Git configuration on MCP startup, preserve only `enabled`, protect it from removal, and clone a missing checkout in the background so the MCP handshake never waits for Git.
+Discovery: Canonicalizing the former `creatio-poc` alias must move its existing checkout under both source locks; otherwise offline users lose a usable cache. Isolated MCP E2E homes must seed the source disabled so unrelated tests never clone from GitHub.
+Files: clio/Command/McpServer/Knowledge/CuratedKnowledgeBootstrapService.cs, clio/Environment/ConfigurationOptions.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceInstallationStore.cs, clio/Command/McpServer/McpServerCommand.cs, clio/Command/McpServer/McpHttpServerCommand.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs
+Impact: Fresh MCP sessions automatically acquire curated guidance without blocking startup, disabled state survives upgrades, legacy caches remain usable offline, and Clio's E2E suite stays deterministic.
+
+## 2026-07-20 15:41 – Complete guidance-content extraction
+Context: PR 927 still compiled migrated article classes, descriptions, and a static guidance catalog into Clio after the content had moved to clio-knowledge.
+Decision: Deleted every article-specific MCP resource and the static catalog; active trusted libraries now own article text, item/topic identity, title, description, and legacy URIs. Clio dynamically adds active articles to `resources/list` and keeps only generic canonical/legacy readers plus delivery mechanics.
+Discovery: The schema validator parsed built-in validator parameters from a guidance article, so that executable contract moved into `StandardValidatorContracts` before deleting the article. Publisher discovery metadata must be bounded and validated by both producer and consumer.
+Files: clio/Command/McpServer/Resources/, clio/Command/McpServer/Knowledge/KnowledgeResourceDiscoveryFilter.cs, clio/Command/StandardValidatorContracts.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.tests/Command/McpServer/ExternalKnowledgeBoundaryTests.cs, C:/Projects/clio-knowledge/bundle-source.json
+Impact: Clio contains no migrated article inventory or content assertions; the CDN ComponentRegistry path remains unchanged, while synthetic E2E coverage proves dynamic knowledge discovery, reads, hot reload, lifecycle, and cache mechanics.
+
+## 2026-07-20 17:29 – Close the external-knowledge migration boundary
+Context: Final PR 927 review found missing supporting references, alias precedence gaps, an unbounded single-source startup path, first-activation races, stale capability docs, and sensitive E2E settings-copy handling.
+Decision: Publish all former supporting resources as producer-owned `reference` items; resolve bare item aliases through canonical topics before priority/pins; propagate a five-second curated-startup deadline into Git transport; make initial activation single-flight until a valid snapshot exists; paginate dynamic MCP discovery; and retain only generic delivery/help resources in Clio.
+Discovery: A cancellation token at the host is not a deadline unless the single-source management path carries it into the transport request. An activation-attempt flag cannot stand in for a valid snapshot after configuration failure. Reference content needs the same publisher metadata and legacy-URI contract as guidance while remaining excluded from bare `get-guidance` names.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Resources/, clio/Command/McpServer/McpServerCommand.cs, clio.mcp.e2e/, clio.tests/Command/McpServer/, docs/McpCapabilityMap.md, C:/Projects/clio-knowledge/bundle-source.json, C:/Projects/clio-knowledge/references/
+Impact: Clio now owns delivery mechanics only; clio-knowledge master `aac7dfff` owns 63 guides, 43 references, and 2 examples with producer tests. First-session bootstrap is bounded, multi-source overrides work through established item aliases, and dynamic content remains hot-reloadable without MCP restart.
 ## 2026-07-18 12:00 – Redis auto-detect bounded retry (#883)
 Context: deploy-creatio (--redis-db -1) hard-failed on a single transient Redis connect blip (Rancher Desktop port-forward hiccup) since ENG-90640 made FindEmptyLocalDatabase fail-fast (AbortOnConnectFail=true, ConnectRetry=1, 12s).
 Decision: Added a bounded retry (MaxConnectAttempts=3) with exponential backoff (500ms→1000ms) around the connect in RedisDatabaseSelector.FindEmptyDatabase, keeping the per-attempt 12s fail-fast timeout. Extracted SelectEmptyDatabase (uses `using` to dispose the multiplexer). Retry only on transient failures; a definitive error is surfaced immediately.
@@ -7470,6 +7608,88 @@ Decision: (1) "the only parameter a standard page authors by hand" scoped to "th
 Discovery: The mobile guide hard-codes ~26 requests but the mobile catalog covers only 4; the list must survive until sibling tickets catalog the rest, with each cataloged entry collapsing to the pointer pattern. Guide-entry sizing rule that emerged: duplicate a fact into the guide ONLY when it is a pre-contract decision trap (RunBusinessProcess run-type/codes); anything the mandated get-request-info call returns verbatim is pure drift surface.
 Files: clio/Command/McpServer/Resources/MobilePageGuidanceResource.cs, clio.tests/Command/McpServer/Fixtures/{RequestRegistry,MobileRequestRegistry}.live-snapshot.json; (siblings) static-files-mcp registries+recipes, creatio-ui JSDoc+copies.
 Impact: get-request-info stays the single source of truth for the upload contract; the guide can no longer contradict it. Validated: Module=McpServer 2893/2893 on net8.0+net10.0, live round-trip both flavors (web LookupValue typedef inlines correctly).
+
+## 2026-07-31 20:30 – PR #927 brought current: content-drift reconciliation before accepting the deletions
+Context: PR #927 (externalize guidance delivery) sat 329 commits behind master and CONFLICTING. It deletes 55 of 61 guidance resource classes, so the merge had to be preceded by a producer-side reconciliation — otherwise "accept the deletion" silently discards whatever master wrote after the migration snapshot.
+Decision: Three-way classify every article — snapshot baseline (merge-base 5587a46 C# literal) vs. published clio-knowledge article vs. current master C# literal — and act per bucket rather than copying in one direction. Result: 21 identical, 22 clio-only (ported), 4 knowledge-only (kept), 2 both-edited (hand-merged), 6 clio-added (published). Only then were the 27 modify/delete conflicts resolved as deletions.
+Discovery: (1) The published articles are the C# raw string literal verbatim, minus the closing-delimiter indent — so base==published proves the extractor is lossless for that file, which makes the "safe to port" bucket self-verifying; a lossy parse can only over-report "both edited", never under-report. (2) Guide bodies embed JS containing `};`, so a non-greedy object-initializer regex truncates the text — scan for the raw-literal closing line instead. (3) `OracleCapture` (reflection over the built clio.dll) is the independent check on that extractor: 51 of 68 resources matched byte-for-byte, and every one of the 17 differences was an already-classified producer edit. (4) master retired `run-process-button` into `when-to-use-requests`, and clio-knowledge kept it — a fourth category the classifier did not anticipate. (5) `FreedomToMobileConversionGuidanceResource` carries `[FeatureToggle("mobile-page-converter")]`; publishing the article without `requiredFeatures` would have un-gated it.
+Files: clio/Command/McpServer/{BindingsModule.cs,Command/McpServer/Tools/GuidanceGetTool.cs}, clio.tests/Command/McpServer/{WorkspaceTemplateGuidanceDriftTests.cs,DurableInvocationGateCompletenessTests.cs,GuidanceGetToolTests.cs,Fixtures/curated-knowledge-names.json}; (producer) clio-knowledge PR #32.
+Impact: The template drift gate no longer needs a compiled GuidanceCatalog — it resolves shipped template names against a curated-knowledge name fixture, so the AGENTS.md gate survives the externalization. Any future "delete an embedded catalog" PR should run the same three-way pass before trusting a modify/delete resolution. macOS baseline for this branch: 19 pre-existing master failures + 5 pre-existing branch failures (4 knowledge trust-store, 1 process-env), all path/shell specific and green in CI.
+
+## 2026-08-02 01:20 – Clearing the last SonarCloud issues on PR #927
+Context: PR #927 needed a clean SonarCloud gate; api/issues/search on
+pullRequest=927 with resolved=false listed exactly five open issues, and the
+S107 threshold on this profile is 7 parameters (read from the issue message,
+not assumed from the rule default).
+Decision: fixed four in code (S2325 static GetConfiguration; S2925 TimeProvider
++ OperationDeadline replacing Stopwatch in KnowledgeGitTransport; S107 on
+Publish via a KnowledgeGenerationPublication record; S107 on the activator by
+moving the checkout-existence probe into IKnowledgeSourceInstallationStore.
+GetInstalledGitRepositoryPath). S1075 on `docs://knowledge/` is a false
+positive and needs a SonarCloud transition, which requires Administer Issues
+on the project.
+Discovery: NSubstitute returns "" (not null) for unstubbed string members, so
+introducing a `string?` probe does not automatically expose tests that never
+stub it -- one activation test kept passing on the empty-string default until
+the stub was made an explicit `.Returns((string?)null)`. Also: the activator's
+existence probe (repository root exists) and the management service's probe
+(a `.git` marker exists) are deliberately different predicates and must not be
+merged into one store member.
+Files: clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs,
+KnowledgeSourceInstallationStore.cs, KnowledgeMultiSourceActivator.cs,
+KnowledgeBundleNuGetClient.cs, KnowledgeSourceManagementService.cs,
+clio.tests/Command/McpServer/Knowledge*Tests.cs
+Impact: future Sonar rounds on this stack should query the API for the exact
+authorized parameter count instead of assuming the rule default, and should
+mutate nullable-string stubs explicitly rather than by deletion.
+
+## 2026-08-02 19:30 – Built-in knowledge moves from Git checkout to signed GitHub Release asset
+Context: the built-in `creatio-curated` source required a Git CLI, read a mutable
+`master` at runtime, and carried no publisher signature. All three are unfixable
+inside the Git transport.
+Decision: added a third artifact transport, `github-release`
+(`KnowledgeGitHubReleaseTransport`), alongside `git` and `nuget`, and flipped the
+built-in source onto it. Discovery is `releases/latest`, revision is the release
+tag (kept identical to the bundle's `libraryVersion`, which the runtime already
+enforces), and the bundle runtime does signature/contract/sequence verification
+unchanged. Generic Git and NuGet sources are untouched. Trust for
+`com.creatio.clio` is pinned in the binary (`BuiltInKnowledgeBundleTrustStore`)
+and consulted BEFORE configured material, and the composed store refuses to fall
+through for that library — a settings entry cannot substitute its own key.
+Producer half is `clio-knowledge` branch `feature/github-release-delivery`
+(release workflow + `verify` verb + `ReleaseArtifactTests`).
+Discovery: three traps worth remembering.
+(1) `CuratedKnowledgeBootstrapService` had exactly one no-network fast exit, and
+it was Git-shaped (`IsGitRepositoryInstalled`). Flipping the transport without an
+artifact-shaped probe would have made EVERY warm MCP start call api.github.com
+inside the 5s pre-serve budget, and no unit test would have failed. Added
+`IsBundleGenerationInstalled` (marker existence only — no lock, no parse, no
+network); `ReadCurrent` is NOT usable there because its crash-recovery path can
+take the source mutation lock.
+(2) `HttpMessageHandler` stubs must override the synchronous `Send`, not only
+`SendAsync`: the knowledge transports call `HttpClient.Send`, and the base
+`Send` throws `NotSupportedException`, which the transport catch turns into a
+plain `Failed` — every case "fails correctly" for the wrong reason.
+(3) The knowledge e2e suite was unrunnable on macOS: clio refuses a knowledge
+root or key path with a reparse point in its ancestry, and `Path.GetTempPath()`
+resolves through the `/var` symlink. Fixed in the fixtures with
+`PhysicalPath.Resolve`, not by weakening the production rule.
+Also: `KnowledgeSourceType.ToString()` yields `githubrelease`, which is neither
+the persisted token nor what `--type` accepts — use `KnowledgeSourceTypeNames.Format`.
+Files: clio/Command/McpServer/Knowledge/KnowledgeGitHubReleaseTransport.cs,
+KnowledgeSourceConfiguration.cs, KnowledgeBundleContracts.cs,
+CuratedKnowledgeBootstrapService.cs, KnowledgeSourceInstallationStore.cs,
+KnowledgeSourceManagementService.cs, clio/Command/KnowledgeCommands.cs,
+clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio/BindingsModule.cs,
+clio.tests/Command/McpServer/KnowledgeGitHubReleaseTransportTests.cs,
+clio.mcp.e2e/KnowledgeGuidanceGitHubReleaseE2ETests.cs,
+clio.mcp.e2e/Support/Knowledge/*, clio.mcp.e2e/Support/PhysicalPath.cs,
+spec/knowledge-bundle-runtime/knowledge-bundle-runtime-github-release-delivery.md
+Impact: a future transport can be added by implementing
+`IKnowledgeArtifactTransport` plus a validator branch, a `ParseType` token, a DI
+registration, and a bootstrap probe — but the bootstrap probe is the one that is
+silent when forgotten, so check it first.
+
 ## 2026-08-01 14:20 – ENG-93878: publish crt.LoadDataRequest ("Refresh data") into both request catalogs
 Context: third OOTB-request ticket after ENG-93879 (upload) and ENG-94482 (save). The Designer action the ticket calls "Refresh page" is labeled "Refresh data" and is `crt.LoadDataRequest` carrying a `refreshDataConfig` - no `crt.RefreshPageRequest` exists anywhere in creatio-ui.
 Decision: the request has TWO scenarios behind one type, so both catalog entries lead with `refreshDataConfig` as the scenario selector and mark `dataSourceName`/`config`/`parameters`/`primaryDisplayFilterValue` programmatic. Published `RefreshDataConfig` as a real typedef on BOTH flavors (mode required, values RefreshAll|RefreshSpecific) while `config` stays loose `JsonObject` - publishing LoadModelRequestHandlerConfig / LoadDynamicModelRequestHandlerConfig would drag handler-internal shapes into the contract for no authoring benefit (precedent: crt.RunBusinessProcessRequest.filters). NO parameter carries `required`: the runtime statically requires none, and RefreshSpecific's need for a target name is conditional, so it lives in prose (crt.CreateRecordRequest disjunctive-contract convention).
@@ -7562,6 +7782,35 @@ Discovery: chasing cross-command consistency is what produced most of the review
 Files: clio/Command/FeatureCommand.cs, clio/Command/SysSettingsCommand.cs, clio/help/en/{set-feature,set-syssetting,apply-manifest}.txt, clio/docs/commands/{set-feature,set-syssetting,apply-manifest}.md, clio.tests/Command/{FeatureCommand,SysSettings}.cs
 Impact: error + exit 0 no longer occurs on any of these paths. Validated: dotnet test --filter "Category=Unit" -> 8165 passed / 0 failed on net10.0 and net8.0.
 
+## 2026-08-05 12:00 – PR #927 resynced with master: three articles ported to the producer, not deleted
+Context: master advanced 14 commits past the branch's last sync (ENG-91848 signal tracked-change columns + element-level useBackgroundMode; ENG-93878 crt.LoadDataRequest "Refresh data"), leaving #927 CONFLICTING. Six of the seven conflicts were modify/delete on content this PR removes from Clio.
+Decision: resolve the clio side as deletions, but only after porting master's article text into clio-knowledge — MobilePageGuidanceResource / PageSchemaHandlersGuidanceResource / ProcessDesigner/ProcessModelingGuidanceResource. The three guidance test files master extended were deleted too: every assertion it added is article-prose, so the coverage follows the content to the producer, where byte parity against the Clio oracle is a stronger guard than a substring check.
+Discovery: (1) The port is mechanically safe when driven by a fresh OracleCapture rather than by hand-patching. Building clio at origin/master and re-capturing proved the delta is exactly three articles — no id added or removed, no description/mediaType/featureGate change — which bounds the whole reconciliation. (2) Published bytes == oracle bytes + the declared IndependentlyEditedArticles divergence is an assertable identity, so rebuilding each published file as "new oracle + same divergence" both ports the content and re-proves the skip-list justification is still accurate. That is the check the earlier round lacked when a stale justification hid a 571 B loss. (3) OracleCapture validates the commit against the assembly's informational version, so it cannot silently capture the wrong build. (4) Only the fixture's provenance fields go stale on a body-only generation: curated-knowledge-names.json name arrays re-derived clean against sequence 12 (the only "missing" entries are the nested esq-filters/backend|frontend legacy URI forms, which are not bare names).
+Files: .codex/workspace-diary.md, clio.tests/Command/McpServer/{WorkspaceTemplateGuidanceDriftTests.cs,Fixtures/curated-knowledge-names.json}; deleted clio/Command/McpServer/Resources/{MobilePageGuidanceResource.cs,PageSchemaHandlersGuidanceResource.cs,ProcessDesigner/ProcessModelingGuidanceResource.cs} + their three test files; (producer) clio-knowledge feature/ENG-94583-master-guidance-sync.
+Impact: Validated: dotnet test --filter "Category=Unit&(Module=McpServer|Module=Command|Module=ProcessModel)" → 6452/6456, the 4 failures being the documented macOS knowledge trust-store baseline; clio.mcp.e2e "FullyQualifiedName~Knowledge" 10/10 on net8.0 and net10.0; producer suite 67/67. The generation is 1.10.0 / sequence 12 and reaches no user until that release is cut.
+
+## 2026-08-05 20:30 – PR #927 resynced twice more; the built-in source is github-release, not git
+Context: master advanced 29 commits past 35cbe574 (ENG-93848 branding package-data delivery, ENG-94418 phantom-cache hint, ENG-91691 CreateRecordRequest page selection) and then 15 more to afebcc56 (ENG-93985 theming web-font probe), leaving #927 CONFLICTING twice in one session. Both rounds hit the same conflict class: master edited published article bodies whose C# classes this PR deletes.
+Decision: same resolution both rounds — classes and their article-specific test files stay deleted, text ported to clio-knowledge driven by a fresh OracleCapture. Round 1 ported branding, theming and page-schema-handlers as generation 1.11.0 / sequence 13 (producer 3d9f607); round 2 ported theming again as 1.12.0 / sequence 14 (producer a5f362b). The discriminator for a conflicted test file is what its added assertions read: article prose belongs to the producer, delivery mechanics stay in clio. Every assertion master added to the five deleted test files was prose, so nothing had to be adapted.
+Discovery: (1) The built-in curated source is KnowledgeSourceType.GitHubRelease against the fixed asset clio-knowledge-bundle.zip, NOT the git/master source the PR body described. So the merge gate is a RELEASE, not a producer master merge — the body was corrected. (2) An unreleased generation cannot be exercised through supported commands: creatio-curated cannot be removed, a second source claiming com.creatio.clio is refused at both write and read time, and MCP startup rewrites the settings back to canonical creatio-curated and migrates a foreign checkout away. Reaching sequence 14 needed the isolated settings file edited AFTER startup plus install-knowledge --source. A locally signed bundle cannot substitute either: the built-in trust store pins com.creatio.clio to keyId clio-knowledge-2026-08 and refuses operator keys for that library. (3) The "macOS knowledge trust-store baseline" was not file permissions: the trust store rejects a reparse point anywhere in the key path's existing ancestry, /var is a link to /private/var, and Path.GetTempPath() on macOS is /var/folders/... — 4 fixtures failed for the platform's reason. KnowledgeTrustTestPaths resolves the temp root once; the guard under test is unchanged. (4) clio-knowledge#36 also claims 1.10.0 / sequence 12; because #35 moved to 14, sequence 12 stayed free, so #36 merging first is consistent and only the reverse order forces it to re-bump.
+Files: .codex/workspace-diary.md, clio.tests/Command/McpServer/{KnowledgeTrustTestPaths.cs (new),ConfiguredKnowledgeBundleTrustStoreTests.cs,KnowledgeSourceManagementServiceTests.cs,GuidanceGetToolTests.cs,Fixtures/curated-knowledge-names.json}; deleted clio/Command/McpServer/Resources/{BrandingGuidanceResource.cs,PageSchemaHandlersGuidanceResource.cs,ThemingGuidanceResource.cs} + their test files and clio.mcp.e2e/GuidanceGetToolE2ETests.cs; (producer) clio-knowledge feature/ENG-94583-master-guidance-sync.
+Impact: Per-resource regression is now driven from the installed manifest instead of a hand-written list — 67 of 69 guidance resolve by bare name (2 feature-gated stay hidden), 112 canonical and 110 legacy URIs answer, 43 references are listable and all refused by unqualified get-guidance. Validated: dotnet test --filter "Category=Unit" -> 8332 passed / 20 failed on net10.0 AND net8.0, the 20 being the pre-existing macOS DbHubTomlStore / NetFrameworkHttps / profile-path / ExecuteAndCaptureAsync baseline that reproduces on origin/master; clio.tests --filter "FullyQualifiedName~Knowledge" 305/305 with the default TMPDIR; producer suite 67/67. Docs reviewed, no update required (no CLI verb or option changed by either resync). MCP reviewed, no update required (no tool contract changed; the deleted classes were article content, already replaced by the dynamic knowledge adapters). ClioRing compatibility reviewed, no Ring-consumed contract changed — neither resync touched clio-ring/**.
+
+## 2026-08-05 23:40 – Reading a gated knowledge URI answers not-found; and the temp-root helper must never touch the path root
+Context: the per-resource sweep on PR #927 found resources/read on a feature-gated topic's URI answering JSON-RPC -32603 "An error occurred." for both URI forms of both gated topics, while gating itself was correct (absent from resources/list, get-guidance answers guidance-not-found). Separately, CI went red on the branch head with 40+ knowledge fixtures erroring in SetUp — caused by the macOS temp-root helper committed earlier in the same session.
+Decision: KnowledgeGuidanceResourceAdapter gets an explicit NotFound arm throwing McpProtocolException with McpErrorCode.ResourceNotFound and a KnowledgeGuidanceNotFoundException message; the `_ =>` arm stays as the impossible-enum-value guard. The message points at resources/list rather than get-guidance's availableGuides, because a read response carries no candidate list of its own. "guidance-not-found" was a bare literal in GuidanceGetTool while its two siblings were exception constants — one symbol now serves both call sites.
+Decision: ONE not-found arm, deliberately no gated-specific branch. A gated topic and an unpublished identifier must be indistinguishable, or the error text becomes an existence oracle for hidden content — which is what the gate exists to prevent. Two tests pin it: the unit one compares both messages modulo the echoed identifier and forbids gate vocabulary in what the refusal adds around it; the e2e one does the same against a real MCP process.
+Discovery: (1) The generic -32603 came from the `_ =>` arm throwing a plain InvalidOperationException — the SDK collapses an unhandled exception into "An error occurred.", which is exactly why the Unavailable/Ambiguous arms already wrapped in McpProtocolException. (2) Directory.ResolveLinkTarget THROWS DirectoryNotFoundException on a Windows drive root ("C:\") instead of answering "not a link". My ancestor walk called it on every existing ancestor including the root, and it ran in a static initializer, so one throw surfaced as every trust-store and source-management fixture erroring in SetUp with the cause buried in TypeInitializationException. clio.mcp.e2e/Support/PhysicalPath.cs already had the safe shape — recurse and stop where Path.GetDirectoryName returns null, so the root is returned without being interrogated. The helper now mirrors it, plus a try/catch so no environment can poison a fixture through type init. It is duplicated rather than shared because PhysicalPath is internal to the other test assembly. (3) macOS could never have caught this: ResolveLinkTarget("/") returns null there. The lesson is that a path helper's root case needs a Windows-shaped argument, not a local run. (4) Fail-before/pass-after cost a rebuild to establish: `dotnet test --no-build` after rebuilding only clio/ ran against the stale clio.dll in clio.tests/bin and reported green with the fix removed; the e2e spawns the real process and failed immediately. (5) The wording assertion first failed on my own fixture data — the test URI contained the word "gated" — so the check now runs on the message with the identifier removed. (6) SyntheticKnowledgeNuGetFixture has its own bundle builder and already emitted requiredFeatures for a gated reference EXAMPLE; only a gated GUIDANCE item exercises the read path, so one was added there rather than in SyntheticKnowledgeBundleFactory, whose GitHub-release fixture has no resources/read coverage to exercise it.
+Files: clio/Command/McpServer/Resources/KnowledgeGuidanceResourceAdapter.cs, clio/Command/McpServer/Knowledge/KnowledgeGuidanceSource.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio.tests/Command/McpServer/{KnowledgeGuidanceResourceAdapterTests.cs,KnowledgeTrustTestPaths.cs,KnowledgeTrustTestPathsTests.cs}, clio.mcp.e2e/{KnowledgeGuidanceNuGetE2ETests.cs,Support/Knowledge/SyntheticKnowledgeNuGetFixture.cs}, clio/docs/commands/mcp-server.md, clio/help/en/mcp-server.txt
+Impact: Validated: dotnet test --filter "Category=Unit&Module=McpServer" -> 3085 passed / 0 failed on net10.0 AND net8.0; clio.mcp.e2e "FullyQualifiedName~Knowledge" 10/10; both new adapter tests fail with the NotFound arm removed. Docs reviewed and updated (mcp-server help + docs describe the read refusal and the gated equivalence); no CLI verb or option changed. MCP reviewed and updated: the resource read error contract changed, no tool argument or description did. ClioRing compatibility reviewed, no Ring-consumed contract changed — grep of clio-ring/ClioRing.Ipc, clio-ring/ClioRing and actions.json for resources/read, docs://knowledge and get-guidance is empty.
+
+## 2026-08-06 09:30 – A Windows-only path fix is provable only in CI; and PR #927's body caught up with the branch
+Context: the previous entry recorded the gated-read contract and the temp-root helper, but its evidence was local only — and the defect it fixed was Windows-specific, so local green proved nothing about it. Separately, #927's body still described the branch as it stood before two resyncs, the released producer generation, and the read-contract change.
+Discovery: CI on 062fc111 is the only place the Windows path behavior could be confirmed: Unit Tests 8434 passed / 0 failed on net10.0 AND net8.0, Integration Tests 17/17, SonarCloud clean. Treat that as the rule rather than this one case — when a fix turns on Path/link semantics that differ per OS, the local run is a smoke test and the cross-platform job is the evidence. The failure mode also argues for keeping such helpers out of static initializers: the CI log showed 40+ fixtures erroring in SetUp with the real cause (DirectoryNotFoundException on 'C:\') buried inside TypeInitializationException, which costs a log dive to read at all.
+Discovery: reviewing the body against the branch surfaced two stale claims that had survived several updates — the built-in curated source described as git/branch master when it is github-release against a fixed asset, and clio-knowledge#35 still called open after it merged. A PR body drifts silently because nothing tests it; re-read it against the code whenever the delivery model or a producer state changes, not only when the diff grows.
+Files: .codex/workspace-diary.md (PR body is not a repository file; edited through the GitHub API)
+Impact: #927's body now states the current head's CI numbers, both resyncs, the released 1.12.0 / sequence 14 generation, the manifest-driven per-resource regression on the real delivery path, the read-contract change, and the macOS fixture fix including the CI break it caused. Nothing in the body is now known to be stale.
+
 ## 2026-07-31 17:30 – Correct workplaces guidance against a live cross-env transfer (ENG-88474)
 Context: Phase 1 shipped workplaces guidance text only. A live verification run on DevEnv plus a real package transfer to a second stand showed an agent following the guide exactly produces a workplace that does not render on the target environment.
 Decision: Teach the binding COLUMN SET, not just the live-row column set: a data binding is projected from the columns you pass and package install applies no DB defaults, so `SysWorkplace` bindings must carry `SysApplicationClientType`, `Type`, and `LoaderId` alongside `Id`/`Name`/`Position`/`HomePageUId`. Also state the move prerequisite (target workplace must be bound first), the `SysPackageSchemaData` read the delete recipe needs for `binding-name`, the `My applications` binding cleanup, and turn the app-modeling cross-link into an explicit STOP-and-ask gate.
@@ -7639,3 +7888,10 @@ Decision: Remove everything built for "make workplace available without relogin"
 Discovery: (1) `install-gate` IS an MCP tool and its description tells agents to run it when a gate-dependent tool fails, so "users don't have cliogate" is a solvable state, not a blocker - that argument did NOT carry the decision; the MCP-precedent one did. (2) clio guidance already routes agents into gate-dependent verbs (`clio set-feature`, `clio sql`, `unlock-package`) in 4-5 places, so the surface is not gate-free today either. (3) `AppHubInfo` in clio is a manifest-declared SOURCE of application .zip files for `apply-manifest` (name/url/path) - nothing to do with navigation or caches, so there was nothing to reuse there. (4) "Remove the re-login" is not an available action: re-login is the platform's default, and dropping the publish makes it the only option rather than removing it. (5) Guide pins keep breaking on line WRAPPING, not wording - a phrase that spans a newline in a raw string literal never matches `Contain`; pin a fragment that sits on one line.
 Files: deleted clio/Command/ReloadWorkplacesCommand.cs, clio/Command/McpServer/Tools/ReloadWorkplacesTool.cs, clio.tests/Command/ReloadWorkplacesCommandTests.cs, clio.tests/Command/WorkplaceCacheReloaderTests.cs, clio.tests/Command/McpServer/ReloadWorkplacesToolTests.cs, clio.mcp.e2e/ReloadWorkplacesToolE2ETests.cs, clio/help/en/reload-workplaces.txt, clio/docs/commands/reload-workplaces.md; edited clio/Common/ServiceUrlBuilder.cs, clio/Program.cs, clio/BindingsModule.cs, clio/Commands.md, clio/Wiki/WikiAnchors.txt, clio/Command/McpServer/Resources/WorkplacesGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/PassthroughToolClassificationRegistry.cs
 Impact: The PR is now purely odata + data-bindings + guidance, with zero cliogate footprint. If the no-relogin requirement is revived, the working implementation is recoverable from this branch's history (commits d75c1ff6 and 0c50d069) - it was verified on two independent stands, so a future attempt should start from that code rather than from scratch, and should first settle whether an MCP tool may depend on the gate.
+
+## 2026-08-05 22:05 – Guidance left clio: resolve ENG-88474 against the knowledge externalization (ENG-88474)
+Context: master merged #927 "Externalize guidance delivery mechanics and synthetic tests", which DELETES every `clio/Command/McpServer/Resources/*GuidanceResource.cs` (57 guidance files on this branch, 1 on master) plus their oracle tests, and serves guidance from verified external knowledge bundles through `KnowledgeGuidanceResourceAdapter` / `MultiSourceKnowledgeResource` (`docs://knowledge/{libraryId}/{itemId}`). ENG-88474's guidance half was written entirely against the deleted files, so the merge surfaced 13 conflicts of which 11 were modify/delete.
+Decision: Accept master's deletion for all 11, and delete the new `WorkplacesGuidanceResource.cs` too. Merging the other way would resurrect files #927 removed on purpose and reintroduce clio-owned guidance wording. The guidance now ships from `clio-knowledge` (`port/eng-88474-workplaces`, article `guidance/mcp/guides/applications/workplaces.md`, declared in `bundle-source.json` as itemId `workplaces` / `docs://knowledge/com.creatio.clio/workplaces`), which already existed as a draft port.
+Discovery: (1) The port was THREE rounds of review stale - it predated the option-order fix, the doc-review trims, and the re-login rewrite. Syncing it needed a faithful extraction of the C# raw string literal: the closing `"""` delimiter's indentation is what C# strips, so stripping a guessed prefix (`\t\t` + 7 spaces) leaves artifacts on continuation lines. Compute the indent from the closing delimiter. (2) `McpGuidanceForcingTests.cs` survived on master but stripped of its guidance oracles; the two tests worth keeping there pin TOOL DESCRIPTIONS (`create-app`, `delete-app-section`), not article text, so they survive the externalization - `RouterCharCeiling` and `ReferencedGuideNames` did not, because they referenced the deleted `GuidanceCatalog`. Master's file lacks `using System.Linq`, needed by the retained `ToolDescription<T>` helper. (3) Trimming the two tool descriptions earlier had swallowed the space after a sentence end (`name=workplaces.Long-running`); found only by reading the merged text.
+Files: deleted 12 guidance resources + `McpGuidanceResourceTests.cs`, `CoreRulesGuidanceResourceTests.cs`, `GuidanceGetToolE2ETests.cs`; resolved `McpGuidanceForcingTests.cs`; clio-knowledge `guidance/mcp/guides/applications/workplaces.md`
+Impact: clio#1008 is now 22 files - `read-data-binding-db` plus two tool-description changes and their pins - and carries no guidance text at all. The article ships through clio-knowledge instead, so the two repos must land together: `get-guidance name=workplaces` resolves only once the knowledge bundle carrying it is released. When a future branch edits guidance, check first whether the file still exists on master; after #927 the answer is usually no, and the edit belongs in clio-knowledge.
