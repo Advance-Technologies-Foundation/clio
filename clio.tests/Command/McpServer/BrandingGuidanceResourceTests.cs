@@ -49,8 +49,8 @@ public sealed class BrandingGuidanceResourceTests {
 	}
 
 	[Test]
-	[Description("The branding guide maps every logo slot of the acceptance criterion — all four Binary sys settings plus the splash and underlay companions — so dropping any slot from the guide fails this test.")]
-	public void BrandingGuidanceResource_Should_Map_All_Four_Logo_Slots_And_Companion_Settings() {
+	[Description("The branding guide routes all logo work through the set-logo tool and maps every argument — the all-slots shortcut, the three light-background slots, and the dark-background toolbar slot — so dropping any of them from the guide fails this test.")]
+	public void BrandingGuidanceResource_Should_Route_Logos_Through_SetLogo_And_Map_Every_Slot() {
 		// Arrange
 		BrandingGuidanceResource resource = new();
 
@@ -59,16 +59,22 @@ public sealed class BrandingGuidanceResourceTests {
 			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
 
 		// Assert
-		article.Text.Should().Contain("`LogoImage`",
-			because: "the login-page logo slot is part of the ENG-92981 acceptance criterion");
-		article.Text.Should().Contain("`MenuLogoImage`",
-			because: "the main-menu logo slot is part of the ENG-92981 acceptance criterion");
-		article.Text.Should().Contain("`ConfigurationPageLogoImage`",
-			because: "the configuration-section logo slot is part of the ENG-92981 acceptance criterion");
-		article.Text.Should().Contain("`CrtAppToolbarLogo`",
-			because: "the Freedom UI top-panel logo slot is part of the ENG-92981 acceptance criterion");
-		article.Text.Should().Contain("HideSplashScreenLogoImage",
-			because: "applying logos must also hide the stock splash logo");
+		article.Text.Should().Contain("set-logo",
+			because: "the dedicated tool owns the logo apply-and-bind flow");
+		article.Text.Should().Contain("`logo`",
+			because: "the all-slots shortcut is what makes branding every slot a single call, and an agent that does not know it exists falls back to four");
+		article.Text.Should().Contain("`login-logo`",
+			because: "the login-page logo slot is part of the acceptance criterion");
+		article.Text.Should().Contain("`menu-logo`",
+			because: "the main-menu logo slot is part of the acceptance criterion");
+		article.Text.Should().NotContain("header-logo",
+			because: "the slot set is the canonical four (login, menu, configuration, dark toolbar); a header-logo slot does not exist on the tool");
+		article.Text.Should().Contain("`configuration-logo`",
+			because: "the configuration-section logo slot is part of the acceptance criterion");
+		article.Text.Should().Contain("`dark-logo`",
+			because: "the dark-background (Freedom UI top panel) logo slot is part of the acceptance criterion");
+		article.Text.Should().Contain("splash-screen logo automatically",
+			because: "the tool suppresses the stock splash logo itself, so the guide must not send the agent to do it by hand");
 		article.Text.Should().Contain("CrtAppToolbarLogoUnderlayColor",
 			because: "the agent must know the underlay-color setting exists but change it only on explicit request");
 	}
@@ -141,6 +147,66 @@ public sealed class BrandingGuidanceResourceTests {
 			because: "the favicon binary slot is what the agent writes the icon into");
 		article.Text.Should().Contain("`UseFaviconFromSysSettings`",
 			because: "the boolean gate must be enabled or the platform ignores the uploaded favicon");
+	}
+
+	[Test]
+	[Description("The branding guide carries the package-delivery contract of the apply tools: both take a package argument, fall back to the environment's CurrentPackageId when it is omitted, and their warnings are the delivery-gap channel to relay.")]
+	public void BrandingGuidanceResource_Should_Describe_Package_Delivery_Through_The_Apply_Tools() {
+		// Arrange
+		BrandingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("`package` argument",
+			because: "the guide must say the apply tools themselves bind the branding into a package");
+		article.Text.Should().Contain("CurrentPackageId",
+			because: "omitting the package delivers into the environment's current package, and an agent that does not know that cannot tell the user where the branding will land");
+		article.Text.Should().NotContain("bind-branding",
+			because: "the standalone bind step no longer exists; naming it would send the agent to a tool that is not there");
+		article.Text.Should().Contain("`warnings`",
+			because: "the warnings are the only place a delivery gap is reported, and the guide must name the exact result field so the agent relays it instead of hunting for a channel called something else");
+	}
+
+	[Test]
+	[Description("The branding guide carries the package-notification contract so the agent tells the user which package the branding data is added to, by name, from a package it passed explicitly (ENG-93848 acceptance criterion 1).")]
+	public void BrandingGuidanceResource_Should_Require_Naming_The_Target_Package() {
+		// Arrange
+		BrandingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("which package",
+			because: "the agent must tell the user which package the new branding data will be added to");
+		article.Text.Should().Contain("get-target-package",
+			because: "naming the target before the recap needs a channel that resolves it, including the "
+				+ "current-package case the agent cannot read for itself");
+		article.Text.Should().Contain("resolutionFailed",
+			because: "the agent must ask the user for another package only on a definitive answer, and retry "
+				+ "when the environment could not be asked, instead of reporting that no target package exists");
+		article.Text.Should().Contain("never a raw id, and never guess it",
+			because: "a raw package id is meaningless to the user, and a guessed name would misreport where the "
+				+ "branding landed");
+	}
+
+	[Test]
+	[Description("The branding guide states that an unbranded logo slot is never delivered, so the package cannot overwrite the target's own logo with this environment's stock value.")]
+	public void BrandingGuidanceResource_Should_State_That_Unbranded_Slots_Never_Ship() {
+		// Arrange
+		BrandingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "the branding guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Text.Should().Contain("a slot nobody branded stays out of the package",
+			because: "shipping a slot the user never branded would replace an install target's own logo with this environment's image");
 	}
 
 	[Test]
