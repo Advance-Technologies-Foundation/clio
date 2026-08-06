@@ -121,8 +121,20 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 		operational.Should().BeFalse(
 			because: "valid JSON from the wrong responder is not evidence about this package — a reverse proxy "
 				+ "or a login redirect can return a well-formed body");
-		diagnosis.Should().BeNull(
-			because: "nothing in the response says what went wrong, so there is no diagnosis to add");
+		diagnosis.Should().NotBeNull(
+			because: "the caller's fallback message blames the configuration build, and that is the WRONG cause "
+				+ "here: something answered this route, so the build is not implicated. Leaving the diagnosis "
+				+ "null sent an operator to the build log for a proxy problem");
+		diagnosis.Should().Contain(PackageName,
+			because: "the reader needs to know which package the verdict is about");
+		diagnosis.Should().Contain("somethingElse",
+			because: "quoting what actually answered is what lets the reader recognise the responder — a "
+				+ "diagnosis that only asserts 'something else answered' cannot be acted on");
+		diagnosis.Should().Contain("NOT implicated",
+			because: "the message must actively CLEAR the configuration build, not merely omit it. Asserting the "
+				+ "absence of the words 'configuration build' cannot express that — the sentence doing the "
+				+ "clearing necessarily contains them, which is the same trap as guarding a claim by banning a "
+				+ "phrase instead of asserting the claim");
 	}
 
 	[Test]
@@ -132,12 +144,15 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 		ArrangeResponse("{\"PingResult\":{}}");
 
 		// Act
-		bool operational = _verifier.IsPackageOperational(PackageName, out string _);
+		bool operational = _verifier.IsPackageOperational(PackageName, out string diagnosis);
 
 		// Assert
 		operational.Should().BeFalse(
 			because: "the envelope name alone can be produced by something other than the shipped build, so the "
 				+ "flag must be present and true — an absent field must never be read as agreement");
+		diagnosis.Should().NotBeNull(
+			because: "this case is distinguishable from 'nothing answered' and leads somewhere else: the route "
+				+ "IS answering in this package's envelope, so the reader must not be sent to the build log");
 	}
 
 	[Test]
@@ -147,12 +162,15 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 		ArrangeResponse(PingResponse(success: false));
 
 		// Act
-		bool operational = _verifier.IsPackageOperational(PackageName, out string _);
+		bool operational = _verifier.IsPackageOperational(PackageName, out string diagnosis);
 
 		// Assert
 		operational.Should().BeFalse(
 			because: "the shipped operation cannot return false today, but this check must not depend on that — a "
 				+ "future build that reports a problem through the flag must not be read as healthy");
+		diagnosis.Should().NotBeNull(
+			because: "the shipped Ping returns a constant true, so a false is evidence that the serving build is "
+				+ "not the one clio ships — a conclusion the caller's generic build-failure message would hide");
 	}
 
 	[Test]

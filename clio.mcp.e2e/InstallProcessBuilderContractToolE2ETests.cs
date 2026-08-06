@@ -105,7 +105,7 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 	[Description("get-tool-contract returns the curated install-process-builder contract: environment-name required, and a description that states the outcome check without claiming the install needs no restart.")]
 	[AllureTag(ToolName)]
 	[AllureName("install-process-builder advertises a curated contract with the corrected restart wording")]
-	[AllureDescription("Reads the curated install-process-builder contract over the real MCP path and verifies the required argument, the list-user-tasks follow-up flow, and that the description does not reassert the retracted \"no application restart\" claim.")]
+	[AllureDescription("Reads the curated install-process-builder contract over the real MCP path and verifies the required argument, that the preferred flow stops at this tool rather than naming a feature-gated follow-up, that the flow note claims no version comparison while still stating the liveness-only limit, and that the description does not reassert the retracted \"no application restart\" claim.")]
 	public async Task InstallProcessBuilder_Contract_Should_Describe_Arguments_And_Outcome_Verification() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -130,14 +130,25 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 		contract.PreferredFlow.Tools.Should().NotContain(ListUserTasksTool.ListUserTasksToolName,
 			because: "naming a [FeatureToggle]-gated tool in the flow of an ungated one is the drift this pins: "
 				+ "the two halves of this fixture would otherwise assert a contradiction and call it correct");
-		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)which\s+build\s+is\s+serving",
-			because: "the tool cannot tell which build is serving, and must not imply it can. The probe is the "
-				+ "package's ungated Ping, which proves an assembly exists and answers — not which sources it "
-				+ "was built from. A version-reporting operation was built for that and DROPPED: for a "
-				+ "source-only package the reported version could only come from a hand-maintained duplicate in "
-				+ "the shipped sources, since the assembly version belongs to the platform and descriptor.json "
-				+ "never reaches the target's build directory (both measured). A contract claiming otherwise "
-				+ "tells an agent an UPGRADE is verified when the outgoing build could have answered");
+		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
+		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
+		// back to "the NEW build is serving: it compares the version the serving build reports against the
+		// one it installed", so this test and its E2E mirror both passed green over the one claim they exist
+		// to block. Widening the ban to "which build" is WRONG too: a correct note has to be able to say
+		// "does not prove WHICH build is serving", and a regex cannot tell an assertion from its negation.
+		// So ban only the verb no correct phrasing needs — both false versions claimed a COMPARISON — and
+		// separately require the limit to be stated, which catches the other failure mode: silence.
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)compar",
+			because: "the tool compares nothing: the probe is the package's ungated Ping, which proves an "
+				+ "assembly exists and answers, not which sources it was built from. A version-reporting "
+				+ "operation was built for that and DROPPED — for a source-only package the reported version "
+				+ "could only come from a hand-maintained duplicate in the shipped sources, since the assembly "
+				+ "version belongs to the platform and descriptor.json never reaches the target's build "
+				+ "directory (both measured on a stand)");
+		contract.PreferredFlow.Notes.Should().MatchRegex(@"(?i)does not prove|stale|only once the functionality",
+			because: "banning the false claim is not sufficient — the note must positively carry the LIMIT, or "
+				+ "the next rewrite satisfies the ban by saying nothing at all and an agent is left assuming "
+				+ "the strong reading again");
 		contract.Description.Should().MatchRegex(@"(?i)liveness,\s+not\s+identity",
 			because: "the LIMIT is part of the contract, not a footnote: on an upgrade a stale assembly that "
 				+ "still answers passes the check, so an agent must not read a successful install of a new "

@@ -2024,15 +2024,25 @@ public sealed class ToolContractGetToolTests {
 			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
 			because: "the flow must stop at this tool: naming a process-designer tool as the follow-up would "
 				+ "point at one this server may not expose while the feature is off");
-		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)which\s+build\s+is\s+serving",
-			because: "that capability was a ProcessDesignService.GetVersion operation, implemented and then "
-				+ "REVERTED. The probe left behind is ListUserTasks, which proves the service answers but not "
-				+ "which assembly answered — so a contract claiming otherwise tells an agent an upgrade is "
-				+ "verified when the outgoing build could have answered it. Mirrored here even though "
-				+ "clio.mcp.e2e pins the same text: that suite is an ADVISORY check that cannot fail a merge, "
-				+ "and the process-designer fixtures do not run in CI at all yet because the CI-deployed stand "
-				+ "carries no CrtProcessBuilder package (tracked separately) — so E2E must not be the only "
-				+ "guard on a shipped agent-facing claim");
+		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
+		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
+		// back to "the NEW build is serving: it compares the version the serving build reports against the
+		// one it installed", so this test and its E2E mirror both passed green over the one claim they exist
+		// to block. Widening the ban to "which build" is WRONG too: a correct note has to be able to say
+		// "does not prove WHICH build is serving", and a regex cannot tell an assertion from its negation.
+		// So ban only the verb no correct phrasing needs — both false versions claimed a COMPARISON — and
+		// separately require the limit to be stated, which catches the other failure mode: silence.
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)compar",
+			because: "the tool compares nothing: the probe is the package's ungated Ping, which proves an "
+				+ "assembly exists and answers, not which sources it was built from. A version-reporting "
+				+ "operation was built for that and DROPPED — for a source-only package the reported version "
+				+ "could only come from a hand-maintained duplicate in the shipped sources, since the assembly "
+				+ "version belongs to the platform and descriptor.json never reaches the target's build "
+				+ "directory (both measured on a stand)");
+		contract.PreferredFlow.Notes.Should().MatchRegex(@"(?i)does not prove|stale|only once the functionality",
+			because: "banning the false claim is not sufficient — the note must positively carry the LIMIT, or "
+				+ "the next rewrite satisfies the ban by saying nothing at all and an agent is left assuming "
+				+ "the strong reading again");
 	}
 	[Test]
 	[Category("Unit")]

@@ -33,9 +33,12 @@ public interface IPackageInstallOutcomeVerifier {
 	/// </summary>
 	/// <param name="packageName">Name of the package whose outcome is being verified.</param>
 	/// <param name="diagnosis">
-	/// When the verdict is <see langword="false"/>, the caller-facing explanation; otherwise
-	/// <see langword="null"/>. It exists because a negative answer has more than one cause — never compiled, a
-	/// route answered by something else, an unreachable instance — and only the verifier can tell them apart.
+	/// The caller-facing explanation when the verifier can name a cause the caller could not guess; otherwise
+	/// <see langword="null"/>, and the caller's own message stands. It exists because a negative answer has more
+	/// than one cause and they lead to different places: "something else is serving that route" (a proxy, a
+	/// gateway, a session redirect) must NOT be reported as a failed configuration build. Deliberately null for
+	/// the two causes the caller already describes correctly — nothing answered at all, and an unreachable
+	/// instance, whose status is logged separately by the implementation.
 	/// </param>
 	/// <returns>
 	/// <see langword="true"/> only on positive evidence that the package's service answered. Fails CLOSED: an

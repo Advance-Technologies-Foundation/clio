@@ -54,7 +54,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>2971f76</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>e01a0ec</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -106,6 +106,29 @@ public class BundledProcessBuilderPackageTests {
 	/// must.
 	/// </summary>
 	private const int MinimumAuthorizationGateCallSites = 3;
+
+	/// <summary>
+	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
+	/// </summary>
+	/// <remarks>
+	/// An EXACT count, unlike the gate floor above, and that is the point: a floor cannot notice a NEW
+	/// operation added without a gate — the count simply rises and still clears the floor. This package is a
+	/// privileged Creatio service whose one ungated operation (<see cref="UngatedOperations"/>) is a deliberate,
+	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
+	/// allowlist, in the same commit, or not at all.
+	/// </remarks>
+	private const int ExpectedOperationContractCount = 5;
+
+	/// <summary>
+	/// The operations allowed to ship WITHOUT the authorization gate.
+	/// </summary>
+	/// <remarks>
+	/// <c>Ping</c> only, and its exemption is argued at its declaration: it answers a question about the
+	/// INSTALLATION rather than about process design, so gating it would fail the check for exactly the
+	/// operator who has just installed the package successfully. Anything else appearing here needs the same
+	/// standard of argument.
+	/// </remarks>
+	private static readonly string[] UngatedOperations = ["Ping"];
 
 	/// <summary>
 	/// The connection-type half of the gate, as the shipped guard expresses it. Pinned separately because the
@@ -253,8 +276,32 @@ public class BundledProcessBuilderPackageTests {
 			because: "the gate sits BELOW the service boundary, in the domain handlers, so it is these call "
 				+ "sites and not a per-[WebInvoke] attribute that authorize a request. An archive rebuilt "
 				+ "from a pre-gate prototype installs fine and answers the install command's own probe BETTER "
-				+ "than a gated one would, so this is the only place the property is checked. It is a floor, "
-				+ "not a proof: it cannot catch a NEW handler added without a gate");
+				+ "than a gated one would, so this is the only place the property is checked");
+	}
+
+	[Test]
+	[Description("The shipped service must expose exactly the expected number of operations, so a new ungated endpoint cannot arrive unnoticed behind the gate-count floor.")]
+	public void BundledArchive_ShouldExposeNoUnexpectedOperation() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		int operations = CountOccurrences(archive, "[OperationContract]");
+
+		// Assert
+		operations.Should().Be(ExpectedOperationContractCount,
+			because: "the gate assertion above is a FLOOR, and a floor is structurally blind to the case that "
+				+ "matters most here: an operation added WITHOUT a gate raises the operation count while leaving "
+				+ "the gate count untouched, so every other pin in this fixture passes and clio ships a "
+				+ "privileged Creatio service with an unauthorized endpoint. Pinning the total is what makes "
+				+ "that arrival fail a test. If this number is legitimately higher, raise it together with "
+				+ $"UngatedOperations in the same commit — currently exempt: {string.Join(", ", UngatedOperations)}");
+		foreach (string ungated in UngatedOperations) {
+			archive.Should().Contain($"{ungated}()",
+				because: $"'{ungated}' is allowlisted as ungated, so it must actually BE in the shipped sources — "
+					+ "an allowlist naming an operation that no longer exists silently widens what the count "
+					+ "above tolerates");
+		}
 	}
 
 	[Test]
@@ -343,10 +390,10 @@ public class BundledProcessBuilderPackageTests {
 				+ "assembly gets loaded at all), and the server's regenerated csproj outputs to that same path "
 				+ "— so a successful build overwrites ours and it was merely dead weight, measured at +13 s. A "
 				+ "failed build overwrites nothing: our DLL stays, the platform resolves the package assembly "
-				+ "by name as '<packageName>.dll', and ListUserTasks answers from it — so the outcome check "
-				+ "passes for an environment that never compiled the shipped sources. That check already "
-				+ "cannot tell WHICH build answered; shipping an assembly would give it a stale one to answer "
-				+ "from. Note this cannot be a blanket '.dll' ban: the csproj legitimately names ~60 "
+				+ "by name as '<packageName>.dll', and Ping answers from it — so the outcome check passes for an "
+				+ "environment that never compiled the shipped sources. That check already cannot tell WHICH "
+				+ "build answered; shipping an assembly would hand it a stale one to answer from, and would do "
+				+ "so on a FIRST install, which is the one case the check does decide today. Note this cannot be a blanket '.dll' ban: the csproj legitimately names ~60 "
 				+ "Terrasoft.* and third-party assemblies in HintPath references, so only the package's OWN "
 				+ "assembly name is forbidden");
 		archive.Should().NotContainEquivalentOf($"{BundledPackages.ProcessBuilderPackageName}.pdb",
@@ -365,8 +412,21 @@ public class BundledProcessBuilderPackageTests {
 			because: "there is no compiled assembly in the archive, so the sources ARE the payload; an "
 				+ "archive without them would compile to nothing");
 		archive.Should().Contain("class ProcessDesignService",
-			because: "the REST entry point clio's four KnownRoute entries call must be among the shipped "
+			because: "the REST entry point clio's five KnownRoute entries call must be among the shipped "
 				+ "sources");
+		archive.Should().Contain("PingResponse Ping()",
+			because: "the ENTIRE install verdict now rests on this one operation — IsPackageOperational asks it "
+				+ "and fails unless it answers — and an archive built from any commit before the rename "
+				+ "satisfies every other pin in this fixture. Without this line the route 404s and clio reports "
+				+ "'the environment did not compile the package' about environments that compiled it perfectly");
+		archive.Should().Contain("[DataMember(Name = \"success\")]",
+			because: "clio parses the answer as PingResult.success, hand-mirrored across two repositories with "
+				+ "nothing linking the two. Renaming this DataMember, or dropping it so the member serialises "
+				+ "as 'Success', makes the verifier return false for a healthy install — and no test on either "
+				+ "side would fail");
+		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
+			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
+				+ "Bare removes the envelope and the verdict inverts silently");
 	}
 
 	#endregion

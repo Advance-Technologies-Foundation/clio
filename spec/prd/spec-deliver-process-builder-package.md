@@ -61,11 +61,12 @@ because the previously built assembly still answers. `SysPackage.Version` cannot
 that IS covered — it records what was ACCEPTED. Covering the upgrade case would require a hand-maintained copy
 of the version inside the shipped sources (the assembly version belongs to the platform, and `descriptor.json`
 never reaches the target's build directory — both measured); that duplicate was judged more expensive than the
-case, and the limit is disclosed in the tool description, the CLI help and the command docs. That it needs `CanManageProcessDesign` is a PROPERTY, not a weakness — the check answers
-"is the capability usable", so a caller without the right must be told it failed; the `errorMessage` branch
-explains the rejection and says a re-install cannot fix it. A per-package `GetVersion` endpoint that
-answered "which build is serving" was built and reverted (see ADR): it does not scale to the next bundled
-package and duplicates platform mechanisms. The package-agnostic replacement (installation log +
+case, and the limit is disclosed in the tool description, the CLI help and the command docs. The check needs NO permission: `Ping` is ungated, which is what keeps
+"the build did not take" apart from "you may not design processes" — two problems with different fixes, and
+only the first is this command's business. So exit code 1 here never means a missing right. A per-package
+endpoint that answered "which build is serving" was built, reverted, reinstated and finally dropped (see the
+ADR for the full elimination): with no assembly of clio's own, the reported version could only come from a
+hand-maintained duplicate inside the shipped sources. The package-agnostic replacement (installation log +
 `ConfActivityLog`, in clio) is follow-up work.
 
 **FR-08 — Detection and offer.** The five consuming commands

@@ -1,6 +1,7 @@
+using System;
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Command.PackageCommand;
 using Clio.Common;
-using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -9,138 +10,224 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 namespace Clio.Tests.Command.PackageCommand;
 
 [TestFixture]
-[Category("Unit")]
-[Property("Module", "Package")]
-public class SetPackageVersionCommandTests {
+[Property("Module", "Command")]
+public class SetPackageVersionCommandTests : BaseCommandTests<SetPackageVersionOptions> {
 
 	#region Constants: Private
 
-	private const string PackagePath = "packages/CrtProcessBuilder";
+	private const string PackagePath = @"C:\pkg\CrtProcessBuilder";
 
-	private const string DescriptorPath = "packages/CrtProcessBuilder/descriptor.json";
+	private const string DescriptorPath = @"C:\pkg\CrtProcessBuilder\descriptor.json";
+
+	/// <summary>A descriptor as <c>clio compress</c> ships one — the real shape, not a stub.</summary>
+	private const string Descriptor = """
+		{
+		  "Descriptor": {
+		    "UId": "f100e6d2-3cd0-a1d8-fbc0-41fce76a538d",
+		    "PackageVersion": "1.0.0.0",
+		    "Name": "CrtProcessBuilder",
+		    "Type": 1,
+		    "ProjectPath": "Files/CrtProcessBuilder.csproj",
+		    "ModifiedOnUtc": "/Date(1786026213000)/",
+		    "Maintainer": "Creatio",
+		    "InstallBehavior": 1,
+		    "DependsOn": []
+		  }
+		}
+		""";
 
 	#endregion
 
 	#region Fields: Private
 
-	private IJsonConverter _jsonConverter;
-	private IFileSystem _fileSystem;
 	private ILogger _logger;
 	private SetPackageVersionCommand _command;
+
+	#endregion
+
+	#region Methods: Private
+
+	private string DescriptorOnDisk() => FileSystem.File.ReadAllText(DescriptorPath);
+
+	private static SetPackageVersionOptions Options(string version) =>
+		new() { PackagePath = PackagePath, PackageVersion = version };
+
+	#endregion
+
+	#region Methods: Protected
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
+		_logger = Substitute.For<ILogger>();
+		containerBuilder.AddSingleton(_logger);
+	}
 
 	#endregion
 
 	#region Methods: Public
 
 	[SetUp]
-	public void Setup() {
-		_jsonConverter = Substitute.For<IJsonConverter>();
-		_fileSystem = Substitute.For<IFileSystem>();
-		_logger = Substitute.For<ILogger>();
-		_fileSystem.Path.Combine(PackagePath, CreatioPackage.DescriptorName).Returns(DescriptorPath);
-		_jsonConverter
-			.DeserializeObjectFromFile<PackageDescriptorDto>(Arg.Any<string>())
-			.Returns(new PackageDescriptorDto {
-				Descriptor = new PackageDescriptor { Name = "CrtProcessBuilder", PackageVersion = "1.1.0.1" }
-			});
-		_command = new SetPackageVersionCommand(_jsonConverter, _fileSystem, _logger);
+	public override void Setup() {
+		base.Setup();
+		FileSystem.AddFile(DescriptorPath, new MockFileData(Descriptor));
+		_command = Container.GetRequiredService<SetPackageVersionCommand>();
 	}
 
 	[TearDown]
-	public void TearDown() {
-		_jsonConverter.ClearReceivedCalls();
+	public override void TearDown() {
 		_logger.ClearReceivedCalls();
+		base.TearDown();
 	}
 
 	[Test]
 	[Description("Writes both the version and a fresh ModifiedOnUtc, because Creatio rewrites the SysPackage row only when the timestamp moves.")]
 	public void Execute_ShouldWriteBothVersionAndTimestamp() {
 		// Arrange
-		PackageDescriptorDto written = null;
-		_jsonConverter
-			.When(converter => converter.SerializeObjectToFile(Arg.Any<object>(), DescriptorPath))
-			// Positional, not Arg<object>(): both parameters are reference types, so a type-based lookup is
-			// ambiguous and throws inside the callback.
-			.Do(call => written = call[0] as PackageDescriptorDto);
+		string before = DescriptorOnDisk();
 
 		// Act
-		int result = _command.Execute(new SetPackageVersionOptions {
-			PackagePath = PackagePath,
-			PackageVersion = "1.1.0.2"
-		});
+		int result = _command.Execute(Options("1.0.0.1"));
 
 		// Assert
+		string after = DescriptorOnDisk();
 		result.Should().Be(0,
 			because: "a well-formed request is the success path");
-		written.Descriptor.PackageVersion.Should().Be("1.1.0.2",
+		after.Should().Contain("\"PackageVersion\": \"1.0.0.1\"",
 			because: "the requested version is what the environment must record");
-		written.Descriptor.ModifiedOnUtc.Should().NotBe("/Date(0)/").And.EndWith("000)/",
+		after.Should().NotContain("/Date(1786026213000)/",
 			because: "the timestamp is what actually makes the version take effect — Creatio rewrites the "
-				+ "SysPackage row only when ModifiedOnUtc changes — and ConvertToModifiedOnUtc clears the "
-				+ "milliseconds, which is the provenance oracle the bundled-package guard relies on to tell a "
-				+ "generated descriptor from a hand-edited one");
+				+ "SysPackage row only when ModifiedOnUtc CHANGES, so asserting merely that some stamp is "
+				+ "present would pass a regression that froze it. Measured on a stand: a descriptor whose "
+				+ "version moved while this field did not installed with exit 0 and left the old version "
+				+ "recorded");
+		after.Should().MatchRegex(@"""ModifiedOnUtc"": ""/Date\(\d+000\)/""",
+			because: "ConvertToModifiedOnUtc clears the milliseconds, and that trailing 000 is the provenance "
+				+ "oracle the bundled-package guard uses to tell a generated descriptor from a hand-edited one");
+		before.Should().NotBe(after,
+			because: "the command's whole purpose is to change this file");
 	}
 
 	[Test]
-	[Description("Refuses and touches nothing when no version is supplied, instead of erasing the version while still moving the timestamp.")]
-	public void Execute_ShouldRefuseAndWriteNothing_WhenNoVersionIsSupplied() {
+	[Description("Accepts the X.Y.Z.W-suffix pre-release form, because every reader of this field parses it through the suffix-aware parser.")]
+	public void Execute_ShouldAcceptAPreReleaseSuffix() {
+		// Arrange
+		// Nothing beyond the descriptor placed by Setup.
+
 		// Act
-		int result = _command.Execute(new SetPackageVersionOptions { PackagePath = PackagePath });
+		int result = _command.Execute(Options("1.0.0.1-rc"));
+
+		// Assert
+		result.Should().Be(0,
+			because: "descriptor.PackageVersion is READ through PackageVersion.TryParseVersion (PackageInfo, "
+				+ "NuGetManager), which models the -suffix form — so validating with System.Version.TryParse "
+				+ "made the writer refuse values its own readers accept, breaking pre-release bumps");
+		DescriptorOnDisk().Should().Contain("\"PackageVersion\": \"1.0.0.1-rc\"",
+			because: "the suffix must survive: NuGetManager compares versions INCLUDING it");
+	}
+
+	[TestCase(" 1.0.0.1 ", TestName = "surrounding whitespace")]
+	[TestCase("+1.0.0.1", TestName = "leading sign")]
+	[TestCase("01.00.00.01", TestName = "leading zeros")]
+	[Description("Writes the canonical form rather than the raw argument, so a value that parses cannot reach SysPackage.Version in a shape no string comparison matches.")]
+	public void Execute_ShouldWriteTheCanonicalForm(string version) {
+		// Arrange
+		// Nothing beyond the descriptor placed by Setup.
+
+		// Act
+		int result = _command.Execute(Options(version));
+
+		// Assert
+		result.Should().Be(0,
+			because: "each of these parses — System.Version's components accept surrounding whitespace and a "
+				+ "leading sign — so refusing them would be a narrowing with no cause");
+		DescriptorOnDisk().Should().Contain("\"PackageVersion\": \"1.0.0.1\"",
+			because: "the raw string is what lands in SysPackage.Version, so writing it verbatim would leave a "
+				+ "version that compares EQUAL as a Version while failing every string comparison against it — "
+				+ "including clio's own archive pin, and a human diffing clio info against list-packages would "
+				+ "see two values that look identical. A trailing \\r from a CI variable is the realistic case");
+	}
+
+	[Test]
+	[Description("Refuses a version with fewer than four parts, because System.Version gives the missing part -1 and it then sorts below every requirement floor.")]
+	public void Execute_ShouldRefuse_WhenTheVersionHasFewerThanFourParts() {
+		// Arrange
+		string before = DescriptorOnDisk();
+
+		// Act
+		int result = _command.Execute(Options("2.0.0"));
 
 		// Assert
 		result.Should().Be(1,
-			because: "the option is not Required on the parser, so the command itself has to refuse — and it must "
-				+ "refuse rather than proceed: assigning a null version and then moving ModifiedOnUtc produced a "
-				+ "descriptor announcing a change while carrying no version at all, and returned 0 while doing it");
-		// NSubstitute's DidNotReceive() takes no `because`; stated here. The refusal has to happen BEFORE the
-		// write, because the damage is the write: the descriptor is the single source of this package's version,
-		// and restoring it afterwards means recovering the value from git.
-		_jsonConverter.DidNotReceive().SerializeObjectToFile(Arg.Any<object>(), Arg.Any<string>());
+			because: "System.Version gives a three-part string a Revision of -1, so RequiredPackageChecker "
+				+ "compares it as LOWER than every four-part floor. Writing 2.0.0 into cliogate's descriptor "
+				+ "would make lock-package, unlock-package and sql refuse FOREVER against an environment "
+				+ "carrying a newer package than the floor they demand");
+		DescriptorOnDisk().Should().Be(before,
+			because: "the refusal must leave the file byte-identical — this is the promise the shipped help "
+				+ "makes, and the defect that motivated the guard was a WRITE (a null version stamped with a "
+				+ "fresh timestamp), so proving it on a real file is the case worth proving");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("2.0.0.0")));
+	}
+
+	[TestCase("", TestName = "empty")]
+	[TestCase("   ", TestName = "whitespace only")]
+	[TestCase(null, TestName = "absent")]
+	[Description("Refuses a missing or blank version and leaves the descriptor byte-identical, instead of erasing the version while still moving the timestamp.")]
+	public void Execute_ShouldRefuseAndWriteNothing_WhenNoVersionIsSupplied(string version) {
+		// Arrange
+		string before = DescriptorOnDisk();
+
+		// Act
+		int result = _command.Execute(Options(version));
+
+		// Assert
+		result.Should().Be(1,
+			because: "the option is not Required on the parser, so the command itself has to refuse — and it "
+				+ "must refuse rather than proceed: assigning a null version and then moving ModifiedOnUtc "
+				+ "produced a descriptor announcing a change while carrying no version at all, and returned 0 "
+				+ "while doing it");
+		DescriptorOnDisk().Should().Be(before,
+			because: "only the hidden --PackageVersion alias guards against an empty value; -v assigns the main "
+				+ "property directly, so without this refusal a blank string would reach the descriptor");
 		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("--package-version")));
 	}
 
-	[TestCase("")]
-	[TestCase("   ")]
-	[Description("Treats an empty or whitespace version the same as an absent one, since the main option has no guard of its own.")]
-	public void Execute_ShouldRefuse_WhenTheVersionIsBlank(string version) {
-		// Act
-		int result = _command.Execute(new SetPackageVersionOptions {
-			PackagePath = PackagePath,
-			PackageVersion = version
-		});
+	[Test]
+	[Description("Refuses a version that does not parse at all, quoting the offending value so the operator can see what was rejected.")]
+	public void Execute_ShouldRefuse_WhenTheVersionDoesNotParse() {
+		// Arrange
+		string before = DescriptorOnDisk();
 
-		// Assert
-		result.Should().Be(1,
-			because: "only the hidden --PackageVersion alias guards against an empty value; -v assigns the main "
-				+ "property directly, so a blank string would otherwise reach the descriptor");
-		_jsonConverter.DidNotReceive().SerializeObjectToFile(Arg.Any<object>(), Arg.Any<string>());
-	}
-
-	[TestCase("abc")]
-	[TestCase("1.1.0.x")]
-	[Description("Refuses a version that is not parseable as a version, because Creatio compares recorded versions as versions.")]
-	public void Execute_ShouldRefuse_WhenTheVersionDoesNotParse(string version) {
 		// Act
-		int result = _command.Execute(new SetPackageVersionOptions {
-			PackagePath = PackagePath,
-			PackageVersion = version
-		});
+		int result = _command.Execute(Options("abc"));
 
 		// Assert
 		result.Should().Be(1,
 			because: "an unparseable value satisfies no dependency and no [RequiresPackage] floor, so writing it "
-				+ "produces a package that installs and can never be depended upon — a failure that surfaces far "
-				+ "from its cause");
-		_jsonConverter.DidNotReceive().SerializeObjectToFile(Arg.Any<object>(), Arg.Any<string>());
-		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains(version)));
+				+ "produces a package that installs and can never be depended upon — a failure that surfaces "
+				+ "far from its cause");
+		DescriptorOnDisk().Should().Be(before,
+			because: "a refusal must not touch the file");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("abc")));
 	}
 
 	[Test]
-	[Description("Rejects a null logger, so a misconfigured DI graph fails at construction rather than while writing a descriptor.")]
-	public void Constructor_ShouldRejectANullLogger() {
-		// Arrange, Act & Assert
-		Assert.Throws<System.ArgumentNullException>(
-			() => new SetPackageVersionCommand(_jsonConverter, _fileSystem, null),
+	[Description("Rejects any null collaborator, so a misconfigured DI graph fails at construction rather than while writing a descriptor.")]
+	public void Constructor_ShouldRejectNullCollaborators() {
+		// Arrange
+		IJsonConverter jsonConverter = Container.GetRequiredService<IJsonConverter>();
+		IFileSystem fileSystem = Container.GetRequiredService<IFileSystem>();
+
+		// Act & Assert
+		Assert.Throws<ArgumentNullException>(
+			() => new SetPackageVersionCommand(null, fileSystem, _logger),
+			"without a converter the descriptor can be neither read nor written");
+		Assert.Throws<ArgumentNullException>(
+			() => new SetPackageVersionCommand(jsonConverter, null, _logger),
+			"a null file system throws a NullReferenceException at Path.Combine instead — i.e. mid-command, "
+			+ "after the caller has been told nothing about which dependency was missing");
+		Assert.Throws<ArgumentNullException>(
+			() => new SetPackageVersionCommand(jsonConverter, fileSystem, null),
 			"without a logger a refusal would be silent, which is worse than the defect the refusal fixes");
 	}
 

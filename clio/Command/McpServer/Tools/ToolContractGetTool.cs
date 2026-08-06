@@ -5241,7 +5241,7 @@ internal static class ToolContractCatalog {
 				[
 					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. The install's own success now IS proof that the new build is serving: it compares the version the serving build reports against the one it installed, which is the one question no database read can answer."),
+				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
 			[],
 			[],
 			Preconditions: [

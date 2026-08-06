@@ -235,10 +235,13 @@ first, propose the install second.
   both fields, so the rule costs nothing when the supported command is used; because this archive is
   hand-produced, the guard fixture additionally pins the version, the date and the archive SHA-256 side by
   side. Not an open question — a documented constraint.
-- **Whether a failed configuration build is reported at all is unverified.** No longer blocking for THIS
-  package — the serving build now reports its own version, so a failed build is detected without the platform
-  saying anything — but it remains the open question for a package-agnostic check, which is what a bundled
-  package exposing no service of its own would need. The seam exists: `IPackageInstallOutcomeVerifier` is named
+- **Whether a failed configuration build is reported at all is unverified.** Partly mitigated for THIS
+  package and NOT closed: an install whose build produces no assembly is detected, because the package's own
+  route then cannot answer — observed on a stand, where the platform logged `Configuration build finished`
+  with no errors while the route was absent. What stays undetected is a failed build on an UPGRADE, where the
+  previously built assembly keeps answering; see decision 2 for why that limit was accepted. The question
+  remains fully open for a package-agnostic check, which is what a bundled package exposing no service of its
+  own would need. The seam exists: `IPackageInstallOutcomeVerifier` is named
   for the question, `ProcessDesignServiceOutcomeVerifier` for today's mechanism, so such a check swaps an
   implementation rather than changing the command.
 - **A version-based skip via the database is viable and deliberately unbuilt.** A skip via the SERVICE is NOT

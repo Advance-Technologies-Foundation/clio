@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using Clio.Common;
@@ -17,6 +18,12 @@ namespace Clio.Package;
 /// gated operation — and that conflated two verdicts: "the build did not take" and "you may not design
 /// processes". The second is not this command's business. A caller lacking the right finds out at its next
 /// call, from the guard's own message, which names the right; a caller whose build failed finds out here.
+/// </para>
+/// <para>
+/// Two of the three negative causes are distinguished, and the third deliberately is not: a body that parses
+/// but is not this package's envelope produces its own diagnosis (something else is serving that route), a
+/// transport failure is logged with its status, and "nothing answered on a route that should exist" is left to
+/// the caller's message because that is the case the caller can act on.
 /// </para>
 /// <para>
 /// What this therefore does NOT establish: that the caller can USE the package, and that the package's
@@ -50,6 +57,12 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// or one whose configuration workspace has not finished loading can also do. A single probe therefore
 	/// risks reporting "the environment did not compile the package" about an environment that answers
 	/// correctly a few seconds later. Three attempts, because this probe alone decides the exit code.
+	/// <para>
+	/// Bounds what this actually buys: the retry lives inside <see cref="IApplicationClient"/> and re-issues on
+	/// a TRANSPORT failure, so it covers a refused connection or a timeout during warm-up. A response that
+	/// arrives and parses — including a 200 from a proxy — is evaluated exactly once, by design: re-asking a
+	/// responder that answered would return the same answer three times.
+	/// </para>
 	/// </remarks>
 	private const int ProbeAttempts = 3;
 
@@ -105,15 +118,31 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// </remarks>
 	public bool IsPackageOperational(string packageName, out string diagnosis) {
 		diagnosis = null;
+		string url = null;
 		try {
-			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
+			url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
 			string response = _applicationClient.ExecutePostRequest(
 				url, "{}", ProbeTimeoutMs, ProbeAttempts, ProbeDelaySec);
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (!document.RootElement.TryGetProperty("PingResult", out JsonElement result)
-				|| !result.TryGetProperty("success", out JsonElement success)
+			// Both branches below are failures, but they send the reader to DIFFERENT places, which is the whole
+			// reason this method reports a diagnosis rather than letting the caller's generic message stand:
+			// that message blames the configuration build, and neither of these is a build problem.
+			if (!document.RootElement.TryGetProperty("PingResult", out JsonElement result)) {
+				diagnosis =
+					$"{packageName} was installed, but {url} answered with a JSON body carrying no PingResult, "
+					+ "so something other than this package is serving that route — a reverse proxy, an "
+					+ "authenticating gateway or an expired-session redirect. The configuration build is NOT "
+					+ "implicated; check what sits in front of the environment. First 200 characters of the "
+					+ $"answer: {Truncate(response, 200)}";
+				return false;
+			}
+			if (!result.TryGetProperty("success", out JsonElement success)
 				|| success.ValueKind != JsonValueKind.True) {
-				// Parsed, but not our envelope: a proxy, a login redirect or another responder. Not evidence.
+				diagnosis =
+					$"{packageName}'s Ping route answered, but not with success — so the package is serving and "
+					+ "is reporting a problem, which the shipped build cannot do (its Ping returns a constant). "
+					+ "Either the serving build is not the one clio ships, or something is answering in this "
+					+ $"package's envelope. First 200 characters of the answer: {Truncate(response, 200)}";
 				return false;
 			}
 			return true;
@@ -124,6 +153,26 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 			_logger.WriteError($"ProcessDesignService did not answer: {e.GetReadableMessageException()}");
 			return false;
 		}
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	/// <summary>
+	/// Shortens an unexpected response for inclusion in a diagnosis.
+	/// </summary>
+	/// <remarks>
+	/// Control characters are stripped, not merely trimmed: the value is a body from an UNKNOWN responder and
+	/// it goes straight into a log line, so CR/LF or ANSI escapes in it could forge or overwrite lines around
+	/// it. The same reasoning already governs <c>FormatPackageNamesForLog</c> in cliogate.
+	/// </remarks>
+	private static string Truncate(string response, int max) {
+		if (string.IsNullOrEmpty(response)) {
+			return "(empty)";
+		}
+		string flattened = new(response.Select(c => char.IsControl(c) ? ' ' : c).ToArray());
+		return flattened.Length <= max ? flattened : flattened.Substring(0, max) + "…";
 	}
 
 	#endregion

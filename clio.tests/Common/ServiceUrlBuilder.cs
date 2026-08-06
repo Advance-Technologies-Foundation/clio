@@ -194,6 +194,18 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest,
 				"http://localhost/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+			// Pinned because this one route decides install-process-builder's exit code. A typo in the path —
+			// CreatioApiGatewayService instead of ProcessDesignService, or Pong for Ping — yields an IIS HTML
+			// page, which the verifier correctly reads as "nothing is serving". So the command would return 1
+			// on every healthy environment, and nothing else would notice: AllEnumsHaveRoutes only asserts the
+			// route is non-blank, the verifier's own fixture stubs Build() to a literal so KnownRoutes is never
+			// read, and the install E2E is deliberately stand-free.
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
+				"http://localhost/0/rest/ProcessDesignService/Ping");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
+				"http://localhost/rest/ProcessDesignService/Ping");
 		}
 	}
 

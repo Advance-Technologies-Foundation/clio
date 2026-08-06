@@ -68,7 +68,8 @@ upgrades prove common. After an upgrade, treat the functionality working as the 
 
 `clio list-packages` cannot substitute for this: it reads the version the environment
 RECORDED, which moves when the archive is accepted whether or not anything compiled.
-Only the serving build can say which sources it came from.
+Only the package's own code answering a request can establish that it was compiled at
+all — which is what this check asks, and the most it can ask.
 
 The command **always installs** — there is no skip. Re-running is safe; it costs one
 configuration build on the target.
@@ -121,16 +122,20 @@ ProcessDesignService enforces in its own handlers. That is deliberately stricter
 than cliogate's `CanManageSolution`, which is broader and does not check the
 connection type, so granting `CanManageSolution` does not grant process design.
 
-That right also decides **this** command's verdict, not only the commands that
-follow it, and that is deliberate. The post-install check calls `ListUserTasks`,
-which is behind the same gate, so without the right the command reports a failure
-even though the archive installed — because the question it answers is not "did the
-archive install" but "is the capability usable". Whoever installs is normally
-whoever uses it: clio holds one credential per environment, and an agent installing
-the package to get on with a task cannot finish that task without the right either.
-Reporting success would just move the same verdict to the next call, where there is
-no diagnosis. So the message names the right to grant and says that re-installing
-does not help.
+That right does **not** decide this command's verdict, and the separation is
+deliberate. The post-install check calls `Ping`, which is ungated, so a caller who
+may install the package but may not design processes still gets a truthful answer
+about the install itself.
+
+An earlier version probed the gated `ListUserTasks` and so conflated two verdicts —
+"the build did not take" and "you may not design processes". Those are different
+problems with different fixes, and only the first is this command's business. A
+caller lacking the right finds out at its next call, from the guard's own message,
+which names the right.
+
+Consequence worth stating plainly: **exit code 1 from this command never means a
+missing permission.** It means the archive did not install, or the environment did
+not compile it — and the place to look is the configuration build log.
 
 ## Notes
 

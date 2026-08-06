@@ -2,6 +2,7 @@
 using System.IO;
 using Clio.Common;
 using Clio.Package;
+using Clio.Project.NuGet;
 using CommandLine;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -45,6 +46,7 @@ namespace Clio.Command.PackageCommand
 
 		public SetPackageVersionCommand(IJsonConverter jsonConverter, IFileSystem fileSystem, ILogger logger) {
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			logger.CheckArgumentNull(nameof(logger));
 			_jsonConverter = jsonConverter;
 			_fileSystem = fileSystem;
@@ -78,17 +80,37 @@ namespace Clio.Command.PackageCommand
 					+ "version — and Creatio would record that as the installed version.");
 				return 1;
 			}
-			if (!Version.TryParse(options.PackageVersion, out _)) {
+			// PackageVersion.TryParseVersion, NOT Version.TryParse: this field is READ everywhere else through
+			// the former (PackageInfo, NuGetManager), which models the X.Y.Z.W-suffix pre-release form. Using the
+			// stricter parser here made the writer refuse values its own readers accept - 1.0.0.0-rc among them.
+			if (!PackageVersion.TryParseVersion(options.PackageVersion, out PackageVersion parsed)) {
 				_logger.WriteError(
-					$"'{options.PackageVersion}' is not a valid package version. Creatio compares recorded "
-					+ "package versions as versions, so an unparseable value cannot satisfy any dependency or "
-					+ "requirement floor.");
+					$"'{options.PackageVersion}' is not a valid package version. Expected four numeric parts, "
+					+ "optionally followed by '-<suffix>', for example 1.2.3.4 or 1.2.3.4-rc.");
+				return 1;
+			}
+			// Four parts REQUIRED, and this is not pedantry: System.Version gives a three-part string a Revision
+			// of -1, so RequiredPackageChecker.IsCompatible then compares such a version as LOWER than every
+			// four-part floor. Writing 2.0.0 into a descriptor therefore makes lock-package, unlock-package and
+			// sql refuse permanently against an environment carrying a NEWER package than the floor they demand.
+			// See the remarks on BundledPackages.ProcessBuilderVersion.
+			if (parsed.Version.Revision < 0) {
+				_logger.WriteError(
+					$"'{options.PackageVersion}' has fewer than four parts. Creatio compares recorded versions "
+					+ "through System.Version, which treats a missing part as -1, so a shorter version sorts BELOW "
+					+ "every four-part requirement floor and would refuse commands forever. Write "
+					+ $"'{parsed.Version.Major}.{parsed.Version.Minor}.{Math.Max(parsed.Version.Build, 0)}."
+					+ $"{Math.Max(parsed.Version.Revision, 0)}' instead.");
 				return 1;
 			}
 			string packageDescriptorPath = _fileSystem.Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
 			try {
 				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
-				dto.Descriptor.PackageVersion = options.PackageVersion;
+				// The CANONICAL form, not the raw argument: Version's components accept surrounding whitespace
+				// and a leading '+', so " 1.0.0.0 " or "+1.0.0.0" would otherwise reach the descriptor verbatim,
+				// land in SysPackage.Version, and break every string comparison against it while every Version
+				// comparison still agreed.
+				dto.Descriptor.PackageVersion = parsed.ToString();
 				dto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
 				_jsonConverter.SerializeObjectToFile(dto, packageDescriptorPath);
 			}

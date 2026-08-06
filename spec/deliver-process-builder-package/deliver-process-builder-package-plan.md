@@ -1,5 +1,12 @@
 # Deliver the process-builder package — bundle into clio and install on demand
 
+
+> **AS-PLANNED, SUPERSEDED.** This document records the plan as written and is deliberately not
+> rewritten. Two things in it no longer describe the shipped code: the outcome check probes the
+> package's ungated `Ping`, not `KnownRoute.ListUserTasks`, and it verifies LIVENESS only — it does not
+> compare versions. See `spec/adr/adr-deliver-process-builder-package.md` for what shipped and for the
+> measurements that changed it.
+
 **Ticket:** [ENG-94385](https://creatio.atlassian.net/browse/ENG-94385) — *Deliver clioprocessbuilder package — Install package bundled into clio*
 **Decision record:** [ENG-91840 / Confluence 4764434460](https://creatio.atlassian.net/wiki/spaces/TER/pages/4764434460) — Option 2 ("same way as clio gate") chosen.
 **Sibling ticket (NOT this plan):** [ENG-92113](https://creatio.atlassian.net/browse/ENG-92113) — CI → dfs-ts chain, owner O. Serhiichyk.

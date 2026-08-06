@@ -225,8 +225,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		RightsApplyChanges = 61,
 
 		/// <summary>
-		///     Reports which build of the bundled process-builder package is serving. UNGATED on the package
-		///     side, deliberately: it answers a question about the installation, not about process design.
+		///     Answers whether the bundled process-builder package's own code is serving — liveness, not
+		///     identity: it cannot report WHICH build answered. UNGATED on the package side, deliberately,
+		///     because it answers a question about the installation, not about process design.
 		/// </summary>
 		ProcessBuilderPing = 62
 
