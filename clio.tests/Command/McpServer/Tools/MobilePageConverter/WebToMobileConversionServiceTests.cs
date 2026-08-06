@@ -416,7 +416,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> TabbedMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.TabContainer", "crt.Input", "crt.ComboBox", "crt.DateTimeEdit", "crt.Feed", "crt.AttachmentList"
+			"crt.TabContainer", "crt.Input", "crt.ComboBox", "crt.DateTimeEdit", "crt.Feed", "crt.AttachmentList",
+			"crt.ExpansionPanel", "crt.GridContainer"
 		};
 
 	private static readonly WebToMobilePageConversionRules GridRule = new() {
@@ -436,12 +437,13 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle,
 		IReadOnlyDictionary<string, string> containerNameMap = null,
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = null,
-		IReadOnlyDictionary<string, string> mobileContainerParents = null) =>
+		IReadOnlyDictionary<string, string> mobileContainerParents = null,
+		WebToMobilePageConversionRules rules = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, TabbedMobileTypes,
 			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid", "crt.IndicatorWidget", "crt.Timeline" },
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
-			mobileByType: null, GridRule, templateRule: null,
+			mobileByType: null, rules ?? GridRule, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: containerNameMap ?? TabbedContainerMap,
 			positionalPlacements: positionalPlacements,
@@ -492,7 +494,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry overview = Element(guide, "OverviewTab");
 		overview.Operation.Should().Be("insert");
 		overview.ParentName.Should().Be("Tabs");
-		overview.Index.Should().BeNull(because: "a web tab is not a positional insert");
+		overview.Index.Should().Be(1,
+			because: "a converted tab is not a positional insert, but the converter still indexes it right after "
+				+ "the template's general tab so the template's Feed/Attachments tabs stay last");
 		Element(guide, "LeadName").Operation.Should().Be("insert");
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
 		Element(guide, "Status").ParentName.Should().Be("OverviewTab");
@@ -513,7 +517,8 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "ProductsList").Operation.Should().Be("drop");
 		Element(guide, "ProductsList").Reason.Should().Contain("ProductsListDS");
 
-		// Empty tabs are still inserted (the user can delete them); only their unsupported content drops.
+		// Empty tabs are still inserted HERE because these rules carry no emptyContainerRemoval section —
+		// the removal pass is switched by data (see the "Empty container removal" region for the on-state).
 		Element(guide, "ProcessingTab").Operation.Should().Be("insert");
 		Element(guide, "Timeline").Operation.Should().Be("drop");
 		Element(guide, "HistoryTab").Operation.Should().Be("insert");
@@ -2114,6 +2119,1315 @@ public sealed class WebToMobileConversionServiceTests {
 
 		Element(guide, "QualifiedContact").MobileValues!.AsObject()["label"]!.GetValue<string>()
 			.Should().Be("$Resources.Strings.Parameter_r8t9n2f", "the field's own web label must survive, not be replaced by a guessed key");
+	}
+
+	#endregion
+
+	#region Tab body / Area layers synthesized into a converted tab
+
+	/// <summary>A converter-SYNTHESIZED entry (no webName), addressed by the mobile name it creates.</summary>
+	private static ElementMapEntry Synthesized(MobilePageConversionGuide guide, string mobileName) =>
+		guide.ElementMap.Single(e => e.WebName is null && e.MobileName == mobileName);
+
+	/// <summary>Position of an entry in the element map (a synthesized layer must precede what it holds).</summary>
+	private static int IndexOfMobile(MobilePageConversionGuide guide, string mobileName) {
+		var map = (IList<ElementMapEntry>)guide.ElementMap;
+		for (int i = 0; i < map.Count; i++) {
+			if (map[i].MobileName == mobileName) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static WebToMobilePageConversionRules RulesWithTabAreaLayers(
+		string tabComponentType = "crt.TabContainer") => new() {
+		Components = GridRule.Components,
+		TabAreaLayers = new TabAreaLayersRule {
+			TabComponentType = tabComponentType,
+			MainTabContainer = new SynthesizedContainerRule {
+				NamePrefix = "MainTabContainer_",
+				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+					"""{ "type": "crt.GridContainer", "alignItems": "stretch", "padding": { "bottom": "medium" } }"""),
+				AreaContainer = new SynthesizedContainerRule {
+					NamePrefix = "GridContainer_",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "type": "crt.GridContainer", "color": "primary", "borderRadius": "medium" }""")
+				}
+			}
+		}
+	};
+
+	/// <summary>The synthesized layer names for a tab of the tabbed fixture (source page comes from AnalyzeTabbed).</summary>
+	private static (string Main, string Area) LayerNames(string tabName) {
+		string suffix = WebToMobileAnalysisService.StableSuffix("Leads_FormPage", tabName);
+		return ("MainTabContainer_" + suffix, "GridContainer_" + suffix);
+	}
+
+	[Test]
+	[Description("I2: a converted tab with content gets the designer's two layers (tab-body grid + Area card) inserted RIGHT AFTER its own entry, carrying the rule values verbatim plus an items slot, with no webName.")]
+	public void Analyze_ShouldSynthesizeBothTabLayers_WhenConvertedTabHasContent() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(string main, string area) = LayerNames("OverviewTab");
+		ElementMapEntry mainEntry = Synthesized(guide, main);
+		mainEntry.Operation.Should().Be("insert");
+		mainEntry.WebName.Should().BeNull(because: "a synthesized container has no source element behind it");
+		mainEntry.WebType.Should().BeNull();
+		mainEntry.ParentName.Should().Be("OverviewTab");
+		mainEntry.PropertyName.Should().Be("items");
+		mainEntry.MobileType.Should().Be("crt.GridContainer");
+		mainEntry.MobileValues!["alignItems"]!.GetValue<string>().Should().Be("stretch");
+		mainEntry.MobileValues!["padding"]!["bottom"]!.GetValue<string>().Should().Be("medium");
+		mainEntry.MobileValues!["items"]!.AsArray().Should().BeEmpty(because: "children need an initialized slot to land in");
+		mainEntry.Reason.Should().Contain("synthesized by the converter");
+
+		ElementMapEntry areaEntry = Synthesized(guide, area);
+		areaEntry.ParentName.Should().Be(main, because: "the Area card sits inside the tab body, not in the tab");
+		areaEntry.MobileValues!["color"]!.GetValue<string>().Should().Be("primary");
+		areaEntry.MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("medium");
+		areaEntry.MobileValues!["items"]!.AsArray().Should().BeEmpty();
+
+		// Order: parent before child, both immediately after the tab.
+		int tabAt = IndexOfMobile(guide, "OverviewTab");
+		IndexOfMobile(guide, main).Should().Be(tabAt + 1);
+		IndexOfMobile(guide, area).Should().Be(tabAt + 2);
+
+		// The tab's content lives in the Area, not in the tab itself.
+		Element(guide, "LeadName").ParentName.Should().Be(area);
+
+		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
+		group.TabName.Should().Be("OverviewTab");
+		group.MainTabContainerName.Should().Be(main);
+		group.AreaName.Should().Be(area);
+		group.MovedChildren.Should().Equal(new[] { "LeadName" });
+	}
+
+	[Test]
+	[Description("I3: every top-level component of a converted tab is retargeted into the Area and stacked in SOURCE order — column 1, rows 1..N of the single-column card.")]
+	public void Analyze_ShouldStackTabContentInSourceOrder_WhenTabContentMovesIntoArea() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" },
+					{ "name": "Status", "type": "crt.ComboBox" },
+					{ "name": "DecisionDate", "type": "crt.DateTimeEdit" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(_, string area) = LayerNames("OverviewTab");
+		foreach (string name in new[] { "LeadName", "Status", "DecisionDate" }) {
+			Element(guide, name).ParentName.Should().Be(area, because: "the tab body holds the Area, not the fields");
+		}
+		// Rows follow the source order, one per row of a single column.
+		Element(guide, "LeadName").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		Element(guide, "DecisionDate").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
+		JsonNode first = Element(guide, "LeadName").MobileValues!["layoutConfig"]!;
+		first["column"]!.GetValue<int>().Should().Be(1);
+		first["colSpan"]!.GetValue<int>().Should().Be(1);
+		first["rowSpan"]!.GetValue<int>().Should().Be(1);
+
+		guide.TabAreaLayers!.Single().MovedChildren.Should().Equal("LeadName", "Status", "DecisionDate");
+	}
+
+	[Test]
+	[Description("I2: with TWO content-bearing tabs each tab's layers sit exactly at tab+1/tab+2 in the FINAL map — the first tab's two inserts shift the second tab, so the pass must re-resolve every tab's index instead of snapshotting positions before inserting; and each tab's children land in that tab's OWN Area.")]
+	public void Analyze_ShouldPlaceLayersRightAfterEachTab_WhenMultipleTabsHaveContent() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] },
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(string overviewMain, string overviewArea) = LayerNames("OverviewTab");
+		(string salesMain, string salesArea) = LayerNames("SalesTab");
+
+		// Parent-before-child right after EACH tab, in the final (post-all-inserts) map: positions computed
+		// against stale pre-insert indices would misplace the second tab's layers while a one-tab test stays green.
+		int overviewAt = IndexOfMobile(guide, "OverviewTab");
+		IndexOfMobile(guide, overviewMain).Should().Be(overviewAt + 1,
+			because: "applying entries in element-map order must create the tab body before the Area it holds");
+		IndexOfMobile(guide, overviewArea).Should().Be(overviewAt + 2,
+			because: "the Area must exist before the tab's children that point at it");
+		int salesAt = IndexOfMobile(guide, "SalesTab");
+		salesAt.Should().BeGreaterThan(overviewAt + 2,
+			because: "the first tab's two inserts shift every later element — the shift this test exists to exercise");
+		IndexOfMobile(guide, salesMain).Should().Be(salesAt + 1,
+			because: "the second tab's index must be re-resolved after the first tab's inserts moved it");
+		IndexOfMobile(guide, salesArea).Should().Be(salesAt + 2,
+			because: "the second tab's Area must still directly follow its own tab body");
+
+		// Each tab's content lands in ITS OWN Area, never in a sibling tab's.
+		Element(guide, "LeadName").ParentName.Should().Be(overviewArea,
+			because: "cross-tab reparenting would silently move content between tabs");
+		Element(guide, "Budget").ParentName.Should().Be(salesArea,
+			because: "cross-tab reparenting would silently move content between tabs");
+
+		guide.TabAreaLayers!.Select(g => g.TabName).Should().Equal(new[] { "OverviewTab", "SalesTab" },
+			because: "groups follow the element-map order of the tabs");
+	}
+
+	[Test]
+	[Description("I3: a web layoutConfig carried over from the multi-column web page is REPLACED by the single-column stack placement — the Area is one column, so the old columns would misplace the field.")]
+	public void Analyze_ShouldReplaceCarriedWebLayoutConfig_WhenTabChildMovesIntoSingleColumnArea() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 7, "colSpan": 3 } } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		JsonNode layout = Element(guide, "LeadName").MobileValues!["layoutConfig"]!;
+		layout["column"]!.GetValue<int>().Should().Be(1);
+		layout["row"]!.GetValue<int>().Should().Be(1);
+		layout["colSpan"]!.GetValue<int>().Should().Be(1);
+	}
+
+	[Test]
+	[Description("I3: a layoutConfig the web page carried as a NON-OBJECT (scalar/array) cannot hold `adaptive` and is replaced by the stack placement — string-indexing it directly would crash the whole guide with InvalidOperationException.")]
+	public void Analyze_ShouldReplaceLayoutConfigInsteadOfCrashing_WhenCarriedLayoutConfigIsNotAnObject() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input", "layoutConfig": "legacy-scalar" },
+					{ "name": "Status", "type": "crt.ComboBox", "layoutConfig": [ 2, 7 ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		JsonNode first = Element(guide, "LeadName").MobileValues!["layoutConfig"]!;
+		first.Should().BeOfType<JsonObject>(because: "a scalar layoutConfig carries no adaptive placement, so the stack pass replaces it");
+		first["column"]!.GetValue<int>().Should().Be(1);
+		first["row"]!.GetValue<int>().Should().Be(1);
+		JsonNode second = Element(guide, "Status").MobileValues!["layoutConfig"]!;
+		second.Should().BeOfType<JsonObject>(because: "an array layoutConfig carries no adaptive placement, so the stack pass replaces it");
+		second["row"]!.GetValue<int>().Should().Be(2);
+	}
+
+	[Test]
+	[Description("I3: children of a wrapper dissolved into the tab are retargeted into the Area with rows; the relocate-children entry itself is retargeted but gets no placement (it is not an element).")]
+	public void Analyze_ShouldStackRelocatedWrapperChildrenInArea_WhenWrapperDissolvesIntoTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Wrapper", "type": "crt.FlexContainer", "items": [
+						{ "name": "LeadName", "type": "crt.Input" },
+						{ "name": "Status", "type": "crt.ComboBox" } ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(_, string area) = LayerNames("OverviewTab");
+		ElementMapEntry wrapper = Element(guide, "Wrapper");
+		wrapper.Operation.Should().Be("relocate-children");
+		wrapper.ParentName.Should().Be(area, because: "its children are now placed in the Area");
+		wrapper.MobileValues.Should().BeNull(because: "a dissolved wrapper is never created, so it carries no values");
+
+		Element(guide, "LeadName").ParentName.Should().Be(area);
+		Element(guide, "LeadName").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		guide.TabAreaLayers!.Single().MovedChildren.Should().Equal(new[] { "LeadName", "Status" },
+			"the wrapper is a routing hint, not a component that occupies a row");
+	}
+
+	[Test]
+	[Description("I3: a multi-column grid inside a converted tab keeps its own adaptive columns, and only its placement in the Area is added — the grid's children stay inside the grid with their adaptive cells.")]
+	public void Analyze_ShouldKeepNestedGridAdaptiveLayout_WhenMultiColumnGridSitsInsideTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "FieldsContainer", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+						{ "name": "LeadName", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+						{ "name": "Status", "type": "crt.ComboBox", "layoutConfig": { "column": 2, "row": 1 } } ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(_, string area) = LayerNames("OverviewTab");
+		// The grid moves into the Area and gets its stack placement…
+		ElementMapEntry grid = Element(guide, "FieldsContainer");
+		grid.ParentName.Should().Be(area);
+		grid.MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		// …while keeping the responsive columns the adaptive pass baked onto it.
+		grid.MobileValues!["adaptive"]!["medium"]!["columns"].Should().NotBeNull();
+		// Its children are NOT touched: they stay in the grid with their per-breakpoint cells.
+		Element(guide, "LeadName").ParentName.Should().Be("FieldsContainer");
+		Element(guide, "Status").MobileValues!["layoutConfig"]!["adaptive"]!["medium"]!["column"]!
+			.GetValue<int>().Should().Be(2);
+		guide.AdaptiveLayout!.Single().ContainerName.Should().Be("FieldsContainer");
+	}
+
+	[Test]
+	[Description("I3: an element the adaptive pass already placed per breakpoint keeps that adaptive placement — the stack pass must not flatten it back to a single base cell.")]
+	public void Analyze_ShouldKeepAdaptivePlacement_WhenTabChildIsAlreadyPlacedPerBreakpoint() {
+		// A web tab carrying its own `columns` makes the adaptive pass treat the tab as a multi-column grid, so
+		// its direct children arrive at this pass already holding layoutConfig.adaptive.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "columns": [ "1fr", "1fr" ], "items": [
+					{ "name": "LeadName", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+					{ "name": "Status", "type": "crt.ComboBox", "layoutConfig": { "column": 2, "row": 1 } } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(_, string area) = LayerNames("OverviewTab");
+		Element(guide, "Status").ParentName.Should().Be(area, because: "retargeting still happens");
+		JsonNode layout = Element(guide, "Status").MobileValues!["layoutConfig"]!;
+		layout["adaptive"].Should().NotBeNull(because: "mobile resolves the placement from adaptive when present");
+		layout["adaptive"]!["medium"]!["column"]!.GetValue<int>().Should().Be(2);
+		layout["row"].Should().BeNull(because: "a flat base cell would silently drop the responsive placement");
+	}
+
+	[Test]
+	[Description("AC#5: a converted tab with no content gets NO layers at all, so an empty Area is never created and never has to be deleted.")]
+	public void Analyze_ShouldSynthesizeNoLayers_WhenConvertedTabIsEmpty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "EmptyTab", "type": "crt.TabContainer", "items": [] },
+				{ "name": "FullTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(string emptyMain, string emptyArea) = LayerNames("EmptyTab");
+		IndexOfMobile(guide, emptyMain).Should().Be(-1);
+		IndexOfMobile(guide, emptyArea).Should().Be(-1);
+		guide.TabAreaLayers!.Select(g => g.TabName).Should().Equal("FullTab");
+	}
+
+	[Test]
+	[Description("A tab the mobile TEMPLATE provides arrives as a merge twin and gets no synthesized layers — the template already carries its own body.")]
+	public void Analyze_ShouldSynthesizeNoLayers_WhenTabIsTemplateMergeTwin() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+					{ "name": "Feed", "type": "crt.Feed" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
+		guide.TabAreaLayers.Should().BeNull();
+		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+	}
+
+	[Test]
+	[Description("The pass is switched by DATA — rules without a tabAreaLayers section synthesize nothing (existing conversions unchanged).")]
+	public void Analyze_ShouldSkipTabAreaLayersPass_WhenRulesCarryNoTabAreaLayersSection() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
+
+		guide.TabAreaLayers.Should().BeNull();
+		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
+		guide.Constraints.Should().NotContain(c => c.Contains("tabAreaLayers"),
+			because: "with the pass off there is nothing baked to warn the caller about");
+		guide.NextSteps.Should().NotContain(s => s.Contains("guide.tabAreaLayers"));
+	}
+
+	[Test]
+	[Description("I4: when layers were synthesized the guide TELLS the caller they are already baked — a constraint (do not reparent/reorder/add an Area) and a next step (state guide.tabAreaLayers when presenting the plan).")]
+	public void Analyze_ShouldCarryMandatoryConstraintAndNextStep_WhenTabAreaLayersAreSynthesized() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		guide.Constraints.Should().ContainSingle(c => c.Contains("tabAreaLayers is MANDATORY"))
+			.Which.Should().Contain("do NOT reparent", because: "the caller must apply the map as it is");
+		guide.NextSteps.Should().ContainSingle(s => s.Contains("guide.tabAreaLayers"))
+			.Which.Should().Contain("MANDATORY",
+				because: "the mobile tab body is the team's required structure — the caller must not turn it into a question");
+		// Lock-in: the tab body is NOT put up for approval the way adaptiveLayout is.
+		guide.Constraints.Concat(guide.NextSteps).Where(t => t.Contains("tabAreaLayers"))
+			.Should().OnlyContain(t => !t.Contains("decline") && !t.Contains("may adjust"),
+				because: "offering to skip or alter the mandatory tab structure is exactly what must not leak into the guide");
+	}
+
+	[Test]
+	[Description("Which element gets the layers comes from the rule's tabComponentType, not from a type hardcoded in the engine — pointing it at another container type moves the synthesis there.")]
+	public void Analyze_ShouldWrapConfiguredComponentType_WhenRulePointsAtAnotherContainerType() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Panel", "type": "crt.ExpansionPanel", "items": [
+						{ "name": "LeadName", "type": "crt.Input" } ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers("crt.ExpansionPanel"));
+
+		// The rule now points at the panel, so the tab is left alone and the panel gets the layers.
+		guide.TabAreaLayers!.Single().TabName.Should().Be("Panel");
+		(string main, string area) = LayerNames("Panel");
+		Synthesized(guide, main).ParentName.Should().Be("Panel");
+		Synthesized(guide, area).ParentName.Should().Be(main);
+		IndexOfMobile(guide, "MainTabContainer_" + WebToMobileAnalysisService.StableSuffix("Leads_FormPage", "OverviewTab"))
+			.Should().Be(-1, because: "the tab type no longer matches the rule");
+	}
+
+	[Test]
+	[Description("An explicit empty tabComponentType leaves nothing to match against, so the pass switches itself off rather than wrapping every insert.")]
+	public void Analyze_ShouldSkipTabAreaLayersPass_WhenTabComponentTypeIsBlank() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers(tabComponentType: null));
+
+		guide.TabAreaLayers.Should().BeNull();
+		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+	}
+
+	[Test]
+	[Description("A tab-body rule with NO nested areaContainer cannot produce the Area card that receives the content, so the pass switches itself off instead of synthesizing a tab body with nowhere to put the tab's children.")]
+	public void Analyze_ShouldSkipTabAreaLayersPass_WhenTabBodyRuleNestsNoAreaContainer() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules complete = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = complete.Components,
+			TabAreaLayers = new TabAreaLayersRule {
+				TabComponentType = complete.TabAreaLayers.TabComponentType,
+				MainTabContainer = new SynthesizedContainerRule {
+					NamePrefix = complete.TabAreaLayers.MainTabContainer.NamePrefix,
+					Values = complete.TabAreaLayers.MainTabContainer.Values
+				}
+			}
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		guide.TabAreaLayers.Should().BeNull(
+			because: "without the nested Area card rule there is no content receiver, so no layer may be synthesized");
+		guide.ElementMap.Should().NotContain(e => e.WebName == null,
+			because: "a switched-off pass must synthesize nothing at all, not a half-built body");
+		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab",
+			because: "with the pass off the tab's content stays directly in the tab, as before the feature");
+	}
+
+	[Test]
+	[Description("A wrapper with no mobile equivalent dissolves INTO the tab (relocate-children), which still counts as tab content — the tab gets its layers.")]
+	public void Analyze_ShouldSynthesizeLayers_WhenTabContentIsOnlyADissolvedWrapper() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Wrapper", "type": "crt.FlexContainer", "items": [
+						{ "name": "LeadName", "type": "crt.Input" } ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		Element(guide, "Wrapper").Operation.Should().Be("relocate-children");
+		guide.TabAreaLayers!.Single().TabName.Should().Be("OverviewTab",
+			because: "a dissolved wrapper still puts content in the tab, so the tab is not empty");
+	}
+
+	[Test]
+	[Description("Synthesized names are reproducible across runs and distinct per tab, so repeated guide runs and baseline diffs stay stable.")]
+	public void Analyze_ShouldSynthesizeDeterministicPerTabNames_WhenRunRepeatedly() {
+		const string viewConfig = """
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] },
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""";
+
+		MobilePageConversionGuide first = AnalyzeTabbed(Bundle(viewConfig), rules: RulesWithTabAreaLayers());
+		MobilePageConversionGuide second = AnalyzeTabbed(Bundle(viewConfig), rules: RulesWithTabAreaLayers());
+
+		first.TabAreaLayers!.Should().HaveCount(2);
+		first.TabAreaLayers.Select(g => g.AreaName).Should().Equal(second.TabAreaLayers!.Select(g => g.AreaName));
+		first.TabAreaLayers.Select(g => g.AreaName).Should().OnlyHaveUniqueItems(because: "each tab gets its own card");
+		first.TabAreaLayers.Select(g => g.MainTabContainerName).Should().OnlyHaveUniqueItems();
+	}
+
+	[Test]
+	[Description("When a source element already owns a synthesized name, the shared suffix is extended so BOTH layer names stay free.")]
+	public void Analyze_ShouldExtendSharedSuffix_WhenSourceElementOwnsASynthesizedName() {
+		(string main, string area) = LayerNames("OverviewTab");
+		PageBundleInfo bundle = Bundle($$"""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "{{main}}", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
+		group.MainTabContainerName.Should().NotBe(main, because: "the source element keeps that name");
+		group.MainTabContainerName.Should().StartWith(main, because: "the collision guard extends the hash prefix");
+		group.AreaName.Should().StartWith(area, because: "both layers share one extended suffix");
+		Element(guide, main).Operation.Should().Be("insert");
+	}
+
+	[Test]
+	[Description("A synthesized entry serializes without a webName key at all (not as null), so the guide never shows a phantom source element.")]
+	public void Analyze_ShouldOmitWebNameKey_WhenSynthesizedEntryIsSerialized() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(string main, _) = LayerNames("OverviewTab");
+		JsonObject json = JsonSerializer.SerializeToNode(Synthesized(guide, main))!.AsObject();
+		json.ContainsKey("webName").Should().BeFalse();
+		json["operation"]!.GetValue<string>().Should().Be("insert");
+		JsonSerializer.SerializeToNode(Element(guide, "LeadName"))!.AsObject()
+			.ContainsKey("webName").Should().BeTrue();
+	}
+
+	[Test]
+	[Description("An expansion panel among the tab's top-level content is an ORDINARY component: it joins the tab's Area with the fields, stacked in the web order.")]
+	public void Analyze_ShouldStackPanelInArea_WhenTabMixesFieldsAndPanel() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" },
+					{ "name": "Status", "type": "crt.ComboBox" },
+					{ "name": "SimilarLead", "type": "crt.ExpansionPanel", "items": [
+						{ "name": "SimilarLeadName", "type": "crt.Input" } ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(string main, string area) = LayerNames("OverviewTab");
+		// Fields and the panel alike stack in the ONE Area, web order = row order.
+		Element(guide, "LeadName").ParentName.Should().Be(area);
+		Element(guide, "Status").ParentName.Should().Be(area);
+		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		Element(guide, "SimilarLead").ParentName.Should().Be(area,
+			because: "a panel is an ordinary component and joins the tab's Area like any other child");
+		Element(guide, "SimilarLead").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
+		// The panel's inner content is none of this pass's business.
+		Element(guide, "SimilarLeadName").ParentName.Should().Be("SimilarLead");
+		// Exactly two layers right after the tab; the Area alone in the tab body carries no placement.
+		int tabAt = IndexOfMobile(guide, "OverviewTab");
+		IndexOfMobile(guide, main).Should().Be(tabAt + 1);
+		IndexOfMobile(guide, area).Should().Be(tabAt + 2);
+		Synthesized(guide, area).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the Area is the only child of the tab body, so it needs no explicit placement");
+
+		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
+		group.AreaName.Should().Be(area);
+		group.MovedChildren.Should().Equal(new[] { "LeadName", "Status", "SimilarLead" },
+			because: "the panel moved into the Area together with the fields, in the web order");
+	}
+
+	[Test]
+	[Description("The panel is carried into the Area AS-IS — every web property (toggleType, togglePosition, labelColor, fullWidthHeader, titleWidth, fitContent, expanded) survives untouched, no alignItems is added, and only parentName + the stack placement change; the panel's own children stay inside it.")]
+	public void Analyze_ShouldCarryPanelAsIs_WhenPanelMovesIntoArea() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "SimilarLead", "type": "crt.ExpansionPanel",
+					  "toggleType": "arrow", "togglePosition": "right", "labelColor": "#333333",
+					  "fullWidthHeader": true, "titleWidth": 200, "fitContent": true, "expanded": true,
+					  "items": [ { "name": "SimilarLeadName", "type": "crt.Input" } ] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		(_, string area) = LayerNames("OverviewTab");
+		ElementMapEntry panelEntry = Element(guide, "SimilarLead");
+		panelEntry.ParentName.Should().Be(area, because: "the panel stacks in the tab's Area like any other component");
+		JsonObject panel = panelEntry.MobileValues!.AsObject();
+		panel["toggleType"]!.GetValue<string>().Should().Be("arrow", because: "prop cleanup is deferred with the general de-skin");
+		panel["togglePosition"]!.GetValue<string>().Should().Be("right");
+		panel["labelColor"]!.GetValue<string>().Should().Be("#333333");
+		panel["fullWidthHeader"]!.GetValue<bool>().Should().BeTrue();
+		panel["titleWidth"]!.GetValue<int>().Should().Be(200);
+		panel["fitContent"]!.GetValue<bool>().Should().BeTrue();
+		panel["expanded"]!.GetValue<bool>().Should().BeTrue(because: "expanded exists on mobile too and must survive");
+		panel.ContainsKey("alignItems").Should().BeFalse(because: "the pass must not add properties either — the panel goes as-is");
+		panel["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		Element(guide, "SimilarLeadName").ParentName.Should().Be("SimilarLead",
+			because: "the panel's inner content is none of this pass's business");
+	}
+
+	[Test]
+	[Description("A tab the mobile TEMPLATE provides is a merge twin and stays out of the pass entirely — a panel inside it is not retargeted anywhere.")]
+	public void Analyze_ShouldSynthesizeNoLayers_WhenPanelSitsInTemplateMergeTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+					{ "name": "FeedPanel", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
+		guide.TabAreaLayers.Should().BeNull(because: "merge tabs get no synthesized layers at all");
+		guide.ElementMap.Should().NotContain(e => e.WebName == null,
+			because: "nothing may be synthesized for a template-provided tab, panels included");
+	}
+
+	[Test]
+	[Description("Snapshot: a page mixing tab shapes (fields+panel, panels-only, fields-only) lays out every tab identically in ONE map — one Area per tab holding all its content, each tab's layers right after its own entry despite the earlier tabs' inserts.")]
+	public void Analyze_ShouldLayOutWholeTabbedPage_WhenTabsMixFieldsAndPanels() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" },
+					{ "name": "SimilarLead", "type": "crt.ExpansionPanel", "items": [] } ] },
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "OpportunityPlanning", "type": "crt.ExpansionPanel", "items": [] },
+					{ "name": "Products", "type": "crt.ExpansionPanel", "items": [] } ] },
+				{ "name": "ProcessingTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Notes", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		guide.TabAreaLayers!.Should().HaveCount(3, because: "every content-bearing converted tab gets its layers");
+		TabAreaLayerGroup overview = guide.TabAreaLayers![0];
+		overview.AreaName.Should().NotBeNull();
+		overview.MovedChildren.Should().Equal(new[] { "LeadName", "SimilarLead" },
+			because: "the panel stacks in the Area together with the field");
+		TabAreaLayerGroup sales = guide.TabAreaLayers![1];
+		sales.AreaName.Should().NotBeNull(because: "a panels-only tab gets an ordinary Area holding the panels");
+		sales.MovedChildren.Should().Equal(new[] { "OpportunityPlanning", "Products" });
+		TabAreaLayerGroup processing = guide.TabAreaLayers![2];
+		processing.AreaName.Should().NotBeNull();
+		processing.MovedChildren.Should().Equal(new[] { "Notes" });
+
+		// Each tab's layers must sit right after ITS entry in the final map — the earlier tabs' inserts
+		// shift the later tabs, so a stale pre-insert index would misplace everything here.
+		int salesAt = IndexOfMobile(guide, "SalesTab");
+		IndexOfMobile(guide, sales.MainTabContainerName).Should().Be(salesAt + 1);
+		IndexOfMobile(guide, sales.AreaName).Should().Be(salesAt + 2);
+		Element(guide, "OpportunityPlanning").ParentName.Should().Be(sales.AreaName);
+		Element(guide, "Products").ParentName.Should().Be(sales.AreaName);
+		Element(guide, "Products").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		int processingAt = IndexOfMobile(guide, "ProcessingTab");
+		IndexOfMobile(guide, processing.MainTabContainerName).Should().Be(processingAt + 1);
+		IndexOfMobile(guide, processing.AreaName).Should().Be(processingAt + 2);
+		Synthesized(guide, processing.AreaName).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the Area alone in the tab body carries no placement");
+	}
+
+	#endregion
+
+	#region Stable suffix (synthesized tab-layer names)
+
+	[Test]
+	[Description("StableSuffix is a pure content hash: identical inputs produce the identical 7-char lowercase base36 suffix on every run (reproducible baselines).")]
+	public void StableSuffix_ShouldReturnIdenticalSuffix_WhenInputsAreEqual() {
+		string first = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3");
+		string second = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3");
+
+		first.Should().Be(second);
+		first.Should().MatchRegex("^[0-9a-z]{7}$", "the suffix must look like a designer-generated one (7 lowercase base36 chars)");
+	}
+
+	[Test]
+	[Description("Different tabs (and different source pages) hash to different suffixes, so synthesized names never collide across tabs.")]
+	public void StableSuffix_ShouldReturnDistinctSuffixes_WhenInputsDiffer() {
+		string tabA = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_a");
+		string tabB = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_b");
+		string otherPage = WebToMobileAnalysisService.StableSuffix("UsrOrder_FormPage", "Tab_a");
+
+		tabA.Should().NotBe(tabB);
+		tabA.Should().NotBe(otherPage);
+	}
+
+	[Test]
+	[Description("A collision (the name already exists in the element map or the mobile template) deterministically EXTENDS the suffix with further hash characters — never a random rename.")]
+	public void StableSuffix_ShouldExtendSuffixDeterministically_WhenCandidateIsTaken() {
+		string free = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3");
+		var taken = new HashSet<string> { free, free + "-unrelated" };
+
+		string extendedFirst = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3", taken.Contains);
+		string extendedSecond = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3", taken.Contains);
+
+		extendedFirst.Should().Be(extendedSecond, "the extension must be as reproducible as the base suffix");
+		extendedFirst.Should().StartWith(free, "the collision guard extends the hash prefix rather than replacing it");
+		extendedFirst.Length.Should().Be(free.Length + 1);
+	}
+
+	[Test]
+	[Description("Without a collision guard the suffix is the plain 7-char hash prefix; a guard that reports everything free returns the same value.")]
+	public void StableSuffix_ShouldReturnBareHashPrefix_WhenGuardReportsNoCollision() {
+		string bare = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3");
+		string guarded = WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3", _ => false);
+
+		guarded.Should().Be(bare);
+	}
+
+	[Test]
+	[Description("GOLDEN VALUE — a compatibility contract, not a regular assertion: the suffix for a fixed input is pinned to the exact literal StableSuffix produced when the feature shipped. The other suffix tests compare the function to itself, so ONLY this literal can catch a silent change to the hash input format ($\"{page}:{tab}\"), algorithm (SHA-256), encoding (lowercase base36) or padding (PadLeft 7) — any of which renames every synthesized container in users' existing conversion baselines while the rest of the suite stays green. Do NOT update the literal to make the test pass; changing it is a deliberate baseline-migration decision.")]
+	public void StableSuffix_ShouldReturnPinnedGoldenValue_WhenInputIsBaselineFixture() {
+		WebToMobileAnalysisService.StableSuffix("UsrLead_FormPage", "Tab_x1y2z3").Should().Be("2vijwqq",
+			because: "the suffix is part of the on-page name compatibility contract — a repeated conversion of the same page must synthesize the very same names it did on the day the feature shipped");
+	}
+
+	[Test]
+	[Description("GOLDEN VALUE through the PUBLIC guide output: the full synthesized layer names for the tabbed fixture are pinned to the exact literals a real Analyze produced when the feature shipped, so the whole naming pipeline (prefix from the rules + StableSuffix over the page/tab pair) is locked end to end, not just the hash helper. Do NOT update the literals to make the test pass; changing them is a deliberate baseline-migration decision.")]
+	public void Analyze_ShouldReproducePinnedGoldenNames_WhenConvertingTabbedFixture() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
+		group.MainTabContainerName.Should().Be("MainTabContainer_4fjmsq8",
+			because: "re-running the guide over an unchanged page must reproduce the exact names of the user's existing baseline");
+		group.AreaName.Should().Be("GridContainer_4fjmsq8",
+			because: "re-running the guide over an unchanged page must reproduce the exact names of the user's existing baseline");
+		Element(guide, "LeadName").ParentName.Should().Be("GridContainer_4fjmsq8",
+			because: "the moved child must point at the same pinned Area name");
+	}
+
+	#endregion
+
+	#region Spacing normalization on inserted containers
+
+	private static readonly IReadOnlySet<string> SpacingMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.GridContainer", "crt.FlexContainer", "crt.Input", "crt.TabContainer"
+		};
+
+	private static readonly IReadOnlyList<ComponentPropertyOverrideRule> SpacingOverrides = [
+		new ComponentPropertyOverrideRule {
+			Type = "crt.GridContainer",
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+				"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
+		},
+		new ComponentPropertyOverrideRule {
+			Type = "crt.FlexContainer",
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "gap": "medium" }""")
+		}
+	];
+
+	private static WebToMobilePageConversionRules RulesWithSpacingOverrides() => new() {
+		ComponentPropertyOverrides = SpacingOverrides
+	};
+
+	private static MobilePageConversionGuide AnalyzeSpacing(PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, SpacingMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true), ("crt.GridContainer", true), ("crt.Input", false)),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+	[Test]
+	[Description("A converted grid container's web gap (any value, e.g. the canonical columnGap large / rowGap none) is DISCARDED, not translated — the insert carries the mobile-standard gap Medium on both axes, and the advisory section lists the container.")]
+	public void Analyze_SpacingNormalization_ShouldReplaceWebGridGapWithMedium() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer",
+			    "gap": { "columnGap": "large", "rowGap": "none" },
+			    "items": [ { "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, RulesWithSpacingOverrides());
+
+		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
+		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium",
+			because: "the web spacing is ignored by design — mobile follows the mobile spacing standard");
+		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
+		entry.Type.Should().Be("crt.GridContainer");
+		entry.Properties.Should().Equal("gap");
+	}
+
+	[Test]
+	[Description("A flex container's web gap of ANY shape (px number, none, CSS string) becomes the Medium token, and a flex container that carried NO gap at all still gets the explicit Medium — the converted body must be self-describing, not lean on client defaults.")]
+	public void Analyze_SpacingNormalization_ShouldStampMediumOnFlex_WhateverTheWebCarried() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "TightRow", "type": "crt.FlexContainer", "gap": 0, "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+			  { "name": "PlainColumn", "type": "crt.FlexContainer", "items": [
+				{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, RulesWithSpacingOverrides());
+
+		Element(guide, "TightRow").MobileValues!["gap"]!.GetValue<string>().Should().Be("medium",
+			because: "a web gap 0/none is deliberately overridden — the known trade-off of the normalization");
+		Element(guide, "PlainColumn").MobileValues!["gap"]!.GetValue<string>().Should().Be("medium",
+			because: "a container without a web gap gets the explicit default added");
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name)
+			.Should().BeEquivalentTo("TightRow", "PlainColumn");
+	}
+
+	[Test]
+	[Description("The pass runs AFTER the tab-area synthesis, so the synthesized tab-body grid and Area card are normalized by the SAME rule as converted containers — the invariant is 'every inserted Grid/Flex carries gap Medium', whatever its origin.")]
+	public void Analyze_SpacingNormalization_ShouldCoverSynthesizedTabLayers() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules baseRules = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = baseRules.Components,
+			TabAreaLayers = baseRules.TabAreaLayers,
+			ComponentPropertyOverrides = SpacingOverrides
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		(string main, string area) = LayerNames("OverviewTab");
+		foreach (string name in new[] { main, area }) {
+			JsonObject vals = Synthesized(guide, name).MobileValues!.AsObject();
+			vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium", because: $"{name} is an inserted grid like any other");
+			vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium");
+		}
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().Contain(new[] { main, area });
+	}
+
+	[Test]
+	[Description("A merge twin the mobile template provides is NEVER touched by the normalization — no values are stamped onto it and it is absent from the advisory list.")]
+	public void Analyze_SpacingNormalization_ShouldNeverTouchMergeTwins() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules baseRules = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = baseRules.Components,
+			TabAreaLayers = baseRules.TabAreaLayers,
+			ComponentPropertyOverrides = SpacingOverrides
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		ElementMapEntry tabs = Element(guide, "Tabs");
+		tabs.Operation.Should().Be("merge", because: "the fixture maps Tabs onto the template's own Tabs");
+		tabs.MobileValues.Should().BeNull(because: "a merge twin gets nothing stamped onto it");
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().NotContain("Tabs");
+	}
+
+	[Test]
+	[Description("The pass is switched by DATA — with no componentPropertyOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
+	public void Analyze_SpacingNormalization_ShouldBeNoOp_WhenRulesGroupAbsent() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer",
+			    "gap": { "columnGap": "large", "rowGap": "none" },
+			    "items": [ { "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, new WebToMobilePageConversionRules());
+
+		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("large",
+			because: "without the rules group the property-carry behavior is unchanged");
+		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("none");
+		guide.SpacingNormalization.Should().BeNull();
+	}
+
+	[Test]
+	[Description("A rules file can never override an element's identity — 'type' (and 'name') entries in the override values are ignored, other listed properties still apply.")]
+	public void Analyze_SpacingNormalization_ShouldIgnoreIdentityKeysInOverrides() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.GridContainer",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "type": "crt.Label", "name": "Hijacked", "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
+				}
+			]
+		};
+
+		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, rules);
+
+		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.GridContainer", because: "identity keys are never overridable");
+		vals.ContainsKey("name").Should().BeFalse();
+		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
+		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
+		entry.Properties.Should().Equal("gap");
+	}
+
+	#endregion
+
+	#region Empty container removal
+
+	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.TabPanel", "crt.TabContainer", "crt.FlexContainer", "crt.GridContainer",
+			"crt.ExpansionPanel", "crt.Input", "crt.ComboBox"
+		};
+
+	private static readonly EmptyContainerRemovalRule EmptyRemoval = new() {
+		RemovableTypes = ["crt.FlexContainer", "crt.GridContainer", "crt.TabPanel", "crt.TabContainer", "crt.ExpansionPanel"]
+	};
+
+	private static WebToMobilePageConversionRules RulesWithEmptyRemoval() => new() {
+		Components = GridRule.Components,
+		EmptyContainerRemoval = EmptyRemoval
+	};
+
+	private static WebToMobilePageConversionRules RulesWithEmptyRemovalAndTabLayers() => new() {
+		Components = GridRule.Components,
+		TabAreaLayers = RulesWithTabAreaLayers().TabAreaLayers,
+		EmptyContainerRemoval = EmptyRemoval
+	};
+
+	private static MobilePageConversionGuide AnalyzeWithEmptyRemoval(
+		PageBundleInfo bundle,
+		WebToMobilePageConversionRules rules = null,
+		IReadOnlyDictionary<string, string> containerNameMap = null,
+		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = null,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null,
+		PageBusinessRuleProbeResult pageBusinessRulesProbe = null) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, EmptyRemovalMobileTypes,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline" },
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules ?? RulesWithEmptyRemoval(), templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: containerNameMap ?? TabbedContainerMap,
+			positionalPlacements: positionalPlacements, mobileContainerParents: mobileContainerParents,
+			pageBusinessRulesProbe: pageBusinessRulesProbe);
+
+	[Test]
+	[Description("A converter-created container whose every child dropped is itself converted to a drop with reason 'empty container', and the guide's constraints warn the reader not to re-create it.")]
+	public void Analyze_ShouldDropEmptyContainer_WhenNoChildSurvives() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry box = Element(guide, "OnlyUnsupported");
+		box.Operation.Should().Be("drop");
+		box.Reason.Should().Contain("empty container");
+		box.WebType.Should().Be("crt.GridContainer", because: "the report must still say what was removed");
+		box.MobileName.Should().BeNull(because: "a drop carries no mobile target");
+		Element(guide, "Timeline").Operation.Should().Be("drop", because: "the child's own drop is what emptied the box");
+		guide.Constraints.Should().Contain(c => c.Contains("empty container"),
+			because: "the reader must be told the removal already happened and is not theirs to redo or undo");
+	}
+
+	[Test]
+	[Description("One surviving child keeps its container — only containers with NO surviving child are removed.")]
+	public void Analyze_ShouldKeepContainer_WhenAnyChildSurvives() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MixedBox", "type": "crt.GridContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input" },
+				{ "name": "Timeline", "type": "crt.Timeline" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "MixedBox").Operation.Should().Be("insert");
+		Element(guide, "LeadName").ParentName.Should().Be("MixedBox");
+		guide.Constraints.Should().NotContain(c => c.Contains("empty container"),
+			because: "with nothing removed there is nothing to warn about");
+	}
+
+	[Test]
+	[Description("Emptiness cascades bottom-up — a FlexContainer holding only an empty GridContainer drops together with it.")]
+	public void Analyze_ShouldCascadeRemoval_WhenWrapperHoldsOnlyEmptyContainer() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Wrapper", "type": "crt.FlexContainer", "items": [
+				{ "name": "InnerGrid", "type": "crt.GridContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "InnerGrid").Operation.Should().Be("drop");
+		Element(guide, "InnerGrid").Reason.Should().Contain("empty container");
+		Element(guide, "Wrapper").Operation.Should().Be("drop",
+			because: "after the inner grid left, the wrapper holds nothing — the removal must cascade");
+		Element(guide, "Wrapper").Reason.Should().Contain("empty container");
+	}
+
+	[Test]
+	[Description("A child with visible:false COUNTS as content — it is hidden at runtime only and must keep its designer home, so its container survives.")]
+	public void Analyze_ShouldKeepContainer_WhenOnlyChildIsHiddenOnly() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "HiddenBox", "type": "crt.GridContainer", "items": [
+				{ "name": "SecretField", "type": "crt.Input", "visible": false } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "HiddenBox").Operation.Should().Be("insert");
+		ElementMapEntry field = Element(guide, "SecretField");
+		field.Operation.Should().Be("insert");
+		field.MobileValues!["visible"]!.GetValue<bool>().Should().BeFalse(
+			because: "the hidden child is carried, which is exactly why its container is not empty");
+	}
+
+	[Test]
+	[Description("A container whose items is a COLLECTION BINDING (a string, not an array) is a repeater with data, not empty scaffolding — it is kept.")]
+	public void Analyze_ShouldKeepRepeaterContainer_WhenItemsIsACollectionBinding() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "RepeaterContainer", "type": "crt.FlexContainer", "items": "$Payments" } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry repeater = Element(guide, "RepeaterContainer");
+		repeater.Operation.Should().Be("insert");
+		repeater.MobileValues!["items"]!.GetValue<string>().Should().Be("$Payments",
+			because: "the binding IS the container's content — deleting the shell would delete the repeater");
+	}
+
+	[Test]
+	[Description("Decision 2026-08-03: an ExpansionPanel is judged on items ONLY — an empty panel drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
+	public void Analyze_ShouldDropEmptyExpansionPanel_AndCascadeIntoTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "EmptyPanel", "type": "crt.ExpansionPanel", "items": [] } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "EmptyPanel").Operation.Should().Be("drop");
+		Element(guide, "EmptyPanel").Reason.Should().Contain("empty container");
+		Element(guide, "OverviewTab").Operation.Should().Be("drop",
+			because: "the panel was the tab's only content, so the tab empties and cascades away");
+		Element(guide, "Tabs").Operation.Should().Be("merge",
+			because: "a template merge twin is structurally out of the removal's reach, however empty its converted content");
+	}
+
+	[Test]
+	[Description("Items-only decision: a panel with header buttons in tools but an empty items still drops — and the discarded tools are called out in the drop reason so the loss stays visible in the report.")]
+	public void Analyze_ShouldMentionDiscardedTools_WhenEmptyPanelCarriesToolsButtons() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ], "items": [] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
+		panel.Operation.Should().Be("drop");
+		panel.Reason.Should().Contain("empty container");
+		panel.Reason.Should().Contain("tools", because: "silent removal is acceptable only while the discarded tools stay visible in the report");
+	}
+
+	[Test]
+	[Description("The pass is switched by DATA — without an emptyContainerRemoval rules section the empty container is still inserted, exactly as before the feature.")]
+	public void Analyze_ShouldSkipRemovalPass_WhenRulesCarryNoSection() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: GridRule);
+
+		Element(guide, "OnlyUnsupported").Operation.Should().Be("insert");
+		guide.Constraints.Should().NotContain(c => c.Contains("empty container"));
+	}
+
+	[Test]
+	[Description("The removal runs BEFORE the tab-area synthesis — a removed empty tab gets NO layers (nothing resurrects it), while its content-bearing sibling keeps the full two-layer body.")]
+	public void Analyze_ShouldSynthesizeNoLayers_WhenEmptyTabWasRemoved() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "EmptyTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] },
+				{ "name": "FullTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithEmptyRemovalAndTabLayers());
+
+		Element(guide, "EmptyTab").Operation.Should().Be("drop");
+		guide.TabAreaLayers!.Single().TabName.Should().Be("FullTab",
+			because: "only the surviving tab gets the designer's two-layer body");
+		(string emptyMain, string emptyArea) = LayerNames("EmptyTab");
+		IndexOfMobile(guide, emptyMain).Should().Be(-1, because: "a removed tab must not be resurrected by synthesized layers");
+		IndexOfMobile(guide, emptyArea).Should().Be(-1);
+		(string fullMain, string fullArea) = LayerNames("FullTab");
+		Synthesized(guide, fullMain).ParentName.Should().Be("FullTab");
+		Element(guide, "LeadName").ParentName.Should().Be(fullArea);
+	}
+
+	[Test]
+	[Description("A page's OWN inserted TabPanel (no template twin) whose every tab emptied cascades away completely — no tabless panel shell survives.")]
+	public void Analyze_ShouldDropOwnTabPanelShell_WhenEveryTabEmptied() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OwnTabs", "type": "crt.TabPanel", "items": [
+				{ "name": "FirstTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+		Element(guide, "FirstTab").Operation.Should().Be("drop");
+		Element(guide, "OwnTabs").Operation.Should().Be("drop",
+			because: "a panel whose every tab left is the most pointless shell of all — the cascade must reach it");
+	}
+
+	[Test]
+	[Description("Positional :top indexes are re-compacted after removal — dropping the middle sibling leaves no hole, so the survivors land at contiguous positions above the mobile anchor.")]
+	public void Analyze_ShouldCompactPositionalIndexes_WhenPositionalSiblingIsRemoved() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "TopBox", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "TopEmpty", "type": "crt.FlexContainer", "items": [ { "name": "Timeline", "type": "crt.Timeline" } ] },
+			  { "name": "TopField", "type": "crt.Input" },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "LeadName", "type": "crt.Input" } ] } ] } ] },
+			  { "name": "FooterField", "type": "crt.Input" }
+			]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, containerNameMap: map, positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		Element(guide, "TopEmpty").Operation.Should().Be("drop");
+		Element(guide, "TopBox").Index.Should().Be(0, because: "the first survivor keeps the top slot");
+		Element(guide, "TopField").Index.Should().Be(1,
+			because: "the removed middle sibling must leave no index hole — a gap would misplace the insert");
+		Element(guide, "FooterField").Index.Should().BeNull(because: ":bottom entries append and never carry an index");
+	}
+
+	[Test]
+	[Description("Follow-up: positional :top compaction is NOT tied to the empty-container pass — a middle sibling dropped for an unrelated reason (unsupported type) leaves no index hole even with no emptyContainerRemoval rules section at all.")]
+	public void Analyze_ShouldCompactPositionalIndexes_WhenSiblingDroppedForUnrelatedReason() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "TopBox", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "Timeline", "type": "crt.Timeline" },
+			  { "name": "TopField", "type": "crt.Input" },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "LeadName", "type": "crt.Input" } ] } ] } ] }
+			]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, rules: GridRule, containerNameMap: map, positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		Element(guide, "Timeline").Operation.Should().Be("drop",
+			because: "the unsupported middle sibling drops during the walk itself, before any empty-container logic");
+		Element(guide, "TopBox").Index.Should().Be(0, because: "the first survivor keeps the top slot");
+		Element(guide, "TopField").Index.Should().Be(1,
+			because: "every drop source leaves the same positional hole, so compaction must run even when the empty-container pass removed nothing");
+	}
+
+	[Test]
+	[Description("Follow-up: the requestConversions summary is reconciled with the removal pass — a converted binding on a container later removed as empty is reclassified into droppedRequests (naming the removal), never reported as converted for an element the map says not to create.")]
+	public void Analyze_ShouldReclassifyConvertedRequest_WhenItsContainerWasRemovedAsEmpty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "EmptyBox", "type": "crt.FlexContainer",
+			    "clicked": { "request": "crt.SaveRecordRequest", "params": {} }, "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] },
+			  { "name": "SaveButton", "type": "crt.Input",
+			    "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			Components = GridRule.Components,
+			Requests = [
+				new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" }
+			],
+			EmptyContainerRemoval = EmptyRemoval
+		};
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: rules);
+
+		Element(guide, "EmptyBox").Operation.Should().Be("drop",
+			because: "the container's only child dropped, so the empty-container pass removes the container itself");
+		guide.RequestConversions!.ConvertedRequests.Should().NotContain(r => r.ElementName == "EmptyBox",
+			because: "reporting a binding as converted for a removed element would contradict the drop entry and invite the caller to re-create the container");
+		guide.RequestConversions.DroppedRequests.Should().ContainSingle(r =>
+				r.ElementName == "EmptyBox" && r.Binding == "clicked" && r.WebRequest == "crt.SaveRecordRequest",
+				because: "the discarded binding must stay visible in the report instead of vanishing silently")
+			.Which.Reason.Should().Contain("empty container",
+				because: "the reason must name the removal so the reader can connect it to the elementMap drop entry");
+		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "SaveButton",
+			because: "reconciliation is scoped to removed containers — a surviving element's converted binding still reports as converted");
+	}
+
+	[Test]
+	[Description("Decision 3: attributes referenced ONLY by a removed empty container are KEPT in viewModelConfig — the removal is layout cleanup, not attribute cleanup — while attributes of a genuinely dropped component are still cleaned as before.")]
+	public void Analyze_ShouldKeepAttributesOfRemovedContainer_WhenOnlyEmptyContainerReferencedThem() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "EmptyBox", "type": "crt.GridContainer", "visible": "$BoxVisible", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline", "value": "$TimelineAttr" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "BoxVisible": { "type": "Boolean" }, "TimelineAttr": { "type": "String" } } }
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		Element(guide, "EmptyBox").Operation.Should().Be("drop");
+		JsonObject attributes = guide.ViewModelConfig!["attributes"]!.AsObject();
+		attributes.ContainsKey("BoxVisible").Should().BeTrue(
+			because: "the empty-container removal deliberately keeps the attributes the removed container referenced");
+		attributes.ContainsKey("TimelineAttr").Should().BeFalse(
+			because: "an attribute consumed only by a genuinely dropped component is still cleaned, exactly as before");
+	}
+
+	[Test]
+	[Description("Decision 6: the removal runs BEFORE the business-rule conversion — a rule whose only action targets the removed container is dropped, while a rule on a surviving element still converts.")]
+	public void Analyze_ShouldDropRuleOnRemovedContainer_WhenRemovalRunsBeforeRuleConversion() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "EmptyBox", "type": "crt.GridContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline" } ] },
+			  { "name": "LeadName", "type": "crt.Input" } ]
+			""");
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the box", ElementAction("hide-element", "EmptyBox")),
+			SourceRule("Lock the name", ElementAction("make-read-only", "LeadName")));
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, pageBusinessRulesProbe: probe);
+
+		Element(guide, "EmptyBox").Operation.Should().Be("drop");
+		guide.PageBusinessRules!.DroppedRules.Should().ContainSingle(r => r.Caption == "Hide the box",
+			because: "a rule left with no live action follows its removed target out");
+		guide.PageBusinessRules.ConvertedRules.Should().ContainSingle(r => r.Caption == "Lock the name",
+			because: "rules on surviving elements are untouched by the removal");
+	}
+
+	#endregion
+
+	#region Converted tab placement (explicit indexes so template Feed/Attachments stay last)
+
+	[Test]
+	[Description("Converted web tabs get explicit indexes under the mobile Tabs starting right after the template's general tab, in web tree order — so applying the element map verbatim keeps the template's Feed/Attachments tabs last.")]
+	public void Analyze_ShouldIndexConvertedTabs_AfterTemplateGeneralTab() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] },
+				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry sales = Element(guide, "SalesTab");
+		sales.ParentName.Should().Be("Tabs");
+		sales.Index.Should().Be(1, because: "position 0 belongs to the template's general tab");
+		sales.Reason.Should().Contain("Feed/Attachments",
+			because: "the report must explain why a non-positional insert suddenly carries an index");
+		Element(guide, "HistoryTab").Index.Should().Be(2, because: "converted tabs keep the web page's own tab order");
+		Element(guide, "Tabs").Operation.Should().Be("merge",
+			because: "the Tabs twin itself is template chrome and is never indexed or moved");
+		Element(guide, "Budget").Index.Should().BeNull(because: "only the tabs are indexed, never their content");
+	}
+
+	[Test]
+	[Description("Leads_FormPage scenario: a tab removed as empty (its only child is unsupported on mobile) is never indexed, and the surviving tabs are numbered contiguously from the first tab index — no hole where the removed tab was.")]
+	public void Analyze_ShouldIndexOnlySurvivingTabs_WhenMiddleTabWasRemovedAsEmpty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] },
+				{ "name": "NextStepsTab", "type": "crt.TabContainer", "items": [ { "name": "Timeline", "type": "crt.Timeline" } ] },
+				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		ElementMapEntry nextSteps = Element(guide, "NextStepsTab");
+		nextSteps.Operation.Should().Be("drop",
+			because: "its only child is unsupported on mobile, so the tab empties and the removal pass takes it");
+		nextSteps.Index.Should().BeNull(because: "a drop is never indexed");
+		Element(guide, "SalesTab").Index.Should().Be(1);
+		Element(guide, "HistoryTab").Index.Should().Be(2,
+			because: "the removed middle tab must leave no index hole — survivors stay contiguous");
+	}
+
+	[Test]
+	[Description("The pass is UNCONDITIONAL: correct tab order is a correctness invariant, not an opt-in — a converted tab is indexed even on a rules file carrying nothing but the component map, so no missing (or externally fetched) rules section can silently push it past the template's Feed/Attachments tabs.")]
+	public void Analyze_ShouldIndexConvertedTab_WhenRulesCarryOnlyComponents() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, rules: new WebToMobilePageConversionRules { Components = GridRule.Components });
+
+		Element(guide, "SalesTab").Index.Should().Be(1,
+			because: "the tab index comes from the converter itself, not from a rules section that could go missing");
+	}
+
+	[Test]
+	[Description("Tab indexes coexist with positional :top indexes: the positional group (under MainContainer) is compacted from 0, while the tab group (under Tabs) starts at the first tab index — the compaction never rebases the tab indexes because they are assigned after it.")]
+	public void Analyze_ShouldKeepTabIndexBase_WhenPositionalCompactionRuns() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "TopBox", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "Timeline", "type": "crt.Timeline" },
+			  { "name": "TopField", "type": "crt.Input" },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] } ] } ] }
+			]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, containerNameMap: map,
+			positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		Element(guide, "TopBox").Index.Should().Be(0, because: ":top compaction still rebases the positional group to 0");
+		Element(guide, "TopField").Index.Should().Be(1,
+			because: "the dropped middle sibling leaves no positional hole, exactly as without tab placement");
+		ElementMapEntry sales = Element(guide, "SalesTab");
+		sales.ParentName.Should().Be("Tabs");
+		sales.Index.Should().Be(1,
+			because: "the tab index is assigned AFTER the compaction — rebased to 0 it would land before the template's general tab");
 	}
 
 	#endregion
