@@ -204,9 +204,9 @@ public static class WebToMobileAnalysisService {
 		// Tabs (starting right after the template's general tab) so the template's Feed/Attachments tabs stay
 		// last. The pass order is load-bearing: AFTER RemoveEmptyContainers (a tab removed as empty is a drop
 		// by then and never indexed — no holes), and AFTER CompactPositionalIndexes (that compaction rebases
-		// each parent's indexed group to 0; run over tab indexes it would rebase firstIndex away and put the
-		// first web tab BEFORE the general tab).
-		AssignConvertedTabIndexes(elementMap, rules);
+		// each parent's indexed group to 0; run over tab indexes it would rebase the first-tab offset away and
+		// put the first web tab BEFORE the general tab).
+		AssignConvertedTabIndexes(elementMap);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
 			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames);
 
@@ -232,9 +232,9 @@ public static class WebToMobileAnalysisService {
 		// every inserted crt.IndicatorWidget: the web widget's own font size and border are IGNORED, not
 		// translated. Each rule declares which guide section it reports into, so the two standards never
 		// bleed into each other's summary.
-		InsertValueOverrideResult insertValueOverrides = ApplyInsertValueOverrides(elementMap, rules);
-		List<SpacingNormalizationEntry> spacingNormalization = insertValueOverrides.Spacing;
-		List<MetricStyleNormalizationEntry> metricStyleNormalization = insertValueOverrides.MetricStyle;
+		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
+		List<SpacingNormalizationEntry> spacingNormalization = componentPropertyOverrides.Spacing;
+		List<MetricStyleNormalizationEntry> metricStyleNormalization = componentPropertyOverrides.MetricStyle;
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -316,8 +316,8 @@ public static class WebToMobileAnalysisService {
 				}
 				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, emptyRemovedNames.Count > 0, insertValueOverrides),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, insertValueOverrides),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, emptyRemovedNames.Count > 0, componentPropertyOverrides),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, componentPropertyOverrides),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1265,7 +1265,7 @@ public static class WebToMobileAnalysisService {
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasEmptyContainerRemovals = false, InsertValueOverrideResult normalization = null) {
+		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1385,7 +1385,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		InsertValueOverrideResult normalization = null) {
+		ComponentPropertyOverrideResult normalization = null) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -2504,38 +2504,50 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>Mobile Tabs element name that converted web tabs are inserted under.</summary>
+	private const string MobileTabsElementName = "Tabs";
+
+	/// <summary>Mobile component type of a single tab.</summary>
+	private const string MobileTabComponentType = "crt.TabContainer";
+
+	/// <summary>
+	/// 0-based index of the FIRST converted tab within the mobile Tabs items: 1 places it right after the
+	/// template's general tab (position 0) and before the template's Feed/Attachments tabs, which shift
+	/// right and stay last.
+	/// </summary>
+	private const int FirstConvertedTabIndex = 1;
+
 	/// <summary>
 	/// Assigns an explicit ordering index to every SURVIVING converted web tab inserted under the mobile
 	/// Tabs element, so the template's Feed/Attachments tabs stay LAST. The mobile tabbed template ships
 	/// its tabs as [general(0), Feed, Attachments]; an index-less insert appends AFTER them, which is how
 	/// converted tabs used to land past Feed/Attachments (the "keep them last" requirement lived only as
-	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors
-	/// <c>firstIndex, firstIndex+1, …</c> in element-map order (= the web tree order) inserts each tab
+	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors from
+	/// <see cref="FirstConvertedTabIndex"/> up in element-map order (= the web tree order) inserts each tab
 	/// right after the general tab and preserves the web page's own tab order; the template twins are
 	/// merges, never move, and get pushed last by construction.
 	/// <para>
 	/// Pass order is load-bearing (enforced at the call site): AFTER <see cref="RemoveEmptyContainers"/>
 	/// so a tab removed as empty is a drop by then and is never indexed (survivors stay contiguous), and
 	/// AFTER <see cref="CompactPositionalIndexes"/> — that compaction rebases each parent's indexed group
-	/// to 0, which over tab indexes would erase <c>firstIndex</c> and put the first converted tab BEFORE
+	/// to 0, which over tab indexes would erase the first-tab offset and put the first converted tab BEFORE
 	/// the general tab. The two never meet in one group anyway (positional inserts target the Tabs
 	/// anchor's PARENT, e.g. MainContainer, never Tabs itself), but the order makes that a non-issue by
 	/// construction. Synthesized tab-area layers are created later, INSIDE tabs, and are never matched.
-	/// With no usable <c>convertedTabPlacement</c> rules section the pass is a no-op — converted tabs
-	/// then append as before (switched by data, not code).
+	/// The pass is UNCONDITIONAL: correct tab order is a correctness invariant, not an opt-in, and the
+	/// values it needs are constants of the mobile tabbed template (the Tabs element name, the tab
+	/// component type, the general tab owning position 0) rather than variable data — a rules file could
+	/// only ever restate them, and its absence would silently reorder tabs behind the guidance contract,
+	/// which promises the caller the indexes are already there. On a non-tabbed page nothing inserts a tab
+	/// under Tabs, so the loop matches nothing and the pass costs one map walk.
 	/// </para>
 	/// </summary>
-	private static void AssignConvertedTabIndexes(
-		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
-		ConvertedTabPlacementRule rule = rules?.ConvertedTabPlacement;
-		if (string.IsNullOrWhiteSpace(rule?.TabsElementName) || string.IsNullOrWhiteSpace(rule.TabComponentType)) {
-			return;
-		}
-		int next = Math.Max(0, rule.FirstIndex);
+	private static void AssignConvertedTabIndexes(List<ElementMapEntry> elementMap) {
+		int next = FirstConvertedTabIndex;
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				&& string.Equals(entry.ParentName, rule.TabsElementName, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(entry.MobileType, rule.TabComponentType, StringComparison.OrdinalIgnoreCase)) {
+				&& string.Equals(entry.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entry.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)) {
 				entry.Index = next++;
 				entry.Reason = entry.Reason
 					+ "; explicit index keeps it before the template's Feed/Attachments tabs (they stay last)";
@@ -2578,8 +2590,11 @@ public static class WebToMobileAnalysisService {
 	private static List<TabAreaLayerGroup> BuildTabAreaLayers(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules, string sourcePage) {
 		TabAreaLayersRule rule = rules?.TabAreaLayers;
+		// The Area card rule is nested inside the tab-body rule — the rules JSON mirrors the DOM it produces.
+		SynthesizedContainerRule mainRule = rule?.MainTabContainer;
+		SynthesizedContainerRule areaRule = mainRule?.AreaContainer;
 		if (string.IsNullOrWhiteSpace(rule?.TabComponentType)
-			|| !IsUsableLayer(rule.MainTabContainer) || !IsUsableLayer(rule.AreaContainer)) {
+			|| !IsUsableLayer(mainRule) || !IsUsableLayer(areaRule)) {
 			return [];
 		}
 		// Every name already spoken for: the source element names and the mobile names the template owns
@@ -2617,16 +2632,16 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			string suffix = StableSuffix(sourcePage, tab.MobileName,
-				candidate => taken.Contains(rule.MainTabContainer.NamePrefix + candidate)
-					|| taken.Contains(rule.AreaContainer.NamePrefix + candidate));
-			string mainName = rule.MainTabContainer.NamePrefix + suffix;
+				candidate => taken.Contains(mainRule.NamePrefix + candidate)
+					|| taken.Contains(areaRule.NamePrefix + candidate));
+			string mainName = mainRule.NamePrefix + suffix;
 			taken.Add(mainName);
 
 			// Freshly resolved index: earlier tabs have already shifted this one by their own inserts.
 			// insertAt walks forward so every synthesized layer lands right after the tab's entry, parent
 			// always before child (layer 2 → Area; the tab's children sit later in the map anyway).
 			int insertAt = elementMap.IndexOf(tab);
-			elementMap.Insert(++insertAt, SynthesizedLayerEntry(rule.MainTabContainer, mainName, tab.MobileName,
+			elementMap.Insert(++insertAt, SynthesizedLayerEntry(mainRule, mainName, tab.MobileName,
 				$"synthesized by the converter (no web counterpart) — the tab body of the converted tab "
 				+ $"'{tab.MobileName}'; it holds the Area card that follows"));
 
@@ -2635,9 +2650,9 @@ public static class WebToMobileAnalysisService {
 			// nothing must not be created — the same AC#5 construction, one level down).
 			string areaName = null;
 			if (content.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
-				areaName = rule.AreaContainer.NamePrefix + suffix;
+				areaName = areaRule.NamePrefix + suffix;
 				taken.Add(areaName);
-				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(rule.AreaContainer, areaName, mainName,
+				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(areaRule, areaName, mainName,
 					$"synthesized by the converter (no web counterpart) — the Area card of the converted tab "
 					+ $"'{tab.MobileName}'; on mobile a tab's content lives in an Area, not in the tab body itself"));
 			}
@@ -2725,7 +2740,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Applies the rules' <c>insertValueOverrides</c> to every element-map INSERT, stamping each mobile
+	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT, stamping each mobile
 	/// standard the rules file declares (container spacing, metric style). For each entry whose
 	/// <c>mobileType</c> matches an override rule, the listed properties are SET on the prebuilt
 	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
@@ -2740,15 +2755,15 @@ public static class WebToMobileAnalysisService {
 	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
 	/// declared via <c>reportGroup</c>.
 	/// </summary>
-	private static InsertValueOverrideResult ApplyInsertValueOverrides(
+	private static ComponentPropertyOverrideResult ApplyComponentPropertyOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
-		var result = new InsertValueOverrideResult();
-		IReadOnlyList<InsertValueOverrideRule> overrides = rules?.InsertValueOverrides;
+		var result = new ComponentPropertyOverrideResult();
+		IReadOnlyList<ComponentPropertyOverrideRule> overrides = rules?.ComponentPropertyOverrides;
 		if (overrides is not { Count: > 0 }) {
 			return result;
 		}
-		var byType = new Dictionary<string, InsertValueOverrideRule>(StringComparer.OrdinalIgnoreCase);
-		foreach (InsertValueOverrideRule rule in overrides) {
+		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
+		foreach (ComponentPropertyOverrideRule rule in overrides) {
 			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
 				byType[rule.Type] = rule;
 			}
@@ -2760,7 +2775,7 @@ public static class WebToMobileAnalysisService {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
 				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out InsertValueOverrideRule rule)) {
+				|| !byType.TryGetValue(entry.MobileType, out ComponentPropertyOverrideRule rule)) {
 				continue;
 			}
 			var properties = new List<string>();
@@ -2844,23 +2859,23 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Maps a rules-file <c>reportGroup</c> to its enum. An absent or unrecognized value falls back to
-	/// <see cref="InsertValueOverrideReportGroup.Spacing"/> so a rules file written before the field
+	/// <see cref="ComponentPropertyOverrideReportGroup.Spacing"/> so a rules file written before the field
 	/// existed reports exactly where it used to. <see cref="Enum.IsDefined{T}"/> guards the numeric form
 	/// <see cref="Enum.TryParse{T}(string, bool, out T)"/> also accepts: the rules file is CDN-served, so
 	/// "7" must not become an undefined enum value that a later switch could route on.
 	/// </summary>
-	private static InsertValueOverrideReportGroup ParseReportGroup(string reportGroup) =>
-		Enum.TryParse(reportGroup, ignoreCase: true, out InsertValueOverrideReportGroup parsed)
+	private static ComponentPropertyOverrideReportGroup ParseReportGroup(string reportGroup) =>
+		Enum.TryParse(reportGroup, ignoreCase: true, out ComponentPropertyOverrideReportGroup parsed)
 			&& Enum.IsDefined(parsed)
 				? parsed
-				: InsertValueOverrideReportGroup.Spacing;
+				: ComponentPropertyOverrideReportGroup.Spacing;
 
 	/// <summary>
 	/// Per-report-group output of the shared insert-value override pass. One pass stamps every standard,
 	/// but each standard reports through its own guide section because each carries its own
 	/// caller-facing summary and constraint.
 	/// </summary>
-	private sealed class InsertValueOverrideResult {
+	private sealed class ComponentPropertyOverrideResult {
 		/// <summary>Inserted containers whose spacing was normalized (gap Medium).</summary>
 		public List<SpacingNormalizationEntry> Spacing { get; } = [];
 
@@ -2869,8 +2884,8 @@ public static class WebToMobileAnalysisService {
 
 		/// <summary>Records one normalized element under the group its rule declared.</summary>
 		public void Add(
-			InsertValueOverrideReportGroup group, string name, string type, IReadOnlyList<string> properties) {
-			if (group == InsertValueOverrideReportGroup.MetricStyle) {
+			ComponentPropertyOverrideReportGroup group, string name, string type, IReadOnlyList<string> properties) {
+			if (group == ComponentPropertyOverrideReportGroup.MetricStyle) {
 				MetricStyle.Add(new MetricStyleNormalizationEntry {
 					Name = name, Type = type, Properties = properties
 				});

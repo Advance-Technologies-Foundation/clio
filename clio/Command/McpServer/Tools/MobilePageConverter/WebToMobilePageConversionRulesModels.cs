@@ -53,8 +53,8 @@ public sealed class WebToMobilePageConversionRules {
 	/// synthesized inserts alike; merge twins the mobile template provides are never touched. Empty or
 	/// absent switches the pass off (the feature is data-driven, like <see cref="TabAreaLayers"/>).
 	/// </summary>
-	[JsonPropertyName("insertValueOverrides")]
-	public IReadOnlyList<InsertValueOverrideRule> InsertValueOverrides { get; init; } = [];
+	[JsonPropertyName("componentPropertyOverrides")]
+	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
 
 	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
@@ -64,15 +64,6 @@ public sealed class WebToMobilePageConversionRules {
 	/// </summary>
 	[JsonPropertyName("emptyContainerRemoval")]
 	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
-
-	/// <summary>
-	/// Group: deterministic placement of converted web tabs under the mobile Tabs element — every
-	/// surviving converted tab gets an explicit ordering index right after the template's general tab,
-	/// so the template's Feed/Attachments tabs stay LAST. Null when the section is absent from the
-	/// rules file — the placement pass is then a no-op (the feature is switched by data, not code).
-	/// </summary>
-	[JsonPropertyName("convertedTabPlacement")]
-	public ConvertedTabPlacementRule ConvertedTabPlacement { get; init; }
 
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
@@ -177,7 +168,9 @@ public sealed class ComponentMappingRule {
 
 /// <summary>
 /// Rule for the two containers synthesized inside every converter-created tab: the
-/// tab-body grid (layer 2) and the Area card inside it. Mirrors the mobile designer's own
+/// tab-body grid (layer 2) nesting the Area card inside it — the JSON nesting mirrors the
+/// resulting DOM (<see cref="MainTabContainer"/> holds its <see cref="SynthesizedContainerRule.AreaContainer"/>).
+/// Mirrors the mobile designer's own
 /// <c>TabItemFactory.getMobileTabContainerConfig()</c> output, kept as DATA so the props follow
 /// the platform without a code change. These values apply only to the synthesized nodes, never to
 /// elements converted from the web page.
@@ -195,13 +188,12 @@ public sealed class TabAreaLayersRule {
 	[JsonPropertyName("tabComponentType")]
 	public string TabComponentType { get; init; } = "crt.TabContainer";
 
-	/// <summary>The synthesized tab-body grid (layer 2, the tab's direct child).</summary>
+	/// <summary>
+	/// The synthesized tab-body grid (layer 2, the tab's direct child); carries the nested
+	/// <see cref="SynthesizedContainerRule.AreaContainer"/> that receives the tab's content.
+	/// </summary>
 	[JsonPropertyName("mainTabContainer")]
 	public SynthesizedContainerRule MainTabContainer { get; init; }
-
-	/// <summary>The synthesized Area card (child of the tab-body grid; receives the tab's content).</summary>
-	[JsonPropertyName("areaContainer")]
-	public SynthesizedContainerRule AreaContainer { get; init; }
 }
 
 /// <summary>
@@ -216,6 +208,13 @@ public sealed class SynthesizedContainerRule {
 	/// <summary>Property name → value the synthesized element carries as its mobile values.</summary>
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	/// <summary>
+	/// The synthesized Area card nested inside this container (receives the tab's content); the nesting
+	/// mirrors the resulting DOM. Null on the innermost container — the Area card carries no nested layer.
+	/// </summary>
+	[JsonPropertyName("areaContainer")]
+	public SynthesizedContainerRule AreaContainer { get; init; }
 }
 
 /// <summary>
@@ -223,7 +222,7 @@ public sealed class SynthesizedContainerRule {
 /// The element identity keys (<c>name</c>/<c>type</c>) can never be overridden — a rules file listing
 /// them is ignored for those keys.
 /// </summary>
-public sealed class InsertValueOverrideRule {
+public sealed class ComponentPropertyOverrideRule {
 	/// <summary>Mobile component type the override applies to (e.g. "crt.GridContainer").</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
@@ -252,7 +251,7 @@ public sealed class InsertValueOverrideRule {
 	/// <summary>
 	/// Which guide normalization section this rule reports into, so one pass can serve several
 	/// standards without their report sections bleeding into each other (container spacing vs metric
-	/// style). Absent or unrecognized falls back to <see cref="InsertValueOverrideReportGroup.Spacing"/>,
+	/// style). Absent or unrecognized falls back to <see cref="ComponentPropertyOverrideReportGroup.Spacing"/>,
 	/// which keeps a rules file written before this field behaving exactly as before.
 	/// </summary>
 	[JsonPropertyName("reportGroup")]
@@ -263,10 +262,10 @@ public sealed class InsertValueOverrideRule {
 }
 
 /// <summary>
-/// Guide report sections an <see cref="InsertValueOverrideRule"/> can feed. The pass is shared; the
+/// Guide report sections an <see cref="ComponentPropertyOverrideRule"/> can feed. The pass is shared; the
 /// reporting is not, because each standard carries its own caller-facing summary and constraint.
 /// </summary>
-public enum InsertValueOverrideReportGroup {
+public enum ComponentPropertyOverrideReportGroup {
 	/// <summary>Container spacing normalization (gap Medium on inserted Grid/Flex containers).</summary>
 	Spacing,
 
@@ -292,35 +291,6 @@ public sealed class EmptyContainerRemovalRule {
 	/// </summary>
 	[JsonPropertyName("removableTypes")]
 	public IReadOnlyList<string> RemovableTypes { get; init; } = [];
-}
-
-/// <summary>
-/// Rule for the deterministic converted-tab placement pass. The mobile tabbed template provides its own
-/// tabs (general/Details first, Feed and Attachments LAST); a converted web tab must land BETWEEN them.
-/// Until this rule the ordering lived only as guidance prose while the element map said "no index —
-/// append" (which lands a converted tab AFTER Feed/Attachments); with the section present every
-/// surviving converted tab gets an explicit index starting at <see cref="FirstIndex"/>, so applying the
-/// element map verbatim yields: general tab, converted web tabs, Feed, Attachments.
-/// </summary>
-public sealed class ConvertedTabPlacementRule {
-	[JsonPropertyName("note")]
-	public string Note { get; init; }
-
-	/// <summary>Mobile Tabs element name the converted tabs are inserted under (e.g. "Tabs").</summary>
-	[JsonPropertyName("tabsElementName")]
-	public string TabsElementName { get; init; }
-
-	/// <summary>Mobile component type of a single tab (e.g. "crt.TabContainer").</summary>
-	[JsonPropertyName("tabComponentType")]
-	public string TabComponentType { get; init; }
-
-	/// <summary>
-	/// 0-based index of the FIRST converted tab within the mobile Tabs items — 1 places it right after
-	/// the template's general tab (position 0) and before the template's Feed/Attachments tabs, which
-	/// shift right and stay last.
-	/// </summary>
-	[JsonPropertyName("firstIndex")]
-	public int FirstIndex { get; init; } = 1;
 }
 
 /// <summary>

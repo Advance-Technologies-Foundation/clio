@@ -494,7 +494,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry overview = Element(guide, "OverviewTab");
 		overview.Operation.Should().Be("insert");
 		overview.ParentName.Should().Be("Tabs");
-		overview.Index.Should().BeNull(because: "a web tab is not a positional insert");
+		overview.Index.Should().Be(1,
+			because: "a converted tab is not a positional insert, but the converter still indexes it right after "
+				+ "the template's general tab so the template's Feed/Attachments tabs stay last");
 		Element(guide, "LeadName").Operation.Should().Be("insert");
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
 		Element(guide, "Status").ParentName.Should().Be("OverviewTab");
@@ -2094,12 +2096,12 @@ public sealed class WebToMobileConversionServiceTests {
 			MainTabContainer = new SynthesizedContainerRule {
 				NamePrefix = "MainTabContainer_",
 				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-					"""{ "type": "crt.GridContainer", "alignItems": "stretch", "padding": { "bottom": "medium" } }""")
-			},
-			AreaContainer = new SynthesizedContainerRule {
-				NamePrefix = "GridContainer_",
-				Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-					"""{ "type": "crt.GridContainer", "color": "primary", "borderRadius": "medium" }""")
+					"""{ "type": "crt.GridContainer", "alignItems": "stretch", "padding": { "bottom": "medium" } }"""),
+				AreaContainer = new SynthesizedContainerRule {
+					NamePrefix = "GridContainer_",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "type": "crt.GridContainer", "color": "primary", "borderRadius": "medium" }""")
+				}
 			}
 		}
 	};
@@ -2450,6 +2452,36 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A tab-body rule with NO nested areaContainer cannot produce the Area card that receives the content, so the pass switches itself off instead of synthesizing a tab body with nowhere to put the tab's children.")]
+	public void Analyze_ShouldSkipTabAreaLayersPass_WhenTabBodyRuleNestsNoAreaContainer() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules complete = RulesWithTabAreaLayers();
+		var rules = new WebToMobilePageConversionRules {
+			Components = complete.Components,
+			TabAreaLayers = new TabAreaLayersRule {
+				TabComponentType = complete.TabAreaLayers.TabComponentType,
+				MainTabContainer = new SynthesizedContainerRule {
+					NamePrefix = complete.TabAreaLayers.MainTabContainer.NamePrefix,
+					Values = complete.TabAreaLayers.MainTabContainer.Values
+				}
+			}
+		};
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
+
+		guide.TabAreaLayers.Should().BeNull(
+			because: "without the nested Area card rule there is no content receiver, so no layer may be synthesized");
+		guide.ElementMap.Should().NotContain(e => e.WebName == null,
+			because: "a switched-off pass must synthesize nothing at all, not a half-built body");
+		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab",
+			because: "with the pass off the tab's content stays directly in the tab, as before the feature");
+	}
+
+	[Test]
 	[Description("A wrapper with no mobile equivalent dissolves INTO the tab (relocate-children), which still counts as tab content — the tab gets its layers.")]
 	public void Analyze_ShouldSynthesizeLayers_WhenTabContentIsOnlyADissolvedWrapper() {
 		PageBundleInfo bundle = Bundle("""
@@ -2737,20 +2769,20 @@ public sealed class WebToMobileConversionServiceTests {
 			"crt.GridContainer", "crt.FlexContainer", "crt.Input", "crt.TabContainer"
 		};
 
-	private static readonly IReadOnlyList<InsertValueOverrideRule> SpacingOverrides = [
-		new InsertValueOverrideRule {
+	private static readonly IReadOnlyList<ComponentPropertyOverrideRule> SpacingOverrides = [
+		new ComponentPropertyOverrideRule {
 			Type = "crt.GridContainer",
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 				"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
 		},
-		new InsertValueOverrideRule {
+		new ComponentPropertyOverrideRule {
 			Type = "crt.FlexContainer",
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "gap": "medium" }""")
 		}
 	];
 
 	private static WebToMobilePageConversionRules RulesWithSpacingOverrides() => new() {
-		InsertValueOverrides = SpacingOverrides
+		ComponentPropertyOverrides = SpacingOverrides
 	};
 
 	private static MobilePageConversionGuide AnalyzeSpacing(PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
@@ -2813,7 +2845,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var rules = new WebToMobilePageConversionRules {
 			Components = baseRules.Components,
 			TabAreaLayers = baseRules.TabAreaLayers,
-			InsertValueOverrides = SpacingOverrides
+			ComponentPropertyOverrides = SpacingOverrides
 		};
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
@@ -2839,7 +2871,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var rules = new WebToMobilePageConversionRules {
 			Components = baseRules.Components,
 			TabAreaLayers = baseRules.TabAreaLayers,
-			InsertValueOverrides = SpacingOverrides
+			ComponentPropertyOverrides = SpacingOverrides
 		};
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
@@ -2851,7 +2883,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The pass is switched by DATA — with no insertValueOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
+	[Description("The pass is switched by DATA — with no componentPropertyOverrides group in the rules the web gap is carried verbatim (the pre-normalization behavior) and the advisory section is null.")]
 	public void Analyze_SpacingNormalization_ShouldBeNoOp_WhenRulesGroupAbsent() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer",
@@ -2876,8 +2908,8 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
 			""");
 		var rules = new WebToMobilePageConversionRules {
-			InsertValueOverrides = [
-				new InsertValueOverrideRule {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
 					Type = "crt.GridContainer",
 					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 						"""{ "type": "crt.Label", "name": "Hijacked", "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
@@ -2905,7 +2937,7 @@ public sealed class WebToMobileConversionServiceTests {
 		};
 
 	/// <summary>The shipped metric rule: a NESTED object value, which must merge rather than replace.</summary>
-	private static readonly InsertValueOverrideRule MetricStyleOverride = new() {
+	private static readonly ComponentPropertyOverrideRule MetricStyleOverride = new() {
 		Type = "crt.IndicatorWidget",
 		ReportGroup = "metricStyle",
 		MergeNestedObjects = true,
@@ -2917,7 +2949,7 @@ public sealed class WebToMobileConversionServiceTests {
 	};
 
 	private static WebToMobilePageConversionRules RulesWithMetricOverride() => new() {
-		InsertValueOverrides = [.. SpacingOverrides, MetricStyleOverride]
+		ComponentPropertyOverrides = [.. SpacingOverrides, MetricStyleOverride]
 	};
 
 	private static MobilePageConversionGuide AnalyzeMetric(PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
@@ -3069,12 +3101,12 @@ public sealed class WebToMobileConversionServiceTests {
 
 	[Test]
 	[Description("An unrecognized reportGroup falls back to the spacing section rather than producing an undefined enum value, and a numeric string is not silently accepted as a group name — the rules file is CDN-served, so an authoring typo must degrade predictably.")]
-	public void Analyze_InsertValueOverrides_ShouldFallBackToSpacing_WhenReportGroupIsUnrecognized() {
+	public void Analyze_ComponentPropertyOverrides_ShouldFallBackToSpacing_WhenReportGroupIsUnrecognized() {
 		// Arrange
 		PageBundleInfo bundle = MetricBundle();
 		var rules = new WebToMobilePageConversionRules {
-			InsertValueOverrides = [
-				new InsertValueOverrideRule {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
 					Type = "crt.IndicatorWidget",
 					ReportGroup = "7",
 					MergeNestedObjects = true,
@@ -3454,18 +3486,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#region Converted tab placement (explicit indexes so template Feed/Attachments stay last)
 
-	private static readonly ConvertedTabPlacementRule TabPlacement = new() {
-		TabsElementName = "Tabs", TabComponentType = "crt.TabContainer", FirstIndex = 1
-	};
-
-	private static WebToMobilePageConversionRules RulesWithTabPlacement() => new() {
-		Components = GridRule.Components,
-		EmptyContainerRemoval = EmptyRemoval,
-		ConvertedTabPlacement = TabPlacement
-	};
-
 	[Test]
-	[Description("Converted web tabs get explicit indexes under the mobile Tabs starting at firstIndex (right after the template's general tab), in web tree order — so applying the element map verbatim keeps the template's Feed/Attachments tabs last.")]
+	[Description("Converted web tabs get explicit indexes under the mobile Tabs starting right after the template's general tab, in web tree order — so applying the element map verbatim keeps the template's Feed/Attachments tabs last.")]
 	public void Analyze_ShouldIndexConvertedTabs_AfterTemplateGeneralTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3473,7 +3495,7 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithTabPlacement());
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		ElementMapEntry sales = Element(guide, "SalesTab");
 		sales.ParentName.Should().Be("Tabs");
@@ -3487,7 +3509,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Leads_FormPage scenario: a tab removed as empty (its only child is unsupported on mobile) is never indexed, and the surviving tabs are numbered contiguously from firstIndex — no hole where the removed tab was.")]
+	[Description("Leads_FormPage scenario: a tab removed as empty (its only child is unsupported on mobile) is never indexed, and the surviving tabs are numbered contiguously from the first tab index — no hole where the removed tab was.")]
 	public void Analyze_ShouldIndexOnlySurvivingTabs_WhenMiddleTabWasRemovedAsEmpty() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -3496,7 +3518,7 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "HistoryTab", "type": "crt.TabContainer", "items": [ { "name": "Comment", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithTabPlacement());
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		ElementMapEntry nextSteps = Element(guide, "NextStepsTab");
 		nextSteps.Operation.Should().Be("drop",
@@ -3508,21 +3530,22 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The pass is switched by DATA — without a convertedTabPlacement rules section a converted tab carries no index and appends, exactly as before the feature.")]
-	public void Analyze_ShouldLeaveTabsUnindexed_WhenRulesCarryNoPlacementSection() {
+	[Description("The pass is UNCONDITIONAL: correct tab order is a correctness invariant, not an opt-in — a converted tab is indexed even on a rules file carrying nothing but the component map, so no missing (or externally fetched) rules section can silently push it past the template's Feed/Attachments tabs.")]
+	public void Analyze_ShouldIndexConvertedTab_WhenRulesCarryOnlyComponents() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [ { "name": "Budget", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
+			bundle, rules: new WebToMobilePageConversionRules { Components = GridRule.Components });
 
-		Element(guide, "SalesTab").Index.Should().BeNull(
-			because: "with no placement section the converter behaves exactly as before the feature");
+		Element(guide, "SalesTab").Index.Should().Be(1,
+			because: "the tab index comes from the converter itself, not from a rules section that could go missing");
 	}
 
 	[Test]
-	[Description("Tab indexes coexist with positional :top indexes: the positional group (under MainContainer) is compacted from 0, while the tab group (under Tabs) starts at firstIndex — the compaction never rebases the tab indexes because they are assigned after it.")]
+	[Description("Tab indexes coexist with positional :top indexes: the positional group (under MainContainer) is compacted from 0, while the tab group (under Tabs) starts at the first tab index — the compaction never rebases the tab indexes because they are assigned after it.")]
 	public void Analyze_ShouldKeepTabIndexBase_WhenPositionalCompactionRuns() {
 		PageBundleInfo bundle = Bundle("""
 			[
@@ -3542,7 +3565,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(
-			bundle, rules: RulesWithTabPlacement(), containerNameMap: map,
+			bundle, containerNameMap: map,
 			positionalPlacements: placements, mobileContainerParents: mobileParents);
 
 		Element(guide, "TopBox").Index.Should().Be(0, because: ":top compaction still rebases the positional group to 0");

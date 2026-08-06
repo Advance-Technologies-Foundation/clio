@@ -149,7 +149,7 @@ public sealed class ElementMapEntry {
 	/// <c>:bottom</c> template rule (<c>:top</c> elements get an ascending index from 0 so they land before
 	/// the anchor, e.g. above the mobile <c>Tabs</c>; <c>:bottom</c> elements are appended, no index) — and
 	/// for every CONVERTED WEB TAB under the mobile Tabs (indexed right after the template's general tab so
-	/// the template's Feed/Attachments tabs stay last; see the <c>convertedTabPlacement</c> rules section).
+	/// the template's Feed/Attachments tabs stay last — always, the converter owns this ordering).
 	/// Add it to the insert operation verbatim when present. Omitted for every other element — the mobile
 	/// designer owns ordering. Settable (like <see cref="ParentName"/>): the empty-container removal pass
 	/// re-compacts sibling indexes after dropping an empty positional sibling, and the

@@ -27,7 +27,7 @@
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
-        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab (see convertedTabPlacement), so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
+        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab, so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
         { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
         { "web": "CardToggleTabPanel", "mobile": "Tabs", "note": "All tabs except Feed and Attachments should be moved to Tabs"},
@@ -99,7 +99,6 @@
     }
   ],
   "tabAreaLayers": {
-    "note": "every converter-created tab gets the designer's 2-layer body — a grid 'tab body' (MainTabContainer_<suffix>) holding the tab's Area card (GridContainer_<suffix>) that receives ALL of the tab's top-level content, expansion panels included. Mirrors TabItemFactory.getMobileTabContainerConfig().",
     "tabComponentType": "crt.TabContainer",
     "mainTabContainer": {
       "namePrefix": "MainTabContainer_",
@@ -108,32 +107,28 @@
         "gap": { "rowGap": "medium", "columnGap": "medium" },
         "alignItems": "stretch",
         "padding": { "bottom": "medium" }
-      }
-    },
-    "areaContainer": {
-      "namePrefix": "GridContainer_",
-      "values": {
-        "type": "crt.GridContainer",
-        "padding": { "top": "medium", "bottom": "medium", "right": "medium", "left": "medium" },
-        "color": "primary",
-        "borderRadius": "medium",
-        "gap": { "rowGap": "medium", "columnGap": "medium" },
-        "alignItems": "stretch"
+      },
+      "areaContainer": {
+        "namePrefix": "GridContainer_",
+        "values": {
+          "type": "crt.GridContainer",
+          "padding": { "top": "medium", "bottom": "medium", "right": "medium", "left": "medium" },
+          "color": "primary",
+          "borderRadius": "medium",
+          "gap": { "rowGap": "medium", "columnGap": "medium" },
+          "alignItems": "stretch"
+        }
       }
     }
   },
-  "insertValueOverrides": [
+  "componentPropertyOverrides": [
     {
       "type": "crt.GridContainer",
-      "reportGroup": "spacing",
-      "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } },
-      "note": "Spacing normalization: mobile follows the mobile spacing standard, so the web grid's gap (typically columnGap large / rowGap none) is IGNORED, not translated — every inserted grid container (converted and synthesized alike) gets Medium row/column spacing. Keep in sync with tabAreaLayers container gaps."
+      "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }
     },
     {
       "type": "crt.FlexContainer",
-      "reportGroup": "spacing",
-      "values": { "gap": "medium" },
-      "note": "Spacing normalization: the web flex gap (token, px number or CSS string) is IGNORED, not translated — every inserted flex container gets Medium gap."
+      "values": { "gap": "medium" }
     },
     {
       "type": "crt.IndicatorWidget",
@@ -145,11 +140,10 @@
           "layout": { "border": { "hidden": true } }
         }
       },
-      "note": "Metric style normalization (ENG-94230): mobile metrics follow the mobile design standard, so the web widget's text size and border are IGNORED, not translated — every inserted indicator widget gets extra-small text with the border hidden (the 'plain white' look; the default 'without-fill' theme is left alone). The value is an OBJECT, so it MERGES into the converted config — config.data (the aggregation/providing subtree, without which the widget renders nothing) and config.title survive untouched. fontSizeMode accepts extra-small|small|medium|large|extra-large; hide-border lives at layout.border.hidden (WidgetBorderConfig), there is no top-level size/hideBorder input."
+      "note": "ENG-94230: crt.IndicatorWidget has no top-level size/hideBorder input - XS is the fontSizeMode enum value and hide-border is layout.border.hidden, so this rule merges instead of replacing to keep config.data (without which the widget renders nothing)."
     }
   ],
   "emptyContainerRemoval": {
-    "note": "a converter-created container of one of these types whose items receive NO surviving child is dropped deterministically (bottom-up, so emptiness cascades). A CLOSED allowlist — 'can hold children' (crt.List, crt.Tabs) is not 'safe to delete when empty'; widening it is an explicit decision here, never registry inference. crt.ExpansionPanel is judged on items only (tools content is discarded with it, called out in the drop reason). Template merge twins and synthesized tab layers are structurally out of scope.",
     "removableTypes": [
       "crt.FlexContainer",
       "crt.GridContainer",
@@ -157,12 +151,6 @@
       "crt.TabContainer",
       "crt.ExpansionPanel"
     ]
-  },
-  "convertedTabPlacement": {
-    "note": "every SURVIVING converted web tab inserted under the mobile Tabs gets an explicit index starting at firstIndex (1 = right after the template's general tab), in web tree order — so the template's FeedTab/AttachmentsTab stay LAST and the applied order is: general tab, converted web tabs, Feed, Attachments. Runs after empty-container removal (a tab removed as empty gets no index — no holes) and after positional-index compaction (which rebases each group to 0 and must never see these indexes). Absent section switches the pass off — converted tabs then append, as before.",
-    "tabsElementName": "Tabs",
-    "tabComponentType": "crt.TabContainer",
-    "firstIndex": 1
   },
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },

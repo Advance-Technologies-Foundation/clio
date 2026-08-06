@@ -42,7 +42,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		InsertValueOverrideRule metric = rules.InsertValueOverrides
+		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
 			.Single(o => o.Type == "crt.IndicatorWidget");
 		metric.ReportGroup.Should().Be("metricStyle",
 			because: "the metric must report through its own guide section, not the spacing one");
@@ -58,17 +58,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-94230: the pre-existing spacing overrides keep declaring the spacing report group, so adding the metric group does not silently move containers into another section.")]
-	public void LoadBundled_SpacingOverridesDeclareSpacingReportGroup() {
+	[Description("ENG-94230: the pre-existing spacing overrides opt into neither new field — they keep the default report group (spacing) and the default replace semantics, so adding the metric rule cannot silently move a container into another section or let a web gap key survive.")]
+	public void LoadBundled_SpacingOverridesKeepDefaultGroupAndReplaceSemantics() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		rules.InsertValueOverrides
+		rules.ComponentPropertyOverrides
 			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
 			.Should().HaveCount(2)
-			.And.OnlyContain(o => o.ReportGroup == "spacing",
-				because: "the containers must keep reporting into the spacing section")
+			.And.OnlyContain(o => o.ReportGroup == null,
+				because: "an absent report group resolves to spacing, so the containers need no explicit value")
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale, which only replace semantics deliver");
 	}
@@ -127,32 +127,24 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules carry the converted-tab placement section: converted web tabs are indexed under the mobile Tabs starting right after the template's general tab (firstIndex 1), so the template's Feed/Attachments tabs stay last deterministically instead of by guidance prose.")]
-	public void LoadBundled_ConvertedTabPlacement_CarriesTabsIndexing() {
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		rules.ConvertedTabPlacement.Should().NotBeNull();
-		rules.ConvertedTabPlacement.TabsElementName.Should().Be("Tabs");
-		rules.ConvertedTabPlacement.TabComponentType.Should().Be("crt.TabContainer");
-		rules.ConvertedTabPlacement.FirstIndex.Should().Be(1,
-			because: "position 0 belongs to the template's general tab — the first converted web tab goes right after it");
-	}
-
-	[Test]
-	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid + Area card) for converter-created tabs.")]
+	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		rules.TabAreaLayers.Should().NotBeNull();
 		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer",
 			because: "which element gets the layers is data, not a hardcoded type in the engine");
-		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
-		rules.TabAreaLayers.MainTabContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
-		rules.TabAreaLayers.MainTabContainer.Values["padding"].GetProperty("bottom").GetString().Should().Be("medium");
-		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
-		rules.TabAreaLayers.AreaContainer.Values["type"].GetString().Should().Be("crt.GridContainer");
-		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
-		rules.TabAreaLayers.AreaContainer.Values["borderRadius"].GetString().Should().Be("medium");
+		SynthesizedContainerRule main = rules.TabAreaLayers.MainTabContainer;
+		main.NamePrefix.Should().Be("MainTabContainer_");
+		main.Values["type"].GetString().Should().Be("crt.GridContainer");
+		main.Values["padding"].GetProperty("bottom").GetString().Should().Be("medium");
+		SynthesizedContainerRule area = main.AreaContainer;
+		area.Should().NotBeNull(because: "the Area card rule nests inside the tab-body rule, mirroring the DOM");
+		area.NamePrefix.Should().Be("GridContainer_");
+		area.Values["type"].GetString().Should().Be("crt.GridContainer");
+		area.Values["color"].GetString().Should().Be("primary");
+		area.Values["borderRadius"].GetString().Should().Be("medium");
+		area.AreaContainer.Should().BeNull(because: "the Area card is the innermost container — it nests nothing");
 	}
 
 	[Test]
@@ -166,7 +158,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ParseStream parses the tabAreaLayers group into the typed rule (prefixes + verbatim values).")]
+	[Description("ParseStream parses the tabAreaLayers group into the typed rule (nested tab-body → Area chain, prefixes + verbatim values).")]
 	public void ParseStream_WithTabAreaLayers_ParsesTypedRule() {
 		const string json = """
 			{
@@ -174,8 +166,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			  "tabAreaLayers": {
 			    "note": "n",
 			    "tabComponentType": "usr.CustomTab",
-			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer", "alignItems": "stretch" } },
-			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer", "color": "primary" } }
+			    "mainTabContainer": {
+			      "namePrefix": "MainTabContainer_",
+			      "values": { "type": "crt.GridContainer", "alignItems": "stretch" },
+			      "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer", "color": "primary" } }
+			    }
 			  }
 			}
 			""";
@@ -187,8 +182,8 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.TabAreaLayers.TabComponentType.Should().Be("usr.CustomTab");
 		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
 		rules.TabAreaLayers.MainTabContainer.Values["alignItems"].GetString().Should().Be("stretch");
-		rules.TabAreaLayers.AreaContainer.NamePrefix.Should().Be("GridContainer_");
-		rules.TabAreaLayers.AreaContainer.Values["color"].GetString().Should().Be("primary");
+		rules.TabAreaLayers.MainTabContainer.AreaContainer.NamePrefix.Should().Be("GridContainer_");
+		rules.TabAreaLayers.MainTabContainer.AreaContainer.Values["color"].GetString().Should().Be("primary");
 	}
 
 	[Test]
@@ -198,8 +193,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			{
 			  "version": "8.3.3",
 			  "tabAreaLayers": {
-			    "mainTabContainer": { "namePrefix": "MainTabContainer_", "values": { "type": "crt.GridContainer" } },
-			    "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
+			    "mainTabContainer": {
+			      "namePrefix": "MainTabContainer_",
+			      "values": { "type": "crt.GridContainer" },
+			      "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
+			    }
 			  }
 			}
 			""";
