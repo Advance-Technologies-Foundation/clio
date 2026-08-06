@@ -17,6 +17,7 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
@@ -83,6 +84,7 @@ public class BindingsModule {
 
 	public static string k8sDns = "127.0.0.1";
 	private static readonly object BootstrapDiagnosticsSyncRoot = new();
+	private static readonly Version DevelopmentKnowledgeBundleClioVersion = new(8, 1, 0);
 	private static bool _bootstrapDiagnosticsLogged;
 	private readonly IFileSystem _fileSystem;
 
@@ -604,6 +606,62 @@ public class BindingsModule {
 		services.AddTransient<MobilePageConversionGuideTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
+		services.AddTransient<KnowledgeManagementTools>();
+		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddSingleton<IBuiltInKnowledgeBundleTrustStore, BuiltInKnowledgeBundleTrustStore>();
+		services.AddSingleton<IKnowledgeBundleTrustStore, ConfiguredKnowledgeBundleTrustStore>();
+		services.AddSingleton<IKnowledgeTrustFingerprintService, KnowledgeTrustFingerprintService>();
+		services.AddHttpClient(KnowledgeBundleNuGetClient.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+		services.AddSingleton<KnowledgeBundleNuGetClient>();
+		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
+			provider.GetRequiredService<KnowledgeBundleNuGetClient>());
+		services.AddHttpClient(KnowledgeGitHubReleaseTransport.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
+			// Redirects are resolved by the transport so every hop can be checked against the host and
+			// scheme allowlist before it is followed.
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+			.ConfigureHttpClient(client => client.DefaultRequestHeaders.UserAgent.ParseAdd("clio-knowledge-client"));
+		services.AddSingleton<KnowledgeGitHubReleaseTransport>();
+		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
+			provider.GetRequiredService<KnowledgeGitHubReleaseTransport>());
+		services.AddSingleton<KnowledgeGitTransport>();
+		services.AddSingleton<IKnowledgeRepositoryTransport>(provider => provider.GetRequiredService<KnowledgeGitTransport>());
+		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
+		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
+		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
+			new Version(1, 1, 0),
+			new HashSet<string>(StringComparer.Ordinal) {
+				GuidanceGetTool.ToolName,
+				KnowledgeManagementTools.ListKnowledgeExamplesToolName
+			}));
+		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
+		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
+		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
+		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
+		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
+		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
+		services.AddSingleton<ICuratedKnowledgeBootstrapService, CuratedKnowledgeBootstrapService>();
+		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
+		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
+		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
+		services.AddTransient<InstallKnowledgeCommand>();
+		services.AddTransient<UpdateKnowledgeCommand>();
+		services.AddTransient<InfoKnowledgeCommand>();
+		services.AddTransient<DeleteKnowledgeCommand>();
+		services.AddTransient<AddKnowledgeSourceCommand>();
+		services.AddTransient<RemoveKnowledgeSourceCommand>();
+		services.AddTransient<EnableKnowledgeSourceCommand>();
+		services.AddTransient<DisableKnowledgeSourceCommand>();
+		services.AddTransient<ListKnowledgeSourcesCommand>();
+		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
@@ -1082,7 +1140,10 @@ public class BindingsModule {
 					options.Capabilities.Logging = new();
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+				.WithRequestFilters(filters => {
+					filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors);
+					filters.AddListResourcesFilter(KnowledgeResourceDiscoveryFilter.AppendKnowledgeResources);
+				});
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		return mcpServerBuilder;
@@ -1214,12 +1275,29 @@ public class BindingsModule {
 					// The restart readiness-wait registry (ENG-91315), like the compile registry above, is
 					// registered explicitly as a SINGLETON; the auto-scan would give restart-by-environment-name
 					// and restart-status each their own empty table and silently break status polling.
-					|| implementedInterface == typeof(IRestartOperationRegistry)) {
+					|| implementedInterface == typeof(IRestartOperationRegistry)
+					// Knowledge services use explicit singleton registrations because they retain immutable
+					// runtime snapshots, source locks, and transport clients across MCP requests.
+					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
+					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
+					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
+					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);
 			}
 		}
+	}
+
+	internal static Version ResolveKnowledgeBundleClioVersion(Version assemblyVersion) {
+		if (assemblyVersion is null
+				|| (assemblyVersion.Major == 0
+					&& assemblyVersion.Minor == 0
+					&& assemblyVersion.Build <= 0
+					&& assemblyVersion.Revision <= 0)) {
+			return DevelopmentKnowledgeBundleClioVersion;
+		}
+		return assemblyVersion;
 	}
 
 	private static void RegisterFluentValidators(IServiceCollection services){

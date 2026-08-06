@@ -16,6 +16,37 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Property("Module", "Command")]
 public class BindingsModuleMcpHostGateTests {
+	[TestCase("0.0.0")]
+	[TestCase("0.0.0.0")]
+	[Category("Unit")]
+	[Description("Maps source-build assembly-version sentinels to the external knowledge compatibility fallback.")]
+	public void ResolveKnowledgeBundleClioVersion_ShouldUseProductFallback_WhenAssemblyVersionIsDevelopmentSentinel(
+		string assemblyVersion) {
+		// Arrange
+		Version version = new(assemblyVersion);
+
+		// Act
+		Version result = BindingsModule.ResolveKnowledgeBundleClioVersion(version);
+
+		// Assert
+		result.Should().Be(new Version(8, 1, 0),
+			because: "source builds without CI or tag versioning must remain compatible with the external bundle product range");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves a real assembly version when building external knowledge compatibility capabilities.")]
+	public void ResolveKnowledgeBundleClioVersion_ShouldPreserveVersion_WhenAssemblyVersionIsReal() {
+		// Arrange
+		Version version = new(8, 1, 0, 86);
+
+		// Act
+		Version result = BindingsModule.ResolveKnowledgeBundleClioVersion(version);
+
+		// Assert
+		result.Should().Be(version,
+			because: "published builds must advertise their actual assembly product version and revision");
+	}
 
 	[Test]
 	[Category("Unit")]
