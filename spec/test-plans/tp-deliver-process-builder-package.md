@@ -163,7 +163,7 @@ shape is pinned here.
 
 | ID | Test | Asserts |
 |----|------|---------|
-| TC-U-20 | `ToolContractGet_Should_Return_InstallProcessBuilder_Contract` | discoverable by name, one required argument, the flow stops at itself, and the rationale does NOT claim it can tell which build is serving. Pinned here and not only in E2E because the E2E suite is not in CI yet |
+| TC-U-20 | `ToolContractGet_Should_Return_InstallProcessBuilder_Contract` | discoverable by name, one required argument, the flow stops at itself, and the rationale does NOT claim it can tell which build is serving. Mirrored here even though E2E pins the same text, because MCP E2E is an **advisory** check that cannot fail a merge (see `project-context.md`) |
 
 ### The timestamp fix (`clio.tests/Package/PackageDescriptorTests.cs`)
 

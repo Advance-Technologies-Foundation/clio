@@ -145,7 +145,13 @@ public void {MethodName}_Should{Behavior}_When{Condition}()
 - **Tool**: `{mcp-tool-name}`
 - **Input**: `{"param": "value"}`
 - **Expected output**: `{"result": "…"}`
-- **⚠️ CI status**: NOT in CI — manual execution required until CI integration
+- **⚠️ CI status**: MCP E2E runs in CI but only as an **advisory, non-blocking** check
+  (`.github/workflows/teamcity-mcp-e2e.yml` → TeamCity `Team_Atf_ClioMcpE2eTests`, result posted back as a
+  commit status). State that distinction, not "not in CI": it means the suite **cannot fail a merge**, it is
+  path-filtered, and its ~45-minute build can be superseded by a later push before it reports. So anything
+  load-bearing needs a unit-level mirror, and an E2E-only guard is not a gate.
+  Individual fixtures may still be genuinely excluded — `[Explicit]`, seeded-environment gated, or
+  stand-mutating — so check the fixture before claiming either way.
 - **Manual gate**: add to PR checklist if this test exists
 
 ---
