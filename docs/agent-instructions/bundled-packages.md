@@ -82,10 +82,20 @@ environment carrying an older package to be refused until it is upgraded.
 dotnet build MainSolution.slnx -c dev-nf
 dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
 
-# 2. Raising the floor? Bump with the COMMAND, never by editing descriptor.json - it writes
-#    PackageVersion AND stamps ModifiedOnUtc, and fact 2 above is why both are needed.
+# 2. Bump with the COMMAND, never by editing descriptor.json - it writes PackageVersion AND stamps
+#    ModifiedOnUtc, and fact 2 above is why both are needed. Run it on EVERY rebundle, not only when
+#    raising the floor: pass the SAME version to re-stamp the date, which is what makes the target
+#    rewrite the SysPackage row at all.
 dotnet <clio>/clio/bin/Debug/net8.0/clio.dll set-pkg-version ./packages/CrtProcessBuilder `
   --PackageVersion X.Y.Z.W
+
+# 2b. SCHEMA descriptors are NOT covered by that command - it stamps the package descriptor only. Check
+#     every Schemas/*/descriptor.json for a plausible ModifiedOnUtc and correct it if not. This is not
+#     hypothetical: the compile-marker schema shipped for a day carrying LOCAL time in a UTC-labelled
+#     field (05:42:51Z for a file written at 08:46Z, i.e. exactly the +03:00 offset), because
+#     PackageDescriptor.ClearMilliseconds dropped DateTime.Kind and ToUniversalTime then treated the
+#     value as local. The producing bug is fixed, so a schema saved by a current clio is correct - but a
+#     descriptor written before the fix keeps its wrong value, since nothing re-stamps it.
 
 # 3. Delete the build output. clioignore does NOT filter Files/Bin (path patterns were tried and do not
 #    match), so without this the archive stops being source-only and ships a host-specific assembly -
@@ -117,6 +127,11 @@ target's configuration build. Lose it and the package installs, the gate reports
 | `ProcessBuilderVersion` (only if raising the floor) | `clio/Common/BundledPackages.cs` |
 | `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
 | `ExpectedDescriptorModifiedOnUtc` | same file |
+
+The date pin must end in `000`. `PackageDescriptor.ConvertToModifiedOnUtc` truncates to whole seconds, so
+milliseconds in it prove the descriptor was written by something other than `set-pkg-version` — a test
+asserts this, because the archive shipped for a while with a stamp ending in `431` while every doc told the
+next person to use the command.
 
 The three pins sit side by side deliberately: a rebundle touches all of them, so a hand edit that moved the
 version without the date fails in clio's own suite instead of on a customer's environment. Name the

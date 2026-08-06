@@ -68,7 +68,7 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"0D33D9AFCA2077D76B5597FEC2272380A398E7D8B08B9D5ECDBE8DE56CBE989A";
+		"5B464FBE0DBE3AD879A3A5418D5D78C42046202D427754CEB5049E4F7B2FEAA7";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -82,12 +82,17 @@ public class BundledProcessBuilderPackageTests {
 	/// the date installs cleanly and leaves the recorded version — the <c>[RequiresPackage]</c> floor — behind.
 	/// <para>
 	/// That state is unreachable through <c>clio set-pkg-version</c>, which writes both fields. It is
-	/// reachable by hand-editing <c>descriptor.json</c>, which is precisely how THIS archive is produced, so
-	/// this pin sits beside the version and the SHA-256: a rebundle touches all three, and a hand edit that
-	/// skipped the date fails here rather than on a customer's environment.
+	/// reachable by hand-editing <c>descriptor.json</c>, so this pin sits beside the version and the SHA-256:
+	/// a rebundle touches all three, and a hand edit that skipped the date fails here rather than on a
+	/// customer's environment.
+	/// </para>
+	/// <para>
+	/// The value must end in <c>000</c>. <c>PackageDescriptor.ConvertToModifiedOnUtc</c> truncates to whole
+	/// seconds, so a stamp carrying milliseconds proves the descriptor was NOT written by the supported
+	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1785957182431)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1785997829000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -295,6 +300,12 @@ public class BundledProcessBuilderPackageTests {
 			because: "the constant and the descriptor must agree: the constant is both what clio info reports "
 				+ "and the floor the five [RequiresPackage] gates enforce against the version the environment "
 				+ "reports, so a drift either refuses a correct installation or accepts a stale one");
+		ExpectedDescriptorModifiedOnUtc.Should().EndWith("000)/",
+			because: "it is the one provenance oracle available here. PackageDescriptor.ConvertToModifiedOnUtc "
+				+ "truncates to whole seconds, so milliseconds in the stamp prove the descriptor was written by "
+				+ "something other than the supported command — this archive shipped for a while with a stamp "
+				+ "ending in 431, i.e. hand-edited, while every doc told the next person to use "
+				+ "'clio set-pkg-version'. A comment saying so would not have caught the next one");
 	}
 
 	[Test]
