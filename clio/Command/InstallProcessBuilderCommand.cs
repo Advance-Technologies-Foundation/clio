@@ -157,7 +157,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// connection right after its restart but stalls behind the configuration-build lock would hang the CLI
 	/// with no output and no way out but Ctrl+C. Every probe in <see cref="IServerReadinessWaiter"/> is
 	/// bounded for exactly this reason; the final probe must not be the only unbounded call in the flow. A
-	/// serving GetVersion answers in well under a second.
+	/// serving <c>ListUserTasks</c> answers in well under a second — it reads a task catalogue, nothing more.
 	/// </remarks>
 	private const int ProbeTimeoutMs = 15_000;
 
@@ -168,8 +168,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// <c>WaitForReady</c> proves the host answers <c>/api/HealthCheck/Ping</c>, which a still-draining
 	/// worker or one whose configuration workspace has not finished loading can also do. A single probe
 	/// therefore risks reporting "the environment did not compile the package" about an environment that
-	/// answers correctly a few seconds later. The pre-install probe is NOT retried: an unanswerable route
-	/// there simply means "install", so waiting on it would only slow the ordinary path.
+	/// answers correctly a few seconds later. Three attempts, because this probe alone decides the exit code.
 	/// </remarks>
 	private const int PostInstallProbeAttempts = 3;
 
@@ -232,13 +231,18 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 				diagnosis =
 					$"{BundledPackages.ProcessBuilderPackageName} was installed and ProcessDesignService is " +
 					$"responding, but it rejected the check: {message.GetString()}. The package compiled — " +
-					"this is not a build failure. If the message is about permissions, note that ListUserTasks " +
+					"this is not a build failure, so re-installing will NOT help and only costs another " +
+					"configuration build. If the message is about permissions, note that ListUserTasks " +
 					"requires the CanManageProcessDesign operation and a General (non-portal) user, which " +
-					"installing a package does not grant.";
+					"installing a package does not grant — grant those, then verify with 'clio call-service " +
+					"--service-path rest/ProcessDesignService/ListUserTasks -m POST -b {} -e <environment>'.";
 			}
 			return false;
 		} catch (Exception e) {
-			_logger.WriteInfo($"ProcessDesignService did not answer: {e.GetReadableMessageException()}");
+			// WriteError, not WriteInfo: this line carries the WebException status / HTTP code, i.e. the only
+			// statement of WHY the probe failed. The caller writes the summary at error level, so logging the
+			// cause below it hid the useful half from anyone filtering on errors.
+			_logger.WriteError($"ProcessDesignService did not answer: {e.GetReadableMessageException()}");
 			return false;
 		}
 	}
@@ -278,8 +282,8 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </summary>
 	/// <param name="options">The parsed install-process-builder command options.</param>
 	/// <returns>
-	/// Returns 0 when a compatible version is already present, or when the package installed AND
-	/// <c>ProcessDesignService</c> answers afterwards; otherwise, returns 1.
+	/// Returns 0 only when the package installed AND <c>ProcessDesignService</c> answers afterwards;
+	/// otherwise, returns 1. There is no already-current branch — see the comment at the install site.
 	/// </returns>
 	public override int Execute(InstallProcessBuilderOptions options) {
 		try {
@@ -300,14 +304,9 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			// build. What survives of the original reasoning is that asking the SERVICE cannot answer the
 			// question — ListUserTasks proves something answers, not which build, so it would happily report
 			// "nothing to do" for an environment still serving an old assembly.
-			//
-			// OPEN: the other half of that reasoning has been retracted. It said the recorded package version
-			// is inert because Creatio does not rewrite the SysPackage row on re-install. It does — the row
-			// is rewritten when the descriptor's ModifiedOnUtc moves, and `clio set-pkg-version` stamps it
-			// alongside PackageVersion (see BundledPackages.ProcessBuilderVersion). So a database short-circuit
-			// via IRequiredPackageChecker.IsCompatible is viable again and would save a needless configuration
-			// build on an up-to-date environment. Left unbuilt deliberately rather than by oversight: it is a
-			// behaviour change, not a doc fix.
+			// A version-based skip IS viable (the recorded version does move — see
+			// BundledPackages.ProcessBuilderVersion) and is left unbuilt deliberately, not by oversight: it is a
+			// behaviour change. Recorded as an open item in spec/adr/adr-deliver-process-builder-package.md.
 			bool success = _packageInstaller.Install(
 				packagePath,
 				CreateInstallEnvironmentSettings(),

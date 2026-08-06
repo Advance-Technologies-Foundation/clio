@@ -126,11 +126,16 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			because: "the flow must stop at this tool. It used to name list-user-tasks as a confirmation step, "
 				+ "which contradicted the assertion above in this same fixture: that tool is feature-gated and "
 				+ "absent from this very server, so the contract was telling an agent to call something it "
-				+ "could not see. The confirmation is also redundant — the tool verifies its own outcome by "
-				+ "asking the service which build is serving");
+				+ "could not see");
 		contract.PreferredFlow.Tools.Should().NotContain(ListUserTasksTool.ListUserTasksToolName,
 			because: "naming a [FeatureToggle]-gated tool in the flow of an ungated one is the drift this pins: "
 				+ "the two halves of this fixture would otherwise assert a contradiction and call it correct");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)which\s+build\s+is\s+serving",
+			because: "that capability was a ProcessDesignService.GetVersion operation which was implemented and "
+				+ "then REVERTED. The probe left behind is ListUserTasks, which proves the service answers but "
+				+ "not which assembly answered, so a contract claiming otherwise tells an agent an upgrade is "
+				+ "verified when the outgoing build could have answered — the one failure this command exists "
+				+ "to catch");
 		contract.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the contract must name the package it installs so an agent can match it against the refusal "
 				+ "text of the tool that sent it here");
@@ -138,8 +143,10 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
 				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");
 		contract.Preconditions.Should().NotBeNullOrEmpty(
-			because: "the tool needs CanManageSolution and a registered environment, and an agent that reads the "
-				+ "contract before calling should learn that from it");
+			because: "the tool needs package-install permission plus SysPackage read access on a registered "
+				+ "environment, and an agent that reads the contract before calling should learn that from it. "
+				+ "CanManageProcessDesign is NOT this tool's requirement — it gates the process-designer tools "
+				+ "the caller retries afterwards");
 	}
 
 	[Test]

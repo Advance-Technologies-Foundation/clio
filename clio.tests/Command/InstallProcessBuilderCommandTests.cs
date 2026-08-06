@@ -58,7 +58,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_logger = Substitute.For<ILogger>();
 		_workingDirectoriesProvider.ExecutingDirectory.Returns(ClioRoot);
 		// Happy-path defaults, so each test only arranges the deviation it is actually about: the bundled
-		// artifact is present, the environment carries nothing yet, and the service answers after install.
+		// artifact is present and the service answers after the install. Nothing is arranged about what the
+		// environment already carries — the command never asks, it always installs.
 		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
 		_serviceUrlBuilder
 			.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks)
@@ -188,10 +189,20 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		result.Should().Be(1,
 			because: "'installed' and 'working' are different states when the target compiles the package; "
 				+ "reporting success here would hide the one failure mode that is otherwise silent — the "
-				+ "package present, the name-based gate satisfied, and every service call failing");
+				+ "package present, the name-based gate satisfied, and every service call failing. Reporting 0 "
+				+ "would also make the documented remediation a dead end: the recorded version satisfies the "
+				+ "gate, so it stops emitting the hint that sends the caller here");
+		// NSubstitute's Received() takes no `because`; the reason is stated here instead. A silent service after
+		// an install means the target did not compile the package, so the message must send the caller to the
+		// configuration build log — the one place that says why.
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("configuration build log")));
 		_logger.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
-			.Should().Be(1, because: "the operator must be told the environment did not compile the package");
+			.Should().Be(2, because: "BOTH halves of the report belong at error level: the summary ('the "
+				+ "environment did not compile the package') and the cause the probe caught, which carries the "
+				+ "WebException status / HTTP code. The cause used to go out at info level, so an operator "
+				+ "filtering on errors saw that something failed and not why");
 	}
 
 	[Test]
@@ -244,34 +255,6 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			.Should().Be(1,
 				because: "one archive carries both Files/Bin and Files/Bin/netstandard, so there is no "
 					+ "per-runtime archive name to choose between");
-	}
-
-	[Test]
-	[Description("Reports a failure when an install succeeds but the service still does not answer at all, pointing the caller at the configuration build log.")]
-	public void Execute_ShouldFail_WhenServiceDoesNotAnswerAtAll() {
-		// Arrange
-		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(),
-			Arg.Any<PackageInstallOptions>(), Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
-		_applicationClient
-			.ExecutePostRequest(ListUserTasksUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("<html>404</html>");
-
-		// Act
-		int result = _command.Execute(new InstallProcessBuilderOptions());
-
-		// Assert
-		result.Should().Be(1,
-			because: "this is the state the whole command exists to detect — a previous install whose "
-				+ "configuration build failed leaves the version recorded, so the name-and-version gate stops "
-				+ "emitting its hint and the designer commands fail with raw service errors. Reporting 0 here "
-				+ "made the documented remediation a dead end");
-		// NSubstitute's Received() takes no `because`; the reason is stated here instead. After an install, a
-		// silent service means the target did not compile the package, so the message has to send the caller
-		// to the configuration build log — the one place that says why. (It deliberately does NOT suggest
-		// --force: the short-circuit is asked of the SERVICE now, so a broken installation never satisfies it
-		// and simply gets reinstalled on the next run without any flag.)
-		_logger.Received().WriteError(Arg.Is<string>(message =>
-			message.Contains("configuration build log")));
 	}
 
 	[Test]

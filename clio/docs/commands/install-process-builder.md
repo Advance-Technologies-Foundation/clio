@@ -102,6 +102,12 @@ ProcessDesignService enforces in its own handlers. That is deliberately stricter
 than cliogate's `CanManageSolution`, which is broader and does not check the
 connection type, so granting `CanManageSolution` does not grant process design.
 
+That right also affects **this** command's verdict, not only the commands that
+follow it. The post-install check calls `ListUserTasks`, which is behind the same
+gate, so an operator who may deploy packages but was never granted process-design
+rights gets a successful install reported as a failure. The message says so
+explicitly and names the right to grant; re-installing does not help.
+
 ## Notes
 
 - The command installs the version of the package bundled with your current

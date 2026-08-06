@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -101,6 +102,25 @@ public class BundledProcessBuilderPackageTests {
 	/// </summary>
 	private const int MinimumAuthorizationGateCallSites = 3;
 
+	/// <summary>
+	/// The connection-type half of the gate, as the shipped guard expresses it. Pinned separately because the
+	/// operation literal alone leaves half the promise unchecked — see the authorization-gate test.
+	/// </summary>
+	private const string ConnectionTypeCheck = "ConnectionType != UserType.General";
+
+	/// <summary>
+	/// The friend-assembly attribute in its fully-qualified csproj form. Matching this rather than the bare
+	/// word keeps the csproj's own explanatory comment about <c>InternalsVisibleTo</c> out of the match.
+	/// </summary>
+	private const string VisibilityAttributeMarker =
+		"AssemblyAttribute Include=\"System.Runtime.CompilerServices.InternalsVisibleTo\"";
+
+	/// <summary>
+	/// The MSBuild property that must condition every friend-assembly group. Defined outside the package
+	/// directory, so only a local build sets it.
+	/// </summary>
+	private const string VisibilityConditionProperty = "CrtProcessBuilderIncludeTestVisibility";
+
 	#endregion
 
 	#region Properties: Private
@@ -151,22 +171,38 @@ public class BundledProcessBuilderPackageTests {
 		string archive = ReadBundledArchiveAsText();
 
 		// Act
-		int unconditionalVisibilityGroups = CountOccurrences(archive,
-			"<ItemGroup Label=\"Add visibility for test project\">");
+		// Pins the PAIRING — every friend-assembly attribute sits inside an ItemGroup conditioned on the
+		// local-only property — rather than the absence of one hand-written Label. The label is cosmetic free
+		// text in ANOTHER repository: renaming it, or swapping Condition/Label order, would have made the old
+		// probe pass an archive with unconditioned visibility (and red-fail a correct one). Matching the
+		// fully-qualified attribute form keeps the csproj's own explanatory comment, which says the word
+		// "InternalsVisibleTo", from reading as a violation.
+		string[] itemGroups = archive.Split("<ItemGroup");
+		List<string> unconditionedGroups = [];
+		foreach (string itemGroup in itemGroups) {
+			if (!itemGroup.Contains(VisibilityAttributeMarker, StringComparison.Ordinal)) {
+				continue;
+			}
+			int openingTagEnd = itemGroup.IndexOf('>');
+			string openingTag = openingTagEnd < 0 ? itemGroup : itemGroup[..openingTagEnd];
+			if (!openingTag.Contains(VisibilityConditionProperty, StringComparison.Ordinal)) {
+				unconditionedGroups.Add(openingTag);
+			}
+		}
 
 		// Assert
-		unconditionalVisibilityGroups.Should().Be(0,
+		archive.Should().Contain(VisibilityAttributeMarker,
+			because: "the attributes must survive for LOCAL builds (the package's own tests reach internals), so "
+				+ "the fix is a condition on a property defined outside the package directory — not deleting "
+				+ "them. Losing them entirely breaks the package repository's test project, so this asserts the "
+				+ "pairing exists before the next assertion checks that it holds");
+		unconditionedGroups.Should().BeEmpty(
 			because: "an UNCONDITIONED visibility group ships the friend assemblies into the assembly the "
 				+ "TARGET compiles. Established on a stand rather than assumed: the platform rewrites the "
 				+ "package csproj on install but does NOT drop these entries, and the DLL the stand produced "
 				+ "contained both friend names. Creatio compiles configuration packages into separate UNSIGNED "
 				+ "assemblies, where InternalsVisibleTo matches on simple name, and 'DynamicProxyGenAssembly2' "
 				+ "has no dot — i.e. it is a usable Creatio package name");
-		archive.Should().Contain("CrtProcessBuilderIncludeTestVisibility",
-			because: "the attributes must survive for LOCAL builds (the package's own tests reach internals), "
-				+ "so the fix is a condition on a property defined outside the package directory — not "
-				+ "deleting them. Losing the property reference would mean they were deleted instead, which "
-				+ "breaks the package repository's test project");
 	}
 
 	[Test]
@@ -202,6 +238,12 @@ public class BundledProcessBuilderPackageTests {
 				+ "task — i.e. server-side C#. The gate is the CanManageProcessDesign operation plus a "
 				+ "General (non-portal) user, deliberately stricter than cliogate's CanManageSolution, which "
 				+ "omits the connection-type check (adr-ENG-90883 section 'Security gate')");
+		archive.Should().Contain(ConnectionTypeCheck,
+			because: "the operation literal alone pins only HALF of what every clio surface promises — the help "
+				+ "text, the command docs and the MCP contract all state a General (non-portal) user is "
+				+ "required too, and that half is exactly what makes this gate stricter than CanManageSolution. "
+				+ "A rebundle that lost the connection-type check would install, pass every other pin here, and "
+				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
 		callSites.Should().BeGreaterThanOrEqualTo(MinimumAuthorizationGateCallSites,
 			because: "the gate sits BELOW the service boundary, in the domain handlers, so it is these call "
 				+ "sites and not a per-[WebInvoke] attribute that authorize a request. An archive rebuilt "
@@ -279,7 +321,10 @@ public class BundledProcessBuilderPackageTests {
 		string archive = ReadBundledArchiveAsText();
 
 		// Act & Assert
-		archive.Should().NotContain($"{BundledPackages.ProcessBuilderPackageName}.dll",
+		// Case-INSENSITIVE on purpose: the platform resolves '<packageName>.dll' case-insensitively on Windows
+		// hosts, so an ordinal ban would miss 'crtprocessbuilder.dll' on the one host family where the mistake
+		// still loads and serves stale code.
+		archive.Should().NotContainEquivalentOf($"{BundledPackages.ProcessBuilderPackageName}.dll",
 			because: "a shipped assembly turns a FAILED target-side compile into a silent one. Installing "
 				+ "materialises Files/Bin into the deployed package folder (that is how cliogate's prebuilt "
 				+ "assembly gets loaded at all), and the server's regenerated csproj outputs to that same path "
@@ -291,7 +336,7 @@ public class BundledProcessBuilderPackageTests {
 				+ "from. Note this cannot be a blanket '.dll' ban: the csproj legitimately names ~60 "
 				+ "Terrasoft.* and third-party assemblies in HintPath references, so only the package's OWN "
 				+ "assembly name is forbidden");
-		archive.Should().NotContain($"{BundledPackages.ProcessBuilderPackageName}.pdb",
+		archive.Should().NotContainEquivalentOf($"{BundledPackages.ProcessBuilderPackageName}.pdb",
 			because: "symbols travel with a leaked build output and are the same accident by a different name; "
 				+ "the bundling runbook passes --skip-pdb, and this asserts it actually happened");
 	}

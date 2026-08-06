@@ -81,6 +81,11 @@ PREREQUISITES
       stricter than cliogate's CanManageSolution, which is broader and does not
       check the connection type, so CanManageSolution alone does not grant
       process design.
+    - That same right also affects THIS command's verdict, not only the commands
+      that follow it: the post-install check calls ListUserTasks, which is behind
+      the gate. Without the right the install still succeeds and the command
+      still reports a failure - it says so explicitly, and names the right to
+      grant. Re-installing does not help in that case.
 
 NOTES
     - The command installs the version of the package bundled with your current

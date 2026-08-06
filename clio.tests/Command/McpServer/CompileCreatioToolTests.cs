@@ -23,7 +23,7 @@ public sealed class CompileCreatioToolTests
 		// A deadline-branch test detaches its compile; its compile reservation is released on that detached
 		// continuation, which can outlive the test method. Clear the process-global reservations so a leaked
 		// one cannot fast-fail the next test's compile for the shared "sandbox-tenant" key.
-		McpToolExecutionLock.ResetCompileReservationsForTests();
+		McpToolExecutionLock.ResetConfigurationBuildReservationsForTests();
 	}
 
 	[Test]
@@ -346,7 +346,7 @@ public sealed class CompileCreatioToolTests
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
 		// Simulate a compile already running for this tenant by holding its reservation.
-		McpToolExecutionLock.TryReserveCompile("sandbox-tenant").Should().BeTrue(
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant").Should().BeTrue(
 			because: "the first reservation for a tenant must succeed");
 
 		try
@@ -366,7 +366,7 @@ public sealed class CompileCreatioToolTests
 		}
 		finally
 		{
-			McpToolExecutionLock.ReleaseCompile("sandbox-tenant");
+			McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant");
 			ConsoleLogger.Instance.ClearMessages();
 		}
 	}
@@ -386,8 +386,8 @@ public sealed class CompileCreatioToolTests
 		ICompileOperationRegistry registry = new CompileOperationRegistry();
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
-		McpToolExecutionLock.TryReserveCompile("sandbox-tenant").Should().BeTrue();
-		McpToolExecutionLock.ReleaseCompile("sandbox-tenant");
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant").Should().BeTrue();
+		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant");
 
 		try
 		{

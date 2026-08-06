@@ -5241,7 +5241,7 @@ internal static class ToolContractCatalog {
 				[
 					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Install the package, then retry whichever process-designer tool sent you here. The flow deliberately stops at this tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one as the follow-up would point at a tool this server may not expose. This tool verifies the outcome itself - it asks the service which build is serving - so no confirmation call is needed."),
+				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. Do not treat the install's own success as proof that the NEW build is serving: it probes ListUserTasks, which shows that ProcessDesignService answers, not which assembly answered."),
 			[],
 			[],
 			Preconditions: [

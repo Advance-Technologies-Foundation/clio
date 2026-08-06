@@ -175,6 +175,16 @@ first, propose the install second.
 - **Whether a failed configuration build is reported at all is unverified**, and a package-agnostic outcome
   check in clio (installation log + `ConfActivityLog`) is the follow-up that would replace the current
   `ListUserTasks` probe for every bundled package, not just this one.
+- **A version-based skip is viable and deliberately unbuilt.** The original argument for "always install" had
+  two halves; only one survives. What survives: asking the SERVICE cannot answer the question, because
+  `ListUserTasks` proves something answers, not which build — so it would report "nothing to do" for an
+  environment still serving the old assembly. What was RETRACTED: that the recorded package version is inert.
+  It is not — the `SysPackage` row is rewritten whenever the descriptor's `ModifiedOnUtc` moves (see the
+  constraint above), so `IRequiredPackageChecker.IsCompatible` could gate the install and save a needless
+  configuration build on an up-to-date environment. Left unbuilt because it is a behaviour change with its own
+  failure mode: the recorded version says what was ACCEPTED, and for a source-only package accepted is not
+  compiled, so a skip would decline to fix an environment that recorded the right version and never built it.
+  Building it needs the package-agnostic outcome check above first.
 - `BundledPackages` deliberately does NOT yet hold the cliogate version, which is still spread across a
   constant in `InfoCommand`, `cliogate/descriptor.json` and a stale `cliogate/version.txt` that nothing
   writes. Collapsing that triple is separate work; do not add a fourth copy.

@@ -1998,6 +1998,39 @@ public sealed class ToolContractGetToolTests {
 			},
 			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical install-process-builder contract, whose flow stops at itself and whose rationale must not claim the tool can tell which build is serving.")]
+	public void ToolContractGet_Should_Return_InstallProcessBuilder_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallProcessBuilderTool.InstallProcessBuilderToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the five process-designer tools are feature-gated and may be absent, so their remediation "
+				+ "tool must be discoverable through get-tool-contract to be reachable at all");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "the package ships inside clio, so the target environment is the only thing to supply");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
+			because: "the flow must stop at this tool: naming a process-designer tool as the follow-up would "
+				+ "point at one this server may not expose while the feature is off");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)which\s+build\s+is\s+serving",
+			because: "that capability was a ProcessDesignService.GetVersion operation, implemented and then "
+				+ "REVERTED. The probe left behind is ListUserTasks, which proves the service answers but not "
+				+ "which assembly answered — so a contract claiming otherwise tells an agent an upgrade is "
+				+ "verified when the outgoing build could have answered it. Pinned here and not only in "
+				+ "clio.mcp.e2e because the E2E suite is not in CI yet");
+	}
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes curated contracts for the deploy lifecycle tools so the most consequential tools are discoverable.")]

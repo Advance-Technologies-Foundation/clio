@@ -1,4 +1,6 @@
+using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -56,9 +58,10 @@ public sealed class InstallProcessBuilderToolTests {
 				because: "the resolved command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("sandbox",
 				because: "the environment-name argument should map into InstallProcessBuilderOptions");
-			resolvedCommand.CapturedOptions.Force.Should().BeFalse(
-				because: "force must default to false when the argument is omitted, so an agent following the "
-					+ "refusal hint cannot accidentally force a recompile on a healthy environment");
+			resolvedCommand.CapturedOptions.Uri.Should().BeNull(
+				because: "environment-name is the tool's only argument, so the mapping must leave every other "
+					+ "environment-identity field unset and let the registered environment supply it — an "
+					+ "MCP-supplied URI would silently retarget the install");
 		} finally {
 			ConsoleLogger.Instance.ClearMessages();
 		}
@@ -66,7 +69,7 @@ public sealed class InstallProcessBuilderToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Exposes non-destructive, idempotent MCP metadata and a remediation-oriented description naming the package and the tools it unblocks.")]
+	[Description("Exposes destructive, idempotent MCP metadata and a remediation-oriented description naming the package and the tools it unblocks.")]
 	public void InstallProcessBuilder_Should_Expose_Expected_Mcp_Metadata() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(InstallProcessBuilderTool)
@@ -93,7 +96,9 @@ public sealed class InstallProcessBuilderToolTests {
 				+ "the effects of both. install-gate's false is not the precedent: it ships a prebuilt "
 				+ "assembly and never makes the target rebuild");
 		attribute.Idempotent.Should().BeTrue(
-			because: "the command short-circuits on an already-current environment, so re-running is safe");
+			because: "a SEQUENTIAL re-run converges on the same end state - the command always installs, so it "
+				+ "costs one configuration build and changes nothing else. The hint says nothing about "
+				+ "CONCURRENT re-entry, which is refused outright by the configuration-build reservation");
 		description.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the description should name the package the tool installs");
 		description.Description.Should().Contain("create-business-process",
@@ -103,9 +108,9 @@ public sealed class InstallProcessBuilderToolTests {
 			because: "the description must disclose that the tool verifies the OUTCOME rather than the install "
 				+ "call, so a caller understands why a successful install can still fail");
 		description.Description.Should().Contain("list-packages",
-			because: "an agent must be told NOT to decide from the recorded package version: Creatio does not "
-				+ "rewrite it when re-installing a package it already has, so it says nothing about what is "
-				+ "actually running");
+			because: "an agent must be told to act on the refusal rather than compare versions itself: the "
+				+ "recorded version list-packages reports is exactly what the [RequiresPackage] gate already "
+				+ "checked, so a second opinion adds a round-trip and a chance to disagree with the gate");
 	}
 
 	[Test]
@@ -138,6 +143,87 @@ public sealed class InstallProcessBuilderToolTests {
 				+ "hide it while the gated process-designer tools keep telling callers to run it");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("When the install exceeds the MCP response deadline the tool returns exit code 0 with an in-progress note that neither claims the outcome is verified nor tells the caller to call the installer again.")]
+	public async Task InstallProcessBuilder_Should_Return_NonVerdict_InProgressNotice_When_ResponseDeadlineExceeded() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The resolved install blocks on the gate until the test releases it, so the deadline deterministically
+		// wins the race — no timing dependence. Released in finally so the detached work finishes promptly and
+		// frees the configuration-build reservation.
+		ManualResetEventSlim executeGate = new(false);
+		FakeInstallProcessBuilderCommand resolvedCommand = new(exitCode: 0) { ExecuteGate = executeGate };
+		commandResolver.Resolve<InstallProcessBuilderCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver) {
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try {
+			// Act
+			CommandExecutionResult result =
+				await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox"));
+
+			// Assert
+			result.ExitCode.Should().Be(0,
+				because: "a still-running install is not a failure, and reporting one would send an agent into "
+					+ "remediation for a healthy configuration build");
+			string notice = string.Join(" ", result.Output.Select(message => message.Value?.ToString()));
+			notice.Should().Contain("NOT a verdict",
+				because: "unlike restart-by-environment-name (whose write already returned) or compile-creatio "
+					+ "(whose operation is recorded and pollable), NOTHING is established at this point — the "
+					+ "install may still fail, so the exit code 0 must not read as success");
+			notice.Should().MatchRegex(@"(?i)do not call\s+install-process-builder\s+again",
+				because: "the notice used to tell the caller to re-run the installer to confirm, which would "
+					+ "start a second install, build and restart on an instance already being rebuilt");
+		} finally {
+			executeGate.Set(); // release the detached work so it finalizes and frees the reservation
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a second install while a configuration build is already in flight on the same tenant, without resolving or running the command.")]
+	public async Task InstallProcessBuilder_Should_Refuse_When_ConfigurationBuild_AlreadyInFlight() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("busy-tenant");
+		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver);
+		McpToolExecutionLock.TryReserveConfigurationBuild("busy-tenant").Should().BeTrue(
+			because: "the test needs to hold the reservation the tool will find taken");
+
+		try {
+			// Act
+			CommandExecutionResult result =
+				await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox"));
+
+			// Assert
+			result.ExitCode.Should().Be(1,
+				because: "waiting fixes it, so it is a caller-actionable refusal rather than a clio failure (-1)");
+			commandResolver.DidNotReceive().Resolve<InstallProcessBuilderCommand>(Arg.Any<EnvironmentOptions>());
+			string refusal = string.Join(" ", result.Output.Select(message => message.Value?.ToString()));
+			refusal.Should().Contain("already running",
+				because: "the refusal must say WHY it refused; without the broad per-tenant monitor there is "
+					+ "nothing to queue behind, and queueing was never right — a second install would rebuild "
+					+ "and restart an instance already being rebuilt");
+		} finally {
+			McpToolExecutionLock.ReleaseConfigurationBuild("busy-tenant");
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[TearDown]
+	public void ClearConfigurationBuildReservations() {
+		// The reservation is released on the DETACHED continuation, which can outlive a deadline test, so a
+		// leaked one would fast-fail the next test in this fixture.
+		McpToolExecutionLock.ResetConfigurationBuildReservationsForTests();
+	}
+
 	private sealed class FakeInstallProcessBuilderCommand : InstallProcessBuilderCommand {
 		private readonly int _exitCode;
 
@@ -156,8 +242,14 @@ public sealed class InstallProcessBuilderToolTests {
 
 		public InstallProcessBuilderOptions? CapturedOptions { get; private set; }
 
+		/// <summary>
+		/// When set, Execute blocks on it, so a deadline test can win the race deterministically.
+		/// </summary>
+		public ManualResetEventSlim? ExecuteGate { get; init; }
+
 		public override int Execute(InstallProcessBuilderOptions options) {
 			CapturedOptions = options;
+			ExecuteGate?.Wait();
 			return _exitCode;
 		}
 	}
