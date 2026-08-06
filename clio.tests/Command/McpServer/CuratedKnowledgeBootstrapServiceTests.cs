@@ -180,6 +180,48 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
+	[Description("Bootstrap preserves and synchronizes an explicitly configured Git checkout of the canonical curated knowledge repository for development.")]
+	public void Bootstrap_ShouldRetainCanonicalGitOverride_WhenConfiguredForDevelopment() {
+		// Arrange
+		KnowledgeSourceConfiguration overrideSource = new() {
+			LibraryId = CuratedKnowledgeSourceDefaults.LibraryId,
+			Type = KnowledgeSourceType.Git,
+			Location = CuratedKnowledgeSourceDefaults.GitRepositoryLocation,
+			Branch = "feature/unreleased-guidance",
+			Priority = CuratedKnowledgeSourceDefaults.Priority,
+			Participation = KnowledgeSourceParticipation.Authoritative
+		};
+		_settings.GetKnowledgeConfiguration().Returns(
+			Configuration((CuratedKnowledgeSourceDefaults.Alias, overrideSource)));
+		_store.IsGitRepositoryInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_management.Install(
+			CuratedKnowledgeSourceDefaults.Alias,
+			Arg.Any<int>(),
+			Arg.Any<System.Threading.CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
+				true,
+				"updated",
+				[new KnowledgeSourceOperationResult(
+					CuratedKnowledgeSourceDefaults.Alias,
+					true,
+					"updated",
+					"Curated Git knowledge was updated.")]));
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = _service.Bootstrap();
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a developer-selected canonical checkout is a supported replacement for the release transport");
+		result.Installed.Should().BeTrue(
+			because: "the configured branch must be synchronized before it is served");
+		_settings.DidNotReceiveWithAnyArgs().EnsureKnowledgeSource(default!, default!);
+		_management.Received(1).Install(
+			CuratedKnowledgeSourceDefaults.Alias,
+			Arg.Any<int>(),
+			Arg.Any<System.Threading.CancellationToken>());
+	}
+
+	[Test]
 	[Description("Bootstrap reports an installation failure without throwing so MCP can still start with other configured sources.")]
 	public void Bootstrap_ShouldReturnFailure_WhenCuratedInstallFails() {
 		// Arrange

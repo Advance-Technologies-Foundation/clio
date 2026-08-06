@@ -59,6 +59,13 @@ DESCRIPTION
     updates and MCP restarts. A failed or timed-out initial install is warned but does not
     prevent MCP startup; retry with install-knowledge --source creatio-curated.
 
+    Every configured knowledge source may use the Git transport. For development, an explicit
+    creatio-curated Git source is preserved instead of being reset to the release transport when it uses library-id com.creatio.clio, location
+    https://github.com/Advance-Technologies-Foundation/clio-knowledge.git, priority 100, and
+    authoritative participation. Its optional branch, tag, or commit can consume unpublished
+    knowledge directly from that checkout. The configured Git source is synchronized during startup so a
+    branch change takes effect. Without this override, the signed GitHub-release default applies.
+
     Public verification keys are not secrets. Never configure a private signing key.
     The public key authorized to sign the built-in com.creatio.clio library is pinned inside
     Clio and is consulted before any configured key material, so a settings entry naming that

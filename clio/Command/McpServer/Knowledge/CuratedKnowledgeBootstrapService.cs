@@ -29,6 +29,9 @@ internal static class CuratedKnowledgeSourceDefaults {
 	/// <summary>The GitHub repository publishing the curated knowledge library.</summary>
 	internal const string RepositoryName = "clio-knowledge";
 
+	/// <summary>The canonical Git repository URI accepted for an explicit developer override.</summary>
+	internal const string GitRepositoryLocation = "https://github.com/Advance-Technologies-Foundation/clio-knowledge.git";
+
 	/// <summary>The fixed release-asset file name carrying the signed bundle.</summary>
 	internal const string AssetName = "clio-knowledge-bundle.zip";
 
@@ -233,10 +236,11 @@ internal sealed class CuratedKnowledgeBootstrapService(
 			// its own. Whether the cached content is actually usable is decided by activation, which
 			// never blocks on the source mutation lock and falls back when it is not.
 			//
-			// This branch is what keeps a warm start offline. Without an artifact-shaped probe the
-			// bundle transports would fall through to Install below and reach the network on every
-			// single MCP start, inside the five-second pre-serve budget.
-			if (IsLocallyInstalled(source.Type, CuratedKnowledgeSourceDefaults.Alias)) {
+			// This branch is what keeps a warm artifact-backed start offline. Git deliberately falls
+			// through to synchronization so an operator's branch, tag, or commit change cannot leave a
+			// stale checkout active under the newly configured reference.
+			if (source.Type != KnowledgeSourceType.Git
+					&& IsLocallyInstalled(source.Type, CuratedKnowledgeSourceDefaults.Alias)) {
 				return new CuratedKnowledgeBootstrapResult(
 					true,
 					true,
@@ -296,6 +300,9 @@ internal sealed class CuratedKnowledgeBootstrapService(
 	/// <param name="candidate">The persisted entry.</param>
 	/// <returns><see langword="true"/> when nothing has to be written.</returns>
 	private static bool IsCanonical(KnowledgeSourceConfiguration candidate) {
+		if (IsCuratedGitOverride(candidate)) {
+			return true;
+		}
 		KnowledgeSourceConfiguration expected = CuratedKnowledgeSourceDefaults.CreateConfiguration();
 		return string.Equals(candidate.LibraryId, expected.LibraryId, StringComparison.OrdinalIgnoreCase)
 			&& candidate.Type == expected.Type
@@ -309,6 +316,16 @@ internal sealed class CuratedKnowledgeBootstrapService(
 			&& candidate.Priority == expected.Priority
 			&& candidate.Participation == expected.Participation;
 	}
+
+	/// <summary>
+	/// Reports whether an operator explicitly selected the canonical curated repository for Git-based development.
+	/// </summary>
+	private static bool IsCuratedGitOverride(KnowledgeSourceConfiguration candidate) =>
+		candidate.Type == KnowledgeSourceType.Git
+		&& string.Equals(candidate.LibraryId, CuratedKnowledgeSourceDefaults.LibraryId, StringComparison.OrdinalIgnoreCase)
+		&& string.Equals(candidate.Location, CuratedKnowledgeSourceDefaults.GitRepositoryLocation, StringComparison.Ordinal)
+		&& candidate.Priority == CuratedKnowledgeSourceDefaults.Priority
+		&& candidate.Participation == KnowledgeSourceParticipation.Authoritative;
 
 	/// <summary>
 	/// Reports whether the alias already has content on disk that activation could serve.
