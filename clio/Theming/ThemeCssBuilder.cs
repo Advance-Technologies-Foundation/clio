@@ -8,8 +8,17 @@ using PaletteSet = System.Collections.Generic.IReadOnlyDictionary<string, System
 
 namespace Clio.Theming;
 
-/// <summary>Custom heading/body font selection for a theme, with the weights to load.</summary>
-public sealed record FontsInput(string Heading = null, string Body = null, IReadOnlyList<int> Weights = null);
+/// <summary>
+/// Custom heading/body font selection for a theme, with the weights to load. Families listed in
+/// <paramref name="SuppressedImportFamilies"/> get no Google Fonts <c>@import</c> — the availability probe
+/// found them unpublished, so an import would only fetch a substitute that shadows the locally installed
+/// font. Matching is ordinal: the catalog is case-sensitive, so each exact spelling carries its own verdict.
+/// </summary>
+public sealed record FontsInput(
+	string Heading = null,
+	string Body = null,
+	IReadOnlyList<int> Weights = null,
+	IReadOnlyCollection<string> SuppressedImportFamilies = null);
 
 /// <summary>Brand inputs for building a theme's CSS.</summary>
 public sealed record BuildThemeInput {
@@ -60,7 +69,7 @@ public interface IThemeCssBuilder {
 /// </summary>
 internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 
-	private const string DefaultFontFamily = "Montserrat";
+	internal const string DefaultFontFamily = "Montserrat";
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
@@ -164,17 +173,29 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		if (headingFamily == DefaultFontFamily && bodyFamily == DefaultFontFamily) {
 			return css;
 		}
+		foreach (string family in new[] { headingFamily, bodyFamily }
+			.Where(family => family != DefaultFontFamily)
+			.Distinct(StringComparer.Ordinal)) {
+			FontFamilyName.Validate(family);
+		}
 		List<FontFamilyEntry> families = new();
-		if (headingFamily != DefaultFontFamily) {
+		if (headingFamily != DefaultFontFamily && NeedsImport(fonts, headingFamily)) {
 			families.Add(new FontFamilyEntry(headingFamily, fonts?.Weights));
 		}
-		if (bodyFamily != DefaultFontFamily && bodyFamily != headingFamily) {
+		if (bodyFamily != DefaultFontFamily && bodyFamily != headingFamily && NeedsImport(fonts, bodyFamily)) {
 			families.Add(new FontFamilyEntry(bodyFamily, fonts?.Weights));
 		}
-		string importRule = FontImportBuilder.BuildRule(families);
 		string next = ReplaceFontFamily(css, "heading", headingFamily);
 		next = ReplaceFontFamily(next, "body", bodyFamily);
-		return importRule + "\n" + next;
+		if (families.Count == 0) {
+			return next;
+		}
+		return FontImportBuilder.BuildRule(families) + "\n" + next;
+	}
+
+	private static bool NeedsImport(FontsInput fonts, string family) {
+		return fonts?.SuppressedImportFamilies == null
+			|| !fonts.SuppressedImportFamilies.Contains(family, StringComparer.Ordinal);
 	}
 
 	private static string ReplaceFontFamily(string css, string which, string family) {
