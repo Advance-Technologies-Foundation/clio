@@ -27,7 +27,7 @@ flowchart LR
         direction TB
         MCP["MCP-сервер<br/>create/modify/describe/list-user-tasks<br/>FeatureToggle: process-designer<br/>(lazy surface, не в tools/list)"]
         VERB["CLI verb<br/>install-process-builder"]
-        GATE["RequiredPackageChecker<br/>[RequiresPackage CrtProcessBuilder 1.1.0.1]"]
+        GATE["RequiredPackageChecker<br/>[RequiresPackage CrtProcessBuilder 1.0.0.0]"]
         CMD["Command-слой<br/>CreateBusinessProcessService<br/>ModifyBusinessProcessService<br/>ServerProcessDescriber"]
         URL["ServiceUrlBuilder<br/>KnownRoute -> /rest/ProcessDesignService/*<br/>(+ префикс 0/ для .NET Framework)"]
         HTTP["IApplicationClient<br/>(auth, retry, timeout)"]
@@ -136,7 +136,7 @@ sequenceDiagram
     AI->>Tool: descriptor JSON + environment-name
     Tool->>Gate: EnsureRequirements(options)
     Gate->>Core: список установленных пакетов
-    alt пакет отсутствует или < 1.1.0.1
+    alt пакет отсутствует или < 1.0.0.0
         Gate-->>AI: PackageRequirementException<br/>"Run 'clio install-process-builder -e env'"
     end
     Tool->>Svc: BuildProcess(env, request)
@@ -211,7 +211,7 @@ sequenceDiagram
 - Для .NET Framework `ServiceUrlBuilder` сам добавляет префикс `0/`: `{uri}/0/rest/ProcessDesignService/BuildProcess`.
 - Все четыре операции — WCF с `BodyStyle=Wrapped`: тело запроса **всегда** `{"request": {...}}`, ответ — `{"<Method>Result": {...}}`.
 - MCP-инструменты закрыты фичетоглом `process-designer` и живут на «ленивой» поверхности: их нет в `tools/list`, они находятся через `get-tool-contract`.
-- Минимальная версия пакета зашита в `BundledPackages.ProcessBuilderVersion` (сейчас `1.1.0.1`) и должна быть **четырёхсоставной** — иначе сравнение через `System.Version` даст `Revision = -1`.
+- Минимальная версия пакета зашита в `BundledPackages.ProcessBuilderVersion` (сейчас `1.0.0.0`) и должна быть **четырёхсоставной** — иначе сравнение через `System.Version` даст `Revision = -1`.
 
 ---
 

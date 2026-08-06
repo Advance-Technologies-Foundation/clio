@@ -33,7 +33,7 @@ note over Crt
 end note
 Cmd -> Wait : WaitForReady (health check, 600 s budget)
 Wait --> Cmd : the instance is back
-Cmd -> Ver : IsPackageOperational("CrtProcessBuilder", "1.1.0.1")
+Cmd -> Ver : IsPackageOperational("CrtProcessBuilder")
 Ver -> Crt : POST /rest/ProcessDesignService/Ping
 note right of Ver
   3 attempts, 5 s apart, 15 s timeout.

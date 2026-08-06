@@ -82,7 +82,7 @@ public static class BundledPackages {
 	/// four-part floor against a three-part installed version compares as installed &lt; required.
 	/// </para>
 	/// </remarks>
-	public const string ProcessBuilderVersion = "1.1.0.1";
+	public const string ProcessBuilderVersion = "1.0.0.0";
 
 	/// <summary>
 	/// File name of the bundled process-builder archive, inside the folder of the same name.

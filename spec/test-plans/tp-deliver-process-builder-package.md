@@ -200,7 +200,7 @@ Performed on two stands, .NET Framework 4.8 and .NET 8.0.29, on 2026-08-05, thro
 Hub and `clio push-pkg`:
 
 - Install on an environment without the package, then `ListUserTasks` answers with the full 23-task catalogue.
-- Upgrade in place with `ModifiedOnUtc` moved: the recorded version moves 1.1.0.0 → 1.1.0.1 on both runtimes.
+- Upgrade in place with `ModifiedOnUtc` moved: the recorded version follows the descriptor on both runtimes. Measured on net472 2026-08-06: 1.1.0.1 → 1.1.0.2 with the command, and — since the comparison is "differs", not "is later" — 1.1.0.2 → 1.1.0.1 when an EARLIER timestamp was installed.
 - Upgrade with `PackageVersion` moved alone: install succeeds, recorded version stays behind. This is
   silent failure 2, reproduced deliberately and in both directions.
 - Compile timing read from the server's own logs: 12–25 s steady state, ~1 min on a cold stand (NuGet

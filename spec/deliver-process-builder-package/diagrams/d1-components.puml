@@ -8,7 +8,7 @@ actor "AI agent / developer" as User
 package "clio (client side)" {
   component "MCP tools\ncreate-business-process\nmodify-business-process\ndescribe-business-process\nlist-user-tasks\n(FeatureToggle: process-designer)" as MCP
   component "CLI verb\ninstall-process-builder" as VERB
-  component "RequiredPackageChecker\n[RequiresPackage\nCrtProcessBuilder 1.1.0.1]" as GATE
+  component "RequiredPackageChecker\n[RequiresPackage\nCrtProcessBuilder 1.0.0.0]" as GATE
   component "Command layer\nCreate/Modify services,\nServerProcessDescriber" as CMD
   component "ServiceUrlBuilder\nKnownRoute ->\n/rest/ProcessDesignService/*" as URL
   component "IApplicationClient\nauth / retry / timeout" as HTTP

@@ -17,7 +17,7 @@ AI -> Tool : list-user-tasks / validate-process-graph (recommended)
 AI -> Tool : descriptor JSON + environment-name
 Tool -> Gate : EnsureRequirements(options)
 Gate -> Core : installed package list
-alt package missing or older than 1.1.0.1
+alt package missing or older than 1.0.0.0
   Gate --> AI : PackageRequirementException\n"Run 'clio install-process-builder -e env'"
 end
 Tool -> Svc : BuildProcess(env, request)
