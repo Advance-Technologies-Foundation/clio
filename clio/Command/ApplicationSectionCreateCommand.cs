@@ -573,6 +573,15 @@ public sealed class ApplicationSectionCreateService(
 	/// unit test can name the <see cref="InsertAttemptResult"/> the guard now returns; it is not a public contract.
 	/// </summary>
 	internal enum InsertAttemptOutcome {
+		/// <summary>
+		/// Unset/invalid — the enum's zero value is deliberately NOT a real outcome, so a
+		/// <c>default(InsertAttemptResult)</c> (e.g. a partially-configured test double for the
+		/// <c>Func&lt;InsertAttemptResult&gt;</c> guard delegate, or a future path that forgets to set the
+		/// outcome) fails loudly in <see cref="CommitGuardedInsert"/> instead of silently reading as
+		/// <see cref="Committed"/> success (PR #1002 RC-4).
+		/// </summary>
+		Unspecified = 0,
+
 		/// <summary>The insert was acknowledged as committed.</summary>
 		Committed,
 
@@ -616,13 +625,19 @@ public sealed class ApplicationSectionCreateService(
 			applicationCode,
 			serializationWait,
 			() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
-		if (result.Outcome == InsertAttemptOutcome.TimedOut) {
+		return result.Outcome switch {
 			// Guard already released (its finally ran as TryCommitAttempt returned). The recovery poll reads
 			// strictly by the id generated for THIS call, so it is safe unserialized (PR #1002 RC-2).
-			return RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, result.TimeoutCause);
-		}
-
-		return result.Outcome == InsertAttemptOutcome.Committed;
+			InsertAttemptOutcome.TimedOut =>
+				RecoverFromInsertTimeout(resolvedRequest, client, environmentSettings, insertTimeoutMs, result.TimeoutCause),
+			InsertAttemptOutcome.Committed => true,
+			InsertAttemptOutcome.Contention => false,
+			// Unspecified is the enum's zero value and never a real outcome: fail loudly rather than let a
+			// default/unset InsertAttemptResult silently read as committed success (PR #1002 RC-4).
+			_ => throw new InvalidOperationException(
+				$"Unclassified section-insert outcome '{result.Outcome}': the serialization guard returned a "
+				+ "default or unset InsertAttemptResult, which must never be treated as success.")
+		};
 	}
 
 	/// <summary>
@@ -1142,11 +1157,17 @@ public sealed class ApplicationSectionCreateService(
 	// (40 s > 30 s): otherwise the cap would fire on the responsive path purely from the sleeps and silently
 	// drop the final attempt(s) — the exact slow-commit window this poll exists to cover (PR #1002 RC-3/RC-5).
 	// With the headroom, a responsive server runs ALL TimeoutRecoveryVerifyAttempts attempts; the cap engages
-	// only when the verify readbacks THEMSELVES consume real latency. Each verify is an HTTP select independently
-	// bounded by VerificationTimeoutMs (30 s), so a STALLED server (verifies each burning the full 30 s) could
-	// otherwise stretch recovery to attempts x 30 s + sleeps (~210 s) and blow past the ~180 s client ceiling
-	// (PR #1002 RC-1); the cap bounds the whole poll to budget + at most one in-flight verify + one backoff
-	// (~40 + 30 + 8 = ~78 s worst case, ~168 s with the 90 s insert — under 180 s). The no-op delay seam +
+	// only when the verify readbacks THEMSELVES consume real latency. Each verify is an HTTP select issued with
+	// an explicit per-request timeout (VerificationTimeoutMs, 30 s — see TryVerifySectionExists), so a single
+	// hung/stalled verify request is ABORTED at 30 s rather than left to run unbounded; the cumulative cap is
+	// then re-checked between attempts. That per-request bound is what makes the cumulative cap effective — a
+	// STALLED server (verifies each burning the full 30 s) could otherwise stretch recovery to attempts x 30 s +
+	// sleeps (~210 s) and blow past the ~180 s client ceiling (PR #1002 RC-1/RC-C); the cap bounds the whole poll
+	// to budget + at most one in-flight verify + one backoff (~40 + 30 + 8 = ~78 s worst case, ~168 s with the
+	// 90 s insert — under 180 s). This ~168 s is the bound for the WHOLE create call, not per insert: at most ONE
+	// recovery poll runs, because insert #1 timing out is mutually exclusive with the contention retry — a
+	// TimedOut insert #1 makes CommitGuardedInsert return/throw before the retry is reached, and the retry runs
+	// only on a Contention outcome (PR #1002 RC-B). The no-op delay seam +
 	// injected timestamp seam make both instant/deterministic under test.
 	internal const int TimeoutRecoveryVerifyAttempts = 6;
 	private static readonly TimeSpan TimeoutRecoveryInitialBackoff = TimeSpan.FromSeconds(2);

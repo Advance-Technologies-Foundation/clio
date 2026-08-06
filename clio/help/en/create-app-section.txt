@@ -108,9 +108,12 @@ TIMEOUT AND FAILURE DIAGNOSTICS
                       retried with backoff (not a single immediate read) so a
                       section that commits just after the budget expired is
                       reported as success, not a spurious failure (ENG-94419).
-                      This re-check adds up to ~30s of read-only polling before
-                      a genuine timeout failure is reported. If it still does
-                      not appear, do NOT retry blindly - the server may still be
+                      This re-check adds ~30s of read-only polling on a
+                      responsive server, and is hard-capped so that even when
+                      the readbacks stall it cannot exceed ~78s of recovery
+                      (~168s end-to-end incl. the 90s insert) - size any
+                      external client timeout above that. If it still does not
+                      appear, do NOT retry blindly - the server may still be
                       processing the insert. Wait a few minutes, run "clio
                       list-app-sections", and retry only if the section is still
                       absent.
