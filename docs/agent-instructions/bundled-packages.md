@@ -91,12 +91,17 @@ environment carrying an older package to be refused until it is upgraded.
 dotnet build MainSolution.slnx -c dev-nf
 dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
 
-# 2. Bump with the COMMAND, never by editing descriptor.json - it writes PackageVersion AND stamps
-#    ModifiedOnUtc, and fact 2 above is why both are needed. Run it on EVERY rebundle, not only when
-#    raising the floor: pass the SAME version to re-stamp the date, which is what makes the target
-#    rewrite the SysPackage row at all.
+# 2. Move BOTH fields - PackageVersion and ModifiedOnUtc - on EVERY rebundle, not only when raising
+#    the floor: fact 2 above is why the date is what makes the target rewrite the SysPackage row at
+#    all, so pass the SAME version to re-stamp the date if the version is not changing.
+#
+#    The command is the way to do that in one step, and it is what the pins expect (it clears the
+#    milliseconds, giving the `000` suffix the guard fixture uses as a provenance oracle). It is NOT
+#    a technical requirement, and the earlier wording here ("never by editing descriptor.json") was
+#    too strong: a hand edit that moves both fields works, because the platform's comparison is
+#    "differs", not "is later" - measured, see fact 2. What breaks is moving the version alone.
 dotnet <clio>/clio/bin/Debug/net8.0/clio.dll set-pkg-version ./packages/CrtProcessBuilder `
-  --PackageVersion X.Y.Z.W
+  --package-version X.Y.Z.W
 
 # 2b. SCHEMA descriptors are NOT covered by that command - it stamps the package descriptor only. Check
 #     every Schemas/*/descriptor.json for a plausible ModifiedOnUtc and correct it if not. This is not

@@ -148,25 +148,30 @@ public class SetPackageVersionCommandTests : BaseCommandTests<SetPackageVersionO
 	}
 
 	[Test]
-	[Description("Refuses a version with fewer than four parts, because System.Version gives the missing part -1 and it then sorts below every requirement floor.")]
-	public void Execute_ShouldRefuse_WhenTheVersionHasFewerThanFourParts() {
+	[Description("Writes a version with fewer than four parts and warns, because clio's own add-package seeds a three-part version and refusing broke existing pipelines.")]
+	public void Execute_ShouldWriteAndWarn_WhenTheVersionHasFewerThanFourParts() {
 		// Arrange
-		string before = DescriptorOnDisk();
+		// The exact shape `clio add-package` produces, bumped the way a release pipeline would bump it:
+		// PackageCreator seeds "0.1.0", so "0.1.1" is what such a pipeline passes.
 
 		// Act
-		int result = _command.Execute(Options("2.0.0"));
+		int result = _command.Execute(Options("0.1.1"));
 
 		// Assert
-		result.Should().Be(1,
-			because: "System.Version gives a three-part string a Revision of -1, so RequiredPackageChecker "
-				+ "compares it as LOWER than every four-part floor. Writing 2.0.0 into cliogate's descriptor "
-				+ "would make lock-package, unlock-package and sql refuse FOREVER against an environment "
-				+ "carrying a newer package than the floor they demand");
-		DescriptorOnDisk().Should().Be(before,
-			because: "the refusal must leave the file byte-identical — this is the promise the shipped help "
-				+ "makes, and the defect that motivated the guard was a WRITE (a null version stamped with a "
-				+ "fresh timestamp), so proving it on a real file is the case worth proving");
-		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("2.0.0.0")));
+		result.Should().Be(0,
+			because: "an earlier version of this guard REFUSED a short version, which broke a shipped verb for "
+				+ "every package clio itself creates: PackageCreator seeds \"0.1.0\" and publish-app writes an "
+				+ "app version verbatim, so `add-package` followed by `set-pkg-version -v 0.1.1` returned 1 and "
+				+ "left the descriptor untouched. Three parts is normal, not an error");
+		DescriptorOnDisk().Should().Contain("\"PackageVersion\": \"0.1.1\"",
+			because: "the requested value must be written as asked, not normalised to four parts — padding it "
+				+ "would make this command disagree with publish-app, which writes the same value verbatim");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("0.1.1") && message.Contains("four")));
+		// NSubstitute's Received() takes no `because`; stated here. The hazard is narrow but real — a short
+		// version sorts below every four-part [RequiresPackage] floor — so it must still be SAID. The
+		// four-part invariant for the packages that actually have a floor is enforced by the archive pins,
+		// not here.
 	}
 
 	[TestCase("", TestName = "empty")]

@@ -26,16 +26,24 @@ hand means taking on that pairing yourself; this command exists so you cannot fo
 | `<PACKAGE PATH>` | yes | Path to the package folder holding `descriptor.json` |
 | `-v`, `--package-version` | yes | The version to write, for example `1.2.3.4` |
 
-The version must be present and must parse as a version. Both checks refuse **before** the
-descriptor is touched: writing an empty or unparseable version while still moving the timestamp
-would produce a descriptor announcing a change it cannot describe.
+The version must be present and must parse as a version, optionally with a `-<suffix>` pre-release
+part (`1.2.3.4` or `1.2.3.4-rc`) — the same form every reader of this field accepts. Both refusals
+happen **before** the descriptor is touched: writing an empty or unparseable version while still
+moving the timestamp would produce a descriptor announcing a change it cannot describe.
+
+Fewer than four parts is **warned about, not refused.** It is normal — clio's own `add-package`
+seeds `0.1.0` and `publish-app` writes an app version verbatim — so refusing it would break existing
+pipelines. The warning exists because Creatio compares recorded versions through `System.Version`,
+which treats a missing part as `-1`: for a package clio enforces a version floor on (`cliogate`,
+`CrtProcessBuilder`) a shorter version sorts below every four-part floor, and the gated commands
+would then refuse an environment that is actually up to date.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| `0` | The descriptor was updated |
-| `1` | No usable version was supplied, or `descriptor.json` was not found. On a refusal the descriptor is left exactly as it was |
+| `0` | The descriptor was updated (possibly with a warning) |
+| `1` | No version was supplied, it could not be parsed, or `descriptor.json` was not found. On a refusal the descriptor is left exactly as it was |
 
 ## Example
 

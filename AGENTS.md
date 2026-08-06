@@ -68,7 +68,7 @@ cp ~/.nuget/packages/atf.repository/<version>/lib/netstandard2.0/ATF.Repository.
   cliogate/Files/Bin/
 
 # 3. Bump version
-dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --PackageVersion X.Y.Z.W
+dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --package-version X.Y.Z.W
 
 # 4. Compress
 dotnet clio/bin/Release/net10.0/clio.dll compress ./cliogate -d ./clio/cliogate/cliogate.gz
@@ -111,7 +111,9 @@ clio ships two Creatio packages inside its own distribution — `cliogate` (preb
 That article carries the rebundle procedure and the three platform facts whose failure modes are SILENT:
 a package is matched by `UId` (never change it); the descriptor's `ModifiedOnUtc` — not `PackageVersion` —
 decides whether the recorded version is rewritten at all (so bump versions with `clio set-pkg-version`,
-never by editing `descriptor.json`); and for a source-only package "installed" and "compiled" are different
+so move BOTH fields on every rebundle — the command does it in one step and leaves the provenance
+marker the pins expect, though a hand edit that moves both works too); and for a source-only package
+"installed" and "compiled" are different
 states that no database read distinguishes.
 
 One trap worth repeating here because it invalidates any local verification: an install command resolves the

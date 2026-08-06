@@ -62,7 +62,10 @@ namespace Clio.Command.PackageCommand
 		/// <c>ModifiedOnUtc</c> with it.
 		/// </summary>
 		/// <param name="options">Parsed command options.</param>
-		/// <returns><c>0</c> on success; <c>1</c> when no usable version was supplied.</returns>
+		/// <returns>
+		/// <c>0</c> on success; <c>1</c> when no version was supplied or it cannot be parsed. A version with
+		/// fewer than four parts is WRITTEN and warned about, not refused — see the comment at that check.
+		/// </returns>
 		/// <remarks>
 		/// The two descriptor fields are written TOGETHER because that is the descriptor's editing contract:
 		/// Creatio rewrites the <c>SysPackage</c> row only when <c>ModifiedOnUtc</c> changes, so a version
@@ -89,19 +92,26 @@ namespace Clio.Command.PackageCommand
 					+ "optionally followed by '-<suffix>', for example 1.2.3.4 or 1.2.3.4-rc.");
 				return 1;
 			}
-			// Four parts REQUIRED, and this is not pedantry: System.Version gives a three-part string a Revision
-			// of -1, so RequiredPackageChecker.IsCompatible then compares such a version as LOWER than every
-			// four-part floor. Writing 2.0.0 into a descriptor therefore makes lock-package, unlock-package and
-			// sql refuse permanently against an environment carrying a NEWER package than the floor they demand.
-			// See the remarks on BundledPackages.ProcessBuilderVersion.
+			// WARN, do not refuse. Fewer than four parts is normal for most packages and clio itself
+			// produces it: PackageCreator seeds "0.1.0" into every `add-package`, and publish-app/Workspace
+			// write an app version verbatim. Refusing here broke those pipelines on a shipped verb, which is
+			// how this warning replaced an earlier hard guard.
+			//
+			// The hazard the guard was written for is real but NARROW: System.Version gives a missing part -1,
+			// so a shorter version sorts BELOW every four-part floor that RequiredPackageChecker.IsCompatible
+			// compares against. That only matters for the packages clio actually gates on, and for those the
+			// four-part invariant is enforced where it belongs — the archive pins in
+			// clio.tests/Common/BundledProcessBuilderPackageTests.cs assert the shipped descriptor equals the
+			// four-part BundledPackages constant, so a short version cannot reach a release unnoticed.
 			if (parsed.Version.Revision < 0) {
-				_logger.WriteError(
-					$"'{options.PackageVersion}' has fewer than four parts. Creatio compares recorded versions "
-					+ "through System.Version, which treats a missing part as -1, so a shorter version sorts BELOW "
-					+ "every four-part requirement floor and would refuse commands forever. Write "
-					+ $"'{parsed.Version.Major}.{parsed.Version.Minor}.{Math.Max(parsed.Version.Build, 0)}."
-					+ $"{Math.Max(parsed.Version.Revision, 0)}' instead.");
-				return 1;
+				_logger.WriteWarning(
+					$"'{options.PackageVersion}' has fewer than four parts. That is fine for an ordinary package - "
+					+ "clio's own add-package seeds 0.1.0 - and the version is being written as requested. But "
+					+ "Creatio compares recorded versions through System.Version, which treats a missing part as "
+					+ "-1, so if THIS package is one clio enforces a version floor on (cliogate, CrtProcessBuilder) "
+					+ "a shorter version sorts below every four-part floor and the gated commands would refuse an "
+					+ $"environment that is actually up to date. For those packages write "
+					+ $"'{parsed.Version.Major}.{parsed.Version.Minor}.{Math.Max(parsed.Version.Build, 0)}.0'.");
 			}
 			string packageDescriptorPath = _fileSystem.Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
 			try {
