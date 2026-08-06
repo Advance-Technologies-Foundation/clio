@@ -78,7 +78,7 @@ public sealed record ProcessGraphValidationResult(bool HasErrors, IReadOnlyList<
 /// — the single source of truth — rather than a re-derived taxonomy. This is a fast pre-check; the
 /// authoritative build/save happens server-side in the <c>ProcessDesignService</c> package. The rule
 /// definitions are published in the <c>process-modeling</c> MCP guidance resource
-/// (<see cref="Clio.Command.McpServer.Resources.ProcessDesigner.ProcessModelingGuidanceResource"/>).
+/// The detailed authoring contract is delivered by the external process-modeling knowledge article.
 /// </remarks>
 public interface IProcessGraphValidator {
 	/// <summary>

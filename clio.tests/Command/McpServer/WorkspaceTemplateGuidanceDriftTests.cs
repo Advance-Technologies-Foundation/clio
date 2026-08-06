@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -190,7 +191,7 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every get-guidance article named in a SHIPPED template resolves through the current guidance catalog.")]
+	[Description("Every get-guidance article named in a SHIPPED template resolves against the curated knowledge catalog.")]
 	public void ShippedTemplates_ShouldReferenceRegisteredGuidance_WhenNamingGuidanceArticles() {
 		// Arrange
 		(string Name, string Path)[] templates = [
@@ -198,7 +199,8 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			("tpl/ui-project/AGENTS.md", TemplatePath("ui-project", "AGENTS.md")),
 			("tpl/ui-project-Empty/AGENTS.md", TemplatePath("ui-project-Empty", "AGENTS.md"))
 		];
-		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		IReadOnlySet<string> curatedNames = CuratedKnowledgeNames("availableNames");
+		IReadOnlySet<string> featureGatedNames = CuratedKnowledgeNames("featureGatedNames");
 
 		// Act
 		Dictionary<string, HashSet<string>> referencesByTemplate = new(StringComparer.OrdinalIgnoreCase);
@@ -214,7 +216,9 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 				foreach (Match match in GuidanceNameReference.Matches(line)) {
 					string guidanceName = match.Groups[1].Value;
 					references.Add(guidanceName);
-					if (!GuidanceCatalog.TryGet(guidanceName, featureToggleService, out _)) {
+					if (featureGatedNames.Contains(guidanceName)) {
+						unresolved.Add($"{name}: '{guidanceName}' (feature-gated)");
+					} else if (!curatedNames.Contains(guidanceName)) {
 						unresolved.Add($"{name}: '{guidanceName}'");
 					}
 				}
@@ -227,8 +231,36 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			because: "the workspace template must retain its mandatory core/routing guidance and route " +
 				"configuration web-service implementation and tests to their canonical live articles");
 		unresolved.Should().BeEmpty(
-			because: "shipped templates are frozen into user workspaces and every named live guidance article " +
-				"must remain visible with the default feature-toggle state");
+			because: "shipped templates are frozen into user workspaces, so every guidance name they use must " +
+				"resolve in the curated knowledge catalog with the default feature-toggle state — a name that " +
+				"is feature-gated dead-ends the agent on every environment where the feature is off");
+	}
+
+	/// <summary>
+	/// Guidance names the curated knowledge library publishes, read from the named fixture array:
+	/// <c>availableNames</c> resolve with the default feature-toggle state, <c>featureGatedNames</c>
+	/// resolve only where their <c>requiredFeatures</c> are enabled.
+	/// </summary>
+	/// <remarks>
+	/// Each array holds item IDs, topic IDs, and legacy <c>docs://mcp/guides/</c> aliases for
+	/// guidance-role articles only — <see cref="Clio.Command.McpServer.Knowledge.KnowledgeResolver"/>
+	/// resolves a bare name against that role alone, so reference articles are reachable by URI only.
+	/// Guidance content lives in clio-knowledge, so this fixture — not a compiled catalog — is what a
+	/// unit test can check shipped templates against without network access. Regenerate it from that
+	/// repository's <c>bundle-source.json</c> (currently tracking library version 1.10.0, sequence 12)
+	/// whenever the curated library publishes a new generation. A generation that only edits article
+	/// bodies leaves the name arrays untouched; refresh the recorded version and sequence anyway, so
+	/// the fixture states which generation it was checked against.
+	/// </remarks>
+	private static IReadOnlySet<string> CuratedKnowledgeNames(string arrayProperty) {
+		string path = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(path));
+		return document.RootElement.GetProperty(arrayProperty)
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 
 	[Test]

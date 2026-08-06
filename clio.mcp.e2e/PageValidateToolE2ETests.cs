@@ -646,6 +646,39 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid=true for a mobile JSON body whose viewModelConfigDiff is the ENG-94101 insert-delta shape: an 'insert' appends a new entry into a template-owned array (Items.modelConfig.filterAttributes) rather than a root merge replacing it. Proves the new merge+insert diff contract validates through the real MCP wire — the apply-oracle seeds a container at the insert path so a template-owned-array append does not false-positive as not-a-container.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts the ENG-94101 template-array insert-delta shape")]
+	[AllureDescription("Sends a mobile JSON body whose viewModelConfigDiff appends a filter entry via an insert at the array's own path (no own base section) and verifies validate-page accepts it end-to-end — the observable output shape the converter now emits.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Body_With_TemplateArray_InsertDelta() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithInsertDelta = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [
+			    { "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+			      "values": { "name": "QuickFilter_x_Items", "loadOnChange": true } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithInsertDelta);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an insert appending to a template-owned array is the ENG-94101 contract; the oracle seeds the container path so it resolves instead of false-positiving as not-a-container");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "the insert-delta shape is a valid mobile data-section diff and must pass content validation");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported for the canonical template-array insert-delta the converter now emits");
+	}
+
+	[Test]
 	[Description("Returns valid=false for a mobile JSON body that contains a 'validators' section.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects mobile body with 'validators' key")]
