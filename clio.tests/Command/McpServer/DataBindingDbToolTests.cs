@@ -46,7 +46,8 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(callInfo => BuildApplicationClientResponse(callInfo.ArgAt<string>(0)));
+			.Returns(callInfo => BuildApplicationClientResponse(
+				callInfo.ArgAt<string>(0), callInfo.ArgAt<string>(1)));
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_packageListProvider.GetPackages().Returns([
 			new PackageInfo(new PackageDescriptor { Name = PackageName, UId = PackageUId },
@@ -356,13 +357,15 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the remove prompt should require remote read-back instead of trusting mutation intent");
 	}
 
-	private static string BuildApplicationClientResponse(string url) {
+	private static string BuildApplicationClientResponse(string url, string body) {
 		if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 			return SchemaResponseJson;
 		}
 
 		if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
-			return BindingLookupResponseJson;
+			return IsPackageLookup(body)
+				? $$"""{"success":true,"rows":[{"Name":"{{PackageName}}","UId":"{{PackageUId}}","InstallType":0}]}"""
+				: BindingLookupResponseJson;
 		}
 
 		if (url.Contains("GetBoundSchemaData", StringComparison.Ordinal)) {
@@ -373,6 +376,13 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 		}
 
 		return """{"success":true,"rowsAffected":1}""";
+	}
+
+	private static bool IsPackageLookup(string body) {
+		using JsonDocument document = JsonDocument.Parse(body);
+		return document.RootElement.TryGetProperty("rootSchemaName", out JsonElement rootSchemaName)
+			&& rootSchemaName.ValueKind == JsonValueKind.String
+			&& string.Equals(rootSchemaName.GetString(), "SysPackage", StringComparison.Ordinal);
 	}
 
 	private static string BindingLookupResponseJson => $$"""

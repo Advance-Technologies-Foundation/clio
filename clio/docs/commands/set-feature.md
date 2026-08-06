@@ -31,6 +31,12 @@ Code (pos. 0)    Feature code
 State (pos. 1)   Feature state
 ```
 
+## Notes
+
+- Exit code 0 means the requested state reached the environment. When the platform rejects the write, or
+  the name passed to `--sys-admin-unit-name` matches no role, nothing is written and the command exits
+  with code 1.
+
 ## Example
 
 ```bash

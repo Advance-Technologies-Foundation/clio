@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -282,6 +283,9 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		AspNetWebApplication app = builder.Build();
+		McpServerCommand.BootstrapCuratedKnowledge(
+			app.Services.GetRequiredService<ICuratedKnowledgeBootstrapService>(),
+			ConsoleLogger.Instance);
 
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and the run-time-configured session-container cache, so per-tenant

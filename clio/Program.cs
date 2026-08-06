@@ -16,6 +16,7 @@ using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -162,6 +163,16 @@ internal class Program {
 		typeof(InstallSkillsOptions),
 		typeof(UpdateSkillOptions),
 		typeof(DeleteSkillOptions),
+		typeof(InstallKnowledgeOptions),
+		typeof(UpdateKnowledgeOptions),
+		typeof(InfoKnowledgeOptions),
+		typeof(DeleteKnowledgeOptions),
+		typeof(AddKnowledgeSourceOptions),
+		typeof(RemoveKnowledgeSourceOptions),
+		typeof(EnableKnowledgeSourceOptions),
+		typeof(DisableKnowledgeSourceOptions),
+		typeof(ListKnowledgeSourcesOptions),
+		typeof(ListKnowledgeExamplesOptions),
 		typeof(DeployIdentityOptions),
 		typeof(GetIdentityServiceConfigOptions),
 		typeof(ResolveOAuthSystemUserOptions),
@@ -230,6 +241,7 @@ internal class Program {
 		typeof(SetUserThemeOptions),
 		typeof(UploadImageOptions),
 		typeof(SetBackgroundImageOptions),
+		typeof(SetLogoOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(WatchCompilationOptions),
 		typeof(UploadLicenseCommandOptions),
@@ -429,6 +441,7 @@ internal class Program {
 			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
 			UploadImageOptions opts => Resolve<UploadImageCommand>(opts).Execute(opts),
 			SetBackgroundImageOptions opts => Resolve<SetBackgroundImageCommand>(opts).Execute(opts),
+			SetLogoOptions opts => Resolve<SetLogoCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -532,6 +545,16 @@ internal class Program {
 			InstallSkillsOptions opts => Resolve<InstallSkillsCommand>().Execute(opts),
 			UpdateSkillOptions opts => Resolve<UpdateSkillCommand>().Execute(opts),
 			DeleteSkillOptions opts => Resolve<DeleteSkillCommand>().Execute(opts),
+			InstallKnowledgeOptions opts => Resolve<InstallKnowledgeCommand>().Execute(opts),
+			UpdateKnowledgeOptions opts => Resolve<UpdateKnowledgeCommand>().Execute(opts),
+			InfoKnowledgeOptions opts => Resolve<InfoKnowledgeCommand>().Execute(opts),
+			DeleteKnowledgeOptions opts => Resolve<DeleteKnowledgeCommand>().Execute(opts),
+			AddKnowledgeSourceOptions opts => Resolve<AddKnowledgeSourceCommand>().Execute(opts),
+			RemoveKnowledgeSourceOptions opts => Resolve<RemoveKnowledgeSourceCommand>().Execute(opts),
+			EnableKnowledgeSourceOptions opts => Resolve<EnableKnowledgeSourceCommand>().Execute(opts),
+			DisableKnowledgeSourceOptions opts => Resolve<DisableKnowledgeSourceCommand>().Execute(opts),
+			ListKnowledgeSourcesOptions opts => Resolve<ListKnowledgeSourcesCommand>().Execute(opts),
+			ListKnowledgeExamplesOptions opts => Resolve<ListKnowledgeExamplesCommand>().Execute(opts),
 			DeployIdentityOptions opts => Resolve<DeployIdentityCommand>(opts).Execute(opts),
 			GetIdentityServiceConfigOptions opts => Resolve<GetIdentityServiceConfigCommand>(opts).Execute(opts),
 			ResolveOAuthSystemUserOptions opts => Resolve<ResolveOAuthSystemUserCommand>(opts).Execute(opts),

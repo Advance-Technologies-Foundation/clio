@@ -7,7 +7,7 @@ namespace Clio.Tests.Theming;
 
 /// <summary>
 /// Calibration anchors for <see cref="FontImportBuilder"/>: URL/rule construction with sorted +
-/// de-duplicated weights, default weights, multi-family joins, and family validation.
+/// de-duplicated weights, default weights, and multi-family joins.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
