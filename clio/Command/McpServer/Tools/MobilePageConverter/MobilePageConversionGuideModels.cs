@@ -500,22 +500,21 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public SpacingNormalizationInfo SpacingNormalization { get; init; }
 
-	// ── Metric style normalized on inserted indicator widgets ──────────
+	// ── Every property normalization the conversion rules declare ──────
 	/// <summary>
-	/// Metric style normalization applied by the converter: mobile metrics follow the mobile design
-	/// standard, so the WEB widget's text size and border are deliberately IGNORED (discarded, not
-	/// translated) — every <c>crt.IndicatorWidget</c> the converter INSERTS already carries
-	/// <c>config.text.fontSizeMode</c> "extra-small" and <c>config.layout.border.hidden</c> true in
-	/// <c>elementMap[].mobileValues</c>, so there is nothing separate to apply. The values are MERGED into
-	/// the converted <c>config</c>, so the widget's own data/aggregation subtree survives untouched. Like
-	/// spacing this is a SILENT normalization, NOT a gate decision: report it as one aggregated line in the
-	/// plan and the final report; never ask whether to apply it and never restore the web values. Null when
-	/// no inserted metric was normalized — which also covers a metric that was dropped rather than
-	/// inserted, and a rules file carrying no metric rule.
+	/// One section per normalization standard the CONVERSION RULES declare, keyed by the rule's
+	/// <c>reportGroup</c> (e.g. <c>"spacing"</c>, <c>"metricStyle"</c>). The set of keys is open: the rules
+	/// file is resolved at runtime, so a standard added there appears here without a binary change, and a
+	/// key this build has never seen gets its own section rather than being folded into another standard's.
+	/// <para>
+	/// Each section carries the caller-facing wording from its rule, the elements normalized (with the
+	/// dotted paths actually written), and anything the stamp had to skip. Read the section rather than
+	/// assuming a fixed set of properties. Null when nothing was normalized at all.
+	/// </para>
 	/// </summary>
-	[JsonPropertyName("metricStyleNormalization")]
+	[JsonPropertyName("normalizations")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public MetricStyleNormalizationInfo MetricStyleNormalization { get; init; }
+	public IReadOnlyDictionary<string, NormalizationInfo> Normalizations { get; init; }
 
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
@@ -797,53 +796,71 @@ public sealed class SpacingNormalizationEntry {
 }
 
 /// <summary>
-/// Advisory summary of the metric style normalization: which inserted metrics had their style stamped
-/// with the mobile-standard values (extra-small text, hidden border). The actionable result is already
-/// baked into <c>elementMap[].mobileValues</c>; this section only feeds the plan / final-report line.
+/// One normalization standard's report: the caller-facing wording carried by the conversion rule that
+/// declared it, what was normalized, and what could not be. Shared by every standard — a new one is a
+/// rules-file entry, not another pair of identical DTOs.
 /// </summary>
-public sealed class MetricStyleNormalizationInfo {
-	/// <summary>Why the web text size and border are ignored and how to report the normalization.</summary>
+public sealed class NormalizationInfo {
+	/// <summary>Caller-facing summary, verbatim from the rule's <c>reportNote</c>.</summary>
 	[JsonPropertyName("note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Note { get; init; }
 
 	/// <summary>
-	/// The conversion rules' own explanation of this standard, verbatim from the rules file. Present when
-	/// the contributing rule carries a note. This is the authoritative WHY — the rules file is resolved at
-	/// runtime, so prefer it over any wording compiled into the guidance article.
+	/// The rules' own rationale for this standard (their <c>note</c> fields, de-duplicated). The rules file
+	/// is resolved at runtime, so prefer this over any wording compiled into the guidance article.
 	/// </summary>
 	[JsonPropertyName("ruleNotes")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> RuleNotes { get; init; }
 
-	/// <summary>One entry per normalized inserted metric.</summary>
+	/// <summary>One entry per element this standard normalized.</summary>
 	[JsonPropertyName("normalized")]
-	public IReadOnlyList<MetricStyleNormalizationEntry> Normalized { get; init; } = [];
+	public IReadOnlyList<NormalizationEntry> Normalized { get; init; } = [];
 
 	/// <summary>
-	/// Metrics the converter could NOT fully normalize, with the branch it refused to enter. Present only
-	/// when something was skipped. This exists so a silent no-op is visible: without it a metric whose
-	/// <c>config</c> (or a nested branch of it) is a whole-value binding would simply be missing from
-	/// <c>normalized</c>, and the caller could not tell that from "there was nothing to normalize". Report
-	/// these to the user — the element keeps the WEB style and may need a manual pass in the designer.
+	/// Elements the standard could NOT be applied to, with the branch it refused and why. Present only when
+	/// something was skipped. Without it a silent no-op is indistinguishable from "nothing to normalize" —
+	/// these elements keep the WEB values and may need a manual pass in the designer.
 	/// </summary>
 	[JsonPropertyName("skipped")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<MetricStyleNormalizationSkip> Skipped { get; init; }
+	public IReadOnlyList<NormalizationSkip> Skipped { get; init; }
 }
 
-/// <summary>One inserted metric whose style could not be stamped, and why.</summary>
-public sealed class MetricStyleNormalizationSkip {
-	/// <summary>The metric's mobile element name.</summary>
+/// <summary>One element normalized to a standard, and the properties actually written on it.</summary>
+public sealed class NormalizationEntry {
+	/// <summary>The element's mobile name.</summary>
 	[JsonPropertyName("name")]
 	public string Name { get; init; }
 
-	/// <summary>The metric's mobile component type (i.e. "crt.IndicatorWidget").</summary>
+	/// <summary>The element's mobile component type.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The properties stamped onto this element's mobileValues. A replacing rule reports the top-level key
+	/// it replaced (e.g. <c>["gap"]</c>); a merging rule reports the dotted paths of the leaves it actually
+	/// changed (e.g. <c>["config.layout.border.hidden"]</c>) — never the merged root, which would
+	/// under-report, and never a leaf that already held the target value.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+}
+
+/// <summary>One element a standard could not be stamped onto, and why.</summary>
+public sealed class NormalizationSkip {
+	/// <summary>The element's mobile name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The element's mobile component type.</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
 	/// <summary>
 	/// The dotted paths the stamp refused to enter (e.g. <c>["config.text"]</c> when the element binds its
-	/// whole text config). Every other path of the same rule may still have been stamped.
+	/// whole text config). Other paths of the same rule may still have been stamped.
 	/// </summary>
 	[JsonPropertyName("properties")]
 	public IReadOnlyList<string> Properties { get; init; } = [];
@@ -851,25 +868,6 @@ public sealed class MetricStyleNormalizationSkip {
 	/// <summary>Why the branch was refused, in caller-facing wording.</summary>
 	[JsonPropertyName("reason")]
 	public string Reason { get; init; }
-}
-
-/// <summary>One inserted metric whose style was normalized to the mobile standard.</summary>
-public sealed class MetricStyleNormalizationEntry {
-	/// <summary>The metric's mobile element name.</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; init; }
-
-	/// <summary>The metric's mobile component type (i.e. "crt.IndicatorWidget").</summary>
-	[JsonPropertyName("type")]
-	public string Type { get; init; }
-
-	/// <summary>
-	/// The dotted paths of the properties stamped onto the metric's mobileValues (e.g.
-	/// <c>["config.text.fontSizeMode", "config.layout.border.hidden"]</c>). Leaves, not the merged root:
-	/// the root alone would under-report which properties the rules file actually touched.
-	/// </summary>
-	[JsonPropertyName("properties")]
-	public IReadOnlyList<string> Properties { get; init; } = [];
 }
 
 /// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>

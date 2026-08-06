@@ -6,18 +6,40 @@
       "mobile": "BaseMobileListTemplate",
       "note": "Section / list page.",
       "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" },
-        { "web": "LeftFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
-        { "web": "RightFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
-        { "web": "ListContainer", "mobile": "ListContainer", "note": "List area; web crt.DataTable maps to mobile crt.List." }
+        {
+          "web": "MainContainer",
+          "mobile": "MainContainer"
+        },
+        {
+          "web": "LeftFilterContainer",
+          "mobile": "HeaderContainer",
+          "note": "filters area."
+        },
+        {
+          "web": "RightFilterContainer",
+          "mobile": "HeaderContainer",
+          "note": "filters area."
+        },
+        {
+          "web": "ListContainer",
+          "mobile": "ListContainer",
+          "note": "List area; web crt.DataTable maps to mobile crt.List."
+        }
       ],
       "components": [
-        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        {
+          "web": "DataTable",
+          "mobile": "List",
+          "note": "Primary list component."
+        },
         {
           "web": "FolderTree",
           "mobile": "FolderTreeActions",
           "mobileType": "crt.FolderTreeActions",
-          "carryProperties": ["sourceSchemaName", "rootSchemaName"],
+          "carryProperties": [
+            "sourceSchemaName",
+            "rootSchemaName"
+          ],
           "note": "Folder tree. The mobile template (BaseMobileListTemplate) already provides the FolderTreeActions element; carry the web folder-schema binding (sourceSchemaName + rootSchemaName) onto it by merge-by-name so the mobile folder tree resolves the section entity. Without this the web crt.FolderTree node (inherited template chrome) is pruned and rootSchemaName is lost."
         }
       ]
@@ -27,14 +49,46 @@
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
-        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab, so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
-        { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
-        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
-        { "web": "CardToggleTabPanel", "mobile": "Tabs", "note": "All tabs except Feed and Attachments should be moved to Tabs"},
-        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer", "note": "Web card-content wrapper; its non-tab content (side/profile) fills the mobile general tab's grid. The profile island itself is the exception — see the SideAreaProfileContainer entry: it merges into AreaProfileContainer, not into the general tab's grid." },
-        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer", "note": "Web profile island (the styled side-area grid with color/borderRadius). Merge twin — do NOT recreate it: the mobile template already provides AreaProfileContainer inside GeneralTabContainer as the profile card, so this wrapper's children are placed INSIDE AreaProfileContainer (never directly into GeneralTabContainer, and never leave AreaProfileContainer empty). Sibling side-area blocks (e.g. a second card like CaseInfoContainer) are NOT the island — they stay ordinary inserts into GeneralTabContainer. The island's own styling is template-provided and is not carried; if the web wrapper carries a BOUND visible or is targeted by business rules, move that logic onto AreaProfileContainer or each promoted child — it is not carried automatically." },
-        { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
-        { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
+        {
+          "web": "Tabs",
+          "mobile": "Tabs",
+          "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab, so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments."
+        },
+        {
+          "web": "FeedTabContainer",
+          "mobile": "FeedContainer",
+          "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)."
+        },
+        {
+          "web": "AttachmentsTabContainer",
+          "mobile": "AttachmentsContainer",
+          "note": "Attachments tab content; the AttachmentsTab stays the LAST tab."
+        },
+        {
+          "web": "CardToggleTabPanel",
+          "mobile": "Tabs",
+          "note": "All tabs except Feed and Attachments should be moved to Tabs"
+        },
+        {
+          "web": "CardContentWrapper",
+          "mobile": "GeneralTabContainer",
+          "note": "Web card-content wrapper; its non-tab content (side/profile) fills the mobile general tab's grid. The profile island itself is the exception — see the SideAreaProfileContainer entry: it merges into AreaProfileContainer, not into the general tab's grid."
+        },
+        {
+          "web": "SideAreaProfileContainer",
+          "mobile": "AreaProfileContainer",
+          "note": "Web profile island (the styled side-area grid with color/borderRadius). Merge twin — do NOT recreate it: the mobile template already provides AreaProfileContainer inside GeneralTabContainer as the profile card, so this wrapper's children are placed INSIDE AreaProfileContainer (never directly into GeneralTabContainer, and never leave AreaProfileContainer empty). Sibling side-area blocks (e.g. a second card like CaseInfoContainer) are NOT the island — they stay ordinary inserts into GeneralTabContainer. The island's own styling is template-provided and is not carried; if the web wrapper carries a BOUND visible or is targeted by business rules, move that logic onto AreaProfileContainer or each promoted child — it is not carried automatically."
+        },
+        {
+          "web": "CardContentWrapper:top",
+          "mobile": "Tabs:top",
+          "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)."
+        },
+        {
+          "web": "CardContentWrapper:bottom",
+          "mobile": "Tabs:bottom",
+          "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs."
+        }
       ]
     },
     {
@@ -42,8 +96,14 @@
       "mobile": "BaseMobilePageTemplate",
       "note": "Base record page (non-tabbed). Web BasePageFreedomTemplate maps to the mobile base record page.",
       "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" },
-        { "web": "CardContentWrapper", "mobile": "MainContainer" }
+        {
+          "web": "MainContainer",
+          "mobile": "MainContainer"
+        },
+        {
+          "web": "CardContentWrapper",
+          "mobile": "MainContainer"
+        }
       ]
     },
     {
@@ -51,7 +111,10 @@
       "mobile": "BlankMobilePageTemplate",
       "note": "Blank page. Mobile blank exposes only the Scaffold root.",
       "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" }
+        {
+          "web": "MainContainer",
+          "mobile": "MainContainer"
+        }
       ]
     },
     {
@@ -59,7 +122,10 @@
       "mobile": "BaseMobilePageTemplate",
       "note": "Base page template; maps to the mobile base record page. Universal fallback container is MainContainer.",
       "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" }
+        {
+          "web": "MainContainer",
+          "mobile": "MainContainer"
+        }
       ]
     },
     {
@@ -67,32 +133,54 @@
       "mobile": "BaseMobileTemplate",
       "note": "Base web template root; maps to the mobile structural root. Universal fallback container is MainContainer.",
       "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" }
+        {
+          "web": "MainContainer",
+          "mobile": "MainContainer"
+        }
       ]
     }
   ],
   "components": [
     {
-      "web": ["crt.Checkbox"],
-      "mobile": ["crt.Toggle"],
+      "web": [
+        "crt.Checkbox"
+      ],
+      "mobile": [
+        "crt.Toggle"
+      ],
       "category": "AlternativeAvailable",
       "note": "Boolean fields on mobile use crt.Toggle instead of the web crt.Checkbox."
     },
     {
-      "web": ["crt.HtmlEditor"],
-      "mobile": ["crt.RichTextEditor"],
+      "web": [
+        "crt.HtmlEditor"
+      ],
+      "mobile": [
+        "crt.RichTextEditor"
+      ],
       "category": "AlternativeAvailable",
       "note": "Rich text on mobile uses crt.RichTextEditor instead of the web crt.HtmlEditor."
     },
     {
-      "web": ["crt.DataGrid", "crt.DataTable"],
-      "mobile": ["crt.List", "crt.ListItem"],
+      "web": [
+        "crt.DataGrid",
+        "crt.DataTable"
+      ],
+      "mobile": [
+        "crt.List",
+        "crt.ListItem"
+      ],
       "category": "AlternativeAvailable",
       "note": "Web grid → mobile crt.List + crt.ListItem. The crt.ListItem must be added INTO the crt.List's `itemLayout` — it defines the row layout (`title` + `body`). Map each grid column's `code` to a `$<code>` binding: the first column becomes the ListItem `title`, the remaining columns become its `body` rows (`{ \"value\": \"$<code>\" }`); the grid `items` binding carries over to the list `items`. A column's `code` is its bound attribute name. Note: if the mobile template already provides the `List`/`ListItem` elements, configure them by merge-by-name (the row goes on the `ListItem` element) rather than inserting new ones."
     },
     {
-      "web": ["crt.FolderTree", "crt.FolderTreeActions"],
-      "mobile": ["crt.FolderTreeActions"],
+      "web": [
+        "crt.FolderTree",
+        "crt.FolderTreeActions"
+      ],
+      "mobile": [
+        "crt.FolderTreeActions"
+      ],
       "category": "AlternativeAvailable",
       "primaryWeb": "crt.FolderTree",
       "note": "Many->one: mobile FolderTreeActions is produced from web crt.FolderTree (primary); web crt.FolderTreeActions is consumed. Values are reconciled against the mobile component's registry contract."
@@ -104,18 +192,31 @@
       "namePrefix": "MainTabContainer_",
       "values": {
         "type": "crt.GridContainer",
-        "gap": { "rowGap": "medium", "columnGap": "medium" },
+        "gap": {
+          "rowGap": "medium",
+          "columnGap": "medium"
+        },
         "alignItems": "stretch",
-        "padding": { "bottom": "medium" }
+        "padding": {
+          "bottom": "medium"
+        }
       },
       "areaContainer": {
         "namePrefix": "GridContainer_",
         "values": {
           "type": "crt.GridContainer",
-          "padding": { "top": "medium", "bottom": "medium", "right": "medium", "left": "medium" },
+          "padding": {
+            "top": "medium",
+            "bottom": "medium",
+            "right": "medium",
+            "left": "medium"
+          },
           "color": "primary",
           "borderRadius": "medium",
-          "gap": { "rowGap": "medium", "columnGap": "medium" },
+          "gap": {
+            "rowGap": "medium",
+            "columnGap": "medium"
+          },
           "alignItems": "stretch"
         }
       }
@@ -124,11 +225,24 @@
   "componentPropertyOverrides": [
     {
       "type": "crt.GridContainer",
-      "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }
+      "values": {
+        "gap": {
+          "rowGap": "medium",
+          "columnGap": "medium"
+        }
+      },
+      "reportNote": "Container spacing was normalized to the mobile standard: every inserted crt.GridContainer / crt.FlexContainer carries gap Medium on all axes, already baked into elementMap[].mobileValues - nothing separate to apply. The web page's own spacing was IGNORED (discarded, not translated), even a container that carried no gap. Merge twins the mobile template provides are untouched.",
+      "reportConstraint": "Spacing is NORMALIZED, not converted: the web page's container spacing was deliberately IGNORED, and every inserted Grid/Flex container already carries the mobile-standard gap in its mobileValues. Do NOT restore or translate the web gap, and do NOT treat the difference from the web page as a defect. SILENT - never a gate question: state it in the plan and the final report as ONE aggregated line (guide.normalizations.spacing lists the containers).",
+      "reportNextStep": "Spacing: every inserted Grid/Flex container already carries the mobile-standard gap in its mobileValues - the web page's spacing is ignored by design (guide.normalizations.spacing lists them). Do not restore the web gap; mention the normalization as ONE aggregated line in the plan and the final report."
     },
     {
       "type": "crt.FlexContainer",
-      "values": { "gap": "medium" }
+      "values": {
+        "gap": "medium"
+      },
+      "reportNote": "Container spacing was normalized to the mobile standard: every inserted crt.GridContainer / crt.FlexContainer carries gap Medium on all axes, already baked into elementMap[].mobileValues - nothing separate to apply. The web page's own spacing was IGNORED (discarded, not translated), even a container that carried no gap. Merge twins the mobile template provides are untouched.",
+      "reportConstraint": "Spacing is NORMALIZED, not converted: the web page's container spacing was deliberately IGNORED, and every inserted Grid/Flex container already carries the mobile-standard gap in its mobileValues. Do NOT restore or translate the web gap, and do NOT treat the difference from the web page as a defect. SILENT - never a gate question: state it in the plan and the final report as ONE aggregated line (guide.normalizations.spacing lists the containers).",
+      "reportNextStep": "Spacing: every inserted Grid/Flex container already carries the mobile-standard gap in its mobileValues - the web page's spacing is ignored by design (guide.normalizations.spacing lists them). Do not restore the web gap; mention the normalization as ONE aggregated line in the plan and the final report."
     },
     {
       "type": "crt.IndicatorWidget",
@@ -136,11 +250,20 @@
       "mergeNestedObjects": true,
       "values": {
         "config": {
-          "text": { "fontSizeMode": "extra-small" },
-          "layout": { "border": { "hidden": true } }
+          "text": {
+            "fontSizeMode": "extra-small"
+          },
+          "layout": {
+            "border": {
+              "hidden": true
+            }
+          }
         }
       },
-      "note": "ENG-94230: crt.IndicatorWidget has no top-level size/hideBorder input - XS is the fontSizeMode enum value and hide-border is layout.border.hidden, so this rule merges instead of replacing to keep config.data (without which the widget renders nothing)."
+      "note": "ENG-94230: crt.IndicatorWidget has no top-level size/hideBorder input - XS is the fontSizeMode enum value and hide-border is layout.border.hidden, so this rule merges instead of replacing to keep config.data (without which the widget renders nothing).",
+      "reportNote": "Metric style was normalized to the mobile design standard: the web widget's own styling was IGNORED (discarded, not translated) and the standard's properties are already baked into elementMap[].mobileValues. normalized[].properties lists exactly what was written on each metric - read it there rather than assuming a fixed set. The stamp is a MERGE into the converted config, so config.data (the aggregation subtree, without which the widget renders nothing) and config.title survive untouched.",
+      "reportConstraint": "Metric style is NORMALIZED, not converted: the web widget's own styling was deliberately IGNORED and the standard's properties are already in each metric's mobileValues, merged into the converted config so its data/aggregation subtree is untouched. guide.normalizations.metricStyle.normalized[].properties is the authoritative list of what was written, and .skipped[] names metrics that could NOT be normalized because a branch is a whole-value binding - those keep the web style and are worth calling out. Never reconstruct config from the normalized keys alone. Do NOT restore or translate the web values. SILENT - never a gate question: state it as ONE aggregated line.",
+      "reportNextStep": "Metric style: every inserted metric already carries the mobile standard's properties in its mobileValues. Read guide.normalizations.metricStyle.normalized[].properties for what was written and .skipped[] for what could not be, rather than assuming a fixed set. Do not restore the web values; mention the normalization as ONE aggregated line and the skipped metrics separately."
     }
   ],
   "emptyContainerRemoval": {
@@ -153,30 +276,130 @@
     ]
   },
   "requests": [
-    { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
-    { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
-    { "web": "crt.UpdateRecordRequest", "mobile": "crt.UpdateRecordRequest", "category": "DirectMapping" },
-    { "web": "crt.DeleteRecordRequest", "mobile": "crt.DeleteRecordRequest", "category": "DirectMapping" },
-    { "web": "crt.CopyRecordRequest", "mobile": "crt.CopyRecordRequest", "category": "DirectMapping" },
-    { "web": "crt.CancelRecordChangesRequest", "mobile": "crt.CancelRecordChangesRequest", "category": "DirectMapping" },
-    { "web": "crt.ClosePageRequest", "mobile": "crt.ClosePageRequest", "category": "DirectMapping" },
-    { "web": "crt.OpenPageRequest", "mobile": "crt.OpenPageRequest", "category": "DirectMapping" },
-    { "web": "crt.OpenLookupPageRequest", "mobile": "crt.OpenLookupPageRequest", "category": "DirectMapping" },
-    { "web": "crt.OpenCustomWebViewPageRequest", "mobile": "crt.OpenCustomWebViewPageRequest", "category": "DirectMapping" },
-    { "web": "crt.ShowDialogRequest", "mobile": "crt.ShowDialogRequest", "category": "DirectMapping" },
-    { "web": "crt.OpenAddressOnMapRequest", "mobile": "crt.OpenAddressOnMapRequest", "category": "DirectMapping" },
-    { "web": "crt.LoadDataRequest", "mobile": "crt.LoadDataRequest", "category": "DirectMapping" },
-    { "web": "crt.QuickFilterRequest", "mobile": "crt.QuickFilterRequest", "category": "DirectMapping" },
-    { "web": "crt.ExecuteExpressionRequest", "mobile": "crt.ExecuteExpressionRequest", "category": "DirectMapping" },
-    { "web": "crt.RunBusinessProcessRequest", "mobile": "crt.RunBusinessProcessRequest", "category": "DirectMapping" },
-    { "web": "crt.CreateListItemRequest", "mobile": "crt.CreateListItemRequest", "category": "DirectMapping" },
-    { "web": "crt.UpdateListItemRequest", "mobile": "crt.UpdateListItemRequest", "category": "DirectMapping" },
-    { "web": "crt.DeleteListItemRequest", "mobile": "crt.DeleteListItemRequest", "category": "DirectMapping" },
-    { "web": "crt.UploadFileRequest", "mobile": "crt.UploadFileRequest", "category": "DirectMapping" },
-    { "web": "crt.DeleteFileRequest", "mobile": "crt.DeleteFileRequest", "category": "DirectMapping" },
-    { "web": "crt.AddCommunicationOptionsRequest", "mobile": "crt.AddCommunicationOptionsRequest", "category": "DirectMapping" },
-    { "web": "crt.CreateCommunicationOptionRequest", "mobile": "crt.CreateCommunicationOptionRequest", "category": "DirectMapping" },
-    { "web": "crt.RemoveCommunicationOptionRequest", "mobile": "crt.RemoveCommunicationOptionRequest", "category": "DirectMapping" },
-    { "web": "crt.SetAttributeFromBarcodeRequest", "mobile": "crt.SetAttributeFromBarcodeRequest", "category": "DirectMapping" }
+    {
+      "web": "crt.SaveRecordRequest",
+      "mobile": "crt.SaveRecordRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.CreateRecordRequest",
+      "mobile": "crt.CreateRecordRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.UpdateRecordRequest",
+      "mobile": "crt.UpdateRecordRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.DeleteRecordRequest",
+      "mobile": "crt.DeleteRecordRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.CopyRecordRequest",
+      "mobile": "crt.CopyRecordRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.CancelRecordChangesRequest",
+      "mobile": "crt.CancelRecordChangesRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.ClosePageRequest",
+      "mobile": "crt.ClosePageRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.OpenPageRequest",
+      "mobile": "crt.OpenPageRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.OpenLookupPageRequest",
+      "mobile": "crt.OpenLookupPageRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.OpenCustomWebViewPageRequest",
+      "mobile": "crt.OpenCustomWebViewPageRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.ShowDialogRequest",
+      "mobile": "crt.ShowDialogRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.OpenAddressOnMapRequest",
+      "mobile": "crt.OpenAddressOnMapRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.LoadDataRequest",
+      "mobile": "crt.LoadDataRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.QuickFilterRequest",
+      "mobile": "crt.QuickFilterRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.ExecuteExpressionRequest",
+      "mobile": "crt.ExecuteExpressionRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.RunBusinessProcessRequest",
+      "mobile": "crt.RunBusinessProcessRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.CreateListItemRequest",
+      "mobile": "crt.CreateListItemRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.UpdateListItemRequest",
+      "mobile": "crt.UpdateListItemRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.DeleteListItemRequest",
+      "mobile": "crt.DeleteListItemRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.UploadFileRequest",
+      "mobile": "crt.UploadFileRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.DeleteFileRequest",
+      "mobile": "crt.DeleteFileRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.AddCommunicationOptionsRequest",
+      "mobile": "crt.AddCommunicationOptionsRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.CreateCommunicationOptionRequest",
+      "mobile": "crt.CreateCommunicationOptionRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.RemoveCommunicationOptionRequest",
+      "mobile": "crt.RemoveCommunicationOptionRequest",
+      "category": "DirectMapping"
+    },
+    {
+      "web": "crt.SetAttributeFromBarcodeRequest",
+      "mobile": "crt.SetAttributeFromBarcodeRequest",
+      "category": "DirectMapping"
+    }
   ]
 }

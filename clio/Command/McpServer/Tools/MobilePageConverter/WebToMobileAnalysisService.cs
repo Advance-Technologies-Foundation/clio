@@ -233,9 +233,8 @@ public static class WebToMobileAnalysisService {
 		// translated. Each rule declares which guide section it reports into, so the two standards never
 		// bleed into each other's summary.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
-		List<SpacingNormalizationEntry> spacingNormalization = componentPropertyOverrides.Spacing;
-		List<MetricStyleNormalizationEntry> metricStyleNormalization = componentPropertyOverrides.MetricStyle;
-		List<MetricStyleNormalizationSkip> metricStyleSkips = componentPropertyOverrides.MetricStyleSkips;
+		IReadOnlyList<NormalizationEntry> spacingNormalization =
+			componentPropertyOverrides.EntriesOf(ComponentPropertyOverrideRule.SpacingGroup);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -295,6 +294,8 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
+			// Back-compat alias: spacingNormalization shipped before normalizations existed, so its shape is
+			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
 				? new SpacingNormalizationInfo {
 					Note = "Mobile follows the mobile spacing standard: the web page's container spacing was "
@@ -302,25 +303,12 @@ public static class WebToMobileAnalysisService {
 						+ "carries gap Medium, already baked into elementMap[].mobileValues — nothing separate "
 						+ "to apply. Silent normalization, not a gate decision: report it as ONE aggregated "
 						+ "line and never restore the web spacing.",
-					Normalized = spacingNormalization
+					Normalized = [.. spacingNormalization.Select(n => new SpacingNormalizationEntry {
+						Name = n.Name, Type = n.Type, Properties = n.Properties
+					})]
 				}
 				: null,
-			MetricStyleNormalization = metricStyleNormalization.Count > 0 || metricStyleSkips.Count > 0
-				? new MetricStyleNormalizationInfo {
-					Note = "Mobile metrics follow the mobile design standard: the web widget's own styling was "
-						+ "IGNORED (not translated) and the standard's properties are already baked into "
-						+ "elementMap[].mobileValues — nothing separate to apply. WHICH properties were written "
-						+ "is per element in normalized[].properties (the conversion rules declare them; do not "
-						+ "assume a fixed set). Silent normalization, not a gate decision: report it as ONE "
-						+ "aggregated line and never restore the web values. Anything under `skipped` was NOT "
-						+ "normalized and keeps the web style — call those out separately.",
-					RuleNotes = componentPropertyOverrides.MetricStyleRuleNotes.Count > 0
-						? componentPropertyOverrides.MetricStyleRuleNotes
-						: null,
-					Normalized = metricStyleNormalization,
-					Skipped = metricStyleSkips.Count > 0 ? metricStyleSkips : null
-				}
-				: null,
+			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
@@ -1376,28 +1364,11 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
-		if (normalization is { Spacing.Count: > 0 }) {
-			constraints.Add(
-				"Spacing is NORMALIZED, not converted: mobile follows the mobile spacing standard, so the web " +
-				"page's container spacing was deliberately IGNORED — every inserted crt.GridContainer / " +
-				"crt.FlexContainer (converted and synthesized alike) already carries gap Medium on all axes in " +
-				"its mobileValues. Do NOT restore or translate the web gap, and do NOT treat the difference " +
-				"from the web page as a defect. This is SILENT — never a gate question: state it in the plan " +
-				"and the final report as ONE aggregated line (guide.spacingNormalization lists the containers). " +
-				"Merge twins the mobile template provides keep the template's own spacing untouched.");
-		}
-		if (normalization is { MetricStyle.Count: > 0 }) {
-			constraints.Add(
-				"Metric style is NORMALIZED, not converted: mobile metrics follow the mobile design standard, so " +
-				"the web widget's own styling was deliberately IGNORED — the standard's properties are already " +
-				"in each metric's mobileValues, merged into the converted config so its data/aggregation subtree " +
-				"is untouched. guide.metricStyleNormalization.normalized[].properties is the authoritative list " +
-				"of what was written (the conversion rules declare it), and .skipped[] names metrics that could " +
-				"NOT be normalized because a branch is a whole-value binding — those keep the web style and are " +
-				"worth calling out. Do NOT restore or translate the web values, and do NOT treat the difference " +
-				"from the web page as a defect. This is SILENT — never a gate question: state it in the plan " +
-				"and the final report as ONE aggregated line.");
-		}
+		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
+		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
+		// built-in text for a rules file that predates reportConstraint.
+		AppendNormalizationLines(constraints, normalization, DefaultSpacingConstraint,
+			accumulator => accumulator.Constraint);
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -1425,12 +1396,8 @@ public static class WebToMobileAnalysisService {
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
-		if (normalization is { Spacing.Count: > 0 }) {
-			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
-		}
-		if (normalization is { MetricStyle.Count: > 0 }) {
-			steps.Add("Metric style: every inserted metric already carries the mobile standard's properties in its mobileValues — the web widget's own styling is ignored by design. Read guide.metricStyleNormalization.normalized[].properties for what was written and .skipped[] for what could not be, rather than assuming a fixed set. Do not restore the web values; mention the normalization as ONE aggregated line when you present the plan and the final report, and the skipped metrics separately.");
-		}
+		AppendNormalizationLines(steps, normalization, DefaultSpacingNextStep,
+			accumulator => accumulator.NextStep);
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
 		return steps;
@@ -2817,8 +2784,8 @@ public static class WebToMobileAnalysisService {
 			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
 			// so a caller can tell "nothing to normalize" from "could not normalize".
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
-				result.Add(ParseReportGroup(rule.ReportGroup), entry.MobileName, entry.MobileType,
-					properties, skippedPaths, rule.Note);
+				result.Add(ParseReportGroup(rule.ReportGroup), rule, entry.MobileName, entry.MobileType,
+					properties, skippedPaths);
 			}
 		}
 		return result;
@@ -2909,81 +2876,161 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>Rules-file <c>reportGroup</c> spelling → the section it routes to.</summary>
-	private static readonly IReadOnlyDictionary<string, ComponentPropertyOverrideReportGroup> ReportGroupsByName =
-		new Dictionary<string, ComponentPropertyOverrideReportGroup>(StringComparer.OrdinalIgnoreCase) {
-			["spacing"] = ComponentPropertyOverrideReportGroup.Spacing,
-			["metricStyle"] = ComponentPropertyOverrideReportGroup.MetricStyle
-		};
-
 	/// <summary>
-	/// Maps a rules-file <c>reportGroup</c> to its section. An ABSENT value falls back to
-	/// <see cref="ComponentPropertyOverrideReportGroup.Spacing"/>, which is what a rules file written before
-	/// the field existed relies on. An explicit lookup rather than <see cref="Enum.TryParse{T}(string, bool, out T)"/>,
-	/// which also accepts numeric strings and comma-separated lists ("Spacing,MetricStyle") — the rules file
-	/// is CDN-served, so only the exact spellings above may route.
-	/// <para>
-	/// KNOWN LIMITATION: an unrecognized non-empty group also lands in the spacing section, where it
-	/// inherits the spacing note/constraint/nextStep. That is wrong for anything that is not a container,
-	/// and it cannot be fixed while the sections are a closed set — see the PR discussion on making
-	/// <c>reportGroup</c> a free-form key with its report prose carried by the rule.
-	/// </para>
+	/// The report group an absent <c>reportGroup</c> falls back to — what a rules file written before the
+	/// field existed relies on. Any other spelling is taken VERBATIM as its own section key: the rules file
+	/// is resolved at runtime, so the binary must not cap which standards data may declare, and an
+	/// unrecognized key must never be folded into another standard's section where it would inherit that
+	/// standard's wording.
 	/// </summary>
-	private static ComponentPropertyOverrideReportGroup ParseReportGroup(string reportGroup) =>
-		reportGroup is { Length: > 0 } && ReportGroupsByName.TryGetValue(reportGroup, out ComponentPropertyOverrideReportGroup parsed)
-			? parsed
-			: ComponentPropertyOverrideReportGroup.Spacing;
+	private static string ParseReportGroup(string reportGroup) =>
+		string.IsNullOrWhiteSpace(reportGroup) ? ComponentPropertyOverrideRule.SpacingGroup : reportGroup.Trim();
+
+	/// <summary>Built-in constraint for the legacy <c>spacing</c> group; see <see cref="DefaultNoteFor"/>.</summary>
+	private const string DefaultSpacingConstraint =
+		"Spacing is NORMALIZED, not converted: mobile follows the mobile spacing standard, so the web page's " +
+		"container spacing was deliberately IGNORED — every inserted crt.GridContainer / crt.FlexContainer " +
+		"(converted and synthesized alike) already carries gap Medium on all axes in its mobileValues. Do NOT " +
+		"restore or translate the web gap, and do NOT treat the difference from the web page as a defect. This " +
+		"is SILENT — never a gate question: state it in the plan and the final report as ONE aggregated line. " +
+		"Merge twins the mobile template provides keep the template's own spacing untouched.";
+
+	/// <summary>Built-in nextStep for the legacy <c>spacing</c> group; see <see cref="DefaultNoteFor"/>.</summary>
+	private const string DefaultSpacingNextStep =
+		"Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web " +
+		"page's spacing is ignored by design (guide.normalizations.spacing lists them). Do not restore the web " +
+		"gap; mention the normalization as ONE aggregated line when you present the plan and the final report.";
 
 	/// <summary>
-	/// Per-report-group output of the shared component-property override pass. One pass stamps every
-	/// standard, but each standard reports through its own guide section because each carries its own
-	/// caller-facing summary and constraint.
+	/// Appends one line per report group that normalized something, taking the wording from the group's own
+	/// rules via <paramref name="select"/>. A group whose rules declare none contributes nothing — except the
+	/// legacy <c>spacing</c> group, which falls back to <paramref name="spacingFallback"/> so a rules file
+	/// written before rules carried prose keeps the guidance it always had. Deliberately NOT a branch per
+	/// known group: the rules file is resolved at runtime, so the binary must stay group-agnostic.
+	/// </summary>
+	private static void AppendNormalizationLines(List<string> lines, ComponentPropertyOverrideResult normalization,
+		string spacingFallback, Func<ComponentPropertyOverrideResult.GroupAccumulator, string> select) {
+		if (normalization is null) {
+			return;
+		}
+		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in normalization.Groups) {
+			if (accumulator.Normalized.Count == 0) {
+				continue;
+			}
+			string line = select(accumulator)
+				?? (string.Equals(group, ComponentPropertyOverrideRule.SpacingGroup, StringComparison.OrdinalIgnoreCase)
+					? spacingFallback
+					: null);
+			if (line is not null) {
+				lines.Add(line);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Projects the pass output into the guide's <c>normalizations</c> map — one section per report group
+	/// the rules declared, carrying that group's own wording. Null when nothing was normalized, so the
+	/// section is omitted rather than emitted empty.
+	/// </summary>
+	private static IReadOnlyDictionary<string, NormalizationInfo> BuildNormalizations(
+		ComponentPropertyOverrideResult result) {
+		if (result.IsEmpty) {
+			return null;
+		}
+		var sections = new Dictionary<string, NormalizationInfo>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in result.Groups) {
+			sections[group] = new NormalizationInfo {
+				Note = accumulator.Note ?? DefaultNoteFor(group),
+				RuleNotes = accumulator.RuleNotes.Count > 0 ? accumulator.RuleNotes : null,
+				Normalized = accumulator.Normalized,
+				Skipped = accumulator.Skipped.Count > 0 ? accumulator.Skipped : null
+			};
+		}
+		return sections;
+	}
+
+	/// <summary>
+	/// Wording for a group whose rules declare none. Only the legacy <c>spacing</c> group has one: it
+	/// shipped before rules carried their own prose, so a rules file that predates <c>reportNote</c> must
+	/// not silently lose its summary. Every other group reports exactly what its rules declare — including
+	/// nothing, which is honest, since the binary cannot know what an unknown standard does.
+	/// </summary>
+	private static string DefaultNoteFor(string group) =>
+		string.Equals(group, ComponentPropertyOverrideRule.SpacingGroup, StringComparison.OrdinalIgnoreCase)
+			? "Container spacing was normalized to the mobile standard; the web page's own spacing was "
+				+ "IGNORED (not translated). Already baked into elementMap[].mobileValues — nothing separate "
+				+ "to apply. Report it as ONE aggregated line and never restore the web spacing."
+			: null;
+
+	/// <summary>
+	/// Output of the shared component-property override pass, bucketed by the report group each rule
+	/// declared. One pass stamps every standard; the reporting stays separate because each standard carries
+	/// its own caller-facing wording — which the RULE supplies, so a new standard is a rules-file entry and
+	/// nothing else.
 	/// </summary>
 	private sealed class ComponentPropertyOverrideResult {
-		/// <summary>Inserted containers whose spacing was normalized (gap Medium).</summary>
-		public List<SpacingNormalizationEntry> Spacing { get; } = [];
+		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
 
-		/// <summary>Inserted metrics whose style was normalized to the rules-declared standard.</summary>
-		public List<MetricStyleNormalizationEntry> MetricStyle { get; } = [];
+		/// <summary>Report groups that normalized or skipped something, in first-seen order.</summary>
+		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups => _groups;
 
-		/// <summary>Metrics a merging rule could not fully normalize, with the branches it refused.</summary>
-		public List<MetricStyleNormalizationSkip> MetricStyleSkips { get; } = [];
+		/// <summary>True when no group recorded anything — the guide then omits the section entirely.</summary>
+		public bool IsEmpty => _groups.Count == 0;
 
-		/// <summary>
-		/// The contributing rules' OWN notes, verbatim from the rules file and de-duplicated. Surfacing them
-		/// keeps the per-rule explanation in one place — the data — instead of restating it in C#.
-		/// </summary>
-		public List<string> MetricStyleRuleNotes { get; } = [];
+		/// <summary>The entries of one group, or an empty list when that group recorded nothing.</summary>
+		public IReadOnlyList<NormalizationEntry> EntriesOf(string group) =>
+			_groups.TryGetValue(group, out GroupAccumulator accumulator) ? accumulator.Normalized : [];
 
 		/// <summary>
-		/// Records one element under the group its rule declared: the properties actually stamped, and any
-		/// branch the merge refused to enter. Only a merging rule can skip — a replacing rule always writes
-		/// its key — so skips are tracked for the metric section alone today.
+		/// Records one element under the group its rule declared, together with the caller-facing wording
+		/// that rule carries. Only a merging rule can skip — a replacing rule always writes its key.
 		/// </summary>
-		public void Add(ComponentPropertyOverrideReportGroup group, string name, string type,
-			IReadOnlyList<string> properties, IReadOnlyList<string> skipped, string ruleNote) {
-			if (group == ComponentPropertyOverrideReportGroup.MetricStyle) {
-				if (!string.IsNullOrWhiteSpace(ruleNote) && !MetricStyleRuleNotes.Contains(ruleNote)) {
-					MetricStyleRuleNotes.Add(ruleNote);
-				}
-				if (properties.Count > 0) {
-					MetricStyle.Add(new MetricStyleNormalizationEntry {
-						Name = name, Type = type, Properties = properties
-					});
-				}
-				if (skipped.Count > 0) {
-					MetricStyleSkips.Add(new MetricStyleNormalizationSkip {
-						Name = name, Type = type, Properties = skipped,
-						Reason = "the element carries no object at this path (a whole-value binding or an absent key), "
-							+ "and a merging rule never fabricates one — the component would be left missing "
-							+ "registry-required fields while appearing normalized"
-					});
-				}
-				return;
+		public void Add(string group, ComponentPropertyOverrideRule rule, string name, string type,
+			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
+			if (!_groups.TryGetValue(group, out GroupAccumulator accumulator)) {
+				accumulator = new GroupAccumulator();
+				_groups[group] = accumulator;
 			}
+			accumulator.Absorb(rule);
 			if (properties.Count > 0) {
-				Spacing.Add(new SpacingNormalizationEntry { Name = name, Type = type, Properties = properties });
+				accumulator.Normalized.Add(new NormalizationEntry {
+					Name = name, Type = type, Properties = properties
+				});
 			}
+			if (skipped.Count > 0) {
+				accumulator.Skipped.Add(new NormalizationSkip {
+					Name = name, Type = type, Properties = skipped,
+					Reason = "the element carries no object at this path (a whole-value binding), and a merging "
+						+ "rule never overwrites one — the component would be left missing registry-required "
+						+ "fields while appearing normalized"
+				});
+			}
+		}
+
+		/// <summary>What one report group accumulated: its elements and the wording its rules declared.</summary>
+		internal sealed class GroupAccumulator {
+			public List<NormalizationEntry> Normalized { get; } = [];
+			public List<NormalizationSkip> Skipped { get; } = [];
+			public List<string> RuleNotes { get; } = [];
+			public string Note { get; private set; }
+			public string Constraint { get; private set; }
+			public string NextStep { get; private set; }
+
+			/// <summary>
+			/// Takes the rule's caller-facing wording. First non-empty value wins, so several rules can feed
+			/// one group (Grid and Flex both feed spacing) without their notes fighting over the section.
+			/// </summary>
+			public void Absorb(ComponentPropertyOverrideRule rule) {
+				Note ??= NullIfBlank(rule.ReportNote);
+				Constraint ??= NullIfBlank(rule.ReportConstraint);
+				NextStep ??= NullIfBlank(rule.ReportNextStep);
+				string ruleNote = NullIfBlank(rule.Note);
+				if (ruleNote is not null && !RuleNotes.Contains(ruleNote)) {
+					RuleNotes.Add(ruleNote);
+				}
+			}
+
+			private static string NullIfBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 		}
 	}
 

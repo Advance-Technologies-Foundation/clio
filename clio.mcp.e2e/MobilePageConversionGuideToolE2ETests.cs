@@ -107,7 +107,7 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 	}
 
 	[Test]
-	[Description("ENG-94230: returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the metric style normalization CONTRACT — that the style is stamped rather than translated, that the stamp is a merge which must not be reconstructed, and that the guide response is the source of what was normalized. Deliberately asserts the mechanism and not the stamped values: the article is compiled in while the rule is resolved at runtime (env var -> cache -> CDN -> bundled), so pinning values here would let a legitimate rules-file update go green while the article silently went stale. The values are pinned where they live, in the rules-catalog test.")]
+	[Description("ENG-94230: returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the NORMALIZATION contract — that standards are stamped rather than translated, that the guide response is the authoritative list of what was written, and that a refused branch is reported rather than silently skipped. Deliberately asserts the mechanism and not any stamped value or section name: the article is compiled in while the rules are resolved at runtime (env var -> cache -> CDN -> bundled), so pinning values here would let a legitimate rules-file update go green while the article silently went stale. Values are pinned where they live, in the rules-catalog test.")]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the conversion article with the metric style normalization contract")]
 	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the freedom-page-web-to-mobile-conversion article carrying the ENG-94230 metric style wording end to end.")]
@@ -133,12 +133,16 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 			because: "freedom-page-web-to-mobile-conversion is a registered guidance name while mobile-page-converter is enabled");
 		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Text.Should().Contain("METRIC STYLE IS NORMALIZED, NOT CONVERTED",
-			because: "the article must state that the metric style is stamped by the converter rather than translated from the web widget");
+		response.Article!.Text.Should().Contain("NORMALIZATION IS NOT CONVERSION",
+			because: "the article must state that a standard is stamped by the converter rather than translated from the web page");
 		response.Article.Text.Should().Contain("never reconstruct config from the normalized keys alone",
 			because: "the stamp is a merge — rebuilding config from the rule values would drop the aggregation subtree and the widget would render nothing");
-		response.Article.Text.Should().Contain("guide.metricStyleNormalization",
-			because: "the article must point the caller at the report section that lists what was actually normalized");
+		response.Article.Text.Should().Contain("guide.normalizations",
+			because: "the article must point the caller at the report sections that list what was actually normalized");
+		response.Article.Text.Should().Contain("the set is OPEN",
+			because: "a build can meet a section declared by a runtime-resolved rules file that it has never heard of, so the caller must be told to read the sections rather than assume which exist");
+		response.Article.Text.Should().Contain("skipped[]",
+			because: "a refused branch must be reported to the caller rather than silently left un-normalized");
 	}
 
 	[Test]

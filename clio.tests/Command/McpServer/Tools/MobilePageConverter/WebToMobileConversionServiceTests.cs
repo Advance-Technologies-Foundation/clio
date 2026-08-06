@@ -2941,6 +2941,9 @@ public sealed class WebToMobileConversionServiceTests {
 		Type = "crt.IndicatorWidget",
 		ReportGroup = "metricStyle",
 		MergeNestedObjects = true,
+		ReportNote = "Metric style was normalized to the mobile design standard.",
+		ReportConstraint = "Metric style is NORMALIZED, not converted: never restore the web values.",
+		ReportNextStep = "Metric style: read normalized[].properties for what was written.",
 		Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 			"""
 			{ "config": { "text": { "fontSizeMode": "extra-small" },
@@ -2986,8 +2989,8 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the web font size is ignored by design — mobile metrics follow the mobile design standard");
 		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
 			because: "hide-border true is the 'plain white' mobile metric style required by ENG-94230");
-		MetricStyleNormalizationEntry entry =
-			guide.MetricStyleNormalization!.Normalized.Single(n => n.Name == "TotalIndicator");
+		NormalizationEntry entry =
+			guide.Normalizations!["metricStyle"].Normalized.Single(n => n.Name == "TotalIndicator");
 		entry.Type.Should().Be("crt.IndicatorWidget",
 			because: "the report must identify the normalized element by its mobile component type");
 		entry.Properties.Should().BeEquivalentTo(
@@ -3030,7 +3033,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
 			because: "the metric declares the metricStyle report group, so it must not land in the spacing section");
-		guide.MetricStyleNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["TotalIndicator"]);
+		guide.Normalizations!["metricStyle"].Normalized.Select(n => n.Name).Should().BeEquivalentTo(["TotalIndicator"]);
 		guide.Constraints.Should().Contain(c => c.Contains("Metric style is NORMALIZED"),
 			because: "the caller must be told not to restore the web text size or border");
 	}
@@ -3050,7 +3053,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "without the rule the property-carry behavior is unchanged");
 		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeFalse(
 			because: "without the rule the web border visibility is carried verbatim");
-		guide.MetricStyleNormalization.Should().BeNull(
+		guide.Normalizations.Should().NotContainKey("metricStyle",
 			because: "the advisory section exists only when something was actually normalized");
 		guide.Constraints.Should().NotContain(c => c.Contains("Metric style is NORMALIZED"),
 			because: "a constraint about a normalization that did not happen would misdirect the caller");
@@ -3071,9 +3074,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "BoundIndicator").MobileValues!["config"]!.GetValue<string>().Should().Be("$MetricConfig",
 			because: "the binding must survive — replacing it with a partial object would silently break the widget");
-		guide.MetricStyleNormalization!.Normalized.Should().BeEmpty(
+		guide.Normalizations!["metricStyle"].Normalized.Should().BeEmpty(
 			because: "an element the pass deliberately skipped must not be reported as normalized");
-		MetricStyleNormalizationSkip skip = guide.MetricStyleNormalization.Skipped!.Single();
+		NormalizationSkip skip = guide.Normalizations!["metricStyle"].Skipped!.Single();
 		skip.Name.Should().Be("BoundIndicator",
 			because: "the skip must be visible in the report — a silent no-op leaves the caller unable to tell "
 				+ "\"nothing to normalize\" from \"could not normalize\"");
@@ -3129,10 +3132,10 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "text.template would be destroyed and the widget would lose its label");
 		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
 			because: "a refused branch must not prevent the branches that ARE stampable");
-		guide.MetricStyleNormalization!.Normalized.Single().Properties
+		guide.Normalizations!["metricStyle"].Normalized.Single().Properties
 			.Should().BeEquivalentTo(["config.layout.border.hidden"],
 				because: "only the leaf actually written may be reported — config.text.fontSizeMode was refused");
-		guide.MetricStyleNormalization.Skipped!.Single().Properties
+		guide.Normalizations!["metricStyle"].Skipped!.Single().Properties
 			.Should().BeEquivalentTo(["config.text"],
 				because: "the refused branch is named by its full path so the caller can find it");
 	}
@@ -3161,7 +3164,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "merging into an existing branch preserves its siblings");
 		config["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
 			because: "creating one branch must not disturb another");
-		guide.MetricStyleNormalization!.Skipped.Should().BeNull(
+		guide.Normalizations!["metricStyle"].Skipped.Should().BeNull(
 			because: "creating an absent branch is not a refusal — nothing was skipped here");
 	}
 
@@ -3191,7 +3194,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a scalar rule value keeps replace semantics even inside a merging rule");
 		values["config"]!["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
 			because: "the object entry of the same rule still merges");
-		guide.MetricStyleNormalization!.Normalized.Single().Properties.Should().BeEquivalentTo(
+		guide.Normalizations!["metricStyle"].Normalized.Single().Properties.Should().BeEquivalentTo(
 			["shape", "config.text.fontSizeMode"],
 			because: "a replaced key reports by its top-level name and a merged one by its leaf path");
 	}
@@ -3212,7 +3215,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		guide.MetricStyleNormalization!.Normalized.Single().Properties.Should().BeEquivalentTo(
+		guide.Normalizations!["metricStyle"].Normalized.Single().Properties.Should().BeEquivalentTo(
 			["config.layout.border.hidden"],
 			because: "config.text.fontSizeMode was already extra-small, so claiming it was normalized would "
 				+ "tell the user a web value was ignored when nothing about it changed");
@@ -3242,7 +3245,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		guide.MetricStyleNormalization!.RuleNotes.Should().BeEquivalentTo(
+		guide.Normalizations!["metricStyle"].RuleNotes.Should().BeEquivalentTo(
 			["why this standard exists, straight from the rules file"],
 			because: "the rules file is the single source of truth for WHY a standard applies — compiled "
 				+ "prose restating it would drift the moment a CDN-served rules file changes");
@@ -3276,21 +3279,28 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "TotalIndicator").MobileValues!["shape"]!.GetValue<string>().Should().Be("rounded",
 			because: "the later rule replaces the earlier one in the by-type index, with no diagnostic");
-		guide.MetricStyleNormalization!.Normalized.Single().Properties.Should().BeEquivalentTo(["shape"],
+		guide.Normalizations!["metricStyle"].Normalized.Single().Properties.Should().BeEquivalentTo(["shape"],
 			because: "only the surviving rule is applied, so only its keys are reported");
 	}
 
 	[Test]
-	[Description("Pins the CURRENT fallback for an unrecognized reportGroup: neither a numeric string nor a comma list may route, and anything unrecognized degrades to the spacing section. KNOWN LIMITATION, not a desirable outcome — such an element then inherits the spacing prose; making each group carry its own section and prose is tracked separately.")]
-	public void Analyze_ComponentPropertyOverrides_ShouldFallBackToSpacing_WhenReportGroupIsUnrecognized() {
+	[Description("A report group this build has never seen gets its OWN section rather than being folded into another standard's: an unknown key must never inherit the spacing wording, which would describe a widget as a normalized container. Only an ABSENT group falls back to spacing, which is what a rules file predating the field relies on.")]
+	public void Analyze_ComponentPropertyOverrides_ShouldGiveAnUnknownReportGroupItsOwnSection() {
 		// Arrange
 		PageBundleInfo bundle = MetricBundle();
 		var rules = new WebToMobilePageConversionRules {
 			ComponentPropertyOverrides = [
 				new ComponentPropertyOverrideRule {
+					Type = "crt.GridContainer",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }"""),
+					ReportConstraint = "spacing constraint"
+				},
+				new ComponentPropertyOverrideRule {
 					Type = "crt.IndicatorWidget",
-					ReportGroup = "7",
+					ReportGroup = "buttonStyle",
 					MergeNestedObjects = true,
+					ReportNote = "a standard this build knows nothing about",
 					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 						"""{ "config": { "text": { "fontSizeMode": "extra-small" } } }""")
 				}
@@ -3301,10 +3311,17 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		guide.MetricStyleNormalization.Should().BeNull(
-			because: "a numeric reportGroup must not be accepted as the metricStyle group");
-		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().Contain("TotalIndicator",
-			because: "the documented fallback routes an unrecognized group to the spacing section");
+		guide.Normalizations!["buttonStyle"].Normalized.Select(n => n.Name).Should().BeEquivalentTo(
+			["TotalIndicator"],
+			because: "an unrecognized group is taken verbatim as its own section key");
+		guide.Normalizations["buttonStyle"].Note.Should().Be("a standard this build knows nothing about",
+			because: "the section carries the wording ITS rule declared, never another standard's");
+		guide.Normalizations["spacing"].Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
+			because: "the unknown group must not leak into the spacing section");
+		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
+			because: "the back-compat alias must stay the spacing section alone");
+		guide.Constraints.Should().NotContain(c => c.Contains("spacing constraint") && c.Contains("buttonStyle"),
+			because: "a group with no declared constraint contributes none rather than borrowing one");
 	}
 
 	#endregion

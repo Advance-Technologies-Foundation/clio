@@ -74,6 +74,25 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Every shipped override rule carries its own caller-facing wording, so the guide's report sections are built from data rather than from prose compiled into the binary — the rules file is resolved at runtime, so anything restated in C# can drift from it.")]
+	public void LoadBundled_OverridesCarryTheirOwnReportProse() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentPropertyOverrides.Should().OnlyContain(
+			o => !string.IsNullOrWhiteSpace(o.ReportNote)
+				&& !string.IsNullOrWhiteSpace(o.ReportConstraint)
+				&& !string.IsNullOrWhiteSpace(o.ReportNextStep),
+			because: "a standard's note, constraint and next step travel with the values they describe");
+		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
+			.Single(o => o.Type == "crt.IndicatorWidget");
+		metric.ReportConstraint.Should().Contain("guide.normalizations.metricStyle",
+			because: "the constraint must route the caller to the section that lists what was actually written, "
+				+ "instead of naming values that a rules-file update could change");
+	}
+
+	[Test]
 	[Description("The bundled rules store only SUPPORTED requests (web→mobile); unsupported web requests are intentionally absent (a request not in the map is flagged at conversion time).")]
 	public void LoadBundled_ReturnsSeededRequests() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
