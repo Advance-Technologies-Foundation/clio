@@ -47,6 +47,9 @@ jobs:
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
+      # Vulnerability auditing stays on: nuget.config scopes <auditSources> to nuget.org, so the
+      # internal Nexus mirror a GitHub-hosted runner cannot reach is never queried for advisory
+      # data and restore no longer fails with NU1900 under TreatWarningsAsErrors.
       - name: Test Ring
         run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
 
@@ -89,7 +92,16 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             throw "Immutable clio-ring release '$tag' already exists. Choose a new version."
           }
-          gh release create $tag artifacts/*.zip artifacts/*.sha256 artifacts/clio-ring-manifest.json `
+          # PowerShell does not expand wildcards in arguments to native commands, and gh does
+          # not expand them itself, so a literal "artifacts/*.zip" would reach gh as a filename.
+          # Resolve the assets here and fail loudly if packaging produced nothing.
+          $assets = @(Get-ChildItem -Path artifacts -File |
+            Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*.sha256' -or $_.Name -eq 'clio-ring-manifest.json' } |
+            ForEach-Object { $_.FullName })
+          if ($assets.Count -lt 3) {
+            throw "Expected the archive, its checksum and the manifest; found $($assets.Count): $($assets -join ', ')"
+          }
+          gh release create $tag @assets `
             --title "clio-ring ${{ steps.version.outputs.value }}" `
             --notes "Internal preview. No telemetry. This POC may be removed."
 

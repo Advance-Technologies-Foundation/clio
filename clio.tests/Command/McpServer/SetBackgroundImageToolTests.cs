@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -16,6 +17,8 @@ namespace Clio.Tests.Command.McpServer;
 public class SetBackgroundImageToolTests {
 
 	private static readonly Guid ImageId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+	private const string BoundPackageName = "UsrBrandingPkg";
 
 	[Test]
 	[Category("Unit")]
@@ -60,7 +63,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId));
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, BoundPackageName, []));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -156,7 +159,7 @@ public class SetBackgroundImageToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSetBackgroundImageCommand defaultCommand = new();
-		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId));
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, BoundPackageName, []));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
 			.Returns(resolvedCommand);
@@ -198,6 +201,90 @@ public class SetBackgroundImageToolTests {
 		result.Success.Should().BeFalse(because: "a failed apply must not report success");
 		result.Error.Should().Contain("No uploaded image",
 			because: "the caller needs the actionable failure reason surfaced from the command");
+		result.Package.Should().BeNull(
+			because: "the run failed before a delivery target was resolved, so naming one would invent a change");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the parts the delivery bound as a structured field, so an agent does not have to read prose to tell a full delivery from an empty one.")]
+	public void SetBackgroundImage_ShouldSurfaceTheBoundParts_OnTheResult() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(
+			ImageId, BoundPackageName, [], ["image", "background-config"]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Bound.Should().BeEquivalentTo(["image", "background-config"],
+			because: "the agent must be able to tell what the package carries without parsing the warnings");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts sensitive tokens out of the warning channel too, because a warning interpolates the same DataService failure text the error path redacts.")]
+	public void SetBackgroundImage_ShouldRedactSensitiveText_InTheWarningChannel() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sensitiveWarning =
+			"turning off the UsePanelIconBackground feature failed: " +
+			"POST https://admin:s3cr3t@stand.creatio.com/0/DataService returned 500.";
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(
+			ImageId, BoundPackageName, [sensitiveWarning]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Warnings.Should().NotBeNull(because: "the delivery-gap channel must still reach the agent");
+		string relayed = string.Join(" ", result.Warnings);
+		relayed.Should().NotContain("s3cr3t",
+			because: "a credential embedded in a request URI must never reach the MCP transcript, whichever channel carries it");
+		relayed.Should().NotContain("stand.creatio.com",
+			because: "the target host must be scrubbed from warnings exactly as it is from the error");
+		relayed.Should().Contain("UsePanelIconBackground",
+			because: "the actionable reason must survive redaction so the agent can still relay the gap");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the package the parts that landed were bound into when binding failed partway, so the agent can act on the structured result instead of parsing the error text.")]
+	public void SetBackgroundImage_ShouldSurfaceThePackage_WhenBindingFailedPartway() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Failure(
+			"binding failed: SaveSchema rejected the binding", [], BoundPackageName));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "part of the delivery did not land");
+		result.Package.Should().Be(BoundPackageName,
+			because: "the parts bound before the failure are in that package, and a blind re-run would be wrong");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -233,6 +320,104 @@ public class SetBackgroundImageToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards the package and keep-icon-background arguments into the command options, so the binding target and the feature opt-out reach the command.")]
+	public void SetBackgroundImage_ShouldForwardPackageAndKeepIconBackground() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, "UsrMyApp", []));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString(),
+			Package: "UsrMyApp", KeepIconBackground: true));
+
+		// Assert
+		commandResolver.Received(1).Resolve<SetBackgroundImageCommand>(Arg.Is<SetBackgroundImageOptions>(options =>
+			options.PackageName == "UsrMyApp" && options.KeepIconBackground));
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the bound package and the reconcile's skipped entries on the structured result, because the skipped entries are the only place a delivery gap is reported.")]
+	public void SetBackgroundImage_ShouldCarryPackageAndSkippedEntries_OnTheResult() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		FakeSetBackgroundImageCommand resolvedCommand = new(SetBackgroundResult.Successful(ImageId, BoundPackageName,
+			["UsePanelIconBackground: no All-Users feature state on this environment"]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>())
+			.Returns(resolvedCommand);
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(new SetBackgroundImageArgs(
+			EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()));
+
+		// Assert
+		result.Package.Should().Be(BoundPackageName,
+			because: "the caller must learn which package the background data was bound into");
+		result.Warnings.Should().ContainSingle(entry => entry.Contains("UsePanelIconBackground"),
+			because: "the delivery gaps the reconcile reported must reach the MCP caller for relay to the user");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects package_name with the canonical rename hint, so the snake_case spelling of the package field cannot silently redirect the delivery to the environment's current package.")]
+	public void SetBackgroundImage_ShouldReturnRenameHint_WhenPackageNameVariantIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetBackgroundImageArgs args = new(EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()) {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["package_name"] = System.Text.Json.JsonSerializer.SerializeToElement("UsrMyApp")
+			}
+		};
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(args);
+
+		// Assert
+		result.Error.Should().Contain("'package'",
+			because: "a dropped package field delivers the background into the environment's current package instead of the named one, which is a silent wrong-target write");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects keep_icon_background with the canonical rename hint, so the snake_case spelling cannot be dropped into a false default that turns the panel icon background off against the caller's intent.")]
+	public void SetBackgroundImage_ShouldReturnRenameHint_WhenKeepIconBackgroundVariantIsPassed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetBackgroundImageCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetBackgroundImageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetBackgroundImageArgs args = new(EnvironmentName: "docker_fix2", ImageId: ImageId.ToString()) {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["keep_icon_background"] = System.Text.Json.JsonSerializer.SerializeToElement(true)
+			}
+		};
+
+		// Act
+		SetBackgroundImageResult result = tool.SetBackgroundImage(args);
+
+		// Assert
+		result.Error.Should().Contain("'keep-icon-background'",
+			because: "a dropped opt-out flag defaults to false and turns off a feature the caller explicitly asked to keep, so it must fail loudly instead");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeSetBackgroundImageCommand : SetBackgroundImageCommand {
 		private readonly SetBackgroundResult _result;
 
@@ -241,8 +426,9 @@ public class SetBackgroundImageToolTests {
 		public FakeSetBackgroundImageCommand(SetBackgroundResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
-				Substitute.For<ISysImageUploader>()) {
-			_result = result ?? SetBackgroundResult.Successful(ImageId);
+				Substitute.For<ISysImageUploader>(), Substitute.For<IFeatureStateService>(),
+				Substitute.For<IPackageDataBinder>()) {
+			_result = result ?? SetBackgroundResult.Successful(ImageId, BoundPackageName, []);
 		}
 
 		public override SetBackgroundResult SetBackground(SetBackgroundImageOptions options) {

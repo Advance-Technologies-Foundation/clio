@@ -79,7 +79,7 @@ public sealed class GetClassicPageSourcesTool(
 					// DataService/transport failure text verbatim, so it can carry the same host/URI detail the
 					// Error path redacts. Redact here — at the MCP boundary — rather than in the command, so the
 					// CLI (where the full message is useful and goes nowhere but the operator's terminal) keeps it.
-					response.Warnings = response.Warnings.Select(SensitiveErrorTextRedactor.Redact).ToList();
+					response.Warnings = SensitiveErrorTextRedactor.RedactAll(response.Warnings);
 				}
 				return response;
 			},

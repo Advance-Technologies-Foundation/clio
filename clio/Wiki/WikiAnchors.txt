@@ -80,6 +80,7 @@ delete-theme:delete-theme
 set-user-theme:set-user-theme,apply-user-theme
 upload-image:upload-image
 set-background-image:set-background-image
+set-logo:set-logo
 get-build-info:get-build-info,bi,buildinfo
 get-classic-page-sources:get-classic-page-sources,classic-page-sources,get-classic-migration-bundle,classic-migration-bundle
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
@@ -125,6 +126,16 @@ lock-package:lock-package,lp
 manage-windows-features:manage-windows-features,mng-win-features,mwf
 mcp-http:mcp-http
 mcp-server:mcp-server,mcp
+install-knowledge:install-knowledge
+update-knowledge:update-knowledge
+info-knowledge:info-knowledge
+delete-knowledge:delete-knowledge
+add-knowledge-source:add-knowledge-source
+remove-knowledge-source:remove-knowledge-source
+enable-knowledge-source:enable-knowledge-source
+disable-knowledge-source:disable-knowledge-source
+list-knowledge-sources:list-knowledge-sources
+list-knowledge-examples:list-knowledge-examples
 merge-workspaces:merge-workspaces,mergew
 mock-data:mock-data,data-mock
 modify-entity-schema-column:modify-entity-schema-column

@@ -86,6 +86,47 @@ public sealed record ProcessExecutionOptions {
 	/// Gets optional environment variables to add or override for the started process.
 	/// </summary>
 	public IReadOnlyDictionary<string, string> EnvironmentVariables { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the inherited process environment must be cleared before
+	/// applying <see cref="InheritedEnvironmentVariableAllowlist"/> and <see cref="EnvironmentVariables"/>.
+	/// </summary>
+	public bool ClearInheritedEnvironment { get; init; }
+
+	/// <summary>
+	/// Gets the names of ambient variables copied into a cleared child environment.
+	/// Values are read from the current process immediately before launch.
+	/// </summary>
+	public IReadOnlyCollection<string> InheritedEnvironmentVariableAllowlist { get; init; } =
+		Array.Empty<string>();
+
+	/// <summary>
+	/// Gets a value indicating whether a bare executable name must be resolved to an absolute file
+	/// from rooted <c>PATH</c> entries before process launch.
+	/// </summary>
+	public bool ResolveProgramPath { get; init; }
+
+	/// <summary>
+	/// Gets the maximum number of characters retained across standard output and standard error.
+	/// When the process produces more output, execution is terminated and reported as a resource-limit failure.
+	/// </summary>
+	public long? MaximumCapturedOutputCharacters { get; init; }
+
+	/// <summary>
+	/// Gets the optional directory whose aggregate file size is monitored while the process runs.
+	/// </summary>
+	public string MonitoredDirectory { get; init; }
+
+	/// <summary>
+	/// Gets the maximum aggregate size, in bytes, permitted under <see cref="MonitoredDirectory"/>.
+	/// When the limit is exceeded, the process tree is terminated.
+	/// </summary>
+	public long? MaximumMonitoredDirectoryBytes { get; init; }
+
+	/// <summary>
+	/// Gets the interval used to poll <see cref="MonitoredDirectory"/> while the process runs.
+	/// </summary>
+	public TimeSpan? ResourceMonitorInterval { get; init; }
 }
 
 /// <summary>
@@ -116,6 +157,11 @@ public sealed record ProcessExecutionResult {
 	/// Gets a value indicating whether execution was canceled.
 	/// </summary>
 	public bool Canceled { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether execution was terminated because a configured resource limit was exceeded.
+	/// </summary>
+	public bool ResourceLimitExceeded { get; init; }
 
 	/// <summary>
 	/// Gets the captured standard output.
@@ -278,8 +324,11 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	#region Methods: Private
 
 	private static ProcessStartInfo CreateStartInfo(ProcessExecutionOptions options, bool redirectOutput) {
+		string program = options.ResolveProgramPath
+			? ResolveExecutablePath(options.Program)
+			: options.Program;
 		ProcessStartInfo startInfo = new() {
-			FileName = options.Program,
+			FileName = program,
 			Arguments = options.Arguments,
 			CreateNoWindow = true,
 			UseShellExecute = false,
@@ -288,6 +337,17 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			RedirectStandardOutput = redirectOutput,
 			RedirectStandardError = redirectOutput
 		};
+
+		if (options.ClearInheritedEnvironment) {
+			startInfo.Environment.Clear();
+			foreach (string variableName in options.InheritedEnvironmentVariableAllowlist
+					?? Array.Empty<string>()) {
+				string value = Environment.GetEnvironmentVariable(variableName);
+				if (value is not null) {
+					startInfo.Environment[variableName] = value;
+				}
+			}
+		}
 
 		if (options.EnvironmentVariables is not null) {
 			foreach ((string key, string value) in options.EnvironmentVariables) {
@@ -298,6 +358,88 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		return startInfo;
 	}
 
+	internal static string ResolveExecutablePath(string program) {
+		program.CheckArgumentNullOrWhiteSpace(nameof(program));
+		if (Path.IsPathFullyQualified(program)) {
+			return ValidateExecutablePath(program)
+				?? throw new FileNotFoundException($"Executable '{program}' was not found or is not executable.", program);
+		}
+		if (program.IndexOf(Path.DirectorySeparatorChar) >= 0
+				|| program.IndexOf(Path.AltDirectorySeparatorChar) >= 0) {
+			throw new ArgumentException("Executable resolution accepts only a bare name or an absolute path.",
+				nameof(program));
+		}
+
+		string pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+		string[] executableNames = OperatingSystem.IsWindows() && !Path.HasExtension(program)
+			? [$"{program}.exe"]
+			: [program];
+		foreach (string rawDirectory in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)) {
+			string resolved = ResolveFromPathDirectory(rawDirectory, executableNames);
+			if (resolved is not null) {
+				return resolved;
+			}
+		}
+		throw new FileNotFoundException(
+			$"Executable '{program}' was not found in any rooted PATH directory.",
+			program);
+	}
+
+	private static string ResolveFromPathDirectory(string rawDirectory, string[] executableNames) {
+		string directory = rawDirectory.Trim().Trim('"');
+		// Relative PATH entries resolve against the current directory and would let a caller-controlled
+		// working directory decide which executable runs, so they are never searched.
+		if (!Path.IsPathFullyQualified(directory)) {
+			return null;
+		}
+		foreach (string executableName in executableNames) {
+			string candidate;
+			try {
+				candidate = Path.Combine(directory, executableName);
+			} catch (ArgumentException) {
+				continue;
+			}
+			string resolved = ValidateExecutablePath(candidate);
+			if (resolved is not null) {
+				return resolved;
+			}
+		}
+		return null;
+	}
+
+	private static string ValidateExecutablePath(string candidate) {
+		try {
+			string fullPath = Path.GetFullPath(candidate);
+			FileInfo executable = new(fullPath);
+			if (!executable.Exists || (executable.Attributes & FileAttributes.Directory) != 0) {
+				return null;
+			}
+			if (executable.LinkTarget is not null) {
+				FileSystemInfo resolvedTarget = executable.ResolveLinkTarget(returnFinalTarget: true)
+					?? throw new IOException($"Executable link '{fullPath}' could not be resolved.");
+				if ((resolvedTarget.Attributes & FileAttributes.Directory) != 0) {
+					return null;
+				}
+				fullPath = resolvedTarget.FullName;
+			}
+			if (!OperatingSystem.IsWindows()) {
+				UnixFileMode mode = File.GetUnixFileMode(fullPath);
+				UnixFileMode executableBits = UnixFileMode.UserExecute
+					| UnixFileMode.GroupExecute
+					| UnixFileMode.OtherExecute;
+				if ((mode & executableBits) == 0) {
+					return null;
+				}
+			}
+			return fullPath;
+		} catch (Exception exception) when (exception is ArgumentException
+				or IOException
+				or NotSupportedException
+				or UnauthorizedAccessException) {
+			return null;
+		}
+	}
+
 	private async Task<ProcessExecutionResult> ExecuteInternalAsync(ProcessExecutionOptions options, bool enableRealtime) {
 		ValidateOptions(options);
 
@@ -306,6 +448,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		DateTimeOffset startedAt = DateTimeOffset.UtcNow;
 
 		try {
+			if (IsMonitoredDirectoryOverLimit(options)) {
+				return ResourceLimitFailure(startedAt);
+			}
+
 			using Process process = new();
 			process.StartInfo = CreateStartInfo(options, redirectOutput: true);
 			process.EnableRaisingEvents = true;
@@ -325,10 +471,11 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				process.StandardInput.Close();
 			}
 
+			ResourceLimitState resourceLimitState = new();
 			Task stdoutTask = ReadStreamAsync(process.StandardOutput, ProcessOutputStream.StdOut, stdout, options,
-				enableRealtime);
+				enableRealtime, resourceLimitState, process);
 			Task stderrTask = ReadStreamAsync(process.StandardError, ProcessOutputStream.StdErr, stderr, options,
-				enableRealtime);
+				enableRealtime, resourceLimitState, process);
 
 			bool canceled = false;
 			bool timedOut = false;
@@ -338,16 +485,24 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			if (options.Timeout is { } timeout && timeout > TimeSpan.Zero) {
 				linkedCts.CancelAfter(timeout);
 			}
+			using CancellationTokenSource monitorCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
+			Task monitorTask = MonitorDirectoryAsync(process, options, resourceLimitState, monitorCts.Token);
 
 			try {
 				await process.WaitForExitAsync(linkedCts.Token);
 			}
 			catch (OperationCanceledException) {
 				canceled = options.CancellationToken.IsCancellationRequested;
-				timedOut = !canceled;
+				timedOut = !canceled && !resourceLimitState.Exceeded;
 				TryKillProcess(process);
 			}
 
+			if (IsMonitoredDirectoryOverLimit(options)) {
+				resourceLimitState.MarkExceeded();
+				TryKillProcess(process);
+			}
+			await monitorCts.CancelAsync();
+			await monitorTask;
 			await Task.WhenAll(stdoutTask, stderrTask);
 
 			return new ProcessExecutionResult {
@@ -356,6 +511,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				ExitCode = process.HasExited ? process.ExitCode : null,
 				Canceled = canceled,
 				TimedOut = timedOut,
+				ResourceLimitExceeded = resourceLimitState.Exceeded,
 				StandardOutput = NormalizeOutput(stdout),
 				StandardError = NormalizeOutput(stderr),
 				StartedAtUtc = startedAt,
@@ -373,7 +529,12 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	}
 
 	private async Task ReadStreamAsync(StreamReader reader, ProcessOutputStream stream, StringBuilder target,
-		ProcessExecutionOptions options, bool enableRealtime) {
+		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process) {
+		if (options.MaximumCapturedOutputCharacters.HasValue) {
+			await ReadBoundedStreamAsync(reader, stream, target, options, enableRealtime, resourceLimitState, process);
+			return;
+		}
+
 		while (true) {
 			string line = await reader.ReadLineAsync();
 			if (line is null) {
@@ -386,6 +547,161 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			}
 		}
 	}
+
+	private async Task ReadBoundedStreamAsync(StreamReader reader, ProcessOutputStream stream, StringBuilder target,
+		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process) {
+		char[] buffer = new char[4096];
+		StringBuilder realtimeLine = new();
+		long maximum = options.MaximumCapturedOutputCharacters.Value;
+		while (true) {
+			// Deliberately uncancellable: the caller awaits both reader tasks after the process has
+			// exited or been killed, and relies on them draining what the child already wrote. Passing
+			// options.CancellationToken here would fault Task.WhenAll on cancellation and lose the
+			// partial output the timeout/cancel result is built from. The closed stream ends the loop.
+			int read = await reader.ReadAsync(buffer.AsMemory(), CancellationToken.None);
+			if (read == 0) {
+				break;
+			}
+
+			long previous = Interlocked.Add(ref resourceLimitState.CapturedOutputCharacters, read) - read;
+			int permitted = previous >= maximum ? 0 : (int)Math.Min(read, maximum - previous);
+			if (permitted > 0) {
+				target.Append(buffer, 0, permitted);
+				if (enableRealtime) {
+					PublishBoundedOutput(buffer.AsSpan(0, permitted), realtimeLine, stream, options);
+				}
+			}
+			if (permitted < read) {
+				resourceLimitState.MarkExceeded();
+				TryKillProcess(process);
+				break;
+			}
+		}
+		if (enableRealtime && realtimeLine.Length > 0) {
+			PublishLine(realtimeLine.ToString(), stream, options);
+		}
+	}
+
+	private void PublishBoundedOutput(ReadOnlySpan<char> output, StringBuilder pendingLine,
+		ProcessOutputStream stream, ProcessExecutionOptions options) {
+		foreach (char character in output) {
+			if (character == '\n') {
+				PublishLine(pendingLine.ToString().TrimEnd('\r'), stream, options);
+				pendingLine.Clear();
+			} else {
+				pendingLine.Append(character);
+			}
+		}
+	}
+
+	private static async Task MonitorDirectoryAsync(Process process, ProcessExecutionOptions options,
+		ResourceLimitState resourceLimitState, CancellationToken cancellationToken) {
+		if (string.IsNullOrWhiteSpace(options.MonitoredDirectory)
+				|| options.MaximumMonitoredDirectoryBytes is not { } maximumBytes) {
+			return;
+		}
+
+		TimeSpan interval = options.ResourceMonitorInterval is { } configured && configured > TimeSpan.Zero
+			? configured
+			: TimeSpan.FromMilliseconds(50);
+		try {
+			while (!process.HasExited && !cancellationToken.IsCancellationRequested) {
+				if (GetDirectorySize(options.MonitoredDirectory) > maximumBytes) {
+					resourceLimitState.MarkExceeded();
+					TryKillProcess(process);
+					return;
+				}
+				await Task.Delay(interval, cancellationToken);
+			}
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			// Normal completion cancels the resource monitor.
+		} catch (IOException) {
+			resourceLimitState.MarkExceeded();
+			TryKillProcess(process);
+		} catch (UnauthorizedAccessException) {
+			resourceLimitState.MarkExceeded();
+			TryKillProcess(process);
+		}
+	}
+
+	private static bool IsMonitoredDirectoryOverLimit(ProcessExecutionOptions options) {
+		if (string.IsNullOrWhiteSpace(options.MonitoredDirectory)
+				|| options.MaximumMonitoredDirectoryBytes is not { } maximumBytes) {
+			return false;
+		}
+		try {
+			return GetDirectorySize(options.MonitoredDirectory) > maximumBytes;
+		} catch (IOException) {
+			return true;
+		} catch (UnauthorizedAccessException) {
+			return true;
+		}
+	}
+
+	private static long GetDirectorySize(string directory) {
+		if (!Directory.Exists(directory)) {
+			return 0;
+		}
+
+		long size = 0;
+		Stack<string> pending = new();
+		pending.Push(directory);
+		while (pending.Count > 0) {
+			string current = pending.Pop();
+			string[] files;
+			string[] directories;
+			try {
+				files = Directory.GetFiles(current);
+				directories = Directory.GetDirectories(current);
+			} catch (DirectoryNotFoundException) {
+				continue;
+			}
+			size = checked(size + SumRegularFileSizes(files));
+			PushTraversableDirectories(directories, pending);
+		}
+		return size;
+	}
+
+	private static long SumRegularFileSizes(string[] files) {
+		long size = 0;
+		foreach (string file in files) {
+			try {
+				FileInfo info = new(file);
+				// Reparse points are skipped so a symlink into a large tree cannot inflate the measured size.
+				if ((info.Attributes & FileAttributes.ReparsePoint) == 0) {
+					size = checked(size + info.Length);
+				}
+			} catch (FileNotFoundException) {
+				// Files can disappear while the monitored process atomically replaces them.
+			} catch (DirectoryNotFoundException) {
+				// A parent directory can disappear between enumeration and metadata access.
+			}
+		}
+		return size;
+	}
+
+	private static void PushTraversableDirectories(string[] directories, Stack<string> pending) {
+		foreach (string child in directories) {
+			try {
+				// Reparse points are not followed so traversal cannot escape the monitored directory.
+				if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0) {
+					pending.Push(child);
+				}
+			} catch (DirectoryNotFoundException) {
+				// Git routinely renames and removes temporary directories during mutation.
+			} catch (FileNotFoundException) {
+				// The directory entry disappeared before its attributes were read.
+			}
+		}
+	}
+
+	private static ProcessExecutionResult ResourceLimitFailure(DateTimeOffset startedAt) => new() {
+		Started = false,
+		ResourceLimitExceeded = true,
+		StandardError = "Process resource limit was exceeded.",
+		StartedAtUtc = startedAt,
+		FinishedAtUtc = DateTimeOffset.UtcNow
+	};
 
 	private void PublishLine(string line, ProcessOutputStream stream, ProcessExecutionOptions options) {
 		if (options.OnOutput is not null) {
@@ -447,6 +763,29 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 
 		options.Program.CheckArgumentNullOrWhiteSpace(nameof(options.Program));
 		options.Arguments.CheckArgumentNullOrWhiteSpace(nameof(options.Arguments));
+		if (options.MaximumCapturedOutputCharacters is <= 0) {
+			throw new ArgumentOutOfRangeException(nameof(options), options.MaximumCapturedOutputCharacters,
+				$"{nameof(options.MaximumCapturedOutputCharacters)} must be greater than zero when configured.");
+		}
+		if (options.MaximumMonitoredDirectoryBytes is <= 0) {
+			throw new ArgumentOutOfRangeException(nameof(options), options.MaximumMonitoredDirectoryBytes,
+				$"{nameof(options.MaximumMonitoredDirectoryBytes)} must be greater than zero when configured.");
+		}
+		if (options.MaximumMonitoredDirectoryBytes.HasValue
+				&& string.IsNullOrWhiteSpace(options.MonitoredDirectory)) {
+			throw new ArgumentException("A monitored directory is required when a directory size limit is configured.",
+				nameof(options));
+		}
+	}
+
+	private sealed class ResourceLimitState {
+		private int _exceeded;
+
+		public long CapturedOutputCharacters;
+
+		public bool Exceeded => Volatile.Read(ref _exceeded) != 0;
+
+		public void MarkExceeded() => Interlocked.Exchange(ref _exceeded, 1);
 	}
 
 	#endregion

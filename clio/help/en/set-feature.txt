@@ -25,6 +25,11 @@ OPTIONS
 
     State (pos. 1)   Feature state
 
+NOTES
+    - Exit code 0 means the requested state reached the environment. When the
+      platform rejects the write, or the name passed to --sys-admin-unit-name
+      matches no role, nothing is written and the command exits with code 1.
+
 EXAMPLE
     set-feature ExampleCode 1 enable feature with code ExampleCode for all users, if feature doesn`t exists it will be created
 	set-feature ExampleCode 0 disable feature with code ExampleCode for all users
