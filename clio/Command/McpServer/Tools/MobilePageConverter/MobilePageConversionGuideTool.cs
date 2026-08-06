@@ -243,7 +243,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateViewModelConfig: mobileTemplateProbe.ViewModelConfig,
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
-				nonConvertingContainers: nonConvertingContainers);
+				nonConvertingContainers: nonConvertingContainers,
+				ownBodyViewConfigOps: pageResponse.Page?.OwnBodySummary?.ViewConfigDiffOps);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

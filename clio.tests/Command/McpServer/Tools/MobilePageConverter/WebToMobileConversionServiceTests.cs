@@ -84,7 +84,8 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
 		bool mobileTemplateUnavailable = false,
-		IReadOnlySet<string> nonConvertingContainers = null) =>
+		IReadOnlySet<string> nonConvertingContainers = null,
+		IReadOnlyList<PageOperationInfo> ownBodyViewConfigOps = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -97,7 +98,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateViewModelConfig: mobileTemplateViewModelConfig,
 			mobileTemplateModelConfig: mobileTemplateModelConfig,
 			mobileTemplateUnavailable: mobileTemplateUnavailable,
-			nonConvertingContainers: nonConvertingContainers);
+			nonConvertingContainers: nonConvertingContainers,
+			ownBodyViewConfigOps: ownBodyViewConfigOps);
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -1877,6 +1879,123 @@ public sealed class WebToMobileConversionServiceTests {
 			.Which.Should().Match<ExcludedComponent>(e =>
 				e.Name == "OrderButton" && e.Container == "MainHeader" && !e.IsContainer,
 			because: "the excluding container propagates through the nameless level to the leaf");
+	}
+
+	private static PageOperationInfo Op(string operation, string name, string type = null, string parentName = null) =>
+		new() { Operation = operation, Name = name, Type = type, ParentName = parentName };
+
+	[Test]
+	[Description("A page-ADDED insert whose declared parentName targets a container nested under a non-converting container is excluded even when the merge orphaned it to the tree root (failed parentName resolution). The position-based prune misses it; the own-body parentName chain recovers it.")]
+	public void Analyze_NonConvertingContainer_OrphanedPageInsert_ExcludedByDeclaredParentChain() {
+		// Arrange: the merged tree carries MainHeader's template chrome, but the page-added Button_f1g6row was
+		// orphaned to the root because its parentName (ActionButtonsContainer) could not be resolved at merge.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+						{ "name": "AddButton", "type": "crt.Button" } ] } ] } ] },
+			  { "name": "Button_f1g6row", "type": "crt.Button" },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		// The source page's OWN body: the button is an insert into ActionButtonsContainer (inside MainHeader).
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "Button_f1g6row", "crt.Button", parentName: "ActionButtonsContainer"),
+			Op("insert", "UsrName", "crt.Input", parentName: "MainContainer")
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"),
+			ownBodyViewConfigOps: ownBody);
+
+		// Assert: the orphaned button is excluded (gone from structure + element map) and reported with MainHeader.
+		guide.SourceStructure.Should().NotContain(s => s.Name == "Button_f1g6row",
+			because: "its declared parent chain (ActionButtonsContainer -> MainHeader) is non-converting");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Button_f1g6row",
+			because: "an orphaned insert into a non-converting container must not leak into the element map");
+		guide.ExcludedComponents.Should().Contain(e =>
+			e.Name == "Button_f1g6row" && e.Container == "MainHeader" && e.Type == "crt.Button" && !e.IsContainer,
+			because: "the orphan recovery reports it like any other excluded component, resolved to MainHeader");
+		// Content outside the excluded container still converts.
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName" && e.Operation == "insert",
+			because: "an orphan whose parent chain is NOT excluded is unaffected");
+	}
+
+	[Test]
+	[Description("Orphan recovery walks the declared-parent chain multiple levels: a page-added button under a page-added container under MainHeader is excluded, and the dropped container's whole subtree is reported.")]
+	public void Analyze_NonConvertingContainer_OrphanedInsert_MultiLevelDeclaredChain() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [] },
+			  { "name": "CustomHeaderGroup", "type": "crt.FlexContainer", "items": [
+				{ "name": "Button_z", "type": "crt.Button" } ] },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrKeep", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "CustomHeaderGroup", "crt.FlexContainer", parentName: "MainHeader"),
+			Op("insert", "Button_z", "crt.Button", parentName: "CustomHeaderGroup")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"),
+			ownBodyViewConfigOps: ownBody);
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "CustomHeaderGroup" || e.WebName == "Button_z",
+			because: "the whole page-added header group resolves to MainHeader through the declared chain");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "CustomHeaderGroup" && e.Container == "MainHeader" && e.IsContainer);
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "Button_z" && e.Container == "MainHeader" && !e.IsContainer,
+			because: "a dropped orphan container still lists its children");
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrKeep" && e.Operation == "insert");
+	}
+
+	[Test]
+	[Description("An orphan whose declared parent chain does NOT lead into a non-converting container is left alone (converts) - the recovery must not over-exclude root-level page content.")]
+	public void Analyze_NonConvertingContainer_OrphanOutsideExcluded_StillConverts() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [] },
+			  { "name": "UsrLooseField", "type": "crt.Input" } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "UsrLooseField", "crt.Input", parentName: "MainContainer")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"),
+			ownBodyViewConfigOps: ownBody);
+
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrLooseField" && e.Operation == "insert",
+			because: "its declared parent (MainContainer) is not a non-converting container");
+		guide.ExcludedComponents.Should().BeNull(
+			because: "nothing resolved as excluded");
+	}
+
+	[Test]
+	[Description("An orphan whose declared parent chain passes through a carved-out twin is NOT excluded - the carved-out subtree converts.")]
+	public void Analyze_NonConvertingContainer_OrphanUnderCarveOut_StillConverts() {
+		// CardToggleTabPanel is a container twin (carve-out) nested under MainHeader; a page insert targeting it converts.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CardToggleTabPanel", "type": "crt.Tabs", "items": [] } ] },
+			  { "name": "UsrTabField", "type": "crt.Input" } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Tabs", true), ("crt.Input", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["CardToggleTabPanel"] = "Tabs" };
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "UsrTabField", "crt.Input", parentName: "CardToggleTabPanel")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			nonConvertingContainers: Names("MainHeader"), ownBodyViewConfigOps: ownBody);
+
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrTabField",
+			because: "its declared parent CardToggleTabPanel is a carved-out twin, so the field converts");
+		guide.ExcludedComponents.Should().BeNull(
+			because: "a carve-out ancestor short-circuits the exclusion, so nothing is excluded");
 	}
 
 	#endregion
