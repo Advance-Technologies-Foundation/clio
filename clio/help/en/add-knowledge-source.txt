@@ -1,0 +1,77 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    add-knowledge-source - Add a trusted GitHub Release, Git, or NuGet knowledge source
+
+SYNOPSIS
+    clio add-knowledge-source --alias <alias> --library-id <id>
+        --type <github-release|git|nuget> --location <url>
+        [--repository-owner <owner>] [--repository-name <name>] [--asset-name <file.zip>]
+        [--trusted-key-id <id>] [--trusted-public-key-path <absolute-path>]
+        [--package-id <id>] [--branch <name>] [--tag <name>]
+        [--commit <sha>] [--priority <number>]
+        [--participation <mode>]
+        [--disabled] [--json]
+
+DESCRIPTION
+    Validates and atomically persists one source under knowledge.sources. The alias
+    uses lowercase letters, digits, dots, and hyphens; library-id is the unique
+    lowercase reverse-DNS publisher identity.
+
+    github-release requires --repository-owner, --repository-name, and --asset-name,
+    and --location is the GitHub REST API origin (https://api.github.com/). Clio reads
+    the repository's latest stable release, retrieves exactly the named asset, and
+    verifies the SHA-256 digest GitHub publishes for it. It needs no Git CLI and reads
+    no branch. Signing trust is optional: omit both key options to rely on the public
+    key Clio pins for its built-in library, or supply both to trust a third-party
+    publisher. A release tag must equal the signed bundle's library version.
+
+    NuGet requires --package-id. For Git, a complete 40- or 64-hex commit takes
+    precedence over tag and branch. With no Git reference, a successful install or
+    update discovers and persists the default branch; info checks do not mutate it.
+    Git sources are cloned directly and updated with a fast-forward-only pull, and
+    therefore require a Git CLI on this machine; github-release and nuget do not.
+    Each NuGet source authorizes one signing key ID and an existing local regular file
+    containing exactly one P-256 PUBLIC KEY PEM (maximum 16 KiB). UNC, device,
+    network-drive, symlink, junction, and other reparse-point paths are refused,
+    including reparse points in the path ancestry. Public-key material is not
+    secret; private-key PEM is rejected. Sources are enabled by default. This POC
+    supports credential-free public HTTPS Git and NuGet locations only. Configured
+    NuGet sources must publish signed v1 bundles. Git sources expose their source
+    manifest and content files directly in the checkout.
+
+OPTIONS
+    --alias <alias>             Required unique lowercase source alias
+    --library-id <id>           Required unique lowercase reverse-DNS library identity
+    --type <github-release|git|nuget>
+                                Required transport type
+    --location <url>            Required public HTTPS source location; the GitHub REST
+                                API origin for github-release
+    --repository-owner <owner>  Required for github-release
+    --repository-name <name>    Required for github-release
+    --asset-name <file.zip>     Required for github-release; matched exactly, once
+    --trusted-key-id <id>       Required for NuGet; optional for github-release
+    --trusted-public-key-path <absolute-path>
+                                Required for NuGet; optional for github-release;
+                                bounded local P-256 PUBLIC KEY PEM
+    --package-id <id>           Required for NuGet
+    --branch <name>             Git branch to follow
+    --tag <name>                Git tag to resolve
+    --commit <sha>              Complete 40/64-hex immutable Git commit
+    --priority <number>         Resolution priority; default: 0
+    --participation <mode>      isolated, supplement, or authoritative; default: supplement
+    --disabled                  Add the source disabled
+    --json                      Emit indented JSON
+
+EXAMPLES
+    clio add-knowledge-source --alias partner-release --library-id com.example.partner --type github-release --location https://api.github.com/ --repository-owner example --repository-name partner-knowledge --asset-name partner-knowledge-bundle.zip --trusted-key-id partner-2026 --trusted-public-key-path /etc/clio/keys/partner-public.pem --priority 50
+    clio add-knowledge-source --alias creatio --library-id com.creatio.clio --type git --location https://github.com/Advance-Technologies-Foundation/clio-knowledge.git --branch master --priority 100 --participation authoritative
+    clio add-knowledge-source --alias partner --library-id com.example.partner --type nuget --location https://packages.example.test/v3/index.json --trusted-key-id partner-2026 --trusted-public-key-path /etc/clio/keys/partner-public.pem --package-id Example.Partner.Knowledge --disabled --json
+
+EXIT CODES
+    0   Source configuration was added
+    1   Validation, uniqueness, or atomic persistence failed
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
