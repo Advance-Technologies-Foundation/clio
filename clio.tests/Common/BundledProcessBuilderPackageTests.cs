@@ -280,16 +280,17 @@ public class BundledProcessBuilderPackageTests {
 
 		// Act & Assert
 		archive.Should().NotContain($"{BundledPackages.ProcessBuilderPackageName}.dll",
-			because: "shipping the assembly DEFEATS the outcome check that makes source-only delivery safe. "
-				+ "Installing materialises Files/Bin into the deployed package folder (that is how cliogate's "
-				+ "prebuilt assembly gets loaded at all), and the server's regenerated csproj outputs to that "
-				+ "same path — so a SUCCESSFUL build overwrites ours and it was merely dead weight. A FAILED "
-				+ "build overwrites nothing: our DLL stays, the platform resolves the package assembly by name "
-				+ "as '<packageName>.dll' and serves it, and GetVersion then returns the version constant WE "
-				+ "compiled in — so install-process-builder reports success on an environment that never "
-				+ "compiled the shipped sources. Note this cannot be a blanket '.dll' ban: the csproj "
-				+ "legitimately names ~60 Terrasoft.* and third-party assemblies in HintPath references, so "
-				+ "only the package's OWN assembly name is forbidden");
+			because: "a shipped assembly turns a FAILED target-side compile into a silent one. Installing "
+				+ "materialises Files/Bin into the deployed package folder (that is how cliogate's prebuilt "
+				+ "assembly gets loaded at all), and the server's regenerated csproj outputs to that same path "
+				+ "— so a successful build overwrites ours and it was merely dead weight, measured at +13 s. A "
+				+ "failed build overwrites nothing: our DLL stays, the platform resolves the package assembly "
+				+ "by name as '<packageName>.dll', and ListUserTasks answers from it — so the outcome check "
+				+ "passes for an environment that never compiled the shipped sources. That check already "
+				+ "cannot tell WHICH build answered; shipping an assembly would give it a stale one to answer "
+				+ "from. Note this cannot be a blanket '.dll' ban: the csproj legitimately names ~60 "
+				+ "Terrasoft.* and third-party assemblies in HintPath references, so only the package's OWN "
+				+ "assembly name is forbidden");
 		archive.Should().NotContain($"{BundledPackages.ProcessBuilderPackageName}.pdb",
 			because: "symbols travel with a leaked build output and are the same accident by a different name; "
 				+ "the bundling runbook passes --skip-pdb, and this asserts it actually happened");
