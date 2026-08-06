@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Loads versioned web→mobile page-conversion rules. Mirrors the academy component-registry

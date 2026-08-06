@@ -18,6 +18,7 @@ using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;

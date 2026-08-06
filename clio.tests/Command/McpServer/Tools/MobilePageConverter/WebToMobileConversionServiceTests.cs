@@ -5,10 +5,11 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace Clio.Tests.Command;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]
@@ -80,10 +81,9 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, string> containerNameMap = null,
 		IReadOnlySet<string> templateComponentNames = null,
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null,
-		IReadOnlyDictionary<string, JsonArray> mobileTemplateArraysByPath = null,
-		bool mobileTemplateArraysUnavailable = false,
-		IReadOnlySet<string> mobileTemplateCollectionKeys = null,
-		IReadOnlyDictionary<string, JsonArray> mobileTemplateModelArraysByPath = null) =>
+		JsonNode mobileTemplateViewModelConfig = null,
+		JsonNode mobileTemplateModelConfig = null,
+		bool mobileTemplateUnavailable = false) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -93,10 +93,9 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap,
 			templateComponentNames: templateComponentNames,
 			componentNameMap: componentNameMap,
-			mobileTemplateArraysByPath: mobileTemplateArraysByPath,
-			mobileTemplateArraysUnavailable: mobileTemplateArraysUnavailable,
-			mobileTemplateCollectionKeys: mobileTemplateCollectionKeys,
-			mobileTemplateModelArraysByPath: mobileTemplateModelArraysByPath);
+			mobileTemplateViewModelConfig: mobileTemplateViewModelConfig,
+			mobileTemplateModelConfig: mobileTemplateModelConfig,
+			mobileTemplateUnavailable: mobileTemplateUnavailable);
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -734,553 +733,334 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the surviving Lookup field auto-captions off it via $Resources.Strings.<attr>, so it is still used");
 	}
 
+	// ----- BuildTargetedDiff: recursive diff of a config against the mobile template's own merged base -----
+
+	private static JsonArray Btd(string page, string baseCfg) =>
+		WebToMobileAnalysisService.BuildTargetedDiff(
+			page is null ? null : JsonNode.Parse(page),
+			baseCfg is null ? null : JsonNode.Parse(baseCfg))!.AsArray();
+
+	private static JsonObject BtdSingleOp(JsonArray diff) {
+		diff.Should().HaveCount(1);
+		return diff[0]!.AsObject();
+	}
+
+	private static string[] BtdPath(JsonObject op) =>
+		op["path"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+
 	[Test]
-	[Description("Both diffs are SPLIT into focused targeted merges with no path-[] root merge remaining: modelConfigDiff (no arrays here) becomes a single [\"dataSources\"] merge carrying the attribute type verbatim; viewModelConfigDiff's page-owned attribute lands in an [\"attributes\"] merge.")]
-	public void Analyze_PrebuiltDiffs_BothConfigsSplitIntoTargetedMerges() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "JobTitle", "type": "crt.Input", "value": "$QualifiedContactJobTitle" } ] } ]
-			""",
-			modelConfigJson: """
-			{ "dataSources": { "PDS": { "config": { "attributes": {
-				"QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle", "type": "ForwardReference" } } } } } }
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.QualifiedContactJobTitle" } } } }
-			""");
+	[Description("An array that already exists in the base is NEVER merged (a merge replaces it wholesale). Each of the page's entries not already present is appended via an insert at the array's own path, so the template's native entries are preserved and the page's are added.")]
+	public void BuildTargetedDiff_ExistingArray_EmitsInsertDelta_PreservingNatives() {
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters2", "loadOnChange": true } ] } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": true } ] } } } }""");
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("insert");
+		BtdPath(op).Should().Equal("attributes", "Items", "modelConfig", "filterAttributes");
+		op["values"]!["name"]!.GetValue<string>().Should().Be("QuickFilterGroup_Filters2");
+		op["values"]!["loadOnChange"]!.GetValue<bool>().Should().BeTrue();
+	}
 
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
-
-		// modelConfigDiff: the whole-config root merge is split — with no arrays, its single top-level key
-		// becomes a focused ["dataSources"] merge (no path-[] operation) carrying the attribute type verbatim.
-		guide.ModelConfigDiff.Should().NotBeNull();
-		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
-		mcd.Should().NotContain(n => n!.AsObject()["path"]!.AsArray().Count == 0,
-			because: "the whole-config root merge is split into targeted merges");
-		JsonObject op = mcd.Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>()).SequenceEqual(new[] { "dataSources" }))!.AsObject();
+	[Test]
+	[Description("A page-owned collection the mobile template does NOT provide has no base node to augment, so it is emitted WHOLE in a single merge at its parent path -- its nested columns and arrays travel inline, so nothing is lost and no flat stub is needed.")]
+	public void BuildTargetedDiff_PageOwnedCollection_EmittedWholeInSingleMerge() {
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "GridDetail_q6k": { "isCollection": true, "modelConfig": { "path": "StageHistoryListDS", "filterAttributes": [ { "name": "F1" } ] }, "viewModelConfig": { "attributes": { "Col1": { "modelConfig": { "path": "StageHistoryListDS.QualifyStatus" } } } } } } }""",
+			baseCfg: """{ "attributes": { } }""");
+		JsonObject op = BtdSingleOp(diff);
 		op["operation"]!.GetValue<string>().Should().Be("merge");
-		op["values"]!["PDS"]!["config"]!["attributes"]!
-			["QualifiedContactJobTitle"]!["type"]!.GetValue<string>().Should().Be("ForwardReference");
-
-		// viewModelConfigDiff: the whole-config root merge is SPLIT into targeted merges — the page-owned
-		// attribute lands in a focused ["attributes"] merge and no path-[] operation remains.
-		guide.ViewModelConfigDiff.Should().NotBeNull();
-		JsonArray vcd = guide.ViewModelConfigDiff!.AsArray();
-		vcd.Should().NotContain(n => n!.AsObject()["path"]!.AsArray().Count == 0,
-			because: "the whole-config root merge is split into targeted merges");
-		JsonObject vop = vcd.Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>()).SequenceEqual(new[] { "attributes" }))!.AsObject();
-		vop["operation"]!.GetValue<string>().Should().Be("merge");
-		vop["values"]!["QualifiedContactJobTitle"].Should().NotBeNull();
+		BtdPath(op).Should().Equal("attributes");
+		JsonObject coll = op["values"]!["GridDetail_q6k"]!.AsObject();
+		coll["isCollection"]!.GetValue<bool>().Should().BeTrue();
+		coll["modelConfig"]!["filterAttributes"]!.AsArray().Should().HaveCount(1);
+		coll["viewModelConfig"]!["attributes"]!.AsObject().Should().ContainKey("Col1");
 	}
 
 	[Test]
-	[Description("A converted quick filter's _Items attribute is wired into the list collection's template-owned modelConfig.filterAttributes. The single root merge is SPLIT into focused targeted merges (no path-[] operation remains): the template-owned Items collection's filterAttributes becomes a TARGETED merge at [attributes,Items,modelConfig] carrying the full array (template natives + quick filters), and the page-owned QuickFilter_x_Items attribute lands in the [\"attributes\"] merge. The mobile diff engine replaces arrays on a root merge, so the template baseline would otherwise win and drop the quick filter; the targeted merge overrides the baseline.")]
-	public void Analyze_QuickFilter_FilterAttributesHoistedToTargetedMerge() {
+	[Description("A new column added to a collection the template already owns lands in a targeted merge at the collection's own viewModelConfig.attributes path -- the unchanged existing column is not re-emitted.")]
+	public void BuildTargetedDiff_NewColumnOnExistingCollection_DeepTargetedMerge() {
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "Items": { "viewModelConfig": { "attributes": { "ColA": { "x": 1 }, "ColB": { "y": 2 } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "viewModelConfig": { "attributes": { "ColA": { "x": 1 } } } } } }""");
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		BtdPath(op).Should().Equal("attributes", "Items", "viewModelConfig", "attributes");
+		op["values"]!.AsObject().Should().ContainKey("ColB").And.NotContainKey("ColA");
+	}
+
+	[Test]
+	[Description("When the mobile template base could not be read (null), the diff degrades to a single root merge carrying the whole config.")]
+	public void BuildTargetedDiff_NullBase_FallsBackToRootMerge() {
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "A" } ] } } } }""",
+			baseCfg: null);
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		op["path"]!.AsArray().Should().BeEmpty();
+		op["values"]!["attributes"]!["Items"].Should().NotBeNull();
+	}
+
+	[Test]
+	[Description("An array element already present in the base (by its 'name' identity) is not re-inserted; only genuinely new elements are appended.")]
+	public void BuildTargetedDiff_ArrayElementAlreadyPresentByName_NotReinserted() {
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "X" }, { "name": "Y" } ] } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "X" } ] } } } }""");
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("insert");
+		op["values"]!["name"]!.GetValue<string>().Should().Be("Y");
+	}
+
+	[Test]
+	[Description("A changed scalar on a NON-collection node shared with the base yields a minimal targeted merge carrying only the changed key -- unchanged siblings are not re-emitted.")]
+	public void BuildTargetedDiff_ChangedScalar_MinimalTargetedMerge() {
+		// Arrange: a plain (non-collection) attribute whose caption changed but kind is unchanged.
+		// Act
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "JobTitle": { "kind": "column", "caption": "New" } } }""",
+			baseCfg: """{ "attributes": { "JobTitle": { "kind": "column", "caption": "Old" } } }""");
+		// Assert
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge",
+			because: "a changed scalar on a shared node is applied via a targeted merge at that node's path");
+		BtdPath(op).Should().Equal("attributes", "JobTitle");
+		op["values"]!.AsObject().Should().ContainKey("caption").And.NotContainKey("kind",
+			because: "only the changed key is carried; the unchanged sibling is not re-emitted");
+		op["values"]!["caption"]!.GetValue<string>().Should().Be("New",
+			because: "the page value wins for a scalar that is not owned by a template collection");
+	}
+
+	[Test]
+	[Description("A scalar that DIFFERS on a template-owned collection (base isCollection:true) is NOT re-emitted: it is the mobile template's own collection config (path/sort/pageSize) and the differing web value would clobber it -- preserving the ENG-89620 drop safeguard.")]
+	public void BuildTargetedDiff_ChangedScalarOnTemplateCollection_Dropped() {
+		// Arrange: the collection's modelConfig.path and pageSize differ between the web page and the mobile
+		// template base; both are template-owned collection config.
+		// Act
+		JsonArray diff = Btd(
+			page: """{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS", "pageSize": 30 } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "MobileDS", "pageSize": 20 } } } }""");
+		// Assert
+		diff.Should().BeEmpty(
+			because: "changed scalars inside a template-owned collection are dropped, so the mobile-correct value is not clobbered by the web one");
+	}
+
+	[Test]
+	[Description("Inside a template-owned collection the drop of changed scalars is surgical: a NEW column still lands (carried whole) and a NEW array entry still inserts (natives preserved), while only the changed template-owned scalar is dropped.")]
+	public void BuildTargetedDiff_TemplateCollection_KeepsNewEntriesDropsChangedScalars() {
+		// Arrange
+		string page = """
+			{ "attributes": { "Items": { "isCollection": true,
+				"modelConfig": { "path": "WebDS", "filterAttributes": [ { "name": "Native" }, { "name": "PageFilter" } ] },
+				"viewModelConfig": { "attributes": { "Existing": { "x": 1 }, "NewCol": { "y": 2 } } } } } }
+			""";
+		string baseCfg = """
+			{ "attributes": { "Items": { "isCollection": true,
+				"modelConfig": { "path": "MobileDS", "filterAttributes": [ { "name": "Native" } ] },
+				"viewModelConfig": { "attributes": { "Existing": { "x": 1 } } } } } }
+			""";
+		// Act
+		JsonArray diff = Btd(page, baseCfg);
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the changed template-owned collection scalar (modelConfig.path) is dropped");
+		JsonObject insert = diff.Single(n => n!.AsObject()["operation"]!.GetValue<string>() == "insert")!.AsObject();
+		insert["values"]!["name"]!.GetValue<string>().Should().Be("PageFilter",
+			because: "a new array entry still inserts at the array's path, preserving the template's native entry");
+		JsonObject merge = diff.Single(n => n!.AsObject()["operation"]!.GetValue<string>() == "merge")!.AsObject();
+		BtdPath(merge).Should().Equal("attributes", "Items", "viewModelConfig", "attributes");
+		merge["values"]!.AsObject().Should().ContainKey("NewCol").And.NotContainKey("Existing",
+			because: "a new column is carried whole while the unchanged existing column is not re-emitted");
+	}
+
+	[Test]
+	[Description("The template-owned-collection scalar drop applies at ANY depth: a CHANGED scalar on an EXISTING named element several levels below the collection root (a column's own sub-object) is NOT re-emitted, matching the collection-scalar safeguard. Because the mobile template base carries only the collection's own config at these positions (never application content, which is always NEW relative to the template), the drop only ever suppresses a web-side override of the template's config, not authored content.")]
+	public void BuildTargetedDiff_ChangedScalarNestedInExistingCollectionElement_Dropped() {
+		// Arrange: an EXISTING column "Existing" inside the isCollection:true node has a nested scalar (caption)
+		// that differs between the web page and the mobile template base -- several levels below the collection root.
+		// Act
+		JsonArray diff = Btd(
+			page:    """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Web" } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Mobile" } } } } } }""");
+		// Assert
+		diff.Should().BeEmpty(
+			because: "a changed scalar on an existing element anywhere inside a template-owned collection is dropped so the mobile-correct value is not clobbered; a new column, by contrast, is absent from the template base and still flows through the new-key path");
+	}
+
+	[Test]
+	[Description("Sibling to the depth-drop test: a NEW element (absent from the template base) added at the same depth inside a template-owned collection IS emitted, proving the depth propagation drops only changed scalars, never new authored content.")]
+	public void BuildTargetedDiff_NewElementNestedInCollection_StillEmitted() {
+		// Arrange: alongside an unchanged existing column, the page adds a brand-new column deep inside the collection.
+		// Act
+		JsonArray diff = Btd(
+			page:    """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Same" }, "NewCol": { "caption": "Fresh" } } } } } }""",
+			baseCfg: """{ "attributes": { "Items": { "isCollection": true, "viewModelConfig": { "attributes": { "Existing": { "caption": "Same" } } } } } }""");
+		// Assert
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		op["values"]!.AsObject().Should().ContainKey("NewCol").And.NotContainKey("Existing",
+			because: "a new column deep inside the collection is carried whole; the unchanged existing one is not re-emitted");
+	}
+
+	[Test]
+	[Description("A changed scalar dropped inside a template-owned collection is NOT silent: it is recorded as a conflict (which flows to guide.Constraints) rather than vanishing, mirroring DiffArray's named-element conflict.")]
+	public void BuildTargetedDiff_ChangedScalarInCollection_RecordedAsConflict() {
+		// Arrange: modelConfig.path differs inside a template-owned collection (isCollection marked on the base).
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "MobileDS" } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the changed template-owned collection scalar is still dropped from the emitted diff");
+		conflicts.Should().Contain(c => c.Contains("path") && c.Contains("changed scalar dropped"),
+			because: "the drop is surfaced as a conflict instead of silently doing nothing (the array case already does this)");
+	}
+
+	[Test]
+	[Description("The collection safeguard is DUAL-SIGNAL: a subtree the PAGE marks isCollection (the base does NOT) still drops a changed scalar rather than re-emitting the web value — the ENG-89620 clobber guard, which a base-only check would miss.")]
+	public void BuildTargetedDiff_PageMarkedCollection_DropsChangedScalar() {
+		// Arrange: the base node is NOT marked isCollection, but the page's own converted body marks it; path differs.
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "path": "MobileDS" } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the page-side isCollection marker must trigger the collection-scalar drop even when the base node is unmarked, so the mobile-correct value is not clobbered");
+		conflicts.Should().Contain(c => c.Contains("path"),
+			because: "the dropped page-marked collection scalar is surfaced as a conflict");
+	}
+
+	[Test]
+	[Description("A named array element present in the base but with different content is a change no diff op can express -- it is reported as a conflict (not silently dropped) and no operation is emitted for it.")]
+	public void BuildTargetedDiff_ChangedNamedArrayElement_FlaggedNotDropped() {
+		// Arrange: filterAttributes has QuickFilterGroup_Filters in both, but loadOnChange differs.
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": false } ] } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": true } ] } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.Should().BeEmpty(because: "no insert is emitted -- the name already exists, and no op can edit an existing array element");
+		conflicts.Should().ContainSingle().Which.Should().Contain("QuickFilterGroup_Filters",
+			because: "the changed named entry is surfaced as a conflict rather than being lost silently");
+	}
+
+	[Test]
+	[Description("A nameless array element the page changed in place is flagged as a conflict (it would otherwise duplicate at runtime) while the insert is still emitted so nothing is dropped.")]
+	public void BuildTargetedDiff_ChangedNamelessArrayElement_FlaggedAndInserted() {
+		// Arrange: sortColumns has one nameless {CreatedOn} whose direction the page changed.
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "sortColumns": [ { "columnName": "CreatedOn", "direction": "asc" } ] } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "sortColumns": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		JsonObject insert = diff.Single(n => n!.AsObject()["operation"]!.GetValue<string>() == "insert")!.AsObject();
+		insert["values"]!["direction"]!.GetValue<string>().Should().Be("asc",
+			because: "the page's element is still inserted so its config is not dropped");
+		conflicts.Should().ContainSingle().Which.Should().Contain("sortColumns",
+			because: "an in-place change to a nameless element would duplicate at runtime, so it is flagged");
+	}
+
+	[Test]
+	[Description("A data source the template base does not carry is a new subtree, emitted whole in one merge at dataSources with its nested arrays inline. Each attribute keeps its type verbatim.")]
+	public void BuildTargetedDiff_NewDataSource_MergeAtDataSources() {
+		JsonArray diff = Btd(
+			page: """{ "dataSources": { "PDS": { "config": { "attributes": { "JobTitle": { "path": "QualifiedContact.JobTitle", "type": "ForwardReference" } }, "filterAttributes": [ { "name": "f" } ] } } } }""",
+			baseCfg: """{ "dataSources": { } }""");
+		JsonObject op = BtdSingleOp(diff);
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		BtdPath(op).Should().Equal("dataSources");
+		op["values"]!["PDS"]!["config"]!["attributes"]!["JobTitle"]!["type"]!.GetValue<string>()
+			.Should().Be("ForwardReference");
+		op["values"]!["PDS"]!["config"]!["filterAttributes"]!.AsArray().Should().HaveCount(1);
+	}
+
+	[Test]
+	[Description("End-to-end through Analyze: when the mobile template base carries the collection's native filterAttributes, a converted page whose collection adds a new filter entry produces an INSERT for the new entry at the array's path (the native is preserved).")]
+	public void Analyze_ExistingTemplateArray_EmitsInsertForNewFilterEntry() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" },
-				{ "name": "QuickFilter_x", "type": "crt.QuickFilter", "filterType": "lookup",
-				  "config": { "caption": "Category", "entitySchemaName": "ProductCategory" },
-				  "_filterOptions": { "from": "QuickFilter_x_Value", "expose": [
-					{ "attribute": "QuickFilter_x_Items", "converters": [
-					  { "converter": "crt.QuickFilterAttributeConverter", "args": [
-						{ "target": { "viewAttributeName": "Items", "filterColumn": "Category" }, "quickFilterType": "lookup" } ] } ] } ] } } ] } ]
+				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
 			""",
 			viewModelConfigJson: """
-			{ "attributes": {
-				"Items": { "isCollection": true, "modelConfig": { "path": "PDS", "filterAttributes": [
+			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
+				"filterAttributes": [
 					{ "name": "QuickFilterGroup_Filters", "loadOnChange": true },
-					{ "name": "QuickFilter_x_Items", "loadOnChange": true } ] } },
-				"QuickFilter_x_Items": { "from": "QuickFilter_x_Value" } } }
+					{ "name": "QuickFilter_x_Items", "loadOnChange": true } ] } } } }
 			""");
-
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false), ("crt.QuickFilter", false)));
-
-		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
-
-		// The root merge is fully split — no path-[] operation remains.
-		diff.Should().NotContain(n => n!.AsObject()["path"]!.AsArray().Count == 0);
-
-		// The page-owned quick-filter _Items attribute lands in the focused ["attributes"] merge; the
-		// template-owned Items collection is NOT dumped there (it is split into targeted merges instead).
-		JsonObject bucket = diff.Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>()).SequenceEqual(new[] { "attributes" }))!.AsObject();
-		bucket["values"]!["QuickFilter_x_Items"].Should().NotBeNull();
-		bucket["values"]!.AsObject().Should().NotContainKey("Items");
-
-		// A targeted merge at [attributes,Items,modelConfig] carries the FULL array (template native
-		// QuickFilterGroup_Filters + the converted QuickFilter_x_Items), overriding the template baseline.
-		JsonObject targeted = diff.Single(n =>
-			n!.AsObject()["operation"]!.GetValue<string>() == "merge"
-			&& n.AsObject()["path"]!.AsArray().Count == 3)!.AsObject();
-		targeted["path"]!.AsArray().Select(n => n!.GetValue<string>())
-			.Should().Equal("attributes", "Items", "modelConfig");
-		targeted["values"]!["filterAttributes"]!.AsArray().Select(n => n!["name"]!.GetValue<string>())
-			.Should().Contain("QuickFilterGroup_Filters").And.Contain("QuickFilter_x_Items");
-	}
-
-	[Test]
-	[Description("A template-owned collection whose only viewModelConfig content is template-inherited scalars (no arrays, no added attributes) contributes nothing to the split — its scalars are dropped and viewModelConfigDiff ends up empty (no page-specific change to merge).")]
-	public void Analyze_CollectionWithOnlyTemplateScalars_ViewModelConfigDiffEmpty() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS" } } } }
-			""");
-
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
-
-		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
-		diff.Should().BeEmpty(because: "the collection carries only template-owned scalars — nothing page-specific to merge");
-	}
-
-	[Test]
-	[Description("An array that is NOT under an attribute's modelConfig (e.g. a combobox's own static default 'value' list) is never owned by the mobile template, so it is left inline on its page-owned attribute in the [\"attributes\"] merge instead of being hoisted into its own targeted merge — hoisting it would only fragment the diff without fixing anything.")]
-	public void Analyze_ArrayOutsideModelConfig_IsNotHoisted_StaysInAttributesMerge() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "UsrOptions", "type": "crt.Input" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": {
-				"UsrOptions": { "modelConfig": { "path": "PDS.UsrOptions" },
-					"value": [ "Option1", "Option2" ] } } }
-			""");
-
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
-
-		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
-		diff.Should().HaveCount(1, because: "one page-owned attribute → a single [\"attributes\"] merge; the 'value' array is not under modelConfig so it is not hoisted");
-		JsonObject bucket = diff[0]!.AsObject();
-		bucket["path"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal("attributes");
-		bucket["values"]!["UsrOptions"]!["value"]!.AsArray()
-			.Select(n => n!.GetValue<string>()).Should().Equal("Option1", "Option2");
-	}
-
-	[Test]
-	[Description("When the mobile template's own filterAttributes array is supplied (mobileTemplateArraysByPath), the hoisted targeted merge UNIONS the template natives with the page's converted entries — natives first, page entries after — so the template baseline is preserved instead of being replaced.")]
-	public void Analyze_TemplateNativesSupplied_TargetedMergeUnionsNativesWithPageEntries() {
-		// Arrange: the page carries ONLY its own converted quick-filter entry; the template's native
-		// entry (QuickFilterGroup_Filters) is provided separately via mobileTemplateArraysByPath.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
+		JsonNode templateVmc = JsonNode.Parse("""
 			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
-				"filterAttributes": [ { "name": "QuickFilter_x_Items", "loadOnChange": true } ] } } } }
+				"filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": true } ] } } } }
 			""");
-		var natives = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase) {
-			["Items/modelConfig/filterAttributes"] =
-				JsonNode.Parse("""[ { "name": "QuickFilterGroup_Filters", "loadOnChange": true } ]""")!.AsArray()
-		};
-
-		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
-			mobileTemplateArraysByPath: natives);
-
-		// Assert
+			bundle,
+			webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
+			mobileTemplateViewModelConfig: templateVmc);
 		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
-		JsonObject targeted = diff.Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
-				.SequenceEqual(new[] { "attributes", "Items", "modelConfig" }))!.AsObject();
-		targeted["values"]!["filterAttributes"]!.AsArray().Select(n => n!["name"]!.GetValue<string>())
-			.Should().Equal(new[] { "QuickFilterGroup_Filters", "QuickFilter_x_Items" },
-				because: "the template native is unioned first, followed by the page's converted entry");
+		JsonObject insert = diff.Single(n => n!.AsObject()["operation"]!.GetValue<string>() == "insert")!.AsObject();
+		insert["path"]!.AsArray().Select(n => n!.GetValue<string>())
+			.Should().Equal("attributes", "Items", "modelConfig", "filterAttributes");
+		insert["values"]!["name"]!.GetValue<string>().Should().Be("QuickFilter_x_Items");
 	}
 
 	[Test]
-	[Description("On a name collision between a template native and a page entry, the union keeps a single entry and the NATIVE wins (natives are added first), so the template's baseline shape is preserved.")]
-	public void Analyze_UnionArrays_NameCollision_NativeWins() {
-		// Arrange: both the template native and the page carry an entry named 'Shared' with a different flag.
+	[Description("When no mobile template base is available for the modelConfig (template unavailable), modelConfigDiff degrades to a single root merge AND the constraints say so (a root-merge constraint plus the template-unavailable warning) -- they do NOT falsely claim it is targeted.")]
+	public void Analyze_ModelConfigWithoutTemplateBase_EmitsRootMergeAndWarns() {
+		// Arrange: a modelConfig with a data source; no mobile template modelConfig base; template reported unavailable.
 		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
-				"filterAttributes": [ { "name": "Shared", "loadOnChange": false } ] } } } }
-			""");
-		var natives = new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase) {
-			["Items/modelConfig/filterAttributes"] =
-				JsonNode.Parse("""[ { "name": "Shared", "loadOnChange": true } ]""")!.AsArray()
-		};
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
-			mobileTemplateArraysByPath: natives);
-
-		// Assert
-		JsonArray filterAttributes = guide.ViewModelConfigDiff!.AsArray().Single(n =>
-			n!.AsObject()["path"]!.AsArray().Count == 3)!.AsObject()["values"]!["filterAttributes"]!.AsArray();
-		filterAttributes.Should().HaveCount(1, because: "the two 'Shared' entries deduplicate by name into one");
-		filterAttributes[0]!["loadOnChange"]!.GetValue<bool>().Should().BeTrue(
-			because: "the native is added first, so it wins the name collision");
-	}
-
-	[Test]
-	[Description("Union dedup is CASE-SENSITIVE (ordinal): two nameless array entries whose serialized JSON differs only by letter case are genuinely distinct data and are BOTH kept — they must not be coalesced by a case-insensitive identity.")]
-	public void Analyze_UnionArrays_CaseOnlyDifferingEntries_AreBothKept() {
-		// Arrange: two nameless objects under a modelConfig array differing only by the case of a value.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
-				"filterAttributes": [ { "column": "abc" }, { "column": "ABC" } ] } } } }
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
-
-		// Assert
-		JsonArray filterAttributes = guide.ViewModelConfigDiff!.AsArray().Single(n =>
-			n!.AsObject()["path"]!.AsArray().Count == 3)!.AsObject()["values"]!["filterAttributes"]!.AsArray();
-		filterAttributes.Select(n => n!["column"]!.GetValue<string>())
-			.Should().Equal(new[] { "abc", "ABC" },
-				because: "case-only-differing entries are distinct under an ordinal dedup and both survive");
-	}
-
-	[Test]
-	[Description("A malformed non-string 'name' on a union entry (e.g. { \"name\": 123 }) does not throw out of the whole conversion — the entry degrades to the deep-JSON identity path and is still carried in the hoisted array.")]
-	public void Analyze_UnionArrays_NonStringName_DegradesGracefully_DoesNotThrow() {
-		// Arrange: a filterAttributes entry whose 'name' is a number instead of a string.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
-				"filterAttributes": [ { "name": 123, "loadOnChange": true } ] } } } }
-			""");
-
-		// Act
-		Action act = () => Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
-
-		// Assert
-		act.Should().NotThrow(because: "a non-string 'name' must degrade to the deep-JSON identity path, not fail the guide");
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
-		JsonArray filterAttributes = guide.ViewModelConfigDiff!.AsArray().Single(n =>
-			n!.AsObject()["path"]!.AsArray().Count == 3)!.AsObject()["values"]!["filterAttributes"]!.AsArray();
-		filterAttributes.Should().HaveCount(1,
-			because: "the malformed entry is still carried, deduplicated by its deep-JSON identity");
-	}
-
-	[Test]
-	[Description("A collection is split (its arrays hoisted, scalars dropped) when mobileTemplateCollectionKeys marks it as template-owned even though the page body itself does NOT carry isCollection:true — the template's own collection metadata drives the decision.")]
-	public void Analyze_TemplateCollectionKeys_DriveSplit_WhenPageLacksIsCollectionMarker() {
-		// Arrange: the page's Items attribute is NOT marked isCollection; the template says it is a collection.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "modelConfig": { "path": "PDS",
-				"filterAttributes": [ { "name": "QuickFilter_x_Items", "loadOnChange": true } ] } } } }
-			""");
-		var collectionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Items" };
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
-			mobileTemplateCollectionKeys: collectionKeys);
-
-		// Assert
-		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
-		diff.Should().Contain(n =>
-			n!.AsObject()["path"]!.AsArray().Count == 3
-			&& n.AsObject()["path"]!.AsArray()[1]!.GetValue<string>() == "Items",
-			because: "the template collection key hoists Items.modelConfig.filterAttributes into a targeted merge");
-		diff.Where(n => n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
-				.SequenceEqual(new[] { "attributes" }))
-			.Select(n => n!.AsObject()["values"]!.AsObject())
-			.Where(v => v.ContainsKey("Items"))
-			.Should().BeEmpty(because: "a template-owned collection is split, never dumped whole into the [\"attributes\"] bucket");
-	}
-
-	[Test]
-	[Description("When arrays were hoisted but the mobile template bundle could not be read (mobileTemplateArraysUnavailable), an explicit constraint warns that the hoisted arrays carry ONLY the page's own entries and template natives may be missing.")]
-	public void Analyze_ArraysHoisted_AndTemplateUnavailable_AddsMissingNativesConstraint() {
-		// Arrange: a collection with a filterAttributes array (hoisted) but no template bundle available.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
-				"filterAttributes": [ { "name": "QuickFilter_x_Items", "loadOnChange": true } ] } } } }
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
-			mobileTemplateArraysUnavailable: true);
-
-		// Assert
-		guide.Constraints.Any(c => c.Contains("Could not read the mobile template's bundle"))
-			.Should().BeTrue(because: "hoisting arrays without the template natives is surfaced as an explicit risk");
-	}
-
-	[Test]
-	[Description("The 'template natives unavailable' constraint is NOT added when no modelConfig array was hoisted, even if the template bundle was unavailable — there is no array at risk.")]
-	public void Analyze_NoArraysHoisted_EvenWhenTemplateUnavailable_NoMissingNativesConstraint() {
-		// Arrange: a page-owned attribute with no modelConfig array to hoist.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "JobTitle", "type": "crt.Input", "value": "$QualifiedContactJobTitle" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.JobTitle" } } } }
-			""");
-
+			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
+			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": {}, "sortColumns": [ { "columnName": "CreatedOn" } ] } } } }""");
 		// Act
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: Reg(("crt.FlexContainer", true)),
-			mobileTemplateArraysUnavailable: true);
-
+			mobileTemplateModelConfig: null, mobileTemplateUnavailable: true);
 		// Assert
-		guide.Constraints.Any(c => c.Contains("Could not read the mobile template's bundle"))
-			.Should().BeFalse(because: "no array was hoisted, so there is nothing at risk to warn about");
+		JsonObject op = guide.ModelConfigDiff!.AsArray().Single()!.AsObject();
+		op["operation"]!.GetValue<string>().Should().Be("merge", because: "with no base to diff against it degrades to one root merge");
+		op["path"]!.AsArray().Should().BeEmpty(because: "a root merge targets the config root (path [])");
+		guide.Constraints.Should().Contain(c => c.Contains("SINGLE ROOT MERGE"),
+			because: "the modelConfig constraint must state it is a root merge, not claim it is targeted");
+		guide.Constraints.Should().Contain(c => c.Contains("fell back to a single root merge"),
+			because: "the template-unavailable warning must be surfaced so the caller verifies template-owned arrays");
 	}
 
 	[Test]
-	[Description("An array nested DEEPER than modelConfig (e.g. modelConfig.sortingConfig.default) is hoisted recursively into a targeted merge at its own parent path — the hoist is type-driven over any array, not keyed to filterAttributes.")]
-	public void Analyze_NestedModelConfigArray_HoistedToParentPath() {
-		// Arrange: the collection carries a sortingConfig.default array two levels under modelConfig.
+	[Description("When a mobile template modelConfig base IS available, modelConfigDiff is targeted and the constraint says 'it is NOT a single root merge' -- the root-merge warning is absent (negative twin of the unavailable case).")]
+	public void Analyze_ModelConfigWithTemplateBase_EmitsTargetedAndNoRootMergeWarning() {
+		// Arrange: same page config, but a mobile template modelConfig base is supplied.
 		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "PDS",
-				"sortingConfig": { "default": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } } }
-			""");
-
+			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
+			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": { "New": { "path": "X" } } } } } }""");
+		JsonNode templateModelConfig = JsonNode.Parse("""{ "dataSources": { "PDS": { "config": { "attributes": {} } } } }""");
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
-
+			bundle, webByType: Reg(("crt.FlexContainer", true)),
+			mobileTemplateModelConfig: templateModelConfig, mobileTemplateUnavailable: false);
 		// Assert
-		JsonObject targeted = guide.ViewModelConfigDiff!.AsArray().Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
-				.SequenceEqual(new[] { "attributes", "Items", "modelConfig", "sortingConfig" }))!.AsObject();
-		targeted["values"]!["default"]!.AsArray()[0]!["columnName"]!.GetValue<string>()
-			.Should().Be("CreatedOn", because: "the nested array is hoisted at its own parent path (modelConfig/sortingConfig)");
+		guide.Constraints.Should().Contain(c => c.Contains("it is NOT a single root merge"),
+			because: "a diff built against a real base is targeted, and the constraint must say so");
+		guide.Constraints.Should().NotContain(c => c.Contains("SINGLE ROOT MERGE"),
+			because: "no root-merge fallback fired, so no root-merge warning must appear");
+		guide.Constraints.Should().NotContain(c => c.Contains("fell back to a single root merge"),
+			because: "the template base was available, so the unavailable warning must not be raised");
 	}
 
 	[Test]
-	[Description("A top-level viewModelConfig key other than 'attributes' cannot be expressed as an [\"attributes\"] merge, so it is preserved in a minimal residual root merge (path []) while the attributes are still split out.")]
-	public void Analyze_NonAttributesTopLevelKey_KeptInResidualRootMerge() {
-		// Arrange: viewModelConfig carries a page-owned attribute AND an unrelated top-level section.
+	[Description("Through Analyze: when the page changes an EXISTING named entry of a template-owned array, the guide surfaces a constraint naming it (rather than silently dropping the change).")]
+	public void Analyze_ChangedTemplateArrayEntry_SurfacesConflictConstraint() {
+		// Arrange: filterAttributes has QuickFilterGroup_Filters in both, but the page toggled loadOnChange.
 		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "JobTitle", "type": "crt.Input", "value": "$QualifiedContactJobTitle" } ] } ]
-			""",
-			viewModelConfigJson: """
-			{ "attributes": { "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.JobTitle" } } },
-			  "converters": { "usr.Custom": {} } }
-			""");
-
+			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [ { "name": "List", "type": "crt.List", "items": "$Items" } ] } ]""",
+			viewModelConfigJson: """{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": false } ] } } } }""");
+		JsonNode templateVmc = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": true } ] } } } }""");
 		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true)));
-
-		// Assert
-		JsonArray diff = guide.ViewModelConfigDiff!.AsArray();
-		JsonObject residual = diff.Single(n => n!.AsObject()["path"]!.AsArray().Count == 0)!.AsObject();
-		residual["values"]!.AsObject().Should().ContainKey("converters",
-			because: "a non-attributes top-level key is kept in the residual root merge");
-		residual["values"]!.AsObject().Should().NotContainKey("attributes",
-			because: "attributes are split out into their own [\"attributes\"] merge");
-		diff.Should().Contain(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>()).SequenceEqual(new[] { "attributes" }),
-			because: "the page-owned attribute still lands in a focused [\"attributes\"] merge");
-	}
-
-	[Test]
-	[Description("CollectNativeArraysByPath returns every array anywhere in the template's merged viewModelConfig, keyed by its /-joined path — including arrays nested deeper than modelConfig.")]
-	public void CollectNativeArraysByPath_ReturnsEveryArrayKeyedByPath() {
-		// Arrange
-		JsonObject templateVmc = JsonNode.Parse("""
-			{ "attributes": { "Items": { "modelConfig": {
-				"filterAttributes": [ { "name": "QuickFilterGroup_Filters" } ],
-				"sortingConfig": { "default": [ { "columnName": "CreatedOn" } ] } } } } }
-			""")!.AsObject();
-
-		// Act
-		IReadOnlyDictionary<string, JsonArray> result =
-			WebToMobileAnalysisService.CollectNativeArraysByPath(templateVmc);
-
-		// Assert
-		result.Should().ContainKey("Items/modelConfig/filterAttributes",
-			because: "a top-level modelConfig array is collected by its path");
-		result.Should().ContainKey("Items/modelConfig/sortingConfig/default",
-			because: "a deeply nested array is collected by its full path");
-		result["Items/modelConfig/filterAttributes"][0]!["name"]!.GetValue<string>()
-			.Should().Be("QuickFilterGroup_Filters", because: "the array's own entries are preserved");
-	}
-
-	[Test]
-	[Description("CollectNativeArraysByPath returns an empty map for a null or attribute-less template viewModelConfig instead of throwing.")]
-	public void CollectNativeArraysByPath_ReturnsEmpty_ForNullOrAttributeLessConfig() {
-		// Act
-		IReadOnlyDictionary<string, JsonArray> fromNull =
-			WebToMobileAnalysisService.CollectNativeArraysByPath(null);
-		IReadOnlyDictionary<string, JsonArray> fromEmpty =
-			WebToMobileAnalysisService.CollectNativeArraysByPath(JsonNode.Parse("""{ }""")!.AsObject());
-
-		// Assert
-		fromNull.Should().BeEmpty(because: "a null config yields no native arrays");
-		fromEmpty.Should().BeEmpty(because: "an attribute-less config yields no native arrays");
-	}
-
-	[Test]
-	[Description("CollectTemplateCollectionKeys returns only the attribute keys the template marks isCollection:true (case-insensitive), ignoring non-collection attributes.")]
-	public void CollectTemplateCollectionKeys_ReturnsOnlyIsCollectionAttributes() {
-		// Arrange
-		JsonObject templateVmc = JsonNode.Parse("""
-			{ "attributes": {
-				"Items": { "isCollection": true, "modelConfig": { "path": "PDS" } },
-				"Title": { "modelConfig": { "path": "PDS.Title" } },
-				"Details": { "isCollection": false } } }
-			""")!.AsObject();
-
-		// Act
-		IReadOnlySet<string> result = WebToMobileAnalysisService.CollectTemplateCollectionKeys(templateVmc);
-
-		// Assert
-		result.Should().Contain("Items", because: "Items is marked isCollection:true");
-		result.Should().NotContain("Title", because: "Title carries no isCollection flag");
-		result.Should().NotContain("Details", because: "Details is explicitly isCollection:false");
-	}
-
-	[Test]
-	[Description("An array in the page's modelConfig (e.g. a data source's config.sortColumns) is hoisted out of the root merge into a TARGETED merge at its own parent path, UNIONED with the mobile template's native array at that same path (natives first, page entries after) — so the mobile diff engine's array-replace on a root merge cannot drop either side. No path-[] operation remains.")]
-	public void Analyze_ModelConfigArray_HoistedToTargetedMerge_UnionedWithTemplateNatives() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			modelConfigJson: """
-			{ "dataSources": { "PDS": { "config": {
-				"sortColumns": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } }
-			""");
-
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
-			mobileTemplateModelArraysByPath: new Dictionary<string, JsonArray>(StringComparer.OrdinalIgnoreCase) {
-				["dataSources/PDS/config/sortColumns"] =
-					JsonNode.Parse("""[ { "columnName": "UsrNativeSort", "direction": "asc" } ]""")!.AsArray()
-			});
-
-		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
-		mcd.Should().NotContain(n => n!.AsObject()["path"]!.AsArray().Count == 0,
-			because: "the whole-config root merge is split into targeted merges");
-		JsonObject targeted = mcd.Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
-				.SequenceEqual(new[] { "dataSources", "PDS", "config" }))!.AsObject();
-		targeted["values"]!["sortColumns"]!.AsArray().Select(n => n!["columnName"]!.GetValue<string>())
-			.Should().Equal(new[] { "UsrNativeSort", "CreatedOn" },
-				because: "the hoisted array unions the template native (first) with the page's own entry (after)");
-	}
-
-	[Test]
-	[Description("When a modelConfig array is hoisted but the mobile template bundle could not be read (mobileTemplateArraysUnavailable), the hoisted array carries ONLY the page's own entries and the same 'template natives unavailable' constraint is raised as for viewModelConfig arrays.")]
-	public void Analyze_ModelConfigArrayHoisted_AndTemplateUnavailable_AddsMissingNativesConstraint() {
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			modelConfigJson: """
-			{ "dataSources": { "PDS": { "config": {
-				"sortColumns": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } }
-			""");
-
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
-			mobileTemplateArraysUnavailable: true);
-
-		JsonObject targeted = guide.ModelConfigDiff!.AsArray().Single(n =>
-			n!.AsObject()["path"]!.AsArray().Select(s => s!.GetValue<string>())
-				.SequenceEqual(new[] { "dataSources", "PDS", "config" }))!.AsObject();
-		targeted["values"]!["sortColumns"]!.AsArray().Should().HaveCount(1,
-			because: "with no template natives the union degrades to just the page's own entry");
-		guide.Constraints.Any(c => c.Contains("Could not read the mobile template's bundle"))
-			.Should().BeTrue(because: "a hoisted modelConfig array without template natives is surfaced as an explicit risk");
-		guide.Constraints.Any(c => c.Contains("viewModelConfig or modelConfig"))
-			.Should().BeTrue(because: "the constraint text must name modelConfig too, since a modelConfig array (not only viewModelConfig) can trigger it");
-	}
-
-	[Test]
-	[Description("CollectNativeArraysByPathFromRoot walks the WHOLE config from its root (not only 'attributes'), so it collects arrays anywhere in a template's merged modelConfig — e.g. under dataSources/<ds>/config — keyed by their full /-joined path.")]
-	public void CollectNativeArraysByPathFromRoot_ReturnsArraysAnywhereFromRoot() {
-		JsonObject templateModelConfig = JsonNode.Parse("""
-			{ "dataSources": { "PDS": { "config": {
-				"sortColumns": [ { "columnName": "CreatedOn" } ],
-				"filter": { "items": [ { "columnPath": "Name" } ] } } } } }
-			""")!.AsObject();
-
-		IReadOnlyDictionary<string, JsonArray> result =
-			WebToMobileAnalysisService.CollectNativeArraysByPathFromRoot(templateModelConfig);
-
-		result.Should().ContainKey("dataSources/PDS/config/sortColumns",
-			because: "an array under a data source's config is collected by its full path from the root");
-		result.Should().ContainKey("dataSources/PDS/config/filter/items",
-			because: "a deeply nested array is collected by its full path");
-		WebToMobileAnalysisService.CollectNativeArraysByPathFromRoot(null)
-			.Should().BeEmpty(because: "a null config yields no native arrays");
-	}
-
-	[Test]
-	[Description("A top-level modelConfig key that is NOT an object (a scalar) cannot be expressed as a nested-key merge, so it stays in a residual path-[] root merge. That residual is EXPECTED-SAFE, not a regression: it carries only scalars — never an array — so the mobile diff engine's array-replace cannot drop the page's own entries, and the split invariant treats it as legitimate.")]
-	public void Analyze_ModelConfigTopLevelScalar_KeptInArrayFreeResidualRootMerge() {
-		// Arrange
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "List", "type": "crt.List", "items": "$Items" } ] } ]
-			""",
-			modelConfigJson: """
-			{ "dataSources": { "PDS": { "config": { "attributes": {} } } },
-			  "primaryDataSourceName": "PDS" }
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)));
-
+			mobileTemplateViewModelConfig: templateVmc);
 		// Assert
-		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
-		JsonObject residual = mcd.Single(n => n!.AsObject()["path"]!.AsArray().Count == 0)!.AsObject();
-		residual["values"]!["primaryDataSourceName"]!.GetValue<string>().Should().Be("PDS",
-			because: "a top-level scalar that cannot be a nested-key merge is preserved verbatim in the residual root merge");
-		residual["values"]!.AsObject().Any(kv => kv.Value is JsonArray).Should().BeFalse(
-			because: "a scalar-only residual root merge carries no array, so the mobile diff engine's array-replace cannot drop a page array — the shape is expected-safe, not a regression");
+		guide.Constraints.Should().Contain(c => c.Contains("changes an EXISTING element of a template-owned array") && c.Contains("QuickFilterGroup_Filters"),
+			because: "a change no diff op can express must be surfaced, not shipped as a silently lossy body");
 	}
 
 	[Test]

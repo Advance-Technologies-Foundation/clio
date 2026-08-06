@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using Clio.Common;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Read-only environment probe that detects whether a source web page is registered as a section
