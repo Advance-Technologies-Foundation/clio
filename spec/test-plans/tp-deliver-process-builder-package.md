@@ -163,7 +163,7 @@ shape is pinned here.
 
 | ID | Test | Asserts |
 |----|------|---------|
-| TC-U-20 | `ToolContractGet_Should_Return_InstallProcessBuilder_Contract` | discoverable by name, one required argument, the flow stops at itself, and the rationale does NOT claim it can tell which build is serving. Mirrored here even though E2E pins the same text, because MCP E2E is an **advisory** check that cannot fail a merge (see `project-context.md`) |
+| TC-U-20 | `ToolContractGet_Should_Return_InstallProcessBuilder_Contract` | discoverable by name, one required argument, the flow stops at itself, and the rationale does NOT claim it can tell which build is serving. Mirrored here even though E2E pins the same text: MCP E2E is **advisory** (cannot fail a merge), and the process-designer fixtures do not run in CI at all yet — the CI-deployed stand carries no `CrtProcessBuilder` package, tracked separately. See `project-context.md` |
 
 ### The timestamp fix (`clio.tests/Package/PackageDescriptorTests.cs`)
 
@@ -178,7 +178,10 @@ shape is pinned here.
 ## MCP E2E (`clio.mcp.e2e/InstallProcessBuilderContractToolE2ETests.cs`)
 
 Every case runs against a real `clio mcp-server` over stdio with an isolated `CLIO_HOME` and an **empty
-`Features` map**, and none of them mutates an environment.
+`Features` map**, and none of them mutates an environment. Being stand-free is what keeps them runnable at
+all: the process-designer fixtures elsewhere in this project do NOT run in CI, because the CI-deployed stand
+carries no `CrtProcessBuilder` package (tracked separately). Even so, MCP E2E is an advisory check that
+cannot fail a merge, which is why every load-bearing claim below is also pinned at unit level.
 
 | ID | Test | Asserts |
 |----|------|---------|

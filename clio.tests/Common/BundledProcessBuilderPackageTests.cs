@@ -54,7 +54,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>55f423e</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>6e24cc0</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -68,7 +68,7 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"5B464FBE0DBE3AD879A3A5418D5D78C42046202D427754CEB5049E4F7B2FEAA7";
+		"36710B1D3C031ED18FAA1272476FD1CBEC951E45A6A9838CC5096890D44997F2";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -92,7 +92,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1785997829000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786001567000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See

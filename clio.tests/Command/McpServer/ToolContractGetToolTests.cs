@@ -2029,9 +2029,10 @@ public sealed class ToolContractGetToolTests {
 				+ "REVERTED. The probe left behind is ListUserTasks, which proves the service answers but not "
 				+ "which assembly answered — so a contract claiming otherwise tells an agent an upgrade is "
 				+ "verified when the outgoing build could have answered it. Mirrored here even though "
-				+ "clio.mcp.e2e pins the same text, because that suite runs as an ADVISORY check: it cannot "
-				+ "fail a merge, it is path-filtered, and its ~45-minute build can be superseded before it "
-				+ "reports — so it must not be the only guard on a shipped agent-facing claim");
+				+ "clio.mcp.e2e pins the same text: that suite is an ADVISORY check that cannot fail a merge, "
+				+ "and the process-designer fixtures do not run in CI at all yet because the CI-deployed stand "
+				+ "carries no CrtProcessBuilder package (tracked separately) — so E2E must not be the only "
+				+ "guard on a shipped agent-facing claim");
 	}
 	[Test]
 	[Category("Unit")]

@@ -210,13 +210,20 @@ Never: `Test1`, `TestMethod`, `ShouldWork`, `MyTest`.
   build for the PR head branch, and TeamCity's Commit Status Publisher posts the result back onto the PR.
   The workflow header states it outright: *"Phase 1 is advisory (non-blocking) — the status is informational
   and is NOT a required check."*
-  Three consequences worth carrying into a test plan, instead of the older and now-wrong "not in CI at all":
-  it **cannot fail a merge**, so anything load-bearing needs a unit-level mirror; it is **path-filtered**
-  (`clio/**` minus `clio/docs`, `clio/help`, `clio/Commands.md`, plus `clio.mcp.e2e/**`, `cliogate/**`,
-  `Directory.Packages.props`), so a docs-only PR never runs it; and the build is a **~45-minute full-Creatio
-  deploy**, so a rapid push can supersede it before you ever see a result. The workflow also documents that
-  only a branch NAME is passed, so a status can land on the branch tip rather than the commit that triggered
-  it.
+  Three consequences worth carrying into a test plan: it **cannot fail a merge**, so anything load-bearing
+  needs a unit-level mirror; it is **path-filtered** (`clio/**` minus `clio/docs`, `clio/help`,
+  `clio/Commands.md`, plus `clio.mcp.e2e/**`, `cliogate/**`, `Directory.Packages.props`), so a docs-only PR
+  never runs it; and the build is a **~45-minute full-Creatio deploy**, so a rapid push can supersede it
+  before you ever see a result. The workflow also documents that only a branch NAME is passed, so a status
+  can land on the branch tip rather than the commit that triggered it.
+- **"Runs in CI" is per-fixture, not per-suite — check before claiming either way.** A fixture that needs
+  something the CI-deployed stand does not have still does not run there, and a per-file "NOT in CI" comment
+  on such a fixture is CORRECT rather than stale. Concretely: the **process-designer** fixtures
+  (`create-business-process`, `modify-business-process`, `describe-business-process`, `list-user-tasks`,
+  `validate-process-graph`) do NOT run in CI, because the `CrtProcessBuilder` package is not installed on
+  that stand — installing it there is tracked as separate work. Stand-free fixtures in the same project (for
+  example the `install-process-builder` contract test, which runs against an isolated `CLIO_HOME` and touches
+  no environment) are unaffected by that.
 
 ---
 

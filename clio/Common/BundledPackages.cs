@@ -9,9 +9,16 @@ namespace Clio.Common;
 /// the consuming commands, and the version surfaced by <c>clio info</c> — must reference them rather
 /// than repeat a literal.
 /// <para>
-/// The cliogate version is deliberately NOT here yet: it is currently spread across a constant in
-/// <c>InfoCommand</c>, <c>cliogate/descriptor.json</c> and a stale <c>cliogate/version.txt</c> that
-/// nothing writes. Collapsing that triple is separate work; do not add a fourth copy.
+/// The cliogate version is deliberately NOT here yet, and its current state is the argument for this class
+/// existing. It lives in four places that have already drifted: a constant in <c>InfoCommand</c>
+/// (<c>2.0.0.44</c>), <c>cliogate/descriptor.json</c> (<c>2.0.0.44</c> — the only one that is true, since it
+/// is what the archive carries), <c>cliogate/version.txt</c> (<c>1.1.1.2</c>), and seven
+/// <c>[RequiresPackage("cliogate", …)]</c> literals. Nothing WRITES <c>version.txt</c>, but
+/// <c>Program.CheckApiVersion</c> READS it as "the version this clio ships" and warns only when it exceeds
+/// the environment's — so at <c>1.1.1.2</c> against a shipped <c>2.0.0.44</c> the upgrade nudge is dead on
+/// any modern environment. Enforcement is unaffected (the seven attribute literals are independent), so this
+/// is a lost convenience rather than a lost guarantee, and fixing it is separate work. Do not add a fifth
+/// copy.
 /// </para>
 /// </remarks>
 public static class BundledPackages {
