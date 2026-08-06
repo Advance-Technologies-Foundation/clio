@@ -495,6 +495,11 @@ public sealed class MobilePageConversionGuide {
 	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
 	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
 	/// restore the web spacing. Null when nothing was normalized.
+	/// <para>
+	/// BACK-COMPAT ALIAS: this section shipped before <see cref="Normalizations"/> existed and duplicates
+	/// its <c>"spacing"</c> entry, shape unchanged. New callers should read <see cref="Normalizations"/>,
+	/// which also carries the standards this one cannot express.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("spacingNormalization")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

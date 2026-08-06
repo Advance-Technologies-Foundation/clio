@@ -2737,8 +2737,8 @@ public static class WebToMobileAnalysisService {
 	/// the web page carried none, so the converted body is self-describing instead of leaning on the
 	/// mobile client's defaults. A rule that sets <c>mergeNestedObjects</c> instead merges its object
 	/// value into the element's own, which is what a rule targeting a nested leaf needs — see
-	/// <see cref="StampOverrideValue"/> for both semantics and for why a merging rule never fabricates a
-	/// missing container. Covers converted and synthesized inserts alike (run it after the tab-area pass);
+	/// <see cref="StampOverrideValue"/> for both semantics, for why a PRESENT non-object is never
+	/// overwritten, and for why an ABSENT branch is created. Covers converted and synthesized inserts alike (run it after the tab-area pass);
 	/// merge twins, drops and relocate hints are never touched, and the element identity keys
 	/// (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an absent/empty group is a
 	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
@@ -2767,9 +2767,14 @@ public static class WebToMobileAnalysisService {
 		// element order would otherwise decide: the canonical spelling of the emitted key, which rule's prose
 		// a group carries when several feed it, and the order the sections and their constraint lines appear
 		// in. A declared group stays out of the report until something is actually recorded against it.
+		// Deliberately a SECOND pass rather than folded into the indexing above: only a rule that survived the
+		// last-wins indexing may donate prose, and that is not known until the index is complete. A shadowed
+		// duplicate never stamps anything, so its wording would advertise values that were never written.
 		foreach (ComponentPropertyOverrideRule rule in overrides) {
-			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
-				result.Declare(ParseReportGroup(rule.ReportGroup), rule);
+			if (!string.IsNullOrWhiteSpace(rule?.Type)
+				&& byType.TryGetValue(rule.Type, out ComponentPropertyOverrideRule surviving)
+				&& ReferenceEquals(surviving, rule)) {
+				result.Declare(ResolveReportGroup(rule.ReportGroup), rule);
 			}
 		}
 		foreach (ElementMapEntry entry in elementMap) {
@@ -2791,7 +2796,7 @@ public static class WebToMobileAnalysisService {
 			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
 			// so a caller can tell "nothing to normalize" from "could not normalize".
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
-				result.Add(ParseReportGroup(rule.ReportGroup), rule, entry.MobileName, entry.MobileType,
+				result.Add(ResolveReportGroup(rule.ReportGroup), rule, entry.MobileName, entry.MobileType,
 					properties, skippedPaths);
 			}
 		}
@@ -2824,9 +2829,9 @@ public static class WebToMobileAnalysisService {
 	/// trade-off is knowing: a created branch holds ONLY what the rule declares, so it may be partial by the
 	/// component's own schema. Accepted deliberately — the source element had no value there to preserve,
 	/// and validate-page is the backstop.
-	/// Leaves are always written, creating or overwriting. A non-object rule value still replaces, so a
-	/// merging rule can carry flat
-	/// entries too.
+	/// Leaves are written, creating or overwriting, but only when the value actually DIFFERS — an element
+	/// already authored at the standard is left alone and is not reported. A non-object rule value still
+	/// replaces, so a merging rule can carry flat entries too.
 	/// </para>
 	/// </summary>
 	private static void StampOverrideValue(JsonObject values, string key, JsonElement ruleValue,
@@ -2868,6 +2873,9 @@ public static class WebToMobileAnalysisService {
 		foreach (KeyValuePair<string, JsonNode> pair in source) {
 			string path = $"{prefix}.{pair.Key}";
 			if (pair.Value is JsonObject sourceChild) {
+				if (sourceChild.Count == 0) {
+					continue; // nothing to write below: neither create the branch nor claim it was refused
+				}
 				if (!target.ContainsKey(pair.Key)) {
 					target[pair.Key] = new JsonObject(); // absent: creating is the normalization itself
 				}
@@ -2888,14 +2896,29 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// The report group an absent <c>reportGroup</c> falls back to — what a rules file written before the
+	/// The report group an absent or blank <c>reportGroup</c> falls back to — what a rules file written before the
 	/// field existed relies on. Any other spelling is taken VERBATIM as its own section key: the rules file
 	/// is resolved at runtime, so the binary must not cap which standards data may declare, and an
 	/// unrecognized key must never be folded into another standard's section where it would inherit that
 	/// standard's wording.
 	/// </summary>
-	private static string ParseReportGroup(string reportGroup) =>
+	private static string ResolveReportGroup(string reportGroup) =>
 		string.IsNullOrWhiteSpace(reportGroup) ? ComponentPropertyOverrideRule.SpacingGroup : reportGroup.Trim();
+
+	/// <summary>
+	/// Marks a constraint / next step whose wording came from the conversion RULES rather than from this
+	/// binary. The rules file is resolved at runtime (env var → local cache → CDN), so text it supplies is
+	/// less trusted than clio's own; the caller needs to see which is which because both land in the same
+	/// arrays.
+	/// </summary>
+	private const string RulesSuppliedPrefix = "[conversion-rules] ";
+
+	/// <summary>Cap on one rules-supplied instruction line, so a single rule cannot flood the channel.</summary>
+	private const int MaxRulesSuppliedLineLength = 2000;
+
+	/// <summary>Shortens <paramref name="value"/> to <paramref name="max"/>, marking that it was cut.</summary>
+	private static string Truncate(string value, int max) =>
+		value.Length <= max ? value : value[..max] + "… (truncated)";
 
 	/// <summary>Built-in constraint for the legacy <c>spacing</c> group; see <see cref="DefaultNoteFor"/>.</summary>
 	private const string DefaultSpacingConstraint =
@@ -2922,16 +2945,23 @@ public static class WebToMobileAnalysisService {
 	private static void AppendNormalizationLines(List<string> lines, ComponentPropertyOverrideResult normalization,
 		string spacingFallback, Func<ComponentPropertyOverrideResult.GroupAccumulator, string> select) {
 		if (normalization is null) {
-			return;
+			return; // the parameter is optional, so the guard is part of the contract, not dead defensiveness
 		}
 		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in normalization.Groups) {
 			if (accumulator.Normalized.Count == 0 && accumulator.Skipped.Count == 0) {
 				continue;
 			}
-			string line = select(accumulator)
-				?? (string.Equals(group, ComponentPropertyOverrideRule.SpacingGroup, StringComparison.OrdinalIgnoreCase)
+			string declared = select(accumulator);
+			// Rules-supplied text is MARKED. constraints[] and nextSteps[] are the arrays the agent treats as
+			// clio's own hard rules, and the rules file is resolved at runtime (env var -> cache -> CDN), so a
+			// caller must be able to weight binary-authored lines above data-authored ones. The built-in
+			// fallback is authored here and carries no marker. Length is capped so one rule cannot flood the
+			// instruction channel.
+			string line = declared is not null
+				? RulesSuppliedPrefix + Truncate(declared, MaxRulesSuppliedLineLength)
+				: string.Equals(group, ComponentPropertyOverrideRule.SpacingGroup, StringComparison.OrdinalIgnoreCase)
 					? spacingFallback
-					: null);
+					: null;
 			if (line is not null) {
 				lines.Add(line);
 			}
@@ -3032,9 +3062,11 @@ public static class WebToMobileAnalysisService {
 			if (skipped.Count > 0) {
 				accumulator.Skipped.Add(new NormalizationSkip {
 					Name = name, Type = type, Properties = skipped,
-					Reason = "the element carries no object at this path (a whole-value binding), and a merging "
-						+ "rule never overwrites one — the component would be left missing registry-required "
-						+ "fields while appearing normalized"
+					Reason = "the element already carries a non-object value at this path — typically a "
+						+ "whole-value binding — and a merging rule never overwrites one: replacing it with an "
+						+ "object built from the rule alone would destroy the binding and leave the component "
+						+ "missing fields it needs, while still appearing normalized. This element keeps its "
+						+ "WEB value here"
 				});
 			}
 		}

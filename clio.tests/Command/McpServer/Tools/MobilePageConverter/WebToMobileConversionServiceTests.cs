@@ -3033,7 +3033,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
 			because: "the metric declares the metricStyle report group, so it must not land in the spacing section");
-		guide.Normalizations!["metricStyle"].Normalized.Select(n => n.Name).Should().BeEquivalentTo(["TotalIndicator"]);
+		guide.Normalizations!["metricStyle"].Normalized.Select(n => n.Name).Should().BeEquivalentTo(
+			["TotalIndicator"],
+			because: "the metric reports through its own section, not the spacing one");
 		guide.Constraints.Should().Contain(c => c.Contains("Metric style is NORMALIZED"),
 			because: "the caller must be told not to restore the web text size or border");
 	}
@@ -3060,8 +3062,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A merging rule never FABRICATES the container it targets: a metric whose config is a whole-value binding (or any non-object) is left untouched and is NOT reported as normalized — a config assembled from the rule alone would lack the registry-required data/text/layout fields, so the widget would render nothing while the report claimed it was styled.")]
-	public void Analyze_MetricStyleNormalization_ShouldSkip_WhenElementCarriesNoConfigObject() {
+	[Description("A merging rule never OVERWRITES a value that is present but is not an object: a metric whose config is a whole-value binding keeps it and is reported as skipped, not as normalized — replacing it with a config built from the rule alone would destroy the binding and drop data/text/layout, so the widget would render nothing while the report claimed it was styled. Distinct from an ABSENT branch, which IS created.")]
+	public void Analyze_MetricStyleNormalization_ShouldRefuse_WhenConfigIsAPresentNonObject() {
 		// Arrange — the web widget binds its whole config, so there is no object to merge into
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
@@ -3111,7 +3113,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The never-fabricate guard holds at EVERY depth, not just the top-level key: a nested whole-value binding is left intact instead of being clobbered by an object assembled from the rule, the sibling branch is still stamped, and the refused path is reported.")]
+	[Description("The never-overwrite guard holds at EVERY depth, not just the top-level key: a nested whole-value binding is left intact instead of being clobbered by an object assembled from the rule, the sibling branch is still stamped, and the refused path is reported.")]
 	public void Analyze_MetricStyleNormalization_ShouldSkipNestedBranch_WhenItIsNotAnObject() {
 		// Arrange — config exists, but its `text` is a whole-value binding
 		PageBundleInfo bundle = Bundle("""
@@ -3284,6 +3286,167 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The built-in spacing wording is the fallback for a rules file that predates reportNote/reportConstraint/reportNextStep — the rules are CDN-resolved, so an older one must not silently lose the guidance it always had. Nothing else covers these three constants, since the bundled rules now carry their own prose.")]
+	public void Analyze_Normalizations_ShouldFallBackToBuiltInSpacingProse_WhenTheRuleDeclaresNone() {
+		// Arrange — a spacing rule exactly as it looked before rules carried prose
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "gap": { "columnGap": "large" }, "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.GridContainer",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		guide.Normalizations!["spacing"].Note.Should().NotBeNullOrWhiteSpace(
+			because: "the legacy group keeps a built-in note when its rules declare none");
+		guide.Constraints.Should().Contain(c => c.Contains("Spacing is NORMALIZED"),
+			because: "a rules file predating reportConstraint must keep the spacing hard rule");
+		guide.NextSteps.Should().Contain(s => s.StartsWith("Spacing:"),
+			because: "and the matching next step, for the same reason");
+	}
+
+	[Test]
+	[Description("A group other than the legacy spacing one gets NO built-in wording: the binary cannot honestly describe a standard it has never seen, so a section whose rules declare no prose carries none rather than borrowing text that would misdescribe it.")]
+	public void Analyze_Normalizations_ShouldCarryNoProse_WhenAnUnknownGroupDeclaresNone() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "buttonStyle",
+					MergeNestedObjects = true,
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "config": { "text": { "fontSizeMode": "extra-small" } } }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		guide.Normalizations!["buttonStyle"].Note.Should().BeNull(
+			because: "no wording is more honest than another standard's wording");
+		guide.Constraints.Should().NotContain(c => c.Contains("Spacing is NORMALIZED"),
+			because: "an unknown group must never pick up the spacing hard rule");
+	}
+
+	[Test]
+	[Description("The back-compat alias keeps the exact summary it shipped with. SPEC C2 / AC-04 require spacingNormalization to stay unchanged for callers that read it, and nothing else pins its text.")]
+	public void Analyze_SpacingNormalization_AliasShouldKeepItsShippedNote() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		guide.SpacingNormalization!.Note.Should().Be(
+			"Mobile follows the mobile spacing standard: the web page's container spacing was IGNORED (not "
+			+ "translated) and every inserted crt.GridContainer / crt.FlexContainer carries gap Medium, "
+			+ "already baked into elementMap[].mobileValues — nothing separate to apply. Silent "
+			+ "normalization, not a gate decision: report it as ONE aggregated line and never restore the "
+			+ "web spacing.",
+			because: "the alias exists so a caller reading the old section sees exactly what it always saw");
+		guide.SpacingNormalization.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
+			because: "and the same elements the normalizations.spacing section lists");
+	}
+
+	[Test]
+	[Description("An EMPTY object in a rule value writes nothing and claims nothing, at any depth: it neither fabricates the branch nor reports it as refused. Degenerate rules-file input, but it is the one shape that could mutate the body while reporting nothing.")]
+	public void Analyze_Normalizations_ShouldIgnoreAnEmptyObjectInARuleValue() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					MergeNestedObjects = true,
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "config": { "layout": {} } }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		config["layout"]!.AsObject().Should().ContainKey("color",
+			because: "an empty rule branch must leave the element's own subtree exactly as it was");
+		guide.Normalizations.Should().BeNull(
+			because: "nothing was written and nothing was refused, so there is nothing to report");
+	}
+
+	[Test]
+	[Description("Instruction text that came from the conversion RULES is marked as such. constraints[] and nextSteps[] are the arrays a caller treats as clio's own hard rules, and the rules file is resolved at runtime from an env var, a local cache or the CDN — so the caller must be able to tell binary-authored lines from data-authored ones. The built-in fallback is authored here and carries no marker.")]
+	public void Analyze_Normalizations_ShouldMarkInstructionTextSuppliedByTheRules() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.StartsWith("[conversion-rules] ") && c.Contains("Metric style"),
+			because: "a constraint whose wording came from the rules file must be attributable to it");
+		guide.NextSteps.Should().Contain(s => s.StartsWith("[conversion-rules] ") && s.Contains("Metric style"),
+			because: "the same applies to the ordered steps the caller executes");
+		guide.Constraints.Should().Contain(c => c.Contains("Mobile body is plain JSON"),
+			because: "clio's own hard rules stay unmarked, which is what makes the marker meaningful");
+	}
+
+	[Test]
+	[Description("A shadowed duplicate-type rule donates no prose: last-wins indexing means it never stamps anything, so advertising its rationale would describe values that were never written.")]
+	public void Analyze_Normalizations_ShouldTakeProseOnlyFromTheRuleThatSurvivesLastWins() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					ReportNote = "shadowed rule, never stamps anything",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "shape": "default" }""")
+				},
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					ReportNote = "surviving rule, the one actually applied",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "shape": "rounded" }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		Element(guide, "TotalIndicator").MobileValues!["shape"]!.GetValue<string>().Should().Be("rounded",
+			because: "the later rule wins the by-type index");
+		guide.Normalizations!["metricStyle"].Note.Should().Be("surviving rule, the one actually applied",
+			because: "the prose must describe the values that were actually written, not a shadowed rule's");
+	}
+
+	[Test]
 	[Description("The rule's own note is surfaced into the report section verbatim, so the explanation of a standard lives once — in the rules file, which is resolved at runtime — instead of being restated in compiled prose that can drift from it.")]
 	public void Analyze_MetricStyleNormalization_ShouldSurfaceTheRulesOwnNote() {
 		// Arrange
@@ -3380,8 +3543,9 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the unknown group must not leak into the spacing section");
 		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
 			because: "the back-compat alias must stay the spacing section alone");
-		guide.Constraints.Should().NotContain(c => c.Contains("spacing constraint") && c.Contains("buttonStyle"),
-			because: "a group with no declared constraint contributes none rather than borrowing one");
+		guide.Constraints.Count(c => c.Contains("spacing constraint")).Should().Be(1,
+			because: "only the spacing rule declared a constraint — a group with none contributes none rather "
+				+ "than borrowing another standard's, which would describe a widget as a normalized container");
 	}
 
 	#endregion

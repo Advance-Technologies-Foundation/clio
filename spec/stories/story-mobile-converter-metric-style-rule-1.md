@@ -6,7 +6,7 @@
 **Ticket**: ENG-94230
 **Status**: review
 **Size**: S
-**Depends on**: ENG-91228 branch (insertValueOverrides pass)
+**Depends on**: ENG-91228 branch (componentPropertyOverrides pass)
 
 ## As a
 developer converting a web page with a metric to mobile
@@ -19,21 +19,29 @@ I do not repeat the same two Mobile Designer fixes on every conversion, and the 
 mobile design standard without the agent being told to do it in prose
 
 ## Design
-- `WebToMobileAnalysisService.ApplyInsertValueOverrides`: replace the shallow
-  `values[pair.Key] = JsonNode.Parse(...)` assignment with a recursive object merge. Two JSON objects
-  merge key-by-key; every other combination keeps replace semantics. The `name`/`type` identity guard
-  stays ahead of the merge.
-- `WebToMobilePageConversionRulesModels`: add the optional report-grouping field to
-  `InsertValueOverrideRule` so a rule declares which normalization section it feeds.
-- `Data/WebToMobilePageConversionRules.json`: add the `crt.IndicatorWidget` override —
-  `config.text.fontSizeMode = "extra-small"`, `config.layout.border.hidden = true` — with a `note`
-  explaining that the web font size and border are ignored, not translated. Existing Grid/Flex rules
-  declare the spacing grouping explicitly so their reporting is unchanged.
-- `MobilePageConversionGuideModels`: add the metric normalization section to the guide response
-  alongside `SpacingNormalization`, with XML docs matching the existing style.
-- `FreedomToMobileConversionGuidanceResource`: document the stamped metric style and add the
-  "do not restore the web font size / border" constraint, mirroring the spacing wording.
-- Non-goal guard: do not set `config.theme` (see SPEC non-goals).
+Rewritten after two review rounds on PR #1010; this section describes what shipped, not the first cut.
+
+- `WebToMobileAnalysisService.ApplyComponentPropertyOverrides` stamps every standard the rules file
+  declares. An object rule value MERGES into the element's own object when the rule sets
+  `mergeNestedObjects`; every other shape replaces, which is what the pre-existing spacing rules rely on.
+- The merge never OVERWRITES a value that is present but is not an object (a whole-value binding), at any
+  depth; such a branch is recorded in the report's `skipped[]`. An ABSENT branch IS created — a real
+  metric carries `layout` with a colour and icon but no `border`, so refusing would make the standard
+  unreachable. Leaves are written only when the value actually differs.
+- `WebToMobilePageConversionRulesModels`: the rule carries `reportGroup` (a FREE-FORM key), its own
+  caller-facing `reportNote` / `reportConstraint` / `reportNextStep`, and `note` for the rationale.
+- `Data/WebToMobilePageConversionRules.json`: the `crt.IndicatorWidget` rule declares
+  `config.text.fontSizeMode = "extra-small"` and `config.layout.border.hidden = true`, merging, in group
+  `metricStyle`. The spacing rules keep the default group and replace semantics, and now carry their own
+  prose. `config.theme` is deliberately untouched (see SPEC non-goals).
+- `MobilePageConversionGuideModels`: one shared `NormalizationInfo` / `NormalizationEntry` /
+  `NormalizationSkip`, surfaced as `normalizations: { "<group>": ... }`. `spacingNormalization` survives
+  as a back-compat alias of the `spacing` section, shape unchanged.
+- Groups are declared in RULES-FILE order, so the emitted key spelling, the prose a group carries when
+  several rules feed it, and the section order never depend on page content.
+- `FreedomToMobileConversionGuidanceResource` and the tool `[Description]` describe the MECHANISM and
+  route the caller to the report; neither names a component, a property or a value, because the rules
+  file is resolved at runtime and would drift from them.
 
 ## Acceptance Criteria
 - [ ] AC-01 — A converted metric insert carries `mobileValues.config.text.fontSizeMode == "extra-small"`.
@@ -53,7 +61,9 @@ mobile design standard without the agent being told to do it in prose
   stamping, deep-merge preservation, identity guard, empty-group no-op, spacing section unaffected.
 - `clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobilePageConversionRulesCatalogTests.cs` —
   the new rule parses, carries both values and its report grouping.
-- `clio.mcp.e2e/MobilePageConversionGuideToolE2ETests.cs` — the live guide response carries the metric
-  normalization section and its constraint.
+- `clio.mcp.e2e/MobilePageConversionGuideToolE2ETests.cs` — the live guidance ARTICLE carries the
+  normalization contract. Deliberately the article and not the guide response: the E2E tier runs without a
+  stood-up Creatio, and pinning values there would go green while a rules-file update left the article
+  stale.
 
 Validated with: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer"`
