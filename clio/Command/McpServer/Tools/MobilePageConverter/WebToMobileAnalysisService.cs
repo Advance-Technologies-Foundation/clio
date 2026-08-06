@@ -223,15 +223,13 @@ public static class WebToMobileAnalysisService {
 		// so the order is safe either way — it is fixed here so it stays that way.
 		List<TabAreaLayerGroup> tabAreaLayers = BuildTabAreaLayers(elementMap, rules, sourcePage);
 
-		// Spacing normalization: mobile follows its own spacing standard, so the web page's
-		// container spacing is deliberately IGNORED — every Grid/Flex container the converter INSERTS gets
-		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
-		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
-		// merge twins the mobile template provides are never touched.
-		// The same pass also stamps the mobile-standard metric style declared by the rules file onto
-		// every inserted crt.IndicatorWidget: the web widget's own font size and border are IGNORED, not
-		// translated. Each rule declares which guide section it reports into, so the two standards never
-		// bleed into each other's summary.
+		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
+		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
+		// (discarded, never translated). Which component, which properties and which values all come from
+		// the rules file — this pass knows none of them. Runs AFTER the tab-area pass so one pass covers
+		// converted and synthesized elements alike (the invariant is per-element-map, not per-origin);
+		// merge twins the mobile template provides are never touched. Each rule also declares the report
+		// group it feeds, so two standards never bleed into each other's summary.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(ComponentPropertyOverrideRule.SpacingGroup);
