@@ -80,9 +80,17 @@ namespace Clio.Command
 		/// <summary>
 		/// Test seam that produces the <see cref="HttpMessageHandler"/> backing each probe. A fresh handler is
 		/// created per probe (and disposed with the probe's <see cref="HttpClient"/>). Defaults to a real
-		/// <see cref="HttpClientHandler"/> that trusts the target certificate (health probes routinely hit
-		/// self-signed dev instances); unit tests substitute a stub handler to simulate a healthy 2xx, a
+		/// <see cref="HttpClientHandler"/>; unit tests substitute a stub handler to simulate a healthy 2xx, a
 		/// non-2xx, a redirect, a transport failure, or a connect-but-never-answer stall.
+		/// <para>The default handler accepts any server certificate. This is TRANSPORT PARITY with the path this
+		/// probe replaced, not a new relaxation: every clio request already runs through creatio.client, whose
+		/// <c>HttpClient</c> path sets the accept-all certificate callback unconditionally and whose
+		/// <c>useUntrustedSsl</c> field defaults to <c>true</c> — a value clio also passes explicitly when it
+		/// builds the client (<c>BindingsModule.BuildCreatioClient</c>, <c>Program.CreateRemoteCommand</c>). So
+		/// the pre-change healthcheck accepted any certificate too, on its main path and not only in a fallback.
+		/// Validating certificates here alone would not narrow clio's exposure (every other command would still
+		/// trust anything) and would break healthcheck against the self-signed dev instances it exists to probe;
+		/// a certificate-validation opt-in belongs at the client/environment level, repo-wide.</para>
 		/// <para>Redirects are NOT followed on purpose (ENG-94417): <c>/api/HealthCheck/Ping</c> is an anonymous
 		/// endpoint that answers 200 directly, so a 3xx from it means the request was routed somewhere else —
 		/// typically the login page, which then answers 200 and would be counted as healthy. Following the
