@@ -152,6 +152,16 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		BundledPackages.ProcessBuilderArchiveFileName);
 
 	/// <summary>
+	/// How long the instance is given to answer its health check after the platform's own restart.
+	/// </summary>
+	/// <remarks>
+	/// Equal to <see cref="ServerReadinessOptions"/>'s default, so this changes no behaviour — it makes the
+	/// number visible at the point that owns it. See <see cref="WaitForPlatformRestart"/> for why it is this
+	/// large and what the size costs.
+	/// </remarks>
+	private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(600);
+
+	/// <summary>
 	/// Waits for the platform's own post-install restart to complete.
 	/// </summary>
 	/// <returns><c>true</c> when the instance answered its health check within the budget.</returns>
@@ -170,11 +180,29 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// returned at 16:44:57,842, and <c>Application_Start</c> followed at 16:44:58,735 — so an immediate
 	/// probe would have landed inside the restart.
 	/// </para>
+	/// <para>
+	/// The budget is stated here rather than inherited, because every other caller of the waiter states its
+	/// own and the value is meaningless without knowing what is being waited for:
+	/// <c>CreatioInstallerService</c> allows 45 s for a freshly deployed instance, <c>RestartCommand</c>
+	/// passes whatever the caller asked for. <see cref="ReadinessTimeout"/> is deliberately generous —
+	/// deliberately, not by default — because a configuration build plus a restart is the slowest thing this
+	/// command triggers, and a false "not ready" would report a SUCCESSFUL install as a failure. Every live
+	/// run so far answered on the first probe.
+	/// </para>
+	/// <para>
+	/// The cost of that generosity is not the CLI wait, which prints progress and can be interrupted: it is
+	/// that on the MCP path the configuration-build reservation is held for the whole detached run, so a
+	/// second install on the same environment is REFUSED for up to the full budget even once the target is
+	/// plainly hopeless. Shortening it would trade that for false failures on a slow-but-recovering
+	/// instance; anyone weighing a shorter value, or an operator-facing knob, should start from that trade
+	/// and from a measurement of how long such an instance actually takes — which nobody has made.
+	/// </para>
 	/// </remarks>
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = _environmentSettings.Uri,
-			IsNetCore = _environmentSettings.IsNetCore
+			IsNetCore = _environmentSettings.IsNetCore,
+			Timeout = ReadinessTimeout
 		});
 
 	#endregion

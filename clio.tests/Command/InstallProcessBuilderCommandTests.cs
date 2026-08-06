@@ -127,8 +127,15 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		// command must name the package whose outcome it is asking about.
 		_outcomeVerifier.Received().IsPackageOperational(
 			BundledPackages.ProcessBuilderPackageName, out string _);
+		// The Timeout is asserted, not just the target: it is the effective budget of the whole flow, and on
+		// the MCP path it is also how long a duplicate install stays refused, since the configuration-build
+		// reservation is held for the detached run. A test cannot tell "stated explicitly" from "inherited
+		// from the shared default" — both produce the same value — so what this pins is the VALUE, which
+		// keeps a change to that shared default from silently retiming this command.
 		_serverReadinessWaiter.Received(1).WaitForReady(Arg.Is<ServerReadinessOptions>(o =>
-			o.Uri == EnvironmentSettings.Uri && o.IsNetCore == EnvironmentSettings.IsNetCore));
+			o.Uri == EnvironmentSettings.Uri
+			&& o.IsNetCore == EnvironmentSettings.IsNetCore
+			&& o.Timeout == TimeSpan.FromSeconds(600)));
 	}
 
 	[Test]
