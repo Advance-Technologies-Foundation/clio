@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
@@ -187,12 +188,14 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical branding article text");
 		result.Article.Text.Should().Contain("get-guidance name=theming",
 			because: "the branding guide must route the theme part of branding (colours, fonts, custom themes) to the theming guide");
-		result.Article.Text.Should().Contain("CrtAppToolbarLogo",
-			because: "the logos section must map the Freedom UI top-panel logo slot to its Binary sys setting");
+		result.Article.Text.Should().Contain("set-logo",
+			because: "the logos section must route the logo flow through the dedicated apply-and-bind tool");
+		result.Article.Text.Should().Contain("dark-logo",
+			because: "the logos section must map the dark-background (Freedom UI top panel) logo slot");
 		result.Article.Text.Should().Contain("value-file-path",
-			because: "logo uploads must route through the Binary sys-setting file path, never inline bytes");
-		result.Article.Text.Should().Contain("HideSplashScreenLogoImage",
-			because: "applying logos must also hide the stock splash logo");
+			because: "the favicon upload must route through the Binary sys-setting file path, never inline bytes");
+		result.Article.Text.Should().Contain("splash-screen logo automatically",
+			because: "set-logo suppresses the stock splash logo itself, so the guide must not send the agent to do it by hand");
 		result.Article.Text.Should().Contain("upload-image",
 			because: "the background image upload must route through the dedicated upload-image tool, since OData JSON cannot write the SysImage binary stream");
 		result.Article.Text.Should().NotContain("ImageAPIService",

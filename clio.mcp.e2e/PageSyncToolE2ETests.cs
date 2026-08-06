@@ -1261,6 +1261,51 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+		[Test]
+		[Description("sync-pages pre-resolves the mobile apply-oracle base OFF the per-tenant lock for MULTIPLE mobile pages; when the base cannot be resolved the degraded validation surfaces as a per-page warning — proving PreResolveMobileBases runs end-to-end for a multi-page batch through the real MCP transport.")]
+		[AllureTag(ToolName)]
+		[AllureName("sync-pages pre-resolves mobile bases off-lock and surfaces degradation for a multi-page batch")]
+		[AllureDescription("Uses a reachable environment and submits TWO mobile pages whose viewModelConfigDiff inserts into a template-owned array (so each NEEDS an external base) for non-existent schemas. The off-lock pre-resolution therefore fails for both, and each page's result must carry the degraded-base warning through the real MCP server — confirming PreResolveMobileBases ran for every page and that a degraded validation is not reported as a clean pass.")]
+		public async Task PageSyncTool_Should_Surface_Degraded_MobileBase_For_MultiplePages() {
+			// Arrange
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			string environmentName = await ResolveReachableEnvironmentAsync(settings);
+			// A mobile body (plain JSON) whose viewModelConfigDiff inserts into a template-owned array with no inline
+			// base -> MobileDiffApplyValidator.NeedsResolvedBase is true, so sync-pages pre-resolves the base off the
+			// lock. The schema does not exist, so the pre-resolution read fails and the page degrades to the seeded base.
+			static string MobileBody() =>
+				"{ \"viewConfigDiff\": [], " +
+				"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"QuickFilter\" } } ], " +
+				"\"modelConfigDiff\": [] }";
+
+			await using ArrangeContext context = await ArrangeAsync();
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> { ["schema-name"] = $"UsrMobileDegradedA_{Guid.NewGuid():N}", ["body"] = MobileBody() },
+							new Dictionary<string, object?> { ["schema-name"] = $"UsrMobileDegradedB_{Guid.NewGuid():N}", ["body"] = MobileBody() }
+						},
+						["validate"] = true
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "a degraded base resolution is a structured per-page outcome, not an MCP transport error");
+			response.Pages.Should().HaveCount(2,
+				because: "both submitted mobile pages must be processed off the lock by PreResolveMobileBases");
+			response.Pages.Should().OnlyContain(
+				p => p.Validation != null && p.Validation.Warnings != null
+					&& p.Validation.Warnings.Any(w => w.Contains("could not be resolved") && w.Contains("seeded base")),
+				because: "when the off-lock base pre-resolution fails, each page's result must carry the degraded-validation warning end-to-end through the real MCP server");
+		}
+
 	private new sealed record ArrangeContext(
 		string RootDirectory,
 		string WorkspacePath,

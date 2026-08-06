@@ -891,6 +891,132 @@ public sealed class PageSyncToolTests {
 		return hierarchyClient;
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Pre-resolves the mobile apply-oracle base OFF the per-tenant lock: a mobile page whose path diff needs a base triggers a get-page read requested with ExcludeOwnBody (replace semantics) for that schema, so the locked save loop does no network I/O.")]
+	public async Task SyncPages_PreResolvesMobileBase_OffLock_WithReplaceSemantics() {
+		// Arrange — a mobile body whose viewModelConfigDiff inserts into a template-owned array with no inline base,
+		// so it needs an externally-resolved base (MobileDiffApplyValidator.NeedsResolvedBase).
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		// Empty rows → the base read fails fast and the resolver degrades to (null, null); we only assert HOW the
+		// pre-resolution get-page was requested, which happens before that.
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		Clio.EnvironmentOptions capturedGetOptions = null;
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Do<Clio.EnvironmentOptions>(o => capturedGetOptions = o)).Returns(getCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		await tool.SyncPages(args, null);
+
+		// Assert
+		capturedGetOptions.Should().BeOfType<PageGetOptions>(
+			because: "sync-pages pre-resolves the mobile base via a get-page read off the lock");
+		PageGetOptions getOptions = (PageGetOptions)capturedGetOptions;
+		getOptions.SchemaName.Should().Be("UsrLeads_MobileFormPage",
+			because: "the base is resolved for the mobile page being synced");
+		getOptions.ExcludeOwnBody.Should().BeTrue(
+			because: "sync-pages writes the body verbatim (replace semantics), so the base excludes the page's own body");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When a mobile base pre-resolution FAILS on the sync-pages batch path, the injected logger records a warning (parity with update-page) so the degraded validation is not silent.")]
+	public async Task SyncPages_PreResolveMobileBaseFailure_LogsWarning() {
+		// Arrange — same mobile body needing a base, but the get-page read fails (empty rows), so the resolver
+		// degrades to (null, null). With a logger injected into PageSyncTool it must leave a diagnostic trail.
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
+		ILogger logger = Substitute.For<ILogger>();
+		string capturedWarning = null;
+		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => capturedWarning = ci.Arg<string>());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()),
+			logger: logger);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		await tool.SyncPages(args, null);
+
+		// Assert
+		capturedWarning.Should().NotBeNull(
+			because: "a failed base pre-resolution on the sync batch path must leave a diagnostic trail")
+			.And.Contain("UsrLeads_MobileFormPage",
+			because: "the warning names the schema whose base could not be resolved");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed mobile base pre-resolution surfaces in the PER-PAGE result (a Validation warning), not just a log line — so a body validated against the permissive seeded stub is not reported as a clean pass.")]
+	public async Task SyncPages_PreResolveMobileBaseFailure_SurfacesWarningInPageResult() {
+		// Arrange — mobile body needs a base, but the get-page read fails (empty rows) so resolution degrades.
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().ContainSingle(
+			because: "the batch had one page")
+			.Which.Validation.Warnings.Should().Contain(w => w.Contains("could not be resolved") && w.Contains("seeded base"),
+			because: "a degraded validation must be visible in the per-page result, not only in a log line");
+	}
+
 	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
 		CreateSuccessfulPageUpdateCommandWithClient(out _, schemaType);
 

@@ -116,6 +116,26 @@ public sealed class McpFixturePolicyTests {
 		|| fixtureType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
 			.Any(method => HasCategory(method.GetCustomAttributes<CategoryAttribute>(inherit: true), category));
 
+	[Test]
+	[Category("Unit")]
+	[Description("A fixture that needs outbound internet must not also carry a blocking tier category. Per-method categories are additive on top of the fixture tag, so leaving one in McpE2E.NoEnvironment keeps it in the pre-merge sweep whose gate is Total == Passed AND Skipped == 0 — an egress-blocked runner then fails the gate on the skip.")]
+	public void LiveNetworkFixtures_ShouldNotCarryABlockingTierCategory() {
+		// Arrange
+		IReadOnlyList<Type> liveFixtures = GetFixturesWithCategory("McpE2E.LiveGoogleFonts");
+
+		// Act
+		IReadOnlyList<Type> leaked = liveFixtures
+			.Where(fixture => FixtureHasCategory(fixture, "McpE2E.NoEnvironment")
+				|| FixtureHasCategory(fixture, "McpE2E.Sandbox"))
+			.ToArray();
+
+		// Assert
+		liveFixtures.Should().NotBeEmpty(
+			because: "the live Google Fonts fixture carries this category; an empty set means this guard pins nothing");
+		leaked.Should().BeEmpty(
+			because: "a live-network fixture selected by a blocking tier filter turns an unreachable endpoint into a gate failure instead of an excluded test");
+	}
+
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>
 		attributes.Any(attribute => string.Equals(attribute.Name, category, StringComparison.Ordinal));
 }
