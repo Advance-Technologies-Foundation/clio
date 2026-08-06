@@ -1854,6 +1854,31 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "nothing was excluded, so the report omits the excludedComponents list");
 	}
 
+	[Test]
+	[Description("An anonymous (nameless) wrapper inside a non-converting container is itself not reported (it has no name), but its named descendants are still dropped and reported in excludedComponents under the TOP-level declared container — the excluding container propagates through the nameless level.")]
+	public void Analyze_NonConvertingContainer_AnonymousWrapperInside_ReportsNamedDescendantsOnly() {
+		// Arrange: MainHeader → (nameless FlexContainer wrapper) → OrderButton.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "type": "crt.FlexContainer", "items": [
+					{ "name": "OrderButton", "type": "crt.Button" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"));
+
+		// Assert: the named leaf is dropped and reported; the anonymous wrapper contributes no entry.
+		guide.SourceStructure.Should().NotContain(s => s.Name == "OrderButton",
+			because: "a named leaf under a nameless wrapper inside the excluded container is still dropped");
+		guide.ExcludedComponents.Should().ContainSingle(
+			because: "only the named descendant is reportable; the nameless wrapper cannot be named")
+			.Which.Should().Match<ExcludedComponent>(e =>
+				e.Name == "OrderButton" && e.Container == "MainHeader" && !e.IsContainer,
+			because: "the excluding container propagates through the nameless level to the leaf");
+	}
+
 	#endregion
 
 	#region Request (action) conversion
