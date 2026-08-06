@@ -497,7 +497,9 @@ public sealed class MobilePageConversionGuide {
 	/// <para>
 	/// BACK-COMPAT ALIAS: this section shipped before <see cref="Normalizations"/> existed and duplicates
 	/// its <c>"spacing"</c> entry, shape unchanged. New callers should read <see cref="Normalizations"/>,
-	/// which also carries the standards this one cannot express.
+	/// which also carries the standards this one cannot express. REMOVAL TARGET: the only consumer is an
+	/// LLM prompt, so this duplicate should go once the guidance article published for
+	/// <c>normalizations</c> has shipped — it is not intended to be permanent.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("spacingNormalization")]
@@ -805,18 +807,14 @@ public sealed class SpacingNormalizationEntry {
 /// rules-file entry, not another pair of identical DTOs.
 /// </summary>
 public sealed class NormalizationInfo {
-	/// <summary>Caller-facing summary, verbatim from the rule's <c>reportNote</c>.</summary>
+	/// <summary>
+	/// Caller-facing summary of this standard's outcome, composed by clio from the actual counts. Never
+	/// sourced from the rules file: those resolve at runtime, and this text reaches the agent's
+	/// instruction channel.
+	/// </summary>
 	[JsonPropertyName("note")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Note { get; init; }
-
-	/// <summary>
-	/// The rules' own rationale for this standard (their <c>note</c> fields, de-duplicated). The rules file
-	/// is resolved at runtime, so prefer this over any wording compiled into the guidance article.
-	/// </summary>
-	[JsonPropertyName("ruleNotes")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<string> RuleNotes { get; init; }
 
 	/// <summary>One entry per element this standard normalized.</summary>
 	[JsonPropertyName("normalized")]

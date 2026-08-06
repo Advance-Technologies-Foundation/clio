@@ -232,7 +232,7 @@ public static class WebToMobileAnalysisService {
 		// group it feeds, so two standards never bleed into each other's summary.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
-			componentPropertyOverrides.EntriesOf(ComponentPropertyOverrideRule.SpacingGroup);
+			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -1398,8 +1398,7 @@ public static class WebToMobileAnalysisService {
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
-		AppendNormalizationLines(constraints, normalization, DefaultSpacingConstraint,
-			accumulator => accumulator.Constraint);
+		AppendNormalizationLines(constraints, normalization);
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -1427,8 +1426,7 @@ public static class WebToMobileAnalysisService {
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
-		AppendNormalizationLines(steps, normalization, DefaultSpacingNextStep,
-			accumulator => accumulator.NextStep);
+		AppendNormalizationLines(steps, normalization);
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
 		return steps;
@@ -2792,20 +2790,6 @@ public static class WebToMobileAnalysisService {
 		if (byType.Count == 0) {
 			return result;
 		}
-		// Declare the groups in RULES-FILE order, before any element is seen. That fixes three things the
-		// element order would otherwise decide: the canonical spelling of the emitted key, which rule's prose
-		// a group carries when several feed it, and the order the sections and their constraint lines appear
-		// in. A declared group stays out of the report until something is actually recorded against it.
-		// Deliberately a SECOND pass rather than folded into the indexing above: only a rule that survived the
-		// last-wins indexing may donate prose, and that is not known until the index is complete. A shadowed
-		// duplicate never stamps anything, so its wording would advertise values that were never written.
-		foreach (ComponentPropertyOverrideRule rule in overrides) {
-			if (!string.IsNullOrWhiteSpace(rule?.Type)
-				&& byType.TryGetValue(rule.Type, out ComponentPropertyOverrideRule surviving)
-				&& ReferenceEquals(surviving, rule)) {
-				result.Declare(ResolveReportGroup(rule.ReportGroup), rule);
-			}
-		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
@@ -2825,7 +2809,7 @@ public static class WebToMobileAnalysisService {
 			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
 			// so a caller can tell "nothing to normalize" from "could not normalize".
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
-				result.Add(ResolveReportGroup(rule.ReportGroup), rule, entry.MobileName, entry.MobileType,
+				result.Add(ResolveReportGroup(entry.MobileType), entry.MobileName, entry.MobileType,
 					properties, skippedPaths);
 			}
 		}
@@ -2867,8 +2851,10 @@ public static class WebToMobileAnalysisService {
 		bool mergeNestedObjects, List<string> stamped, List<string> skipped) {
 		JsonNode incoming = JsonNode.Parse(ruleValue.GetRawText());
 		if (mergeNestedObjects && incoming is JsonObject incomingObject) {
-			if (incomingObject.Count == 0) {
-				return; // nothing to write: creating the branch would change the body and report nothing
+			if (!HasLeaf(incomingObject)) {
+				// Nothing is writable anywhere below, so creating the branch would change the body and report
+				// nothing. Counting keys is not enough: { "layout": {} } has a key and no leaf.
+				return;
 			}
 			if (!values.ContainsKey(key)) {
 				values[key] = new JsonObject(); // absent: same rule as any deeper branch
@@ -2882,6 +2868,20 @@ public static class WebToMobileAnalysisService {
 		}
 		values[key] = incoming;
 		stamped.Add(key);
+	}
+
+	/// <summary>
+	/// True when <paramref name="source"/> carries at least one non-object value somewhere below it — the
+	/// only thing a merge can actually write. A tree of empty objects writes nothing, so it must not cause a
+	/// branch to be created either, at any depth.
+	/// </summary>
+	private static bool HasLeaf(JsonObject source) {
+		foreach (KeyValuePair<string, JsonNode> pair in source) {
+			if (pair.Value is not JsonObject child || HasLeaf(child)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -2924,83 +2924,63 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>
-	/// The report group an absent or blank <c>reportGroup</c> falls back to — what a rules file written before the
-	/// field existed relies on. Any other spelling is taken VERBATIM as its own section key: the rules file
-	/// is resolved at runtime, so the binary must not cap which standards data may declare, and an
-	/// unrecognized key must never be folded into another standard's section where it would inherit that
-	/// standard's wording.
-	/// </summary>
-	private static string ResolveReportGroup(string reportGroup) =>
-		string.IsNullOrWhiteSpace(reportGroup) ? ComponentPropertyOverrideRule.SpacingGroup : reportGroup.Trim();
+	/// <summary>The report group each normalizable component type belongs to.</summary>
+	private static readonly IReadOnlyDictionary<string, string> ReportGroupsByType =
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["crt.GridContainer"] = SpacingGroup,
+			["crt.FlexContainer"] = SpacingGroup,
+			["crt.IndicatorWidget"] = "metricStyle"
+		};
+
+	/// <summary>The group the <c>spacingNormalization</c> back-compat alias mirrors.</summary>
+	private const string SpacingGroup = "spacing";
 
 	/// <summary>
-	/// Marks a constraint / next step whose wording came from the conversion RULES rather than from this
-	/// binary. The rules file is resolved at runtime (env var → local cache → CDN), so text it supplies is
-	/// less trusted than clio's own; the caller needs to see which is which because both land in the same
-	/// arrays.
+	/// The guide section a standard reports into, derived from the component TYPE it targets rather than
+	/// declared by the rules file. The binary owns this deliberately: the section is a presentation detail,
+	/// a free-form key in a runtime-resolved file lets an authoring typo ("metricstyle") silently open a new
+	/// section instead of failing, and renaming the spacing rules' group would silently delete the
+	/// documented <c>spacingNormalization</c> alias from the response. An unmapped type falls back to its
+	/// own name, so a new standard still reports somewhere sensible; adding it here is what gives it a
+	/// curated section name.
 	/// </summary>
-	private const string RulesSuppliedPrefix = "[conversion-rules] ";
-
-	/// <summary>Cap on one rules-supplied instruction line, so a single rule cannot flood the channel.</summary>
-	private const int MaxRulesSuppliedLineLength = 2000;
-
-	/// <summary>Shortens <paramref name="value"/> to <paramref name="max"/>, marking that it was cut.</summary>
-	private static string Truncate(string value, int max) =>
-		value.Length <= max ? value : value[..max] + "… (truncated)";
-
-	/// <summary>Built-in constraint for the legacy <c>spacing</c> group; see <see cref="DefaultNoteFor"/>.</summary>
-	private const string DefaultSpacingConstraint =
-		"Spacing is NORMALIZED, not converted: mobile follows the mobile spacing standard, so the web page's " +
-		"container spacing was deliberately IGNORED — every inserted crt.GridContainer / crt.FlexContainer " +
-		"(converted and synthesized alike) already carries gap Medium on all axes in its mobileValues. Do NOT " +
-		"restore or translate the web gap, and do NOT treat the difference from the web page as a defect. This " +
-		"is SILENT — never a gate question: state it in the plan and the final report as ONE aggregated line. " +
-		"Merge twins the mobile template provides keep the template's own spacing untouched.";
-
-	/// <summary>Built-in nextStep for the legacy <c>spacing</c> group; see <see cref="DefaultNoteFor"/>.</summary>
-	private const string DefaultSpacingNextStep =
-		"Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web " +
-		"page's spacing is ignored by design (guide.normalizations.spacing lists them). Do not restore the web " +
-		"gap; mention the normalization as ONE aggregated line when you present the plan and the final report.";
+	private static string ResolveReportGroup(string mobileType) =>
+		mobileType is { Length: > 0 } && ReportGroupsByType.TryGetValue(mobileType, out string group)
+			? group
+			: mobileType;
 
 	/// <summary>
-	/// Appends one line per report group that normalized something, taking the wording from the group's own
-	/// rules via <paramref name="select"/>. A group whose rules declare none contributes nothing — except the
-	/// legacy <c>spacing</c> group, which falls back to <paramref name="spacingFallback"/> so a rules file
-	/// written before rules carried prose keeps the guidance it always had. Deliberately NOT a branch per
-	/// known group: the rules file is resolved at runtime, so the binary must stay group-agnostic.
+	/// Appends ONE line per report group that recorded something, composed from the actual counts.
+	/// Deliberately built here rather than taken from the rules file: that file is resolved at runtime
+	/// (env var → local cache → CDN), and <c>constraints</c>/<c>nextSteps</c> are the arrays the calling
+	/// agent treats as clio's own hard rules — nothing outside this binary may write into them. It is also
+	/// deterministic, and one line instead of the several hundred tokens per page that per-rule prose cost,
+	/// while still saying the one thing the caller cannot derive from the data: do not undo it.
 	/// </summary>
-	private static void AppendNormalizationLines(List<string> lines, ComponentPropertyOverrideResult normalization,
-		string spacingFallback, Func<ComponentPropertyOverrideResult.GroupAccumulator, string> select) {
+	private static void AppendNormalizationLines(
+		List<string> lines, ComponentPropertyOverrideResult normalization) {
 		if (normalization is null) {
-			return; // the parameter is optional, so the guard is part of the contract, not dead defensiveness
+			return;
 		}
 		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in normalization.Groups) {
-			if (accumulator.Normalized.Count == 0 && accumulator.Skipped.Count == 0) {
-				continue;
-			}
-			string declared = select(accumulator);
-			// Rules-supplied text is MARKED. constraints[] and nextSteps[] are the arrays the agent treats as
-			// clio's own hard rules, and the rules file is resolved at runtime (env var -> cache -> CDN), so a
-			// caller must be able to weight binary-authored lines above data-authored ones. The built-in
-			// fallback is authored here and carries no marker. Length is capped so one rule cannot flood the
-			// instruction channel.
-			string line = declared is not null
-				? RulesSuppliedPrefix + Truncate(declared, MaxRulesSuppliedLineLength)
-				: string.Equals(group, ComponentPropertyOverrideRule.SpacingGroup, StringComparison.OrdinalIgnoreCase)
-					? spacingFallback
-					: null;
-			if (line is not null) {
-				lines.Add(line);
-			}
+			lines.Add(SummaryFor(group, accumulator));
 		}
 	}
 
+	/// <summary>The single caller-facing sentence describing one group's outcome.</summary>
+	private static string SummaryFor(string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) {
+		string skipped = accumulator.Skipped.Count > 0
+			? $", {accumulator.Skipped.Count} skipped (kept their web values — worth calling out)"
+			: string.Empty;
+		return $"{group}: {accumulator.Normalized.Count} element(s) normalized{skipped} — see "
+			+ $"guide.normalizations.{group}. The values are already in elementMap[].mobileValues; the web "
+			+ "page's own values for those properties were IGNORED by design. Do NOT restore them, do NOT "
+			+ "treat the difference as a defect, and never raise it as a gate question.";
+	}
+
 	/// <summary>
-	/// Projects the pass output into the guide's <c>normalizations</c> map — one section per report group
-	/// the rules declared, carrying that group's own wording. Null when nothing was normalized, so the
-	/// section is omitted rather than emitted empty.
+	/// Projects the pass output into the guide's <c>normalizations</c> map — one section per group that
+	/// recorded something. Null when nothing was normalized, so the section is omitted rather than empty.
 	/// </summary>
 	private static IReadOnlyDictionary<string, NormalizationInfo> BuildNormalizations(
 		ComponentPropertyOverrideResult result) {
@@ -3010,8 +2990,7 @@ public static class WebToMobileAnalysisService {
 		var sections = new Dictionary<string, NormalizationInfo>(StringComparer.OrdinalIgnoreCase);
 		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in result.Groups) {
 			sections[group] = new NormalizationInfo {
-				Note = accumulator.Note ?? DefaultNoteFor(group),
-				RuleNotes = accumulator.RuleNotes.Count > 0 ? accumulator.RuleNotes : null,
+				Note = SummaryFor(group, accumulator),
 				Normalized = accumulator.Normalized,
 				Skipped = accumulator.Skipped.Count > 0 ? accumulator.Skipped : null
 			};
@@ -3020,69 +2999,36 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Wording for a group whose rules declare none. Only the legacy <c>spacing</c> group has one: it
-	/// shipped before rules carried their own prose, so a rules file that predates <c>reportNote</c> must
-	/// not silently lose its summary. Every other group reports exactly what its rules declare — including
-	/// nothing, which is honest, since the binary cannot know what an unknown standard does.
-	/// </summary>
-	private static string DefaultNoteFor(string group) =>
-		string.Equals(group, ComponentPropertyOverrideRule.SpacingGroup, StringComparison.OrdinalIgnoreCase)
-			? "Container spacing was normalized to the mobile standard; the web page's own spacing was "
-				+ "IGNORED (not translated). Already baked into elementMap[].mobileValues — nothing separate "
-				+ "to apply. Report it as ONE aggregated line and never restore the web spacing."
-			: null;
-
-	/// <summary>
-	/// Output of the shared component-property override pass, bucketed by the report group each rule
-	/// declared. One pass stamps every standard; the reporting stays separate because each standard carries
-	/// its own caller-facing wording — which the RULE supplies, so a new standard is a rules-file entry and
-	/// nothing else.
+	/// Output of the shared component-property override pass, bucketed by the report group each element's
+	/// type maps to. One pass stamps every standard; the reporting stays separate because each standard is
+	/// a distinct thing the caller has to be told about.
 	/// </summary>
 	private sealed class ComponentPropertyOverrideResult {
 		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
-
-		/// <summary>
-		/// Group keys in the order their rules appear in the rules file, holding the CANONICAL spelling —
-		/// the dictionary matches case-insensitively, so without this the emitted JSON key would be whichever
-		/// spelling a page happened to hit first. Also fixes the order of the sections and of their
-		/// constraint/nextStep lines, which must not depend on page content.
-		/// </summary>
 		private readonly List<string> _order = [];
 
-		/// <summary>Report groups that recorded something, in rules-file order.</summary>
+		/// <summary>Report groups that recorded something, in first-seen (element-map) order.</summary>
 		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>
-			_order.Select(group => new KeyValuePair<string, GroupAccumulator>(group, _groups[group]))
-				.Where(pair => pair.Value.Normalized.Count > 0 || pair.Value.Skipped.Count > 0);
+			_order.Select(group => new KeyValuePair<string, GroupAccumulator>(group, _groups[group]));
 
 		/// <summary>True when no group recorded anything — the guide then omits the section entirely.</summary>
-		public bool IsEmpty => !Groups.Any();
+		public bool IsEmpty => _order.Count == 0;
 
 		/// <summary>The entries of one group, or an empty list when that group recorded nothing.</summary>
 		public IReadOnlyList<NormalizationEntry> EntriesOf(string group) =>
 			_groups.TryGetValue(group, out GroupAccumulator accumulator) ? accumulator.Normalized : [];
 
 		/// <summary>
-		/// Registers a group and takes its rule's caller-facing wording, BEFORE any element is stamped.
-		/// Called once per rule in rules-file order, so the wording a group carries and the spelling of its
-		/// key are decided by the rules file rather than by which element a page happens to contain first.
+		/// Records one element under its group. Only a merging rule can skip — a replacing rule always
+		/// writes its key.
 		/// </summary>
-		public void Declare(string group, ComponentPropertyOverrideRule rule) {
+		public void Add(string group, string name, string type,
+			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
 			if (!_groups.TryGetValue(group, out GroupAccumulator accumulator)) {
 				accumulator = new GroupAccumulator();
 				_groups[group] = accumulator;
 				_order.Add(group);
 			}
-			accumulator.Absorb(rule);
-		}
-
-		/// <summary>
-		/// Records one element under the group its rule declared. Only a merging rule can skip — a replacing
-		/// rule always writes its key.
-		/// </summary>
-		public void Add(string group, ComponentPropertyOverrideRule rule, string name, string type,
-			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
-			Declare(group, rule);
-			GroupAccumulator accumulator = _groups[group];
 			if (properties.Count > 0) {
 				accumulator.Normalized.Add(new NormalizationEntry {
 					Name = name, Type = type, Properties = properties
@@ -3100,31 +3046,10 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 
-		/// <summary>What one report group accumulated: its elements and the wording its rules declared.</summary>
+		/// <summary>What one report group accumulated.</summary>
 		internal sealed class GroupAccumulator {
 			public List<NormalizationEntry> Normalized { get; } = [];
 			public List<NormalizationSkip> Skipped { get; } = [];
-			public List<string> RuleNotes { get; } = [];
-			public string Note { get; private set; }
-			public string Constraint { get; private set; }
-			public string NextStep { get; private set; }
-
-			/// <summary>
-			/// Takes the rule's caller-facing wording. First non-empty value wins and the rules are absorbed in
-			/// rules-file order, so several rules can feed one group (Grid and Flex both feed spacing) and the
-			/// winner is the first rule in the FILE rather than whichever element a page carried first.
-			/// </summary>
-			public void Absorb(ComponentPropertyOverrideRule rule) {
-				Note ??= NullIfBlank(rule.ReportNote);
-				Constraint ??= NullIfBlank(rule.ReportConstraint);
-				NextStep ??= NullIfBlank(rule.ReportNextStep);
-				string ruleNote = NullIfBlank(rule.Note);
-				if (ruleNote is not null && !RuleNotes.Contains(ruleNote)) {
-					RuleNotes.Add(ruleNote);
-				}
-			}
-
-			private static string NullIfBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 		}
 	}
 

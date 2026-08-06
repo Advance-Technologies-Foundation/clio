@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -106,7 +105,6 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 		response.Article.Text.Should().Contain("SideAreaProfileContainer→AreaProfileContainer",
 			because: "only the profile island's children merge into the template's profile Area card, while the wrapper's other non-tab content fills the general tab's grid (CardContentWrapper→GeneralTabContainer)");
 	}
-
 
 	[Test]
 	[Description("Returns a structured failure (not a protocol error) when the target environment is not registered, so the caller can read why the source page could not be read.")]

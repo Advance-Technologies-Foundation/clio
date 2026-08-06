@@ -267,51 +267,15 @@ public sealed class ComponentPropertyOverrideRule {
 	public bool MergeNestedObjects { get; init; }
 
 	/// <summary>
-	/// FREE-FORM key of the guide normalization section this rule reports into, so one pass can serve any
-	/// number of standards without their reports bleeding into each other. The guide exposes one section per
-	/// distinct key under <c>normalizations</c>; a key the binary has never heard of gets its OWN section
-	/// rather than being folded into another standard's. Absent falls back to
-	/// <see cref="SpacingGroup"/>, which is what a rules file written before this field relies on.
-	/// <para>
-	/// Deliberately not an enum: the rules file is resolved at runtime (env var → cache → CDN → bundled), so
-	/// a closed set would cap what data is allowed to express and make every new standard a binary change.
-	/// </para>
-	/// </summary>
-	[JsonPropertyName("reportGroup")]
-	public string ReportGroup { get; init; }
-
-	/// <summary>
-	/// Caller-facing summary of the standard, surfaced as the section's <c>note</c>. Carried by the rule so
-	/// the wording travels with the values it describes instead of being frozen in the binary.
-	/// </summary>
-	[JsonPropertyName("reportNote")]
-	public string ReportNote { get; init; }
-
-	/// <summary>
-	/// Caller-facing hard rule, appended to the guide's <c>constraints</c> when this group normalized
-	/// anything. Carried by the rule for the same reason as <see cref="ReportNote"/>.
-	/// </summary>
-	[JsonPropertyName("reportConstraint")]
-	public string ReportConstraint { get; init; }
-
-	/// <summary>
-	/// Caller-facing step, appended to the guide's ordered <c>nextSteps</c> when this group normalized
-	/// anything. Carried by the rule for the same reason as <see cref="ReportNote"/>.
-	/// </summary>
-	[JsonPropertyName("reportNextStep")]
-	public string ReportNextStep { get; init; }
-
-	/// <summary>
-	/// The rule's own explanation of WHY the standard exists, surfaced verbatim as the section's
-	/// <c>ruleNotes</c>. Distinct from <see cref="ReportNote"/>: this is the rationale for a maintainer,
-	/// that one is the instruction for the caller.
+	/// Free-form explanation for whoever maintains the rules file. Deliberately NOT surfaced to the
+	/// caller: the guide composes its report from the actual outcome, so no wording here can drift from
+	/// what was written, and the rules file — resolved at runtime from an env var, a local cache or the
+	/// CDN — cannot reach the calling agent's instruction channel.
 	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
-
-	/// <summary>The group an absent <see cref="ReportGroup"/> falls back to.</summary>
-	public const string SpacingGroup = "spacing";
 }
+
 
 /// <summary>
 /// Rule for the deterministic empty-container removal pass. <see cref="RemovableTypes"/> is

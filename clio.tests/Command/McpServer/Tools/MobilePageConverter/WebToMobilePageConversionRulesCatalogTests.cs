@@ -36,7 +36,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, reporting into the metricStyle section — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
+	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, merging — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
 	public void LoadBundled_ReturnsSeededMetricStyleOverride() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -44,8 +44,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		// Assert
 		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
 			.Single(o => o.Type == "crt.IndicatorWidget");
-		metric.ReportGroup.Should().Be("metricStyle",
-			because: "the metric must report through its own guide section, not the spacing one");
 		metric.MergeNestedObjects.Should().BeTrue(
 			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
 		JsonElement config = metric.Values["config"];
@@ -58,8 +56,23 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-94230: the pre-existing spacing overrides opt into neither new field — they keep the default report group (spacing) and the default replace semantics, so adding the metric rule cannot silently move a container into another section or let a web gap key survive.")]
-	public void LoadBundled_SpacingOverridesKeepDefaultGroupAndReplaceSemantics() {
+	[Description("Every override rule carries ONLY data: a component type, the values to stamp and whether they merge. No rule may carry caller-facing prose, because the rules file is resolved at runtime and the guide's constraints/nextSteps are the caller's instruction channel.")]
+	public void LoadBundled_OverridesCarryDataOnly() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentPropertyOverrides.Should().OnlyContain(
+			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
+			because: "a rule without a type or values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
+			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
+				+ "never fires — cheap to catch here for the bundled file");
+	}
+
+	[Test]
+	[Description("The pre-existing spacing overrides keep replace semantics: their promise that the web gap is discarded wholesale is only delivered by replacing, never by merging.")]
+	public void LoadBundled_SpacingOverridesKeepReplaceSemantics() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -67,29 +80,8 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.ComponentPropertyOverrides
 			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
 			.Should().HaveCount(2)
-			.And.OnlyContain(o => o.ReportGroup == null,
-				because: "an absent report group resolves to spacing, so the containers need no explicit value")
 			.And.OnlyContain(o => !o.MergeNestedObjects,
-				because: "the spacing rules promise the web gap is discarded wholesale, which only replace semantics deliver");
-	}
-
-	[Test]
-	[Description("Every shipped override rule carries its own caller-facing wording, so the guide's report sections are built from data rather than from prose compiled into the binary — the rules file is resolved at runtime, so anything restated in C# can drift from it.")]
-	public void LoadBundled_OverridesCarryTheirOwnReportProse() {
-		// Arrange & Act
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		// Assert
-		rules.ComponentPropertyOverrides.Should().OnlyContain(
-			o => !string.IsNullOrWhiteSpace(o.ReportNote)
-				&& !string.IsNullOrWhiteSpace(o.ReportConstraint)
-				&& !string.IsNullOrWhiteSpace(o.ReportNextStep),
-			because: "a standard's note, constraint and next step travel with the values they describe");
-		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
-			.Single(o => o.Type == "crt.IndicatorWidget");
-		metric.ReportConstraint.Should().Contain("guide.normalizations.metricStyle",
-			because: "the constraint must route the caller to the section that lists what was actually written, "
-				+ "instead of naming values that a rules-file update could change");
+				because: "the spacing rules promise the web gap is discarded wholesale");
 	}
 
 	[Test]
