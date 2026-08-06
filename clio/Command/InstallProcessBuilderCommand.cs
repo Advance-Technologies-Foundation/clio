@@ -152,16 +152,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		BundledPackages.ProcessBuilderArchiveFileName);
 
 	/// <summary>
-	/// How long the instance is given to answer its health check after the platform's own restart.
-	/// </summary>
-	/// <remarks>
-	/// Equal to <see cref="ServerReadinessOptions"/>'s default, so this changes no behaviour — it makes the
-	/// number visible at the point that owns it. See <see cref="WaitForPlatformRestart"/> for why it is this
-	/// large and what the size costs.
-	/// </remarks>
-	private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(600);
-
-	/// <summary>
 	/// Waits for the platform's own post-install restart to complete.
 	/// </summary>
 	/// <returns><c>true</c> when the instance answered its health check within the budget.</returns>
@@ -181,28 +171,33 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// probe would have landed inside the restart.
 	/// </para>
 	/// <para>
-	/// The budget is stated here rather than inherited, because every other caller of the waiter states its
-	/// own and the value is meaningless without knowing what is being waited for:
-	/// <c>CreatioInstallerService</c> allows 45 s for a freshly deployed instance, <c>RestartCommand</c>
-	/// passes whatever the caller asked for. <see cref="ReadinessTimeout"/> is deliberately generous —
-	/// deliberately, not by default — because a configuration build plus a restart is the slowest thing this
-	/// command triggers, and a false "not ready" would report a SUCCESSFUL install as a failure. Every live
-	/// run so far answered on the first probe.
+	/// The timing budget is deliberately NOT overridden: <see cref="ServerReadinessOptions"/>'s 600 s is
+	/// what this command wants, and restating it here would put a second copy of the number in the codebase
+	/// that a future retune of the shared default would silently skip. The other two callers override
+	/// because their situations differ — <c>CreatioInstallerService</c> allows 45 s for a freshly deployed
+	/// instance, <c>RestartCommand</c> passes the caller's own value — which is the convention: override
+	/// when you need something else, not to echo the default.
 	/// </para>
 	/// <para>
-	/// The cost of that generosity is not the CLI wait, which prints progress and can be interrupted: it is
+	/// Generous on purpose, and the size is load-bearing in one direction: a configuration build plus a
+	/// restart is the slowest thing this command triggers, and a false "not ready" would report a
+	/// SUCCESSFUL install as a failure. Every live run so far answered on the FIRST probe.
+	/// </para>
+	/// <para>
+	/// What the size costs is not the CLI wait, which prints progress per attempt and takes Ctrl+C: it is
 	/// that on the MCP path the configuration-build reservation is held for the whole detached run, so a
 	/// second install on the same environment is REFUSED for up to the full budget even once the target is
-	/// plainly hopeless. Shortening it would trade that for false failures on a slow-but-recovering
-	/// instance; anyone weighing a shorter value, or an operator-facing knob, should start from that trade
-	/// and from a measurement of how long such an instance actually takes — which nobody has made.
+	/// plainly hopeless. That is the trade a shorter value — or an operator-facing knob — would be buying,
+	/// and it needs a measurement of how long a slow-but-recovering instance actually takes, which nobody
+	/// has made. A knob would also cost the whole doc quartet plus an MCP parity decision; <c>RestartCommand</c>
+	/// carries one because waiting IS its job, whereas here the wait is incidental to an install whose
+	/// healthy case measured 45-78 s end to end.
 	/// </para>
 	/// </remarks>
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = _environmentSettings.Uri,
-			IsNetCore = _environmentSettings.IsNetCore,
-			Timeout = ReadinessTimeout
+			IsNetCore = _environmentSettings.IsNetCore
 		});
 
 	#endregion
