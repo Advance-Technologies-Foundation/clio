@@ -2492,22 +2492,26 @@ stories:
   # spec/prd/spec-deliver-process-builder-package.md carries the FRs/ACs, the ADR carries the decision,
   # and spec/deliver-process-builder-package/deliver-process-builder-package-plan.md carries the
   # experiment log, cost ledger and the four dead hypotheses. Same shape as story-mcp-resident-tool-flag-1.
-  # Status is in-progress rather than review: the work is complete on
-  # feature/ENG-94385-bundle-process-builder-package but no PR is open yet (the pre-PR review gate has
-  # not run). Flip to review when the PR opens.
+  # Status review as of 2026-08-06: the pre-PR review gate ran a full 3-lens fan-out over the complete
+  # diff against master (no Blocker; 3 High, all in the MCP wrapper, all fixed in e1681a38), the full unit
+  # suite is green, and both PRs are open — clio on feature/ENG-94385-bundle-process-builder-package and the
+  # package side at https://creatio.ghe.com/engineering/cli-process-builder/pull/18. The clio PR pins the
+  # archive produced from that branch by SHA-256, so the two land together.
+  # Test plan: spec/test-plans/tp-deliver-process-builder-package.md (written after implementation — it maps
+  # the delivered coverage and states the gaps rather than forecasting).
 
   - id: story-deliver-process-builder-package-1
     title: "Bundle the source-only CrtProcessBuilder archive into the clio distribution"
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
     fr: [FR-01, FR-02]
     ac: [AC-02]
-    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (187,531 bytes) committed with a csproj Content glob and *.gz marked binary; 4 archive-content tests pin the descriptor identity and the load-bearing compile-marker schema. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved."
+    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (188,446 bytes) committed with a csproj Content glob and *.gz marked binary; 8 guard tests pin the archive SHA-256, the descriptor identity (UId/name/version/ModifiedOnUtc side by side, so a hand edit that moves the version without the date fails here), the load-bearing compile-marker schema, the absence of any compiled assembly, the sources, the authorization gate inside the shipped code (operation AND connection-type halves), and the friend-assembly condition. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved."
     depends_on: []
     blocks:
       - story-deliver-process-builder-package-2
@@ -2517,7 +2521,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2534,7 +2538,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2551,7 +2555,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
