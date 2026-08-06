@@ -9,6 +9,13 @@ namespace Clio.Command;
 [Verb("create-entity-schema", HelpText = "Create an entity schema in a remote Creatio package")]
 public class CreateEntitySchemaOptions : RemoteCommandOptions
 {
+	/// <summary>
+	/// Parent schema applied when <c>--parent</c> is omitted (and the schema is not a replacement schema).
+	/// A parentless root schema gets a prefixed primary column (e.g. <c>UsrId</c> instead of <c>Id</c>) and is
+	/// unreachable over OData in both directions, so a missing parent defaults to this fully usable base (ENG-94424).
+	/// </summary>
+	public const string DefaultParentSchemaName = "BaseEntity";
+
 	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
 
@@ -61,6 +68,7 @@ public class CreateEntitySchemaCommand : Command<CreateEntitySchemaOptions>
 	{
 		try {
 			Validate(options);
+			NormalizeParentSchema(options);
 			_remoteEntitySchemaCreator.Create(options);
 			_logger.WriteInfo("Done");
 			return 0;
@@ -86,6 +94,19 @@ public class CreateEntitySchemaCommand : Command<CreateEntitySchemaOptions>
 		}
 		if (options.ExtendParent && string.IsNullOrWhiteSpace(options.ParentSchemaName)) {
 			throw new InvalidOperationException("--extend-parent requires --parent.");
+		}
+	}
+
+	/// <summary>
+	/// Defaults a root schema's parent to <see cref="CreateEntitySchemaOptions.DefaultParentSchemaName"/> when
+	/// <c>--parent</c> was omitted, mirroring the create-entity-schema MCP tool. Without a parent the created
+	/// schema gets a prefixed primary column (e.g. <c>UsrId</c>) and cannot be used over OData (ENG-94424).
+	/// An explicit parent and replacement schemas (<c>--extend-parent</c>) are left untouched.
+	/// </summary>
+	private static void NormalizeParentSchema(CreateEntitySchemaOptions options)
+	{
+		if (!options.ExtendParent && string.IsNullOrWhiteSpace(options.ParentSchemaName)) {
+			options.ParentSchemaName = CreateEntitySchemaOptions.DefaultParentSchemaName;
 		}
 	}
 }

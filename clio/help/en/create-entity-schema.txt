@@ -11,9 +11,10 @@ DESCRIPTION
     Creates an entity schema in an existing remote package using
     EntitySchemaDesignerService.
 
-    The command creates a draft schema on the server, optionally assigns a
-    parent schema, applies the requested name, title, and initial columns,
-    saves the result, applies the DB structure, and publishes the
+    The command creates a draft schema on the server, assigns a parent schema
+    (BaseEntity by default when --parent is omitted), applies the requested
+    name, title, and initial columns, saves the result, applies the DB
+    structure, and publishes the
     configuration so the new schema is immediately visible to lookup pickers
     and sys-setting reference schema lists. No separate compile is required.
     Publishing also requests an OData entities rebuild, so the schema becomes
@@ -49,7 +50,8 @@ OPTIONS
     --package              Target package name
     --name                 Entity schema name
     --title                Entity schema title/caption
-    --parent               Parent schema name
+    --parent               Parent schema name. Defaults to BaseEntity when
+                           omitted (not applied with --extend-parent)
     --extend-parent        Create a replacement schema. Requires --parent
     --is-virtual           Create a virtual entity schema without a physical
                            database table. Default: false
@@ -72,7 +74,7 @@ OPTIONS
     -p, --Password         User password
 
 EXAMPLES
-    # Create a bare entity schema
+    # Create a bare entity schema (inherits BaseEntity by default)
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle"
 
     # Create an entity schema with columns
@@ -102,6 +104,11 @@ EXAMPLES
 NOTES
     - The command works against a remote Creatio environment only
     - Package resolution requires cliogate to be installed on the target environment
+    - When --parent is omitted the schema inherits BaseEntity by default. A
+      parentless root schema gets a prefixed primary column (e.g. UsrId instead
+      of Id) and is not reachable over OData in either direction, so BaseEntity is
+      applied automatically. Pass --parent explicitly to inherit from a different
+      schema (--extend-parent still requires an explicit --parent)
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
     - A schema with a parent keeps the parent's primary column; custom Guid columns
       remain ordinary columns

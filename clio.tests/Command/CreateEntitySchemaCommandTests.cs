@@ -34,23 +34,75 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 	}
 
 	[Test]
+	[Description("Forwards valid options to the remote entity schema creator and reports success.")]
 	public void Execute_CallsRemoteCreator_WhenOptionsAreValid()
 	{
+		// Arrange
 		var options = new CreateEntitySchemaOptions {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			Title = "Vehicle"
 		};
 
+		// Act
 		var result = _command.Execute(options);
 
-		result.Should().Be(0);
+		// Assert
+		result.Should().Be(0,
+			because: "valid options should produce a successful create-entity-schema run");
 		_creator.Received(1).Create(options);
 	}
 
 	[Test]
+	[Description("Defaults the parent schema to BaseEntity when --parent is omitted so the created root schema keeps an Id primary column and is reachable over OData (ENG-94424).")]
+	public void Execute_DefaultsParentToBaseEntity_WhenParentOmitted()
+	{
+		// Arrange
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle"
+		};
+
+		// Act
+		var result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "creating a root schema with the defaulted parent should succeed");
+		options.ParentSchemaName.Should().Be(CreateEntitySchemaOptions.DefaultParentSchemaName,
+			because: "an omitted --parent must default to BaseEntity to avoid a parentless, OData-unusable schema");
+		_creator.Received(1).Create(options);
+	}
+
+	[Test]
+	[Description("Keeps an explicitly supplied --parent instead of overriding it with the BaseEntity default.")]
+	public void Execute_PreservesExplicitParent_WhenParentSupplied()
+	{
+		// Arrange
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			ParentSchemaName = "Contact"
+		};
+
+		// Act
+		var result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "creating a schema with an explicit parent should succeed");
+		options.ParentSchemaName.Should().Be("Contact",
+			because: "an explicitly supplied parent must not be replaced by the BaseEntity default");
+		_creator.Received(1).Create(options);
+	}
+
+	[Test]
+	[Description("Rejects --extend-parent without an explicit --parent and does not call the remote creator.")]
 	public void Execute_ReturnsFailure_WhenExtendParentIsUsedWithoutParent()
 	{
+		// Arrange
 		var options = new CreateEntitySchemaOptions {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
@@ -58,9 +110,12 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 			ExtendParent = true
 		};
 
+		// Act
 		var result = _command.Execute(options);
 
-		result.Should().Be(1);
+		// Assert
+		result.Should().Be(1,
+			because: "a replacement schema requires an explicit parent and must fail fast otherwise");
 		_creator.DidNotReceiveWithAnyArgs().Create(default);
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("--extend-parent requires --parent")));
 	}
