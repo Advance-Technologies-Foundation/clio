@@ -522,8 +522,8 @@ Known coupled contracts (repo `creatio-ai-app-development-toolkit`):
 
 | clio output DTO (tool) | Consuming skill reference to update |
 |---|---|
-| `MobilePageConversionGuide` (`get-mobile-page-conversion-guide`) | `skills/creatio-mobile-page-conversion/references/page-to-mobile-conversion.md` — the conversion plan, the step-8 report, and the `elementMap` drop notes |
+| `MobilePageConversionGuide` (`get-mobile-page-conversion-guide`) | `skills/creatio-mobile-page-conversion/references/page-to-mobile-conversion.md` — a cross-cutting field is surfaced in FOUR touch-points: the `elementMap` drop notes, the conversion plan, the step-8 report, and "Mobile constraints (carry into every step)" |
 
 When you touch `MobilePageConversionGuideModels.cs` (or any DTO listed above), open the referenced
-skill and update the plan + report sections so every new/changed field is surfaced to the user. Ship
+skill and update all four touch-points so every new/changed field is surfaced to the user. Ship
 the clio change and the skill change as a matched PR pair.
