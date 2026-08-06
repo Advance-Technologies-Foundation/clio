@@ -315,24 +315,16 @@ public sealed class WorkplacesGuidanceResource {
 		         replacement row with a new `Id` rather than patching the broken one.
 
 		       ## When changes appear
-		       Workplace, section, and edit-page lists are cached PER SESSION, so a signed-in user keeps seeing the old
-		       navigation and a browser refresh alone shows nothing. Do not claim a restart is required; it is not.
-		       Finish every navigation change by publishing it:
-		       - `reload-workplaces` (requires cliogate) invokes the platform's own workplace-cache reload — the same
-		         contract Creatio itself runs when a role membership changes. Call it as the LAST step, after the
-		         final write: run it earlier and the writes that follow are stale again. What is VERIFIED is that the
-		         call reaches that contract and succeeds; whether a given session then needs only F5 is the
-		         platform's behaviour, not something clio can guarantee, and the section and edit-page caches are
-		         separate from the workplace cache. So tell the user to refresh FIRST, and to re-login if the change
-		         still is not visible — do not state the refresh is sufficient as a fact.
-		       - If it fails or cliogate is not installed, say the change is applied but that F5 is not enough and
-		         users must log out and back in. Never promise a refresh you did not publish.
-		       Why this is needed even though the platform self-heals sometimes: Creatio invalidates those caches from
-		       an entity event listener on `SysUserInRole` / `SysAdminUnitInWorkplace` INSERT and DELETE only. So a
-		       role grant made through `odata-create` may publish itself, while creating a workplace, moving a section,
-		       or pointing `HomePageUId` at a home page invalidates nothing — and a row written by the binding tools
-		       goes straight through the database engine, which raises no entity events at all. Do not rely on the
-		       listener: ordering it correctly is fragile and it does not cover the section or home-page cases.
+		       Workplace, section, and edit-page lists are cached PER SESSION. A signed-in user keeps seeing the old
+		       navigation, and a browser refresh alone does NOT show the change. So the LAST step of every navigation
+		       change is to tell the user, in the result, to LOG OUT AND BACK IN. Do not report the change as done
+		       without that; do not tell them to press F5; and do not claim a restart is required, because it is not.
+		       Do not expect the platform to publish the change for you. Creatio invalidates those caches from an
+		       entity event listener on `SysUserInRole` / `SysAdminUnitInWorkplace` INSERT and DELETE only, so a role
+		       grant made through `odata-create` may publish itself while creating a workplace, moving a section, or
+		       pointing `HomePageUId` at a home page invalidates nothing — and a row written by the binding tools goes
+		       straight through the database engine, which raises no entity events at all. A re-login is the one
+		       instruction that covers every case.
 
 		       ## Verify
 		       Read back after every mutation with `odata-read` (filter junctions by `SysWorkplace/Id`); do not

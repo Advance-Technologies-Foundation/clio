@@ -85,10 +85,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="cfg"></a>
 <a id="reg"></a>
 - [`reg-web-app`](docs/commands/reg-web-app.md) - Register a Creatio environment, `cfg`, `reg`
-<a id="reload-workplaces"></a>
-<a id="reload-navigation"></a>
-<a id="rlwp"></a>
-- [`reload-workplaces`](docs/commands/reload-workplaces.md) - Publish navigation changes to signed-in users without a re-login, `reload-navigation`, `rlwp`
 <a id="set-dev-mode"></a>
 <a id="dev"></a>
 <a id="unlock"></a>

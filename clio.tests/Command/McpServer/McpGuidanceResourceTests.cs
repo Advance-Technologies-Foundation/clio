@@ -2551,17 +2551,12 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("`data-bindings` owns the projection rule",
 			because: "restating the rule here would let the two guides drift; the owner is asserted in the data-bindings test");
 
-		article.Text.Should().Contain("log out and back in",
-			because: "when the change cannot be published the agent must fall back to telling the user to re-login");
-		article.Text.Should().Contain("F5 is not enough",
-			because: "a refresh alone was verified insufficient, so the guide must not let the agent promise it unpublished");
-
-		article.Text.Should().Contain("`reload-workplaces`",
-			because: "the guide must name the tool that publishes the change instead of only prescribing a re-login");
-		article.Text.Should().Contain("Call it as the LAST step",
-			because: "publishing before the final write re-stales the cache, so the ordering is part of the rule");
-		article.Text.Should().Contain("Never promise a refresh you did not publish",
-			because: "the failure path must not degrade into an unverified claim that F5 suffices");
+		article.Text.Should().Contain("LOG OUT AND BACK IN",
+			because: "navigation caches are session-scoped, so the re-login instruction is the only thing that makes the change visible");
+		article.Text.Should().Contain("do not tell them to press F5",
+			because: "a refresh alone was verified insufficient, so the guide must not let the agent offer it as the fix");
+		article.Text.Should().Contain("Do not report the change as done",
+			because: "a navigation change the user cannot see yet is not done, and reporting it as done is the failure this rule prevents");
 		article.Text.Should().Contain("raises no entity events",
 			because: "the guide must explain why the platform's own listener cannot be relied on for binding-tool writes");
 
@@ -2600,8 +2595,8 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("create it and then update it",
 			because: "the only way to land a chosen position is the two-step, so the guide must say it");
 
-		article.Text.Should().Contain("do not state the refresh is sufficient as a fact",
-			because: "the section and edit-page caches are separate, and promising F5 for them was never measured");
+		article.Text.Should().Contain("A re-login is the one",
+			because: "the platform's listener covers only role-membership events, so re-login is the single instruction that works for every navigation change");
 
 		article.Text.Should().Contain("Do not \"fix\" the order",
 			because: "removing the binding after deleting the live row works, and a well-meant reorder would break the recipe");

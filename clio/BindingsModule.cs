@@ -706,7 +706,6 @@ public class BindingsModule {
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
-		services.AddTransient<ReloadWorkplacesCommand>();
 		services.AddTransient<ReadDataBindingDbCommand>();
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();

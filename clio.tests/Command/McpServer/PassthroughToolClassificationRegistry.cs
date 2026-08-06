@@ -329,7 +329,6 @@ internal static class PassthroughToolClassificationRegistry {
 			["read-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
-			["reload-workplaces"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["remove-package-dependency"] = PassthroughClassification.NotApplicable,
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
