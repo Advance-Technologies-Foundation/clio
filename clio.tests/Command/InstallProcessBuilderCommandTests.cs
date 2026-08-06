@@ -20,18 +20,10 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 	private const string ClioRoot = "clio-root";
 
-	/// <summary>A successful ListUserTasks envelope, as ProcessDesignService actually returns it.</summary>
-	private const string ServiceAnswersResponse =
-		"{\"ListUserTasksResult\":{\"errorMessage\":null,\"success\":true,"
-		+ "\"userTasks\":[{\"name\":\"ActivityUserTask\",\"uid\":\"b5c726f2-af5b-4381-bac6-913074144308\"}]}}";
-
-	private const string ListUserTasksUrl = "http://localhost/0/rest/ProcessDesignService/ListUserTasks";
-
 	private IPackageInstaller _packageInstaller;
 	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private IFileSystem _fileSystem;
-	private IApplicationClient _applicationClient;
-	private IServiceUrlBuilder _serviceUrlBuilder;
+	private IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private IServerReadinessWaiter _serverReadinessWaiter;
 	private ILogger _logger;
 	private InstallProcessBuilderCommand _command;
@@ -52,28 +44,27 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_packageInstaller = Substitute.For<IPackageInstaller>();
 		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		_fileSystem = Substitute.For<IFileSystem>();
-		_applicationClient = Substitute.For<IApplicationClient>();
-		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_outcomeVerifier = Substitute.For<IPackageInstallOutcomeVerifier>();
 		_serverReadinessWaiter = Substitute.For<IServerReadinessWaiter>();
 		_logger = Substitute.For<ILogger>();
 		_workingDirectoriesProvider.ExecutingDirectory.Returns(ClioRoot);
 		// Happy-path defaults, so each test only arranges the deviation it is actually about: the bundled
-		// artifact is present and the service answers after the install. Nothing is arranged about what the
-		// environment already carries — the command never asks, it always installs.
+		// artifact is present, the instance comes back, and the package is operational afterwards. Nothing is
+		// arranged about what the environment already carries — the command never asks, it always installs.
 		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
-		_serviceUrlBuilder
-			.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks)
-			.Returns(ListUserTasksUrl);
-		// One probe, one route: the outcome check is ListUserTasks and nothing else.
-		_applicationClient
-			.ExecutePostRequest(ListUserTasksUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ServiceAnswersResponse);
+		// HOW the outcome is established is the verifier's business and is tested in its own fixture; this
+		// fixture only cares that the command asks the question at the right moment and obeys the answer.
+		_outcomeVerifier
+			.IsPackageOperational(Arg.Any<string>(), out string _)
+			.Returns(call => {
+				call[1] = null;
+				return true;
+			});
 		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
 		containerBuilder.AddSingleton(_packageInstaller);
 		containerBuilder.AddSingleton(_workingDirectoriesProvider);
 		containerBuilder.AddSingleton(_fileSystem);
-		containerBuilder.AddSingleton(_applicationClient);
-		containerBuilder.AddSingleton(_serviceUrlBuilder);
+		containerBuilder.AddSingleton(_outcomeVerifier);
 		containerBuilder.AddSingleton(_serverReadinessWaiter);
 		containerBuilder.AddSingleton(_logger);
 	}
@@ -97,7 +88,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		EnvironmentSettings.IsNetCore = false;
 		_packageInstaller.ClearReceivedCalls();
 		_fileSystem.ClearReceivedCalls();
-		_applicationClient.ClearReceivedCalls();
+		_outcomeVerifier.ClearReceivedCalls();
 		_serverReadinessWaiter.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
@@ -126,13 +117,16 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			because: "the command should pass resolved environment settings to the package installer");
 		capturedEnvironmentSettings!.DeveloperModeEnabled.Should().BeFalse(
 			because: "installing must not unlock maintainer packages, whose unlock step routes through cliogate");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+		_outcomeVerifier.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstallOutcomeVerifier.IsPackageOperational))
 			.Should().Be(1,
-				because: "one probe, and only after the install: the package ships without an assembly, so the "
-					+ "service answering is the only proof the target compiled it. There is no pre-install "
-					+ "probe, because the command always installs");
-		_serviceUrlBuilder.Received().Build(ServiceUrlBuilder.KnownRoute.ListUserTasks);
+				because: "the question is asked once, and only after the install: the package ships without an "
+					+ "assembly, so nothing before the install can answer it. There is no pre-install check, "
+					+ "because the command always installs");
+		// NSubstitute's Received() takes no `because`; stated here: the verifier is package-agnostic, so the
+		// command must name the package whose outcome it is asking about.
+		_outcomeVerifier.Received().IsPackageOperational(
+			BundledPackages.ProcessBuilderPackageName, out string _);
 		_serverReadinessWaiter.Received(1).WaitForReady(Arg.Is<ServerReadinessOptions>(o =>
 			o.Uri == EnvironmentSettings.Uri && o.IsNetCore == EnvironmentSettings.IsNetCore));
 	}
@@ -156,13 +150,12 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(1, because: "an instance that never came back cannot be reported as a success");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+		_outcomeVerifier.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstallOutcomeVerifier.IsPackageOperational))
 			.Should().Be(0,
-				because: "the outcome probe must not run: "
-					+ "probing a restarting instance races the restart in both directions: it can fail while "
-					+ "the app warms up, and on an upgrade the outgoing app domain can answer with the OLD "
-					+ "assembly and produce a false pass");
+				because: "verification must not run against a restarting instance: it races the restart in both "
+					+ "directions — it can fail while the app warms up, and on an upgrade the outgoing app "
+					+ "domain can answer with the OLD assembly and produce a false pass");
 	}
 
 	[Test]
@@ -177,10 +170,14 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				reportPath: null,
 				createBackup: true)
 			.Returns(true);
-		// An IIS error page is exactly what an unbound route returns.
-		_applicationClient
-			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("<!DOCTYPE html><html><head><title>404 - Not Found</title></head></html>");
+		// Not operational, and the verifier has nothing more specific to say — the shape it reports when the
+		// service simply does not answer. HOW it reaches that verdict is its own fixture's business.
+		_outcomeVerifier
+			.IsPackageOperational(Arg.Any<string>(), out string _)
+			.Returns(call => {
+				call[1] = null;
+				return false;
+			});
 
 		// Act
 		int result = _command.Execute(new InstallProcessBuilderOptions());
@@ -199,16 +196,17 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			message.Contains("configuration build log")));
 		_logger.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
-			.Should().Be(2, because: "BOTH halves of the report belong at error level: the summary ('the "
-				+ "environment did not compile the package') and the cause the probe caught, which carries the "
-				+ "WebException status / HTTP code. The cause used to go out at info level, so an operator "
-				+ "filtering on errors saw that something failed and not why");
+			.Should().Be(1, because: "with no diagnosis from the verifier the command owns the whole report, so "
+				+ "there is exactly one error line. The second line — the cause, carrying the WebException "
+				+ "status / HTTP code — is written by the verifier and is asserted in its own fixture");
 	}
 
 	[Test]
-	[Description("Execute should fail when the service returns a well-formed envelope reporting failure.")]
-	public void Execute_ShouldFail_WhenServiceReportsUnsuccessfulEnvelope() {
+	[Description("Execute should report the verifier's own diagnosis instead of its generic build-failure message when the verifier supplies one.")]
+	public void Execute_ShouldReportTheVerifierDiagnosis_WhenTheVerifierSuppliesOne() {
 		// Arrange
+		const string diagnosisFromVerifier =
+			"CrtProcessBuilder was installed and ProcessDesignService is responding, but it rejected the check";
 		_packageInstaller
 			.Install(
 				Arg.Any<string>(),
@@ -217,16 +215,31 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				reportPath: null,
 				createBackup: true)
 			.Returns(true);
-		_applicationClient
-			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"ListUserTasksResult\":{\"errorMessage\":\"boom\",\"success\":false}}");
+		_outcomeVerifier
+			.IsPackageOperational(Arg.Any<string>(), out string _)
+			.Returns(call => {
+				call[1] = diagnosisFromVerifier;
+				return false;
+			});
 
 		// Act
 		int result = _command.Execute(new InstallProcessBuilderOptions());
 
 		// Assert
 		result.Should().Be(1,
-			because: "a parseable response is not the same as a working service; only success:true proves it");
+			because: "not operational is a failure however precisely it is explained — the command could not "
+				+ "establish that the package works, and reporting 0 would call an unusable environment ready");
+		// NSubstitute's Received() takes no `because`; stated here. The generic message sends the reader to the
+		// configuration build log, which is exactly wrong when the verifier already knows the build was fine and
+		// the failure is inside the running package (typically authorization). Preferring the diagnosis is the
+		// difference between a clean log the reader is told to inspect and the actual cause.
+		_logger.Received().WriteError(diagnosisFromVerifier);
+		_logger.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError)
+				&& (call.GetArguments()[0] as string)!.Contains("configuration build log"))
+			.Should().Be(0,
+				because: "the generic build-failure message must be SUPPRESSED, not appended, when a diagnosis "
+					+ "exists — two contradicting explanations are worse than the wrong one alone");
 	}
 
 	[Test]
@@ -296,12 +309,11 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(1, because: "a failed package installation should make the command fail");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+		_outcomeVerifier.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstallOutcomeVerifier.IsPackageOperational))
 			.Should().Be(0,
-				because: "there is nothing to verify once the "
-					+ "package never installed, and probing anyway would report the install failure as a "
-					+ "service failure");
+				because: "there is nothing to verify once the package never installed, and asking anyway would "
+					+ "report the install failure as a service failure");
 		_logger.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
 			.Should().Be(1, because: "a failed install should report an error");
@@ -337,11 +349,10 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		errors[0].Should().Contain("upload rejected",
 			because: "the readable message must come FIRST; push-pkg loses this information by printing the "
 				+ "bare stack, which is the behaviour this ordering exists to avoid");
-		_applicationClient.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+		_outcomeVerifier.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstallOutcomeVerifier.IsPackageOperational))
 			.Should().Be(0,
-				because: "a throwing install must not proceed "
-					+ "to the outcome check");
+				because: "a throwing install must not proceed to the outcome check");
 	}
 
 	[Test]

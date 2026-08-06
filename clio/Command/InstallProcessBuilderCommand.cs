@@ -53,11 +53,11 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions { }
 /// <b>The OUTCOME is verified, not the install call.</b> Because the assembly is produced by the target
 /// rather than shipped, "installed" and "working" are genuinely different states: accepting the archive and
 /// compiling it are separate events, and only the second yields something that can serve. So after the
-/// readiness wait this command calls <c>ProcessDesignService.ListUserTasks</c> and fails when the service
-/// does not answer. What that probe can and cannot prove — in particular that it cannot tell WHICH build
-/// answered — is documented on <see cref="DoesListUserTasksAnswer"/>. The Application Hub can recover a
-/// failed compile through its own <c>RestoreFromBackup</c> stage; this path has no such button, which is
-/// exactly why the check belongs here.
+/// readiness wait this command asks <see cref="IPackageInstallOutcomeVerifier"/> whether the package became
+/// operational, and fails when it did not. What today's verification can and cannot prove — in particular
+/// that it cannot tell WHICH build answered — is documented on that interface and its implementation. The
+/// Application Hub can recover a failed compile through its own <c>RestoreFromBackup</c> stage; this path has
+/// no such button, which is exactly why the check belongs here.
 /// </description></item>
 /// <item><description>
 /// <b>The bundled artifact's presence is checked first</b>, so a distribution that failed to carry it
@@ -76,8 +76,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	private readonly IPackageInstaller _packageInstaller;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly IFileSystem _fileSystem;
-	private readonly IApplicationClient _applicationClient;
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private readonly IServerReadinessWaiter _serverReadinessWaiter;
 	private readonly ILogger _logger;
 
@@ -92,8 +91,10 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// <param name="packageInstaller">Package installer used to install the bundled archive.</param>
 	/// <param name="workingDirectoriesProvider">Provider used to locate bundled clio assets.</param>
 	/// <param name="fileSystem">File system used to verify the bundled archive is present.</param>
-	/// <param name="applicationClient">Client used to prove the service answers after installation.</param>
-	/// <param name="serviceUrlBuilder">Builder for the <c>ProcessDesignService</c> route.</param>
+	/// <param name="outcomeVerifier">
+	/// Verifier that answers whether the package became operational after being accepted — the question the
+	/// install call itself cannot answer for a package the target has to compile.
+	/// </param>
 	/// <param name="serverReadinessWaiter">
 	/// Waiter used to let the platform's self-triggered restart finish before the service is probed.
 	/// </param>
@@ -103,24 +104,21 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		IPackageInstaller packageInstaller,
 		IWorkingDirectoriesProvider workingDirectoriesProvider,
 		IFileSystem fileSystem,
-		IApplicationClient applicationClient,
-		IServiceUrlBuilder serviceUrlBuilder,
+		IPackageInstallOutcomeVerifier outcomeVerifier,
 		IServerReadinessWaiter serverReadinessWaiter,
 		ILogger logger) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 		workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 		fileSystem.CheckArgumentNull(nameof(fileSystem));
-		applicationClient.CheckArgumentNull(nameof(applicationClient));
-		serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
+		outcomeVerifier.CheckArgumentNull(nameof(outcomeVerifier));
 		serverReadinessWaiter.CheckArgumentNull(nameof(serverReadinessWaiter));
 		logger.CheckArgumentNull(nameof(logger));
 		_environmentSettings = environmentSettings;
 		_packageInstaller = packageInstaller;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_fileSystem = fileSystem;
-		_applicationClient = applicationClient;
-		_serviceUrlBuilder = serviceUrlBuilder;
+		_outcomeVerifier = outcomeVerifier;
 		_serverReadinessWaiter = serverReadinessWaiter;
 		_logger = logger;
 	}
@@ -148,104 +146,10 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		return installEnvironmentSettings;
 	}
 
-	/// <summary>
-	/// Per-request budget for a service probe, in milliseconds.
-	/// </summary>
-	/// <remarks>
-	/// <see cref="IApplicationClient.ExecutePostRequest"/> defaults to <see cref="Timeout.Infinite"/>, which
-	/// is wrong for the one call that decides this command's exit code: an instance that accepts the
-	/// connection right after its restart but stalls behind the configuration-build lock would hang the CLI
-	/// with no output and no way out but Ctrl+C. Every probe in <see cref="IServerReadinessWaiter"/> is
-	/// bounded for exactly this reason; the final probe must not be the only unbounded call in the flow. A
-	/// serving <c>ListUserTasks</c> answers in well under a second — it reads a task catalogue, nothing more.
-	/// </remarks>
-	private const int ProbeTimeoutMs = 15_000;
-
-	/// <summary>
-	/// Attempts for the POST-install probe, retried because the readiness gate is weaker than the question.
-	/// </summary>
-	/// <remarks>
-	/// <c>WaitForReady</c> proves the host answers <c>/api/HealthCheck/Ping</c>, which a still-draining
-	/// worker or one whose configuration workspace has not finished loading can also do. A single probe
-	/// therefore risks reporting "the environment did not compile the package" about an environment that
-	/// answers correctly a few seconds later. Three attempts, because this probe alone decides the exit code.
-	/// </remarks>
-	private const int PostInstallProbeAttempts = 3;
-
-	/// <summary>Delay between post-install probe attempts, in seconds.</summary>
-	private const int PostInstallProbeDelaySec = 5;
-
 	private string GetPackagePath() => Path.Combine(
 		_workingDirectoriesProvider.ExecutingDirectory,
 		BundledPackages.ProcessBuilderPackageName,
 		BundledPackages.ProcessBuilderArchiveFileName);
-
-	/// <summary>
-	/// Proves that <c>ProcessDesignService</c> answers on the target after the install.
-	/// </summary>
-	/// <returns><c>true</c> only when the service returned a successful <c>ListUserTasks</c> envelope.</returns>
-	/// <remarks>
-	/// Weak in two ways worth naming. It cannot tell WHICH
-	/// build answered, so on an upgrade a still-serving old assembly passes it. And <c>ListUserTasks</c> is
-	/// gated on <c>CanManageProcessDesign</c> inside the package, which returns the guard's rejection as an
-	/// UNSUCCESSFUL envelope — so an installer who may deploy packages but was never granted process-design
-	/// rights would fail this check on a perfectly good install. The <c>errorMessage</c> branch below exists
-	/// to keep that from being reported as a build failure.
-	/// <para>
-	/// A per-package <c>GetVersion</c> operation answering "which build is serving" was tried and REVERTED:
-	/// it does not scale (every bundled package would have to re-implement it) and it duplicates two
-	/// mechanisms the platform already has — <c>SysPackage.Version</c> and the <c>ConfActivityLog</c>
-	/// Compilation record. The package-agnostic replacement belongs in clio, reading the platform's own
-	/// signals: the installation log clio already receives, and <c>ConfActivityLog</c>. Until that lands this
-	/// probe is the whole outcome check, and its weakness is stated above rather than hidden.
-	/// </para>
-	/// <para>
-	/// The response is parsed rather than pattern-matched, because the interesting failure is an HTML error
-	/// page from IIS when the route does not resolve — that fails <see cref="JsonDocument.Parse"/> and is
-	/// correctly reported as "not answering", whereas a substring search over it could accidentally match.
-	/// </para>
-	/// </remarks>
-	private bool DoesListUserTasksAnswer(out string diagnosis) {
-		diagnosis = null;
-		try {
-			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks);
-			string response = _applicationClient.ExecutePostRequest(
-				url, "{}", ProbeTimeoutMs, PostInstallProbeAttempts, PostInstallProbeDelaySec);
-			using JsonDocument document = JsonDocument.Parse(response);
-			if (!document.RootElement.TryGetProperty("ListUserTasksResult", out JsonElement result)) {
-				return false;
-			}
-			if (result.TryGetProperty("success", out JsonElement success)
-				&& success.ValueKind == JsonValueKind.True) {
-				return true;
-			}
-			// A PARSEABLE envelope saying success:false proves the assembly exists and is serving — the
-			// failure is INSIDE it, and errorMessage is the only field that says what. Discarding it and
-			// letting the caller print "the environment did not compile the package" sends the reader to a
-			// build log that is clean. The likeliest cause is authorization: the package returns the
-			// process-design guard's rejection this way, and installing a package does not grant
-			// CanManageProcessDesign.
-			if (result.TryGetProperty("errorMessage", out JsonElement message)
-				&& message.ValueKind == JsonValueKind.String
-				&& !string.IsNullOrWhiteSpace(message.GetString())) {
-				diagnosis =
-					$"{BundledPackages.ProcessBuilderPackageName} was installed and ProcessDesignService is " +
-					$"responding, but it rejected the check: {message.GetString()}. The package compiled — " +
-					"this is not a build failure, so re-installing will NOT help and only costs another " +
-					"configuration build. If the message is about permissions, note that ListUserTasks " +
-					"requires the CanManageProcessDesign operation and a General (non-portal) user, which " +
-					"installing a package does not grant — grant those, then verify with 'clio call-service " +
-					"--service-path rest/ProcessDesignService/ListUserTasks -m POST -b {} -e <environment>'.";
-			}
-			return false;
-		} catch (Exception e) {
-			// WriteError, not WriteInfo: this line carries the WebException status / HTTP code, i.e. the only
-			// statement of WHY the probe failed. The caller writes the summary at error level, so logging the
-			// cause below it hid the useful half from anyone filtering on errors.
-			_logger.WriteError($"ProcessDesignService did not answer: {e.GetReadableMessageException()}");
-			return false;
-		}
-	}
 
 	/// <summary>
 	/// Waits for the platform's own post-install restart to complete.
@@ -329,8 +233,9 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 				return 1;
 			}
 			// The install only proves the archive was accepted. The assembly is compiled BY THE TARGET, so
-			// the service answering is the only proof the code exists and is loaded.
-			if (!DoesListUserTasksAnswer(out string diagnosis)) {
+			// something has to establish that the code exists and is loaded — the question the verifier owns.
+			if (!_outcomeVerifier.IsPackageOperational(
+					BundledPackages.ProcessBuilderPackageName, out string diagnosis)) {
 				_logger.WriteError(diagnosis ??
 					$"{BundledPackages.ProcessBuilderPackageName} was installed, but ProcessDesignService " +
 					"does not answer, which means the environment did not compile the package. Check the " +

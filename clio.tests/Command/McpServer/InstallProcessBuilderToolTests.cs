@@ -233,8 +233,7 @@ public sealed class InstallProcessBuilderToolTests {
 				Substitute.For<IPackageInstaller>(),
 				Substitute.For<IWorkingDirectoriesProvider>(),
 				Substitute.For<IFileSystem>(),
-				Substitute.For<IApplicationClient>(),
-				Substitute.For<IServiceUrlBuilder>(),
+				Substitute.For<IPackageInstallOutcomeVerifier>(),
 				Substitute.For<IServerReadinessWaiter>(),
 				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;

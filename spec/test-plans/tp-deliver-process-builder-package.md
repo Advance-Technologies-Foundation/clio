@@ -43,9 +43,11 @@ The three, which every section below is organised around:
 - **Story 1** — the committed source-only archive: its identity (`UId`, name, version, `ModifiedOnUtc`),
   the load-bearing compile-marker schema, the absence of any compiled assembly, the presence of sources,
   the authorization gate inside the shipped code, and the friend-assembly condition.
-- **Story 2** — `InstallProcessBuilderCommand`: install → wait out the platform's own restart → probe
-  `ProcessDesignService`, and every failure branch of that sequence. Plus the MCP tool wrapper: argument
-  mapping, annotations, the response-deadline branch, and concurrency.
+- **Story 2** — `InstallProcessBuilderCommand`: install → wait out the platform's own restart → ask
+  `IPackageInstallOutcomeVerifier` whether the package became operational, and every failure branch of that
+  sequence. The verifier's own answer shapes are covered separately, because the interface is named for the
+  question and its implementation is the part the recorded follow-up replaces. Plus the MCP tool wrapper:
+  argument mapping, annotations, the response-deadline branch, and concurrency.
 - **Story 3** — the `[RequiresPackage]` floor on the five process-designer surfaces, and the two absences
   that keep the remediation reachable.
 - **Story 4** — the curated MCP contract, the shipped tool description, and the stand-free MCP E2E path.
@@ -109,8 +111,8 @@ This fixture is the only reviewability the artifact has: it is hand-produced in 
 | ID | Test | Asserts |
 |----|------|---------|
 | TC-U-01 | `Execute_ShouldInstallPackageAndVerifyTheServiceAnswers` | the happy path is install → readiness → probe, in that order |
-| TC-U-02 | `Execute_ShouldFail_WhenPackageInstallsButServiceDoesNotAnswer` | exit 1 plus BOTH report halves at error level — the summary and the cause carrying the HTTP status |
-| TC-U-03 | `Execute_ShouldFail_WhenServiceReportsUnsuccessfulEnvelope` | an authorization rejection is reported as itself, not as a build failure |
+| TC-U-02 | `Execute_ShouldFail_WhenPackageInstallsButServiceDoesNotAnswer` | exit 1 when the verifier reports the package not operational and has nothing more specific to say |
+| TC-U-03 | `Execute_ShouldReportTheVerifierDiagnosis_WhenTheVerifierSuppliesOne` | the verifier's diagnosis SUPPRESSES the command's generic build-failure message rather than being appended — the generic text sends the reader to a build log that is clean when the failure is an authorization rejection inside a package that built fine |
 | TC-U-04 | `Execute_ShouldFailWithoutProbing_WhenInstanceDoesNotBecomeReady` | no probe before the instance answers its health check — probing sooner can be answered by the outgoing app domain |
 | TC-U-05 | `Execute_ShouldFailWithoutInstalling_WhenBundledArchiveIsMissing` | a broken distribution says so, and says retrying will not help |
 | TC-U-06 | `Execute_ShouldReturnFailureAndSkipServiceCheck_WhenPackageInstallFails` | no probe after a failed install |
@@ -129,6 +131,24 @@ This fixture is the only reviewability the artifact has: it is hand-produced in 
 | TC-U-15 | `InstallProcessBuilder_Should_Refuse_When_ConfigurationBuild_AlreadyInFlight` | a duplicate is refused with exit 1, and the command is never resolved |
 | TC-U-17 | `InstallProcessBuilderOptions_Should_Not_Be_FeatureGated` | a gated options type disappears from the verb parse array |
 | TC-U-18 | `InstallProcessBuilderTool_Should_Not_Be_FeatureGated` | a gated primitive is filtered out of MCP registration — a different attribute read by a different surface, hence a separate test |
+
+### Story 2 — the outcome verifier (`clio.tests/Package/ProcessDesignServiceOutcomeVerifierTests.cs`)
+
+`IPackageInstallOutcomeVerifier` owns the question "did the package become operational after being
+accepted", and is named for that question rather than for today's mechanism, because the recorded follow-up
+replaces the mechanism (installation log + `ConfActivityLog`) and must not have to change the interface. The
+command fixture above asserts only that the question is asked at the right moment and obeyed; every answer
+shape is pinned here.
+
+| ID | Test | Asserts |
+|----|------|---------|
+| TC-U-30 | `IsPackageOperational_ShouldReturnTrue_WhenServiceReturnsSuccessfulEnvelope` | only positive evidence yields true, and it carries no diagnosis |
+| TC-U-31 | `IsPackageOperational_ShouldReturnFalseAndLogTheCause_WhenRouteReturnsHtml` | an HTML error page from an unbound route — the exact shape of "installed but never compiled" — fails CLOSED, and the cause is logged at error level |
+| TC-U-32 | `IsPackageOperational_ShouldReturnFalseWithDiagnosis_WhenEnvelopeReportsFailure` | a parseable `success:false` proves the opposite of a build failure, so the service's own message becomes the diagnosis, names the package it was asked about, and says a re-install cannot help |
+| TC-U-33 | `IsPackageOperational_ShouldReturnFalse_WhenEnvelopeIsMissing` | valid JSON from the wrong responder (proxy, login redirect) is not evidence |
+| TC-U-34 | `IsPackageOperational_ShouldReturnFalse_WhenTheCallThrows` | an unreachable service is a verdict, not an escaping exception |
+| TC-U-35 | `IsPackageOperational_ShouldBoundTheProbe_AndRetryIt` | the call is bounded and retried — `ExecutePostRequest` defaults to `Timeout.Infinite`, and the readiness wait the caller performs is weaker than this question |
+| TC-U-36 | `Constructor_ShouldRejectNullCollaborators` | a misconfigured graph fails at construction, not mid-install |
 
 ### Story 3 — the gate (`clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs`)
 
@@ -203,4 +223,5 @@ Hub and `clio push-pkg`:
 4. **Which build answered.** No test can close this; the probe cannot distinguish, by design, after the
    per-package `GetVersion` operation was reverted. A package-agnostic outcome check reading the
    installation log plus `ConfActivityLog` is the recorded follow-up, and it would serve every bundled
-   package rather than this one.
+   package rather than this one. The seam it lands in now exists: `IPackageInstallOutcomeVerifier` is named
+   for the question, so that replacement swaps the implementation and the cases above keep their meaning.

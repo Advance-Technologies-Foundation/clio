@@ -174,7 +174,11 @@ first, propose the install second.
   side. Not an open question — a documented constraint.
 - **Whether a failed configuration build is reported at all is unverified**, and a package-agnostic outcome
   check in clio (installation log + `ConfActivityLog`) is the follow-up that would replace the current
-  `ListUserTasks` probe for every bundled package, not just this one.
+  `ListUserTasks` probe for every bundled package, not just this one. **The seam that replacement lands in
+  now exists**: `IPackageInstallOutcomeVerifier` is named for the question ("did the package become
+  operational after being accepted?") rather than for how it is answered today, and
+  `ProcessDesignServiceOutcomeVerifier` is named for the mechanism. So the follow-up swaps an
+  implementation instead of changing the command, and the command's tests keep their meaning.
 - **A version-based skip is viable and deliberately unbuilt.** The original argument for "always install" had
   two halves; only one survives. What survives: asking the SERVICE cannot answer the question, because
   `ListUserTasks` proves something answers, not which build — so it would report "nothing to do" for an
