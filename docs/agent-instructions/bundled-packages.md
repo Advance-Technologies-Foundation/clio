@@ -193,8 +193,15 @@ when it does not answer.
   serving every bundled package: the installation log clio already receives, plus the `ConfActivityLog`
   `Compilation` record (a normal entity schema readable through DataService, carrying `Operation`, `Status`,
   `PackageName`, `CreatedOn`). They are complements: "did the target build it" and "can this caller use it"
-  are different questions. Note `install-gate` verifies NEITHER today — it reports success on the archive
-  being accepted — while cliogate already exposes `GetApiVersion`, which answers the which-build half for it.
+  are different questions.
+- **This is NOT a gap in `install-gate`, and copying it there would be symmetry for its own sake.**
+  `install-gate` verifies neither half — it returns success once the archive is accepted, without even waiting
+  for the restart it triggers — and that has been fine for years, because cliogate ships a PREBUILT assembly:
+  there is no target-side compile to fail, so the state this verification exists to catch cannot arise. The
+  feedback loop that covers the remaining case already works: `Program.CheckApiVersion` runs on essentially
+  every environment-touching command and tells the user to run `install-gate` when the gate is absent. Adding
+  a readiness wait to a command every user runs would turn some currently-passing installs into failures for
+  a hypothetical benefit.
 
 ## See also
 
