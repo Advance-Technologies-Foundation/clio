@@ -109,4 +109,59 @@ public sealed class PageGetCommandExcludeOwnBodyTests {
 		response.Bundle.ViewModelConfig.ToJsonString().Should().Contain("BaseAttr").And.Contain("OwnAttr",
 			because: "the normal read still returns the full merged config");
 	}
+
+	[Test]
+	[Description("For a single-entry chain (the editable schema has no ancestors), ExcludeOwnBody yields an EMPTY base — it does NOT fall back to the own body. An empty base correctly fails a replace-mode insert into an array that existed only in the discarded own body.")]
+	public void TryGetPage_ExcludeOwnBody_SingleEntryChain_BaseIsEmptyNotOwnBody() {
+		// Arrange — the hierarchy has ONLY the editable schema (uid-1, pkg-1) whose own body (a root merge that
+		// stands alone) establishes attributes.BaseAttr / modelConfig.baseKey. Excluding it leaves nothing.
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>()).Returns([
+			new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = SchemaName, PackageUId = "pkg-1", PackageName = "UsrPkg", SchemaVersion = 1, Body = ParentBody
+			}
+		]);
+		PageGetCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
+			hierarchyClient, new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		PageGetOptions options = new() { SchemaName = SchemaName, Environment = "dev", ExcludeOwnBody = true };
+
+		// Act
+		bool ok = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the page reads successfully");
+		response.BaseViewModelConfig!.ToJsonString().Should().NotContain("BaseAttr",
+			because: "excluding the only schema in the chain must NOT re-include its own body; the base is empty");
+		response.BaseModelConfig!.ToJsonString().Should().NotContain("baseKey",
+			because: "the empty base carries none of the editable schema's own body");
+		response.Bundle.ViewModelConfig.ToJsonString().Should().Contain("BaseAttr",
+			because: "the full bundle still reflects the single schema's own body");
+	}
+
+	[Test]
+	[Description("BaseViewModelConfig / BaseModelConfig are internal validation channels — [JsonIgnore] on BOTH Newtonsoft and System.Text.Json — and must never leak into the get-page wire payload through either serializer.")]
+	public void PageGetResponse_BaseConfigFields_NeverSerialize() {
+		// Arrange — a response with both base fields populated with distinctive marker content.
+		var response = new PageGetResponse {
+			Success = true,
+			BaseViewModelConfig = new System.Text.Json.Nodes.JsonObject { ["BaseVmcMarker"] = "vmc" },
+			BaseModelConfig = new System.Text.Json.Nodes.JsonObject { ["BaseMcMarker"] = "mc" }
+		};
+
+		// Act
+		string systemTextJson = System.Text.Json.JsonSerializer.Serialize(response);
+		string newtonsoft = Newtonsoft.Json.JsonConvert.SerializeObject(response);
+
+		// Assert
+		foreach (string payload in new[] { systemTextJson, newtonsoft }) {
+			payload.Should().NotContain("BaseViewModelConfig")
+				.And.NotContain("BaseModelConfig")
+				.And.NotContain("BaseVmcMarker")
+				.And.NotContain("BaseMcMarker",
+				because: "the base-config fields are [JsonIgnore] on both serializers and must never reach the wire payload");
+		}
+	}
 }

@@ -1023,7 +1023,12 @@ public static class WebToMobileAnalysisService {
 					DiffArray(pageArr, baseArr, path, kv.Key, arrayInserts, arrayConflicts);
 					break;
 				case JsonObject pageChild when baseVal is JsonObject baseChild:
-					recurse.Add((pageChild, baseChild, kv.Key, insideCollection || IsCollectionNode(baseChild)));
+					// A node is a template-owned collection when EITHER side marks it: the merged template base, or
+					// the page's own converted body (isCollection). Consulting only the base would miss a page-marked
+					// collection whose base node lacks the flag, re-emitting its scalars and clobbering the
+					// mobile-correct template value at runtime — the ENG-89620 dual-signal safeguard.
+					recurse.Add((pageChild, baseChild, kv.Key,
+						insideCollection || IsCollectionNode(baseChild) || IsCollectionNode(pageChild)));
 					break;
 				case JsonObject:
 				case JsonArray:
@@ -1034,8 +1039,15 @@ public static class WebToMobileAnalysisService {
 					// Scalar (or JSON null): emit a new key always, but a CHANGED key only outside a
 					// template-owned collection (see the method remarks -- a changed collection scalar is
 					// template-owned and re-emitting the web value would clobber the mobile-correct one).
-					if (baseVal is null || (!insideCollection && !JsonNode.DeepEquals(baseVal, kv.Value))) {
+					bool changedScalar = baseVal is not null && !JsonNode.DeepEquals(baseVal, kv.Value);
+					if (baseVal is null || (!insideCollection && changedScalar)) {
 						mergeValues[kv.Key] = kv.Value?.DeepClone();
+					} else if (insideCollection && changedScalar) {
+						// The change is dropped (template config wins) — but surface it as a conflict rather than
+						// silently, so it flows through dataSectionArrayConflicts -> guide.Constraints exactly like
+						// DiffArray's named-element conflict. The code cannot tell template plumbing from authored
+						// content at this position, so the caller/developer is told the drop happened.
+						arrayConflicts.Add(ArrayConflictLabel(path, kv.Key, "changed scalar dropped: template-owned collection config"));
 					}
 					break;
 			}

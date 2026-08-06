@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Theming;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
@@ -15,8 +17,9 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end coverage for the build-theme MCP tool. build-theme is pure compute over the bundled template,
-/// so the real clio MCP server can build a theme without a live Creatio environment.
+/// End-to-end coverage for the build-theme MCP tool. It builds over the bundled template without a live
+/// Creatio environment; a custom font additionally triggers a Google Fonts availability check, which fails
+/// soft to an advisory warning when the catalogue is unreachable.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -70,6 +73,8 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
 		contract.Description.Should().Contain("get-guidance theming",
 			because: "the contract routes agents to the theme workflow guidance");
+		contract.Description.Should().Contain("checked against Google Fonts",
+			because: "the branding skill gates itself on this phrase in the get-tool-contract PROJECTION — the unit assertion on the [Description] attribute would stay green if build-theme ever gained a curated ToolContractCatalog entry that dropped it, silently telling users on a correct clio that their clio predates the feature");
 		callResult.IsError.Should().NotBeTrue(
 			because: "build-theme returns a structured result instead of a top-level MCP failure");
 		result.Success.Should().BeTrue(
@@ -125,5 +130,115 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 			because: "workspace-write mode writes theme.css into the package theme directory");
 		File.Exists(Path.Combine(themeDir, "theme.json")).Should().BeTrue(
 			because: "workspace-write mode writes theme.json alongside theme.css");
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("build-theme rejects an unknown argument through the real JSON binding")]
+	[Description("Starts the real clio MCP server and invokes build-theme with an argument the tool does not advertise; verifies the real JSON binding routes it into the overflow bag and the tool returns a structured failure naming it, instead of silently ignoring it. Uses local-font-families as the example because it is the argument this slice removed — it never shipped, so no migration hint is owed and the generic unknown-argument guard is the whole contract.")]
+	public async Task BuildTheme_Should_RejectUnknownArgument() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = "MyTheme",
+					["heading-font"] = "Verdana",
+					["local-font-families"] = new[] { "Verdana" }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unadvertised argument must fail loudly instead of vanishing into the overflow bag");
+		result.Error.Should().Contain("local-font-families",
+			because: "the failure names the argument it rejected so the caller can correct the call");
+		result.Error.Should().Contain("heading-font",
+			because: "the failure lists the arguments that ARE valid, which is what lets a caller self-correct");
+	}
+}
+
+/// <summary>
+/// The one build-theme e2e case that needs outbound access to fonts.google.com. It lives in its own
+/// fixture, and deliberately carries NEITHER <c>McpE2E.NoEnvironment</c> nor <c>McpE2E.Sandbox</c>:
+/// per-method categories are additive on top of the fixture tag, so a live-network test left in the
+/// environment-free tier would still be selected by the blocking pre-merge sweep, whose acceptance gate is
+/// <c>Total == Passed</c> AND <c>Skipped == 0</c> — an egress-blocked runner would fail that gate on a skip.
+/// Exclude it with <c>dotnet test --filter "TestCategory!=McpE2E.LiveGoogleFonts"</c>.
+/// The deterministic InCatalog / NotInCatalog / Unverified matrix lives in the unit suite
+/// (<c>GoogleFontsCatalogTests</c>, <c>BuildThemeCommandTests</c>); the MCP server runs out of process here,
+/// so its <c>IGoogleFontsCatalog</c> cannot be substituted from the test.
+/// </summary>
+[TestFixture]
+[Category(LiveGoogleFontsE2ETests.LiveGoogleFontsCategory)]
+[AllureNUnit]
+[AllureSuite("MCP e2e")]
+[AllureFeature("build-theme")]
+public sealed class LiveGoogleFontsE2ETests : McpContractFixtureBase {
+
+	internal const string LiveGoogleFontsCategory = "McpE2E.LiveGoogleFonts";
+
+	private const string ToolName = "build-theme";
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("build-theme suppresses the Google Fonts import for a family the live catalogue does not publish")]
+	[Description("Live smoke test of the whole probe path: starts the real clio MCP server and invokes build-theme with a family Google Fonts does not host (Verdana); the server probes the live catalogue, applies the family through the --crt-font-family-heading token WITHOUT an @import, and reports the suppression in a warning. The server runs out of process, so its IGoogleFontsCatalog cannot be substituted from here — the deterministic InCatalog/NotInCatalog/Unverified matrix lives in the unit suite (GoogleFontsCatalogTests, BuildThemeCommandTests). Carries its own category so a runner without egress can exclude it, and skips rather than fails when the endpoint is unreachable: the production design fails open, so a blocked runner would otherwise report an infrastructure problem as a suppression regression.")]
+	public async Task BuildTheme_Should_OmitImportAndWarn_ForFamilyNotInGoogleFonts() {
+		// Arrange
+		await SkipUnlessGoogleFontsIsReachableAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = "MyTheme",
+					["heading-font"] = "Verdana",
+					["body-font"] = "Verdana"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a family outside Google Fonts is advisory, not an error");
+		result.Success.Should().BeTrue(
+			because: "build-theme builds normally and decides the import from its own availability probe");
+		result.Css.Should().NotContain("@import",
+			because: "the live catalogue answers 404 for Verdana, so the import is suppressed — css2 would serve a look-alike substitute that shadows the locally installed font");
+		result.Css.Should().Contain("--crt-font-family-heading: 'Verdana', sans-serif;",
+			because: "the family is still applied through the token so the theme actually restyles");
+		result.Warnings.Should().Contain(w => w.Contains("was not found in Google Fonts"),
+			because: "the suppression is disclosed post factum through the warnings channel");
+	}
+
+	private static async Task SkipUnlessGoogleFontsIsReachableAsync() {
+		using HttpClientHandler handler = new() { UseCookies = false, AllowAutoRedirect = false };
+		using HttpClient probeClient = new(handler) { Timeout = GoogleFontsCatalog.ProbeTimeout };
+		probeClient.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+		try {
+			using HttpResponseMessage response = await probeClient.GetAsync(
+				"https://fonts.google.com/metadata/fonts/Roboto", HttpCompletionOption.ResponseHeadersRead);
+			string mediaType = response.Content?.Headers?.ContentType?.MediaType;
+			if (!response.IsSuccessStatusCode
+				|| mediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) {
+				Assert.Ignore(
+					$"fonts.google.com answered {(int)response.StatusCode} ({mediaType ?? "no content type"}); "
+					+ "the server's probe would degrade to Unverified, so the suppression path cannot be exercised.");
+			}
+		}
+		catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) {
+			Assert.Ignore($"fonts.google.com is unreachable ({exception.GetType().Name}); the live probe path cannot be exercised.");
+		}
 	}
 }

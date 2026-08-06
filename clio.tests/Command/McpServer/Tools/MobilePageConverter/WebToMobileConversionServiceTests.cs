@@ -904,6 +904,36 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A changed scalar dropped inside a template-owned collection is NOT silent: it is recorded as a conflict (which flows to guide.Constraints) rather than vanishing, mirroring DiffArray's named-element conflict.")]
+	public void BuildTargetedDiff_ChangedScalarInCollection_RecordedAsConflict() {
+		// Arrange: modelConfig.path differs inside a template-owned collection (isCollection marked on the base).
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "MobileDS" } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the changed template-owned collection scalar is still dropped from the emitted diff");
+		conflicts.Should().Contain(c => c.Contains("path") && c.Contains("changed scalar dropped"),
+			because: "the drop is surfaced as a conflict instead of silently doing nothing (the array case already does this)");
+	}
+
+	[Test]
+	[Description("The collection safeguard is DUAL-SIGNAL: a subtree the PAGE marks isCollection (the base does NOT) still drops a changed scalar rather than re-emitting the web value — the ENG-89620 clobber guard, which a base-only check would miss.")]
+	public void BuildTargetedDiff_PageMarkedCollection_DropsChangedScalar() {
+		// Arrange: the base node is NOT marked isCollection, but the page's own converted body marks it; path differs.
+		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
+		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "path": "MobileDS" } } } }""");
+		// Act
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		// Assert
+		diff.ToJsonString().Should().NotContain("WebDS",
+			because: "the page-side isCollection marker must trigger the collection-scalar drop even when the base node is unmarked, so the mobile-correct value is not clobbered");
+		conflicts.Should().Contain(c => c.Contains("path"),
+			because: "the dropped page-marked collection scalar is surfaced as a conflict");
+	}
+
+	[Test]
 	[Description("A named array element present in the base but with different content is a change no diff op can express -- it is reported as a conflict (not silently dropped) and no operation is emitted for it.")]
 	public void BuildTargetedDiff_ChangedNamedArrayElement_FlaggedNotDropped() {
 		// Arrange: filterAttributes has QuickFilterGroup_Filters in both, but loadOnChange differs.
