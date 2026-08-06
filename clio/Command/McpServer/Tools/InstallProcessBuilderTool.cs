@@ -81,9 +81,15 @@ public sealed class InstallProcessBuilderTool(
 	             this takes longer than a plain package install (roughly 15-75 seconds depending on the
 	             environment). You never restart anything yourself, though a restart does happen - the platform
 	             recycles itself on .NET Framework, the installer issues it on .NET - and the tool waits for the
-	             instance to come back before judging it. It then verifies the OUTCOME rather than the install
+	             instance to come back before judging it. It then checks the OUTCOME rather than the install
 	             call: it queries ListUserTasks and fails if ProcessDesignService does not answer, so
 	             "installed but never compiled" is reported instead of looking like success.
+
+	             How much that proves depends on the case, so do not over-read a success. On a FIRST install it
+	             is conclusive: nothing served before, so an answer can only come from a fresh build. On an
+	             UPGRADE it is not: if the new sources fail to compile, the previously built assembly keeps
+	             serving and answers this check, so success means "the service works", not "your new version is
+	             the one running".
 
 	             It always installs - there is no skip, and re-running is safe (it costs one configuration build
 	             on the target). Take the refusal itself as the signal to call this tool rather than comparing

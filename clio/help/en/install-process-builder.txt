@@ -45,6 +45,15 @@ DESCRIPTION
     environment that accepted the package but never compiled it is reported
     instead of looking like a success.
 
+    How much a success proves depends on the case:
+      - FIRST install - conclusive. Nothing served before, and Creatio
+        registers service routes by reflecting over LOADED types, so with no
+        compiled assembly there is no route to answer at all.
+      - UPGRADE - not conclusive. A failed configuration build leaves the
+        previously built assembly loaded and serving, and it answers this
+        check, so success means the service works, not that the new sources
+        compiled.
+
     The command ALWAYS installs - there is no skip. Re-running is safe; it costs
     one configuration build on the target.
 

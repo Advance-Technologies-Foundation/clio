@@ -56,7 +56,9 @@ check before judging the result. (ADR: Consequences, mitigation 3.)
 **FR-07 — Outcome verification.** After a successful install the command calls `ListUserTasks` and fails when
 `ProcessDesignService` does not answer, so an environment that accepted the package but never compiled it is
 reported instead of looking like success. Fails CLOSED. One weakness is stated in the code: it cannot tell
-WHICH build answered. That it needs `CanManageProcessDesign` is a PROPERTY, not a weakness — the check answers
+WHICH build answered — so a pass is conclusive on a FIRST install (no assembly means no route to answer at
+all) and inconclusive on an UPGRADE (the previously built assembly answers), which is half the reasons to run
+it. That it needs `CanManageProcessDesign` is a PROPERTY, not a weakness — the check answers
 "is the capability usable", so a caller without the right must be told it failed; the `errorMessage` branch
 explains the rejection and says a re-install cannot fix it. A per-package `GetVersion` endpoint that
 answered "which build is serving" was built and reverted (see ADR): it does not scale to the next bundled

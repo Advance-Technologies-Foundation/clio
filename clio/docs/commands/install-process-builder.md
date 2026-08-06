@@ -51,6 +51,18 @@ working are different states. After a successful install the command calls
 environment that accepted the package but never compiled it is reported instead of
 looking like a success.
 
+How much a success proves depends on the case, and the difference is worth knowing:
+
+| Case | What a passing check establishes |
+|---|---|
+| First install | **The package installed and compiled.** Nothing served before, so an answer can only come from a fresh build |
+| Upgrade | Only that the service answers and you may call it. A failed configuration build leaves the previously built assembly loaded and serving, and it answers this check — so the new sources may never have compiled |
+
+Route registration is what makes the first row hold: Creatio discovers services by
+reflecting over loaded types (`CustomServicesParser`), so with no compiled assembly
+there is no `ProcessDesignService` type and no route. The same mechanism is why the
+second row does not hold — on an upgrade the previous assembly is already loaded.
+
 The command **always installs** — there is no skip. Re-running is safe; it costs one
 configuration build on the target.
 

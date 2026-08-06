@@ -108,7 +108,18 @@ silent failure:
    when `ProcessDesignService` does not answer. This check fails CLOSED.
 
    Its ONE weakness is stated in the code rather than hidden: it cannot tell WHICH build answered (on an
-   upgrade whose build failed, the last successfully built assembly answers).
+   upgrade whose build failed, the last successfully built assembly answers). What a pass proves therefore
+   splits by case, and the split follows from how routes are registered — `CustomServicesParser` reflects over
+   LOADED types, so a service exists only if its assembly does:
+
+   - **First install — conclusive.** Nothing served before, so an answer can only come from a build that
+     succeeded: a failed build produces no assembly, hence no `ProcessDesignService` type and no route.
+   - **Upgrade — not conclusive.** The previous assembly is already loaded and answers, so the check passes
+     whether or not the new sources compiled.
+
+   That matters more than it sounds, because the refusal that sends callers here has two causes — the package
+   is ABSENT (first install) or OLDER than the floor (upgrade) — so roughly half the reasons to run the
+   command land in the case the check cannot decide.
 
    Its dependence on `CanManageProcessDesign` is NOT a weakness, though it was first written up as one. The
    question this check answers is "is the capability usable", not "did the archive install", so a caller
