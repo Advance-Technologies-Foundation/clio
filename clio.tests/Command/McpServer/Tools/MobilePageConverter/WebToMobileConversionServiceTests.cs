@@ -3197,6 +3197,34 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The rule's own note is surfaced into the report section verbatim, so the explanation of a standard lives once — in the rules file, which is resolved at runtime — instead of being restated in compiled prose that can drift from it.")]
+	public void Analyze_MetricStyleNormalization_ShouldSurfaceTheRulesOwnNote() {
+		// Arrange
+		PageBundleInfo bundle = MetricBundle();
+		var rules = new WebToMobilePageConversionRules {
+			ComponentPropertyOverrides = [
+				new ComponentPropertyOverrideRule {
+					Type = "crt.IndicatorWidget",
+					ReportGroup = "metricStyle",
+					MergeNestedObjects = true,
+					Note = "why this standard exists, straight from the rules file",
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "config": { "text": { "fontSizeMode": "extra-small" } } }""")
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
+
+		// Assert
+		guide.MetricStyleNormalization!.RuleNotes.Should().BeEquivalentTo(
+			["why this standard exists, straight from the rules file"],
+			because: "the rules file is the single source of truth for WHY a standard applies — compiled "
+				+ "prose restating it would drift the moment a CDN-served rules file changes");
+	}
+
+	[Test]
 	[Description("Two rules for the same mobile type silently LAST-WIN — one rule per type is a real limit of the pass, so it is pinned rather than left to be discovered by a rules-file author.")]
 	public void Analyze_ComponentPropertyOverrides_ShouldLastWin_WhenTwoRulesShareAType() {
 		// Arrange

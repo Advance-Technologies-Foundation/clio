@@ -228,7 +228,7 @@ public static class WebToMobileAnalysisService {
 		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
 		// merge twins the mobile template provides are never touched.
-		// The same pass also stamps the mobile-standard metric style (extra-small text, hidden border) onto
+		// The same pass also stamps the mobile-standard metric style declared by the rules file onto
 		// every inserted crt.IndicatorWidget: the web widget's own font size and border are IGNORED, not
 		// translated. Each rule declares which guide section it reports into, so the two standards never
 		// bleed into each other's summary.
@@ -314,13 +314,33 @@ public static class WebToMobileAnalysisService {
 						+ "assume a fixed set). Silent normalization, not a gate decision: report it as ONE "
 						+ "aggregated line and never restore the web values. Anything under `skipped` was NOT "
 						+ "normalized and keeps the web style — call those out separately.",
+					RuleNotes = componentPropertyOverrides.MetricStyleRuleNotes.Count > 0
+						? componentPropertyOverrides.MetricStyleRuleNotes
+						: null,
 					Normalized = metricStyleNormalization,
 					Skipped = metricStyleSkips.Count > 0 ? metricStyleSkips : null
 				}
 				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, emptyRemovedNames.Count > 0, componentPropertyOverrides),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, componentPropertyOverrides),
+			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
+			// mis-wires the moment a parameter is inserted rather than appended.
+			Constraints = BuildConstraints(webOnly,
+				hasModelConfig: modelConfig is not null,
+				hasViewModelConfig: viewModelConfig is not null,
+				hasAdaptiveLayout: adaptiveLayout.Count > 0,
+				templatePruned: templatePruned,
+				viewModelConfigRootMerge: viewModelConfigRootMerge,
+				modelConfigRootMerge: modelConfigRootMerge,
+				mobileTemplateUnavailable: mobileTemplateUnavailable,
+				dataSectionArrayConflicts: dataSectionArrayConflicts,
+				hasTabAreaLayers: tabAreaLayers.Count > 0,
+				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
+				normalization: componentPropertyOverrides),
+			NextSteps = BuildNextSteps(
+				hasDataSections: modelConfig is not null || viewModelConfig is not null,
+				hasAdaptiveLayout: adaptiveLayout.Count > 0,
+				hasTabAreaLayers: tabAreaLayers.Count > 0,
+				normalization: componentPropertyOverrides),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -2798,7 +2818,7 @@ public static class WebToMobileAnalysisService {
 			// so a caller can tell "nothing to normalize" from "could not normalize".
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
 				result.Add(ParseReportGroup(rule.ReportGroup), entry.MobileName, entry.MobileType,
-					properties, skippedPaths);
+					properties, skippedPaths, rule.Note);
 			}
 		}
 		return result;
@@ -2915,11 +2935,17 @@ public static class WebToMobileAnalysisService {
 		/// <summary>Inserted containers whose spacing was normalized (gap Medium).</summary>
 		public List<SpacingNormalizationEntry> Spacing { get; } = [];
 
-		/// <summary>Inserted metrics whose style was normalized (extra-small text, hidden border).</summary>
+		/// <summary>Inserted metrics whose style was normalized to the rules-declared standard.</summary>
 		public List<MetricStyleNormalizationEntry> MetricStyle { get; } = [];
 
 		/// <summary>Metrics a merging rule could not fully normalize, with the branches it refused.</summary>
 		public List<MetricStyleNormalizationSkip> MetricStyleSkips { get; } = [];
+
+		/// <summary>
+		/// The contributing rules' OWN notes, verbatim from the rules file and de-duplicated. Surfacing them
+		/// keeps the per-rule explanation in one place — the data — instead of restating it in C#.
+		/// </summary>
+		public List<string> MetricStyleRuleNotes { get; } = [];
 
 		/// <summary>
 		/// Records one element under the group its rule declared: the properties actually stamped, and any
@@ -2927,8 +2953,11 @@ public static class WebToMobileAnalysisService {
 		/// its key — so skips are tracked for the metric section alone today.
 		/// </summary>
 		public void Add(ComponentPropertyOverrideReportGroup group, string name, string type,
-			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
+			IReadOnlyList<string> properties, IReadOnlyList<string> skipped, string ruleNote) {
 			if (group == ComponentPropertyOverrideReportGroup.MetricStyle) {
+				if (!string.IsNullOrWhiteSpace(ruleNote) && !MetricStyleRuleNotes.Contains(ruleNote)) {
+					MetricStyleRuleNotes.Add(ruleNote);
+				}
 				if (properties.Count > 0) {
 					MetricStyle.Add(new MetricStyleNormalizationEntry {
 						Name = name, Type = type, Properties = properties

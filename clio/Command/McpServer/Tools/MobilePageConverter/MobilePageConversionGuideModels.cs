@@ -806,6 +806,15 @@ public sealed class MetricStyleNormalizationInfo {
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 
+	/// <summary>
+	/// The conversion rules' own explanation of this standard, verbatim from the rules file. Present when
+	/// the contributing rule carries a note. This is the authoritative WHY — the rules file is resolved at
+	/// runtime, so prefer it over any wording compiled into the guidance article.
+	/// </summary>
+	[JsonPropertyName("ruleNotes")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> RuleNotes { get; init; }
+
 	/// <summary>One entry per normalized inserted metric.</summary>
 	[JsonPropertyName("normalized")]
 	public IReadOnlyList<MetricStyleNormalizationEntry> Normalized { get; init; } = [];
