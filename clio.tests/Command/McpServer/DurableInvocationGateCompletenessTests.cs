@@ -109,6 +109,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-themes",
 		"list-user-tasks",
 		"odata-read",
+		// Reads SysPackageSchemaData and the bound rows; writes nothing.
+		"read-data-binding-db",
 		"read-entity-business-rules",
 		"read-page-business-rules",
 		"resolve-oauth-system-user",

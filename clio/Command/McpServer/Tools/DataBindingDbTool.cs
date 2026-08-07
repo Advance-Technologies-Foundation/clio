@@ -73,7 +73,7 @@ public class RemoveDataBindingRowDbTool(
 
 	[McpServerTool(Name = RemoveDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when no bound rows remain.")]
+	[Description("DELETES THE LIVE RECORD by primary-key value, not just its binding, then drops the package schema data record when no bound rows remain. No confirm argument and no undo, so get the user's agreement first. To stop shipping a value without destroying the row, upsert the binding instead.")]
 	public CommandExecutionResult RemoveDataBindingRowDb(
 		[Description("Parameters: environment-name, package-name, binding-name, key-value (all required)")]
 		[Required]
@@ -87,6 +87,61 @@ public class RemoveDataBindingRowDbTool(
 		return InternalExecute<RemoveDataBindingRowDbCommand>(options);
 	}
 }
+
+/// <summary>
+///     MCP surface for <see cref="ReadDataBindingDbCommand" />: reports which columns a DB-first binding ships.
+/// </summary>
+public class ReadDataBindingDbTool(
+	ReadDataBindingDbCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<ReadDataBindingDbOptions>(command, logger, commandResolver) {
+
+	internal const string ReadDataBindingDbToolName = "read-data-binding-db";
+
+	/// <summary>
+	///     Reads a binding's shipped column set from the environment.
+	/// </summary>
+	[McpServerTool(Name = ReadDataBindingDbToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description(
+		"Reports what a DB-first package data binding ships: entity schema, row count, the bound column set, and "
+		+ "each row's values. Only the columns a binding was created with transfer, so check this rather than the "
+		+ "live record. Localizable columns appear inline here but in a Localization folder in a package export. "
+		+ "Prints bound values — treat a binding over a settings or credential schema as sensitive output.")]
+	public CommandExecutionResult ReadDataBindingDb(
+		[Description("Parameters: environment-name, package-name, binding-name (all required)")]
+		[Required]
+		ReadDataBindingDbArgs args){
+		ReadDataBindingDbOptions options = new() {
+			Environment = args.EnvironmentName,
+			PackageName = args.PackageName,
+			BindingName = args.BindingName
+		};
+		return InternalExecute<ReadDataBindingDbCommand>(options);
+	}
+
+}
+
+/// <summary>
+///     Arguments for the <c>read-data-binding-db</c> MCP tool.
+/// </summary>
+public sealed record ReadDataBindingDbArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Target package name on the remote environment")]
+	[property: Required]
+	string PackageName,
+
+	[property: JsonPropertyName("binding-name")]
+	[property: Description("Binding folder name, i.e. the SysPackageSchemaData.Name")]
+	[property: Required]
+	string BindingName
+);
 
 /// <summary>
 /// Arguments for the <c>create-data-binding-db</c> MCP tool.
