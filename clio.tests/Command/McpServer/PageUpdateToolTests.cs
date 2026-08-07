@@ -170,4 +170,41 @@ public sealed class PageUpdateToolTests {
 		ReceivedChartValidationVersion().Should().Be("8.3.4",
 			because: "the write path and the version probe must resolve the SAME registered environment identically to the pre-change baseline");
 	}
+
+	[Test]
+	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> templateBaseContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
+	public async Task UpdatePage_ThreadsMode_IntoGetPageExcludeOwnBody() {
+		// A mobile body whose viewModelConfigDiff needs an external base, so the oracle resolves it (invokes get-page).
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+
+		async Task<bool> CaptureExcludeOwnBodyForModeAsync(string mode) {
+			EnvironmentOptions captured = null;
+			IApplicationClient getClient = Substitute.For<IApplicationClient>();
+			getClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+				.Returns("""{"success":true,"rows":[]}""");
+			PageGetCommand getCommand = new(getClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+				Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+				new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+				Substitute.For<IPageFileWriter>());
+			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
+
+			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, "dev", null, null, null, SkipSampling: true, Mode: mode);
+			await _tool.UpdatePage(args, null);
+
+			captured.Should().BeOfType<PageGetOptions>(
+				because: "update-page must resolve the mobile base via get-page for a body that needs one");
+			return ((PageGetOptions)captured).ExcludeOwnBody;
+		}
+
+		// Act / Assert
+		(await CaptureExcludeOwnBodyForModeAsync("replace")).Should().BeTrue(
+			because: "replace mode overwrites the own body, so the base must exclude it");
+		(await CaptureExcludeOwnBodyForModeAsync(null)).Should().BeTrue(
+			because: "a null mode defaults to replace, so the base must still exclude the own body");
+		(await CaptureExcludeOwnBodyForModeAsync("append")).Should().BeFalse(
+			because: "append mode keeps the current own body, so the base must NOT exclude it");
+	}
 }

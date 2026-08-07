@@ -1,7 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Common.Telemetry;
 using CommandLine;
 
@@ -13,11 +15,20 @@ public class McpServerCommandOptions : BaseCommandOptions
 { }
 
 
+/// <summary>
+/// Starts Clio's standard-input/output MCP host.
+/// </summary>
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITelemetryFlushScheduler flushScheduler,
 	ISessionContainerCache sessionContainerCache,
-	ITenantExecutionLockProvider tenantExecutionLockProvider) : Command<McpServerCommandOptions>{
+	ITenantExecutionLockProvider tenantExecutionLockProvider,
+	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
+	ILogger logger) : Command<McpServerCommandOptions>{
+	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
+		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
+
 	public override int Execute(McpServerCommandOptions options) {
+		BootstrapCuratedKnowledge(curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
 		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
@@ -72,6 +83,38 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Reports one non-fatal curated knowledge bootstrap phase.
+	/// </summary>
+	/// <param name="result">The phase result to report.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>The bootstrap result.</returns>
+	internal static CuratedKnowledgeBootstrapResult ReportCuratedKnowledgeBootstrap(
+		CuratedKnowledgeBootstrapResult result,
+		ILogger logger) {
+		if (result.Success) {
+			logger.WriteDebug(result.Message);
+		} else {
+			logger.WriteWarning(
+				$"MCP is starting without built-in curated knowledge: {result.Message} "
+				+ $"Retry with install-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}.");
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Repairs and installs the curated source before the MCP transport starts accepting requests.
+	/// </summary>
+	/// <param name="bootstrapService">The curated knowledge bootstrap service.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>The non-fatal bootstrap result.</returns>
+	internal static CuratedKnowledgeBootstrapResult BootstrapCuratedKnowledge(
+		ICuratedKnowledgeBootstrapService bootstrapService,
+		ILogger logger) {
+		using CancellationTokenSource startupBudget = new(CuratedKnowledgeBootstrapTimeout);
+		return ReportCuratedKnowledgeBootstrap(bootstrapService.Bootstrap(startupBudget.Token), logger);
 	}
 
 	/// <summary>

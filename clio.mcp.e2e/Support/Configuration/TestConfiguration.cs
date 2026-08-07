@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal static class TestConfiguration {
+	private static string? _sharedClioHome;
+
 	public static McpE2ESettings Load() {
 		IConfigurationRoot configuration = new ConfigurationBuilder()
 			.SetBasePath(TestContext.CurrentContext.TestDirectory)
@@ -25,9 +27,19 @@ internal static class TestConfiguration {
 		if (!settings.ProcessEnvironmentVariables.ContainsKey("CLIO_NO_UPDATE_CHECK")) {
 			settings.ProcessEnvironmentVariables["CLIO_NO_UPDATE_CHECK"] = "true";
 		}
+		if (!string.IsNullOrWhiteSpace(_sharedClioHome)) {
+			settings.ProcessEnvironmentVariables["CLIO_HOME"] = _sharedClioHome;
+		}
 
 		return settings;
 	}
+
+	internal static void UseSharedClioHome(string clioHome) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(clioHome);
+		_sharedClioHome = Path.GetFullPath(clioHome);
+	}
+
+	internal static void ClearSharedClioHome() => _sharedClioHome = null;
 
 	public static void EnsureSandboxIsConfigured(McpE2ESettings settings) {
 		settings.Sandbox.EnvironmentName.Should().NotBeNullOrWhiteSpace(
