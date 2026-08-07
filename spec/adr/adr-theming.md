@@ -151,8 +151,28 @@ instance), taking **inline `cssContent` only** (no file variant). They fall thro
   `ListThemesCommand.TryGetAvailableThemes` pattern) and returns a **structured `CreateThemeResult
   { success, id, error? }`** so the agent learns the generated id. `update`/`delete` use the standard log
   envelope (`CommandExecutionResult`) — the id is caller-supplied.
-- Safety flags (`OpenWorld=false` on all): create `false/false/false`; update `false/false/true`; delete
-  `false/**true**/false`. Auto-discovered via `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
+- Safety flags (`ReadOnly/Destructive/Idempotent`): create `false/false/false`; update `false/false/true`;
+  delete `false/**true**/false`. `OpenWorld` was `false` on all three; _amended (ENG-93989)_ —
+  `create-theme` is `OpenWorld=true` because its brand mode reaches Google Fonts through the shared build
+  engine (see the amendment below); `update`/`delete` stay `false`. Auto-discovered via
+  `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
+
+_Amended (ENG-93989, 2026-07-30):_ the `create-theme` **MCP tool** gains a **brand mode** alongside
+inline `cssContent`: the caller passes the brand inputs (`primary` plus optional
+secondary/accent/success/error, fonts, font weights, and an optional template `version`) and the tool
+builds the CSS server-side in the same call by composing the shared
+`BuildThemeCommand.TryBuildTheme(options, resolvedSettings, …)` overload — exactly one of the two CSS
+sources per call. Rationale: in the no-code flow the theme CSS no longer crosses the model boundary in
+either direction (the C-D1 token-cost concern, extended to create), and output identity with
+`build-theme` is guaranteed given the same font-availability probe outcomes — a probe verdict can
+suppress a web-font `@import` (ENG-93985), so identity holds per verdict set — because both surfaces
+share `TryBuildTheme` + `ThemeParameterValidator` — no second engine. This is **MCP-only, with no CLI parity** — the precedent is `advise-theme-palette`
+(an MCP surface with no CLI verb); the CLI already covers the non-inline need via `--css-content-file`.
+Deliberately **not** added: a `css-content-file` argument on this MCP tool — it would knot a
+three-way XOR (`css-content` × file × brand inputs); do not add it without revisiting this amendment
+(a separate tool if the need ever materializes). The create call stays non-idempotent (B-D3's
+no-pre-check decision stands), so the theming guidance now instructs agents to pass an explicit `id`
+as an idempotency key and to confirm with `list-themes` before retrying after a transport timeout.
 
 **B-D6 — Guidance edit.** Flip the "No-code / server flow" section in `ThemingGuidanceResource` from "not
 yet available" to available; add a body section covering create/update/delete; keep the shared sections
@@ -187,7 +207,9 @@ the `@creatio/theming` npm package. A new `Clio.Theming` namespace holds the por
 math; a `build-theme` CLI verb + MCP tool expose it; the template ships bundled in-tool.
 
 **C-D1 — `build-theme` is a compute tool with an optional local-write mode — NOT combined with create.**
-Flags `ReadOnly=false, Destructive=false, Idempotent=true, OpenWorld=false`. Two modes:
+Flags `ReadOnly=false, Destructive=false, Idempotent=true`. `OpenWorld` was `false`; _amended
+(ENG-93985)_ — it is `true` now that each custom font family is checked against Google Fonts over the
+network (see `adr-ENG-93985-google-fonts-availability.md`). Two modes:
 - **Compute mode** (CLI stdout / MCP default) — returns the `theme.css` string + descriptor + warnings.
 - **Workspace-write mode** — CLI takes `--output`; the **MCP tool takes `workspaceDirectory` (absolute) +
   `packageName`** and resolves `<ws>/packages/<pkg>/Files/themes/<cssClassName>/` itself, writing

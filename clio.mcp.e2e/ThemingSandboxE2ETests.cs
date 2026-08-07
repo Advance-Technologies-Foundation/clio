@@ -17,11 +17,13 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Sandbox-tier end-to-end coverage for the theming server flow: the live behavior of
 /// check-theming-access, create-theme, list-themes, update-theme, delete-theme, and clear-themes-cache
-/// against the configured sandbox Creatio environment. Theme mutations require the
-/// <c>CanCustomizeBranding</c> license and the <c>CanManageThemes</c> operation on the stand, so the
-/// mutating tests probe check-theming-access first and ignore themselves (rather than fail) on a stand
-/// without theming access. The hermetic contract assertions for the same tools live in the per-tool
-/// NoEnvironment fixtures.
+/// against the configured sandbox Creatio environment — in both CSS-source modes of create-theme:
+/// inline <c>css-content</c> (the CRUD lifecycle test, which doubles as the pre-ENG-93989
+/// backward-compatibility proof) and the brand mode (palette hexes + fonts, CSS built server-side in the
+/// same call). Theme mutations require the <c>CanCustomizeBranding</c> license and the
+/// <c>CanManageThemes</c> operation on the stand, so the mutating tests probe check-theming-access first
+/// and ignore themselves (rather than fail) on a stand without theming access. The hermetic contract
+/// assertions for the same tools live in the per-tool NoEnvironment fixtures.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
@@ -117,7 +119,7 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CreateThemeTool.ToolName)]
 	[AllureName("theme CRUD lifecycle: create, list, update, delete on the sandbox environment")]
-	[Description("Runs the full no-code theme lifecycle against the configured sandbox environment: create-theme with an explicit id, list-themes sees it, update-theme overwrites the caption, list-themes sees the new caption, delete-theme removes it, and list-themes no longer returns it. Ignored when the stand lacks theming access.")]
+	[Description("Runs the full no-code theme lifecycle against the configured sandbox environment: create-theme with an explicit id, list-themes sees it, update-theme overwrites the caption, list-themes sees the new caption, delete-theme removes it, and list-themes no longer returns it. Both mutations pass INLINE css-content only, so this test is also the live backward-compatibility proof that create-theme's pre-brand-mode call shape keeps working unchanged (ENG-93989). Ignored when the stand lacks theming access.")]
 	public async Task ThemeTools_Should_Complete_Crud_Lifecycle_When_Theming_Access_Is_Granted() {
 		// Arrange
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
@@ -242,6 +244,103 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		// The throwaway theme (and any residual profile selection, had a phase above failed mid-flow) is removed
 		// by the guarded teardown (CleanupSandboxStateAsync): it resets the user's theme before deleting the
 		// theme, so the profile never references a deleted theme.
+	}
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("brand-mode create-theme builds the CSS server-side, lists the theme, and applies it to the current user")]
+	[AllureDescription("Runs the brand-mode no-code flow (ENG-93989) against the configured sandbox environment through the real MCP server: create-theme is called with palette hexes, fonts, and a caption — NO css-content, the CSS is built server-side in the same call — and must succeed; list-themes then shows the created id/caption/cssClassName; set-user-theme applies the theme to the current user (succeeding only after the command's read-back verification). The throwaway theme and the profile mutation are undone by the guarded teardown. Ignored when the stand lacks theming access.")]
+	public async Task CreateTheme_Should_CreateListAndApplyTheme_WhenBrandModeSupplied() {
+		// Arrange
+		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await EnsureThemingAccessAsync(context, environmentName);
+		string themeId = $"e2e-brand-theme-{Guid.NewGuid():N}";
+		const string caption = "Clio MCP E2E brand";
+		string cssClassName = themeId;
+		_environmentNameForCleanup = environmentName;
+
+		await AllureApi.Step("Create the theme from brand inputs only (no css-content)", async () => {
+			CreateThemeResult created = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+				await CallToolAsync(context, CreateThemeTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["id"] = themeId,
+					["caption"] = caption,
+					["css-class-name"] = cssClassName,
+					["primary"] = "#004fd6",
+					["secondary"] = "#0d2e4e",
+					["accent"] = "#e8552b",
+					["heading-font"] = "Poppins",
+					["body-font"] = "Poppins",
+					["font-weights"] = new[] { 400, 600 }
+				}));
+			created.Success.Should().BeTrue(
+				because: $"a stand with theming access must accept the brand-mode creation — the CSS is built server-side in the same call (error: {created.Error})");
+			created.Id.Should().Be(themeId,
+				because: "the tool must echo the explicitly supplied theme id in the brand mode too");
+			_createdThemeId = themeId;
+		});
+
+		await AllureApi.Step("list-themes shows the brand-built theme with its id, caption, and CSS class name", async () => {
+			ListThemesResult catalog = await ListThemesAsync(context, environmentName);
+			catalog.Themes.Should().Contain(
+				theme => theme.Id == themeId && theme.Caption == caption && theme.CssClassName == cssClassName,
+				because: "the brand-built theme must be visible in the live catalog under the supplied id, caption, and CSS class name");
+		});
+
+		await AllureApi.Step("Apply the brand-built theme to the current user by id and verify the read-back", async () => {
+			// Mark the profile mutated BEFORE the call so the guarded teardown resets it even if the apply
+			// (or a later phase) fails after the write committed.
+			_userThemeMutatedForCleanup = true;
+			SetUserThemeResult applied = await SetUserThemeAsync(context, environmentName,
+				new Dictionary<string, object?> { ["theme"] = themeId });
+			applied.Success.Should().BeTrue(
+				because: $"applying the brand-built theme to the current user must succeed once the read-back verifies it (error: {applied.Error})");
+			applied.Id.Should().Be(themeId,
+				because: "the tool must report the theme id it wrote to the profile");
+		});
+
+		// The guarded teardown (CleanupSandboxStateAsync) resets the user's theme BEFORE deleting the
+		// throwaway theme, so the profile never references a deleted theme.
+	}
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("a blind same-id create retry leaves exactly one theme in the catalog")]
+	[AllureDescription("Pins the server-side invariant the theming guidance's retry protocol rests on (ENG-93989): create-theme is non-idempotent by design (ADR B-D3), so the guidance tells agents to pass an explicit id and confirm with list-themes before retrying after a transport timeout. This test performs the blind retry that protocol warns against — a second create-theme call with the SAME explicit id and arguments, in brand mode — and asserts the live catalog holds exactly ONE theme under that id afterwards. The second call's verdict is logged, not asserted: the pinned invariant is no-duplication, not the server's rejection shape. Ignored when the stand lacks theming access.")]
+	public async Task CreateTheme_ShouldNotCreateDuplicate_WhenSameIdIsRetried() {
+		// Arrange
+		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await EnsureThemingAccessAsync(context, environmentName);
+		string themeId = $"e2e-retry-theme-{Guid.NewGuid():N}";
+		_environmentNameForCleanup = environmentName;
+		Dictionary<string, object?> createArgs = new() {
+			["environment-name"] = environmentName,
+			["id"] = themeId,
+			["caption"] = "Clio MCP E2E retry",
+			["css-class-name"] = themeId,
+			["primary"] = "#004fd6"
+		};
+
+		// Act / Assert — the first create must succeed
+		CreateThemeResult first = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+			await CallToolAsync(context, CreateThemeTool.ToolName, createArgs));
+		first.Success.Should().BeTrue(
+			because: $"a stand with theming access must accept the first brand-mode creation (error: {first.Error})");
+		_createdThemeId = themeId;
+
+		// Act — the blind same-id retry the guidance tells agents not to make without a list-themes check
+		CreateThemeResult retried = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+			await CallToolAsync(context, CreateThemeTool.ToolName, createArgs));
+		TestContext.Out.WriteLine(
+			$"same-id retry verdict: success={retried.Success}, error={retried.Error ?? "<none>"}");
+
+		// Assert — the no-duplication invariant
+		ListThemesResult catalog = await ListThemesAsync(context, environmentName);
+		catalog.Themes.Should().ContainSingle(theme => theme.Id == themeId,
+			because: "a same-id retry must never leave two catalog entries under one id — the explicit-id retry "
+				+ "protocol in the theming guidance depends on this invariant");
 	}
 
 	[Test]

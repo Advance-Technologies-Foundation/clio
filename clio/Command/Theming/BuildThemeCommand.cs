@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -301,8 +302,9 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <summary>
 	/// Like <see cref="TryBuildTheme(BuildThemeOptions, out string, out string, out IReadOnlyList{string}, out string)"/>
 	/// but resolves the platform version from a caller-supplied <paramref name="resolvedSettings"/> instead of
-	/// resolving <c>--environment-name</c> by name against the settings repository. Used only by the
-	/// <c>build-theme</c> MCP tool, which resolves settings itself via
+	/// resolving <c>--environment-name</c> by name against the settings repository. Used by the
+	/// <c>build-theme</c> MCP tool, and composed by the <c>create-theme</c> MCP tool's brand mode to build the
+	/// CSS server-side in the same call; each tool resolves settings itself via
 	/// <see cref="Clio.Command.McpServer.Tools.IToolCommandResolver"/> so the version probe reaches the correct
 	/// (possibly header-derived, credential-passthrough) tenant; the CLI never calls this overload and its
 	/// by-name <see cref="ResolveVersion(BuildThemeOptions)"/> path stays unchanged.
@@ -513,6 +515,21 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			TaskScheduler.Default).GetAwaiter().GetResult();
 	}
 
+	/// <summary>
+	/// Collects the non-fatal build advisories. These travel verbatim onto the <c>create-theme</c> MCP result,
+	/// which is the one string channel there that is NOT passed through
+	/// <see cref="Clio.Command.McpServer.SensitiveErrorTextRedactor"/> — the error channel beside it is. Every advisory
+	/// added here must therefore be static text or a locally computed value: never an environment setting, a
+	/// path, a URI, or unvalidated caller input. The only caller-supplied text any advisory interpolates today
+	/// is a font family name, which is safe solely because <see cref="Clio.Theming.FontFamilyName.Validate"/>
+	/// has already rejected anything outside its letters/digits/spaces/hyphens grammar in
+	/// <see cref="ResolveFontAvailability"/> — an advisory must never interpolate input that has not passed an
+	/// equivalent gate. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
+	/// contract (including the font advisories), and the guard below runs the redactor over every advisory in
+	/// every build configuration: a violating advisory — existing or added later — fails fast in Debug/test
+	/// runs and ships only in its redacted form in Release, so a violation cannot leak raw text on the
+	/// strength of the doc alone.
+	/// </summary>
 	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {
 		List<string> warnings = [];
@@ -522,6 +539,17 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		AddGoogleFontsAvailabilityWarnings(fontAvailability, warnings);
 		if (string.IsNullOrEmpty(options.Accent)) {
 			AddAutoAccentWarning(options, warnings);
+		}
+		for (int i = 0; i < warnings.Count; i++) {
+			string redacted = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(warnings[i]);
+			if (string.Equals(redacted, warnings[i], StringComparison.Ordinal)) {
+				continue;
+			}
+			Debug.Fail("A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
+				"unredacted onto the create-theme MCP result by contract (see this method's doc): they must be " +
+				"static or locally computed text, and caller input may be interpolated only after a validation " +
+				"gate equivalent to FontFamilyName.Validate.");
+			warnings[i] = redacted;
 		}
 		return warnings;
 	}

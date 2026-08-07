@@ -183,6 +183,14 @@ enabled") rather than silently honored:
   be resolved, the result carries a non-fatal `warnings` entry naming the environment and the
   newest-version fallback (the resolution catch is scoped to `EnvironmentResolutionException`, so
   an unexpected fault surfaces as a real error rather than a silent newest-version build).
+  The same version-resolution probe also runs server-side inside `create-theme` brand mode (it
+  composes the build into its single call; an explicit `version` argument skips the probe): the
+  probe resolves through the same per-request resolver as the create call itself, so the build and
+  the theme write always target the same tenant. `create-theme` hard-requires `environment-name`,
+  however, so it rejects a passthrough request before any probe runs — a missing
+  `environment-name` fails the tool's own validation, and a supplied one trips the uniform
+  explicit-environment rejection above; the header-tenant probe behaviour applies to `build-theme`
+  only.
 
 **Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
 alternative (register the target environment and use the stdio path, or a non-passthrough
@@ -696,14 +704,23 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline, and `build-theme` needs no environment but does reach fonts.google.com for a short bounded availability probe per custom font family (it still works without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline; `build-theme` needs no environment, and both it and `create-theme` in brand mode reach fonts.google.com for a short bounded availability probe per custom font family, because brand mode drives the same build engine (both still work without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
   Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment. Each custom font family is checked against Google Fonts: one the catalogue does not publish gets NO `@import` plus a warning (it then renders only where installed locally), and an unverifiable probe keeps the import plus a warning — so the emitted CSS can vary with probe outcomes, which the warnings always disclose.
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
-  Create a theme on the environment from inline `css-content` plus a caption.
+  Create a theme on the environment from inline `css-content` plus a caption, or — brand mode — from brand colours and fonts (`primary`, plus optional secondary/accent/success/error, fonts, and font weights), with the CSS built server-side in the same call so it never enters the agent context. Exactly one of the two CSS sources per call. Brand mode runs the same Google Fonts availability probe as `build-theme`, with the same suppression and warning outcomes, so on that path the tool reaches fonts.google.com as well as the addressed tenant; the inline `css-content` path stays tenant-only.
+  Stable error codes travelling in the `error` message, on top of the version-gate codes above:
+  `theme-css-source-conflict` (both CSS sources supplied), `theme-css-source-missing` (neither supplied),
+  `theme-brand-primary-missing` (brand parameters without `primary`, which is what enables the brand mode),
+  and `theme-build-failed: <engine message>` (the server-side build rejected the brand inputs or the build
+  phase faulted — raised before any HTTP write, so nothing was created). Non-fatal build advisories travel in
+  `warnings` on both the success and the failure paths. `error` is redacted before it leaves the tool;
+  `warnings` are deliberately not redacted — every advisory is static or locally computed text by contract
+  (a font advisory carries only a family name the build has already validated against the font-family
+  grammar), pinned by the `CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite` tests.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`

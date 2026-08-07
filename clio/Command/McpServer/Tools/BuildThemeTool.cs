@@ -51,6 +51,16 @@ public sealed class BuildThemeTool(
 
 	internal const string ToolName = "build-theme";
 
+	/// <summary>
+	/// The argument roster returned when a caller sends an unrecognised field name. Extracted to a field
+	/// (mirroring <see cref="CreateThemeTool.ValidArgumentNames"/>) so the drift test can assert every
+	/// <see cref="ThemeBrandArgs"/> wire name still appears here after the brand properties moved to the
+	/// shared base record.
+	/// </summary>
+	internal static readonly string ValidArgumentNames =
+		"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
+		"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.";
+
 	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
@@ -90,9 +100,7 @@ public sealed class BuildThemeTool(
 			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name (all optional).")]
 		[Required] BuildThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
-			"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.");
+			args.ExtensionData, LegacyAliases, ".", ValidArgumentNames);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return BuildThemeResult.Failure(aliasError);
 		}
@@ -228,34 +236,6 @@ public sealed record BuildThemeArgs(
 	[property: Description("Theme id for theme.json; an auto-generated UUID when omitted.")]
 	string? Id = null,
 
-	[property: JsonPropertyName("secondary")]
-	[property: Description("Secondary colour; derived from the primary when omitted.")]
-	string? Secondary = null,
-
-	[property: JsonPropertyName("accent")]
-	[property: Description("Accent colour; chosen from the primary when omitted.")]
-	string? Accent = null,
-
-	[property: JsonPropertyName("success")]
-	[property: Description("Success colour; the platform default when omitted.")]
-	string? Success = null,
-
-	[property: JsonPropertyName("error")]
-	[property: Description("Error colour; the platform default when omitted.")]
-	string? Error = null,
-
-	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
-	string? HeadingFont = null,
-
-	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
-	string? BodyFont = null,
-
-	[property: JsonPropertyName("font-weights")]
-	[property: Description("Font weights to load (e.g. [400,500,600]); ignored without a custom heading/body font; defaults to 400,500,600.")]
-	int[]? FontWeights = null,
-
 	[property: JsonPropertyName("version")]
 	[property: Description("Creatio version the theme targets (e.g. 10.0); the newest supported version is used when omitted; mutually exclusive with environment-name.")]
 	string? Version = null,
@@ -274,7 +254,7 @@ public sealed record BuildThemeArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Package inside the workspace to write theme.css + theme.json into, under Files/themes/<css-class-name>/; provide together with workspace-directory.")]
 	string? PackageName = null
-) {
+) : ThemeBrandArgs {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
