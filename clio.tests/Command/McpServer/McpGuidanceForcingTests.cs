@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Clio.Command;
@@ -15,6 +16,50 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
+
+	private static string ToolDescription<TTool>() {
+		MethodInfo toolMethod = typeof(TTool)
+			.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+			.Single(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null);
+		return toolMethod.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("delete-app-section advertises that it removes the section from every workplace and routes single-workplace removal to the workplaces guide.")]
+	public void SectionDeleteToolDescription_ShouldRouteSingleWorkplaceRemoval_ToWorkplacesGuide() {
+		// Arrange
+		string description = ToolDescription<ApplicationSectionDeleteTool>();
+
+		// Act
+		bool namesEveryWorkplace = description.Contains("EVERY workplace");
+
+		// Assert
+		namesEveryWorkplace.Should().BeTrue(
+			because: "the tool deletes the SysModule plus every placement, so its own description must say the section disappears everywhere");
+		description.Should().Contain("workplaces",
+			because: "an agent asked to remove a section from one workplace must be routed to the workplaces guide instead of this tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-app advertises that it places the section in the administrators-only default workplace and that placement must be settled before the call.")]
+	public void ApplicationCreateToolDescription_ShouldRequirePlacement_BeforeTheCall() {
+		// Arrange
+		string description = ToolDescription<ApplicationCreateTool>();
+
+		// Act
+		bool statesTheDefaultIsAdminOnly = description.Contains("System administrators only");
+
+		// Assert
+		statesTheDefaultIsAdminOnly.Should().BeTrue(
+			because: "the tool's own description is the one surface always in context, and the reason the decision cannot wait is that the default placement is invisible to ordinary users");
+		description.Should().Contain("BEFORE this call",
+			because: "a live run built the whole app and asked afterwards, so the ordering must be stated on the tool itself and not only in a guide");
+		description.Should().Contain("get-guidance name=workplaces",
+			because: "the description states the requirement and routes to the guide that owns the option set and the write recipes");
+	}
+
 	[Test]
 	[Description("Confirms the response types carry a nullable note property so the deterministic compile-not-required signal can be emitted.")]
 	public void ResponseTypes_ShouldExposeNoteProperty_ForDeterministicSignal() {
