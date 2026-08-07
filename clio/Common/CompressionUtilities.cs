@@ -66,22 +66,36 @@ namespace Clio.Common
 			return totalRead;
 		}
 
+		// Returns the empty string for BOTH a clean end of archive and an incredible name length. The two
+		// are indistinguishable to a caller by design: the container has no terminator, so "the next
+		// length prefix decodes as zero" IS how the walk ends, and a length that cannot fit in what is
+		// left is corruption that must stop the walk just as firmly.
+		//
+		// The bound matters. Without it a garbage prefix (a truncated download, a half-written copy) drives
+		// the read loop up to int.MaxValue times appending to a StringBuilder — gigabytes of allocation and
+		// a long stall instead of a refusal — and this method is on the untrusted path: `extract-pkg-zip`
+		// unpacks whatever archive a user was handed, and Downloader unpacks whatever the remote instance
+		// returned. The content walk has always had this bound; the name walk did not.
 		private string ReadFileRelativePath(MemoryStream zipStream)
 		{
 			var bytes = new byte[sizeof(int)];
-			SafeReadGZipStream(zipStream, bytes);
-			int fileNameLength = BitConverter.ToInt32(bytes, 0);
-			bytes = new byte[sizeof(char)];
-			var sb = new StringBuilder();
-			for (int i = 0; i < fileNameLength; i++)
+			if (SafeReadGZipStream(zipStream, bytes) != bytes.Length)
 			{
-				SafeReadGZipStream(zipStream, bytes);
-				char character = BitConverter.ToChar(bytes, 0);
-				sb.Append(character);
+				return string.Empty;
 			}
-			string filePath = sb.ToString();
-			filePath = filePath.Replace('\\', Path.DirectorySeparatorChar);
-			return filePath;
+			int fileNameLength = BitConverter.ToInt32(bytes, 0);
+			// long arithmetic: fileNameLength * sizeof(char) overflows int for a length above 2^30.
+			if (fileNameLength < 0
+				|| (long)fileNameLength * sizeof(char) > zipStream.Length - zipStream.Position)
+			{
+				return string.Empty;
+			}
+			var nameBytes = new byte[fileNameLength * sizeof(char)];
+			if (SafeReadGZipStream(zipStream, nameBytes) != nameBytes.Length)
+			{
+				return string.Empty;
+			}
+			return Encoding.Unicode.GetString(nameBytes).Replace('\\', Path.DirectorySeparatorChar);
 		}
 
 		private void ReadFileContent(string targetFilePath, Stream zipStream)
@@ -148,6 +162,46 @@ namespace Clio.Common
 			return true;
 		}
 
+		// Reads the length-prefixed content block the stream is positioned at, WITHOUT writing it anywhere.
+		// Returns null when the block is truncated or its declared length is not credible, which is the only
+		// signal a caller gets that the archive is corrupt: entries carry no checksum and no terminator, so a
+		// bad length would otherwise be read as a valid (huge) allocation request.
+		private static byte[] ReadFileContent(MemoryStream zipStream)
+		{
+			var lengthBytes = new byte[sizeof(int)];
+			if (SafeReadGZipStream(zipStream, lengthBytes) != lengthBytes.Length) {
+				return null;
+			}
+			int fileContentLength = BitConverter.ToInt32(lengthBytes, 0);
+			// Bound by what is actually left rather than by a magic number: the archive is already fully
+			// decompressed in memory, so "longer than the remainder" is exactly the impossible case.
+			if (fileContentLength < 0 || fileContentLength > zipStream.Length - zipStream.Position) {
+				return null;
+			}
+			var content = new byte[fileContentLength];
+			return SafeReadGZipStream(zipStream, content) == fileContentLength ? content : null;
+		}
+
+		// Advances past the content block the stream is positioned at. Same credibility bound as the reader
+		// above — a bad length here would seek past the end and turn every later entry into garbage.
+		private static bool SkipFileContent(MemoryStream zipStream)
+		{
+			var lengthBytes = new byte[sizeof(int)];
+			if (SafeReadGZipStream(zipStream, lengthBytes) != lengthBytes.Length) {
+				return false;
+			}
+			int fileContentLength = BitConverter.ToInt32(lengthBytes, 0);
+			if (fileContentLength < 0 || fileContentLength > zipStream.Length - zipStream.Position) {
+				return false;
+			}
+			zipStream.Seek(fileContentLength, SeekOrigin.Current);
+			return true;
+		}
+
+		// The archive stores whatever separator the packing host used, so compare on a normalized form.
+		private static string NormalizeEntryPath(string entryPath) =>
+			entryPath.Replace('\\', '/').Trim('/');
+
 		#endregion
 
 		#region Methods: Public
@@ -172,6 +226,45 @@ namespace Clio.Common
 			zipStream.CopyTo(newStream);
 			newStream.Seek(0, SeekOrigin.Begin);
 			while (UnpackFromGZip(destinationPackageDirectory, newStream)) { }
+		}
+
+		public byte[] ReadFileFromGZip(string packedPackagePath, string relativeFilePath) {
+			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
+			relativeFilePath.CheckArgumentNullOrWhiteSpace(nameof(relativeFilePath));
+			string wanted = NormalizeEntryPath(relativeFilePath);
+			using var fileStream =
+				_fileSystem.FileOpenStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+			using var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true);
+			using var newStream = new MemoryStream();
+			zipStream.CopyTo(newStream);
+			newStream.Seek(0, SeekOrigin.Begin);
+			while (true) {
+				string entryPath = ReadFileRelativePath(newStream);
+				if (string.IsNullOrEmpty(entryPath)) {
+					// End of the walk. It is a CLEAN end only if the stream is actually exhausted; bytes left
+					// over mean the name prefix was incredible, i.e. the container is corrupt. Distinguishing
+					// them matters to the caller, which otherwise reports a truncated archive as one that
+					// simply has no such entry — same remedy, wrong diagnosis.
+					if (newStream.Position < newStream.Length) {
+						throw new InvalidDataException(
+							$"'{packedPackagePath}' is not a readable package archive: the entry starting at "
+							+ $"offset {newStream.Position} declares an impossible name length.");
+					}
+					return null;
+				}
+				if (!string.Equals(NormalizeEntryPath(entryPath), wanted, StringComparison.OrdinalIgnoreCase)) {
+					if (!SkipFileContent(newStream)) {
+						throw new InvalidDataException(
+							$"'{packedPackagePath}' is not a readable package archive: entry '{entryPath}' "
+							+ "declares a content length that does not fit in the remaining bytes.");
+					}
+					continue;
+				}
+				byte[] content = ReadFileContent(newStream);
+				return content ?? throw new InvalidDataException(
+					$"'{packedPackagePath}' is not a readable package archive: entry '{entryPath}' is "
+					+ "truncated.");
+			}
 		}
 
 		public void Unzip(string zipFilePath, string destinationDirectory) {

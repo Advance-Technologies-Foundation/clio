@@ -147,7 +147,7 @@ not compile it — and the place to look is the configuration build log.
   would hold across environments. The command waits for the instance to answer its health
   check rather than for a fixed budget.
 - `clio list-packages` shows the version the environment **recorded**, which is what
-  the version floor is checked against. It moves on install only when the archive's
+  clio compares against the version it ships (`clio info`). It moves on install only when the archive's
   descriptor also changed its `ModifiedOnUtc` — that field is what Creatio treats as
   "this descriptor changed", and `PackageVersion` is not part of the comparison
   (`PackageStorageComposer.ApplySourcePackageChanges` → `IsPackageDescriptorChanged` →

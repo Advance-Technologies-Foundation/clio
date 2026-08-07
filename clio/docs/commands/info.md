@@ -77,10 +77,14 @@ clio:   8.0.1.97
 
 ## Notes
 
-- The `process-builder` version is the `CrtProcessBuilder` package this clio **carries**, read from a
-  constant rather than from any environment. It is also the floor the process-designer commands
-  enforce, so comparing it against `clio list-packages -e <environment>` tells you whether that
-  environment is behind what this clio would install.
+- The `process-builder` version is the `CrtProcessBuilder` package this clio **carries**, read out of the
+  bundled archive itself rather than from any environment. It is the same value the process-designer
+  commands compare against, so comparing it with `clio list-packages -e <environment>` tells you whether
+  that environment is behind what this clio would install.
+- If that line reads `unavailable — …`, this clio installation cannot read its own bundled archive. The
+  message names the file and the remedy is to reinstall or update clio; nothing done to an environment can
+  help. Gated commands still work against an environment that already has the package — they simply stop
+  offering to update it.
 - The cliogate version shown is the version included with current clio
 installation
 - This may differ from the version installed on a specific Creatio instance

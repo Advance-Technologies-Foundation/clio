@@ -74,7 +74,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IPackageInstaller _packageInstaller;
-	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private readonly IBundledPackageCatalog _bundledPackageCatalog;
 	private readonly IFileSystem _fileSystem;
 	private readonly IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private readonly IServerReadinessWaiter _serverReadinessWaiter;
@@ -89,7 +89,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </summary>
 	/// <param name="environmentSettings">Resolved target environment settings.</param>
 	/// <param name="packageInstaller">Package installer used to install the bundled archive.</param>
-	/// <param name="workingDirectoriesProvider">Provider used to locate bundled clio assets.</param>
+	/// <param name="bundledPackageCatalog">Catalog used to locate the bundled archive.</param>
 	/// <param name="fileSystem">File system used to verify the bundled archive is present.</param>
 	/// <param name="outcomeVerifier">
 	/// Verifier that answers whether the package became operational after being accepted — the question the
@@ -102,21 +102,21 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	public InstallProcessBuilderCommand(
 		EnvironmentSettings environmentSettings,
 		IPackageInstaller packageInstaller,
-		IWorkingDirectoriesProvider workingDirectoriesProvider,
+		IBundledPackageCatalog bundledPackageCatalog,
 		IFileSystem fileSystem,
 		IPackageInstallOutcomeVerifier outcomeVerifier,
 		IServerReadinessWaiter serverReadinessWaiter,
 		ILogger logger) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		packageInstaller.CheckArgumentNull(nameof(packageInstaller));
-		workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+		bundledPackageCatalog.CheckArgumentNull(nameof(bundledPackageCatalog));
 		fileSystem.CheckArgumentNull(nameof(fileSystem));
 		outcomeVerifier.CheckArgumentNull(nameof(outcomeVerifier));
 		serverReadinessWaiter.CheckArgumentNull(nameof(serverReadinessWaiter));
 		logger.CheckArgumentNull(nameof(logger));
 		_environmentSettings = environmentSettings;
 		_packageInstaller = packageInstaller;
-		_workingDirectoriesProvider = workingDirectoriesProvider;
+		_bundledPackageCatalog = bundledPackageCatalog;
 		_fileSystem = fileSystem;
 		_outcomeVerifier = outcomeVerifier;
 		_serverReadinessWaiter = serverReadinessWaiter;
@@ -146,10 +146,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		return installEnvironmentSettings;
 	}
 
-	private string GetPackagePath() => Path.Combine(
-		_workingDirectoriesProvider.ExecutingDirectory,
-		BundledPackages.ProcessBuilderPackageName,
-		BundledPackages.ProcessBuilderArchiveFileName);
+	// Through the catalog rather than composing the path here, so the archive this installs and the archive
+	// clio info / the convergence rule describe are the same file by construction, not by two copies of one
+	// Path.Combine agreeing.
+	private string GetPackagePath() =>
+		_bundledPackageCatalog.GetArchivePath(BundledPackages.ProcessBuilderPackageName);
 
 	/// <summary>
 	/// Waits for the platform's own post-install restart to complete.

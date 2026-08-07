@@ -14,7 +14,7 @@ namespace Clio.Command;
 /// Options for reading an existing Creatio process into a structured graph ("read &amp; explain").
 /// Consumed by the MCP <c>describe-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName,
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public class DescribeProcessOptions : EnvironmentOptions {
 

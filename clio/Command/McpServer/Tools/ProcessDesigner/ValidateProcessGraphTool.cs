@@ -98,7 +98,7 @@ public sealed class ValidateProcessGraphTool {
 }
 
 /// <summary>Request arguments for <c>validate-process-graph</c>.</summary>
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion,
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName,
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed record ValidateProcessGraphArgs(
 	[property:JsonPropertyName("environment-name")]

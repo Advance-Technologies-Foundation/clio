@@ -7,6 +7,8 @@ using Clio.Project.NuGet;
 using Clio.Tests.Command;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ClearExtensions;
+using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
@@ -27,6 +29,14 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProviderMock
 		= Substitute.For<IApplicationPackageListProvider>();
+
+	// Substituted rather than left to resolve the real rule, for two reasons. It makes the SEAM assertable
+	// — that a satisfied requirement is handed to convergence and its refusal becomes a
+	// PackageRequirementException carrying the attribute's hint — and it stops every other test in this
+	// fixture depending incidentally on the real catalog finding (or not finding) an archive in the build
+	// output. None of the fixture's package names is bundled, so the real rule was a silent no-op here.
+	private readonly IBundledPackageConvergence _bundledPackageConvergenceMock
+		= Substitute.For<IBundledPackageConvergence>();
 
 	private readonly Func<Version, string, PackageInfo> _createPackageInfo = (version, name) => {
 		PackageDescriptor descriptor = new() {
@@ -102,6 +112,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		containerBuilder.AddSingleton<IApplicationPackageListProvider>(_applicationPackageListProviderMock);
+		containerBuilder.AddSingleton<IBundledPackageConvergence>(_bundledPackageConvergenceMock);
 		base.AdditionalRegistrations(containerBuilder);
 	}
 
@@ -112,6 +123,111 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 	[TearDown]
 	public void ClearMockState(){
 		_applicationPackageListProviderMock.ClearReceivedCalls();
+		// Returns AND received calls: this substitute is shared across the fixture, so a configured refusal
+		// left behind would make an unrelated test fail on a rule it never arranged.
+		_bundledPackageConvergenceMock.ClearSubstitute(ClearOptions.All);
+	}
+
+	[Test]
+	[Description("A SATISFIED presence-only requirement is still handed to the convergence rule, and its refusal is raised as a PackageRequirementException carrying the attribute's install hint — this is the shipped configuration of all five process-designer gates and the only live convergence path in the product.")]
+	public void EnsureRequirements_ShouldThrowWithHint_WhenSatisfiedRequirementHasNotConverged(){
+		// Arrange
+		const string convergenceRefusal = "This clio carries MyPkg 2.0.0, but the target environment has 1.0.0.";
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(1, 0, 0), "MyPkg")
+		]);
+		_bundledPackageConvergenceMock
+			.TryGetConvergenceRefusal("MyPkg", Arg.Any<PackageVersion>(), out Arg.Any<string>())
+			.Returns(call => { call[2] = convergenceRefusal; return true; });
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new PresenceOnlyRequirementWithHintOptions());
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+				because: "the package is present, so the requirement passes - but clio ships a newer one, and "
+					+ "nothing else in the product would tell the user so")
+			.WithMessage($"*{convergenceRefusal}*")
+			.And.Message.Should().Contain(TestHint,
+				because: "convergence and the requirement land on the same remedy, so the refusal must name it "
+					+ "the same way; the checker appends the attribute's own hint to both");
+	}
+
+	[Test]
+	[Description("A satisfied VERSIONED requirement is also handed to the convergence rule, so compatibility and convergence are genuinely independent: being above the declared floor does not mean being current.")]
+	public void EnsureRequirements_ShouldThrow_WhenVersionedRequirementIsMetButHasNotConverged(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(3, 0, 0), "MyPkg")
+		]);
+		_bundledPackageConvergenceMock
+			.TryGetConvergenceRefusal("MyPkg", Arg.Any<PackageVersion>(), out Arg.Any<string>())
+			.Returns(call => { call[2] = "behind"; return true; });
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new SingleVersionedRequirementOptions());
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+			because: "3.0.0 clears the declared 2.0.0 floor, so the requirement is satisfied - convergence is "
+				+ "a separate question and must still be asked");
+	}
+
+	[Test]
+	[Description("Convergence is NOT consulted when the requirement itself failed: a second, differently worded refusal about the same package would tell the user to update something they have not installed.")]
+	public void EnsureRequirements_ShouldNotConsultConvergence_WhenRequirementIsUnmet(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(2, 2, 2), "not_my_pkg")
+		]);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new PresenceOnlyRequirementOptions());
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+			because: "the package is absent, which is the requirement gate's own failure");
+		_bundledPackageConvergenceMock.DidNotReceive().TryGetConvergenceRefusal(
+			Arg.Any<string>(), Arg.Any<PackageVersion>(), out Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("An options type with no requirement never reaches the convergence rule either, so the zero-cost guarantee covers both rules rather than only the one that declares itself.")]
+	public void EnsureRequirements_ShouldNotConsultConvergence_WhenTypeHasNoRequirement(){
+		// Arrange
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		checker.EnsureRequirements(new NoRequirementOptions());
+
+		// Assert
+		_bundledPackageConvergenceMock.DidNotReceive().TryGetConvergenceRefusal(
+			Arg.Any<string>(), Arg.Any<PackageVersion>(), out Arg.Any<string>());
+		_applicationPackageListProviderMock.DidNotReceive().GetPackages();
+	}
+
+	[Test]
+	[Description("A satisfied requirement whose package HAS converged proceeds silently, so the rule cannot refuse an environment that is already current.")]
+	public void EnsureRequirements_ShouldNotThrow_WhenSatisfiedRequirementHasConverged(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(2, 0, 0), "MyPkg")
+		]);
+		_bundledPackageConvergenceMock
+			.TryGetConvergenceRefusal("MyPkg", Arg.Any<PackageVersion>(), out Arg.Any<string>())
+			.Returns(false);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new PresenceOnlyRequirementOptions());
+
+		// Assert
+		act.Should().NotThrow(
+			because: "both rules are satisfied; a refusal here would block every gated command on a correctly "
+				+ "provisioned environment");
 	}
 
 	[Test]

@@ -6,6 +6,12 @@
 > package's ungated `Ping`, not `KnownRoute.ListUserTasks`, and it verifies LIVENESS only — it does not
 > compare versions. See `spec/adr/adr-deliver-process-builder-package.md` for what shipped and for the
 > measurements that changed it.
+>
+> A third since: every mention below of a `BundledPackages.ProcessBuilderVersion` constant, and of a
+> `[RequiresPackage]` FLOOR equal to it, describes a design that was replaced. The shipped version is read
+> out of the archive (`IBundledPackageCatalog`), the five gates are presence-only, and being behind is a
+> separate convergence rule. Do not implement the constant from this document — see
+> `spec/adr/adr-bundled-package-version-source-of-truth.md`.
 
 **Ticket:** [ENG-94385](https://creatio.atlassian.net/browse/ENG-94385) — *Deliver clioprocessbuilder package — Install package bundled into clio*
 **Decision record:** [ENG-91840 / Confluence 4764434460](https://creatio.atlassian.net/wiki/spaces/TER/pages/4764434460) — Option 2 ("same way as clio gate") chosen.

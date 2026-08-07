@@ -14,7 +14,7 @@ namespace Clio.Tests
     [TestFixture]
     [Category("Unit")]
     [Property("Module", "Command")]
-    [Description("Reflection lock-in tests asserting the four process-designer command options classes are gated on the bundled CrtProcessBuilder package at the bundled version, that the hint names the install command, and that the MCP args record carries the same requirement.")]
+    [Description("Reflection lock-in tests asserting the four process-designer command options classes are gated on the bundled CrtProcessBuilder package, that the requirement is presence-only, that the hint names the install command, and that the MCP args record carries the same requirement.")]
     public class ProcessDesignerRequiresPackageAttributeTests
     {
         // The hint is the user-visible remediation channel, so it is pinned verbatim: it must name a verb
@@ -38,8 +38,8 @@ namespace Clio.Tests
         [TestCase(typeof(DescribeProcessOptions))]
         [TestCase(typeof(ListUserTasksOptions))]
         [Test]
-        [Description("Each process-designer command options class that actually calls ProcessDesignService must be gated on the bundled package NAME and VERSION, so the gate refuses both a missing and a stale package. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
-        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenProcessDesignerCommand(
+        [Description("Each process-designer command options class that actually calls ProcessDesignService must be gated on the bundled package NAME, and the requirement must be presence-only, because none of these commands needs an operation introduced in a particular version. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
+        public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
             Type optionsType)
         {
             // Arrange & Act
@@ -48,17 +48,12 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
-                because: "the floor must equal the version clio bundles: a lower floor accepts a stale package "
-                    + "whose server rejects operations this clio sends, and the refusal then comes from the "
-                    + "server as an unexplained error instead of from the gate with an install hint");
-            System.Version.TryParse(requirement.Version, out System.Version floor).Should().BeTrue(
-                because: $"RequiredPackageChecker parses the floor through System.Version, so "
-                    + $"'{requirement.Version}' must be parseable or every gated command throws instead of gating");
-            floor!.Revision.Should().BeGreaterThanOrEqualTo(0,
-                because: $"'{requirement.Version}' must carry all four parts, matching the archive descriptor: "
-                    + "a part-count mismatch compares as installed < required and makes the gate unsatisfiable "
-                    + "by any successful install");
+            requirement!.Version.Should().BeNullOrEmpty(
+                because: "the attribute states what THIS command needs in order to work, and each of these "
+                    + "fails only when the package is absent entirely — no operation any of them calls was "
+                    + "introduced in a particular version. Keeping an environment current is the separate "
+                    + "convergence rule's job (IBundledPackageConvergence), which compares against the "
+                    + "archive; a literal here would restate that policy in a place that cannot track it");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }
@@ -76,8 +71,8 @@ namespace Clio.Tests
         }
 
         [Test]
-        [Description("The validate-process-graph args record must carry the same versioned requirement, because the standalone tool manually calls EnsureRequirements(args) which reads the attribute off the args type rather than an options class.")]
-        public void ValidateProcessGraphArgs_ShouldDeclareVersionedProcessBuilderRequirement_WhenStandaloneTool()
+        [Description("The validate-process-graph args record must carry the same presence-only requirement, because the standalone tool manually calls EnsureRequirements(args) which reads the attribute off the args type rather than an options class.")]
+        public void ValidateProcessGraphArgs_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenStandaloneTool()
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetProcessBuilderRequirement(
@@ -87,17 +82,9 @@ namespace Clio.Tests
             requirement.Should().NotBeNull(
                 because: "the standalone validator reads [RequiresPackage] off the args record, so the gate "
                     + "would silently not fire if the attribute moved to an options class");
-            requirement!.Version.Should().Be(BundledPackages.ProcessBuilderVersion,
-                because: "the floor must equal the version clio bundles: a lower floor accepts a stale package "
-                    + "whose server rejects operations this clio sends, and the refusal then comes from the "
-                    + "server as an unexplained error instead of from the gate with an install hint");
-            System.Version.TryParse(requirement.Version, out System.Version floor).Should().BeTrue(
-                because: $"RequiredPackageChecker parses the floor through System.Version, so "
-                    + $"'{requirement.Version}' must be parseable or every gated command throws instead of gating");
-            floor!.Revision.Should().BeGreaterThanOrEqualTo(0,
-                because: $"'{requirement.Version}' must carry all four parts, matching the archive descriptor: "
-                    + "a part-count mismatch compares as installed < required and makes the gate unsatisfiable "
-                    + "by any successful install");
+            requirement!.Version.Should().BeNullOrEmpty(
+                because: "it must state the same requirement as the four options classes above — the validator "
+                    + "calls no operation the others do not");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the validator hint must match the other process-designer gates");
         }

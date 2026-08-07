@@ -34,8 +34,8 @@ moving the timestamp would produce a descriptor announcing a change it cannot de
 Fewer than four parts is **warned about, not refused.** It is normal — clio's own `add-package`
 seeds `0.1.0` and `publish-app` writes an app version verbatim — so refusing it would break existing
 pipelines. The warning exists because Creatio compares recorded versions through `System.Version`,
-which treats a missing part as `-1`: for a package clio enforces a version floor on (`cliogate`,
-`CrtProcessBuilder`) a shorter version sorts below every four-part floor, and the gated commands
+which treats a missing part as `-1`: for a package clio compares versions on (`cliogate`,
+`CrtProcessBuilder`) a shorter version sorts below every four-part version, and the gated commands
 would then refuse an environment that is actually up to date.
 
 ## Exit codes

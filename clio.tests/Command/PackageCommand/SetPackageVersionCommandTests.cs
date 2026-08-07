@@ -169,9 +169,10 @@ public class SetPackageVersionCommandTests : BaseCommandTests<SetPackageVersionO
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("0.1.1") && message.Contains("four")));
 		// NSubstitute's Received() takes no `because`; stated here. The hazard is narrow but real — a short
-		// version sorts below every four-part [RequiresPackage] floor — so it must still be SAID. The
-		// four-part invariant for the packages that actually have a floor is enforced by the archive pins,
-		// not here.
+		// version sorts below every four-part version it gets compared against, whether that is a
+		// [RequiresPackage] literal or a bundled archive's own version — so it must still be SAID. For the
+		// packages clio actually gates on, the four-part invariant is asserted against the shipped archive
+		// in BundledProcessBuilderPackageTests, not here.
 	}
 
 	[TestCase("", TestName = "empty")]

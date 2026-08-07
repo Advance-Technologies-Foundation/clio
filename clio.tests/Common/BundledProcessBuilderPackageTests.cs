@@ -2,9 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using Clio.Common;
+using Clio.Project.NuGet;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
@@ -71,6 +74,23 @@ public class BundledProcessBuilderPackageTests {
 		"93B527B9626E0D6D63F90189A2DDA5B1D8097FEEA64F0B14D5968EEDCDA05748";
 
 	/// <summary>
+	/// The <c>PackageVersion</c> the shipped descriptor carries.
+	/// </summary>
+	/// <remarks>
+	/// A TEST-side pin, not a reintroduction of the deleted <c>BundledPackages.ProcessBuilderVersion</c>: no
+	/// production code reads it, nothing compares against it at runtime, and the version clio ships is still
+	/// read out of the archive. What it exists for is the same thing the SHA-256 pin exists for — a `.gz`
+	/// renders in a diff as a changed byte count, so without this line a reviewer cannot see whether the
+	/// version moved. It sits beside the SHA because a rebundle edits both.
+	/// <para>
+	/// It cannot catch a deliberately FROZEN version — that is
+	/// <c>rebundle-process-builder.ps1</c>'s must-increase guard, which refuses before touching anything.
+	/// This makes the freeze visible; the script makes it impossible through the supported path.
+	/// </para>
+	/// </remarks>
+	private const string ExpectedArchiveVersion = "1.0.0.0";
+
+	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
 	/// </summary>
 	/// <remarks>
@@ -79,12 +99,14 @@ public class BundledProcessBuilderPackageTests {
 	/// only when it differs (<c>PackageStorageComposer.ApplySourcePackageChanges</c> →
 	/// <c>IsPackageDescriptorChanged</c> → <c>PackageDBStorage.SavePackageDescriptor</c>'s guard). So the date
 	/// decides WHETHER the row is updated and the version decides WHAT lands there; a version moved without
-	/// the date installs cleanly and leaves the recorded version — the <c>[RequiresPackage]</c> floor — behind.
+	/// the date installs cleanly and leaves the OLD version recorded — and that recorded version is exactly
+	/// what the convergence rule compares, so the environment keeps being told it is behind after a correct
+	/// upgrade.
 	/// <para>
 	/// That state is unreachable through <c>clio set-pkg-version</c>, which writes both fields. It is
-	/// reachable by hand-editing <c>descriptor.json</c>, so this pin sits beside the version and the SHA-256:
-	/// a rebundle touches all three, and a hand edit that skipped the date fails here rather than on a
-	/// customer's environment.
+	/// reachable by hand-editing <c>descriptor.json</c>, so this pin sits beside the SHA-256: a rebundle
+	/// touches both, and a hand edit that skipped the date fails here rather than on a customer's
+	/// environment.
 	/// </para>
 	/// <para>
 	/// The value must end in <c>000</c>. <c>PackageDescriptor.ConvertToModifiedOnUtc</c> truncates to whole
@@ -188,6 +210,44 @@ public class BundledProcessBuilderPackageTests {
 		using MemoryStream buffer = new();
 		decompressor.CopyTo(buffer);
 		return Encoding.UTF8.GetString(buffer.ToArray());
+	}
+
+	/// <summary>
+	/// Reads the shipped version the way production does — through the real
+	/// <see cref="BundledPackageCatalog"/> over the real archive in this test project's build output.
+	/// </summary>
+	/// <remarks>
+	/// Real collaborators on purpose: the point is the bytes on disk and the production container walk, not
+	/// the wiring. Substituting the reader here would make every assertion built on this a statement about
+	/// the substitute.
+	/// </remarks>
+	private static PackageVersion ReadBundledVersionThroughTheCatalog() {
+		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		workingDirectoriesProvider.ExecutingDirectory.Returns(AppContext.BaseDirectory);
+		IFileSystem fileSystem = new FileSystem(new System.IO.Abstractions.FileSystem());
+		IBundledPackageCatalog catalog = new BundledPackageCatalog(
+			workingDirectoriesProvider, fileSystem, new CompressionUtilities(fileSystem, new ZipFileWrapper()));
+		bool read = catalog.TryGetVersion(
+			BundledPackages.ProcessBuilderPackageName, out PackageVersion version, out string diagnosis);
+		read.Should().BeTrue(
+			because: "clio info and the convergence rule both go through this reader, so a distribution whose "
+				+ $"version it cannot read breaks both silently. Diagnosis was '{diagnosis}'");
+		return version;
+	}
+
+	/// <summary>
+	/// Collects every <see cref="RequiresPackageAttribute"/> declared against the bundled package on a type,
+	/// the same way <c>RequiredPackageChecker.CollectTriggeredRequirements</c> does.
+	/// </summary>
+	private static IEnumerable<RequiresPackageAttribute> GetProcessBuilderRequirements(Type type) {
+		IEnumerable<RequiresPackageAttribute> onClass =
+			(RequiresPackageAttribute[])type.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: true);
+		IEnumerable<RequiresPackageAttribute> onProperties = type.GetProperties()
+			.SelectMany(property => (RequiresPackageAttribute[])
+				property.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: true));
+		return onClass.Concat(onProperties)
+			.Where(requirement => string.Equals(requirement.Name,
+				BundledPackages.ProcessBuilderPackageName, StringComparison.OrdinalIgnoreCase));
 	}
 
 	/// <summary>
@@ -351,17 +411,28 @@ public class BundledProcessBuilderPackageTests {
 			because: "Creatio identifies a package by UId, so a changed UId would install a SECOND package "
 				+ "instead of upgrading this one");
 		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedDescriptorModifiedOnUtc}\"",
-			because: "this is the value that makes the version bump take effect - Creatio rewrites the "
-				+ "SysPackage row only when it changes. If this assertion fails together with the version one, "
-				+ "the bump was done properly (clio set-pkg-version writes both); if only the version "
-				+ "assertion fails, descriptor.json was hand-edited and the [RequiresPackage] floor would "
-				+ "refuse every environment that already carries the package");
-		archive.Should().Contain($"\"PackageVersion\": \"{BundledPackages.ProcessBuilderVersion}\"",
-			because: "the descriptor is the ONLY place this package's version lives, and this is the single link "
-				+ "between it and clio: BundledPackages.ProcessBuilderVersion is what clio info reports and the "
-				+ "floor the [RequiresPackage] gates enforce against the version the environment recorded from "
-				+ "this very descriptor. A drift either refuses a correct installation or accepts a stale one, "
-				+ "and nothing else in the product compares the two");
+			because: "this is the value that makes a version bump take effect at all - Creatio rewrites the "
+				+ "SysPackage row only when this field changes, never because PackageVersion did. So a rebundle "
+				+ "that moved the version but not the date installs cleanly and leaves the environment recording "
+				+ "the OLD version, which is what the convergence rule then compares. Pinning it means such a "
+				+ "rebundle fails here rather than on a customer's environment");
+		// Pinned as a VALUE, not against a production constant - there is no longer one to compare with, and
+		// that is the point of the current design. What this buys is the reviewability the SHA pin buys for
+		// the bytes: a rebundle edits this line, so the version movement appears in the diff as readable text
+		// instead of only as a changed hash. It cannot catch a DELIBERATELY frozen version (the rebundle
+		// script's must-increase guard is what does that) - it makes the freeze visible to a reviewer.
+		//
+		// Read through the catalog rather than by scanning the archive text: `"PackageVersion"` also appears
+		// on every entry of the descriptor's DependsOn array, so a textual match would silently start
+		// comparing a dependency's version the day this package gains one.
+		ReadBundledVersionThroughTheCatalog().ToString().Should().Be(ExpectedArchiveVersion,
+			because: "the version in the shipped descriptor is what clio info reports and what the convergence "
+				+ "rule compares against every environment; pinning it here is what puts a version change on a "
+				+ "reviewable line rather than leaving it invisible inside the archive's byte count");
+		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
+			because: "four parts, because a shorter version yields Revision = -1 through System.Version and "
+				+ "would compare below any four-part requirement, making a gate unsatisfiable by a successful "
+				+ "install");
 		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedSchemaDescriptorModifiedOnUtc}\"",
 			because: "set-pkg-version stamps the PACKAGE descriptor only, so the schema descriptor's timestamp "
 				+ "is hand-maintained — and it is the one field here that has actually shipped wrong, carrying "
@@ -377,6 +448,68 @@ public class BundledProcessBuilderPackageTests {
 				+ "something other than the supported command — this archive shipped for a while with a stamp "
 				+ "ending in 431, i.e. hand-edited, while every doc told the next person to use "
 				+ "'clio set-pkg-version'. A comment saying so would not have caught the next one");
+	}
+
+	[Test]
+	[Description("The production catalog must read the shipped archive with its real container format and byte-order mark, because every unit test of it substitutes the reader and would stay green if the real walk were broken.")]
+	public void BundledPackageCatalog_ShouldReadTheVersionOutOfTheRealArchive() {
+		// Arrange & Act
+		PackageVersion version = ReadBundledVersionThroughTheCatalog();
+
+		// Assert
+		version.ToString().Should().Be(ExpectedArchiveVersion,
+			because: "the production reader must return the version actually written in the shipped "
+				+ "descriptor - every unit test of the catalog substitutes the container walk, so this is the "
+				+ "only place the real format, the real byte-order mark and the real entry ordering are "
+				+ "exercised together");
+	}
+
+	[Test]
+	[Description("Every literal version declared in a [RequiresPackage] against the bundled package must be satisfiable by the archive clio itself ships, or clio demands of an environment something it cannot supply and its own remediation cannot help.")]
+	public void BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+
+		// Act
+		// Mirrors RequiredPackageChecker.CollectTriggeredRequirements exactly — class-level with
+		// inherit: true, AND every property. Anything less is worse than no guard: a property-level
+		// [RequiresPackage(…, "9.9.9.9")] on a bool option is a SUPPORTED declaration form that the checker
+		// enforces at runtime, so a class-only scan would stay green while shipping a gate no install can
+		// satisfy. RequiresPackageAttribute.IsDefinedOn walks both levels for the same reason.
+		List<RequiresPackageAttribute> declared = [];
+		foreach (Type type in typeof(BundledPackages).Assembly.GetTypes()) {
+			declared.AddRange(GetProcessBuilderRequirements(type));
+		}
+		List<RequiresPackageAttribute> versioned =
+			declared.FindAll(r => !string.IsNullOrEmpty(r.Version));
+
+		// Assert
+		// The scan has to be falsifiable before its verdict means anything. Every way it could break —
+		// wrong assembly, wrong attribute type, the inherit flag, the property-level miss above — yields an
+		// EMPTY list and a green test, which is indistinguishable from "no literals declared". Asserting the
+		// five presence-only declarations are visible is what tells the two apart.
+		declared.Should().HaveCountGreaterThanOrEqualTo(5,
+			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
+				+ "reflection is broken and the version loop below is silently inspecting nothing");
+		// The loop is vacuous today — every declaration is presence-only — and that is the intended state.
+		// It asserts an invariant that must hold WHEN a literal appears, and the commit that adds the first
+		// one is exactly when it must already be in place. It replaces the old pin (descriptor version == a
+		// constant), which needed hand-synchronising on every rebundle and asserted a coincidence, not a rule.
+		foreach (string declaredVersion in versioned.ConvertAll(r => r.Version)) {
+			PackageVersion.TryParseVersion(declaredVersion, out PackageVersion required).Should().BeTrue(
+				because: $"RequiredPackageChecker parses '{declaredVersion}' through System.Version, so an "
+					+ "unparseable literal makes every gated command throw instead of gating");
+			required.Version.Revision.Should().BeGreaterThanOrEqualTo(0,
+				because: $"'{declaredVersion}' must carry all four parts to match the archive descriptor: a "
+					+ "three-part literal yields Revision = -1 and compares below any four-part installed "
+					+ "version, making the gate unsatisfiable by a successful install");
+			// The operator, not a FluentAssertions comparison: PackageVersion implements the non-generic
+			// IComparable only, and this is the exact comparison the convergence rule and the gate perform.
+			(bundledVersion >= required).Should().BeTrue(
+				because: $"a command requires {declaredVersion} but this clio ships {bundledVersion}, so the "
+					+ "gate would refuse an environment and then hand it an installer that cannot satisfy the "
+					+ "refusal - clio must never demand what it does not carry");
+		}
 	}
 
 	[Test]

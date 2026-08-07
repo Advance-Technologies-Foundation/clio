@@ -73,9 +73,12 @@ public sealed class InstallProcessBuilderTool(
 	             environment, making ProcessDesignService reachable there.
 
 	             Run this when a process-designer tool (`create-business-process`, `modify-business-process`,
-	             `describe-business-process`, `list-user-tasks`, `validate-process-graph`) refuses with "you
-	             need to install the CrtProcessBuilder package" - whether it is missing entirely or older than
-	             the version this clio bundles. Then retry the original call.
+	             `describe-business-process`, `list-user-tasks`, `validate-process-graph`) refuses because of
+	             the CrtProcessBuilder package. There are two such refusals and both are fixed by this tool:
+	             the package is missing entirely ("you need to install the CrtProcessBuilder package"), or the
+	             environment carries an older version than this clio ships ("This clio carries CrtProcessBuilder
+	             X, but the target environment has Y"). Both name this tool in their hint. Then retry the
+	             original call.
 
 	             The package ships as source and the target environment compiles it during installation, so
 	             this takes substantially longer than a plain package install. How long depends entirely on

@@ -4,31 +4,44 @@ namespace Clio.Common;
 /// Identities of the Creatio packages that ship inside the clio distribution.
 /// </summary>
 /// <remarks>
-/// These constants are the single source of truth for a bundled package's identity. Everything that
-/// needs to name the package — the install command's artifact path, the <c>[RequiresPackage]</c> gate on
-/// the consuming commands, and the version surfaced by <c>clio info</c> — must reference them rather
-/// than repeat a literal.
+/// These constants are the single source of truth for a bundled package's IDENTITY — its name and the file
+/// it ships as. Everything that needs to name the package must reference them rather than repeat a literal.
 /// <para>
-/// The cliogate version is deliberately NOT here yet, and its current state is the argument for this class
-/// existing. Note first that cliogate carries TWO different quantities that both look like "the cliogate
-/// version", and conflating them is the trap:
+/// A bundled package's VERSION is deliberately NOT here, and used to be. It lives in the archive's own
+/// descriptor and is read by <see cref="IBundledPackageCatalog"/>: the archive is a content file copied to
+/// the build output, so it can be — and during this feature's development was — replaced without
+/// recompiling anything, which makes a constant in this assembly a claim about bytes it no longer
+/// describes. The reasoning, and the three concepts that constant was conflating, are recorded in
+/// <c>spec/adr/adr-bundled-package-version-source-of-truth.md</c>. Do not reintroduce one.
+/// </para>
+/// <para>
+/// <b>cliogate's version-shaped values, in one place.</b> This analysis lives here and nowhere else — the
+/// other documents that used to carry a copy now point at this remark, because one of those copies had
+/// already drifted into being wrong. cliogate carries THREE things that look like "the cliogate version",
+/// and only one pair of them is duplication:
 /// <list type="bullet">
 /// <item><description>
 /// the PACKAGE version <c>2.0.0.44</c> — <c>cliogate/descriptor.json</c> and the <c>_gateVersion</c> constant
-/// in <c>InfoCommand</c>, both written from one variable at the top of <c>build.ps1</c>, plus seven
-/// hand-maintained <c>[RequiresPackage("cliogate", …)]</c> literals. Those seven are the genuine duplication.
+/// in <c>InfoCommand</c>. Both are written from one variable at the top of <c>build.ps1</c>, and these two
+/// ARE the genuine duplication.
 /// </description></item>
 /// <item><description>
 /// the ASSEMBLY version <c>1.1.1.2</c> — <c>cliogate/Properties/AssemblyInfo.cs</c> and
 /// <c>cliogate/version.txt</c>, both hand-maintained and NOT touched by <c>build.ps1</c>.
 /// </description></item>
+/// <item><description>
+/// seven <c>[RequiresPackage("cliogate", …)]</c> sites, which are NOT copies of either. Four require only
+/// presence; the other three carry <c>2.0.0.41</c> and <c>2.0.0.42</c> — deliberately not <c>2.0.0.44</c>,
+/// because each states the version that introduced the operation ITS command calls. That is a requirement,
+/// not a fact about what ships, and keeping the two apart is the whole point of the version ADR. Add a
+/// literal when a command starts needing one; do not "align" the existing ones.
+/// </description></item>
 /// </list>
-/// The two are unrelated by design: cliogate ships a PREBUILT assembly, so its assembly version is ours and
-/// need not track the package version. <c>Program.CheckApiVersion</c> compares <c>version.txt</c> against
+/// The first two are unrelated by design: cliogate ships a PREBUILT assembly, so its assembly version is ours
+/// and need not track the package version. <c>Program.CheckApiVersion</c> compares <c>version.txt</c> against
 /// <c>rest/CreatioApiGateway/GetApiVersion</c>, which returns <c>Assembly.GetName().Version</c> — assembly
 /// against assembly, so the upgrade nudge is consistent and works. Do not "fix" <c>version.txt</c> to
-/// <c>2.0.0.44</c>; that would break it. What is worth fixing is the seven attribute literals — and that is
-/// separate work. Do not add an eighth.
+/// <c>2.0.0.44</c>; that would break it.
 /// </para>
 /// </remarks>
 public static class BundledPackages {
@@ -45,44 +58,6 @@ public static class BundledPackages {
 	/// (.NET), and that lookup is case-sensitive on Linux hosts.
 	/// </remarks>
 	public const string ProcessBuilderPackageName = "CrtProcessBuilder";
-
-	/// <summary>
-	/// Version of the package inside the bundled archive, and the floor the <c>[RequiresPackage]</c> gates
-	/// enforce against the version the target environment reports.
-	/// </summary>
-	/// <remarks>
-	/// Bump it with <c>clio set-pkg-version &lt;package-path&gt; --PackageVersion X.Y.Z.W</c> rather than by
-	/// editing <c>descriptor.json</c> by hand. That command writes <c>PackageVersion</c> AND stamps
-	/// <c>ModifiedOnUtc</c>, and both are needed for a bump to take effect: the date decides WHETHER Creatio
-	/// rewrites the package's <c>SysPackage</c> row at all, the version decides WHAT lands there.
-	/// <para>
-	/// The mechanism, for anyone auditing a version that did not move:
-	/// <c>PackageStorageComposer.ApplySourcePackageChanges</c> sets <c>IsPackageDescriptorChanged</c> when the
-	/// descriptor's <c>ModifiedOnUtc</c> (or repository revision) differs — <c>PackageVersion</c> is not part
-	/// of that comparison — and without that flag <c>PackageDBStorage.SavePackageDescriptor</c> returns early
-	/// at its <c>GetIsPackageDescriptorModified</c> guard, never reaching the <c>SysPackage.Version</c>
-	/// assignment. This is coherent platform behaviour, not a defect: <c>ModifiedOnUtc</c> IS the field that
-	/// means "this descriptor changed", and the supported tooling maintains it. Only a hand edit can leave it
-	/// stale while the version moves.
-	/// </para>
-	/// <para>
-	/// Both halves were observed live on 2026-08-05: with only <c>PackageVersion</c> moved the row kept
-	/// <c>1.0.0.0</c>; once <c>ModifiedOnUtc</c> moved too the row took the new version and the descriptor's
-	/// own timestamp, on both .NET Framework and .NET.
-	/// </para>
-	/// <para>
-	/// Because THIS archive is hand-produced, <c>BundledProcessBuilderPackageTests</c> pins this value and the
-	/// descriptor's <c>ModifiedOnUtc</c> beside the archive SHA-256 — cheap insurance against exactly the hand
-	/// edit that cannot happen through <c>set-pkg-version</c>. The producing repository documents the step in
-	/// <c>docs/bundling-into-clio.md</c>.
-	/// </para>
-	/// <para>
-	/// Must stay four-part: <c>RequiredPackageChecker.IsCompatible</c> compares through
-	/// <see cref="System.Version"/>, which gives a three-part string a <c>Revision</c> of <c>-1</c>, so a
-	/// four-part floor against a three-part installed version compares as installed &lt; required.
-	/// </para>
-	/// </remarks>
-	public const string ProcessBuilderVersion = "1.0.0.0";
 
 	/// <summary>
 	/// File name of the bundled process-builder archive, inside the folder of the same name.

@@ -303,7 +303,7 @@ public sealed class InstallProcessBuilderToolTests {
 			: base(
 				new EnvironmentSettings(),
 				Substitute.For<IPackageInstaller>(),
-				Substitute.For<IWorkingDirectoriesProvider>(),
+				Substitute.For<IBundledPackageCatalog>(),
 				Substitute.For<IFileSystem>(),
 				Substitute.For<IPackageInstallOutcomeVerifier>(),
 				Substitute.For<IServerReadinessWaiter>(),

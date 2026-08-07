@@ -98,18 +98,18 @@ namespace Clio.Command.PackageCommand
 			// how this warning replaced an earlier hard guard.
 			//
 			// The hazard the guard was written for is real but NARROW: System.Version gives a missing part -1,
-			// so a shorter version sorts BELOW every four-part floor that RequiredPackageChecker.IsCompatible
-			// compares against. That only matters for the packages clio actually gates on, and for those the
-			// four-part invariant is enforced where it belongs — the archive pins in
-			// clio.tests/Common/BundledProcessBuilderPackageTests.cs assert the shipped descriptor equals the
-			// four-part BundledPackages constant, so a short version cannot reach a release unnoticed.
+			// so a shorter version sorts BELOW every four-part version it is compared against — whether that
+			// is a [RequiresPackage] literal or, for a bundled package, the version in the shipped archive.
+			// That only matters for the packages clio actually gates on, and for those the four-part invariant
+			// is enforced where it belongs: BundledProcessBuilderPackageTests asserts the shipped descriptor's
+			// version is four-part, so a short one cannot reach a release unnoticed.
 			if (parsed.Version.Revision < 0) {
 				_logger.WriteWarning(
 					$"'{options.PackageVersion}' has fewer than four parts. That is fine for an ordinary package - "
 					+ "clio's own add-package seeds 0.1.0 - and the version is being written as requested. But "
 					+ "Creatio compares recorded versions through System.Version, which treats a missing part as "
-					+ "-1, so if THIS package is one clio enforces a version floor on (cliogate, CrtProcessBuilder) "
-					+ "a shorter version sorts below every four-part floor and the gated commands would refuse an "
+					+ "-1, so if THIS package is one clio compares versions on (cliogate, CrtProcessBuilder) "
+					+ "a shorter version sorts below every four-part version and the gated commands would refuse an "
 					+ $"environment that is actually up to date. For those packages write "
 					+ $"'{parsed.Version.Major}.{parsed.Version.Minor}.{Math.Max(parsed.Version.Build, 0)}.0'.");
 			}

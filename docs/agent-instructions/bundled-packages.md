@@ -8,8 +8,10 @@ Read it before touching any of:
 
 - `clio/CrtProcessBuilder/*.gz`, `clio/cliogate/*.gz` — the archives themselves
 - `clio/Common/BundledPackages.cs` — the identity constants
+- `clio/Common/BundledPackageCatalog.cs` — the reader that answers what the distribution carries
+- `clio/Common/BundledPackageConvergence.cs` — the rule that decides an environment is behind
 - `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the pins
-- a `[RequiresPackage]` version floor
+- a `[RequiresPackage]` version literal
 
 ## The two packages
 
@@ -50,9 +52,16 @@ PackageInstallerService.InstallPackage(zip)
 ```
 
 So: **the date decides WHETHER the row is rewritten, the version decides WHAT lands in it.** A version
-bumped alone installs cleanly and leaves the recorded version behind — which is what a `[RequiresPackage]`
-floor reads, so the floor then refuses commands on an environment that was upgraded correctly. Verified on
-two stands (net472 and .NET 8) on 2026-08-05, in both directions.
+bumped alone installs cleanly and leaves the recorded version behind — which is the version clio compares
+against, so an environment upgraded correctly still looks out of date. Verified on two stands (net472 and
+.NET 8) on 2026-08-05, in both directions.
+
+The mirror case is the one that catches people out, because nothing about it looks wrong: **date moved,
+version unchanged.** The row IS rewritten — with the same version. The sources land, the target compiles
+them, everything works. But clio decides whether to ask an environment to update by comparing versions, so
+every environment that already has the package compares as converged and is never asked. The rebundle
+reaches new installs only, silently. This is why the version must move on every rebundle, and why
+`rebundle-process-builder.ps1` refuses to run without a higher one.
 
 Re-measured on 2026-08-06 (net472, `ts1-web01-15837616`), which added one property worth knowing: the
 comparison is **"differs", not "is later"**. Installing an archive whose `ModifiedOnUtc` is EARLIER than the
@@ -74,34 +83,41 @@ database therefore cannot distinguish "installed" from "working" — which is wh
 
 ## Procedure — replacing `CrtProcessBuilder.gz`
 
-### First decide whether to raise the floor
+### The version moves on every rebundle
 
-`BundledPackages.ProcessBuilderVersion` is the `[RequiresPackage]` floor. Raising it forces every
-environment carrying an older package to be refused until it is upgraded.
+There is no "decide whether to raise it" step any more, and no floor constant to raise. clio reads the
+shipped version out of the archive itself (`IBundledPackageCatalog`) and compares it against what the
+environment recorded; that comparison is the entire delivery mechanism. So:
 
-- **Service contract changed** (new operation, changed response, clio starts sending something an older
-  server cannot handle) → raise it. A refusal naming the fix beats an unexplained server error.
-- **Internal change, same contract** (bug fix, refactor) → leave it. The new sources still reach whoever
-  installs, without forcing everyone to upgrade. Only the SHA pin changes.
+- **raising it is the only way a change reaches an existing environment** — see fact 2 for what happens
+  when it does not;
+- **raising it costs nothing to maintain.** Nothing on the clio side has to be kept in step with it. That
+  used to be false: the version was also the `[RequiresPackage]` floor, so raising it forced a refusal on
+  every environment until upgraded, which is why the old guidance reserved it for contract changes. Both
+  the floor and that reason are gone.
+
+An explicit `[RequiresPackage("CrtProcessBuilder", "X.Y.Z.W")]` literal is a separate and much rarer thing:
+add one in the commit where a command starts calling an operation an older server does not have. It states
+what the CODE needs, not what environments should converge to. A guard test asserts the shipped archive
+satisfies every such literal — class-level and property-level — so clio can never demand a version it does
+not itself carry.
+
+**A server-side change with a SECURITY character needs a literal, always.** A new permission check, a
+tightened validator, a fixed authorization hole: those must be a `[RequiresPackage]` version, never left to
+convergence. Convergence warns and proceeds when it cannot read the archive, and it is a delivery policy
+rather than a gate — only the literal fails closed.
 
 ### One call — `rebundle-process-builder.ps1`
 
 The whole procedure, from the repository root:
 
 ```powershell
-# Raising the floor: the package's SERVICE CONTRACT changed and every environment must upgrade.
-pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout> `
-  -Version 1.1.0.0 -RaiseFloor
-
-# NOT raising it: an internal change - the sources are re-packed and the descriptor's date is
-# re-stamped (which is what makes the target rewrite its SysPackage row), while the version and
-# the floor both stay where they are. Omit -Version entirely.
-pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout>
+pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout> -Version 1.0.1.0
 ```
 
-`-Version` without `-RaiseFloor` is REFUSED before anything is touched, and this is not pedantry: the
-guard fixture pins the shipped descriptor's version to `BundledPackages.ProcessBuilderVersion`, so the
-two cannot diverge — that run would only produce a red test.
+`-Version` is required and must be HIGHER than the version currently in the descriptor. The script refuses
+before touching anything otherwise — an equal version publishes to nobody, and a lower one is worse:
+`SysPackage.Version` is not monotonic (fact 2), so it would pin environments below what clio ships.
 
 Add `-Configuration` / `-Framework` when more than one clio build output exists. The script refuses to
 guess, because whichever it picks is the one that receives the new archive; the others keep the previous
@@ -109,7 +125,7 @@ one and an install run from them ships it. It names them all at the end.
 
 What it does beyond running the steps below:
 
-- computes both pins **from the archive it just produced**, so "the pins are stale" stops being a
+- computes the pins **from the archive it just produced**, so "the pins are stale" stops being a
   reachable state;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the
   compile marker present, the package's own assembly absent. No pin covers this, and its absence is how
@@ -133,15 +149,17 @@ carry the REASONS, and a script that fails is only useful to someone who knows w
 dotnet build MainSolution.slnx -c dev-nf
 dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
 
-# 2. Move BOTH fields - PackageVersion and ModifiedOnUtc - on EVERY rebundle, not only when raising
-#    the floor: fact 2 above is why the date is what makes the target rewrite the SysPackage row at
-#    all, so pass the SAME version to re-stamp the date if the version is not changing.
+# 2. Move BOTH fields - PackageVersion and ModifiedOnUtc - and move the version UP. Fact 2 is why:
+#    the date is what makes the target rewrite the SysPackage row at all, and the version is what
+#    clio compares to decide whether an environment needs updating. Move only the date and the
+#    change reaches nobody who already has the package; move only the version and it installs
+#    without being recorded.
 #
 #    The command is the way to do that in one step, and it is what the pins expect (it clears the
 #    milliseconds, giving the `000` suffix the guard fixture uses as a provenance oracle). It is NOT
 #    a technical requirement, and the earlier wording here ("never by editing descriptor.json") was
 #    too strong: a hand edit that moves both fields works, because the platform's comparison is
-#    "differs", not "is later" - measured, see fact 2. What breaks is moving the version alone.
+#    "differs", not "is later" - measured, see fact 2.
 dotnet <clio>/clio/bin/Debug/net8.0/clio.dll set-pkg-version ./packages/CrtProcessBuilder `
   --package-version X.Y.Z.W
 
@@ -180,19 +198,23 @@ target's configuration build. Lose it and the package installs, the gate reports
 
 | Update | Where |
 |---|---|
-| `ProcessBuilderVersion` (only if raising the floor) | `clio/Common/BundledPackages.cs` |
 | `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
 | `ExpectedDescriptorModifiedOnUtc` | same file |
+| `ExpectedArchiveVersion` | same file |
+
+**No PRODUCTION constant to update** — that is the point of the current design: clio reads the shipped
+version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`
+is a test-side pin with no runtime consumer, and it exists for the same reason the SHA pin does — a `.gz`
+renders in a diff as a changed byte count, so without that line a reviewer cannot see whether the version
+moved. The script writes all three from the archive it produced.
 
 The date pin must end in `000`. `PackageDescriptor.ConvertToModifiedOnUtc` truncates to whole seconds, so
 milliseconds in it prove the descriptor was written by something other than `set-pkg-version` — a test
 asserts this, because the archive shipped for a while with a stamp ending in `431` while every doc told the
 next person to use the command.
 
-The three pins sit side by side deliberately: a rebundle touches all of them, so a hand edit that moved the
-version without the date fails in clio's own suite instead of on a customer's environment. Name the
-producing repository's commit in the commit message — the SHA pin is the only reviewability this artifact
-has, since a `.gz` change renders in a diff as nothing but a byte count.
+Name the producing repository's commit in the commit message — the SHA pin is the only reviewability this
+artifact has, since a `.gz` change renders in a diff as nothing but a byte count.
 
 ### Then verify
 
@@ -200,6 +222,9 @@ has, since a `.gz` change renders in a diff as nothing but a byte count.
 # 6. REBUILD clio first. This is the trap: the command resolves the archive from
 #    IWorkingDirectoriesProvider.ExecutingDirectory - the BUILD OUTPUT directory - while `compress -d`
 #    wrote to the repo path. Skip this and you will test the previous archive and conclude the wrong thing.
+#
+#    RESTART any long-running `clio mcp` afterwards. It caches the archive's version for the life of the
+#    process, so it keeps reporting - and comparing against - the version it read at startup.
 dotnet build clio/clio.csproj -f net8.0
 
 # 7. Tests.
@@ -210,8 +235,13 @@ dotnet clio/bin/Debug/net8.0/clio.dll install-process-builder -e <env>
 dotnet clio/bin/Debug/net8.0/clio.dll list-packages -e <env>
 ```
 
-If `list-packages` still shows the old version after a floor bump, `ModifiedOnUtc` did not move — step 2 was
-done by hand instead of with the command.
+`list-packages` must show the NEW version. If it still shows the old one, `ModifiedOnUtc` did not move —
+step 2 was done by hand instead of with the command — and the environment will keep being told it is behind
+on every gated call, because that recorded version is exactly what the convergence rule compares.
+
+`clio info` must also show the new version on the `process-builder` line. It reads the archive through the
+same catalog the install and the convergence rule use, so if it still prints the old one, the rebuild in
+step 6 did not happen or landed in a different build output.
 
 Judge the result by outcome, never by the installer's dialog: the install call returning success only proves
 the archive was accepted. `install-process-builder` already probes `ProcessDesignService` for you and fails
@@ -219,10 +249,20 @@ when it does not answer.
 
 ## Invariants for any bundled package
 
-- **Identity lives in one place.** `BundledPackages` holds the name, version and archive file name; nothing
-  repeats those literals. (The cliogate version is deliberately NOT there yet — it is still spread across a
-  constant in `InfoCommand`, `cliogate/descriptor.json` and a stale `cliogate/version.txt`. Collapsing that
-  triple is separate work; do not add a fourth copy.)
+- **Identity lives in one place, and the version lives in another.** `BundledPackages` holds the name and
+  archive file name; `IBundledPackageCatalog` reads the version out of the archive. Do not add a version
+  constant back — the archive is a content file that can be replaced without recompiling clio, so a
+  constant describes bytes it may no longer be shipping. Three build outputs held three different archives
+  under one constant while this was being built; see
+  `spec/adr/adr-bundled-package-version-source-of-truth.md`. cliogate is deliberately not in the catalog
+  yet; before touching any of its several version-shaped values, read the remarks on
+  `clio/Common/BundledPackages.cs` — that is the single place the analysis lives, and a duplicate of it
+  elsewhere had already drifted into being wrong.
+- **What the code requires and what environments converge to are different statements.**
+  `[RequiresPackage]` is the first: written by whoever writes the calling code, in their own commit, and it
+  refuses. Convergence is the second: derived from the archive, applied to any package clio ships, and it
+  also refuses — but with a different message, because the reader's reason for acting differs even though
+  the remedy does not. Neither belongs inside the other.
 - **The remediation command must not be gated by what it fixes.** An install verb carries neither
   `[RequiresPackage]` for its own package (it would be refused by the requirement it exists to satisfy) nor
   `[FeatureToggle]` (a gated options type is filtered out of the verb parse array, and a gated MCP primitive

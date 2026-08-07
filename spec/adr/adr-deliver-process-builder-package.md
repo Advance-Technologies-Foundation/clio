@@ -43,11 +43,18 @@ Concretely:
 4. `clio install-process-builder` (MCP tool `install-process-builder`) installs it, waits out the
    restart, and then verifies the OUTCOME rather than the install call.
 5. The five consuming commands carry
-   `[RequiresPackage(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderVersion, Hint = "…")]`,
-   so a missing or stale package produces a refusal that names the fix.
+   `[RequiresPackage(BundledPackages.ProcessBuilderPackageName, Hint = "…")]`,
+   so a missing package produces a refusal that names the fix, and a separate convergence rule refuses a
+   stale one.
 
-`clio/Common/BundledPackages.cs` is the single source of truth for the name, version and archive
-filename. Nothing repeats those literals.
+`clio/Common/BundledPackages.cs` is the single source of truth for the name and archive filename. Nothing
+repeats those literals.
+
+> **Superseded in part.** As first built this ADR also put the shipped VERSION in that class and used it as
+> the `[RequiresPackage]` floor, so points 5 and the paragraph above read differently. That arrangement
+> conflated three separate concepts and was replaced; see
+> [adr-bundled-package-version-source-of-truth.md](adr-bundled-package-version-source-of-truth.md). The
+> rest of this ADR — source-only delivery, the compile marker, the outcome check — stands.
 
 ## Alternatives considered
 
@@ -231,10 +238,12 @@ first, propose the install second.
   rule this delivery adds. Creatio treats `ModifiedOnUtc` — not `PackageVersion` — as "this descriptor
   changed" (`PackageStorageComposer.ApplySourcePackageChanges` → `IsPackageDescriptorChanged` →
   `PackageDBStorage.SavePackageDescriptor`'s guard), so a version moved alone installs cleanly and leaves the
-  RECORDED version behind, making the `[RequiresPackage]` floor unsatisfiable. `clio set-pkg-version` writes
-  both fields, so the rule costs nothing when the supported command is used; because this archive is
-  hand-produced, the guard fixture additionally pins the version, the date and the archive SHA-256 side by
-  side. Not an open question — a documented constraint.
+  RECORDED version behind — and that recorded version is exactly what the convergence rule compares, so a
+  correctly upgraded environment keeps being told it is behind. `clio set-pkg-version` writes both fields, so
+  the rule costs nothing when the supported command is used; because this archive is hand-produced, the guard
+  fixture pins the date, the version and the archive SHA-256 side by side. Not an open question — a
+  documented constraint. (Originally worded in terms of a `[RequiresPackage]` floor; there is none on this
+  package any more — see the superseding ADR.)
 - **Whether a failed configuration build is reported at all is unverified.** Partly mitigated for THIS
   package and NOT closed: an install whose build produces no assembly is detected, because the package's own
   route then cannot answer — observed on a stand, where the platform logged `Configuration build finished`
@@ -254,6 +263,8 @@ first, propose the install second.
   failure mode: the recorded version says what was ACCEPTED, and for a source-only package accepted is not
   compiled, so a skip would decline to fix an environment that recorded the right version and never built it.
   Building it needs the package-agnostic outcome check above first.
-- `BundledPackages` deliberately does NOT yet hold the cliogate version, which is still spread across a
-  constant in `InfoCommand`, `cliogate/descriptor.json` and a stale `cliogate/version.txt` that nothing
-  writes. Collapsing that triple is separate work; do not add a fourth copy.
+- `BundledPackages` deliberately does NOT hold the cliogate version. The full analysis of what cliogate's
+  several version-shaped values actually are — and which of them are genuine duplication versus correctly
+  different quantities — lives in one place, the remarks on `clio/Common/BundledPackages.cs`. Read it there
+  before touching any of them; earlier copies of that analysis in this file were wrong about
+  `cliogate/version.txt`.

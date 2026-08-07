@@ -62,7 +62,12 @@ OUTPUT FORMAT
         clio:   8.0.1.97
 
 NOTES
-    - The cliogate version shown is the version included with current clio 
+    - The process-builder version is read out of the bundled archive this clio
+      carries, not from any environment. Compare it with 'clio list-packages
+      -e <environment>' to tell whether that environment is behind.
+    - 'process-builder: unavailable - ...' means this clio installation cannot
+      read its own bundled archive; the remedy is to reinstall or update clio.
+    - The cliogate version shown is the version included with current clio
       installation
     - This may differ from the version installed on a specific Creatio instance
     - Use 'get-info' command to check the actual cliogate version on an 

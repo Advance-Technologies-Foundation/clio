@@ -16,26 +16,30 @@
         compiled the shipped sources;
       * moving PackageVersion without moving ModifiedOnUtc leaves the environment's recorded version
         behind, because Creatio decides WHETHER to rewrite the SysPackage row from the timestamp;
-      * refreshing one archive pin but not the other leaves a red test at best and a lie at worst;
+      * NOT moving PackageVersion at all ships the new sources to nobody: clio compares the recorded
+        version against the one in the archive, so an unchanged version means every existing
+        environment is already "converged" and is never asked to update;
+      * refreshing the archive but not its SHA pin leaves a red test at best and a lie at worst;
       * forgetting to rebuild clio means every local verification tests the PREVIOUS archive, since an
         install resolves the bundled .gz from the BUILD OUTPUT, not from the repository.
 
-    The pins are computed FROM the archive this run produced, so "the pins are stale" stops being a
-    reachable state. Nothing is committed and nothing is pushed: the script reports what it changed
-    and leaves both repositories dirty for review.
+    The three pins this run can derive - the archive SHA-256, the descriptor's ModifiedOnUtc, and the
+    version - are computed FROM the archive it just produced, so "those pins are stale" stops being a
+    reachable state. The SCHEMA descriptor pin is deliberately verified rather than refreshed: it guards a
+    field clio's own tooling does not stamp, so a moved value stops the run instead of being accepted
+    silently. Nothing is committed and nothing is pushed: the script reports what it changed and leaves
+    both repositories dirty for review.
 
 .PARAMETER PackageRepoPath
     Path to the ProcessBuilder repository checkout (the folder containing packages/CrtProcessBuilder).
 
 .PARAMETER Version
-    Four-part version to stamp. Omit to RE-STAMP the current version, which is the correct thing to do
-    when the sources changed but the floor does not move - the timestamp is what makes the target
-    rewrite its SysPackage row at all.
-
-.PARAMETER RaiseFloor
-    Also update BundledPackages.ProcessBuilderVersion, i.e. require this version of every environment.
-    Only pass this when the package's SERVICE CONTRACT changed; an internal fix should leave the floor
-    alone so existing environments are not forced to upgrade.
+    Four-part version to stamp. REQUIRED, and it must be higher than the version currently in the
+    descriptor. There is no "internal change, leave the version alone" case any more: clio decides
+    whether to update an environment by comparing its recorded version against the one in the shipped
+    archive, so a rebundle under an unchanged version reaches only brand-new installs. Raising it costs
+    nothing to maintain - no floor constant exists to keep in step - and is the only way for a change to
+    reach environments that already have the package.
 
 .PARAMETER Configuration
     Which clio build output to use and refresh (Debug or Release). Omit to auto-detect: with exactly one
@@ -50,19 +54,18 @@
     Skip the package's own build and unit tests. For a docs-only or descriptor-only rebundle.
 
 .EXAMPLE
-    ./rebundle-process-builder.ps1 -PackageRepoPath C:\Projects\workspace\ProcessBuilder
+    ./rebundle-process-builder.ps1 -PackageRepoPath C:\Projects\workspace\ProcessBuilder -Version 1.0.1.0
 
 .EXAMPLE
     ./rebundle-process-builder.ps1 -PackageRepoPath C:\Projects\workspace\ProcessBuilder `
-        -Version 1.1.0.0 -RaiseFloor
+        -Version 1.1.0.0 -Configuration Release -Framework net10.0
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string] $PackageRepoPath,
-    [string] $Version,
+    [Parameter(Mandatory = $true)][string] $Version,
     [ValidateSet('Debug','Release')][string] $Configuration,
     [string] $Framework,
-    [switch] $RaiseFloor,
     [switch] $SkipTests
 )
 
@@ -74,7 +77,6 @@ $packageDir   = Join-Path $PackageRepoPath 'packages\CrtProcessBuilder'
 $descriptor   = Join-Path $packageDir 'descriptor.json'
 $binDir       = Join-Path $packageDir 'Files\Bin'
 $archive      = Join-Path $clioRoot 'clio\CrtProcessBuilder\CrtProcessBuilder.gz'
-$bundledFile  = Join-Path $clioRoot 'clio\Common\BundledPackages.cs'
 $pinsFile     = Join-Path $clioRoot 'clio.tests\Common\BundledProcessBuilderPackageTests.cs'
 
 function Step([string] $text) { Write-Host "`n=== $text" -ForegroundColor Cyan }
@@ -152,28 +154,38 @@ function Get-DescriptorField([string] $path, [string] $field) {
 
 $beforeVersion = Get-DescriptorField $descriptor 'PackageVersion'
 $beforeStamp   = Get-DescriptorField $descriptor 'ModifiedOnUtc'
-if (-not $Version) { $Version = $beforeVersion }
 
-# Version and floor are LOCKED TOGETHER for this package, and the lock is a pin, not a convention:
-# BundledProcessBuilderPackageTests asserts the shipped descriptor's PackageVersion equals
-# BundledPackages.ProcessBuilderVersion. So changing the version without -RaiseFloor produces a
-# guaranteed red test. Refuse here rather than warn afterwards - warning would leave two repositories
-# modified and the breakage discovered at test time.
-$currentFloor = ([regex]::Match((Get-Content -LiteralPath $bundledFile -Raw),
-    'ProcessBuilderVersion = "([^"]*)"')).Groups[1].Value
-if ($Version -ne $currentFloor -and -not $RaiseFloor) {
+# The version must MOVE UP, and this is the guard that carries the whole delivery model. clio compares an
+# environment's recorded version against the one in the shipped archive to decide whether to ask for an
+# update, so:
+#   * an unchanged version publishes to nobody - the archive installs fine, but every environment that
+#     already has the package compares as converged and is never asked, silently;
+#   * a LOWER version is worse than useless: SysPackage.Version is not monotonic (the platform rewrites
+#     the row whenever ModifiedOnUtc DIFFERS, and an earlier stamp was measured moving a recorded version
+#     downward), so it would leave environments pinned below what clio ships with no way back up.
+[version] $parsedNew = $null
+[version] $parsedOld = $null
+if (-not [version]::TryParse($Version, [ref] $parsedNew)) {
+    Die "-Version '$Version' is not a version. Use four parts, e.g. 1.0.1.0."
+}
+if ($parsedNew.Revision -lt 0) {
+    Die "-Version '$Version' must carry all four parts: a three-part version yields Revision = -1 and sorts BELOW any four-part version an environment recorded."
+}
+if (-not [version]::TryParse($beforeVersion, [ref] $parsedOld)) {
+    Die "The descriptor's current PackageVersion '$beforeVersion' is not a version. Fix $descriptor first."
+}
+if ($parsedNew -le $parsedOld) {
     Die @"
-Refusing: -Version $Version differs from the floor ($currentFloor) and -RaiseFloor was not passed.
+Refusing: -Version $Version is not higher than the version already in the descriptor ($beforeVersion).
 
-clio pins the shipped descriptor's version to BundledPackages.ProcessBuilderVersion, so the two cannot
-diverge - this run would leave a red guard test. Pick one:
+clio decides whether to update an environment by comparing the version it recorded against the version in
+the shipped archive. So this run would produce an archive that:
 
-  * the package's SERVICE CONTRACT changed, and every environment must upgrade:
-        -Version $Version -RaiseFloor
+  * installs correctly on a machine that has never had the package, and
+  * is never offered to any environment that already has it - they all compare as already converged.
 
-  * an internal change (bug fix, refactor) that must NOT force anyone to upgrade:
-        omit -Version entirely. The sources are re-packed and the timestamp is re-stamped, which is what
-        makes the target rewrite its SysPackage row; the version and the floor both stay at $currentFloor.
+Pass a higher -Version. There is no reason left to hold it back: no floor constant has to be kept in step
+with it any more, so raising it costs nothing.
 "@
 }
 
@@ -192,6 +204,13 @@ Ok "ModifiedOnUtc $beforeStamp -> $afterStamp"
 
 # ------------------------------------------------------------- 2b. schema descriptors, unstamped
 Step '2b. Check schema descriptors (set-pkg-version stamps the PACKAGE descriptor only)'
+# Deliberately VERIFIED, not refreshed. The schema pin exists to catch a descriptor written by something
+# other than clio - the compile marker shipped for a day carrying local time in a UTC-labelled field - and
+# a script that silently rewrote the pin to whatever it found would defeat exactly that. So a moved schema
+# stamp stops the run and asks for a deliberate decision.
+$pinnedSchemaStamp = ([regex]::Match((Get-Content -LiteralPath $pinsFile -Raw),
+    'ExpectedSchemaDescriptorModifiedOnUtc = "([^"]*)"')).Groups[1].Value
+$schemaStamps = @()
 Get-ChildItem -LiteralPath (Join-Path $packageDir 'Schemas') -Filter descriptor.json -Recurse -ErrorAction SilentlyContinue |
     ForEach-Object {
         $raw = Get-Content -LiteralPath $_.FullName -Raw
@@ -200,8 +219,22 @@ Get-ChildItem -LiteralPath (Join-Path $packageDir 'Schemas') -Filter descriptor.
             $utc = [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime
             $flag = if ($ms % 1000 -ne 0) { '  <-- NOT whole seconds: written by hand?' } else { '' }
             Ok ("{0,-34} {1:yyyy-MM-dd HH:mm:ss}Z{2}" -f $_.Directory.Name, $utc, $flag)
+            $schemaStamps += "/Date($ms)/"
         }
     }
+if ($pinnedSchemaStamp -and $schemaStamps -notcontains $pinnedSchemaStamp) {
+    Die @"
+The pinned schema descriptor stamp is no longer present in the package.
+
+  pinned in clio : $pinnedSchemaStamp
+  found in schemas: $($schemaStamps -join ', ')
+
+This run would leave a red guard test. The pin is NOT refreshed automatically on purpose: it is the only
+check on a field clio's own tooling does not stamp, and it has shipped wrong before (local time in a
+UTC-labelled field). If the move is intended, set ExpectedSchemaDescriptorModifiedOnUtc in
+clio.tests\Common\BundledProcessBuilderPackageTests.cs to the new value and re-run.
+"@
+}
 
 # ---------------------------------------------------------------- 3. keep the archive source-only
 Step '3. Remove the build output so the archive stays source-only'
@@ -268,7 +301,11 @@ $stamp = $afterStamp
 
 function Replace-InFile([string] $path, [string] $pattern, [string] $replacement, [string] $label) {
     $text = Get-Content -LiteralPath $path -Raw
-    if ($text -notmatch $pattern) { Die "Could not find $label in $path - the constant's shape changed; update this script." }
+    # Insist on EXACTLY one match. A pattern that hits nothing means the constant's shape changed; one that
+    # hits several means it is not anchored tightly enough, and [regex]::Replace would rewrite all of them.
+    $matches = [regex]::Matches($text, $pattern)
+    if ($matches.Count -eq 0) { Die "Could not find $label in $path - the constant's shape changed; update this script." }
+    if ($matches.Count -gt 1) { Die "The pattern for $label matches $($matches.Count) places in $path. Refusing to rewrite them all - tighten the pattern in this script." }
     $new = [regex]::Replace($text, $pattern, $replacement)
     if ($new -ne $text) {
         [IO.File]::WriteAllText($path, $new)
@@ -276,13 +313,14 @@ function Replace-InFile([string] $path, [string] $pattern, [string] $replacement
     } else { Ok "$label -> unchanged" }
 }
 
-Replace-InFile $pinsFile '(?m)^(\s*)"[0-9A-Fa-f]{64}";' "`${1}`"$sha`";" 'ExpectedArchiveSha256'
+# Anchored on the constant's NAME, not merely on "64 hex digits on their own line": the pins file already
+# carries other quoted literals, and a shape-only pattern would silently overwrite the next one added.
+Replace-InFile $pinsFile '(?s)(ExpectedArchiveSha256\s*=\s*)"[0-9A-Fa-f]{64}";' "`${1}`"$sha`";" 'ExpectedArchiveSha256'
+Replace-InFile $pinsFile 'ExpectedArchiveVersion = "[^"]*";' "ExpectedArchiveVersion = `"$Version`";" 'ExpectedArchiveVersion'
 Replace-InFile $pinsFile 'ExpectedDescriptorModifiedOnUtc = "[^"]*";' "ExpectedDescriptorModifiedOnUtc = `"$stamp`";" 'ExpectedDescriptorModifiedOnUtc'
-if ($RaiseFloor) {
-    Replace-InFile $bundledFile 'ProcessBuilderVersion = "[^"]*";' "ProcessBuilderVersion = `"$Version`";" 'BundledPackages.ProcessBuilderVersion'
-} else {
-    Ok "BundledPackages.ProcessBuilderVersion stays at $currentFloor (no floor raise requested)"
-}
+# There is deliberately no version constant to update. clio reads the shipped version out of this very
+# archive (IBundledPackageCatalog), so nothing on the clio side has to be kept in step with it - which is
+# what made raising the version cheap enough to require on every rebundle.
 
 # ---------------------------------------------------------------- 7. rebuild, or verify nothing
 Step '7. Rebuild clio (an install resolves the archive from the BUILD OUTPUT, not the repository)'

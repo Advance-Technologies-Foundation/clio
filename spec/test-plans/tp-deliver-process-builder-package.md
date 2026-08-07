@@ -29,8 +29,8 @@ The three, which every section below is organised around:
 1. A package can install and never be **compiled**. The name-based gate then reports it present while
    every service call fails.
 2. A version can move in the archive and not in the environment's **recorded** version, because Creatio
-   decides from the descriptor's `ModifiedOnUtc`, not from `PackageVersion` — so the `[RequiresPackage]`
-   floor refuses an environment that WAS upgraded correctly.
+   decides from the descriptor's `ModifiedOnUtc`, not from `PackageVersion` — so the convergence rule keeps
+   reporting an environment that WAS upgraded correctly as behind.
 3. The remediation command can be made **unreachable by the very gate it exists to satisfy**, on either
    surface, by one attribute.
 
@@ -48,7 +48,8 @@ The three, which every section below is organised around:
   sequence. The verifier's own answer shapes are covered separately, because the interface is named for the
   question and its implementation is the part the recorded follow-up replaces. Plus the MCP tool wrapper:
   argument mapping, annotations, the response-deadline branch, and concurrency.
-- **Story 3** — the `[RequiresPackage]` floor on the five process-designer surfaces, and the two absences
+- **Story 3** — the presence-only `[RequiresPackage]` gate on the five process-designer surfaces, the
+  separate convergence rule that refuses an environment behind the shipped archive, and the two absences
   that keep the remediation reachable.
 - **Story 4** — the curated MCP contract, the shipped tool description, and the stand-free MCP E2E path.
 - `PackageDescriptor.ConvertToModifiedOnUtc` — a `DateTimeKind` defect found while establishing silent
@@ -99,7 +100,9 @@ This fixture is the only reviewability the artifact has: it is hand-produced in 
 
 | ID | Test | Asserts |
 |----|------|---------|
-| TC-U-09 | `BundledArchive_ShouldMatchThePinnedHash` + `BundledArchive_ShouldCarryADescriptorMatchingBundledPackages` | SHA-256, `UId`, name, `PackageVersion` and `ModifiedOnUtc` pinned side by side — the three-pin rule that makes silent failure 2 fail here first |
+| TC-U-09 | `BundledArchive_ShouldMatchThePinnedHash` + `BundledArchive_ShouldCarryADescriptorMatchingBundledPackages` | SHA-256, `UId`, name, `PackageVersion` and `ModifiedOnUtc` pinned side by side — the pins that make silent failure 2 fail here first. `PackageVersion` is read through the real `BundledPackageCatalog`, so this also covers the production reader against the real container format |
+| TC-U-09a | `BundledPackageCatalog_ShouldReadTheVersionOutOfTheRealArchive` | the production reader parses the shipped descriptor (real format, real BOM); every catalog unit test substitutes the container walk |
+| TC-U-09b | `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` | the shipped archive satisfies every `[RequiresPackage]` literal declared against it — class-level and property-level — so clio can never demand a version it does not carry |
 | TC-U-10 | `BundledArchive_ShouldCarryTheAuthorizationGateOnTheServiceHandlers` | the `CanManageProcessDesign` operation literal, the `ConnectionType != UserType.General` half, and a floor on gate call sites |
 | TC-U-11 | `BundledArchive_ShouldContainTheCompileMarkerSchema` | the one empty Source Code schema that drags the package into the target's configuration build |
 | TC-U-12 | `BundledArchive_ShouldCarryThePackageSources` | sources present — the target compiles them, so their absence is fatal |
@@ -157,10 +160,24 @@ shape is pinned here.
 
 | ID | Test | Asserts |
 |----|------|---------|
-| TC-U-26 | `OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenProcessDesignerCommand` | all five surfaces carry the floor, four-part, sourced from `BundledPackages` |
-| TC-U-27 | `ValidateProcessGraphArgs_ShouldDeclareVersionedProcessBuilderRequirement_WhenStandaloneTool` | the standalone tool's own args type carries it too |
-| TC-U-28 | `GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService` | a boundary case — this one does NOT need the package, and pinning that keeps the floor from spreading by habit |
+| TC-U-26 | `OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand` | all four options types declare the requirement by NAME only — none of these commands needs an operation introduced in a particular version; keeping an environment current is the separate convergence rule's job |
+| TC-U-27 | `ValidateProcessGraphArgs_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenStandaloneTool` | the standalone tool's own args type carries the same presence-only requirement |
+| TC-U-28 | `GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService` | a boundary case — this one does NOT need the package, and pinning that keeps the gate from spreading by habit |
 | TC-U-29 | `DescribeProcessArgs_ShouldNotDeclareAnyPackageRequirement_BecauseGateReadsOptionsType` | the gate reads the options type, so an attribute on the args type would be inert |
+
+### Story 3b — the version source of truth and the convergence rule
+
+Added by `spec/adr/adr-bundled-package-version-source-of-truth.md`, which replaced the shipped-version
+constant with a reader over the archive and split the `[RequiresPackage]` floor into a presence-only
+requirement plus a separate convergence rule.
+
+| ID | Test | Asserts |
+|----|------|---------|
+| TC-U-39 | `BundledPackageCatalogTests` (11 cases) | the version is read out of the archive at `ExecutingDirectory`, the UTF-8 BOM is stripped, successes are cached and failures are not, and every unreadable-distribution branch produces a diagnosis rather than a throw or a silent default — including four valid-JSON-wrong-shape descriptors, where `TryGetProperty` throws rather than returning false |
+| TC-U-40 | `BundledPackageConvergenceTests` (8 cases) | behind → refusal naming both versions; equal, ahead, absent, and unbundled → allowed; an unreadable archive warns and allows rather than turning clio's own defect into the user's |
+| TC-U-41 | `RequiredPackageCheckerTests` convergence cases (5) | the SEAM: a satisfied requirement (presence-only and versioned) is handed to convergence and its refusal becomes a `PackageRequirementException` carrying the attribute's hint; convergence is not consulted when the requirement itself failed, nor when nothing triggered |
+| TC-U-42 | `CompressionUtilitiesReadFileTests` (17 cases) | the container walk: entry found first and after others, absent → `null`, separator/case-insensitive matching, and every corrupt-length branch → `InvalidDataException` in constant time (an unbounded name length is billions of iterations from four bytes of corruption, on the path that unpacks archives clio did not produce) |
+| TC-U-43 | `InfoCommandTests` (3 cases) | the `process-builder` line reports the archive's version, reports the diagnosis when it cannot be read, and the command resolves from the container — its dependency is an explicit singleton plus an auto-scan exclusion |
 
 ### Story 4 — the curated contract (`clio.tests/Command/McpServer/ToolContractGetToolTests.cs`)
 
