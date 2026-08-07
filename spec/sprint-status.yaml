@@ -2525,7 +2525,7 @@ stories:
     adr: spec/adr/adr-deliver-process-builder-package.md
     fr: [FR-01, FR-02]
     ac: [AC-02]
-    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (188,446 bytes) committed with a csproj Content glob and *.gz marked binary; 8 guard tests pin the archive SHA-256, the descriptor identity (UId/name/version/ModifiedOnUtc side by side, so a hand edit that moves the version without the date fails here), the load-bearing compile-marker schema, the absence of any compiled assembly, the sources, the authorization gate inside the shipped code (operation AND connection-type halves), and the friend-assembly condition. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved."
+    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (190,195 bytes) committed with a csproj Content glob and *.gz marked binary. 9 guard tests pin the archive SHA-256, the descriptor identity (UId/name/version/ModifiedOnUtc side by side, so a hand edit that moves the version without the date fails here), the compile-marker SCHEMA descriptor's own ModifiedOnUtc (the one field that has actually shipped wrong - local time in a UTC-labelled field - and set-pkg-version does not touch it), the load-bearing compile-marker schema, the absence of any compiled assembly, the sources, the Ping operation and its wire envelope (PingResult / Name=\"success\" / BodyStyle - the whole install verdict rests on these two tokens), an EXACT [OperationContract] count plus an explicit ungated allowlist (a gate-count floor cannot see a new ungated endpoint arriving), the authorization gate inside the shipped code (operation AND connection-type halves), and the friend-assembly condition. Package version reset to 1.0.0.0 for its first release. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved. Rebundling goes through rebundle-process-builder.ps1, which also verifies the archive INVENTORY (both compile references present, own assembly absent, exactly two dlls) - the one property the byte-level pins here structurally cannot check, because filenames are UTF-16 in the container."
     depends_on: []
     blocks:
       - story-deliver-process-builder-package-2
@@ -2541,7 +2541,7 @@ stories:
     adr: spec/adr/adr-deliver-process-builder-package.md
     fr: [FR-03, FR-04, FR-05, FR-06, FR-07, FR-09, FR-10, FR-11]
     ac: [AC-03, AC-04]
-    status_note: "Verified live on both runtimes: net472 78 s exit 0, .NET 8 71 s exit 0, package listed, 23 user tasks. The restart comes from a different place on each runtime and outlives the install call, so IServerReadinessWaiter sits between installing and probing; 11 unit tests including the readiness-wait race."
+    status_note: "The check is LIVENESS, not identity: the command calls the package's ungated Ping and fails unless it answers. A version-reporting operation was built, shipped for a day and DROPPED - every carrier was eliminated by measurement (the platform stamps its own assembly version over the csproj's; descriptor.json is absent from the target's build directory; a before/after delta reports failure on a normal re-install). So a failed UPGRADE, where the previously built assembly still answers, is NOT caught - an accepted limit disclosed on every caller-facing surface. Verified live on a .NET Framework stand against the current archive: install exit 0, list-packages records 1.0.0.0, Ping returns success, and the pre-rename GetApiVersion route 404s. The earlier two-runtime verification predates the rename and several repacks and is NOT re-proven. No duration is quoted anywhere: elapsed time belongs to the target, and a range on the MCP surface was read out and repeated to a user as a promise. The restart comes from a different place on each runtime and outlives the install call, so IServerReadinessWaiter sits between installing and probing. 9 command tests (all six exit paths) + 11 verifier tests + 8 tool tests, including the post-deadline stderr report, which is the sole failure signal once the caller has been answered."
     depends_on:
       - story-deliver-process-builder-package-1
     blocks:
@@ -2558,7 +2558,7 @@ stories:
     adr: spec/adr/adr-deliver-process-builder-package.md
     fr: [FR-08, FR-12]
     ac: [AC-01, AC-05, AC-06]
-    status_note: "5 versioned [RequiresPackage] sites with a Hint naming both the CLI verb and the MCP tool; BaseTool now returns FromValidationError (exit 1) for PackageRequirementException instead of FromError (-1); process-modeling guidance carries the ORDER OF CHECKS rule so an agent never proposes an install before establishing the buildable slice; clio info reports the bundled version."
+    status_note: "5 versioned [RequiresPackage] sites with a Hint naming both the CLI verb and the MCP tool; BaseTool now returns FromValidationError (exit 1) for PackageRequirementException instead of FromError (-1); process-modeling guidance carries the ORDER OF CHECKS rule so an agent never proposes an install before establishing the buildable slice; clio info reports the bundled version, and both info doc surfaces now show that line - command output is a mandatory doc-review trigger and it had been missed."
     depends_on:
       - story-deliver-process-builder-package-2
     blocks:
@@ -2575,7 +2575,7 @@ stories:
     adr: spec/adr/adr-deliver-process-builder-package.md
     fr: [FR-11]
     ac: [AC-05]
-    status_note: "help/en + docs/commands + Commands.md + WikiAnchors + McpCapabilityMap hand-written because clio __generate-help-artifacts is broken (it rewrote ~130 files, deleted 7, and mangles verb aliases - chip filed). 3 stand-free E2E tests; a real-install fixture was deliberately NOT shipped, see SPEC section 7."
+    status_note: "help/en + docs/commands + Commands.md + WikiAnchors + McpCapabilityMap hand-written because clio __generate-help-artifacts is broken (it rewrote ~130 files, deleted 7, and mangles verb aliases - chip filed). 3 stand-free E2E tests; a real-install fixture was deliberately NOT shipped, see SPEC section 7. The reachability test now also pins WHICH path applies (the tool is deliberately non-resident, so it is reached through the curated contract index rather than tools/list) - asserting only that the name is reachable was satisfied by the index union and would have stayed green if the tool were feature-gated. The curated contract's flow note had reasserted the removed version comparison past two guards that banned a PHRASE rather than a CLAIM; both guards now ban the capability verb AND require the limit to be stated."
     depends_on:
       - story-deliver-process-builder-package-3
     blocks: []
