@@ -1374,6 +1374,46 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Description("Pins the client half of the guidance retry protocol in the CI gate: a brand-mode retry with the same explicit id forwards that id verbatim into every create call and echoes it back. Duplicate prevention itself is server-owned (ADR B-D3: the id is baked into the request before any transport retry), so the end-to-end no-duplicate contract is pinned by the sandbox e2e — this test guards the client-side id passthrough that contract depends on.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldForwardTheSameExplicitId_WhenBrandModeCallIsRetried() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "retry-id");
+		BuildThemeCommandHarness build = new();
+		List<string> forwardedIds = [];
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver
+			.Resolve<CreateThemeCommand>(Arg.Do<CreateThemeOptions>(options => forwardedIds.Add(options.Id)))
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateThemeArgs args = new(
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Id: "retry-id", Primary: "#004fd6");
+
+		// Act
+		CreateThemeResult first = tool.CreateTheme(args);
+		CreateThemeResult second = tool.CreateTheme(args);
+
+		// Assert
+		first.Success.Should().BeTrue(because: "the initial brand-mode create must succeed");
+		second.Success.Should().BeTrue(
+			because: "the client is stateless by design — it must re-issue the create and leave same-id duplicate rejection to the server");
+		forwardedIds.Should().Equal(["retry-id", "retry-id"],
+			because: "the guidance retry protocol depends on the caller's explicit id reaching the create call verbatim on every attempt, so the server can recognize the retry");
+		resolvedCommand.CapturedOptions.Id.Should().Be("retry-id",
+			because: "the id must survive untouched all the way to TryCreateTheme — a post-resolve rewrite would defeat the server-side duplicate detection");
+		first.Id.Should().Be("retry-id",
+			because: "the effective id must be echoed so the caller can confirm with list-themes before retrying");
+		second.Id.Should().Be("retry-id",
+			because: "a retry must echo the same id it attempted to create, not a fresh auto-generated one");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Leaves the inline css-content path exactly as before the brand mode existed: no build is resolved, no settings are resolved, the CSS flows through unchanged, and the result carries no warnings (regression canary).")]
 	[Category("Unit")]
 	public void CreateTheme_ShouldNotInvokeBuildAndCarryNoWarnings_WhenInlineModeSupplied() {

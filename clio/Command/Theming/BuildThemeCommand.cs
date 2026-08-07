@@ -525,9 +525,10 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// has already rejected anything outside its letters/digits/spaces/hyphens grammar in
 	/// <see cref="ResolveFontAvailability"/> — an advisory must never interpolate input that has not passed an
 	/// equivalent gate. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
-	/// contract (including the font advisories), and the debug assert below fails fast in every Debug/test
-	/// run for any advisory — existing or added later — that the redactor would rewrite, so a violation
-	/// cannot ship silently on the strength of the doc alone.
+	/// contract (including the font advisories), and the guard below runs the redactor over every advisory in
+	/// every build configuration: a violating advisory — existing or added later — fails fast in Debug/test
+	/// runs and ships only in its redacted form in Release, so a violation cannot leak raw text on the
+	/// strength of the doc alone.
 	/// </summary>
 	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {
@@ -539,12 +540,17 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (string.IsNullOrEmpty(options.Accent)) {
 			AddAutoAccentWarning(options, warnings);
 		}
-		Debug.Assert(warnings.TrueForAll(static warning =>
-				Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(warning) == warning),
-			"A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
-			"unredacted onto the create-theme MCP result by contract (see this method's doc): they must be " +
-			"static or locally computed text, and caller input may be interpolated only after a validation " +
-			"gate equivalent to FontFamilyName.Validate.");
+		for (int i = 0; i < warnings.Count; i++) {
+			string redacted = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(warnings[i]);
+			if (string.Equals(redacted, warnings[i], StringComparison.Ordinal)) {
+				continue;
+			}
+			Debug.Fail("A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
+				"unredacted onto the create-theme MCP result by contract (see this method's doc): they must be " +
+				"static or locally computed text, and caller input may be interpolated only after a validation " +
+				"gate equivalent to FontFamilyName.Validate.");
+			warnings[i] = redacted;
+		}
 		return warnings;
 	}
 

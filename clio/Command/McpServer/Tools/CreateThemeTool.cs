@@ -109,6 +109,7 @@ public class CreateThemeTool(
 		"in one call — provide exactly one of css-content / primary. In brand mode custom font families are " +
 		"checked against Google Fonts over the network (a short bounded probe): a family the catalog does not " +
 		"publish gets no @import plus a warning, and an unverifiable probe keeps the import plus a warning. " +
+		"The inline css-content path stays tenant-only (no Google Fonts probe) — OpenWorld reflects the brand-mode probe only. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (inline mode) or primary (brand mode) — exactly one of the two, " +
