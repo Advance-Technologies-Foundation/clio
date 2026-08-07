@@ -316,6 +316,56 @@ public sealed class KnowledgeGitTransportTests {
 			because: "a subprocess may receive only the operation's remaining budget");
 	}
 
+	[Test]
+	[Description("Git transport timeout diagnostics disclose that already reparented descendant termination is uncertain.")]
+	public void ValidateInstalledCheckout_ShouldExposeCleanupLimitation_WhenGitDrainTimesOut() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "timed-out", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath);
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
+			Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				TimedOut = true,
+				DescendantTerminationUncertain = true
+			}));
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
+
+		// Act
+		Action act = () => transport.ValidateInstalledCheckout(GitSource(), repositoryPath);
+
+		// Assert
+		act.Should().Throw<TimeoutException>()
+			.WithMessage("*termination of already reparented descendants is not guaranteed*",
+				because: "the non-fatal MCP fallback log must not imply that portable process-tree cleanup succeeded");
+	}
+
+	[Test]
+	[Description("Git transport resource-limit diagnostics disclose that already reparented descendant termination is uncertain.")]
+	public void ValidateInstalledCheckout_ShouldExposeCleanupLimitation_WhenGitExceedsResourceLimit() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "resource-limited", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath);
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
+			Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ResourceLimitExceeded = true,
+				DescendantTerminationUncertain = true
+			}));
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
+
+		// Act
+		Action act = () => transport.ValidateInstalledCheckout(GitSource(), repositoryPath);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*termination of already reparented descendants is not guaranteed*",
+				because: "every failed cleanup path must disclose that portable descendant termination is uncertain");
+	}
+
 	private static KnowledgeSourceConfiguration GitSource() => new() {
 		LibraryId = "com.example.partner",
 		Type = KnowledgeSourceType.Git,

@@ -38,6 +38,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\clio\clio.csproj" />
+		<ProjectReference Include="..\clio.process.fixture\clio.process.fixture.csproj" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 
 	<ItemGroup>
