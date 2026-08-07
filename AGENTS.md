@@ -108,6 +108,11 @@ clio ships two Creatio packages inside its own distribution — `cliogate` (preb
 - `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the SHA-256 / version / `ModifiedOnUtc` pins
 - a `[RequiresPackage]` version floor
 
+The normal path is one call — `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder
+checkout>`, adding `-Version X.Y.Z.W -RaiseFloor` when the package's service contract changed. It runs the
+whole procedure, computes the pins from the archive it just produced, and checks the archive's inventory.
+The article documents it, and keeps the manual steps as the fallback for a host without `pwsh`.
+
 That article carries the rebundle procedure and the three platform facts whose failure modes are SILENT:
 a package is matched by `UId` (never change it); the descriptor's `ModifiedOnUtc` — not `PackageVersion` —
 decides whether the recorded version is rewritten at all (so bump versions with `clio set-pkg-version`,

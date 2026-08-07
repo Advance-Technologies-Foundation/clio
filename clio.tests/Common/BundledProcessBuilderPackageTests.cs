@@ -68,7 +68,7 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"DFF3D3D393DB1D09A80737A462144DAE3556E8C9D1C4D04CF104A91FD7F461A4";
+		"93B527B9626E0D6D63F90189A2DDA5B1D8097FEEA64F0B14D5968EEDCDA05748";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -92,7 +92,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786026213000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786075660000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See

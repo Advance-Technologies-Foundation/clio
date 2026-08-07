@@ -84,6 +84,48 @@ environment carrying an older package to be refused until it is upgraded.
 - **Internal change, same contract** (bug fix, refactor) → leave it. The new sources still reach whoever
   installs, without forcing everyone to upgrade. Only the SHA pin changes.
 
+### One call — `rebundle-process-builder.ps1`
+
+The whole procedure, from the repository root:
+
+```powershell
+# Raising the floor: the package's SERVICE CONTRACT changed and every environment must upgrade.
+pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout> `
+  -Version 1.1.0.0 -RaiseFloor
+
+# NOT raising it: an internal change - the sources are re-packed and the descriptor's date is
+# re-stamped (which is what makes the target rewrite its SysPackage row), while the version and
+# the floor both stay where they are. Omit -Version entirely.
+pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout>
+```
+
+`-Version` without `-RaiseFloor` is REFUSED before anything is touched, and this is not pedantry: the
+guard fixture pins the shipped descriptor's version to `BundledPackages.ProcessBuilderVersion`, so the
+two cannot diverge — that run would only produce a red test.
+
+Add `-Configuration` / `-Framework` when more than one clio build output exists. The script refuses to
+guess, because whichever it picks is the one that receives the new archive; the others keep the previous
+one and an install run from them ships it. It names them all at the end.
+
+What it does beyond running the steps below:
+
+- computes both pins **from the archive it just produced**, so "the pins are stale" stops being a
+  reachable state;
+- reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the
+  compile marker present, the package's own assembly absent. No pin covers this, and its absence is how
+  a rebundle without `Files/Libs` would pass every test and then fail the target's configuration build;
+- verifies `ModifiedOnUtc` actually MOVED, rather than merely being present;
+- rebuilds clio, and reports every other build output that now holds a different archive or none.
+
+It deliberately does NOT commit. Step 8 — committing both repositories and naming the producing commit
+in the clio message — is a judgement call and stays with you.
+
+### Without the script
+
+The script requires `pwsh`. The steps below are what it runs, and they are the fallback on a host without
+PowerShell — the same arrangement `AGENTS.md` uses for `cliogate`'s `build.ps1`. Read them anyway: they
+carry the REASONS, and a script that fails is only useful to someone who knows what each step protects.
+
 ### In the `ProcessBuilder` repository
 
 ```powershell
