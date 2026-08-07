@@ -1,0 +1,51 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    read-data-binding-db - report which columns a DB-first data binding actually ships
+
+DESCRIPTION
+    Reads a remote DB-first package data binding and reports its entity schema,
+    the number of bound rows, the exact set of bound columns, and each row's
+    values.
+
+    A binding ships ONLY the columns it was created with, and that projection is
+    the transfer contract: a column that was never passed is absent from the
+    package, install supplies no default for it, and the row arrives on the next
+    environment with that column empty. Reading the LIVE record proves nothing
+    about this - the live row and the binding carry different column sets. This
+    command is the check that matters before calling a navigation change or a
+    seed-data change done.
+
+    It replaces exporting the package and parsing
+    Data/<binding>/data.json. One expected difference: localizable columns (for
+    example a workplace Name) are listed inline here, while the package export
+    moves them into a Localization folder - so this command can report one more
+    column than data.json for the same binding.
+
+    Read-only. It also lists every bound row, which neither execute-esq nor the
+    write-side binding commands can do: SysPackageSchemaData holds one record per
+    BINDING, not per bound row.
+
+SYNOPSIS
+    read-data-binding-db --package <PACKAGE> --binding-name <BINDING> [options]
+
+ALIASES
+    get-data-binding-db
+
+OPTIONS
+    --package                       Target package name (required)
+
+    --binding-name                  Binding folder name, i.e. the
+                                    SysPackageSchemaData.Name (required)
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+EXAMPLE
+    clio read-data-binding-db --package UsrTodo --binding-name SysWorkplace_Todo -e dev

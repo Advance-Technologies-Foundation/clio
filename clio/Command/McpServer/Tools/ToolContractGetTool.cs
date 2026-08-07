@@ -1461,7 +1461,13 @@ internal static class ToolContractCatalog {
 			[
 				new ToolAntiPattern(
 					"create-app → create-app-section → delete-app-section",
-					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead.")
+					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead."),
+				new ToolAntiPattern(
+					"create-app, build the pages, THEN ask which workplace the app belongs to",
+					"Asking after the build makes the user re-decide finished work, and until they answer only System administrators can open the app. Settle the placement and its audience in the same turn you confirm the environment, before this call.")
+			],
+			Preconditions: [
+				"Navigation placement and audience are settled BEFORE this call. This tool puts the new section in the `My applications` workplace, which is granted to `System administrators` only, so an app created without that decision is unreachable for ordinary users. When the request does not name a target workplace, ask it together with the environment confirmation - which workplace the section AND its home page belong to (offer a NEW workplace named for the app and recommend it when scaffolding), and which roles should see it. Read `get-guidance name=workplaces` for the option set and the write recipes; apply the navigation writes after the app exists, but take the DECISION first."
 			]);
 	}
 
@@ -1655,7 +1661,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionDelete() {
 		return new ToolContractDefinition(
 			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
-			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
+			"Deletes a section from an existing installed application and returns structured readback of the deleted section. Removes the section ITSELF, so it disappears from every workplace it was placed in.",
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
@@ -1710,7 +1716,12 @@ internal static class ToolContractCatalog {
 					],
 					"Use this shorter flow when the target app is already known and inspected.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"delete-app-section to take a section out of ONE workplace",
+					"This deletes the SysModule record and every SysModuleInWorkplace placement, so the section disappears from every workplace. To remove a section from a single workplace, delete only that SysModuleInWorkplace row and update its data binding — call get-guidance with name 'workplaces' first.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationSectionGetList() {
