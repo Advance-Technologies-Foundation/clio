@@ -2506,7 +2506,7 @@ stories:
     feature: "process-executor-stream-drain-timeout"
     repo: "clio"
     size: S
-    status: in-progress
+    status: done
     issue: 1018
     file: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-story.md
     prd: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-spec.md
