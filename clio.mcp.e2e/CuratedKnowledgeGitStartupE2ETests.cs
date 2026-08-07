@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Text.Json;
 using Allure.Net.Commons;
 using Allure.NUnit;
@@ -41,9 +40,11 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			// Assert
 			AssertFakeGitWasInvoked(result);
 			AssertPipeHoldingDescendantWasStarted(result);
-			AssertInitializeResponse(result);
+			AssertInitializeResult(result);
+			AssertInitializeServerInfo(result);
 			AssertStartupWasBounded(result);
 			AssertFallbackWarning(result);
+			AssertCleanupLimitationWarning(result);
 			AssertNormalShutdown(result);
 		} finally {
 			await CleanupAsync(context);
@@ -60,9 +61,9 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			Directory.CreateDirectory(knowledgeRoot);
 			string fixtureDirectory = ResolveFixtureDirectory();
 			string invocationMarkerPath = Path.Combine(fixtureDirectory, "invoked.marker");
-			string descendantPidPath = Path.Combine(fixtureDirectory, "descendant.pid");
+			string descendantIdentityPath = Path.Combine(fixtureDirectory, "descendant.identity");
 			File.Delete(invocationMarkerPath);
-			File.Delete(descendantPidPath);
+			File.Delete(descendantIdentityPath);
 			string logPath = Path.Combine(clioHome, "mcp-startup.log");
 			await File.WriteAllTextAsync(Path.Combine(clioHome, "appsettings.json"),
 				CreateSettings(knowledgeRoot));
@@ -88,7 +89,7 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 				? fixtureDirectory
 				: $"{fixtureDirectory}{Path.PathSeparator}{inheritedPath}";
 
-			return new ArrangeContext(clioHome, logPath, invocationMarkerPath, descendantPidPath, startInfo);
+			return new ArrangeContext(clioHome, logPath, invocationMarkerPath, descendantIdentityPath, startInfo);
 		});
 	}
 
@@ -115,12 +116,12 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			string? invocation = File.Exists(context.InvocationMarkerPath)
 				? await File.ReadAllTextAsync(context.InvocationMarkerPath, responseDeadline.Token)
 				: null;
-			int? descendantPid = File.Exists(context.DescendantPidPath)
-				? int.Parse(await File.ReadAllTextAsync(context.DescendantPidPath, responseDeadline.Token),
-					CultureInfo.InvariantCulture)
+			ProcessIdentity? descendantIdentity = File.Exists(context.DescendantIdentityPath)
+				? JsonSerializer.Deserialize<ProcessIdentity>(
+					await File.ReadAllTextAsync(context.DescendantIdentityPath, responseDeadline.Token))
 				: null;
-			context.DescendantPid = descendantPid;
-			return new ActResult(response, startupLog, elapsed.Elapsed, process.ExitCode, invocation, descendantPid);
+			context.DescendantIdentity = descendantIdentity;
+			return new ActResult(response, startupLog, elapsed.Elapsed, process.ExitCode, invocation, descendantIdentity);
 		});
 	}
 
@@ -132,14 +133,20 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 
 	[AllureStep("Assert fake Git spawned the inherited-pipe descendant")]
 	private static void AssertPipeHoldingDescendantWasStarted(ActResult result) {
-		result.DescendantPid.Should().NotBeNull(
+		result.DescendantIdentity.Should().NotBeNull(
 			because: "the fake Git parent must leave a real descendant holding its redirected handles");
 	}
 
-	[AllureStep("Assert MCP initialize succeeds after curated Git fallback")]
-	private static void AssertInitializeResponse(ActResult result) {
-		result.Response.TryGetProperty("result", out JsonElement initializeResult).Should().BeTrue(
+	[AllureStep("Assert MCP initialize returns a result after curated Git fallback")]
+	private static void AssertInitializeResult(ActResult result) {
+		result.Response.TryGetProperty("result", out _).Should().BeTrue(
 			because: "a timed-out curated Git bootstrap is non-fatal and must still produce an initialize result");
+	}
+
+	[AllureStep("Assert MCP initialize identifies the server")]
+	private static void AssertInitializeServerInfo(ActResult result) {
+		result.Response.TryGetProperty("result", out JsonElement initializeResult).Should().BeTrue(
+			because: "the initialize response must contain a result before server information can be inspected");
 		initializeResult.TryGetProperty("serverInfo", out _).Should().BeTrue(
 			because: "the initialize response proves MCP stdio began serving after fallback");
 	}
@@ -154,6 +161,10 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 	private static void AssertFallbackWarning(ActResult result) {
 		result.StartupLog.Should().Contain(BootstrapWarning,
 			because: "operators must be told that MCP started without built-in curated knowledge");
+	}
+
+	[AllureStep("Assert fallback warning discloses the portable cleanup limitation")]
+	private static void AssertCleanupLimitationWarning(ActResult result) {
 		result.StartupLog.Should().Contain("termination of already reparented descendants is not guaranteed",
 			because: "the fallback diagnostic must expose the cross-platform cleanup limitation");
 	}
@@ -170,16 +181,15 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 				await StopProcessAsync(context.Process);
 				context.Process.Dispose();
 			}
-			if (context.DescendantPid is null && File.Exists(context.DescendantPidPath)
-					&& int.TryParse(await File.ReadAllTextAsync(context.DescendantPidPath),
-						NumberStyles.Integer, CultureInfo.InvariantCulture, out int recordedPid)) {
-				context.DescendantPid = recordedPid;
+			if (context.DescendantIdentity is null && File.Exists(context.DescendantIdentityPath)) {
+				context.DescendantIdentity = JsonSerializer.Deserialize<ProcessIdentity>(
+					await File.ReadAllTextAsync(context.DescendantIdentityPath));
 			}
-			if (context.DescendantPid is not null) {
-				await TerminateProcessAsync(context.DescendantPid.Value);
+			if (context.DescendantIdentity is not null) {
+				await TerminateProcessAsync(context.DescendantIdentity);
 			}
 			File.Delete(context.InvocationMarkerPath);
-			File.Delete(context.DescendantPidPath);
+			File.Delete(context.DescendantIdentityPath);
 			TryDeleteDirectory(context.ClioHome);
 		});
 	}
@@ -203,10 +213,10 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 		}
 	}
 
-	private static async Task TerminateProcessAsync(int processId) {
+	private static async Task TerminateProcessAsync(ProcessIdentity identity) {
 		try {
-			using Process process = Process.GetProcessById(processId);
-			if (process.HasExited) {
+			using Process process = Process.GetProcessById(identity.ProcessId);
+			if (process.HasExited || !MatchesIdentity(process, identity)) {
 				return;
 			}
 			process.Kill(entireProcessTree: true);
@@ -218,6 +228,21 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			// The fixture descendant exited while cleanup was in progress.
 		} catch (OperationCanceledException) {
 			// Best-effort cleanup must not mask the primary test failure.
+		}
+	}
+
+	private static bool MatchesIdentity(Process process, ProcessIdentity identity) {
+		try {
+			StringComparison comparison = OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal;
+			return process.StartTime.ToUniversalTime().Ticks == identity.StartUtcTicks
+				&& string.Equals(Path.GetFullPath(process.MainModule!.FileName),
+					Path.GetFullPath(identity.ExecutablePath), comparison);
+		} catch (Exception exception) when (exception is InvalidOperationException
+				or System.ComponentModel.Win32Exception
+				or NotSupportedException) {
+			return false;
 		}
 	}
 
@@ -287,22 +312,24 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 	}
 
 	private sealed class ArrangeContext(string clioHome, string logPath, string invocationMarkerPath,
-		string descendantPidPath, ProcessStartInfo startInfo) {
+		string descendantIdentityPath, ProcessStartInfo startInfo) {
 		public string ClioHome { get; } = clioHome;
 
 		public string LogPath { get; } = logPath;
 
 		public string InvocationMarkerPath { get; } = invocationMarkerPath;
 
-		public string DescendantPidPath { get; } = descendantPidPath;
+		public string DescendantIdentityPath { get; } = descendantIdentityPath;
 
 		public ProcessStartInfo StartInfo { get; } = startInfo;
 
 		public Process? Process { get; set; }
 
-		public int? DescendantPid { get; set; }
+		public ProcessIdentity? DescendantIdentity { get; set; }
 	}
 
 	private sealed record ActResult(JsonElement Response, string StartupLog, TimeSpan Elapsed, int ExitCode,
-		string? Invocation, int? DescendantPid);
+		string? Invocation, ProcessIdentity? DescendantIdentity);
+
+	private sealed record ProcessIdentity(int ProcessId, long StartUtcTicks, string ExecutablePath);
 }

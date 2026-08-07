@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -20,33 +20,35 @@ public class ProcessExecutorIntegrationTests {
 	[TestCase(false, null)]
 	[TestCase(true, 4096L)]
 	[Description("Verifies that timeout and caller cancellation bound redirected stream draining after an immediate parent exits.")]
-	public async Task ExecuteAndCaptureAsync_ShouldBoundDrain_WhenDescendantRetainsRedirectedHandles(
+	public async Task ExecuteWithRealtimeOutputAsync_ShouldBoundDrain_WhenDescendantRetainsRedirectedHandles(
 		bool cancelByCaller, long? maximumCapturedOutputCharacters) {
 		// Arrange
 		ILogger logger = Substitute.For<ILogger>();
 		ProcessExecutor sut = new(logger);
 		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-drain-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(directory);
-		string descendantPidPath = Path.Combine(directory, "descendant.pid");
+		string descendantIdentityPath = Path.Combine(directory, "descendant.identity");
 		string fixtureExecutable = ResolveFixtureExecutable();
 		TimeSpan operationBudget = TimeSpan.FromSeconds(2);
+		ConcurrentQueue<string> lines = new();
 		using CancellationTokenSource cancellationSource = cancelByCaller
 			? new CancellationTokenSource(operationBudget)
 			: new CancellationTokenSource();
 		ProcessExecutionOptions options = new(fixtureExecutable,
-			$"--spawn-inherited-handle-descendant \"{descendantPidPath}\"") {
+			$"--spawn-inherited-handle-descendant \"{descendantIdentityPath}\"") {
 			CancellationToken = cancellationSource.Token,
 			MaximumCapturedOutputCharacters = maximumCapturedOutputCharacters,
-			Timeout = cancelByCaller ? null : operationBudget
+			Timeout = cancelByCaller ? null : operationBudget,
+			OnOutput = (line, _) => lines.Enqueue(line)
 		};
 		Stopwatch elapsed = Stopwatch.StartNew();
-		int? descendantPid = null;
+		ProcessIdentity? descendantIdentity = null;
 
 		try {
 			// Act
-			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+			ProcessExecutionResult result = await sut.ExecuteWithRealtimeOutputAsync(options);
 			elapsed.Stop();
-			descendantPid = ReadDescendantPid(descendantPidPath);
+			descendantIdentity = ReadDescendantIdentity(descendantIdentityPath);
 
 			// Assert
 			result.Started.Should().BeTrue(
@@ -59,11 +61,13 @@ public class ProcessExecutorIntegrationTests {
 				because: "closing redirected streams cannot prove that a silent reparented descendant was terminated");
 			result.StandardOutput.Should().Be("parent-exited",
 				because: "unterminated output captured before cancellation must remain available in full");
+			lines.Should().ContainSingle().Which.Should().Be("parent-exited",
+				because: "cancellation must flush the pending unterminated fragment to real-time consumers");
 			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5),
 				because: "the silent thirty-second descendant must not extend the two-second operation budget");
 		} finally {
-			if (descendantPid is not null) {
-				await TerminateProcessAsync(descendantPid.Value);
+			if (descendantIdentity is not null) {
+				await TerminateProcessAsync(descendantIdentity);
 			}
 			Directory.Delete(directory, recursive: true);
 		}
@@ -77,19 +81,19 @@ public class ProcessExecutorIntegrationTests {
 		ProcessExecutor sut = new(logger);
 		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-limit-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(directory);
-		string descendantPidPath = Path.Combine(directory, "descendant.pid");
+		string descendantIdentityPath = Path.Combine(directory, "descendant.identity");
 		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
-			$"--overflow-output-with-inherited-handle-descendant \"{descendantPidPath}\"") {
+			$"--overflow-output-with-inherited-handle-descendant \"{descendantIdentityPath}\"") {
 			MaximumCapturedOutputCharacters = 64
 		};
 		Stopwatch elapsed = Stopwatch.StartNew();
-		int? descendantPid = null;
+		ProcessIdentity? descendantIdentity = null;
 
 		try {
 			// Act
 			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
 			elapsed.Stop();
-			descendantPid = ReadDescendantPid(descendantPidPath);
+			descendantIdentity = ReadDescendantIdentity(descendantIdentityPath);
 
 			// Assert
 			result.ResourceLimitExceeded.Should().BeTrue(
@@ -101,8 +105,51 @@ public class ProcessExecutorIntegrationTests {
 			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3),
 				because: "canceling the operation token must release the other redirected reader immediately");
 		} finally {
-			if (descendantPid is not null) {
-				await TerminateProcessAsync(descendantPid.Value);
+			if (descendantIdentity is not null) {
+				await TerminateProcessAsync(descendantIdentity);
+			}
+			Directory.Delete(directory, recursive: true);
+		}
+	}
+
+	[Test]
+	[Description("Verifies that directory monitoring continues while a descendant retains redirected handles after the parent exits.")]
+	public async Task ExecuteAndCaptureAsync_ShouldApplyDirectoryLimit_DuringPostExitDrain() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-directory-limit-{Guid.NewGuid():N}");
+		string monitoredDirectory = Path.Combine(directory, "checkout");
+		Directory.CreateDirectory(monitoredDirectory);
+		string descendantIdentityPath = Path.Combine(directory, "descendant.identity");
+		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
+			$"--spawn-growing-inherited-handle-descendant \"{descendantIdentityPath}\" \"{monitoredDirectory}\"") {
+			Timeout = TimeSpan.FromSeconds(5),
+			MonitoredDirectory = monitoredDirectory,
+			MaximumMonitoredDirectoryBytes = 1024,
+			ResourceMonitorInterval = TimeSpan.FromMilliseconds(50)
+		};
+		Stopwatch elapsed = Stopwatch.StartNew();
+		ProcessIdentity? descendantIdentity = null;
+
+		try {
+			// Act
+			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+			elapsed.Stop();
+			descendantIdentity = ReadDescendantIdentity(descendantIdentityPath);
+
+			// Assert
+			result.ResourceLimitExceeded.Should().BeTrue(
+				because: "a descendant must remain subject to the checkout limit while stream draining is pending");
+			result.TimedOut.Should().BeFalse(
+				because: "late directory growth must retain resource-limit classification instead of waiting for timeout");
+			result.StandardOutput.Should().Be("parent-exited",
+				because: "output captured before the late resource violation must remain available");
+			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3),
+				because: "the fifty-millisecond monitor must detect growth well before the five-second timeout");
+		} finally {
+			if (descendantIdentity is not null) {
+				await TerminateProcessAsync(descendantIdentity);
 			}
 			Directory.Delete(directory, recursive: true);
 		}
@@ -157,15 +204,19 @@ public class ProcessExecutorIntegrationTests {
 			: throw new FileNotFoundException("The process integration fixture was not built.", fixtureExecutable);
 	}
 
-	private static int ReadDescendantPid(string descendantPidPath) {
-		File.Exists(descendantPidPath).Should().BeTrue(
+	private static ProcessIdentity ReadDescendantIdentity(string descendantIdentityPath) {
+		File.Exists(descendantIdentityPath).Should().BeTrue(
 			because: "the immediate parent must record the descendant that inherited its redirected handles");
-		return int.Parse(File.ReadAllText(descendantPidPath), CultureInfo.InvariantCulture);
+		return JsonSerializer.Deserialize<ProcessIdentity>(File.ReadAllText(descendantIdentityPath))
+			?? throw new InvalidDataException("The fixture descendant identity is invalid.");
 	}
 
-	private static async Task TerminateProcessAsync(int processId) {
-		using Process process = TryGetProcess(processId);
+	private static async Task TerminateProcessAsync(ProcessIdentity identity) {
+		using Process process = TryGetProcess(identity.ProcessId);
 		if (process is null || process.HasExited) {
+			return;
+		}
+		if (!MatchesIdentity(process, identity)) {
 			return;
 		}
 		process.Kill(entireProcessTree: true);
@@ -180,5 +231,22 @@ public class ProcessExecutorIntegrationTests {
 			return null;
 		}
 	}
+
+	private static bool MatchesIdentity(Process process, ProcessIdentity identity) {
+		try {
+			StringComparison comparison = OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal;
+			return process.StartTime.ToUniversalTime().Ticks == identity.StartUtcTicks
+				&& string.Equals(Path.GetFullPath(process.MainModule!.FileName),
+					Path.GetFullPath(identity.ExecutablePath), comparison);
+		} catch (Exception exception) when (exception is InvalidOperationException
+				or System.ComponentModel.Win32Exception
+				or NotSupportedException) {
+			return false;
+		}
+	}
+
+	private sealed record ProcessIdentity(int ProcessId, long StartUtcTicks, string ExecutablePath);
 
 }

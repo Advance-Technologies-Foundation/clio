@@ -459,7 +459,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		DateTimeOffset startedAt = DateTimeOffset.UtcNow;
 
 		try {
-			if (IsMonitoredDirectoryOverLimit(options)) {
+			if (IsMonitoredDirectoryOverLimit(options, options.CancellationToken)) {
 				return ResourceLimitFailure(startedAt);
 			}
 
@@ -475,23 +475,29 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 					FinishedAtUtc = DateTimeOffset.UtcNow
 				};
 			}
-			using CancellationTokenSource linkedCts =
-				CancellationTokenSource.CreateLinkedTokenSource(options.CancellationToken);
+			OperationStopState stopState = new();
+			using CancellationTokenSource timeoutCts = new();
+			using CancellationTokenRegistration callerCancellationRegistration = options.CancellationToken.Register(
+				() => stopState.TrySet(OperationStopReason.CallerCancellation));
+			using CancellationTokenRegistration timeoutRegistration = timeoutCts.Token.Register(
+				() => stopState.TrySet(OperationStopReason.Timeout));
+			using CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+				options.CancellationToken, timeoutCts.Token);
 			if (options.Timeout is { } timeout && timeout > TimeSpan.Zero) {
-				linkedCts.CancelAfter(timeout);
+				timeoutCts.CancelAfter(timeout);
 			}
 
 			ResourceLimitState resourceLimitState = new();
 			Task stdoutTask = ReadStreamAsync(process.StandardOutput, ProcessOutputStream.StdOut, stdout, options,
-				enableRealtime, resourceLimitState, process, linkedCts);
+				enableRealtime, resourceLimitState, stopState, process, linkedCts);
 			Task stderrTask = ReadStreamAsync(process.StandardError, ProcessOutputStream.StdErr, stderr, options,
-				enableRealtime, resourceLimitState, process, linkedCts);
+				enableRealtime, resourceLimitState, stopState, process, linkedCts);
 
 			bool canceled = false;
 			bool timedOut = false;
 
 			using CancellationTokenSource monitorCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
-			Task monitorTask = MonitorDirectoryAsync(process, options, resourceLimitState, linkedCts,
+			Task monitorTask = MonitorDirectoryAsync(process, options, resourceLimitState, stopState, linkedCts,
 				monitorCts.Token);
 
 			try {
@@ -503,26 +509,40 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				await process.WaitForExitAsync(linkedCts.Token);
 			}
 			catch (OperationCanceledException) when (linkedCts.IsCancellationRequested) {
-				ClassifyCancellation(options, resourceLimitState, ref canceled, ref timedOut);
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
 				TryKillProcess(process);
 				TryCloseStandardInput(process);
 				TryCloseRedirectedStreams(process);
 			}
 
-			if (IsMonitoredDirectoryOverLimit(options)) {
-				resourceLimitState.MarkExceeded();
-				linkedCts.Cancel();
-				TryKillProcess(process);
-				TryCloseRedirectedStreams(process);
-			}
-			await monitorCts.CancelAsync();
-			await monitorTask;
 			try {
 				await Task.WhenAll(stdoutTask, stderrTask);
 			} catch (Exception) when (linkedCts.IsCancellationRequested) {
-				ClassifyCancellation(options, resourceLimitState, ref canceled, ref timedOut);
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
 				TryKillProcess(process);
 				TryCloseRedirectedStreams(process);
+			} finally {
+				await monitorCts.CancelAsync();
+				await monitorTask;
+			}
+
+			try {
+				if (!linkedCts.IsCancellationRequested
+						&& IsMonitoredDirectoryOverLimit(options, linkedCts.Token)) {
+					resourceLimitState.MarkExceeded();
+					stopState.TrySet(OperationStopReason.ResourceLimit);
+					linkedCts.Cancel();
+					TryKillProcess(process);
+					TryCloseRedirectedStreams(process);
+				}
+			} catch (OperationCanceledException) when (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
+				TryKillProcess(process);
+				TryCloseRedirectedStreams(process);
+			}
+			timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
+			if (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
 			}
 
 			return new ProcessExecutionResult {
@@ -550,39 +570,44 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	}
 
 	private async Task ReadStreamAsync(StreamReader reader, ProcessOutputStream stream, StringBuilder target,
-		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process,
-		CancellationTokenSource operationCts) {
+		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState,
+		OperationStopState stopState, Process process, CancellationTokenSource operationCts) {
 		char[] buffer = new char[4096];
 		RealtimeLineState realtimeLine = new();
-		while (true) {
-			// The operation-wide token also bounds post-exit draining when a descendant retains an
-			// inherited pipe handle. Output already appended to the target remains available when the
-			// pending read is canceled.
-			int read = await reader.ReadAsync(buffer.AsMemory(), operationCts.Token);
-			if (read == 0) {
-				break;
-			}
+		try {
+			while (true) {
+				// The operation-wide token also bounds post-exit draining when a descendant retains an
+				// inherited pipe handle. Output already appended to the target remains available when the
+				// pending read is canceled.
+				int read = await reader.ReadAsync(buffer.AsMemory(), operationCts.Token);
+				if (read == 0) {
+					break;
+				}
 
-			int permitted = read;
-			if (options.MaximumCapturedOutputCharacters is { } maximum) {
-				long previous = Interlocked.Add(ref resourceLimitState.CapturedOutputCharacters, read) - read;
-				permitted = previous >= maximum ? 0 : (int)Math.Min(read, maximum - previous);
-			}
-			if (permitted > 0) {
-				target.Append(buffer, 0, permitted);
-				if (enableRealtime) {
-					PublishRealtimeOutput(buffer.AsSpan(0, permitted), realtimeLine, stream, options);
+				int permitted = read;
+				if (options.MaximumCapturedOutputCharacters is { } maximum) {
+					long previous = Interlocked.Add(ref resourceLimitState.CapturedOutputCharacters, read) - read;
+					permitted = previous >= maximum ? 0 : (int)Math.Min(read, maximum - previous);
+				}
+				if (permitted > 0) {
+					target.Append(buffer, 0, permitted);
+					if (enableRealtime) {
+						PublishRealtimeOutput(buffer.AsSpan(0, permitted), realtimeLine, stream, options);
+					}
+				}
+				if (permitted < read) {
+					resourceLimitState.MarkExceeded();
+					stopState.TrySet(OperationStopReason.ResourceLimit);
+					operationCts.Cancel();
+					TryKillProcess(process);
+					break;
 				}
 			}
-			if (permitted < read) {
-				resourceLimitState.MarkExceeded();
-				operationCts.Cancel();
-				TryKillProcess(process);
-				break;
+		} finally {
+			if (enableRealtime && realtimeLine.Pending.Length > 0) {
+				PublishLine(realtimeLine.Pending.ToString(), stream, options);
+				realtimeLine.Pending.Clear();
 			}
-		}
-		if (enableRealtime && realtimeLine.Pending.Length > 0) {
-			PublishLine(realtimeLine.Pending.ToString(), stream, options);
 		}
 	}
 
@@ -606,7 +631,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	}
 
 	private static async Task MonitorDirectoryAsync(Process process, ProcessExecutionOptions options,
-		ResourceLimitState resourceLimitState, CancellationTokenSource operationCts,
+		ResourceLimitState resourceLimitState, OperationStopState stopState, CancellationTokenSource operationCts,
 		CancellationToken cancellationToken) {
 		if (string.IsNullOrWhiteSpace(options.MonitoredDirectory)
 				|| options.MaximumMonitoredDirectoryBytes is not { } maximumBytes) {
@@ -617,9 +642,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			? configured
 			: TimeSpan.FromMilliseconds(50);
 		try {
-			while (!process.HasExited && !cancellationToken.IsCancellationRequested) {
-				if (GetDirectorySize(options.MonitoredDirectory) > maximumBytes) {
+			while (!cancellationToken.IsCancellationRequested) {
+				if (GetDirectorySize(options.MonitoredDirectory, cancellationToken) > maximumBytes) {
 					resourceLimitState.MarkExceeded();
+					stopState.TrySet(OperationStopReason.ResourceLimit);
 					operationCts.Cancel();
 					TryKillProcess(process);
 					return;
@@ -630,22 +656,25 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			// Normal completion cancels the resource monitor.
 		} catch (IOException) {
 			resourceLimitState.MarkExceeded();
+			stopState.TrySet(OperationStopReason.ResourceLimit);
 			operationCts.Cancel();
 			TryKillProcess(process);
 		} catch (UnauthorizedAccessException) {
 			resourceLimitState.MarkExceeded();
+			stopState.TrySet(OperationStopReason.ResourceLimit);
 			operationCts.Cancel();
 			TryKillProcess(process);
 		}
 	}
 
-	private static bool IsMonitoredDirectoryOverLimit(ProcessExecutionOptions options) {
+	private static bool IsMonitoredDirectoryOverLimit(ProcessExecutionOptions options,
+		CancellationToken cancellationToken) {
 		if (string.IsNullOrWhiteSpace(options.MonitoredDirectory)
 				|| options.MaximumMonitoredDirectoryBytes is not { } maximumBytes) {
 			return false;
 		}
 		try {
-			return GetDirectorySize(options.MonitoredDirectory) > maximumBytes;
+			return GetDirectorySize(options.MonitoredDirectory, cancellationToken) > maximumBytes;
 		} catch (IOException) {
 			return true;
 		} catch (UnauthorizedAccessException) {
@@ -653,7 +682,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		}
 	}
 
-	private static long GetDirectorySize(string directory) {
+	private static long GetDirectorySize(string directory, CancellationToken cancellationToken) {
 		if (!Directory.Exists(directory)) {
 			return 0;
 		}
@@ -662,24 +691,22 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		Stack<string> pending = new();
 		pending.Push(directory);
 		while (pending.Count > 0) {
+			cancellationToken.ThrowIfCancellationRequested();
 			string current = pending.Pop();
-			string[] files;
-			string[] directories;
 			try {
-				files = Directory.GetFiles(current);
-				directories = Directory.GetDirectories(current);
+				size = checked(size + SumRegularFileSizes(current, cancellationToken));
+				PushTraversableDirectories(current, pending, cancellationToken);
 			} catch (DirectoryNotFoundException) {
 				continue;
 			}
-			size = checked(size + SumRegularFileSizes(files));
-			PushTraversableDirectories(directories, pending);
 		}
 		return size;
 	}
 
-	private static long SumRegularFileSizes(string[] files) {
+	private static long SumRegularFileSizes(string directory, CancellationToken cancellationToken) {
 		long size = 0;
-		foreach (string file in files) {
+		foreach (string file in Directory.EnumerateFiles(directory)) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
 				FileInfo info = new(file);
 				// Reparse points are skipped so a symlink into a large tree cannot inflate the measured size.
@@ -695,8 +722,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		return size;
 	}
 
-	private static void PushTraversableDirectories(string[] directories, Stack<string> pending) {
-		foreach (string child in directories) {
+	private static void PushTraversableDirectories(string directory, Stack<string> pending,
+		CancellationToken cancellationToken) {
+		foreach (string child in Directory.EnumerateDirectories(directory)) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
 				// Reparse points are not followed so traversal cannot escape the monitored directory.
 				if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0) {
@@ -794,12 +823,24 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	}
 
 	private static void ClassifyCancellation(ProcessExecutionOptions options,
-		ResourceLimitState resourceLimitState, ref bool canceled, ref bool timedOut) {
-		if (canceled || timedOut || resourceLimitState.Exceeded) {
+		ResourceLimitState resourceLimitState, OperationStopState stopState, ref bool canceled, ref bool timedOut) {
+		if (canceled || timedOut) {
 			return;
 		}
-		canceled = options.CancellationToken.IsCancellationRequested;
-		timedOut = !canceled && !resourceLimitState.Exceeded;
+		switch (stopState.Reason) {
+			case OperationStopReason.CallerCancellation:
+				canceled = true;
+				break;
+			case OperationStopReason.Timeout:
+				timedOut = true;
+				break;
+			case OperationStopReason.ResourceLimit:
+				break;
+			default:
+				canceled = options.CancellationToken.IsCancellationRequested;
+				timedOut = !canceled && !resourceLimitState.Exceeded;
+				break;
+		}
 	}
 
 	private static void ValidateOptions(ProcessExecutionOptions options) {
@@ -832,6 +873,22 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		public bool Exceeded => Volatile.Read(ref _exceeded) != 0;
 
 		public void MarkExceeded() => Interlocked.Exchange(ref _exceeded, 1);
+	}
+
+	private sealed class OperationStopState {
+		private int _reason;
+
+		public OperationStopReason Reason => (OperationStopReason)Volatile.Read(ref _reason);
+
+		public void TrySet(OperationStopReason reason) =>
+			Interlocked.CompareExchange(ref _reason, (int)reason, (int)OperationStopReason.None);
+	}
+
+	private enum OperationStopReason {
+		None,
+		CallerCancellation,
+		Timeout,
+		ResourceLimit
 	}
 
 	private sealed class RealtimeLineState {
