@@ -164,6 +164,17 @@ public sealed record ProcessExecutionResult {
 	public bool ResourceLimitExceeded { get; init; }
 
 	/// <summary>
+	/// Gets a value indicating that timeout, cancellation, or resource-limit cleanup disconnected redirected
+	/// streams but could not guarantee that already reparented descendants were terminated.
+	/// </summary>
+	/// <remarks>
+	/// The immediate process tree is terminated on a best-effort basis. Operating systems can reparent descendants
+	/// after the immediate process exits, so callers must not interpret a stopped capture as proof that every
+	/// independently running descendant has exited.
+	/// </remarks>
+	public bool DescendantTerminationUncertain { get; init; }
+
+	/// <summary>
 	/// Gets the captured standard output.
 	/// </summary>
 	public string StandardOutput { get; init; } = string.Empty;
@@ -464,46 +475,55 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 					FinishedAtUtc = DateTimeOffset.UtcNow
 				};
 			}
-
-			if (!string.IsNullOrEmpty(options.StandardInput)) {
-				await process.StandardInput.WriteAsync(options.StandardInput);
-				await process.StandardInput.FlushAsync();
-				process.StandardInput.Close();
-			}
-
-			ResourceLimitState resourceLimitState = new();
-			Task stdoutTask = ReadStreamAsync(process.StandardOutput, ProcessOutputStream.StdOut, stdout, options,
-				enableRealtime, resourceLimitState, process);
-			Task stderrTask = ReadStreamAsync(process.StandardError, ProcessOutputStream.StdErr, stderr, options,
-				enableRealtime, resourceLimitState, process);
-
-			bool canceled = false;
-			bool timedOut = false;
-
 			using CancellationTokenSource linkedCts =
 				CancellationTokenSource.CreateLinkedTokenSource(options.CancellationToken);
 			if (options.Timeout is { } timeout && timeout > TimeSpan.Zero) {
 				linkedCts.CancelAfter(timeout);
 			}
+
+			ResourceLimitState resourceLimitState = new();
+			Task stdoutTask = ReadStreamAsync(process.StandardOutput, ProcessOutputStream.StdOut, stdout, options,
+				enableRealtime, resourceLimitState, process, linkedCts);
+			Task stderrTask = ReadStreamAsync(process.StandardError, ProcessOutputStream.StdErr, stderr, options,
+				enableRealtime, resourceLimitState, process, linkedCts);
+
+			bool canceled = false;
+			bool timedOut = false;
+
 			using CancellationTokenSource monitorCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
-			Task monitorTask = MonitorDirectoryAsync(process, options, resourceLimitState, monitorCts.Token);
+			Task monitorTask = MonitorDirectoryAsync(process, options, resourceLimitState, linkedCts,
+				monitorCts.Token);
 
 			try {
+				if (!string.IsNullOrEmpty(options.StandardInput)) {
+					await process.StandardInput.WriteAsync(options.StandardInput.AsMemory(), linkedCts.Token);
+					await process.StandardInput.FlushAsync(linkedCts.Token);
+					process.StandardInput.Close();
+				}
 				await process.WaitForExitAsync(linkedCts.Token);
 			}
-			catch (OperationCanceledException) {
-				canceled = options.CancellationToken.IsCancellationRequested;
-				timedOut = !canceled && !resourceLimitState.Exceeded;
+			catch (OperationCanceledException) when (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, ref canceled, ref timedOut);
 				TryKillProcess(process);
+				TryCloseStandardInput(process);
+				TryCloseRedirectedStreams(process);
 			}
 
 			if (IsMonitoredDirectoryOverLimit(options)) {
 				resourceLimitState.MarkExceeded();
+				linkedCts.Cancel();
 				TryKillProcess(process);
+				TryCloseRedirectedStreams(process);
 			}
 			await monitorCts.CancelAsync();
 			await monitorTask;
-			await Task.WhenAll(stdoutTask, stderrTask);
+			try {
+				await Task.WhenAll(stdoutTask, stderrTask);
+			} catch (Exception) when (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, ref canceled, ref timedOut);
+				TryKillProcess(process);
+				TryCloseRedirectedStreams(process);
+			}
 
 			return new ProcessExecutionResult {
 				Started = true,
@@ -512,6 +532,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				Canceled = canceled,
 				TimedOut = timedOut,
 				ResourceLimitExceeded = resourceLimitState.Exceeded,
+				DescendantTerminationUncertain = canceled || timedOut || resourceLimitState.Exceeded,
 				StandardOutput = NormalizeOutput(stdout),
 				StandardError = NormalizeOutput(stderr),
 				StartedAtUtc = startedAt,
@@ -529,73 +550,64 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	}
 
 	private async Task ReadStreamAsync(StreamReader reader, ProcessOutputStream stream, StringBuilder target,
-		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process) {
-		if (options.MaximumCapturedOutputCharacters.HasValue) {
-			await ReadBoundedStreamAsync(reader, stream, target, options, enableRealtime, resourceLimitState, process);
-			return;
-		}
-
-		while (true) {
-			string line = await reader.ReadLineAsync();
-			if (line is null) {
-				break;
-			}
-
-			target.AppendLine(line);
-			if (enableRealtime) {
-				PublishLine(line, stream, options);
-			}
-		}
-	}
-
-	private async Task ReadBoundedStreamAsync(StreamReader reader, ProcessOutputStream stream, StringBuilder target,
-		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process) {
+		ProcessExecutionOptions options, bool enableRealtime, ResourceLimitState resourceLimitState, Process process,
+		CancellationTokenSource operationCts) {
 		char[] buffer = new char[4096];
-		StringBuilder realtimeLine = new();
-		long maximum = options.MaximumCapturedOutputCharacters.Value;
+		RealtimeLineState realtimeLine = new();
 		while (true) {
-			// Deliberately uncancellable: the caller awaits both reader tasks after the process has
-			// exited or been killed, and relies on them draining what the child already wrote. Passing
-			// options.CancellationToken here would fault Task.WhenAll on cancellation and lose the
-			// partial output the timeout/cancel result is built from. The closed stream ends the loop.
-			int read = await reader.ReadAsync(buffer.AsMemory(), CancellationToken.None);
+			// The operation-wide token also bounds post-exit draining when a descendant retains an
+			// inherited pipe handle. Output already appended to the target remains available when the
+			// pending read is canceled.
+			int read = await reader.ReadAsync(buffer.AsMemory(), operationCts.Token);
 			if (read == 0) {
 				break;
 			}
 
-			long previous = Interlocked.Add(ref resourceLimitState.CapturedOutputCharacters, read) - read;
-			int permitted = previous >= maximum ? 0 : (int)Math.Min(read, maximum - previous);
+			int permitted = read;
+			if (options.MaximumCapturedOutputCharacters is { } maximum) {
+				long previous = Interlocked.Add(ref resourceLimitState.CapturedOutputCharacters, read) - read;
+				permitted = previous >= maximum ? 0 : (int)Math.Min(read, maximum - previous);
+			}
 			if (permitted > 0) {
 				target.Append(buffer, 0, permitted);
 				if (enableRealtime) {
-					PublishBoundedOutput(buffer.AsSpan(0, permitted), realtimeLine, stream, options);
+					PublishRealtimeOutput(buffer.AsSpan(0, permitted), realtimeLine, stream, options);
 				}
 			}
 			if (permitted < read) {
 				resourceLimitState.MarkExceeded();
+				operationCts.Cancel();
 				TryKillProcess(process);
 				break;
 			}
 		}
-		if (enableRealtime && realtimeLine.Length > 0) {
-			PublishLine(realtimeLine.ToString(), stream, options);
+		if (enableRealtime && realtimeLine.Pending.Length > 0) {
+			PublishLine(realtimeLine.Pending.ToString(), stream, options);
 		}
 	}
 
-	private void PublishBoundedOutput(ReadOnlySpan<char> output, StringBuilder pendingLine,
+	private void PublishRealtimeOutput(ReadOnlySpan<char> output, RealtimeLineState lineState,
 		ProcessOutputStream stream, ProcessExecutionOptions options) {
 		foreach (char character in output) {
-			if (character == '\n') {
-				PublishLine(pendingLine.ToString().TrimEnd('\r'), stream, options);
-				pendingLine.Clear();
-			} else {
-				pendingLine.Append(character);
+			if (lineState.SuppressLineFeedAfterCarriageReturn) {
+				lineState.SuppressLineFeedAfterCarriageReturn = false;
+				if (character == '\n') {
+					continue;
+				}
 			}
+			if (character is '\r' or '\n') {
+				PublishLine(lineState.Pending.ToString(), stream, options);
+				lineState.Pending.Clear();
+				lineState.SuppressLineFeedAfterCarriageReturn = character == '\r';
+				continue;
+			}
+			lineState.Pending.Append(character);
 		}
 	}
 
 	private static async Task MonitorDirectoryAsync(Process process, ProcessExecutionOptions options,
-		ResourceLimitState resourceLimitState, CancellationToken cancellationToken) {
+		ResourceLimitState resourceLimitState, CancellationTokenSource operationCts,
+		CancellationToken cancellationToken) {
 		if (string.IsNullOrWhiteSpace(options.MonitoredDirectory)
 				|| options.MaximumMonitoredDirectoryBytes is not { } maximumBytes) {
 			return;
@@ -608,6 +620,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			while (!process.HasExited && !cancellationToken.IsCancellationRequested) {
 				if (GetDirectorySize(options.MonitoredDirectory) > maximumBytes) {
 					resourceLimitState.MarkExceeded();
+					operationCts.Cancel();
 					TryKillProcess(process);
 					return;
 				}
@@ -617,9 +630,11 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			// Normal completion cancels the resource monitor.
 		} catch (IOException) {
 			resourceLimitState.MarkExceeded();
+			operationCts.Cancel();
 			TryKillProcess(process);
 		} catch (UnauthorizedAccessException) {
 			resourceLimitState.MarkExceeded();
+			operationCts.Cancel();
 			TryKillProcess(process);
 		}
 	}
@@ -747,13 +762,44 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 
 	private static void TryKillProcess(Process process) {
 		try {
-			if (!process.HasExited) {
-				process.Kill(entireProcessTree: true);
-			}
+			// Best-effort cleanup is still useful after the immediate process exits: Windows can traverse
+			// descendants from the retained root process. Unix may already have reparented them, so the
+			// authoritative cross-platform cleanup remains closing Clio's redirected stream ends.
+			process.Kill(entireProcessTree: true);
 		}
 		catch {
 			// Ignore termination failures and return partial result.
 		}
+	}
+
+	private static void TryCloseRedirectedStreams(Process process) {
+		try {
+			process.StandardOutput.Close();
+		} catch {
+			// Ignore cleanup failures and return the timeout/cancellation result.
+		}
+		try {
+			process.StandardError.Close();
+		} catch {
+			// Ignore cleanup failures and return the timeout/cancellation result.
+		}
+	}
+
+	private static void TryCloseStandardInput(Process process) {
+		try {
+			process.StandardInput.Close();
+		} catch {
+			// Ignore cleanup failures and continue timeout/cancellation cleanup.
+		}
+	}
+
+	private static void ClassifyCancellation(ProcessExecutionOptions options,
+		ResourceLimitState resourceLimitState, ref bool canceled, ref bool timedOut) {
+		if (canceled || timedOut || resourceLimitState.Exceeded) {
+			return;
+		}
+		canceled = options.CancellationToken.IsCancellationRequested;
+		timedOut = !canceled && !resourceLimitState.Exceeded;
 	}
 
 	private static void ValidateOptions(ProcessExecutionOptions options) {
@@ -786,6 +832,12 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		public bool Exceeded => Volatile.Read(ref _exceeded) != 0;
 
 		public void MarkExceeded() => Interlocked.Exchange(ref _exceeded, 1);
+	}
+
+	private sealed class RealtimeLineState {
+		public StringBuilder Pending { get; } = new();
+
+		public bool SuppressLineFeedAfterCarriageReturn { get; set; }
 	}
 
 	#endregion

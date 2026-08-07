@@ -580,7 +580,11 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 			ResourceMonitorInterval = monitoredDirectory is null ? null : TimeSpan.FromSeconds(1)
 		}).GetAwaiter().GetResult();
 		if (result.TimedOut) {
-			throw new TimeoutException("The operation-wide Git knowledge synchronization deadline elapsed.");
+			string cleanupDiagnostic = result.DescendantTerminationUncertain
+				? " Redirected streams were disconnected; termination of already reparented descendants is not guaranteed."
+				: string.Empty;
+			throw new TimeoutException(
+				$"The operation-wide Git knowledge synchronization deadline elapsed.{cleanupDiagnostic}");
 		}
 		if (!result.Started || result.ExitCode != 0 || result.Canceled || result.ResourceLimitExceeded) {
 			throw new InvalidOperationException("Git knowledge synchronization failed.");
