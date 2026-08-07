@@ -269,8 +269,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				call.GetMethodInfo().Name == nameof(IPackageInstaller.Install)
 				&& call.GetArguments().FirstOrDefault() as string == ExpectedPackagePath)
 			.Should().Be(1,
-				because: "one archive carries both Files/Bin and Files/Bin/netstandard, so there is no "
-					+ "per-runtime archive name to choose between");
+				because: "there is no per-runtime archive to choose between because there is no ASSEMBLY at all - this package ships as SOURCE and the target compiles it, so one archive serves both runtimes. The two-Files/Bin shape this comment used to describe is CLIOGATE's, from the other column of the comparison table in docs/agent-instructions/bundled-packages.md, and BundledArchive_ShouldNotCarryACompiledAssembly bans it here");
 	}
 
 	[Test]

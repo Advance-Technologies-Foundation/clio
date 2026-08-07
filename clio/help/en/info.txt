@@ -8,7 +8,8 @@ SYNOPSIS
     clio i [OPTIONS]
 
 DESCRIPTION
-    Displays version information for clio, cliogate, and the .NET runtime 
+    Displays version information for clio, cliogate, the bundled
+    CrtProcessBuilder package, and the .NET runtime 
     environment. By default (without options), displays all component versions 
     and the path to the settings file.
 
@@ -53,6 +54,7 @@ OUTPUT FORMAT
     Default output (all versions):
         clio:   8.0.1.97
         gate:   2.0.0.38
+        process-builder:   1.0.0.0
         dotnet: 8.0.0
         settings file path: C:\Users\username\.clio\appsettings.json
 

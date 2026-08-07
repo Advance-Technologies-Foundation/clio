@@ -95,6 +95,21 @@ public class BundledProcessBuilderPackageTests {
 	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786075660000)/";
 
 	/// <summary>
+	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
+	/// </summary>
+	/// <remarks>
+	/// Pinned separately from the package descriptor because <c>clio set-pkg-version</c> does NOT touch schema
+	/// descriptors — <c>docs/agent-instructions/bundled-packages.md</c> step 2b says so and tells the
+	/// rebundler to check them by hand. This is the one field in the archive with a DEMONSTRATED production
+	/// defect: the marker shipped for a day carrying LOCAL time in a UTC-labelled field (05:42:51Z for a file
+	/// written at 08:46Z, i.e. exactly the +03:00 offset), because <c>ClearMilliseconds</c> dropped
+	/// <c>DateTimeKind</c> and <c>ToUniversalTime</c> then treated the value as local. The producing bug is
+	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
+	/// was the only one with no guard.
+	/// </remarks>
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1785919371000)/";
+
+	/// <summary>
 	/// The authorization gate inside the shipped package. See
 	/// <c>BundledArchive_ShouldCarryTheAuthorizationGateOnTheServiceHandlers</c> for why clio pins it.
 	/// </summary>
@@ -318,9 +333,7 @@ public class BundledProcessBuilderPackageTests {
 				+ $"nothing fails until a user runs the command against a real environment. Looked in "
 				+ $"'{BundledArchivePath}'. NOTE the limit of this check: it reads the BUILD OUTPUT, so it "
 				+ $"cannot see a packaging regression. The csproj entry carries Pack=\"false\" and a separate "
-				+ $"None/Pack pair puts the file under tools/<tfm>/any/ in the nupkg; break that and every "
-				+ $"test here still passes while the shipped global tool cannot find the archive. Covering it "
-				+ $"needs a check over the produced .nupkg or publish output");
+				+ "CopyToOutputDirectory=Always plus PackAsTool is what puts the file under tools/<tfm>/any/ in the nupkg - there is no None/Pack pair, and the csproj's Pack=\"false\" exists to SUPPRESS extra copies rather than to place any. Break the copy and every install answers 'this clio installation does not carry the package archive' with this test still green, because it reads the build output and not the package");
 	}
 
 	[Test]
@@ -349,6 +362,15 @@ public class BundledProcessBuilderPackageTests {
 				+ "floor the [RequiresPackage] gates enforce against the version the environment recorded from "
 				+ "this very descriptor. A drift either refuses a correct installation or accepts a stale one, "
 				+ "and nothing else in the product compares the two");
+		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedSchemaDescriptorModifiedOnUtc}\"",
+			because: "set-pkg-version stamps the PACKAGE descriptor only, so the schema descriptor's timestamp "
+				+ "is hand-maintained — and it is the one field here that has actually shipped wrong, carrying "
+				+ "local time in a UTC-labelled field for a day. Pinning it turns the runbook's manual step 2b "
+				+ "into a failing test");
+		ExpectedSchemaDescriptorModifiedOnUtc.Should().EndWith("000)/",
+			because: "the same provenance oracle applies to the schema descriptor: ConvertToModifiedOnUtc "
+				+ "truncates to whole seconds, so a value with milliseconds was written by something other than "
+				+ "clio — which is exactly how the +03:00 shift got in");
 		ExpectedDescriptorModifiedOnUtc.Should().EndWith("000)/",
 			because: "it is the one provenance oracle available here. PackageDescriptor.ConvertToModifiedOnUtc "
 				+ "truncates to whole seconds, so milliseconds in the stamp prove the descriptor was written by "
@@ -398,7 +420,7 @@ public class BundledProcessBuilderPackageTests {
 				+ "assembly name is forbidden");
 		archive.Should().NotContainEquivalentOf($"{BundledPackages.ProcessBuilderPackageName}.pdb",
 			because: "symbols travel with a leaked build output and are the same accident by a different name; "
-				+ "the bundling runbook passes --skip-pdb, and this asserts it actually happened");
+				+ "neither runbook passes --skip-pdb - both delete Files/Bin instead, which is what removes the pdb along with the assembly - so this assertion is the check on THAT step, not on a flag");
 	}
 
 	[Test]

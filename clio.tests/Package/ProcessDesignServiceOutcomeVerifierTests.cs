@@ -174,6 +174,53 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 	}
 
 	[Test]
+	[Description("Strips control characters out of an unknown responder's body before it reaches the diagnosis, so a crafted answer cannot forge or overwrite log lines around it.")]
+	public void IsPackageOperational_ShouldNeutraliseControlCharacters_InTheQuotedAnswer() {
+		// Arrange
+		// A responder that is not this package, whose body tries to inject a log line of its own. The CR/LF
+		// are JSON escapes, so the DECODED value carries real control characters.
+		ArrangeResponse("{\"forged\":\"a\\r\\n[ERR] - the environment did not compile the package\"}");
+
+		// Act
+		_verifier.IsPackageOperational(PackageName, out string diagnosis);
+
+		// Assert
+		diagnosis.Should().NotBeNull(
+			because: "a JSON body without PingResult is the branch that quotes what answered");
+		diagnosis.Should().NotContain(((char)13).ToString(),
+			because: "the quoted text comes from an UNKNOWN responder and goes straight into a log line, so a "
+				+ "carriage return in it would let that responder forge a line of its own and the reader would see "
+				+ "what looks like clio's own diagnosis. The same reasoning already governs cliogate's "
+				+ "FormatPackageNamesForLog. Delete the char.IsControl map and nothing else in this fixture notices");
+		diagnosis.Should().NotContain(((char)10).ToString(),
+			because: "a line feed forges a line just as effectively as a carriage return");
+		diagnosis.Should().Contain("forged",
+			because: "neutralising must not mean discarding: the body is what lets the reader recognise the "
+				+ "responder, so its printable content has to survive");
+	}
+
+	[Test]
+	[Description("Bounds the quoted answer, so a large body from an unknown responder cannot flood the log or the MCP transcript.")]
+	public void IsPackageOperational_ShouldBoundTheQuotedAnswer() {
+		// Arrange
+		string flood = new('x', 5_000);
+		ArrangeResponse("{\"flood\":\"" + flood + "\"}");
+
+		// Act
+		_verifier.IsPackageOperational(PackageName, out string diagnosis);
+
+		// Assert
+		diagnosis.Should().NotBeNull(
+			because: "this is still the wrong-envelope branch, which quotes the answer");
+		diagnosis.Length.Should().BeLessThan(1_000,
+			because: "the diagnosis reaches the CLI log and, on the MCP path, the agent's context — an "
+				+ "unbounded quote of a stranger's response body would flood both, and the responder chooses "
+				+ "its own length");
+		diagnosis.Should().Contain("…",
+			because: "the truncation must be visible, or a reader cannot tell a short answer from a clipped one");
+	}
+
+	[Test]
 	[Description("Reports NOT operational, without throwing, when the call itself fails.")]
 	public void IsPackageOperational_ShouldReturnFalse_WhenTheCallThrows() {
 		// Arrange

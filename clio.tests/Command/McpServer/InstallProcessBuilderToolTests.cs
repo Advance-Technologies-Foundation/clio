@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -235,6 +236,55 @@ public sealed class InstallProcessBuilderToolTests {
 					+ "and restart an instance already being rebuilt");
 		} finally {
 			McpToolExecutionLock.ReleaseConfigurationBuild("busy-tenant");
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Writes the post-deadline failure to stderr when the detached install fails after the caller was already answered, because the exit code has no response left to travel on.")]
+	public async Task InstallProcessBuilder_Should_ReportToStdErr_When_TheInstallFailsPastTheDeadline() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		TextWriter originalError = Console.Error;
+		StringWriter capturedError = new();
+		Console.SetError(capturedError);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("failing-tenant");
+		// exitCode 1, unlike every other case in this fixture: this is the ONLY arrangement that reaches
+		// ReportPostDeadlineFailure, whose guard is `ExitCode != 0 && callerAlreadyAnswered`.
+		ManualResetEventSlim executeGate = new(false);
+		FakeInstallProcessBuilderCommand resolvedCommand = new(exitCode: 1) { ExecuteGate = executeGate };
+		commandResolver.Resolve<InstallProcessBuilderCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver) {
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try {
+			// Act
+			await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox"));
+			executeGate.Set();
+			// The report happens on the detached continuation, so wait for it rather than for a duration.
+			SpinWait.SpinUntil(() => capturedError.ToString().Contains("FAILED"), TimeSpan.FromSeconds(10));
+
+			// Assert
+			string stderr = capturedError.ToString();
+			stderr.Should().Contain("FAILED",
+				because: "past the response deadline the caller has already been told the install is still "
+					+ "running, so the exit code has nowhere to travel. stderr is the only channel left, and "
+					+ "without it a failed install is indistinguishable from a slow one — the whole reason this "
+					+ "reporter exists. Every other test in this fixture uses exitCode 0, so this branch had no "
+					+ "coverage at all: inverting its guard, or dropping the callerAlreadyAnswered write, would "
+					+ "have made a post-deadline failure completely silent with the suite still green");
+			stderr.Should().Contain("exit code 1",
+				because: "the exit code is the only detail distinguishing which failure occurred, and the "
+					+ "caller's own transcript no longer carries it");
+			stderr.Should().Contain(InstallProcessBuilderTool.InstallProcessBuilderToolName,
+				because: "on a shared stderr the line must say which tool wrote it");
+		} finally {
+			executeGate.Set();
+			Console.SetError(originalError);
 			ConsoleLogger.Instance.ClearMessages();
 		}
 	}
