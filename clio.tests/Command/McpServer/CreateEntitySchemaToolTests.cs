@@ -293,9 +293,9 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
-	[Description("Uses BaseEntity as the default parent schema when parent-schema-name is omitted from the MCP create-entity-schema call.")]
+	[Description("Forwards an omitted parent-schema-name unchanged to the command; parent defaulting is centralized in CreateEntitySchemaCommand.NormalizeParentSchema (the single source of truth), not re-implemented in the MCP mapping layer.")]
 	[Category("Unit")]
-	public async Task CreateEntitySchema_Should_Use_BaseEntity_As_Default_Parent_When_ParentSchemaName_Is_Omitted() {
+	public async Task CreateEntitySchema_Should_ForwardOmittedParentUnchanged_SoTheCommandAppliesTheDefault() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -317,8 +317,8 @@ public class CreateEntitySchemaToolTests {
 			because: "omitting parent-schema-name should still produce a valid schema creation request");
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command should receive the mapped options");
-		resolvedCommand.CapturedOptions!.ParentSchemaName.Should().Be("BaseEntity",
-			because: "create-entity-schema should default to BaseEntity when no parent-schema-name is supplied");
+		resolvedCommand.CapturedOptions!.ParentSchemaName.Should().BeNull(
+			because: "the mapping layer must forward the omitted parent unchanged; the BaseEntity default is applied by CreateEntitySchemaCommand.NormalizeParentSchema (covered by CreateEntitySchemaCommandTests) so the predicate lives in exactly one place");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
