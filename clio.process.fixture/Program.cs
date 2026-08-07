@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Clio.ProcessFixture;
 
 const string holdPipesArgument = "--hold-inherited-pipes";
 const string spawnDescendantArgument = "--spawn-inherited-handle-descendant";
@@ -26,33 +27,28 @@ if (args.Length == 2 && string.Equals(args[0], growDirectoryArgument, StringComp
 if (args.Length == 2 && string.Equals(args[0], spawnDescendantArgument, StringComparison.Ordinal)) {
 	using Process descendant = StartPipeHoldingDescendant();
 	await WriteProcessIdentityAsync(args[1], descendant);
-	Console.Out.Write("parent-exited");
-	Console.Out.Flush();
+	await WriteOutputAsync("parent-exited");
 	return 0;
 }
 
 if (args.Length == 3 && string.Equals(args[0], spawnGrowingDescendantArgument, StringComparison.Ordinal)) {
 	using Process descendant = StartPipeHoldingDescendant(growDirectoryArgument, args[2]);
 	await WriteProcessIdentityAsync(args[1], descendant);
-	Console.Out.Write("parent-exited");
-	Console.Out.Flush();
+	await WriteOutputAsync("parent-exited");
 	return 0;
 }
 
 if (args.Length == 2 && string.Equals(args[0], overflowOutputArgument, StringComparison.Ordinal)) {
 	using Process descendant = StartPipeHoldingDescendant();
 	await WriteProcessIdentityAsync(args[1], descendant);
-	Console.Out.Write(new string('x', 8192));
-	Console.Out.Flush();
+	await WriteOutputAsync(new string('x', 8192));
 	return 0;
 }
 
 if (args.Length == 1 && string.Equals(args[0], carriageReturnOutputArgument, StringComparison.Ordinal)) {
-	Console.Out.Write("first\r");
-	Console.Out.Flush();
+	await WriteOutputAsync("first\r");
 	await Task.Delay(TimeSpan.FromSeconds(1));
-	Console.Out.Write("second");
-	Console.Out.Flush();
+	await WriteOutputAsync("second");
 	return 0;
 }
 
@@ -61,12 +57,11 @@ await File.WriteAllTextAsync(Path.Combine(fixtureDirectory, invocationMarkerFile
 	string.Join(' ', args));
 using Process gitDescendant = StartPipeHoldingDescendant();
 await WriteProcessIdentityAsync(Path.Combine(fixtureDirectory, descendantIdentityFileName), gitDescendant);
-Console.Out.Write("fake-git-parent-exited");
-Console.Out.Flush();
+await WriteOutputAsync("fake-git-parent-exited");
 return 1;
 
 static Process StartPipeHoldingDescendant(params string[] arguments) {
-	ProcessStartInfo descendantStartInfo = new(Environment.ProcessPath!) {
+	ProcessStartInfo descendantStartInfo = new(GetCurrentExecutablePath()) {
 		UseShellExecute = false,
 		CreateNoWindow = true
 	};
@@ -83,8 +78,14 @@ static Process StartPipeHoldingDescendant(params string[] arguments) {
 
 static async Task WriteProcessIdentityAsync(string path, Process process) {
 	ProcessIdentity identity = new(process.Id, process.StartTime.ToUniversalTime().Ticks,
-		Path.GetFullPath(Environment.ProcessPath!));
+		Path.GetFullPath(GetCurrentExecutablePath()));
 	await File.WriteAllTextAsync(path, JsonSerializer.Serialize(identity));
 }
 
-internal sealed record ProcessIdentity(int ProcessId, long StartUtcTicks, string ExecutablePath);
+static async Task WriteOutputAsync(string output) {
+	await Console.Out.WriteAsync(output);
+	await Console.Out.FlushAsync();
+}
+
+static string GetCurrentExecutablePath() => Environment.ProcessPath
+	?? throw new InvalidOperationException("The fixture executable path is unavailable.");

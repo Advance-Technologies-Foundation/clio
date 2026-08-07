@@ -7836,3 +7836,10 @@ Decision: Create the first-cause state, timeout source, and linked operation tok
 Discovery: An operation-wide deadline must begin before every potentially expensive preparation step, not merely before process wait and stream drain. A 40,000-file regression makes this boundary observable, while an identity-marker assertion proves pre-cancellation starts no fixture process.
 Files: clio/Common/ProcessExecutor.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs, clio.mcp.e2e/CuratedKnowledgeGitStartupE2ETests.cs
 Impact: Windows passes 17 focused process/Git tests and 918 Common unit tests plus 3 skips per framework; Linux Docker passes seven integration cases per framework; MCP E2E, 152 Ring tests, and Windows x64 NativeAOT publish remain green.
+
+## 2026-08-07 10:51 – Sonar new-code findings removed after PR publication
+Context: PR #1019's first Sonar analysis failed the new-code reliability rating and reported async, complexity, parameter-count, namespace, and fixture-output findings.
+Decision: Extract preflight and captured-output responsibilities, carry process-read state in a private context record, await cancellation and fixture writes, and move fixture identity into a named namespace.
+Discovery: The original single-directory timing fixture was too fast on Linux to prove timeout-before-launch. One thousand shallow child directories create portable traversal work with less filesystem churn and assert `Started=false`; the regression passes on Windows and Linux for both target frameworks.
+Files: clio/Common/ProcessExecutor.cs, clio.process.fixture/Program.cs, clio.process.fixture/ProcessIdentity.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs
+Impact: All reported Sonar new-code locations are addressed; Windows focused/Common/MCP tests, the Linux preflight regression, 152 Ring tests, and Windows x64 NativeAOT publish remain green before the follow-up push.

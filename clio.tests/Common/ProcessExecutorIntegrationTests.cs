@@ -60,8 +60,10 @@ public class ProcessExecutorIntegrationTests {
 		ProcessExecutor sut = new(logger);
 		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-preflight-timeout-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(directory);
-		for (int index = 0; index < 5_000; index++) {
-			File.Create(Path.Combine(directory, $"{index:D5}.tmp")).Dispose();
+		for (int index = 0; index < 1_000; index++) {
+			string childDirectory = Path.Combine(directory, $"entry-{index:D4}");
+			Directory.CreateDirectory(childDirectory);
+			File.Create(Path.Combine(childDirectory, "content.tmp")).Dispose();
 		}
 		ProcessExecutionOptions options = new(ResolveFixtureExecutable(), "--write-carriage-return-output") {
 			Timeout = TimeSpan.FromMilliseconds(10),
