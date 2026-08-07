@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
@@ -13,7 +13,7 @@ using IClioFileSystem = Clio.Common.IFileSystem;
 namespace Clio.Tests.Common;
 
 /// <summary>
-/// Covers <see cref="ICompressionUtilities.ReadFileFromGZip"/> — the walk over clio's own package container
+/// Covers <see cref="ICompressionUtilities.TryReadFileFromGZip"/> — the walk over clio's own package container
 /// format that reads a single entry without unpacking to disk.
 /// </summary>
 /// <remarks>
@@ -87,21 +87,22 @@ public class CompressionUtilitiesReadFileTests {
 
 	[Test]
 	[Description("The wanted entry is returned when it is the first in the archive, which is the shape the shipped package happens to have.")]
-	public void ReadFileFromGZip_ShouldReturnTheEntry_WhenItIsFirst() {
+	public void TryReadFileFromGZip_ShouldReturnTheEntry_WhenItIsFirst() {
 		// Arrange
 		ArrangeArchive(("descriptor.json", "{\"a\":1}"), ("Files/x.cs", "class X {}"));
 
 		// Act
-		byte[] content = _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		bool found = _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] content);
 
 		// Assert
+		found.Should().BeTrue(because: "the entry is present in the archive");
 		Encoding.UTF8.GetString(content).Should().Be("{\"a\":1}",
 			because: "the reader must return the wanted entry's bytes exactly, with no length prefix attached");
 	}
 
 	[Test]
 	[Description("The wanted entry is found after other entries, exercising the skip path — the shipped archive stores the descriptor first, so no test over the real archive can reach this.")]
-	public void ReadFileFromGZip_ShouldReturnTheEntry_WhenItFollowsOtherEntries() {
+	public void TryReadFileFromGZip_ShouldReturnTheEntry_WhenItFollowsOtherEntries() {
 		// Arrange
 		ArrangeArchive(
 			("Files/a.cs", "aaaa"),
@@ -109,27 +110,29 @@ public class CompressionUtilitiesReadFileTests {
 			("descriptor.json", "{\"found\":true}"));
 
 		// Act
-		byte[] content = _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		bool found = _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] content);
 
 		// Assert
+		found.Should().BeTrue(because: "the entry is present, just not first");
 		Encoding.UTF8.GetString(content).Should().Be("{\"found\":true}",
 			because: "skipping an entry must advance by exactly its declared content length; an off-by-one "
 				+ "there would read every later entry as garbage");
 	}
 
 	[Test]
-	[Description("An archive read cleanly to its end without the wanted entry returns null, which the caller reads as ABSENT rather than as damage.")]
-	public void ReadFileFromGZip_ShouldReturnNull_WhenEntryIsAbsent() {
+	[Description("An archive read cleanly to its end without the wanted entry answers false, which the caller reads as ABSENT rather than as damage.")]
+	public void TryReadFileFromGZip_ShouldAnswerFalse_WhenEntryIsAbsent() {
 		// Arrange
 		ArrangeArchive(("Files/a.cs", "aaaa"), ("Files/b.cs", "bbbb"));
 
 		// Act
-		byte[] content = _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		bool found = _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] content);
 
 		// Assert
-		content.Should().BeNull(
-			because: "null means absent and nothing else - the caller reports a missing descriptor "
+		found.Should().BeFalse(
+			because: "false means absent and nothing else - the caller reports a missing descriptor "
 				+ "differently from a corrupt archive, and the two have different remedies");
+		content.Should().BeNull(because: "nothing may be handed back when nothing was found");
 	}
 
 	[Test]
@@ -139,15 +142,16 @@ public class CompressionUtilitiesReadFileTests {
 	[TestCase("Files/Libs/ErrorOr.dll", "Files\\Libs\\ErrorOr.dll")]
 	[TestCase("descriptor.json", "DESCRIPTOR.JSON")]
 	[TestCase("descriptor.json", "/descriptor.json")]
-	public void ReadFileFromGZip_ShouldMatchTheEntry_RegardlessOfSeparatorFlavourAndCase(
+	public void TryReadFileFromGZip_ShouldMatchTheEntry_RegardlessOfSeparatorFlavourAndCase(
 		string storedName, string requestedName) {
 		// Arrange
 		ArrangeArchive((storedName, "payload"));
 
 		// Act
-		byte[] content = _sut.ReadFileFromGZip(ArchivePath, requestedName);
+		bool found = _sut.TryReadFileFromGZip(ArchivePath, requestedName, out byte[] content);
 
 		// Assert
+		found.Should().BeTrue(because: "the stored and requested paths denote the same entry");
 		Encoding.UTF8.GetString(content).Should().Be("payload",
 			because: "an archive packed on Windows and read on Linux (or the reverse) must resolve the same "
 				+ "entry, and the caller should not have to know which host produced it");
@@ -155,7 +159,7 @@ public class CompressionUtilitiesReadFileTests {
 
 	[Test]
 	[Description("A skipped entry declaring a content length longer than the bytes remaining is corruption, and must throw rather than seek past the end and read every later entry as garbage.")]
-	public void ReadFileFromGZip_ShouldThrow_WhenASkippedEntryDeclaresAnImpossibleLength() {
+	public void TryReadFileFromGZip_ShouldThrow_WhenASkippedEntryDeclaresAnImpossibleLength() {
 		// Arrange
 		ArrangeArchive(stream => {
 			byte[] nameBytes = Encoding.Unicode.GetBytes("Files/a.cs");
@@ -166,17 +170,17 @@ public class CompressionUtilitiesReadFileTests {
 		});
 
 		// Act
-		Action act = () => _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		Action act = () => _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] _);
 
 		// Assert
 		act.Should().Throw<InvalidDataException>(
-			because: "returning null here would tell the caller the archive simply has no descriptor, when in "
+			because: "answering false here would tell the caller the archive simply has no descriptor, when in "
 				+ "fact it cannot be parsed at all");
 	}
 
 	[Test]
 	[Description("The wanted entry being truncated is corruption too, and must not be reported as a shorter file.")]
-	public void ReadFileFromGZip_ShouldThrow_WhenTheWantedEntryIsTruncated() {
+	public void TryReadFileFromGZip_ShouldThrow_WhenTheWantedEntryIsTruncated() {
 		// Arrange
 		ArrangeArchive(stream => {
 			byte[] nameBytes = Encoding.Unicode.GetBytes("descriptor.json");
@@ -187,7 +191,7 @@ public class CompressionUtilitiesReadFileTests {
 		});
 
 		// Act
-		Action act = () => _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		Action act = () => _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] _);
 
 		// Assert
 		act.Should().Throw<InvalidDataException>(
@@ -197,7 +201,7 @@ public class CompressionUtilitiesReadFileTests {
 
 	[Test]
 	[Description("An entry name length larger than the bytes remaining must be rejected immediately, not driven as a read loop — an unbounded name length is billions of iterations and gigabytes of allocation from four bytes of corruption, on a path that unpacks archives clio did not produce.")]
-	public void ReadFileFromGZip_ShouldThrow_WhenAnEntryNameLengthExceedsTheRemainingBytes() {
+	public void TryReadFileFromGZip_ShouldThrow_WhenAnEntryNameLengthExceedsTheRemainingBytes() {
 		// Arrange
 		ArrangeArchive(stream => {
 			stream.Write(BitConverter.GetBytes(0x2000_0000));
@@ -205,7 +209,7 @@ public class CompressionUtilitiesReadFileTests {
 		});
 
 		// Act
-		Action act = () => _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		Action act = () => _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] _);
 
 		// Assert
 		// The bound must make this immediate. Without it the loop appends up to 2^29 characters before the
@@ -217,7 +221,7 @@ public class CompressionUtilitiesReadFileTests {
 
 	[Test]
 	[Description("A negative declared length is refused like any other incredible one, because new byte[negative] would throw OverflowException out of the reader instead of a readable diagnosis.")]
-	public void ReadFileFromGZip_ShouldThrow_WhenAnEntryDeclaresANegativeLength() {
+	public void TryReadFileFromGZip_ShouldThrow_WhenAnEntryDeclaresANegativeLength() {
 		// Arrange
 		ArrangeArchive(stream => {
 			stream.Write(BitConverter.GetBytes(-1));
@@ -225,7 +229,7 @@ public class CompressionUtilitiesReadFileTests {
 		});
 
 		// Act
-		Action act = () => _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		Action act = () => _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] _);
 
 		// Assert
 		act.Should().Throw<InvalidDataException>(
@@ -239,12 +243,12 @@ public class CompressionUtilitiesReadFileTests {
 	[TestCase("", "descriptor.json")]
 	[TestCase(ArchivePath, null)]
 	[TestCase(ArchivePath, "   ")]
-	public void ReadFileFromGZip_ShouldThrow_WhenAnArgumentIsMissing(string archivePath, string entryPath) {
+	public void TryReadFileFromGZip_ShouldThrow_WhenAnArgumentIsMissing(string archivePath, string entryPath) {
 		// Arrange
 		ArrangeArchive(("descriptor.json", "{}"));
 
 		// Act
-		Action act = () => _sut.ReadFileFromGZip(archivePath, entryPath);
+		Action act = () => _sut.TryReadFileFromGZip(archivePath, entryPath, out byte[] _);
 
 		// Assert
 		act.Should().Throw<ArgumentException>(
@@ -253,7 +257,7 @@ public class CompressionUtilitiesReadFileTests {
 
 	[Test]
 	[Description("Packing and reading back agree about the format, so the reader cannot drift from the writer it shares a file with.")]
-	public void ReadFileFromGZip_ShouldReadWhatPackToGZipWrote() {
+	public void TryReadFileFromGZip_ShouldReadWhatPackToGZipWrote() {
 		// Arrange
 		_mockFileSystem.AddFile("/src/descriptor.json", new MockFileData("{\"round\":\"trip\"}"));
 		_mockFileSystem.AddFile("/src/Files/a.cs", new MockFileData("class A {}"));
@@ -261,7 +265,7 @@ public class CompressionUtilitiesReadFileTests {
 
 		// Act
 		_sut.PackToGZip(files, "/src", ArchivePath);
-		byte[] content = _sut.ReadFileFromGZip(ArchivePath, "descriptor.json");
+		bool found = _sut.TryReadFileFromGZip(ArchivePath, "descriptor.json", out byte[] content);
 
 		// Assert
 		Encoding.UTF8.GetString(content).Should().Be("{\"round\":\"trip\"}",

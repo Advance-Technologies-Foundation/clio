@@ -303,9 +303,11 @@ function Replace-InFile([string] $path, [string] $pattern, [string] $replacement
     $text = Get-Content -LiteralPath $path -Raw
     # Insist on EXACTLY one match. A pattern that hits nothing means the constant's shape changed; one that
     # hits several means it is not anchored tightly enough, and [regex]::Replace would rewrite all of them.
-    $matches = [regex]::Matches($text, $pattern)
-    if ($matches.Count -eq 0) { Die "Could not find $label in $path - the constant's shape changed; update this script." }
-    if ($matches.Count -gt 1) { Die "The pattern for $label matches $($matches.Count) places in $path. Refusing to rewrite them all - tighten the pattern in this script." }
+    # NOT $matches: that is a PowerShell automatic variable, populated by every -match in the script - step
+    # 2b reads $Matches[1] straight after one - so assigning to it here would clobber a live value.
+    $pinMatches = [regex]::Matches($text, $pattern)
+    if ($pinMatches.Count -eq 0) { Die "Could not find $label in $path - the constant's shape changed; update this script." }
+    if ($pinMatches.Count -gt 1) { Die "The pattern for $label matches $($pinMatches.Count) places in $path. Refusing to rewrite them all - tighten the pattern in this script." }
     $new = [regex]::Replace($text, $pattern, $replacement)
     if ($new -ne $text) {
         [IO.File]::WriteAllText($path, $new)

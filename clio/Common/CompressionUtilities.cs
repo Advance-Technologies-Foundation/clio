@@ -163,23 +163,30 @@ namespace Clio.Common
 		}
 
 		// Reads the length-prefixed content block the stream is positioned at, WITHOUT writing it anywhere.
-		// Returns null when the block is truncated or its declared length is not credible, which is the only
+		// Answers false when the block is truncated or its declared length is not credible, which is the only
 		// signal a caller gets that the archive is corrupt: entries carry no checksum and no terminator, so a
-		// bad length would otherwise be read as a valid (huge) allocation request.
-		private static byte[] ReadFileContent(MemoryStream zipStream)
+		// bad length would otherwise be read as a valid (huge) allocation request. A Try-pattern rather than a
+		// nullable return because a zero-length entry is a legitimate result and must stay distinguishable
+		// from a failed read.
+		private static bool TryReadFileContent(MemoryStream zipStream, out byte[] content)
 		{
+			content = null;
 			var lengthBytes = new byte[sizeof(int)];
 			if (SafeReadGZipStream(zipStream, lengthBytes) != lengthBytes.Length) {
-				return null;
+				return false;
 			}
 			int fileContentLength = BitConverter.ToInt32(lengthBytes, 0);
 			// Bound by what is actually left rather than by a magic number: the archive is already fully
 			// decompressed in memory, so "longer than the remainder" is exactly the impossible case.
 			if (fileContentLength < 0 || fileContentLength > zipStream.Length - zipStream.Position) {
-				return null;
+				return false;
 			}
-			var content = new byte[fileContentLength];
-			return SafeReadGZipStream(zipStream, content) == fileContentLength ? content : null;
+			var buffer = new byte[fileContentLength];
+			if (SafeReadGZipStream(zipStream, buffer) != fileContentLength) {
+				return false;
+			}
+			content = buffer;
+			return true;
 		}
 
 		// Advances past the content block the stream is positioned at. Same credibility bound as the reader
@@ -228,9 +235,10 @@ namespace Clio.Common
 			while (UnpackFromGZip(destinationPackageDirectory, newStream)) { }
 		}
 
-		public byte[] ReadFileFromGZip(string packedPackagePath, string relativeFilePath) {
+		public bool TryReadFileFromGZip(string packedPackagePath, string relativeFilePath, out byte[] content) {
 			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
 			relativeFilePath.CheckArgumentNullOrWhiteSpace(nameof(relativeFilePath));
+			content = null;
 			string wanted = NormalizeEntryPath(relativeFilePath);
 			using var fileStream =
 				_fileSystem.FileOpenStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -250,7 +258,7 @@ namespace Clio.Common
 							$"'{packedPackagePath}' is not a readable package archive: the entry starting at "
 							+ $"offset {newStream.Position} declares an impossible name length.");
 					}
-					return null;
+					return false;
 				}
 				if (!string.Equals(NormalizeEntryPath(entryPath), wanted, StringComparison.OrdinalIgnoreCase)) {
 					if (!SkipFileContent(newStream)) {
@@ -260,10 +268,12 @@ namespace Clio.Common
 					}
 					continue;
 				}
-				byte[] content = ReadFileContent(newStream);
-				return content ?? throw new InvalidDataException(
-					$"'{packedPackagePath}' is not a readable package archive: entry '{entryPath}' is "
-					+ "truncated.");
+				if (!TryReadFileContent(newStream, out content)) {
+					throw new InvalidDataException(
+						$"'{packedPackagePath}' is not a readable package archive: entry '{entryPath}' is "
+						+ "truncated.");
+				}
+				return true;
 			}
 		}
 

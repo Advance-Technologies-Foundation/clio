@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using Clio.Common;
@@ -58,9 +58,13 @@ public class BundledPackageCatalogTests {
 		BundledPackages.ProcessBuilderPackageName,
 		BundledPackages.ProcessBuilderArchiveFileName);
 
+	// A null descriptor arranges the ABSENT case: the reader answers false and hands back nothing, which is
+	// a different condition from the corrupt archive arranged by the throwing setup further down.
 	private void ArrangeArchive(byte[] descriptor) {
 		_fileSystem.ExistsFile(ExpectedArchivePath).Returns(true);
-		_compressionUtilities.ReadFileFromGZip(ExpectedArchivePath, "descriptor.json").Returns(descriptor);
+		_compressionUtilities
+			.TryReadFileFromGZip(ExpectedArchivePath, "descriptor.json", out Arg.Any<byte[]>())
+			.Returns(call => { call[2] = descriptor; return descriptor is not null; });
 	}
 
 	#endregion
@@ -146,7 +150,8 @@ public class BundledPackageCatalogTests {
 		// Assert
 		version.ToString().Should().Be("1.2.3.4",
 			because: "the cached answer must be the one that was read, not a stale default");
-		_compressionUtilities.Received(1).ReadFileFromGZip(ExpectedArchivePath, "descriptor.json");
+		_compressionUtilities.Received(1).TryReadFileFromGZip(
+			ExpectedArchivePath, "descriptor.json", out Arg.Any<byte[]>());
 	}
 
 	[Test]
@@ -270,7 +275,8 @@ public class BundledPackageCatalogTests {
 	public void TryGetVersion_ShouldDiagnose_WhenTheReaderThrows() {
 		// Arrange
 		_fileSystem.ExistsFile(ExpectedArchivePath).Returns(true);
-		_compressionUtilities.ReadFileFromGZip(ExpectedArchivePath, "descriptor.json")
+		_compressionUtilities
+			.TryReadFileFromGZip(ExpectedArchivePath, "descriptor.json", out Arg.Any<byte[]>())
 			.Returns(_ => throw new InvalidDataException("the gzip member is truncated"));
 
 		// Act

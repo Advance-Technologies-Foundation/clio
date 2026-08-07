@@ -17,10 +17,12 @@ namespace Clio.Common
 		/// independently of directory-separator flavour, since the archive stores whatever separator the host
 		/// that packed it used.
 		/// </param>
+		/// <param name="content">The entry's bytes when found; otherwise <c>null</c>.</param>
 		/// <returns>
-		/// The entry's bytes, or <c>null</c> when the archive was read to its end without holding such an
-		/// entry. <c>null</c> means ABSENT and nothing else — a corrupt container throws instead, so a caller
-		/// can tell "no such file" from "this archive is damaged" and say the right thing about it.
+		/// <c>true</c> when the entry was found. <c>false</c> means the archive was read to its end without
+		/// holding such an entry — ABSENT and nothing else, because a corrupt container throws instead. A
+		/// caller can therefore tell "no such file" from "this archive is damaged" and say the right thing
+		/// about it.
 		/// </returns>
 		/// <exception cref="System.IO.InvalidDataException">
 		/// Thrown when the container is unreadable: an entry declares a name or content length that does not
@@ -30,13 +32,18 @@ namespace Clio.Common
 		/// Exists so a caller that needs one small file — a descriptor, say — does not have to unpack a whole
 		/// package to a temporary directory to read it.
 		/// <para>
+		/// A Try-pattern rather than a nullable <c>byte[]</c> return, because an EMPTY entry is a legitimate
+		/// result: returning a zero-length array for "not found" would make the two indistinguishable, and
+		/// that distinction is the point of the contract above.
+		/// </para>
+		/// <para>
 		/// The archive is decompressed into memory in FULL before any entry is inspected (as
 		/// <see cref="UnpackFromGZip"/> already does), so the caller must be willing to hold the whole
 		/// decompressed package. There is no cap: this is not a streaming reader, and it must not be pointed
 		/// at an archive whose size is not already trusted.
 		/// </para>
 		/// </remarks>
-		byte[] ReadFileFromGZip(string packedPackagePath, string relativeFilePath);
+		bool TryReadFileFromGZip(string packedPackagePath, string relativeFilePath, out byte[] content);
 
 		void Unzip(string zipFilePath, string destinationDirectory);
 

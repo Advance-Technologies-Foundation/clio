@@ -192,8 +192,9 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 			return false;
 		}
 		byte[] descriptor;
+		bool found;
 		try {
-			descriptor = _compressionUtilities.ReadFileFromGZip(archivePath, DescriptorEntryPath);
+			found = _compressionUtilities.TryReadFileFromGZip(archivePath, DescriptorEntryPath, out descriptor);
 		} catch (Exception e) {
 			// Anything the reader can throw — a truncated gzip member, an unreadable file — means the same
 			// thing to the caller, so it is reported as one condition with the cause appended rather than as
@@ -203,9 +204,9 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 				+ "Reinstall or update clio itself.";
 			return false;
 		}
-		if (descriptor is null) {
-			// Distinct from the catch above on purpose: the reader throws for a CORRUPT archive and returns
-			// null only for a cleanly-read archive that genuinely has no such entry. Collapsing the two would
+		if (!found) {
+			// Distinct from the catch above on purpose: the reader throws for a CORRUPT archive and answers
+			// false only for a cleanly-read archive that genuinely has no such entry. Collapsing the two would
 			// tell an operator their archive lacks a descriptor when in fact it is truncated.
 			diagnosis =
 				$"The bundled {packageName} archive at '{archivePath}' contains no {DescriptorEntryPath}, so "
