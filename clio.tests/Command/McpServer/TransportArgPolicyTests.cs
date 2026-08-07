@@ -29,7 +29,6 @@ public sealed class TransportArgPolicyTests {
 		new(
 			Substitute.For<ISettingsRepository>(),
 			Substitute.For<ISettingsBootstrapService>(),
-			new NonInteractiveConsole(),
 			credentialContextAccessor,
 			Substitute.For<ITargetUrlValidator>(),
 			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));

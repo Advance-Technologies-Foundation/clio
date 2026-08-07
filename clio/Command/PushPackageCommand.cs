@@ -203,13 +203,22 @@
 			}
 		}
 
-		private CompileConfigurationOptions CreateFromPushPkgOptions(EnvironmentOptions options) {
+		/// <summary>
+		/// Builds the compile options for the <c>--force-compilation</c> in-process compile. <c>IsSilent</c>
+		/// is set because <c>--force-compilation</c> already expresses the intent to compile, so the internal
+		/// compile must run without the interactive heavy-operation prompt (ENG-93157, RC-10/RC-16). Without
+		/// it an interactive <c>push-package --force-compilation</c> that declined the prompt would postpone
+		/// the compile yet still report success. Centralizing the flag here (rather than at the call site)
+		/// keeps the "in-process callers compile silently" invariant guarded by a single testable helper.
+		/// </summary>
+		internal static CompileConfigurationOptions CreateFromPushPkgOptions(EnvironmentOptions options) {
 			return new CompileConfigurationOptions {
 				Environment = options.Environment,
 				Login = options.Login,
 				Password = options.Password,
 				Uri = options.Uri,
 				All = true,
+				IsSilent = true,
 			};
 		}
 

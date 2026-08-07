@@ -5180,6 +5180,7 @@ internal static class ToolContractCatalog {
 					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
 			],
 			Preconditions: [
+				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
