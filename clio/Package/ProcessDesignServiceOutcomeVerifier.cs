@@ -123,6 +123,21 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 			url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
 			string response = _applicationClient.ExecutePostRequest(
 				url, "{}", ProbeTimeoutMs, ProbeAttempts, ProbeDelaySec);
+			// BEFORE parsing, because this is the one non-JSON answer that has a specific cause and a specific
+			// remedy. The non-generic ExecutePostRequest returns the login page VERBATIM when automatic
+			// re-authentication fails (only the generic overload turns that into an exception), so without this
+			// check the HTML fails JsonDocument.Parse, lands in the catch with no diagnosis, and the caller's
+			// fallback message blames the configuration build and sends the operator to the build log — for a
+			// credentials problem. That is exactly the conflation the remarks above forbid.
+			if (ReauthExecutor.IsSessionExpiredResponse(response)) {
+				diagnosis =
+					$"{packageName} was installed, but {url} answered with a login page: the session expired and "
+					+ "automatic re-authentication did not restore it. The configuration build is NOT implicated "
+					+ "and the package's state is UNKNOWN — check the environment's credentials, then verify "
+					+ "with 'clio call-service --service-path rest/ProcessDesignService/Ping -m POST -b {} "
+					+ "-e <environment>'.";
+				return false;
+			}
 			using JsonDocument document = JsonDocument.Parse(response);
 			// Both branches below are failures, but they send the reader to DIFFERENT places, which is the whole
 			// reason this method reports a diagnosis rather than letting the caller's generic message stand:

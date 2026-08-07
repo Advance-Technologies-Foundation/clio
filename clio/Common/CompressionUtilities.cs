@@ -76,6 +76,11 @@ namespace Clio.Common
 		// a long stall instead of a refusal — and this method is on the untrusted path: `extract-pkg-zip`
 		// unpacks whatever archive a user was handed, and Downloader unpacks whatever the remote instance
 		// returned. The content walk has always had this bound; the name walk did not.
+		//
+		// One asymmetry this introduced, deliberately left: WriteFileName emits each char through
+		// BitConverter, i.e. in HOST byte order, while Encoding.Unicode here is fixed UTF-16LE. The previous
+		// per-char BitConverter.ToChar loop was symmetric with the writer on either endianness. Theoretical
+		// on every host .NET actually runs on, and the bulk read is what makes the bound expressible at all.
 		private string ReadFileRelativePath(MemoryStream zipStream)
 		{
 			var bytes = new byte[sizeof(int)];
@@ -274,6 +279,36 @@ namespace Clio.Common
 						+ "truncated.");
 				}
 				return true;
+			}
+		}
+
+		public IReadOnlyList<string> ListGZipEntryNames(string packedPackagePath) {
+			packedPackagePath.CheckArgumentNullOrWhiteSpace(nameof(packedPackagePath));
+			var names = new List<string>();
+			using var fileStream =
+				_fileSystem.FileOpenStream(packedPackagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+			using var zipStream = new GZipStream(fileStream, CompressionMode.Decompress, true);
+			using var newStream = new MemoryStream();
+			zipStream.CopyTo(newStream);
+			newStream.Seek(0, SeekOrigin.Begin);
+			while (true) {
+				string entryPath = ReadFileRelativePath(newStream);
+				if (string.IsNullOrEmpty(entryPath)) {
+					// Same discriminator as ReadFileFromGZip: a clean end leaves nothing behind, so bytes
+					// remaining mean the name prefix was incredible and the container is corrupt.
+					if (newStream.Position < newStream.Length) {
+						throw new InvalidDataException(
+							$"'{packedPackagePath}' is not a readable package archive: the entry starting at "
+							+ $"offset {newStream.Position} declares an impossible name length.");
+					}
+					return names;
+				}
+				names.Add(NormalizeEntryPath(entryPath));
+				if (!SkipFileContent(newStream)) {
+					throw new InvalidDataException(
+						$"'{packedPackagePath}' is not a readable package archive: entry '{entryPath}' "
+						+ "declares a content length that does not fit in the remaining bytes.");
+				}
 			}
 		}
 

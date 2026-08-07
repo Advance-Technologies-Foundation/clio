@@ -45,6 +45,26 @@ namespace Clio.Common
 		/// </remarks>
 		bool TryReadFileFromGZip(string packedPackagePath, string relativeFilePath, out byte[] content);
 
+		/// <summary>
+		/// Lists the entry paths a gz-packed package contains, without writing anything to disk.
+		/// </summary>
+		/// <param name="packedPackagePath">Path to the packed package.</param>
+		/// <returns>
+		/// Every entry path, relative to the package root, with directory separators normalized to
+		/// <c>/</c> so a caller's expectations do not depend on which host packed the archive or which host
+		/// is reading it.
+		/// </returns>
+		/// <exception cref="System.IO.InvalidDataException">
+		/// Thrown when the container is unreadable — same conditions as <see cref="TryReadFileFromGZip"/>.
+		/// </exception>
+		/// <remarks>
+		/// Exists because entry names are the one thing a caller CANNOT check by searching the decompressed
+		/// bytes: they are stored UTF-16LE, so an ASCII/UTF-8 probe never matches a path, and any assertion
+		/// phrased against one is silently vacuous. Measured on the shipped process-builder archive: a text
+		/// scan finds zero hits for <c>SafeText.cs</c>, which is a real entry.
+		/// </remarks>
+		IReadOnlyList<string> ListGZipEntryNames(string packedPackagePath);
+
 		void Unzip(string zipFilePath, string destinationDirectory);
 
 		void Zip(string directoryPath, string zipFilePath);

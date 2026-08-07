@@ -109,6 +109,37 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 	}
 
 	[Test]
+	[Description("Reports NOT operational with its OWN diagnosis when the route answers with a login page, because a credentials failure must not be reported as a failed configuration build — the caller's fallback message sends the operator to the build log, which cannot help.")]
+	public void IsPackageOperational_ShouldDiagnoseTheSession_WhenTheRouteAnswersWithALoginPage() {
+		// Arrange
+		// The non-generic ExecutePostRequest returns the login page VERBATIM when automatic re-authentication
+		// fails — only the generic overload converts that into an exception. So this string is what the
+		// verifier really receives, and without a dedicated branch it would fail JsonDocument.Parse and be
+		// indistinguishable from an unresolved route.
+		//
+		// The `/Login/` route token, not login-page DOM: ReauthExecutor keys off the platform's auth-ROUTING
+		// tokens on purpose, so its HTML arm survives a login-page redesign. A body carrying only form input
+		// IDs and a title is NOT recognised — which this test asserted first time round, and rightly failed.
+		ArrangeResponse("<html><form action=\"/0/Login/NuiLogin.aspx\">sign in</form></html>");
+
+		// Act
+		bool operational = _verifier.IsPackageOperational(PackageName, out string diagnosis);
+
+		// Assert
+		operational.Should().BeFalse(
+			because: "nothing answered for this package, so the check must still fail closed - an unknown "
+				+ "state is not a healthy one");
+		diagnosis.Should().NotBeNull(
+			because: "leaving it null hands the caller its generic message, which blames the configuration "
+				+ "build and points at the build log for what is a credentials problem");
+		diagnosis.Should().Contain("NOT implicated",
+			because: "the reader has to be told explicitly that the build is not the place to look, which is "
+				+ "the same separation the other two diagnoses make");
+		diagnosis.Should().Contain("re-authentication",
+			because: "naming the actual cause is what makes this diagnosis worth having over the generic one");
+	}
+
+	[Test]
 	[Description("Reports NOT operational when the response parses as JSON but is not the Ping envelope.")]
 	public void IsPackageOperational_ShouldReturnFalse_WhenEnvelopeIsMissing() {
 		// Arrange

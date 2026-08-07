@@ -242,7 +242,7 @@ public abstract class BaseTool<T>(
 		return result;
 	}
 
-	// The per-tenant key both execution paths paths key their guards on. Computed up-front so the pending
+	// The per-tenant key both execution paths key their guards on. Computed up-front so the pending
 	// in-use reservation drains into the container the instant Acquire creates it (see the reserve-before-
 	// Acquire note on InternalExecute<TCommand>).
 	private string ResolveExecutionTenantKey(T options) =>

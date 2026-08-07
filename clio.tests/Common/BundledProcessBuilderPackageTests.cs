@@ -57,7 +57,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>e01a0ec</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>53cb6be</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -69,6 +69,13 @@ public class BundledProcessBuilderPackageTests {
 	/// rest are substring probes that a tampered archive can satisfy while adding whatever it likes. Update
 	/// this constant in the SAME commit that replaces the archive, and say in the message which commit of the
 	/// producing repository the bytes came from.
+	/// <para>
+	/// Verify the reference rather than copying the previous one: this docstring named <c>e01a0ec</c> for a
+	/// while, which cannot produce these bytes (its descriptor carried <c>/Date(1786026213000)/</c> against
+	/// the shipped <c>/Date(1786075660000)/</c>), so anyone following it to reproduce the archive would have
+	/// got a different hash. The <c>ModifiedOnUtc</c> pinned below is the cheapest way to check: it must
+	/// match the descriptor at the commit named above.
+	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
 		"93B527B9626E0D6D63F90189A2DDA5B1D8097FEEA64F0B14D5968EEDCDA05748";
@@ -200,10 +207,31 @@ public class BundledProcessBuilderPackageTests {
 	#region Methods: Private
 
 	/// <summary>
-	/// Decompresses the archive and returns it as text. The stream is clio's own package format and
-	/// carries binary members, so only ASCII/UTF-8 content (the JSON descriptors) is meaningfully
-	/// searchable here — which is all these checks need.
+	/// Lists the archive's entry paths through the production reader.
 	/// </summary>
+	/// <remarks>
+	/// The ONLY way to assert anything about a path. Entry names are stored UTF-16LE, so they are invisible
+	/// to <see cref="ReadBundledArchiveAsText"/> — measured, a text scan finds zero hits for
+	/// <c>SafeText.cs</c> while the archive really carries it. Any assertion phrased against a path must come
+	/// through here or it is vacuous.
+	/// </remarks>
+	private static IReadOnlyList<string> ReadBundledArchiveEntryNames() {
+		IFileSystem fileSystem = new FileSystem(new System.IO.Abstractions.FileSystem());
+		ICompressionUtilities compressionUtilities =
+			new CompressionUtilities(fileSystem, new ZipFileWrapper());
+		return compressionUtilities.ListGZipEntryNames(BundledArchivePath);
+	}
+
+	/// <summary>
+	/// Decompresses the archive and returns it as text. The stream is clio's own package format and
+	/// carries binary members, so only file CONTENT that happens to be UTF-8 (the JSON descriptors, the C#
+	/// sources, the csproj) is searchable here.
+	/// </summary>
+	/// <remarks>
+	/// Entry PATHS are NOT searchable and never were: the container stores them UTF-16LE. Use
+	/// <see cref="ReadBundledArchiveEntryNames"/> for anything about a path, and treat a hit found here as
+	/// evidence about a file's contents only.
+	/// </remarks>
 	private static string ReadBundledArchiveAsText() {
 		using FileStream compressed = File.OpenRead(BundledArchivePath);
 		using GZipStream decompressor = new(compressed, CompressionMode.Decompress);
@@ -533,13 +561,20 @@ public class BundledProcessBuilderPackageTests {
 	[Description("The bundled archive must carry NO compiled assembly of its own, because a shipped DLL survives a failed target-side compile and then serves stale code that the install command's own outcome check would accept as success.")]
 	public void BundledArchive_ShouldNotCarryACompiledAssembly() {
 		// Arrange
-		string archive = ReadBundledArchiveAsText();
+		// Entry NAMES, not a text scan of the decompressed bytes. Paths are stored UTF-16LE, so an ASCII probe
+		// over the container can never match one: measured, `SafeText.cs` is a real entry and a text scan finds
+		// it zero times. The previous phrasing of this test fired only incidentally — a leaked assembly happens
+		// to carry its own module name in its #Strings heap — and the .pdb half could not fire at all, because
+		// a portable PDB does not embed its filename. Both now read the actual inventory.
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
 
 		// Act & Assert
 		// Case-INSENSITIVE on purpose: the platform resolves '<packageName>.dll' case-insensitively on Windows
 		// hosts, so an ordinal ban would miss 'crtprocessbuilder.dll' on the one host family where the mistake
 		// still loads and serves stale code.
-		archive.Should().NotContainEquivalentOf($"{BundledPackages.ProcessBuilderPackageName}.dll",
+		entries.Should().NotContain(
+			entry => entry.EndsWith($"{BundledPackages.ProcessBuilderPackageName}.dll",
+				StringComparison.OrdinalIgnoreCase),
 			because: "a shipped assembly turns a FAILED target-side compile into a silent one. Installing "
 				+ "materialises Files/Bin into the deployed package folder (that is how cliogate's prebuilt "
 				+ "assembly gets loaded at all), and the server's regenerated csproj outputs to that same path "
@@ -551,9 +586,37 @@ public class BundledProcessBuilderPackageTests {
 				+ "so on a FIRST install, which is the one case the check does decide today. Note this cannot be a blanket '.dll' ban: the csproj legitimately names ~60 "
 				+ "Terrasoft.* and third-party assemblies in HintPath references, so only the package's OWN "
 				+ "assembly name is forbidden");
-		archive.Should().NotContainEquivalentOf($"{BundledPackages.ProcessBuilderPackageName}.pdb",
+		entries.Should().NotContain(
+			entry => entry.EndsWith($"{BundledPackages.ProcessBuilderPackageName}.pdb",
+				StringComparison.OrdinalIgnoreCase),
 			because: "symbols travel with a leaked build output and are the same accident by a different name; "
 				+ "neither runbook passes --skip-pdb - both delete Files/Bin instead, which is what removes the pdb along with the assembly - so this assertion is the check on THAT step, not on a flag");
+		entries.Should().NotContain(
+			entry => entry.StartsWith("Files/Bin/", StringComparison.OrdinalIgnoreCase),
+			because: "Files/Bin is the csproj's unconditional OutputPath and clioignore does not filter it, so "
+				+ "the accident this test guards is 'the build output directory was not deleted' - banning the "
+				+ "directory catches it whatever the leaked files happen to be called");
+	}
+
+	[Test]
+	[Description("The archive must carry exactly the two Files/Libs compile references and nothing else with a .dll extension, because a rebundle that dropped them passes every other pin here and then fails the target's configuration build.")]
+	public void BundledArchive_ShouldCarryExactlyTheTwoCompileReferences() {
+		// Arrange
+		// This inventory check existed only in rebundle-process-builder.ps1 step 5 until now, i.e. it protected
+		// only the operator who ran the script. It could not be written as a test before, because it is phrased
+		// entirely against entry PATHS and no text probe can see one.
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
+
+		// Act
+		List<string> dlls = entries
+			.Where(entry => entry.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+			.ToList();
+
+		// Assert
+		dlls.Should().BeEquivalentTo(["Files/Libs/ErrorOr.dll", "Files/Libs/ATF.Repository.dll"],
+			because: "ErrorOr and ATF.Repository are real compile references absent from the platform core, so "
+				+ "dropping either ships source the target cannot build; and any OTHER dll is a leaked build "
+				+ "output, which would survive a failed compile and answer from stale code");
 	}
 
 	[Test]

@@ -155,9 +155,14 @@ function Get-DescriptorField([string] $path, [string] $field) {
 $beforeVersion = Get-DescriptorField $descriptor 'PackageVersion'
 $beforeStamp   = Get-DescriptorField $descriptor 'ModifiedOnUtc'
 
-# The version must MOVE UP, and this is the guard that carries the whole delivery model. clio compares an
-# environment's recorded version against the one in the shipped archive to decide whether to ask for an
-# update, so:
+# The version must MOVE UP against BOTH baselines, and this is the guard that carries the whole delivery
+# model. Comparing only against the package repository's descriptor is not enough: from a stale ProcessBuilder
+# checkout you could produce an archive LOWER than the one clio already ships, and since the run then
+# overwrites the version pin unconditionally, nothing downstream would refuse. That is the very failure this
+# guard exists to prevent, measured from the wrong side. So read the currently-shipped archive too.
+#
+# clio compares an environment's recorded version against the one in the shipped archive to decide whether to
+# ask for an update, so:
 #   * an unchanged version publishes to nobody - the archive installs fine, but every environment that
 #     already has the package compares as converged and is never asked, silently;
 #   * a LOWER version is worse than useless: SysPackage.Version is not monotonic (the platform rewrites
@@ -174,6 +179,40 @@ if ($parsedNew.Revision -lt 0) {
 if (-not [version]::TryParse($beforeVersion, [ref] $parsedOld)) {
     Die "The descriptor's current PackageVersion '$beforeVersion' is not a version. Fix $descriptor first."
 }
+
+# The version clio ALREADY ships, read out of the committed archive the same way clio itself reads it.
+# Absent on a first bundle, in which case the package-repo descriptor is the only baseline there is.
+$shippedVersion = $null
+if (Test-Path -LiteralPath $archive) {
+    $bytes = & {
+        $fs = [IO.File]::OpenRead($archive)
+        $gz = [IO.Compression.GZipStream]::new($fs, [IO.Compression.CompressionMode]::Decompress)
+        $ms = [IO.MemoryStream]::new()
+        $gz.CopyTo($ms); $gz.Dispose(); $fs.Dispose()
+        $out = $ms.ToArray(); $ms.Dispose(); ,$out
+    }
+    # The descriptor is UTF-8 CONTENT inside the container, so a text scan finds it; entry NAMES are
+    # UTF-16LE and would not be found this way. Only the package descriptor is needed here.
+    $text = [Text.Encoding]::UTF8.GetString($bytes)
+    $m = [regex]::Match($text, '"PackageVersion":\s*"([^"]+)"')
+    if ($m.Success) { $shippedVersion = $m.Groups[1].Value }
+}
+[version] $parsedShipped = $null
+$shippedParsed = $shippedVersion -and [version]::TryParse($shippedVersion, [ref] $parsedShipped)
+if ($shippedParsed -and $parsedNew -le $parsedShipped) {
+    Die @"
+Refusing: -Version $Version is not higher than the version clio ALREADY ships ($shippedVersion).
+
+The descriptor in your ProcessBuilder checkout says $beforeVersion, so this run looked fine against it - but
+the committed archive is already at $shippedVersion. Producing a lower one is the failure this script exists
+to prevent, and it is silent: clio info would report the downgrade, every environment already on
+$shippedVersion compares as AHEAD so convergence never fires, and only fresh installs would receive the older
+sources.
+
+Your ProcessBuilder checkout is probably behind. Pull it, or pass a version above $shippedVersion.
+"@
+}
+
 if ($parsedNew -le $parsedOld) {
     Die @"
 Refusing: -Version $Version is not higher than the version already in the descriptor ($beforeVersion).
