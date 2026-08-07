@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -2048,6 +2049,23 @@ public sealed class ToolContractGetToolTests {
 			because: "the five process-designer tools are feature-gated and may be absent, so their remediation "
 				+ "tool must be discoverable through get-tool-contract to be reachable at all");
 		ToolContractDefinition contract = result.Tools!.Single();
+		// The CURATED string, which is what an agent actually reads: install-process-builder is deliberately
+		// non-resident, so it is never in tools/list and this contract is its only description. The tool's
+		// [Description] attribute is NOT merged in - a change made there alone ships invisible, which is what
+		// happened when the downgrade refusal was added and this contract kept saying the tool always installs.
+		// The E2E pins the same claims, but E2E is advisory and cannot fail a merge.
+		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		curatedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
+			because: "the one case where the tool does NOT install must be discoverable, or an agent meets the "
+				+ "refusal as a surprise");
+		curatedDescription.Should().MatchRegex(@"(?i)update clio",
+			because: "stating the refusal without the remedy just produces a retry loop");
+		curatedDescription.Should().NotMatchRegex(@"(?i)no skip|always installs|never refuses",
+			because: "the contradicting claim is the regression that actually shipped; a positive-match-only "
+				+ "guard stays green while the same description asserts both halves");
+		curatedDescription.Should().NotMatchRegex(@"(?i)--force",
+			because: "the contract must not hand an agent the literal bypass invocation right after telling it "
+				+ "not to work around the refusal");
 		contract.Name.Should().Be(InstallProcessBuilderTool.InstallProcessBuilderToolName,
 			because: "the requested tool contract should be returned verbatim");
 		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",

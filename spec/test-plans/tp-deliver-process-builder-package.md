@@ -165,6 +165,22 @@ shape is pinned here.
 | TC-U-28 | `GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService` | a boundary case — this one does NOT need the package, and pinning that keeps the gate from spreading by habit |
 | TC-U-29 | `DescribeProcessArgs_ShouldNotDeclareAnyPackageRequirement_BecauseGateReadsOptionsType` | the gate reads the options type, so an attribute on the args type would be inert |
 
+### Story 2b — the downgrade guard on `install-process-builder`
+
+Added after the initial delivery. Nothing else stops a rollback: the installer never compared versions and
+the platform rewrites `SysPackage.Version` whenever `ModifiedOnUtc` merely DIFFERS.
+
+| ID | Test | Asserts |
+|----|------|---------|
+| TC-U-44 | `Execute_ShouldRefuseWithoutInstalling_WhenItWouldDowngradeTheEnvironment` + `..._WhenTheEnvironmentIsOneRevisionAhead` | refuses and does not install; the single-revision case is the only shape a rebundle produces, and the wide-gap case alone could not distinguish a full comparison from one inspecting Major |
+| TC-U-45 | `Execute_ShouldInstall_WhenTheEnvironmentIsNotAhead` (behind, equal) | the upgrade path and the same-version repair path both proceed — refusing either would make the gate's named remedy refuse too |
+| TC-U-46 | `Execute_ShouldInstall_WhenTheEnvironmentCarriesAPreReleaseOfTheShippedVersion` + `Execute_ShouldRefuse_WhenShippingAPreReleaseOverTheInstalledRelease` | SemVer pre-release ordering, both directions. `PackageVersion` ranks an empty suffix BELOW a non-empty one, so its own operator would strand the caller one way and permit a silent rollback the other |
+| TC-U-47 | `Execute_ShouldTakeTheShippedVersionFromTheCatalog` | the shipped half comes from the archive, never a constant: the same installed version yields opposite verdicts when only the catalog's answer changes |
+| TC-U-48 | `Execute_ShouldInstallWithAWarning_WhenTheShippedVersionCannotBeRead` + `..._WhenTheInstalledVersionCannotBeRead` + `..._WhenThePackageIsAbsentFromTheEnvironment` | the three fail-open branches warn and proceed rather than refuse |
+| TC-U-49 | `Execute_ShouldInstall_WhenDowngradeIsForced` | `--force` installs AND performs no version probe at all, so it is proven to skip the check rather than ignore its verdict |
+| TC-U-50 | `InstallProcessBuilderArgs_ShouldExposeOnlyTheEnvironmentName` + the `Force` assertion in the mapping test | `--force` is unreachable from MCP; the args record is the whole agent-visible surface |
+| TC-U-51 | `ToolContractGet_Should_Return_InstallProcessBuilder_Contract` (extended) | the CURATED contract carries the refusal, the remedy, and neither the contradicting "always installs" claim nor the literal bypass invocation — the tool is non-resident, so this string is the only description an agent reads |
+
 ### Story 3b — the version source of truth and the convergence rule
 
 Added by `spec/adr/adr-bundled-package-version-source-of-truth.md`, which replaced the shipped-version

@@ -1,6 +1,6 @@
 ﻿using System;
-using System.IO;
-using System.Text.Json;
+using System.Linq;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project.NuGet;
@@ -37,10 +37,18 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions {
 	/// Deliberately CLI-only — it is not exposed on the MCP tool. Rolling a package back is a decision with
 	/// consequences for everyone else on that environment, and an agent working a user's business task is
 	/// not the right party to take it. The refusal names this flag so a human can.
+	/// <para>
+	/// <c>new</c> on purpose: <see cref="EnvironmentOptions"/> already declares a <c>--force</c> ("Force
+	/// restore") that is inherited here and means nothing for this verb. Shadowing it gives the flag this
+	/// verb's own help text. The compiler will NOT point the shadowing out — <c>CS0108</c> is in the
+	/// project's <c>NoWarn</c> list — hence this note. Keep the type <c>bool</c>: CommandLineParser and
+	/// <c>CommandHelpRenderer</c> both de-duplicate by name+signature, so a differing signature would make
+	/// <c>--force</c> appear TWICE in help, once with each description, with nothing to flag it.
+	/// </para>
 	/// </remarks>
 	[Option("force", Required = false,
 		HelpText = "Install even if it would downgrade the package already installed in the environment")]
-	public bool Force { get; set; }
+	public new bool Force { get; set; }
 
 }
 
@@ -80,10 +88,30 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions {
 /// existence pre-check of its own.
 /// </description></item>
 /// </list>
-/// <b>There is no short-circuit</b>: an explicitly requested install always installs. See the comment at the
-/// install site for the reasoning and for the one part of it that is now open again.
+/// <b>There is exactly ONE short-circuit</b>: an install that would move the environment's recorded
+/// version BACKWARDS is refused unless <c>--force</c> is passed - see <see cref="WouldDowngrade"/>.
+/// Otherwise an explicitly requested install always installs; see the comment at the install site for the
+/// reasoning and for the one part of it that is now open again.
 /// </remarks>
 public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions> {
+
+	#region Constants: Private
+
+	/// <summary>
+	/// Budget for the advisory read of the environment's recorded version.
+	/// </summary>
+	/// <remarks>
+	/// Generous, because a slow-but-answering instance must not lose the check — but finite, because the
+	/// check is optional and the reservation it sits inside is not. See the call site.
+	/// </remarks>
+	private const int InstalledVersionProbeTimeoutMs = 60_000;
+
+	/// <summary>
+	/// Cap on any environment- or transport-supplied text this command quotes back to the reader.
+	/// </summary>
+	private const int QuotedTextLimit = 300;
+
+	#endregion
 
 	#region Fields: Private
 
@@ -174,6 +202,184 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		_bundledPackageCatalog.GetArchivePath(BundledPackages.ProcessBuilderPackageName);
 
 	/// <summary>
+	/// Decides whether this install would move the environment's recorded version BACKWARDS.
+	/// </summary>
+	/// <param name="message">The refusal, naming both versions and the flag that overrides it.</param>
+	/// <returns><c>true</c> when the install must be refused.</returns>
+	/// <remarks>
+	/// Nothing else stops a downgrade. The installer does not compare versions, and neither does the
+	/// platform: Creatio rewrites <c>SysPackage.Version</c> whenever the descriptor's <c>ModifiedOnUtc</c>
+	/// DIFFERS — not when it is later — and an earlier stamp was measured moving a recorded version down.
+	/// So an older clio run against a shared environment silently rolls the package back for everyone on it.
+	/// <para>
+	/// Three cases deliberately proceed rather than refuse:
+	/// </para>
+	/// <list type="bullet">
+	/// <item><description>
+	/// The SAME version. For a source-only package "installed" and "compiled" are different states, so
+	/// reinstalling the version already recorded is the repair path for a package that never built. Refusing
+	/// it would block the one action that fixes that.
+	/// </description></item>
+	/// <item><description>
+	/// The package is absent. There is nothing to move backwards.
+	/// </description></item>
+	/// <item><description>
+	/// Either version could not be READ — a distribution that cannot describe itself, or an environment that
+	/// did not answer. Both are clio-side or transport failures, and neither is evidence of a downgrade;
+	/// blocking on them would turn "I could not check" into "you may not proceed". The install fails on its
+	/// own terms a moment later if the environment really is unreachable.
+	/// </description></item>
+	/// </list>
+	/// <para>
+	/// There is a FOURTH, and it is silent: <c>PackageInfo</c> leaves its version <see langword="null"/> when
+	/// <c>SysPackage.Version</c> does not parse, and <c>GetInstalledVersion</c> returns <c>?.Version</c> — so
+	/// a recorded version of garbage is indistinguishable here from the package being absent, and takes the
+	/// null branch with no warning. Distinguishing them means the checker exposing the difference, which is
+	/// its own change; recorded so the gap is known rather than assumed away.
+	/// </para>
+	/// <para>
+	/// What this is NOT: a guarantee. It compares against the version the environment RECORDED, which is
+	/// simply whatever the last descriptor with a different timestamp said — not necessarily the highest
+	/// ever installed, and not evidence that the recorded version is the one serving.
+	/// </para>
+	/// </remarks>
+	private bool WouldDowngrade(out string message) {
+		message = null;
+		if (!_bundledPackageCatalog.TryGetVersion(
+				BundledPackages.ProcessBuilderPackageName,
+				out PackageVersion shippedVersion,
+				out string diagnosis)) {
+			_logger.WriteWarning(
+				$"{diagnosis} Installing anyway: without a version to compare, a downgrade cannot be ruled in "
+				+ "or out, and refusing would block the install over clio's own defect.");
+			return false;
+		}
+		PackageVersion installedVersion;
+		try {
+			// BOUNDED, unlike the install that follows it. This read is advisory - every failure below
+			// proceeds - so it must never be able to outlast the thing it precedes. IApplicationClient
+			// defaults to Timeout.Infinite, so a target that accepts the connection and then says nothing
+			// would otherwise block here forever, with nothing attempted and nothing printed. On the MCP path
+			// that is worse than a slow command: the tool holds the per-tenant configuration-build
+			// reservation across this call, and a hang never reaches the finally that releases it, so every
+			// later install-process-builder AND compile-creatio on that tenant is refused for the life of the
+			// server process. A read allowed to fail must not be allowed to hang.
+			Task<PackageVersion> read = Task.Run(() =>
+				_requiredPackageChecker.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName));
+			if (!read.Wait(InstalledVersionProbeTimeoutMs)) {
+				_logger.WriteWarning(
+					"Timed out reading the version currently installed in the environment. Installing anyway; "
+					+ "if the environment is genuinely unreachable the install itself will say so.");
+				return false;
+			}
+			installedVersion = read.Result;
+		} catch (Exception e) {
+			_logger.WriteWarning(
+				"Could not read the version currently installed in the environment "
+				+ $"({Truncate(e.GetReadableMessageException())}). Installing anyway; if the environment is "
+				+ "genuinely unreachable the install itself will say so.");
+			return false;
+		}
+		if (installedVersion is null || !IsStrictlyNewer(installedVersion, shippedVersion)) {
+			return false;
+		}
+		message =
+			$"Refusing: the environment carries {BundledPackages.ProcessBuilderPackageName} "
+			+ $"{Sanitize(installedVersion)}, and this clio ships {shippedVersion} — installing would move "
+			+ "that environment's recorded version BACKWARDS for everyone using it, and nothing downstream "
+			+ "would report it: the gate would see a present package and the convergence check compares the "
+			+ "recorded version, which the rollback has just rewritten. Update clio instead, or pass --force "
+			+ "if the rollback is what you want.";
+		return true;
+	}
+
+	/// <summary>
+	/// Determines whether <paramref name="installed"/> is genuinely newer than <paramref name="shipped"/>,
+	/// with SemVer's ordering of pre-releases.
+	/// </summary>
+	/// <remarks>
+	/// NOT <c>PackageVersion</c>'s own comparison, and the difference decides this guard both ways.
+	/// <c>CompareSuffix</c> ranks an EMPTY suffix BELOW a non-empty one, so it holds
+	/// <c>1.1.0.0 &lt; 1.1.0.0-rc</c> — the inverse of SemVer. Using it here would:
+	/// <list type="bullet">
+	/// <item><description>
+	/// REFUSE installing the GA <c>1.1.0.0</c> onto an environment recording <c>1.1.0.0-rc</c>, which is an
+	/// upgrade, not a rollback — and strand the caller, because the refusal's advice ("update clio") cannot
+	/// help when clio already ships the release, and <c>--force</c> is unavailable over MCP; and
+	/// </description></item>
+	/// <item><description>
+	/// ALLOW installing a pre-release over the GA of the same version — the silent rollback this guard
+	/// exists to stop.
+	/// </description></item>
+	/// </list>
+	/// Reachable through the supported path: <c>clio set-pkg-version</c> accepts and writes the
+	/// <c>X.Y.Z.W-suffix</c> form deliberately, and whatever lands in <c>SysPackage.Version</c> is parsed
+	/// straight back through <c>PackageVersion</c>.
+	/// <para>
+	/// Fixed locally rather than in <c>PackageVersion</c>: that operator is repo-wide and backs the
+	/// <c>[RequiresPackage]</c> gate for cliogate, where the same change would alter which environments are
+	/// refused. Correcting it there is its own decision with its own blast radius.
+	/// </para>
+	/// </remarks>
+	private static bool IsStrictlyNewer(PackageVersion installed, PackageVersion shipped) {
+		int numeric = installed.Version.CompareTo(shipped.Version);
+		if (numeric != 0) {
+			return numeric > 0;
+		}
+		bool installedIsPreRelease = !string.IsNullOrWhiteSpace(installed.Suffix);
+		bool shippedIsPreRelease = !string.IsNullOrWhiteSpace(shipped.Suffix);
+		if (installedIsPreRelease != shippedIsPreRelease) {
+			// A pre-release precedes its own release, so the environment is newer only when it is the one
+			// holding the RELEASE and we would be shipping the pre-release over it.
+			return shippedIsPreRelease;
+		}
+		return string.CompareOrdinal(installed.Suffix ?? string.Empty, shipped.Suffix ?? string.Empty) > 0;
+	}
+
+	/// <summary>
+	/// Renders a version read from the ENVIRONMENT in a form that is safe to put in front of a reader.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="PackageVersion"/> splits on the first <c>-</c>: the left side must parse as
+	/// <see cref="Version"/> and is therefore numeric, but the SUFFIX is free text that
+	/// <c>ToString</c> re-emits verbatim, newlines included. This value comes from the target's
+	/// <c>SysPackage.Version</c> column, and the message carrying it reaches an MCP agent's context — so a
+	/// hostile or compromised instance could otherwise plant instructions there. Rendering the numeric
+	/// version plus a clamped, restricted suffix keeps the information a reader needs and drops the rest.
+	/// <para>
+	/// The SHIPPED version is not passed through this: it comes from clio's own archive, and anyone able to
+	/// choose its text already controls what the command installs.
+	/// </para>
+	/// </remarks>
+	/// <summary>
+	/// Clamps text that came from the environment or the transport before it is quoted back.
+	/// </summary>
+	/// <remarks>
+	/// A DataService failure with no <c>errorInfo</c> puts the ENTIRE raw response body into the exception
+	/// message (<c>SelectQueryHelper</c>), which can carry a server stack trace and internal paths. On the
+	/// MCP path that would be redacted; on the CLI it would go straight to the console.
+	/// </remarks>
+	private static string Truncate(string text) {
+		if (string.IsNullOrEmpty(text)) {
+			return text;
+		}
+		string collapsed = text.Replace("\r", " ").Replace("\n", " ");
+		return collapsed.Length <= QuotedTextLimit
+			? collapsed
+			: collapsed[..QuotedTextLimit] + "…";
+	}
+
+	private static string Sanitize(PackageVersion version) {
+		if (string.IsNullOrWhiteSpace(version.Suffix)) {
+			return version.Version.ToString();
+		}
+		string suffix = new(version.Suffix
+			.Where(character => char.IsLetterOrDigit(character) || character is '.' or '_' or '-')
+			.Take(32).ToArray());
+		return suffix.Length == 0 ? version.Version.ToString() : $"{version.Version}-{suffix}";
+	}
+
+	/// <summary>
 	/// Waits for the platform's own post-install restart to complete.
 	/// </summary>
 	/// <returns><c>true</c> when the instance answered its health check within the budget.</returns>
@@ -217,75 +423,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// target, not to clio. No figure is quoted anywhere on purpose; see the remark on the readiness budget.
 	/// </para>
 	/// </remarks>
-	/// <summary>
-	/// Decides whether this install would move the environment's recorded version BACKWARDS.
-	/// </summary>
-	/// <param name="message">The refusal, naming both versions and the flag that overrides it.</param>
-	/// <returns><c>true</c> when the install must be refused.</returns>
-	/// <remarks>
-	/// Nothing else stops a downgrade. The installer does not compare versions, and neither does the
-	/// platform: Creatio rewrites <c>SysPackage.Version</c> whenever the descriptor's <c>ModifiedOnUtc</c>
-	/// DIFFERS — not when it is later — and an earlier stamp was measured moving a recorded version down.
-	/// So an older clio run against a shared environment silently rolls the package back for everyone on it.
-	/// <para>
-	/// Three cases deliberately proceed rather than refuse:
-	/// </para>
-	/// <list type="bullet">
-	/// <item><description>
-	/// The SAME version. For a source-only package "installed" and "compiled" are different states, so
-	/// reinstalling the version already recorded is the repair path for a package that never built. Refusing
-	/// it would block the one action that fixes that.
-	/// </description></item>
-	/// <item><description>
-	/// The package is absent. There is nothing to move backwards.
-	/// </description></item>
-	/// <item><description>
-	/// Either version could not be READ — a distribution that cannot describe itself, or an environment that
-	/// did not answer. Both are clio-side or transport failures, and neither is evidence of a downgrade;
-	/// blocking on them would turn "I could not check" into "you may not proceed". The install fails on its
-	/// own terms a moment later if the environment really is unreachable.
-	/// </description></item>
-	/// </list>
-	/// <para>
-	/// What this is NOT: a guarantee. It compares against the version the environment RECORDED, which is
-	/// simply whatever the last descriptor with a different timestamp said — not necessarily the highest
-	/// ever installed, and not evidence that the recorded version is the one serving.
-	/// </para>
-	/// </remarks>
-	private bool WouldDowngrade(out string message) {
-		message = null;
-		if (!_bundledPackageCatalog.TryGetVersion(
-				BundledPackages.ProcessBuilderPackageName,
-				out PackageVersion shippedVersion,
-				out string diagnosis)) {
-			_logger.WriteWarning(
-				$"{diagnosis} Installing anyway: without a version to compare, a downgrade cannot be ruled in "
-				+ "or out, and refusing would block the install over clio's own defect.");
-			return false;
-		}
-		PackageVersion installedVersion;
-		try {
-			installedVersion =
-				_requiredPackageChecker.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName);
-		} catch (Exception e) {
-			_logger.WriteWarning(
-				"Could not read the version currently installed in the environment "
-				+ $"({e.GetReadableMessageException()}). Installing anyway; if the environment is genuinely "
-				+ "unreachable the install itself will say so.");
-			return false;
-		}
-		if (installedVersion is null || installedVersion <= shippedVersion) {
-			return false;
-		}
-		message =
-			$"Refusing: the environment carries {BundledPackages.ProcessBuilderPackageName} "
-			+ $"{installedVersion}, and this clio ships {shippedVersion} — installing would roll it BACK for "
-			+ "everyone using that environment, and nothing downstream would report it: the gate would see a "
-			+ "present package and the convergence check compares the recorded version, which the rollback "
-			+ "has just rewritten. Update clio instead, or pass --force if the rollback is what you want.";
-		return true;
-	}
-
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = _environmentSettings.Uri,

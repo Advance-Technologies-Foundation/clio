@@ -58,11 +58,13 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_logger = Substitute.For<ILogger>();
 		_workingDirectoriesProvider.ExecutingDirectory.Returns(ClioRoot);
 		// Happy-path defaults, so each test only arranges the deviation it is actually about: the bundled
-		// artifact is present, the instance comes back, and the package is operational afterwards. Nothing is
-		// arranged about what the environment already carries — the command never asks, it always installs.
+		// artifact is present, the instance comes back, and the package is operational afterwards. The
+		// environment is arranged as carrying NOTHING - the first-install flow - which is what every
+		// pre-existing test here assumes; the command does now ask, to decide whether it would downgrade.
+		// _fileSystem and _workingDirectoriesProvider are CONTAINER plumbing, not inputs to this command any
+		// more: archive presence is asked through the catalog (which is substituted below), so neither of them
+		// can influence a verdict here. They stay registered because other services in the graph resolve them.
 		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
-		// Asked through the CATALOG now, not the file system: the command no longer reaches for a path it
-		// did not compute, so the presence answer and the path come from the same place by construction.
 		// HOW the outcome is established is the verifier's business and is tested in its own fixture; this
 		// fixture only cares that the command asks the question at the right moment and obeys the answer.
 		_outcomeVerifier
@@ -98,6 +100,26 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		containerBuilder.AddSingleton(_logger);
 	}
 
+	private void ArrangeShippedVersion(string version) =>
+		_bundledPackageCatalog
+			.TryGetVersion(BundledPackages.ProcessBuilderPackageName, out Arg.Any<PackageVersion>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = PackageVersion.ParseVersion(version);
+				call[2] = null;
+				return true;
+			});
+
+	private void ArrangeUnreadableShippedVersion(string diagnosis) =>
+		_bundledPackageCatalog
+			.TryGetVersion(BundledPackages.ProcessBuilderPackageName, out Arg.Any<PackageVersion>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = null;
+				call[2] = diagnosis;
+				return false;
+			});
+
 	private void ArrangeInstalledVersion(string version) =>
 		_requiredPackageChecker.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName)
 			.Returns(PackageVersion.ParseVersion(version));
@@ -130,8 +152,11 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_outcomeVerifier.ClearReceivedCalls();
 		_serverReadinessWaiter.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
-		// Returns AND calls: a configured installed-version left behind would decide the downgrade verdict
-		// for whatever test runs next.
+		// Belt-and-braces only, and worth saying why so nobody reasons from a hazard that is not there:
+		// BaseClioModuleTests.Setup rebuilds the container on EVERY [SetUp] and re-runs AdditionalRegistrations,
+		// so every substitute field above is a fresh instance per test and nothing can leak between them. The
+		// genuinely shared state is EnvironmentSettings, reset immediately above - it is a fixture field set
+		// outside AdditionalRegistrations, so it is the one thing that survives.
 		_requiredPackageChecker.ClearSubstitute(ClearOptions.All);
 	}
 
@@ -163,8 +188,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstallOutcomeVerifier.IsPackageOperational))
 			.Should().Be(1,
 				because: "the question is asked once, and only after the install: the package ships without an "
-					+ "assembly, so nothing before the install can answer it. There is no pre-install check, "
-					+ "because the command always installs");
+					+ "assembly, so nothing before the install can answer it. The one pre-install check the "
+					+ "command does make is the downgrade guard, which asks a different question entirely");
 		// NSubstitute's Received() takes no `because`; stated here. The command must name the package it is
 		// asking about, because the diagnosis the verifier writes on failure quotes it — the verdict itself is
 		// liveness, so no version is passed: what the target compiled is not readable back out of it.
@@ -404,6 +429,10 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	public void Execute_ShouldRefuseWithoutInstalling_WhenItWouldDowngradeTheEnvironment() {
 		// Arrange
 		ArrangeInstalledVersion("9.9.9.9");
+		// Arranged to SUCCEED, so exit 1 can only come from the refusal. Without this the unarranged
+		// installer returns false and the command exits 1 through the install-failed branch anyway - the
+		// assertion would then pass whether or not the guard exists.
+		ArrangeSuccessfulInstall();
 
 		// Act
 		int result = _command.Execute(new InstallProcessBuilderOptions());
@@ -416,6 +445,126 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			Arg.Any<string>(), Arg.Any<bool>());
 		_logger.Received().WriteError(Arg.Is<string>(message =>
 			message.Contains("9.9.9.9") && message.Contains("--force")));
+	}
+
+	[Test]
+	[Description("Installs when the environment is BEHIND the version this clio ships — the single most common invocation, because the process-designer gate's refusal sends the caller straight here. One revision behind, not a wide gap: a comparison that only inspected Major would pass every other case in this fixture and still allow the shape a rebundle actually produces.")]
+	[TestCase("0.9.9.9", TestName = "behind in every part")]
+	[TestCase("1.0.0.0", TestName = "exactly equal - the repair path")]
+	public void Execute_ShouldInstall_WhenTheEnvironmentIsNotAhead(string installedVersion) {
+		// Arrange
+		ArrangeInstalledVersion(installedVersion);
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(0, because: "this is the flow the gate's refusal creates; blocking it would leave "
+			+ "the user with a refusal whose named remedy also refuses");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+	}
+
+	[Test]
+	[Description("Refuses a downgrade of a SINGLE revision, which is the only shape a rebundle actually produces — the 9.9.9.9 case differs in every part and so cannot tell a full comparison from one that inspects Major alone.")]
+	public void Execute_ShouldRefuse_WhenTheEnvironmentIsOneRevisionAhead() {
+		// Arrange
+		ArrangeInstalledVersion("1.0.0.1");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1, because: "1.0.0.1 -> 1.0.0.0 is a rollback, and the runbook bumps exactly that "
+			+ "part on every rebundle");
+		_packageInstaller.DidNotReceive().Install(
+			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>());
+	}
+
+	[Test]
+	[Description("A pre-release recorded in the environment is NOT newer than the release this clio ships, so installing the GA over an -rc proceeds. PackageVersion's own comparison says the opposite — it ranks an empty suffix BELOW a non-empty one — and using it would strand the caller: 'update clio' cannot help when clio already ships the release, and --force is unavailable over MCP.")]
+	public void Execute_ShouldInstall_WhenTheEnvironmentCarriesAPreReleaseOfTheShippedVersion() {
+		// Arrange
+		ArrangeInstalledVersion($"{ShippedVersion}-rc");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(0,
+			because: "SemVer orders a pre-release below its own release, so the GA is an upgrade over the rc");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+	}
+
+	[Test]
+	[Description("Installing a PRE-RELEASE over the release of the same version is a rollback and must be refused — the other half of the same inversion, and the one that would have let the guard's own failure mode through silently.")]
+	public void Execute_ShouldRefuse_WhenShippingAPreReleaseOverTheInstalledRelease() {
+		// Arrange
+		ArrangeShippedVersion($"{ShippedVersion}-rc");
+		ArrangeInstalledVersion(ShippedVersion);
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "the environment holds the release and clio carries only a pre-release of it, so this "
+				+ "install would move it backwards");
+		_packageInstaller.DidNotReceive().Install(
+			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>());
+	}
+
+	[Test]
+	[Description("The SHIPPED half of the comparison is read from the archive through IBundledPackageCatalog, never from a constant: the same installed version must produce opposite verdicts when only the catalog's answer changes. The ADR forbids a shipped-version constant, and a mutant that hardcoded 1.0.0.0 would pass every other test here.")]
+	[TestCase("2.0.0.0", 0, TestName = "catalog ahead of the environment - installs")]
+	[TestCase("1.0.0.0", 1, TestName = "catalog behind the environment - refuses")]
+	public void Execute_ShouldTakeTheShippedVersionFromTheCatalog(string shippedVersion, int expected) {
+		// Arrange
+		ArrangeShippedVersion(shippedVersion);
+		ArrangeInstalledVersion("1.5.0.0");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(expected,
+			because: "only the catalog's answer differs between these two cases, so a verdict that did not "
+				+ "come from the catalog could not change with it");
+	}
+
+	[Test]
+	[Description("Installs, with a warning and no error, when clio cannot read the version out of its OWN archive — a distribution that cannot describe itself is clio's defect, and refusing would turn 'I could not check' into 'you may not proceed'.")]
+	public void Execute_ShouldInstallWithAWarning_WhenTheShippedVersionCannotBeRead() {
+		// Arrange
+		const string diagnosis = "The bundled CrtProcessBuilder archive could not be read.";
+		ArrangeUnreadableShippedVersion(diagnosis);
+		// Would refuse if the comparison ran at all — that is what makes this test non-vacuous.
+		ArrangeInstalledVersion("9.9.9.9");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(0, because: "clio's own broken archive must not block an install the environment "
+			+ "is perfectly able to accept");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+		// NSubstitute's Received takes no `because`; stated here. The warning is the only signal that the
+		// guard was skipped, and the absence of an error is what distinguishes "skipped" from "refused".
+		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains(diagnosis)));
+		_logger.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Should().Be(0, because: "a skipped check is a warning; reporting it as an error would send the "
+				+ "reader looking for a failure that did not happen");
 	}
 
 	[Test]
@@ -432,6 +581,11 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		result.Should().Be(0, because: "the operator asked for the rollback explicitly");
 		_packageInstaller.Received(1).Install(
 			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+		// Not merely "it installed": --force must SKIP the check, not run it and ignore the verdict.
+		// GetInstalledVersion is a real package-list fetch over HTTP against the target.
+		_requiredPackageChecker.DidNotReceive().GetInstalledVersion(Arg.Any<string>());
+		_bundledPackageCatalog.DidNotReceive().TryGetVersion(
+			Arg.Any<string>(), out Arg.Any<PackageVersion>(), out Arg.Any<string>());
 	}
 
 	[Test]
@@ -470,6 +624,9 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				+ "unrelated transport failure look like a refusal");
 		_packageInstaller.Received(1).Install(
 			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+		// The warning is the only trace that the guard was skipped; the Contains also pins that the readable
+		// message is used rather than the bare exception type.
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("the environment did not answer")));
 	}
 
 	[Test]

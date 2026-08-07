@@ -99,12 +99,12 @@ public sealed class InstallProcessBuilderTool(
 	             RECORDED, which is what the gate already checks for you.
 
 	             The exception: it REFUSES when the environment already carries a NEWER version than this clio
-	             ships, because installing would roll the package back for everyone using that environment.
-	             Do not work around it and do not retry - retrying cannot succeed. Report it and say the fix
-	             is to update clio. Overriding is possible only from the command line
-	             (`clio install-process-builder -e <environment> --force`), deliberately: rolling a shared
-	             environment back is a human decision. Reinstalling the SAME version is not a downgrade and is
-	             allowed - that is the repair path when a package installed but never compiled.
+	             ships, because installing would move that environment's recorded version backwards for
+	             everyone using it. Report the refusal and say the fix is to update clio. Do not retry it, and
+	             do not reach for a shell to get around it: an override exists but is deliberately NOT
+	             available to you - it is a command-line flag a human runs after deciding the rollback is
+	             what they want. Reinstalling the SAME version is not a downgrade and is allowed - that is the
+	             repair path when a package installed but never compiled.
 
 	             Long-running: streams notifications/progress while working. If the MCP response deadline is
 	             reached first you get an in-progress note, which is NOT a verdict - the install is still

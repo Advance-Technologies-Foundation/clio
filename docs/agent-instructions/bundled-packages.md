@@ -91,6 +91,10 @@ environment recorded; that comparison is the entire delivery mechanism. So:
 
 - **raising it is the only way a change reaches an existing environment** — see fact 2 for what happens
   when it does not;
+- **lowering it now REFUSES**, it does not merely fail to propagate: `install-process-builder` reads the
+  environment's recorded version and will not move it backwards without `--force`. So a rebundle that
+  lowers the version, or an older clio pointed at a stand that already carries a newer package, is turned
+  away on every such environment;
 - **raising it costs nothing to maintain.** Nothing on the clio side has to be kept in step with it. That
   used to be false: the version was also the `[RequiresPackage]` floor, so raising it forced a refusal on
   every environment until upgraded, which is why the old guidance reserved it for contract changes. Both

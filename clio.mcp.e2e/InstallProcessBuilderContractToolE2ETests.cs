@@ -169,11 +169,28 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 		contract.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the contract must name the package it installs so an agent can match it against the refusal "
 				+ "text of the tool that sent it here");
-		contract.Description.Should().MatchRegex(@"(?i)REFUSES.*newer|newer.*roll(ing)? .*back",
+		// Whitespace-normalised, because `.` does not match a newline and the contract text is re-wrapped
+		// freely; a purely cosmetic re-wrap must not turn this red.
+		string normalizedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		normalizedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
 			because: "the one case where this tool does NOT install must be in the contract, or an agent meets "
-				+ "the refusal as a surprise and retries it forever. Retrying cannot succeed: the remedy is to "
-				+ "update clio, and the override is deliberately CLI-only because rolling a shared environment "
-				+ "back is a human decision");
+				+ "the refusal as a surprise. Within one sentence, so 'it never refuses ... a newer version' "
+				+ "cannot satisfy it across two");
+		normalizedDescription.Should().MatchRegex(@"(?i)update clio",
+			because: "an agent that meets the refusal must be told the ONE thing that resolves it; stating the "
+				+ "refusal without the remedy just produces a retry loop, and retrying cannot succeed");
+		normalizedDescription.Should().MatchRegex(@"(?i)command[- ]line|\bCLI\b",
+			because: "--force is deliberately not an argument of this tool, so the contract must say the "
+				+ "override lives elsewhere rather than leaving an agent hunting for a parameter that has been "
+				+ "withheld on purpose");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)--force",
+			because: "the contract must NOT hand over the literal bypass invocation. Naming the flag right "
+				+ "after 'do not work around this' is what makes the workaround easy to reach for: concrete "
+				+ "syntax outweighs an abstract prohibition, and any host that also grants a shell can run it");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)no skip|always installs|never refuses",
+			because: "this is the regression that actually shipped: the curated contract kept saying 'It "
+				+ "ALWAYS installs - there is no skip' after the refusal existed. A positive-match-only guard "
+				+ "stays green while the same description asserts both halves");
 		contract.Description.Should().NotMatchRegex(@"(?i)no\s+(application\s+)?restart",
 			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
 				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");

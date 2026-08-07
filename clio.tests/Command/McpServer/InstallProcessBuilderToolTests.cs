@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -72,6 +72,10 @@ public sealed class InstallProcessBuilderToolTests {
 				because: "environment-name is the tool's only argument, so the mapping must leave every other "
 					+ "environment-identity field unset and let the registered environment supply it — an "
 					+ "MCP-supplied URI would silently retarget the install");
+			resolvedCommand.CapturedOptions.Force.Should().BeFalse(
+				because: "--force overrides the downgrade refusal, and rolling a shared environment back is a "
+					+ "human decision. The mapping must leave it at its default; an agent-reachable override "
+					+ "would let a business-task agent roll the package back for everyone on that environment");
 		} finally {
 			ConsoleLogger.Instance.ClearMessages();
 		}
@@ -324,4 +328,19 @@ public sealed class InstallProcessBuilderToolTests {
 			return _exitCode;
 		}
 	}
+	[Test]
+	[Description("The args record is the entire agent-reachable surface of this tool, so it must expose exactly one member. --force is deliberately withheld from MCP, and the only thing standing between that decision and an agent is this record - adding a property 'for parity' would expose the override with no other test turning red.")]
+	public void InstallProcessBuilderArgs_ShouldExposeOnlyTheEnvironmentName() {
+		// Arrange & Act
+		string[] properties = typeof(InstallProcessBuilderArgs)
+			.GetProperties()
+			.Select(property => property.Name)
+			.ToArray();
+
+		// Assert
+		properties.Should().BeEquivalentTo([nameof(InstallProcessBuilderArgs.EnvironmentName)],
+			because: "every member here becomes an argument an agent can send; the downgrade override must "
+				+ "stay unreachable from this surface");
+	}
+
 }

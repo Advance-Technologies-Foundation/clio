@@ -45,7 +45,7 @@ it during installation. No `IsNetCore` branch, no per-framework artifact. (ADR: 
 **FR-04 — Bundled-artifact pre-check.** A distribution that failed to carry the archive says so plainly,
 naming the expected path, instead of surfacing as a generic failure from inside the installer.
 
-**FR-05 — No short-circuit.** The command always installs. There is no cheap trustworthy way to ask "is this
+**FR-05 — No short-circuit, with one exception.** The command always installs, EXCEPT when the install would move the environment's recorded version backwards; that is refused unless `--force` is passed (added after the initial delivery — nothing else stops a downgrade, and a rollback affects everyone on a shared environment). There is no cheap trustworthy way to ask "is this
 environment already serving what I ship", so an explicitly requested install is performed: it is invoked as
 remediation, the install is backed up, and a needless run costs one configuration build.
 

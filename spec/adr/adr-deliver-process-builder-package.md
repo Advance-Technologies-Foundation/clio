@@ -253,7 +253,11 @@ first, propose the install second.
   own would need. The seam exists: `IPackageInstallOutcomeVerifier` is named
   for the question, `ProcessDesignServiceOutcomeVerifier` for today's mechanism, so such a check swaps an
   implementation rather than changing the command.
-- **A version-based skip via the database is viable and deliberately unbuilt.** A skip via the SERVICE is NOT
+- **A version-based skip via the database is viable and deliberately unbuilt.** (Superseded in part: the
+  OPPOSITE direction was built later — an install that would move the recorded version BACKWARDS is now
+  refused unless `--force` is passed. The hazard argued below applies to that guard too: an environment
+  that ACCEPTED a newer version but never compiled it is refused the older-but-working archive, and
+  `--force` — the only way through — is unreachable from MCP.) A skip via the SERVICE is NOT
   viable, and that is by design: `Ping` answers "this package is compiled and serving", not "which build", so
   it cannot tell a current assembly from a stale one and would skip an install that is needed. The database
   half of the original argument, however, was RETRACTED: that the recorded package version is inert.
