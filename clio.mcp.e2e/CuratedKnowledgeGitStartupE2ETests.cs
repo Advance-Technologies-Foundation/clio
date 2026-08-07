@@ -40,8 +40,8 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			// Assert
 			AssertFakeGitWasInvoked(result);
 			AssertPipeHoldingDescendantWasStarted(result);
-			AssertInitializeResult(result);
-			AssertInitializeServerInfo(result);
+			JsonElement initializeResult = AssertInitializeResult(result);
+			AssertInitializeServerInfo(initializeResult);
 			AssertStartupWasBounded(result);
 			AssertFallbackWarning(result);
 			AssertCleanupLimitationWarning(result);
@@ -138,15 +138,14 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 	}
 
 	[AllureStep("Assert MCP initialize returns a result after curated Git fallback")]
-	private static void AssertInitializeResult(ActResult result) {
-		result.Response.TryGetProperty("result", out _).Should().BeTrue(
+	private static JsonElement AssertInitializeResult(ActResult result) {
+		result.Response.TryGetProperty("result", out JsonElement initializeResult).Should().BeTrue(
 			because: "a timed-out curated Git bootstrap is non-fatal and must still produce an initialize result");
+		return initializeResult;
 	}
 
 	[AllureStep("Assert MCP initialize identifies the server")]
-	private static void AssertInitializeServerInfo(ActResult result) {
-		result.Response.TryGetProperty("result", out JsonElement initializeResult).Should().BeTrue(
-			because: "the initialize response must contain a result before server information can be inspected");
+	private static void AssertInitializeServerInfo(JsonElement initializeResult) {
 		initializeResult.TryGetProperty("serverInfo", out _).Should().BeTrue(
 			because: "the initialize response proves MCP stdio began serving after fallback");
 	}

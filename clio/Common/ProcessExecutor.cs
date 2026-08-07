@@ -457,15 +457,44 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		StringBuilder stdout = new();
 		StringBuilder stderr = new();
 		DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+		OperationStopState stopState = new();
+		ResourceLimitState resourceLimitState = new();
+		using CancellationTokenSource timeoutCts = new();
+		using CancellationTokenRegistration callerCancellationRegistration = options.CancellationToken.Register(
+			() => stopState.TrySet(OperationStopReason.CallerCancellation));
+		using CancellationTokenRegistration timeoutRegistration = timeoutCts.Token.Register(
+			() => stopState.TrySet(OperationStopReason.Timeout));
+		using CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+			options.CancellationToken, timeoutCts.Token);
+		if (options.Timeout is { } timeout && timeout > TimeSpan.Zero) {
+			timeoutCts.CancelAfter(timeout);
+		}
+		bool canceled = false;
+		bool timedOut = false;
 
 		try {
-			if (IsMonitoredDirectoryOverLimit(options, options.CancellationToken)) {
-				return ResourceLimitFailure(startedAt);
+			try {
+				linkedCts.Token.ThrowIfCancellationRequested();
+				if (IsMonitoredDirectoryOverLimit(options, linkedCts.Token)) {
+					return ResourceLimitFailure(startedAt);
+				}
+			} catch (OperationCanceledException) when (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
+				return StoppedBeforeStart(startedAt, canceled, timedOut);
+			}
+
+			if (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
+				return StoppedBeforeStart(startedAt, canceled, timedOut);
 			}
 
 			using Process process = new();
 			process.StartInfo = CreateStartInfo(options, redirectOutput: true);
 			process.EnableRaisingEvents = true;
+			if (linkedCts.IsCancellationRequested) {
+				ClassifyCancellation(options, resourceLimitState, stopState, ref canceled, ref timedOut);
+				return StoppedBeforeStart(startedAt, canceled, timedOut);
+			}
 
 			bool started = process.Start();
 			if (!started) {
@@ -475,26 +504,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 					FinishedAtUtc = DateTimeOffset.UtcNow
 				};
 			}
-			OperationStopState stopState = new();
-			using CancellationTokenSource timeoutCts = new();
-			using CancellationTokenRegistration callerCancellationRegistration = options.CancellationToken.Register(
-				() => stopState.TrySet(OperationStopReason.CallerCancellation));
-			using CancellationTokenRegistration timeoutRegistration = timeoutCts.Token.Register(
-				() => stopState.TrySet(OperationStopReason.Timeout));
-			using CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-				options.CancellationToken, timeoutCts.Token);
-			if (options.Timeout is { } timeout && timeout > TimeSpan.Zero) {
-				timeoutCts.CancelAfter(timeout);
-			}
-
-			ResourceLimitState resourceLimitState = new();
 			Task stdoutTask = ReadStreamAsync(process.StandardOutput, ProcessOutputStream.StdOut, stdout, options,
 				enableRealtime, resourceLimitState, stopState, process, linkedCts);
 			Task stderrTask = ReadStreamAsync(process.StandardError, ProcessOutputStream.StdErr, stderr, options,
 				enableRealtime, resourceLimitState, stopState, process, linkedCts);
-
-			bool canceled = false;
-			bool timedOut = false;
 
 			using CancellationTokenSource monitorCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
 			Task monitorTask = MonitorDirectoryAsync(process, options, resourceLimitState, stopState, linkedCts,
@@ -746,6 +759,15 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		StartedAtUtc = startedAt,
 		FinishedAtUtc = DateTimeOffset.UtcNow
 	};
+
+	private static ProcessExecutionResult StoppedBeforeStart(DateTimeOffset startedAt, bool canceled, bool timedOut) =>
+		new() {
+			Started = false,
+			Canceled = canceled,
+			TimedOut = timedOut,
+			StartedAtUtc = startedAt,
+			FinishedAtUtc = DateTimeOffset.UtcNow
+		};
 
 	private void PublishLine(string line, ProcessOutputStream stream, ProcessExecutionOptions options) {
 		if (options.OnOutput is not null) {

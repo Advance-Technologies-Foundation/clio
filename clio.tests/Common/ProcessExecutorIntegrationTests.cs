@@ -16,6 +16,76 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 [Category("Integration")]
 public class ProcessExecutorIntegrationTests {
+	[Test]
+	[Description("Verifies that caller cancellation during monitored-directory preflight is classified without launching the process.")]
+	public async Task ExecuteAndCaptureAsync_ShouldReturnCanceledWithoutStarting_WhenPreflightIsAlreadyCanceled() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-preflight-cancel-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(directory);
+		string descendantIdentityPath = Path.Combine(directory, "descendant.identity");
+		using CancellationTokenSource cancellationSource = new();
+		cancellationSource.Cancel();
+		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
+			$"--spawn-inherited-handle-descendant \"{descendantIdentityPath}\"") {
+			CancellationToken = cancellationSource.Token,
+			MonitoredDirectory = directory,
+			MaximumMonitoredDirectoryBytes = 1024
+		};
+
+		try {
+			// Act
+			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+
+			// Assert
+			result.Started.Should().BeFalse(
+				because: "an operation canceled before preflight must not launch the child process");
+			result.Canceled.Should().BeTrue(
+				because: "preflight cancellation must retain the same classification as in-process cancellation");
+			result.TimedOut.Should().BeFalse(
+				because: "the caller token, not an operation deadline, stopped this execution");
+			File.Exists(descendantIdentityPath).Should().BeFalse(
+				because: "the fixture identity marker proves whether the child process was launched");
+		} finally {
+			Directory.Delete(directory, recursive: true);
+		}
+	}
+
+	[Test]
+	[Description("Verifies that the operation timeout bounds traversal of a large pre-existing monitored directory.")]
+	public async Task ExecuteAndCaptureAsync_ShouldBoundPreflightScan_WhenMonitoredDirectoryIsLarge() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-preflight-timeout-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(directory);
+		for (int index = 0; index < 40_000; index++) {
+			File.Create(Path.Combine(directory, $"{index:D5}.tmp")).Dispose();
+		}
+		ProcessExecutionOptions options = new(ResolveFixtureExecutable(), "--write-carriage-return-output") {
+			Timeout = TimeSpan.FromMilliseconds(100),
+			MonitoredDirectory = directory,
+			MaximumMonitoredDirectoryBytes = long.MaxValue
+		};
+		Stopwatch elapsed = Stopwatch.StartNew();
+
+		try {
+			// Act
+			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+			elapsed.Stop();
+
+			// Assert
+			result.TimedOut.Should().BeTrue(
+				because: "the configured deadline must include the monitored-directory preflight scan");
+			result.Canceled.Should().BeFalse(
+				because: "the operation deadline, not caller cancellation, stopped this execution");
+			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750),
+				because: "a large existing checkout must not postpone a one-hundred-millisecond operation deadline");
+		} finally {
+			Directory.Delete(directory, recursive: true);
+		}
+	}
 
 	[TestCase(false, null)]
 	[TestCase(true, 4096L)]

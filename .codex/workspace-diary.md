@@ -7829,3 +7829,10 @@ Decision: Preserve the first cancellation cause atomically, keep the directory m
 Discovery: Bounding stream reads alone is insufficient when a descendant can keep mutating the checkout after its parent exits. The monitor and the final filesystem scan are both part of the same operation deadline, and every uncertain failure diagnostic must disclose the portable cleanup limitation.
 Files: clio/Common/ProcessExecutor.cs, clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs, clio.mcp.e2e/CuratedKnowledgeGitStartupE2ETests.cs, clio.process.fixture/Program.cs
 Impact: Windows passes 15 focused process/Git tests, 918 Common unit tests plus 3 skips, and the real MCP startup E2E on both target frameworks; Linux Docker passes five process integration cases per framework; ClioRing passes 152 tests and Windows x64 NativeAOT publish.
+
+## 2026-08-07 10:29 – Process deadline now includes monitored-directory preflight
+Context: The repeated final review reproduced a large existing checkout delaying execution before the timeout source was armed, and pre-canceled callers were reported as generic start failures.
+Decision: Create the first-cause state, timeout source, and linked operation token before directory preflight; return classified pre-start cancellation/timeout results without launching the child.
+Discovery: An operation-wide deadline must begin before every potentially expensive preparation step, not merely before process wait and stream drain. A 40,000-file regression makes this boundary observable, while an identity-marker assertion proves pre-cancellation starts no fixture process.
+Files: clio/Common/ProcessExecutor.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs, clio.mcp.e2e/CuratedKnowledgeGitStartupE2ETests.cs
+Impact: Windows passes 17 focused process/Git tests and 918 Common unit tests plus 3 skips per framework; Linux Docker passes seven integration cases per framework; MCP E2E, 152 Ring tests, and Windows x64 NativeAOT publish remain green.
