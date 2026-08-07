@@ -87,10 +87,22 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
+		bool advertised = await context.Session.IsToolAdvertisedAsync(
+			ToolName, context.CancellationTokenSource.Token);
+
+		// Assert
 		toolNames.Should().Contain(ToolName,
 			because: "install-process-builder is the remediation the gated tools point at, so a server with "
-				+ "process-designer off must still advertise it — a gated primitive is filtered out of "
+				+ "process-designer off must still be able to reach it — a gated primitive is filtered out of "
 				+ "registration and would be unreachable exactly when it is needed");
+		advertised.Should().BeFalse(
+			because: "this pins WHICH of the two reachability paths applies, and the assertion above is nearly "
+				+ "vacuous without it. ListReachableToolNamesAsync unions tools/list with the get-tool-contract "
+				+ "index, and this tool is deliberately absent from McpCoreToolProfile.CoreToolTypes — so it is "
+				+ "never in tools/list and is reached through the curated index plus clio-run. Its index entry "
+				+ "is unconditional, so the Contain above would stay green even if [FeatureToggle] were added "
+				+ "to the tool — the exact regression this fixture exists to block. Pinning non-residency here "
+				+ "means a change to EITHER half (residency or gating) has to come past a red test");
 		toolNames.Should().NotIntersectWith(FeatureGatedProcessDesignerTools,
 			because: "this fixture's CLIO_HOME leaves Features empty, so the five [FeatureToggle(\"process-designer\")] "
 				+ "tools must be invisible on every MCP surface — if they were reachable here the asymmetry this "

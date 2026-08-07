@@ -190,8 +190,9 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// plainly hopeless. That is the trade a shorter value — or an operator-facing knob — would be buying,
 	/// and it needs a measurement of how long a slow-but-recovering instance actually takes, which nobody
 	/// has made. A knob would also cost the whole doc quartet plus an MCP parity decision; <c>RestartCommand</c>
-	/// carries one because waiting IS its job, whereas here the wait is incidental to an install whose
-	/// healthy case measured 45-78 s end to end.
+	/// carries one because waiting IS its job, whereas here the wait is incidental to an install that is
+	/// long by nature — the target runs a full configuration build, and how long that takes belongs to the
+	/// target, not to clio. No figure is quoted anywhere on purpose; see the remark on the readiness budget.
 	/// </para>
 	/// </remarks>
 	private bool WaitForPlatformRestart() =>

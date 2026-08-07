@@ -14,6 +14,15 @@ using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Tests.Command.McpServer;
 
+// NonParallelizable: this fixture and CompileCreatioToolTests both call
+// McpToolExecutionLock.ResetConfigurationBuildReservationsForTests(), which does an UNKEYED Clear() on a
+// process-global dictionary, and both hold a reservation across an await in the middle of a test. Under
+// [assembly: Parallelizable(ParallelScope.Fixtures)] one fixture's TearDown can therefore clear the
+// reservation the other is asserting on, with no bug present. The keys differ today (sandbox-tenant vs
+// busy-tenant) so it cannot flake yet — it is one shared key away. It would flake FIRST under the
+// mandated pre-commit filter, where the smaller fixture pool makes the two likelier to be co-scheduled,
+// and a flaky red on the gate is how a gate stops being trusted.
+[NonParallelizable]
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class InstallProcessBuilderToolTests {
