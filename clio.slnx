@@ -10,6 +10,7 @@
     <File Path="project-context.md" />
   </Folder>
   <Project Path="clio.mcp.e2e/clio.mcp.e2e.csproj" />
+  <Project Path="clio.process.fixture/clio.process.fixture.csproj" />
   <Project Path="clio.tests\clio.tests.csproj" />
   <Project Path="Clio.Analyzers\Clio.Analyzers.csproj" />
   <Project Path="Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj" />

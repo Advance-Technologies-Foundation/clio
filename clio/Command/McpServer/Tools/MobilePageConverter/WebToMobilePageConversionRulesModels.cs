@@ -231,9 +231,51 @@ public sealed class ComponentPropertyOverrideRule {
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
 
+	/// <summary>
+	/// How an object-valued entry in <see cref="Values"/> is stamped. Default (false) REPLACES the
+	/// element's value outright — the long-standing behavior every flat rule relies on, and the reason a
+	/// spacing rule can promise the web value is discarded rather than translated. When true the rule
+	/// value is MERGED key-by-key (recursively) into the element's existing object, which is what a rule
+	/// targeting a nested leaf (e.g. <c>config.text.fontSizeMode</c>) needs so the converter's sibling
+	/// subtrees (e.g. <c>config.data.providing</c>) survive.
+	/// <para>
+	/// A merging rule NEVER overwrites a value that is PRESENT but is not an object, at ANY depth: such a
+	/// value is typically a whole-value binding, and replacing it with an object assembled from the rule
+	/// alone would destroy the binding and leave the component missing fields it needs (an indicator widget
+	/// whose <c>config</c> is replaced loses <c>config.data</c> and renders nothing) while still looking
+	/// normalized. Every branch refused this way is recorded in the report's <c>skipped</c> list.
+	/// </para>
+	/// <para>
+	/// An ABSENT branch is the opposite case and IS created, because that is the normalization itself: a
+	/// real converted metric carries <c>layout</c> with a colour and icon but no <c>border</c>, so refusing
+	/// to create would make the standard unreachable on every real page. A created branch holds ONLY what
+	/// the rule declares — so a rule may create a branch that is partial by the component's own schema. That
+	/// is accepted deliberately: the source element had no value there to preserve, and <c>validate-page</c>
+	/// is the backstop. Keep it in mind when authoring a rule whose branch may be absent.
+	/// </para>
+	/// <para>
+	/// LEAVES are written — creating or overwriting — but only when the value actually differs, so an
+	/// element already authored at the standard is left alone and is not reported as normalized.
+	/// </para>
+	/// <para>
+	/// Note the granularity: the flag is per-rule, but the effect is per-value-shape — an object value
+	/// merges, a scalar or array still replaces. One rule therefore cannot mix the two semantics for
+	/// different keys.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("mergeNestedObjects")]
+	public bool MergeNestedObjects { get; init; }
+
+	/// <summary>
+	/// Free-form explanation for whoever maintains the rules file. Deliberately NOT surfaced to the
+	/// caller: the guide composes its report from the actual outcome, so no wording here can drift from
+	/// what was written, and the rules file — resolved at runtime from an env var, a local cache or the
+	/// CDN — cannot reach the calling agent's instruction channel.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
+
 
 /// <summary>
 /// Rule for the deterministic empty-container removal pass. <see cref="RemovableTypes"/> is

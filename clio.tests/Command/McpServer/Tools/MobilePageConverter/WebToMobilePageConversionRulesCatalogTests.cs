@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -32,6 +33,55 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			c.Web.Contains("crt.Checkbox") && c.Mobile.Contains("crt.Toggle") && c.Category == "AlternativeAvailable");
 		rules.Components.Should().Contain(c =>
 			c.Web.Contains("crt.DataGrid") && c.Mobile.Contains("crt.List") && c.Category == "AlternativeAvailable");
+	}
+
+	[Test]
+	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, merging — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
+	public void LoadBundled_ReturnsSeededMetricStyleOverride() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
+			.Single(o => o.Type == "crt.IndicatorWidget");
+		metric.MergeNestedObjects.Should().BeTrue(
+			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
+		JsonElement config = metric.Values["config"];
+		config.GetProperty("text").GetProperty("fontSizeMode").GetString().Should().Be("extra-small",
+			because: "the registry's fontSizeMode enum spells XS as 'extra-small'");
+		config.GetProperty("layout").GetProperty("border").GetProperty("hidden").GetBoolean().Should().BeTrue(
+			because: "hide-border lives at layout.border.hidden (WidgetBorderConfig)");
+		config.TryGetProperty("theme", out _).Should().BeFalse(
+			because: "the theme is a deliberate non-goal — the default 'without-fill' already gives the plain white look");
+	}
+
+	[Test]
+	[Description("Every override rule carries ONLY data: a component type, the values to stamp and whether they merge. No rule may carry caller-facing prose, because the rules file is resolved at runtime and the guide's constraints/nextSteps are the caller's instruction channel.")]
+	public void LoadBundled_OverridesCarryDataOnly() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentPropertyOverrides.Should().OnlyContain(
+			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
+			because: "a rule without a type or values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
+			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
+				+ "never fires — cheap to catch here for the bundled file");
+	}
+
+	[Test]
+	[Description("The pre-existing spacing overrides keep replace semantics: their promise that the web gap is discarded wholesale is only delivered by replacing, never by merging.")]
+	public void LoadBundled_SpacingOverridesKeepReplaceSemantics() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentPropertyOverrides
+			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
+			.Should().HaveCount(2)
+			.And.OnlyContain(o => !o.MergeNestedObjects,
+				because: "the spacing rules promise the web gap is discarded wholesale");
 	}
 
 	[Test]

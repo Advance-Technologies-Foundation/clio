@@ -2579,3 +2579,17 @@ stories:
     depends_on:
       - story-deliver-process-builder-package-3
     blocks: []
+
+  - id: story-process-executor-stream-drain-timeout-1
+    title: "Bound redirected stream draining by the process operation timeout"
+    feature: "process-executor-stream-drain-timeout"
+    repo: "clio"
+    size: S
+    status: done
+    issue: 1018
+    file: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-story.md
+    prd: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-spec.md
+    adr: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-adr.md
+    test_plan: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-test-plan.md
+    depends_on: []
+    blocks: []
