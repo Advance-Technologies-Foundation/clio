@@ -7810,6 +7810,12 @@ Discovery: CI on 062fc111 is the only place the Windows path behavior could be c
 Discovery: reviewing the body against the branch surfaced two stale claims that had survived several updates — the built-in curated source described as git/branch master when it is github-release against a fixed asset, and clio-knowledge#35 still called open after it merged. A PR body drifts silently because nothing tests it; re-read it against the code whenever the delivery model or a producer state changes, not only when the diff grows.
 Files: .codex/workspace-diary.md (PR body is not a repository file; edited through the GitHub API)
 Impact: #927's body now states the current head's CI numbers, both resyncs, the released 1.12.0 / sequence 14 generation, the manifest-driven per-resource regression on the real delivery path, the read-contract change, and the macOS fixture fix including the CI break it caused. Nothing in the body is now known to be stale.
+# Curated knowledge Git development override
+
+- Preserved an explicitly configured `creatio-curated` Git source for the canonical `clio-knowledge` repository, while retaining the signed GitHub Release source as the default.
+- Added a focused bootstrap test and documented the supported development configuration.
+- Git overrides synchronize on startup even when a checkout is already present, so changing the configured branch cannot leave stale cached knowledge active.
+
 
 ## 2026-07-31 17:30 – Correct workplaces guidance against a live cross-env transfer (ENG-88474)
 Context: Phase 1 shipped workplaces guidance text only. A live verification run on DevEnv plus a real package transfer to a second stand showed an agent following the guide exactly produces a workplace that does not render on the target environment.

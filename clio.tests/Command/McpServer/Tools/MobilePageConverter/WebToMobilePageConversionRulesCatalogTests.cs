@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -35,6 +36,55 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, merging — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
+	public void LoadBundled_ReturnsSeededMetricStyleOverride() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
+			.Single(o => o.Type == "crt.IndicatorWidget");
+		metric.MergeNestedObjects.Should().BeTrue(
+			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
+		JsonElement config = metric.Values["config"];
+		config.GetProperty("text").GetProperty("fontSizeMode").GetString().Should().Be("extra-small",
+			because: "the registry's fontSizeMode enum spells XS as 'extra-small'");
+		config.GetProperty("layout").GetProperty("border").GetProperty("hidden").GetBoolean().Should().BeTrue(
+			because: "hide-border lives at layout.border.hidden (WidgetBorderConfig)");
+		config.TryGetProperty("theme", out _).Should().BeFalse(
+			because: "the theme is a deliberate non-goal — the default 'without-fill' already gives the plain white look");
+	}
+
+	[Test]
+	[Description("Every override rule carries ONLY data: a component type, the values to stamp and whether they merge. No rule may carry caller-facing prose, because the rules file is resolved at runtime and the guide's constraints/nextSteps are the caller's instruction channel.")]
+	public void LoadBundled_OverridesCarryDataOnly() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentPropertyOverrides.Should().OnlyContain(
+			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
+			because: "a rule without a type or values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
+			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
+				+ "never fires — cheap to catch here for the bundled file");
+	}
+
+	[Test]
+	[Description("The pre-existing spacing overrides keep replace semantics: their promise that the web gap is discarded wholesale is only delivered by replacing, never by merging.")]
+	public void LoadBundled_SpacingOverridesKeepReplaceSemantics() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentPropertyOverrides
+			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
+			.Should().HaveCount(2)
+			.And.OnlyContain(o => !o.MergeNestedObjects,
+				because: "the spacing rules promise the web gap is discarded wholesale");
+	}
+
+	[Test]
 	[Description("The bundled rules store only SUPPORTED requests (web→mobile); unsupported web requests are intentionally absent (a request not in the map is flagged at conversion time).")]
 	public void LoadBundled_ReturnsSeededRequests() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -47,7 +97,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled tabbed template carries container-name correspondence, the CardContentWrapper->GeneralTabContainer leftover mapping, and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
+	[Description("Bundled tabbed template carries container-name correspondence: CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -55,7 +105,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
 		tabbed.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs");
 		tabbed.Containers.Should().Contain(c => c.Web == "FeedTabContainer" && c.Mobile == "FeedContainer");
-		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer",
+			because: "the wrapper's general non-tab content fills the mobile general tab's grid");
+		tabbed.Containers.Should().Contain(c => c.Web == "SideAreaProfileContainer" && c.Mobile == "AreaProfileContainer",
+			because: "the web profile island merges into the template's profile Area card — its children " +
+				"land inside AreaProfileContainer, not directly in GeneralTabContainer, so the Area is never left empty");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
 	}
@@ -69,6 +123,99 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		grid.Mobile.Should().Contain("crt.List");
 		grid.Mobile.Should().Contain("crt.ListItem");
 		grid.Note.Should().Contain("itemLayout");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the empty-container removal allowlist: the CLOSED set of five layout container types removable when empty. The set is a deliberate decision pinned here — widening it must be an explicit change with its own review, never a drive-by edit or registry inference.")]
+	public void LoadBundled_EmptyContainerRemoval_CarriesClosedAllowlist() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.EmptyContainerRemoval.Should().NotBeNull();
+		rules.EmptyContainerRemoval.RemovableTypes.Should().BeEquivalentTo(
+			["crt.FlexContainer", "crt.GridContainer", "crt.TabPanel", "crt.TabContainer", "crt.ExpansionPanel"],
+			because: "the removable set is a closed allowlist of disposable layout scaffolding — content-bearing " +
+				"containers (crt.List, crt.Tabs) must never appear here");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
+	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.TabAreaLayers.Should().NotBeNull();
+		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer",
+			because: "which element gets the layers is data, not a hardcoded type in the engine");
+		SynthesizedContainerRule main = rules.TabAreaLayers.MainTabContainer;
+		main.NamePrefix.Should().Be("MainTabContainer_");
+		main.Values["type"].GetString().Should().Be("crt.GridContainer");
+		main.Values["padding"].GetProperty("bottom").GetString().Should().Be("medium");
+		SynthesizedContainerRule area = main.AreaContainer;
+		area.Should().NotBeNull(because: "the Area card rule nests inside the tab-body rule, mirroring the DOM");
+		area.NamePrefix.Should().Be("GridContainer_");
+		area.Values["type"].GetString().Should().Be("crt.GridContainer");
+		area.Values["color"].GetString().Should().Be("primary");
+		area.Values["borderRadius"].GetString().Should().Be("medium");
+		area.AreaContainer.Should().BeNull(because: "the Area card is the innermost container — it nests nothing");
+	}
+
+	[Test]
+	[Description("A rules file without the tabAreaLayers group parses to null — the tab-area pass is then a no-op (data-switched feature).")]
+	public void ParseStream_WithoutTabAreaLayers_ParsesToNull() {
+		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.TabAreaLayers.Should().BeNull();
+	}
+
+	[Test]
+	[Description("ParseStream parses the tabAreaLayers group into the typed rule (nested tab-body → Area chain, prefixes + verbatim values).")]
+	public void ParseStream_WithTabAreaLayers_ParsesTypedRule() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "tabAreaLayers": {
+			    "note": "n",
+			    "tabComponentType": "usr.CustomTab",
+			    "mainTabContainer": {
+			      "namePrefix": "MainTabContainer_",
+			      "values": { "type": "crt.GridContainer", "alignItems": "stretch" },
+			      "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer", "color": "primary" } }
+			    }
+			  }
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.TabAreaLayers.Should().NotBeNull();
+		rules.TabAreaLayers.Note.Should().Be("n");
+		rules.TabAreaLayers.TabComponentType.Should().Be("usr.CustomTab");
+		rules.TabAreaLayers.MainTabContainer.NamePrefix.Should().Be("MainTabContainer_");
+		rules.TabAreaLayers.MainTabContainer.Values["alignItems"].GetString().Should().Be("stretch");
+		rules.TabAreaLayers.MainTabContainer.AreaContainer.NamePrefix.Should().Be("GridContainer_");
+		rules.TabAreaLayers.MainTabContainer.AreaContainer.Values["color"].GetString().Should().Be("primary");
+	}
+
+	[Test]
+	[Description("A tabAreaLayers group that omits tabComponentType falls back to the platform's own tab type, so an older rules file keeps working.")]
+	public void ParseStream_TabAreaLayersWithoutTabComponentType_FallsBackToPlatformTabType() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "tabAreaLayers": {
+			    "mainTabContainer": {
+			      "namePrefix": "MainTabContainer_",
+			      "values": { "type": "crt.GridContainer" },
+			      "areaContainer": { "namePrefix": "GridContainer_", "values": { "type": "crt.GridContainer" } }
+			    }
+			  }
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.TabAreaLayers.TabComponentType.Should().Be("crt.TabContainer");
 	}
 
 	[Test]

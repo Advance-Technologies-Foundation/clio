@@ -101,7 +101,13 @@ public sealed class CaptionResource {
 /// from <c>containerMap</c> + <c>componentSuggestions</c>.
 /// </summary>
 public sealed class ElementMapEntry {
+	/// <summary>
+	/// Source element name. Omitted for a SYNTHESIZED entry — a container the converter creates that has
+	/// no web counterpart (the tab-body / Area layers of a converted tab). Its <c>reason</c>
+	/// says so explicitly; apply it exactly like any other <c>insert</c>.
+	/// </summary>
 	[JsonPropertyName("webName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string WebName { get; init; }
 
 	[JsonPropertyName("webType")]
@@ -125,10 +131,12 @@ public sealed class ElementMapEntry {
 	/// <summary>
 	/// Mobile parent element to attach to. For <c>insert</c> it is the element's parent; for
 	/// <c>relocate-children</c> it is the container the element's children are placed into instead.
+	/// Settable (like <see cref="MobileValues"/>): the tab-area pass retargets a tab's
+	/// top-level content onto the synthesized Area container after the element map is built.
 	/// </summary>
 	[JsonPropertyName("parentName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string ParentName { get; init; }
+	public string ParentName { get; set; }
 
 	/// <summary>Parent property to insert into (insert); defaults to <c>items</c>.</summary>
 	[JsonPropertyName("propertyName")]
@@ -136,16 +144,20 @@ public sealed class ElementMapEntry {
 	public string PropertyName { get; init; }
 
 	/// <summary>
-	/// Optional 0-based insert position within the parent's <c>items</c>. Set ONLY for a positional insert
-	/// — a web element mapped above/below an anchor container via a <c>&lt;container&gt;:top</c> /
-	/// <c>:bottom</c> template rule. <c>:top</c> elements get an ascending index from 0 so they land before
-	/// the anchor (e.g. above the mobile <c>Tabs</c>); <c>:bottom</c> elements are appended (no index). Add it
-	/// to the insert operation verbatim when present. Omitted for every other element — the mobile designer
-	/// owns ordering.
+	/// Optional 0-based insert position within the parent's <c>items</c>. Set for a positional insert — a
+	/// web element mapped above/below an anchor container via a <c>&lt;container&gt;:top</c> /
+	/// <c>:bottom</c> template rule (<c>:top</c> elements get an ascending index from 0 so they land before
+	/// the anchor, e.g. above the mobile <c>Tabs</c>; <c>:bottom</c> elements are appended, no index) — and
+	/// for every CONVERTED WEB TAB under the mobile Tabs (indexed right after the template's general tab so
+	/// the template's Feed/Attachments tabs stay last — always, the converter owns this ordering).
+	/// Add it to the insert operation verbatim when present. Omitted for every other element — the mobile
+	/// designer owns ordering. Settable (like <see cref="ParentName"/>): the empty-container removal pass
+	/// re-compacts sibling indexes after dropping an empty positional sibling, and the
+	/// converted-tab placement pass assigns tab indexes after the element map is built.
 	/// </summary>
 	[JsonPropertyName("index")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public int? Index { get; init; }
+	public int? Index { get; set; }
 
 	/// <summary>For an <c>insert</c> of a named element with a localizable caption.</summary>
 	[JsonPropertyName("captionResource")]
@@ -164,9 +176,14 @@ public sealed class ElementMapEntry {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonNode MobileValues { get; set; }
 
+	/// <summary>
+	/// Why this operation was chosen, for the conversion report. Settable (like
+	/// <see cref="ParentName"/>): the converted-tab placement pass appends the placement note after the
+	/// element map is built.
+	/// </summary>
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Reason { get; init; }
+	public string Reason { get; set; }
 }
 
 /// <summary>
@@ -452,6 +469,59 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<AdaptiveLayoutGroup> AdaptiveLayout { get; init; }
 
+	// ── Tab body / Area layers synthesized inside a converted tab ──────
+	/// <summary>
+	/// The containers the converter SYNTHESIZES inside every tab it creates: the designer's
+	/// tab-body grid and the Area card inside it that receives the tab's content. Already baked into
+	/// <see cref="ElementMap"/> as ordinary
+	/// <c>insert</c> entries placed right after the tab's own entry — there is nothing separate to apply.
+	/// This is an informational summary of a MANDATORY structure, NOT a proposal: report it at the
+	/// conversion gate as fact, never offer to skip or replace it. Null when the page has no
+	/// converter-created tab with content (a tab the mobile template provides is a merge twin and is never
+	/// touched; an empty tab gets no layers at all).
+	/// </summary>
+	[JsonPropertyName("tabAreaLayers")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<TabAreaLayerGroup> TabAreaLayers { get; init; }
+
+	// ── Spacing normalized on inserted containers ──────────────────────
+	/// <summary>
+	/// Spacing normalization applied by the converter: mobile pages follow the mobile spacing
+	/// standard, so the WEB page's container spacing is deliberately IGNORED (discarded, not translated) —
+	/// every <c>crt.GridContainer</c> / <c>crt.FlexContainer</c> the converter INSERTS (converted from web
+	/// and synthesized tab-body / Area layers alike) already carries gap Medium on all axes in
+	/// <c>elementMap[].mobileValues</c>, so there is nothing separate to apply. Merge twins the mobile
+	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
+	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
+	/// restore the web spacing. Null when nothing was normalized.
+	/// <para>
+	/// BACK-COMPAT ALIAS: this section shipped before <see cref="Normalizations"/> existed and duplicates
+	/// its <c>"spacing"</c> entry, shape unchanged. New callers should read <see cref="Normalizations"/>,
+	/// which also carries the standards this one cannot express. REMOVAL TARGET: the only consumer is an
+	/// LLM prompt, so this duplicate should go once the guidance article published for
+	/// <c>normalizations</c> has shipped — it is not intended to be permanent.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("spacingNormalization")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SpacingNormalizationInfo SpacingNormalization { get; init; }
+
+	// ── Every property normalization the conversion rules declare ──────
+	/// <summary>
+	/// One section per normalization standard the CONVERSION RULES declare, keyed by the rule's
+	/// <c>reportGroup</c> (e.g. <c>"spacing"</c>, <c>"metricStyle"</c>). The set of keys is open: the rules
+	/// file is resolved at runtime, so a standard added there appears here without a binary change, and a
+	/// key this build has never seen gets its own section rather than being folded into another standard's.
+	/// <para>
+	/// Each section carries the caller-facing wording from its rule, the elements normalized (with the
+	/// dotted paths actually written), and anything the stamp had to skip. Read the section rather than
+	/// assuming a fixed set of properties. Null when nothing was normalized at all.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("normalizations")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, NormalizationInfo> Normalizations { get; init; }
+
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
 	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted mobileValues
@@ -668,6 +738,138 @@ public sealed class AdaptiveLayoutGroup {
 	/// <summary>The fields placed in this container and the per-breakpoint cell each occupies.</summary>
 	[JsonPropertyName("items")]
 	public IReadOnlyList<AdaptiveLayoutItem> Items { get; init; } = [];
+}
+
+/// <summary>
+/// The tab-body / Area layers synthesized inside ONE converter-created tab. Mirrors what is
+/// already baked into the element map: mobile design puts a tab's content inside a colored Area card that
+/// sits in a tab-body grid, and a tab converted from web carries neither.
+/// </summary>
+public sealed class TabAreaLayerGroup {
+	/// <summary>The converted tab the layers were synthesized into (its mobile name).</summary>
+	[JsonPropertyName("tabName")]
+	public string TabName { get; init; }
+
+	/// <summary>Name of the synthesized tab-body grid (the tab's direct child).</summary>
+	[JsonPropertyName("mainTabContainerName")]
+	public string MainTabContainerName { get; init; }
+
+	/// <summary>
+	/// Name of the synthesized Area card (child of the tab-body grid). Null when the tab's top-level
+	/// content is routing hints only — no Area is synthesized then, so an empty card never appears (AC#5).
+	/// </summary>
+	[JsonPropertyName("areaName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string AreaName { get; init; }
+
+	/// <summary>
+	/// The components moved out of the tab and into the Area, in the order they are stacked there
+	/// (the source page's own order — the first entry is row 1). Already reflected in each element's
+	/// <c>parentName</c> and <c>layoutConfig</c>, so there is nothing to re-parent by hand.
+	/// </summary>
+	[JsonPropertyName("movedChildren")]
+	public IReadOnlyList<string> MovedChildren { get; init; } = [];
+}
+
+/// <summary>
+/// Advisory summary of the spacing normalization: which inserted containers had their
+/// spacing stamped with the mobile-standard values (gap Medium). The actionable result is already
+/// baked into <c>elementMap[].mobileValues</c>; this section only feeds the plan / final-report line.
+/// </summary>
+public sealed class SpacingNormalizationInfo {
+	/// <summary>Why the web spacing is ignored and how to report the normalization.</summary>
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+
+	/// <summary>One entry per normalized inserted container.</summary>
+	[JsonPropertyName("normalized")]
+	public IReadOnlyList<SpacingNormalizationEntry> Normalized { get; init; } = [];
+}
+
+/// <summary>One inserted container whose spacing was normalized to the mobile standard.</summary>
+public sealed class SpacingNormalizationEntry {
+	/// <summary>The container's mobile element name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The container's mobile component type (e.g. "crt.GridContainer").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>The property names stamped onto the container's mobileValues (e.g. ["gap"]).</summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+}
+
+/// <summary>
+/// One normalization standard's report: the caller-facing wording carried by the conversion rule that
+/// declared it, what was normalized, and what could not be. Shared by every standard — a new one is a
+/// rules-file entry, not another pair of identical DTOs.
+/// </summary>
+public sealed class NormalizationInfo {
+	/// <summary>
+	/// Caller-facing summary of this standard's outcome, composed by clio from the actual counts. Never
+	/// sourced from the rules file: those resolve at runtime, and this text reaches the agent's
+	/// instruction channel.
+	/// </summary>
+	[JsonPropertyName("note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; init; }
+
+	/// <summary>One entry per element this standard normalized.</summary>
+	[JsonPropertyName("normalized")]
+	public IReadOnlyList<NormalizationEntry> Normalized { get; init; } = [];
+
+	/// <summary>
+	/// Elements the standard could NOT be applied to, with the branch it refused and why. Present only when
+	/// something was skipped. Without it a silent no-op is indistinguishable from "nothing to normalize" —
+	/// these elements keep the WEB values and may need a manual pass in the designer.
+	/// </summary>
+	[JsonPropertyName("skipped")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<NormalizationSkip> Skipped { get; init; }
+}
+
+/// <summary>One element normalized to a standard, and the properties actually written on it.</summary>
+public sealed class NormalizationEntry {
+	/// <summary>The element's mobile name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The element's mobile component type.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The properties stamped onto this element's mobileValues. A replacing rule reports the top-level key
+	/// it replaced (e.g. <c>["gap"]</c>); a merging rule reports the dotted paths of the leaves it actually
+	/// changed (e.g. <c>["config.layout.border.hidden"]</c>) — never the merged root, which would
+	/// under-report, and never a leaf that already held the target value.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+}
+
+/// <summary>One element a standard could not be stamped onto, and why.</summary>
+public sealed class NormalizationSkip {
+	/// <summary>The element's mobile name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The element's mobile component type.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The dotted paths the stamp refused to enter (e.g. <c>["config.text"]</c> when the element binds its
+	/// whole text config). Other paths of the same rule may still have been stamped.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+
+	/// <summary>Why the branch was refused, in caller-facing wording.</summary>
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
 }
 
 /// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>
