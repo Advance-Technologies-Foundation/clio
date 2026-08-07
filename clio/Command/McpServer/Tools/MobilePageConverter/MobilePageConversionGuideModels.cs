@@ -33,6 +33,37 @@ public sealed class SourceComponentInfo {
 }
 
 /// <summary>
+/// A source-page component that was NOT converted because it lives inside one of the web template's
+/// non-converting containers (declared per template as <c>nonConvertingContainers</c> — for
+/// <c>PageWithTabsFreedomTemplate</c> that is the WHOLE <c>MainHeader</c>: page title, back button, AND the
+/// action bar with its Order/print buttons). The mobile template already provides the equivalent
+/// header/scaffold chrome, so this component is intentionally dropped. Because the prune runs before
+/// inherited-chrome subtraction, the list mixes chrome the mobile template replaces (page title, back button)
+/// with page-added components — use <see cref="IsContainer"/> / <see cref="Container"/> to tell them apart.
+/// It is reported HERE (never in <see cref="MobilePageConversionGuide.ElementMap"/>, which only lists converted
+/// survivors) so the caller can confirm nothing needed was lost — do NOT re-add these. Carve-out is name-keyed:
+/// a descendant whose NAME is a template twin (a container name in <c>containerMap</c> or a mapped component
+/// name, e.g. nested tabs) is kept and still converts, so it never appears here.
+/// </summary>
+public sealed class ExcludedComponent {
+	[JsonPropertyName("name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Name { get; init; }
+
+	[JsonPropertyName("type")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Type { get; init; }
+
+	/// <summary>The declared non-converting container (its ancestor in <c>nonConvertingContainers</c>) this component lived under.</summary>
+	[JsonPropertyName("container")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Container { get; init; }
+
+	[JsonPropertyName("isContainer")]
+	public bool IsContainer { get; init; }
+}
+
+/// <summary>
 /// A web→mobile container-name correspondence from the matched template pair. The model uses it
 /// to set each component's <c>parentName</c> to the correct mobile container.
 /// </summary>
@@ -307,6 +338,13 @@ public sealed class SectionRegistrationInfo {
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
 /// </summary>
+/// <remarks>
+/// PUBLISHED CONTRACT: consumed field-by-field by the CAADT <c>creatio-mobile-page-conversion</c> skill
+/// (<c>references/page-to-mobile-conversion.md</c>). Adding / renaming / removing / repurposing a field here
+/// REQUIRES a matching skill update (the conversion plan + the step-8 report) in the same PR pair — otherwise
+/// the model never surfaces the new field to the user. See <c>clio/Command/McpServer/AGENTS.md</c> →
+/// "Consumer-facing tool outputs are a cross-repo contract".
+/// </remarks>
 public sealed class MobilePageConversionGuide {
 	// ── Source analysis ───────────────────────────────────────────────
 	[JsonPropertyName("sourcePage")]
@@ -324,6 +362,23 @@ public sealed class MobilePageConversionGuide {
 	/// <summary>Full resolved component tree (incl. inherited template components).</summary>
 	[JsonPropertyName("sourceStructure")]
 	public IReadOnlyList<SourceComponentInfo> SourceStructure { get; init; } = [];
+
+	/// <summary>
+	/// Components dropped from conversion because they live inside the web template's non-converting
+	/// container(s) (<c>nonConvertingContainers</c> — for <c>PageWithTabsFreedomTemplate</c>, the whole
+	/// <c>MainHeader</c>, not just its action bar). The mobile template already provides the equivalent
+	/// header/scaffold chrome, so these are intentionally excluded. The prune runs before inherited-chrome
+	/// subtraction, so the list mixes chrome the mobile template replaces (page title, back button) with
+	/// page-added components (e.g. Order/print buttons) — a consumer should split on <c>isContainer</c> /
+	/// <c>container</c> and present the former as replaced-by-template, not as a loss. Enumerated HERE (not in
+	/// <see cref="ElementMap"/>) so the caller can confirm nothing needed was lost; do NOT re-add them. A nested
+	/// subtree whose name is a template twin (e.g. tabs) is carved out and still converts, so it is absent from
+	/// this list. Null when the matched template declares no non-converting containers, or when none of their
+	/// descendants were present on the source page.
+	/// </summary>
+	[JsonPropertyName("excludedComponents")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ExcludedComponent> ExcludedComponents { get; init; }
 
 	/// <summary>
 	/// Diagnostic set only when the converted layout came back empty despite the source page having

@@ -101,6 +101,20 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
 
+	/// <summary>
+	/// Names of this template's containers whose components are NOT converted to mobile — recursively,
+	/// including any descendant containers (e.g. the web header action bar with its Order/print buttons).
+	/// The mobile template provides the equivalent header/actions, so this web chrome is dropped rather than
+	/// carried over. A descendant that itself has a conversion rule — its name is a container twin in
+	/// <see cref="Containers"/> or a component twin in <see cref="Components"/> — is CARVED OUT: it and its
+	/// whole subtree still convert (e.g. a <c>CardToggleTabPanel</c> mapped to mobile <c>Tabs</c> nested
+	/// inside a non-converting header). Case-insensitive. Unlike inherited-chrome subtraction (which keys on
+	/// the web template's component-name baseline and needs a successful template read), this exclusion is
+	/// declarative and applies even when the template probe is unavailable.
+	/// </summary>
+	[JsonPropertyName("nonConvertingContainers")]
+	public IReadOnlyList<string> NonConvertingContainers { get; init; } = [];
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }

@@ -88,6 +88,16 @@ public static class WebToMobileAnalysisService {
 	/// <param name="mobileTemplateUnavailable">True when a mobile template was known but its bundle could not
 	/// be read (no active environment, read failure) - the data-section diffs fall back to a single root merge
 	/// and an explicit constraint warns that template-owned arrays may be replaced wholesale.</param>
+	/// <param name="nonConvertingContainers">Names of the web template's containers whose components are NOT
+	/// converted (recursively, including descendant containers) - e.g. the header action bar. A descendant that
+	/// has a conversion rule (a container twin in <paramref name="containerNameMap"/> or a component twin in
+	/// <paramref name="componentNameMap"/>) is carved out and still converts. Declarative, so it applies even
+	/// when <paramref name="templateComponentNames"/> is unavailable. Null/empty leaves the tree unchanged.</param>
+	/// <param name="ownBodyViewConfigOps">The source page's OWN-body <c>viewConfigDiff</c> operations (name +
+	/// declared <c>parentName</c>). Used to also exclude a page-ADDED element whose declared parent chain leads
+	/// into a non-converting container but which the diff-apply orphaned to the tree root (so the position-based
+	/// prune never saw it there). Null/empty skips this orphan recovery; only meaningful with
+	/// <paramref name="nonConvertingContainers"/>.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -108,7 +118,9 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileContainerParents = null,
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
-		bool mobileTemplateUnavailable = false) {
+		bool mobileTemplateUnavailable = false,
+		IReadOnlySet<string> nonConvertingContainers = null,
+		IReadOnlyList<Clio.Command.PageOperationInfo> ownBodyViewConfigOps = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -126,6 +138,43 @@ public static class WebToMobileAnalysisService {
 		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
+
+		// 0a. Declarative, rule-driven exclusion: drop the components of the web template's non-converting
+		//     containers (e.g. MainHeader / its action bar) BEFORE chrome subtraction. It must run first
+		//     because chrome subtraction hoists page-added survivors up to the root, detaching them from the
+		//     container that designates them chrome — so the exclusion needs the intact nesting. A descendant
+		//     with a conversion rule (a container/component twin) is carved out and still converts.
+		var excludedContainers = nonConvertingContainers is { Count: > 0 }
+			? new HashSet<string>(nonConvertingContainers, StringComparer.OrdinalIgnoreCase)
+			: null;
+		bool nonConvertingPruned = false;
+		var excludedComponents = new List<ExcludedComponent>();
+		if (excludedContainers is not null) {
+			// Capture the names under each non-converting container from the INTACT tree first, so a page-added
+			// insert whose declared parentName targets one can be excluded even when the merge orphaned it out of
+			// the container (a failed/ambiguous parentName resolution drops the insert at the tree root).
+			var excludedNameToContainer = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			CollectExcludedSubtreeNames(tree, excludedContainers, map, componentMap, currentContainer: null, excludedNameToContainer);
+
+			tree = PruneNonConvertingContainers(tree, map, componentMap, excludedContainers, insideExcluded: false, excludedComponents, excludingContainer: null);
+
+			// Orphan recovery: an element the position-based prune could not reach because the merge detached it
+			// from its declared non-converting parent. Resolve by its own-body parentName chain, then drop by name.
+			if (ownBodyViewConfigOps is { Count: > 0 }) {
+				Dictionary<string, string> orphanToContainer =
+					ResolveOrphanExclusions(ownBodyViewConfigOps, excludedNameToContainer, excludedContainers, map, componentMap);
+				if (orphanToContainer.Count > 0) {
+					tree = PruneOrphansByName(tree, orphanToContainer, excludedComponents);
+				}
+			}
+			nonConvertingPruned = true;
+		}
+
+		// 0b. Filter out the web template's own components at read time. The merged tree carries the
+		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
+		//    MainHeader / TitleContainer / BackButton / PageTitle / …) — the mobile template already
+		//    provides those (Scaffold + header). Only the page's DELTA over its web template is
+		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
 			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames);
@@ -270,6 +319,7 @@ public static class WebToMobileAnalysisService {
 			SourceType = SourceTypeFreedomWeb,
 			SourceTemplate = string.IsNullOrWhiteSpace(sourceTemplate) ? null : sourceTemplate,
 			SourceStructure = structure,
+			ExcludedComponents = excludedComponents.Count > 0 ? excludedComponents : null,
 			LayoutResolution = layoutResolution,
 			WebOnlySections = webOnly.Count > 0 ? webOnly : null,
 			DataSources = dataSources.Count > 0 ? dataSources : null,
@@ -299,7 +349,7 @@ public static class WebToMobileAnalysisService {
 				}
 				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0, nonConvertingPruned ? excludedContainers : null),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -679,6 +729,220 @@ public static class WebToMobileAnalysisService {
 			result.Add(node);
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Removes from the merged page tree the components of the web template's <paramref name="excluded"/>
+	/// containers (declared per template as <c>nonConvertingContainers</c>) — recursively, including any
+	/// descendant containers: once a node's name is in <paramref name="excluded"/>, every descendant is
+	/// dropped (<paramref name="insideExcluded"/> carries that state down). The one exception is a
+	/// CARVE-OUT: a node whose name is a container twin (<paramref name="containerNameMap"/>) or a component
+	/// twin (<paramref name="componentMap"/>) has its own conversion rule, so it is kept and its whole subtree
+	/// re-enters normal conversion — carve-out takes precedence over exclusion. Carved-out survivors under a
+	/// dropped container are hoisted up to the current parent (they are merge-by-name targets, so their tree
+	/// position is irrelevant downstream). Anonymous wrappers are recursed in place, preserving the excluded
+	/// state. Runs BEFORE inherited-chrome subtraction so the container→child nesting is still intact.
+	/// Every named component actually dropped (the descendants INSIDE an excluded container, not the declared
+	/// container node itself — that is already named in the constraint) is appended to <paramref name="collected"/>
+	/// so the guide can report exactly what was left out (<c>excludedComponents</c>). <paramref name="excludingContainer"/>
+	/// carries the declared top-level container name down for that report.
+	/// </summary>
+	private static JArray PruneNonConvertingContainers(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
+		IReadOnlySet<string> excluded,
+		bool insideExcluded,
+		List<ExcludedComponent> collected,
+		string excludingContainer) {
+		var result = new JArray();
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				// Preserve non-object tokens only outside an excluded subtree.
+				if (!insideExcluded) {
+					result.Add(token);
+				}
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			JArray items = node["items"] as JArray;
+			bool isCarveOut = !string.IsNullOrEmpty(name)
+				&& (containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name)));
+			if (isCarveOut) {
+				// Has its own conversion rule: keep it and convert its whole subtree normally (exit exclusion).
+				if (items is not null) {
+					node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false, collected, excludingContainer: null);
+				}
+				result.Add(node);
+				continue;
+			}
+			bool entersExclusion = !insideExcluded && !string.IsNullOrEmpty(name) && excluded.Contains(name);
+			if (insideExcluded || entersExclusion) {
+				// Record only the components INSIDE the excluded container (descendants); the declared container
+				// node itself (entersExclusion) is already surfaced by name in the exclusion constraint.
+				if (insideExcluded && !string.IsNullOrEmpty(name)) {
+					collected.Add(new ExcludedComponent {
+						Name = name,
+						Type = node["type"]?.ToString(),
+						Container = excludingContainer,
+						IsContainer = items is not null
+					});
+				}
+				// Drop this node; still recurse to hoist any carved-out (rule-mapped) survivors up to the parent.
+				if (items is not null) {
+					string childContainer = entersExclusion ? name : excludingContainer;
+					foreach (JToken survivor in PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: true, collected, excludingContainer: childContainer)) {
+						result.Add(survivor);
+					}
+				}
+				continue;
+			}
+			// Outside any excluded subtree and no rule of its own: keep in place, recurse normally.
+			if (items is not null) {
+				node["items"] = PruneNonConvertingContainers(items, containerNameMap, componentMap, excluded, insideExcluded: false, collected, excludingContainer: null);
+			}
+			result.Add(node);
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Collects, from the INTACT merged tree, every element name that is equal to or nested under a
+	/// non-converting container, mapped to the top-level declared container that excludes it. Used to match a
+	/// page-added element by its DECLARED <c>parentName</c> even when the diff-apply orphaned it out of the
+	/// excluded subtree (a failed/ambiguous <c>parentName</c> resolution drops the insert at the tree root, so
+	/// the position-based prune never sees it under the container). A carve-out subtree (a name that is a
+	/// container/component twin) is NOT collected — it and its descendants still convert.
+	/// </summary>
+	private static void CollectExcludedSubtreeNames(
+		JArray nodes,
+		IReadOnlySet<string> excluded,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
+		string currentContainer,
+		Dictionary<string, string> nameToContainer) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			bool isCarveOut = !string.IsNullOrEmpty(name)
+				&& (containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name)));
+			// Carve-out resets the excluded state for its whole subtree; otherwise inherit, or enter on a match.
+			string container = isCarveOut ? null : currentContainer;
+			if (!isCarveOut && container is null && !string.IsNullOrEmpty(name) && excluded.Contains(name)) {
+				container = name;
+			}
+			if (container is not null && !string.IsNullOrEmpty(name)) {
+				nameToContainer.TryAdd(name, container);
+			}
+			if (node["items"] is JArray items) {
+				CollectExcludedSubtreeNames(items, excluded, containerNameMap, componentMap, container, nameToContainer);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Resolves which page-added elements (from the source page's OWN-body <c>viewConfigDiff</c> ops) must be
+	/// excluded because their DECLARED <c>parentName</c> chain leads into a non-converting container — the case
+	/// the position-based prune misses when the merge orphaned the insert to the tree root. Walks each element's
+	/// declared-parent chain (own-body ops, cycle-guarded); an ancestor that is a non-converting container or a
+	/// name nested under one (<paramref name="excludedNameToContainer"/>) excludes the element. A carve-out
+	/// ancestor (or the element itself being a twin) short-circuits to "keep" — the carved-out subtree converts.
+	/// Returns name → the excluding top-level container.
+	/// </summary>
+	private static Dictionary<string, string> ResolveOrphanExclusions(
+		IReadOnlyList<Clio.Command.PageOperationInfo> ownBodyOps,
+		IReadOnlyDictionary<string, string> excludedNameToContainer,
+		IReadOnlySet<string> nonConverting,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap) {
+		var declaredParent = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (Clio.Command.PageOperationInfo op in ownBodyOps) {
+			if (!string.IsNullOrEmpty(op?.Name) && !string.IsNullOrEmpty(op.ParentName)) {
+				declaredParent.TryAdd(op.Name, op.ParentName);
+			}
+		}
+		bool IsTwin(string n) => !string.IsNullOrEmpty(n)
+			&& (containerNameMap.ContainsKey(n) || (componentMap is not null && componentMap.ContainsKey(n)));
+
+		var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (Clio.Command.PageOperationInfo op in ownBodyOps) {
+			string name = op?.Name;
+			if (string.IsNullOrEmpty(name) || IsTwin(name) || result.ContainsKey(name)) {
+				continue; // no name, or has its own conversion rule (carved out) — keep
+			}
+			var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			string parent = declaredParent.GetValueOrDefault(name);
+			while (!string.IsNullOrEmpty(parent) && visited.Add(parent)) {
+				if (IsTwin(parent)) {
+					break; // element lives inside a carved-out subtree — it converts
+				}
+				if (nonConverting.Contains(parent)) {
+					result[name] = parent;
+					break;
+				}
+				if (excludedNameToContainer.TryGetValue(parent, out string container)) {
+					result[name] = container;
+					break;
+				}
+				parent = declaredParent.GetValueOrDefault(parent);
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Removes from the tree (at any depth) each node whose name is an orphan resolved by
+	/// <see cref="ResolveOrphanExclusions"/> — a page-added element the merge placed outside its declared,
+	/// non-converting parent — and records it (with the tree node's real <c>type</c> / container flag) into
+	/// <paramref name="collected"/> so it is reported like any other excluded component.
+	/// </summary>
+	private static JArray PruneOrphansByName(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> orphanToContainer,
+		List<ExcludedComponent> collected) {
+		var result = new JArray();
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				result.Add(token);
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			if (!string.IsNullOrEmpty(name) && orphanToContainer.TryGetValue(name, out string container)) {
+				RecordExcludedSubtree(node, container, collected); // record the orphan AND its named descendants
+				continue; // drop the orphan (and its subtree)
+			}
+			if (node["items"] is JArray items) {
+				node["items"] = PruneOrphansByName(items, orphanToContainer, collected);
+			}
+			result.Add(node);
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Records a dropped node and every named descendant into <paramref name="collected"/> under the same
+	/// excluding <paramref name="container"/> — mirroring how the position-based prune reports each descendant
+	/// of an excluded container, so an orphaned container that is dropped wholesale still lists its children.
+	/// </summary>
+	private static void RecordExcludedSubtree(JObject node, string container, List<ExcludedComponent> collected) {
+		string name = node["name"]?.ToString();
+		if (!string.IsNullOrEmpty(name)) {
+			collected.Add(new ExcludedComponent {
+				Name = name,
+				Type = node["type"]?.ToString(),
+				Container = container,
+				IsContainer = node["items"] is JArray
+			});
+		}
+		if (node["items"] is JArray items) {
+			foreach (JToken child in items) {
+				if (child is JObject childNode) {
+					RecordExcludedSubtree(childNode, container, collected);
+				}
+			}
+		}
 	}
 
 	/// <summary>
@@ -1281,7 +1545,8 @@ public static class WebToMobileAnalysisService {
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false) {
+		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false,
+		IReadOnlyCollection<string> nonConvertingContainers = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1325,6 +1590,14 @@ public static class WebToMobileAnalysisService {
 				"Components inherited from the source page's web template (and its base templates) are excluded " +
 				"from this guide — the mobile template already provides the equivalent header/scaffold chrome. " +
 				"Only the page's delta over its web template is converted; do NOT re-add the web header containers.");
+		}
+		if (nonConvertingContainers is { Count: > 0 }) {
+			constraints.Add(
+				"Components inside the web template's non-converting container(s) (" +
+				string.Join(", ", nonConvertingContainers) + ") are excluded — the mobile template provides the " +
+				"equivalent header/actions. A nested subtree with its own conversion rule (e.g. tabs) is still " +
+				"converted; do NOT re-add the excluded header/action components. The exact components dropped are " +
+				"listed in excludedComponents — report them so the user can confirm nothing needed was lost.");
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");

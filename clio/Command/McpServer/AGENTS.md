@@ -506,3 +506,21 @@ For tools that operate on a local workspace:
 - require `workspace-path` when the tool may be called outside the current shell working directory
 - validate ownership against the local workspace before mutating the remote environment
 - mark destructive tools as destructive
+
+## Consumer-facing tool outputs are a cross-repo contract (keep the skill in sync)
+
+Some MCP tools return an output DTO that an external Claude *skill* consumes and documents
+field-by-field. When you add / rename / remove / change the meaning of a field on such a DTO, you
+MUST mirror it in the consuming skill in the SAME change — the skill drives what the model reports
+to the user, so a drifted field silently drops information (e.g. a new "dropped/excluded" list that
+the report never mentions because the skill still enumerates only the old sources).
+
+Known coupled contracts (repo `creatio-ai-app-development-toolkit`):
+
+| clio output DTO (tool) | Consuming skill reference to update |
+|---|---|
+| `MobilePageConversionGuide` (`get-mobile-page-conversion-guide`) | `skills/creatio-mobile-page-conversion/references/page-to-mobile-conversion.md` — a cross-cutting field is surfaced in FOUR touch-points: the `elementMap` drop notes, the conversion plan, the step-8 report, and "Mobile constraints (carry into every step)" |
+
+When you touch `MobilePageConversionGuideModels.cs` (or any DTO listed above), open the referenced
+skill and update all four touch-points so every new/changed field is surfaced to the user. Ship
+the clio change and the skill change as a matched PR pair.
