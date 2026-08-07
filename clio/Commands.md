@@ -666,6 +666,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
+<a id="install-process-builder"></a>
+<a id="installprocessbuilder"></a>
+<a id="update-process-builder"></a>
+- [`install-process-builder`](docs/commands/install-process-builder.md) - Install or update the bundled process-builder package in Creatio, `installprocessbuilder`, `update-process-builder`
 <a id="install-toolkit"></a>
 - [`install-toolkit`](docs/commands/install-toolkit.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>

@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Story 5 (ai-business-process-generation) end-to-end coverage for <c>validate-process-graph</c>.
 /// NOT in CI — run manually. The tool is feature-toggled (<c>process-designer</c>) and, since
-/// the env-scoping fix, requires the <c>clioprocessbuilder</c> package on the named environment, so
+/// the env-scoping fix, requires the <c>CrtProcessBuilder</c> package on the named environment, so
 /// it is no longer hermetic: the advertisement and refusal cases run without a Creatio instance, but
 /// the happy-path graph validation requires a reachable sandbox environment with the package.
 /// </summary>
@@ -81,7 +81,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path against a reachable environment with clioprocessbuilder, a valid Start -> Read data -> End graph validates with zero error findings.")]
+	[Description("Over the real MCP path against a reachable environment with CrtProcessBuilder, a valid Start -> Read data -> End graph validates with zero error findings.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph reports a valid graph as having no errors")]
 	public async Task ValidateProcessGraph_Should_ReportNoErrors_WhenGraphIsValid() {
@@ -104,12 +104,12 @@ public sealed class ValidateProcessGraphToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(because: "a validation call against a valid graph should return a structured payload");
-		response.Success.Should().BeTrue(because: "validating a well-formed graph on an environment with clioprocessbuilder succeeds");
+		response.Success.Should().BeTrue(because: "validating a well-formed graph on an environment with CrtProcessBuilder succeeds");
 		response.HasErrors.Should().BeFalse(because: "Start -> Read data -> End violates no connection rule");
 	}
 
 	[Test]
-	[Description("Over the real MCP path against a reachable environment with clioprocessbuilder, a start event with an incoming flow surfaces an R1 error finding.")]
+	[Description("Over the real MCP path against a reachable environment with CrtProcessBuilder, a start event with an incoming flow surfaces an R1 error finding.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph surfaces an R1 error for a start with an incoming flow")]
 	public async Task ValidateProcessGraph_Should_SurfaceR1Error_WhenStartHasIncomingFlow() {
@@ -141,7 +141,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with clioprocessbuilder installed) to run {ToolName} graph-validation E2E tests.");
+			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with CrtProcessBuilder installed) to run {ToolName} graph-validation E2E tests.");
 		}
 		return environmentName!;
 	}

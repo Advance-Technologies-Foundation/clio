@@ -2,6 +2,7 @@
 using System.IO;
 using Clio.Common;
 using Clio.Package;
+using Clio.Project.NuGet;
 using CommandLine;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -37,26 +38,89 @@ namespace Clio.Command.PackageCommand
 
 		protected readonly IJsonConverter _jsonConverter;
 		private readonly IFileSystem _fileSystem;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public SetPackageVersionCommand(IJsonConverter jsonConverter, IFileSystem fileSystem) {
+		public SetPackageVersionCommand(IJsonConverter jsonConverter, IFileSystem fileSystem, ILogger logger) {
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			logger.CheckArgumentNull(nameof(logger));
 			_jsonConverter = jsonConverter;
 			_fileSystem = fileSystem;
+			_logger = logger;
 		}
 
 		#endregion
 
 		#region Methods: Public
 
+		/// <summary>
+		/// Writes <paramref name="options"/>'s version into the package descriptor, moving
+		/// <c>ModifiedOnUtc</c> with it.
+		/// </summary>
+		/// <param name="options">Parsed command options.</param>
+		/// <returns>
+		/// <c>0</c> on success; <c>1</c> when no version was supplied or it cannot be parsed. A version with
+		/// fewer than four parts is WRITTEN and warned about, not refused — see the comment at that check.
+		/// </returns>
+		/// <remarks>
+		/// The two descriptor fields are written TOGETHER because that is the descriptor's editing contract:
+		/// Creatio rewrites the <c>SysPackage</c> row only when <c>ModifiedOnUtc</c> changes, so a version
+		/// without a fresh timestamp installs and silently leaves the recorded version behind. This command
+		/// exists to make that pairing automatic — which is exactly why it must refuse an unusable version
+		/// instead of writing one: doing otherwise moves the timestamp while erasing the version, breaking the
+		/// contract this command is here to keep, and the descriptor would then claim to have changed while
+		/// carrying no version at all.
+		/// </remarks>
 		public override int Execute(SetPackageVersionOptions options) {
+			if (string.IsNullOrWhiteSpace(options.PackageVersion)) {
+				_logger.WriteError(
+					"--package-version is required. Without it the descriptor's version would be erased while "
+					+ "ModifiedOnUtc still moves, leaving a package that claims to have changed but carries no "
+					+ "version — and Creatio would record that as the installed version.");
+				return 1;
+			}
+			// PackageVersion.TryParseVersion, NOT Version.TryParse: this field is READ everywhere else through
+			// the former (PackageInfo, NuGetManager), which models the X.Y.Z.W-suffix pre-release form. Using the
+			// stricter parser here made the writer refuse values its own readers accept - 1.0.0.0-rc among them.
+			if (!PackageVersion.TryParseVersion(options.PackageVersion, out PackageVersion parsed)) {
+				_logger.WriteError(
+					$"'{options.PackageVersion}' is not a valid package version. Expected four numeric parts, "
+					+ "optionally followed by '-<suffix>', for example 1.2.3.4 or 1.2.3.4-rc.");
+				return 1;
+			}
+			// WARN, do not refuse. Fewer than four parts is normal for most packages and clio itself
+			// produces it: PackageCreator seeds "0.1.0" into every `add-package`, and publish-app/Workspace
+			// write an app version verbatim. Refusing here broke those pipelines on a shipped verb, which is
+			// how this warning replaced an earlier hard guard.
+			//
+			// The hazard the guard was written for is real but NARROW: System.Version gives a missing part -1,
+			// so a shorter version sorts BELOW every four-part version it is compared against — whether that
+			// is a [RequiresPackage] literal or, for a bundled package, the version in the shipped archive.
+			// That only matters for the packages clio actually gates on, and for those the four-part invariant
+			// is enforced where it belongs: BundledProcessBuilderPackageTests asserts the shipped descriptor's
+			// version is four-part, so a short one cannot reach a release unnoticed.
+			if (parsed.Version.Revision < 0) {
+				_logger.WriteWarning(
+					$"'{options.PackageVersion}' has fewer than four parts. That is fine for an ordinary package - "
+					+ "clio's own add-package seeds 0.1.0 - and the version is being written as requested. But "
+					+ "Creatio compares recorded versions through System.Version, which treats a missing part as "
+					+ "-1, so if THIS package is one clio compares versions on (cliogate, CrtProcessBuilder) "
+					+ "a shorter version sorts below every four-part version and the gated commands would refuse an "
+					+ $"environment that is actually up to date. For those packages write "
+					+ $"'{parsed.Version.Major}.{parsed.Version.Minor}.{Math.Max(parsed.Version.Build, 0)}.0'.");
+			}
 			string packageDescriptorPath = _fileSystem.Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
 			try {
 				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
-				dto.Descriptor.PackageVersion = options.PackageVersion;
+				// The CANONICAL form, not the raw argument: Version's components accept surrounding whitespace
+				// and a leading '+', so " 1.0.0.0 " or "+1.0.0.0" would otherwise reach the descriptor verbatim,
+				// land in SysPackage.Version, and break every string comparison against it while every Version
+				// comparison still agreed.
+				dto.Descriptor.PackageVersion = parsed.ToString();
 				dto.Descriptor.ModifiedOnUtc = PackageDescriptor.ConvertToModifiedOnUtc(DateTime.Now);
 				_jsonConverter.SerializeObjectToFile(dto, packageDescriptorPath);
 			}
@@ -67,6 +131,7 @@ namespace Clio.Command.PackageCommand
 		}
 
 		#endregion
+
 
 	}
 

@@ -89,7 +89,7 @@ internal static class McpToolExecutionLock {
 	// reservation instead: a second same-tenant compile fails fast (mirroring the core's own reject), and
 	// non-compile tools are not blocked at all. Process-global by necessity — concurrent MCP calls share the
 	// process, and tool instances do not — matching why the lock provider itself is a static facade.
-	private static readonly ConcurrentDictionary<string, byte> _compileInFlight = new();
+	private static readonly ConcurrentDictionary<string, byte> _configurationBuildInFlight = new();
 
 	/// <summary>
 	/// Wires the facade to the host's DI-registered lock provider and session cache. Called once at MCP
@@ -160,29 +160,36 @@ internal static class McpToolExecutionLock {
 	}
 
 	/// <summary>
-	/// Attempts to reserve compilation for <paramref name="cacheKey"/>. Returns <see langword="true"/> when
-	/// no compile is currently in flight for this tenant (the caller may proceed and MUST balance it with
-	/// <see cref="ReleaseCompile"/> when the compile — including its detached, past-deadline continuation —
-	/// finishes), or <see langword="false"/> when one is already running (the caller should fail fast rather
-	/// than start a second compile the Creatio core would reject anyway). Atomic (single-flight) so two
-	/// concurrent same-tenant compiles cannot both win.
+	/// Attempts to reserve a configuration build on <paramref name="cacheKey"/>. Returns
+	/// <see langword="true"/> when none is currently in flight for this tenant (the caller may proceed and
+	/// MUST balance it with <see cref="ReleaseConfigurationBuild"/> when the work — including its detached,
+	/// past-deadline continuation — finishes), or <see langword="false"/> when one is already running (the
+	/// caller should fail fast rather than start a second build the Creatio core would reject anyway).
+	/// Atomic (single-flight) so two concurrent same-tenant builds cannot both win.
 	/// </summary>
-	internal static bool TryReserveCompile(string cacheKey) =>
-		_compileInFlight.TryAdd(Normalize(cacheKey), 0);
+	/// <remarks>
+	/// One reservation covers every tool that makes the TARGET rebuild its configuration, not just
+	/// <c>compile-creatio</c>: <c>install-process-builder</c> ships a source-only package the target compiles
+	/// during installation, so it must exclude, and be excluded by, a concurrent compile on the same tenant.
+	/// It is deliberately narrow — it does NOT serialize unrelated same-tenant tools the way the per-tenant
+	/// execution monitor would (review Blocker, ENG-91315).
+	/// </remarks>
+	internal static bool TryReserveConfigurationBuild(string cacheKey) =>
+		_configurationBuildInFlight.TryAdd(Normalize(cacheKey), 0);
 
 	/// <summary>
-	/// Releases the compile reservation taken by <see cref="TryReserveCompile"/>. Must be called from the
-	/// point where the actual compile work completes (its detached continuation past the MCP response
-	/// deadline), not where the tool method returns, so the reservation spans the real compile duration.
+	/// Releases the reservation taken by <see cref="TryReserveConfigurationBuild"/>. Must be called from the
+	/// point where the actual work completes (its detached continuation past the MCP response deadline), not
+	/// where the tool method returns, so the reservation spans the real build duration.
 	/// </summary>
-	internal static void ReleaseCompile(string cacheKey) =>
-		_compileInFlight.TryRemove(Normalize(cacheKey), out _);
+	internal static void ReleaseConfigurationBuild(string cacheKey) =>
+		_configurationBuildInFlight.TryRemove(Normalize(cacheKey), out _);
 
-	// Test-only: clears the process-global compile reservations so a detached compile started by one test
-	// cannot fast-fail a compile in the next (the reservation release runs on the detached continuation,
-	// which may outlive the test method). No production caller.
-	internal static void ResetCompileReservationsForTests() =>
-		_compileInFlight.Clear();
+	// Test-only: clears the process-global reservations so detached work started by one test cannot
+	// fast-fail the next one (the release runs on the detached continuation, which may outlive the test
+	// method). No production caller.
+	internal static void ResetConfigurationBuildReservationsForTests() =>
+		_configurationBuildInFlight.Clear();
 
 	// Null/blank normalizes to the single shared fallback key so GetLock, MarkInUse, and MarkAvailable
 	// all key the same lock-provider entry for an environment-less / test-double call.

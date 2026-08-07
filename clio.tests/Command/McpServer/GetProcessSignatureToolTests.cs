@@ -195,9 +195,26 @@ public class GetProcessSignatureToolTests {
 	}
 
 	// NOTE: the former GetProcessSignature_Should_Return_RequirementFailure_When_ProcessBuilderPackageMissing test
-	// was removed — get-process-signature no longer carries [RequiresPackage("clioprocessbuilder")] (it reads the
+	// was removed — get-process-signature no longer carries the process-builder [RequiresPackage] (it reads the
 	// built-in DataService, not ProcessDesignService — PR #715). The "not gated" invariant is locked in by
 	// ProcessDesignerRequiresPackageAttributeTests.GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_*.
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-process-signature's MCP tool must NOT carry [FeatureToggle], unlike the rest of the process-designer suite, so its MCP surface matches its shipped public CLI verb.")]
+	public void GetProcessSignatureTool_Should_Not_Be_FeatureGated() {
+		// Arrange & Act
+		object[] toggles = typeof(GetProcessSignatureTool)
+			.GetCustomAttributes(typeof(FeatureToggleAttribute), inherit: true);
+
+		// Assert
+		toggles.Should().BeEmpty(
+			because: "gps is a shipped standalone capability that reads the built-in DataService and has a "
+				+ "public CLI verb, so gating only its MCP twin would make the two surfaces disagree. The "
+				+ "gate was added in 96250e4d and deliberately removed again in 7fda641e (PR #715) — this "
+				+ "test exists so 'restoring consistency' with the gated process-designer tools cannot "
+				+ "silently undo that decision");
+	}
 
 	private sealed class FakeGetProcessSignatureCommand : GetProcessSignatureCommand {
 		public GetProcessSignatureOptions CapturedOptions { get; private set; }
