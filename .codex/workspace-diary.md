@@ -7815,3 +7815,31 @@ Impact: #927's body now states the current head's CI numbers, both resyncs, the 
 - Preserved an explicitly configured `creatio-curated` Git source for the canonical `clio-knowledge` repository, while retaining the signed GitHub Release source as the default.
 - Added a focused bootstrap test and documented the supported development configuration.
 - Git overrides synchronize on startup even when a checkout is already present, so changing the configured branch cannot leave stale cached knowledge active.
+
+## 2026-08-07 09:57 – MCP Git bootstrap stream drain is bounded across Windows and Linux
+Context: Issue #1018 reproduced an MCP startup hang after the immediate Git process exited while a descendant retained redirected stdout or stderr handles beyond the five-second curated-knowledge budget.
+Decision: Apply one linked operation token to stdin, process waiting, both stream readers, and resource monitoring; close Clio's redirected endpoints on cancellation; preserve partial output plus CR/LF/CRLF real-time boundaries; and expose `DescendantTerminationUncertain` instead of adding Windows Job Objects or Unix process-group ownership.
+Discovery: A bootstrap E2E that fails before Git is a false positive. The deterministic `clio.process.fixture` must be first on the MCP child's `PATH`, record its invocation and descendant PID, exit its Git parent, and keep inherited pipes open for thirty seconds. The real server then warns and initializes in about six seconds. Linux uses the same pipe semantics and passes the identical four-case integration fixture in Docker. Broad desktop unit execution can invoke the production wiki help viewer, so final local validation stayed on safe targeted filters after that earlier browser leak.
+Files: clio/Common/ProcessExecutor.cs, clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs, clio.mcp.e2e/CuratedKnowledgeGitStartupE2ETests.cs, clio.process.fixture/, spec/process-executor-stream-drain-timeout/
+Impact: Windows passed 918 Common unit tests and all focused ProcessExecutor/Git tests on net8.0 and net10.0; MCP E2E passed on both frameworks; Linux Docker passed four integration cases on both frameworks; ClioRing passed 152 tests and Windows x64 NativeAOT publish. Docs reviewed, no update required. MCP reviewed, no tool/resource/prompt contract change. ClioRing compatibility reviewed; startup behavior improved without changing its consumed protocol.
+
+## 2026-08-07 10:19 – Final review hardened post-exit resource enforcement
+Context: The comprehensive pre-PR review found that an uncancellable final directory scan could exceed the operation deadline and that directory monitoring stopped when the immediate parent exited, before inherited-pipe draining completed.
+Decision: Preserve the first cancellation cause atomically, keep the directory monitor active until redirected readers settle, make recursive traversal lazy and cancellation-aware, flush pending real-time fragments in a finally block, and verify recorded descendant identity before test cleanup kills a PID.
+Discovery: Bounding stream reads alone is insufficient when a descendant can keep mutating the checkout after its parent exits. The monitor and the final filesystem scan are both part of the same operation deadline, and every uncertain failure diagnostic must disclose the portable cleanup limitation.
+Files: clio/Common/ProcessExecutor.cs, clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs, clio.mcp.e2e/CuratedKnowledgeGitStartupE2ETests.cs, clio.process.fixture/Program.cs
+Impact: Windows passes 15 focused process/Git tests, 918 Common unit tests plus 3 skips, and the real MCP startup E2E on both target frameworks; Linux Docker passes five process integration cases per framework; ClioRing passes 152 tests and Windows x64 NativeAOT publish.
+
+## 2026-08-07 10:29 – Process deadline now includes monitored-directory preflight
+Context: The repeated final review reproduced a large existing checkout delaying execution before the timeout source was armed, and pre-canceled callers were reported as generic start failures.
+Decision: Create the first-cause state, timeout source, and linked operation token before directory preflight; return classified pre-start cancellation/timeout results without launching the child.
+Discovery: An operation-wide deadline must begin before every potentially expensive preparation step, not merely before process wait and stream drain. A 40,000-file regression makes this boundary observable, while an identity-marker assertion proves pre-cancellation starts no fixture process.
+Files: clio/Common/ProcessExecutor.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs, clio.mcp.e2e/CuratedKnowledgeGitStartupE2ETests.cs
+Impact: Windows passes 17 focused process/Git tests and 918 Common unit tests plus 3 skips per framework; Linux Docker passes seven integration cases per framework; MCP E2E, 152 Ring tests, and Windows x64 NativeAOT publish remain green.
+
+## 2026-08-07 10:51 – Sonar new-code findings removed after PR publication
+Context: PR #1019's first Sonar analysis failed the new-code reliability rating and reported async, complexity, parameter-count, namespace, and fixture-output findings.
+Decision: Extract preflight and captured-output responsibilities, carry process-read state in a private context record, await cancellation and fixture writes, and move fixture identity into a named namespace.
+Discovery: The original single-directory timing fixture was too fast on Linux to prove timeout-before-launch. One thousand shallow child directories create portable traversal work with less filesystem churn and assert `Started=false`; the regression passes on Windows and Linux for both target frameworks.
+Files: clio/Common/ProcessExecutor.cs, clio.process.fixture/Program.cs, clio.process.fixture/ProcessIdentity.cs, clio.tests/Common/ProcessExecutorIntegrationTests.cs
+Impact: All reported Sonar new-code locations are addressed; Windows focused/Common/MCP tests, the Linux preflight regression, 152 Ring tests, and Windows x64 NativeAOT publish remain green before the follow-up push.
