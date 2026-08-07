@@ -304,7 +304,6 @@ public sealed class InstallProcessBuilderToolTests {
 				new EnvironmentSettings(),
 				Substitute.For<IPackageInstaller>(),
 				Substitute.For<IBundledPackageCatalog>(),
-				Substitute.For<IFileSystem>(),
 				Substitute.For<IPackageInstallOutcomeVerifier>(),
 				Substitute.For<IServerReadinessWaiter>(),
 				Substitute.For<IRequiredPackageChecker>(),

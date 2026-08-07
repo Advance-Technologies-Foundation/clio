@@ -50,6 +50,21 @@ public interface IBundledPackageCatalog {
 	string GetArchivePath(string packageName);
 
 	/// <summary>
+	/// Determines whether the bundled archive is actually present in this distribution.
+	/// </summary>
+	/// <param name="packageName">Package name (case-insensitive).</param>
+	/// <returns><c>false</c> when clio ships the package in principle but the file is not there.</returns>
+	/// <exception cref="ArgumentException">
+	/// Thrown when the package does not ship inside clio — see <see cref="GetArchivePath"/>.
+	/// </exception>
+	/// <remarks>
+	/// Here rather than in the caller so that a command which asks this catalog for the path does not then
+	/// have to reach into the file system itself to ask about it — the two answers must be about the same
+	/// file, and keeping both here is what makes that true by construction.
+	/// </remarks>
+	bool ArchiveExists(string packageName);
+
+	/// <summary>
 	/// Reads the version recorded in the bundled archive's descriptor.
 	/// </summary>
 	/// <param name="packageName">Package name (case-insensitive).</param>
@@ -178,6 +193,8 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 		return Path.Combine(
 			_workingDirectoriesProvider.ExecutingDirectory, archive.Folder, archive.FileName);
 	}
+
+	public bool ArchiveExists(string packageName) => _fileSystem.ExistsFile(GetArchivePath(packageName));
 
 	public bool TryGetVersion(string packageName, out PackageVersion version, out string diagnosis) {
 		string archivePath = GetArchivePath(packageName);

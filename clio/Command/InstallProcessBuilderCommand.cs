@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json;
 using Clio.Common;
@@ -90,7 +90,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IPackageInstaller _packageInstaller;
 	private readonly IBundledPackageCatalog _bundledPackageCatalog;
-	private readonly IFileSystem _fileSystem;
 	private readonly IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private readonly IServerReadinessWaiter _serverReadinessWaiter;
 	private readonly IRequiredPackageChecker _requiredPackageChecker;
@@ -105,8 +104,10 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </summary>
 	/// <param name="environmentSettings">Resolved target environment settings.</param>
 	/// <param name="packageInstaller">Package installer used to install the bundled archive.</param>
-	/// <param name="bundledPackageCatalog">Catalog used to locate the bundled archive.</param>
-	/// <param name="fileSystem">File system used to verify the bundled archive is present.</param>
+	/// <param name="bundledPackageCatalog">
+	/// Catalog used to locate the bundled archive, to confirm it is present, and to read the version it
+	/// carries.
+	/// </param>
 	/// <param name="outcomeVerifier">
 	/// Verifier that answers whether the package became operational after being accepted — the question the
 	/// install call itself cannot answer for a package the target has to compile.
@@ -123,7 +124,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		EnvironmentSettings environmentSettings,
 		IPackageInstaller packageInstaller,
 		IBundledPackageCatalog bundledPackageCatalog,
-		IFileSystem fileSystem,
 		IPackageInstallOutcomeVerifier outcomeVerifier,
 		IServerReadinessWaiter serverReadinessWaiter,
 		IRequiredPackageChecker requiredPackageChecker,
@@ -131,7 +131,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		packageInstaller.CheckArgumentNull(nameof(packageInstaller));
 		bundledPackageCatalog.CheckArgumentNull(nameof(bundledPackageCatalog));
-		fileSystem.CheckArgumentNull(nameof(fileSystem));
 		outcomeVerifier.CheckArgumentNull(nameof(outcomeVerifier));
 		serverReadinessWaiter.CheckArgumentNull(nameof(serverReadinessWaiter));
 		requiredPackageChecker.CheckArgumentNull(nameof(requiredPackageChecker));
@@ -139,7 +138,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		_environmentSettings = environmentSettings;
 		_packageInstaller = packageInstaller;
 		_bundledPackageCatalog = bundledPackageCatalog;
-		_fileSystem = fileSystem;
 		_outcomeVerifier = outcomeVerifier;
 		_serverReadinessWaiter = serverReadinessWaiter;
 		_requiredPackageChecker = requiredPackageChecker;
@@ -309,7 +307,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	public override int Execute(InstallProcessBuilderOptions options) {
 		try {
 			string packagePath = GetPackagePath();
-			if (!_fileSystem.ExistsFile(packagePath)) {
+			if (!_bundledPackageCatalog.ArchiveExists(BundledPackages.ProcessBuilderPackageName)) {
 				// Says "do not retry" explicitly. Every failure branch here returns 1, which the MCP contract
 				// documents as EXPECTED / caller-actionable — and an agent that reads it that way will retry
 				// forever on a broken distribution. The exit code is left alone (changing it is a contract

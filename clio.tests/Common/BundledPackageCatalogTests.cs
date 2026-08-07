@@ -105,6 +105,36 @@ public class BundledPackageCatalogTests {
 	}
 
 	[Test]
+	[Description("ArchiveExists answers about the SAME path the catalog hands out, so a caller cannot end up asking about one file and installing another.")]
+	[TestCase(true)]
+	[TestCase(false)]
+	public void ArchiveExists_ShouldAnswerAboutTheResolvedArchivePath(bool present) {
+		// Arrange
+		_fileSystem.ExistsFile(ExpectedArchivePath).Returns(present);
+
+		// Act
+		bool exists = _sut.ArchiveExists(BundledPackages.ProcessBuilderPackageName);
+
+		// Assert
+		exists.Should().Be(present,
+			because: "the install command asks this instead of reaching into the file system itself; if the "
+				+ "two could disagree it would report a missing archive while installing a present one, or "
+				+ "the reverse");
+	}
+
+	[Test]
+	[Description("ArchiveExists throws for a package clio does not ship, matching GetArchivePath — a plausible false is worse than an error, because it reads as a broken distribution rather than as a coding mistake.")]
+	public void ArchiveExists_ShouldThrow_WhenPackageIsNotBundled() {
+		// Arrange & Act
+		Action act = () => _sut.ArchiveExists(UnbundledPackage);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "answering 'not present' would send the caller looking for a file that was never "
+				+ "supposed to exist");
+	}
+
+	[Test]
 	[Description("IsBundled is the predicate that decides whether a package is subject to convergence, so it must answer false for anything clio does not ship — including null and blank.")]
 	[TestCase(UnbundledPackage, false)]
 	[TestCase("", false)]

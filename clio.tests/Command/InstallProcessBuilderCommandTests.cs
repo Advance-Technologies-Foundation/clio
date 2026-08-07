@@ -61,6 +61,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		// artifact is present, the instance comes back, and the package is operational afterwards. Nothing is
 		// arranged about what the environment already carries — the command never asks, it always installs.
 		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
+		// Asked through the CATALOG now, not the file system: the command no longer reaches for a path it
+		// did not compute, so the presence answer and the path come from the same place by construction.
 		// HOW the outcome is established is the verifier's business and is tested in its own fixture; this
 		// fixture only cares that the command asks the question at the right moment and obeys the answer.
 		_outcomeVerifier
@@ -76,6 +78,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_bundledPackageCatalog = Substitute.For<IBundledPackageCatalog>();
 		_bundledPackageCatalog.GetArchivePath(BundledPackages.ProcessBuilderPackageName)
 			.Returns(ExpectedPackagePath);
+		_bundledPackageCatalog.ArchiveExists(BundledPackages.ProcessBuilderPackageName).Returns(true);
 		_bundledPackageCatalog
 			.TryGetVersion(BundledPackages.ProcessBuilderPackageName, out Arg.Any<PackageVersion>(),
 				out Arg.Any<string>())
@@ -315,7 +318,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	[Description("Execute should fail with a clear message when the clio installation does not carry the bundled archive.")]
 	public void Execute_ShouldFailWithoutInstalling_WhenBundledArchiveIsMissing() {
 		// Arrange
-		_fileSystem.ExistsFile(ExpectedPackagePath).Returns(false);
+		_bundledPackageCatalog.ArchiveExists(BundledPackages.ProcessBuilderPackageName).Returns(false);
 
 		// Act
 		int result = _command.Execute(new InstallProcessBuilderOptions());
