@@ -93,10 +93,18 @@ public sealed class InstallProcessBuilderTool(
 	             UPGRADE a stale assembly that still answers will pass. Treat a successful install of a NEW
 	             version as authoritative only after the functionality you needed actually works.
 
-	             It always installs - there is no skip, and re-running is safe (it costs one configuration build
-	             on the target). Take the refusal itself as the signal to call this tool rather than comparing
-	             versions yourself: `list-packages` reports the version the environment RECORDED, which is what
-	             the gate already checks for you.
+	             It always installs, with ONE exception, and re-running is otherwise safe (it costs one
+	             configuration build on the target). Take the refusal itself as the signal to call this tool
+	             rather than comparing versions yourself: `list-packages` reports the version the environment
+	             RECORDED, which is what the gate already checks for you.
+
+	             The exception: it REFUSES when the environment already carries a NEWER version than this clio
+	             ships, because installing would roll the package back for everyone using that environment.
+	             Do not work around it and do not retry - retrying cannot succeed. Report it and say the fix
+	             is to update clio. Overriding is possible only from the command line
+	             (`clio install-process-builder -e <environment> --force`), deliberately: rolling a shared
+	             environment back is a human decision. Reinstalling the SAME version is not a downgrade and is
+	             allowed - that is the repair path when a package installed but never compiled.
 
 	             Long-running: streams notifications/progress while working. If the MCP response deadline is
 	             reached first you get an in-progress note, which is NOT a verdict - the install is still

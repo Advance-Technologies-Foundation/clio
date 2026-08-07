@@ -71,13 +71,27 @@ RECORDED, which moves when the archive is accepted whether or not anything compi
 Only the package's own code answering a request can establish that it was compiled at
 all — which is what this check asks, and the most it can ask.
 
-The command **always installs** — there is no skip. Re-running is safe; it costs one
-configuration build on the target.
+The command **always installs**, with one exception, and re-running is otherwise safe; it
+costs one configuration build on the target. The exception is a **downgrade**: when the
+environment already carries a NEWER version than this clio ships, the command refuses
+without installing, because rolling the package back affects everyone using that
+environment and nothing downstream would report it — the gate would still see a present
+package, and the version clio compares against is the recorded one the rollback has just
+rewritten. Pass `--force` when the rollback is what you want. Reinstalling the SAME
+version is not a downgrade and is always allowed.
 
 ## Options
 
     -e, --environment <ENVIRONMENT_NAME>
         Target environment name from your configuration
+
+    --force
+        Install even when the environment already carries a NEWER version of the
+        package than this clio ships. Without it such an install is REFUSED: it
+        would roll the package back for everyone using that environment, and
+        nothing downstream would report it. Reinstalling the SAME version is not
+        a downgrade and never needs this flag - that is the normal repair path
+        for a package that installed but never compiled.
 
     Environment options (can be used instead of -e):
         -u, --uri <URI>

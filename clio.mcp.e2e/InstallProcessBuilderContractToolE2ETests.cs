@@ -169,6 +169,11 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 		contract.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the contract must name the package it installs so an agent can match it against the refusal "
 				+ "text of the tool that sent it here");
+		contract.Description.Should().MatchRegex(@"(?i)REFUSES.*newer|newer.*roll(ing)? .*back",
+			because: "the one case where this tool does NOT install must be in the contract, or an agent meets "
+				+ "the refusal as a surprise and retries it forever. Retrying cannot succeed: the remedy is to "
+				+ "update clio, and the override is deliberately CLI-only because rolling a shared environment "
+				+ "back is a human decision");
 		contract.Description.Should().NotMatchRegex(@"(?i)no\s+(application\s+)?restart",
 			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
 				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");

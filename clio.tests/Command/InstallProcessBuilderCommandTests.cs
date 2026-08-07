@@ -1,12 +1,15 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
+using Clio.Project.NuGet;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using NSubstitute.ClearExtensions;
+using NSubstitute.Core;
 using NUnit.Framework;
 using IFileSystem = Clio.Common.IFileSystem;
 
@@ -20,8 +23,14 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 	private const string ClioRoot = "clio-root";
 
+	// The archive's own descriptor is what the real catalog would read; there is no archive on the
+	// substituted file system, so the catalog is substituted too and this is the version it reports.
+	private const string ShippedVersion = "1.0.0.0";
+
 	private IPackageInstaller _packageInstaller;
 	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private IBundledPackageCatalog _bundledPackageCatalog;
+	private IRequiredPackageChecker _requiredPackageChecker;
 	private IFileSystem _fileSystem;
 	private IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private IServerReadinessWaiter _serverReadinessWaiter;
@@ -61,13 +70,40 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 				return true;
 			});
 		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
+		// Both halves of the downgrade comparison are substituted so a test can state the one it is about.
+		// Default: clio ships ShippedVersion and the environment has nothing — the first-install flow, which
+		// is what every pre-existing test in this fixture assumes.
+		_bundledPackageCatalog = Substitute.For<IBundledPackageCatalog>();
+		_bundledPackageCatalog.GetArchivePath(BundledPackages.ProcessBuilderPackageName)
+			.Returns(ExpectedPackagePath);
+		_bundledPackageCatalog
+			.TryGetVersion(BundledPackages.ProcessBuilderPackageName, out Arg.Any<PackageVersion>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = PackageVersion.ParseVersion(ShippedVersion);
+				call[2] = null;
+				return true;
+			});
+		_requiredPackageChecker = Substitute.For<IRequiredPackageChecker>();
 		containerBuilder.AddSingleton(_packageInstaller);
 		containerBuilder.AddSingleton(_workingDirectoriesProvider);
+		containerBuilder.AddSingleton(_bundledPackageCatalog);
+		containerBuilder.AddSingleton(_requiredPackageChecker);
 		containerBuilder.AddSingleton(_fileSystem);
 		containerBuilder.AddSingleton(_outcomeVerifier);
 		containerBuilder.AddSingleton(_serverReadinessWaiter);
 		containerBuilder.AddSingleton(_logger);
 	}
+
+	private void ArrangeInstalledVersion(string version) =>
+		_requiredPackageChecker.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName)
+			.Returns(PackageVersion.ParseVersion(version));
+
+	private void ArrangeSuccessfulInstall() =>
+		_packageInstaller
+			.Install(ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), packageInstallOptions: null,
+				reportPath: null, createBackup: true)
+			.Returns(true);
 
 	#endregion
 
@@ -91,6 +127,9 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_outcomeVerifier.ClearReceivedCalls();
 		_serverReadinessWaiter.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		// Returns AND calls: a configured installed-version left behind would decide the downgrade verdict
+		// for whatever test runs next.
+		_requiredPackageChecker.ClearSubstitute(ClearOptions.All);
 	}
 
 	[Test]
@@ -355,6 +394,97 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 			.Count(call => call.GetMethodInfo().Name == nameof(IPackageInstallOutcomeVerifier.IsPackageOperational))
 			.Should().Be(0,
 				because: "a throwing install must not proceed to the outcome check");
+	}
+
+	[Test]
+	[Description("Refuses without installing when the environment carries a NEWER version than this clio ships, because nothing else stops a downgrade — not the installer, which never compares, and not the platform, which rewrites the recorded version whenever the descriptor timestamp merely DIFFERS.")]
+	public void Execute_ShouldRefuseWithoutInstalling_WhenItWouldDowngradeTheEnvironment() {
+		// Arrange
+		ArrangeInstalledVersion("9.9.9.9");
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1, because: "rolling the package back for everyone on that environment is not a "
+			+ "thing an install should do silently");
+		_packageInstaller.DidNotReceive().Install(
+			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>());
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("9.9.9.9") && message.Contains("--force")));
+	}
+
+	[Test]
+	[Description("--force installs anyway, because rolling a package back is legitimate for a bad release or a support repro — the refusal exists to make it deliberate, not impossible.")]
+	public void Execute_ShouldInstall_WhenDowngradeIsForced() {
+		// Arrange
+		ArrangeInstalledVersion("9.9.9.9");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions { Force = true });
+
+		// Assert
+		result.Should().Be(0, because: "the operator asked for the rollback explicitly");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+	}
+
+	[Test]
+	[Description("Reinstalling the version the environment already records must proceed: for a source-only package 'installed' and 'compiled' are different states, so this is the repair path for a package that never built.")]
+	public void Execute_ShouldInstall_WhenTheEnvironmentCarriesTheSameVersion() {
+		// Arrange
+		ArrangeInstalledVersion(ShippedVersion);
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(0,
+			because: "refusing an equal version would block the one action that fixes a package which "
+				+ "installed but never compiled");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+	}
+
+	[Test]
+	[Description("Proceeds when the environment's version cannot be read at all, because 'I could not check' must not become 'you may not proceed' — the install fails on its own terms if the environment is genuinely unreachable.")]
+	public void Execute_ShouldInstall_WhenTheInstalledVersionCannotBeRead() {
+		// Arrange
+		_requiredPackageChecker
+			.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName)
+			.Returns(_ => throw new InvalidOperationException("the environment did not answer"));
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(0,
+			because: "a failed probe is not evidence of a downgrade, and blocking on it would make an "
+				+ "unrelated transport failure look like a refusal");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+	}
+
+	[Test]
+	[Description("Proceeds when the package is absent, because there is nothing to move backwards — and this is the flow the process-designer gate's refusal sends people into.")]
+	public void Execute_ShouldInstall_WhenThePackageIsAbsentFromTheEnvironment() {
+		// Arrange
+		_requiredPackageChecker
+			.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName)
+			.Returns((PackageVersion)null);
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a first install is the command's primary purpose");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
 	}
 
 	[Test]

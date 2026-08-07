@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using Clio.Common;
 using Clio.Package;
+using Clio.Project.NuGet;
 using CommandLine;
 
 namespace Clio.Command;
@@ -27,7 +28,21 @@ namespace Clio.Command;
 /// </remarks>
 [Verb("install-process-builder", Aliases = ["update-process-builder", "installprocessbuilder"],
 	HelpText = "Install or update the bundled process-builder package in Creatio")]
-public class InstallProcessBuilderOptions : EnvironmentNameOptions { }
+public class InstallProcessBuilderOptions : EnvironmentNameOptions {
+
+	/// <summary>
+	/// Installs even when the environment already carries a NEWER version than this clio ships.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately CLI-only — it is not exposed on the MCP tool. Rolling a package back is a decision with
+	/// consequences for everyone else on that environment, and an agent working a user's business task is
+	/// not the right party to take it. The refusal names this flag so a human can.
+	/// </remarks>
+	[Option("force", Required = false,
+		HelpText = "Install even if it would downgrade the package already installed in the environment")]
+	public bool Force { get; set; }
+
+}
 
 /// <summary>
 /// Installs the bundled process-builder package into a Creatio environment, making
@@ -78,6 +93,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	private readonly IFileSystem _fileSystem;
 	private readonly IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private readonly IServerReadinessWaiter _serverReadinessWaiter;
+	private readonly IRequiredPackageChecker _requiredPackageChecker;
 	private readonly ILogger _logger;
 
 	#endregion
@@ -98,6 +114,10 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// <param name="serverReadinessWaiter">
 	/// Waiter used to let the platform's self-triggered restart finish before the service is probed.
 	/// </param>
+	/// <param name="requiredPackageChecker">
+	/// Used only to read the version the environment currently records, so an install that would move it
+	/// BACKWARDS can be refused.
+	/// </param>
 	/// <param name="logger">Logger used for command output.</param>
 	public InstallProcessBuilderCommand(
 		EnvironmentSettings environmentSettings,
@@ -106,6 +126,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		IFileSystem fileSystem,
 		IPackageInstallOutcomeVerifier outcomeVerifier,
 		IServerReadinessWaiter serverReadinessWaiter,
+		IRequiredPackageChecker requiredPackageChecker,
 		ILogger logger) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		packageInstaller.CheckArgumentNull(nameof(packageInstaller));
@@ -113,6 +134,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		fileSystem.CheckArgumentNull(nameof(fileSystem));
 		outcomeVerifier.CheckArgumentNull(nameof(outcomeVerifier));
 		serverReadinessWaiter.CheckArgumentNull(nameof(serverReadinessWaiter));
+		requiredPackageChecker.CheckArgumentNull(nameof(requiredPackageChecker));
 		logger.CheckArgumentNull(nameof(logger));
 		_environmentSettings = environmentSettings;
 		_packageInstaller = packageInstaller;
@@ -120,6 +142,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		_fileSystem = fileSystem;
 		_outcomeVerifier = outcomeVerifier;
 		_serverReadinessWaiter = serverReadinessWaiter;
+		_requiredPackageChecker = requiredPackageChecker;
 		_logger = logger;
 	}
 
@@ -196,6 +219,75 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// target, not to clio. No figure is quoted anywhere on purpose; see the remark on the readiness budget.
 	/// </para>
 	/// </remarks>
+	/// <summary>
+	/// Decides whether this install would move the environment's recorded version BACKWARDS.
+	/// </summary>
+	/// <param name="message">The refusal, naming both versions and the flag that overrides it.</param>
+	/// <returns><c>true</c> when the install must be refused.</returns>
+	/// <remarks>
+	/// Nothing else stops a downgrade. The installer does not compare versions, and neither does the
+	/// platform: Creatio rewrites <c>SysPackage.Version</c> whenever the descriptor's <c>ModifiedOnUtc</c>
+	/// DIFFERS — not when it is later — and an earlier stamp was measured moving a recorded version down.
+	/// So an older clio run against a shared environment silently rolls the package back for everyone on it.
+	/// <para>
+	/// Three cases deliberately proceed rather than refuse:
+	/// </para>
+	/// <list type="bullet">
+	/// <item><description>
+	/// The SAME version. For a source-only package "installed" and "compiled" are different states, so
+	/// reinstalling the version already recorded is the repair path for a package that never built. Refusing
+	/// it would block the one action that fixes that.
+	/// </description></item>
+	/// <item><description>
+	/// The package is absent. There is nothing to move backwards.
+	/// </description></item>
+	/// <item><description>
+	/// Either version could not be READ — a distribution that cannot describe itself, or an environment that
+	/// did not answer. Both are clio-side or transport failures, and neither is evidence of a downgrade;
+	/// blocking on them would turn "I could not check" into "you may not proceed". The install fails on its
+	/// own terms a moment later if the environment really is unreachable.
+	/// </description></item>
+	/// </list>
+	/// <para>
+	/// What this is NOT: a guarantee. It compares against the version the environment RECORDED, which is
+	/// simply whatever the last descriptor with a different timestamp said — not necessarily the highest
+	/// ever installed, and not evidence that the recorded version is the one serving.
+	/// </para>
+	/// </remarks>
+	private bool WouldDowngrade(out string message) {
+		message = null;
+		if (!_bundledPackageCatalog.TryGetVersion(
+				BundledPackages.ProcessBuilderPackageName,
+				out PackageVersion shippedVersion,
+				out string diagnosis)) {
+			_logger.WriteWarning(
+				$"{diagnosis} Installing anyway: without a version to compare, a downgrade cannot be ruled in "
+				+ "or out, and refusing would block the install over clio's own defect.");
+			return false;
+		}
+		PackageVersion installedVersion;
+		try {
+			installedVersion =
+				_requiredPackageChecker.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName);
+		} catch (Exception e) {
+			_logger.WriteWarning(
+				"Could not read the version currently installed in the environment "
+				+ $"({e.GetReadableMessageException()}). Installing anyway; if the environment is genuinely "
+				+ "unreachable the install itself will say so.");
+			return false;
+		}
+		if (installedVersion is null || installedVersion <= shippedVersion) {
+			return false;
+		}
+		message =
+			$"Refusing: the environment carries {BundledPackages.ProcessBuilderPackageName} "
+			+ $"{installedVersion}, and this clio ships {shippedVersion} — installing would roll it BACK for "
+			+ "everyone using that environment, and nothing downstream would report it: the gate would see a "
+			+ "present package and the convergence check compares the recorded version, which the rollback "
+			+ "has just rewritten. Update clio instead, or pass --force if the rollback is what you want.";
+		return true;
+	}
+
 	private bool WaitForPlatformRestart() =>
 		_serverReadinessWaiter.WaitForReady(new ServerReadinessOptions {
 			Uri = _environmentSettings.Uri,
@@ -228,7 +320,13 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 					"will not help — reinstall or update clio itself.");
 				return 1;
 			}
-			// No short-circuit: an explicitly requested install always installs. It is invoked as
+			// The ONE thing that can stop an explicitly requested install: it would move the environment
+			// backwards. Checked before anything is touched, and skipped entirely under --force.
+			if (!options.Force && WouldDowngrade(out string downgradeRefusal)) {
+				_logger.WriteError(downgradeRefusal);
+				return 1;
+			}
+			// Otherwise no short-circuit: an explicitly requested install always installs. It is invoked as
 			// remediation, the install is backed up, and the cost of a needless run is one configuration build.
 			// A version-based skip via the database is viable — the recorded version does move — and is left
 			// unbuilt deliberately, not by oversight: it is a behaviour change, recorded as an open item in

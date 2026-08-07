@@ -65,12 +65,25 @@ DESCRIPTION
     environment RECORDED, which moves when the archive is accepted whether or not
     anything compiled.
 
-    The command ALWAYS installs - there is no skip. Re-running is safe; it costs
-    one configuration build on the target.
+    The command ALWAYS installs, with one exception, and re-running is otherwise
+    safe; it costs one configuration build on the target. The exception is a
+    DOWNGRADE: when the environment already carries a newer version than this
+    clio ships, the command refuses without installing, because rolling the
+    package back affects everyone using that environment and nothing downstream
+    would report it. Pass --force when the rollback is what you want.
+    Reinstalling the SAME version is not a downgrade and is always allowed.
 
 OPTIONS
     -e, --environment <ENVIRONMENT_NAME>
         Target environment name from your configuration
+
+    --force
+        Install even when the environment already carries a NEWER version of the
+        package than this clio ships. Without it such an install is REFUSED: it
+        would roll the package back for everyone using that environment, and
+        nothing downstream would report it. Reinstalling the SAME version is not
+        a downgrade and never needs this flag - that is the normal repair path
+        for a package that installed but never compiled.
 
     Environment options (can be used instead of -e):
         -u, --uri <URI>
