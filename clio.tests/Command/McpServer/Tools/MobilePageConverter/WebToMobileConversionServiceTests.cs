@@ -18,7 +18,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions", "crt.QuickFilter"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions", "crt.QuickFilter", "crt.FileList"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
@@ -1704,6 +1704,74 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Reason.Should().Contain("rootSchemaName");
 		// No duplicate insert for the folder element.
 		guide.ElementMap.Should().NotContain(e => e.WebName == "FolderTree" && e.Operation == "insert");
+	}
+
+	[Test]
+	[Description("A same-component twin (AttachmentList→AttachmentFileList, both crt.FileList) declared name-only carries the WHOLE web node onto the template-provided mobile element by merge-by-name — recordColumnName and the rest of its parameters — WITHOUT re-declaring the component type. The reason tells the caller to paste the prebuilt mobileValues.")]
+	public void Analyze_TemplateComponentTwin_SameComponent_CarriesWholeNodeWithoutType() {
+		// Arrange — web AttachmentList (crt.FileList) inherited from the tabbed template baseline; the twin is
+		// declared name-only, so because both sides are crt.FileList the whole node is carried.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "masterRecordColumnValue": "$Id", "primaryColumnName": "AttachmentListDS_Id", "viewType": "gallery" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentsTabContainer"] = "AttachmentsContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+		// AttachmentList is inherited from the web tabbed template (it is in the baseline). Without the components
+		// map it would be pruned as chrome and its page recordColumnName lost; the same-component twin keeps it
+		// and carries its whole parameter set (crt.FileList is a mobile type -> same component on both sides).
+		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+
+		// Assert — kept as a merge-by-name twin onto the mobile AttachmentFileList element.
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		twin.Operation.Should().Be("merge", because: "the mobile template already provides AttachmentFileList — it is configured by merge-by-name, not inserted as a duplicate");
+		twin.MobileName.Should().Be("AttachmentFileList", because: "the web AttachmentList maps to the mobile AttachmentFileList element");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the object-specific link column is the whole point — it must carry onto the mobile element");
+		vals["masterRecordColumnValue"]!.GetValue<string>().Should().Be("$Id", because: "a same-component twin carries the whole node, not a whitelist");
+		vals["primaryColumnName"]!.GetValue<string>().Should().Be("AttachmentListDS_Id", because: "a same-component twin carries the whole node");
+		vals.ContainsKey("viewType").Should().BeTrue(because: "AttachmentList and AttachmentFileList are the same component (crt.FileList) — every property is carried");
+		vals.ContainsKey("type").Should().BeFalse(because: "a merge targets an element the template already owns — it must not re-declare the component type");
+		twin.Reason.Should().Contain("merge the prebuilt mobileValues", because: "a payload was produced, so the caller is told to paste it, not hand-configure");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "AttachmentList" && e.Operation == "insert", because: "the twin merges onto the template element rather than inserting a duplicate list");
+	}
+
+	[Test]
+	[Description("When the web attachments node has no recordColumnName, the same-component twin merge omits it — nothing overrides the mobile template's default RecordId link column.")]
+	public void Analyze_TemplateComponentTwin_SameComponent_OmitsAbsentRecordColumnName() {
+		// Arrange — no recordColumnName on the web node.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "AttachmentList", "type": "crt.FileList", "masterRecordColumnValue": "$Id" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentsTabContainer"] = "AttachmentsContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		twin.Operation.Should().Be("merge", because: "still a merge-by-name onto the template-provided element");
+		twin.MobileValues!.AsObject().ContainsKey("recordColumnName").Should().BeFalse(because: "an absent web recordColumnName must not override the mobile template's default RecordId");
 	}
 
 	#endregion

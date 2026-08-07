@@ -151,12 +151,16 @@ public sealed class ComponentMappingRule {
 	public string MobileType { get; init; }
 
 	/// <summary>
-	/// Optional whitelist of web-node property names carried VERBATIM onto the mapped mobile element as a
-	/// deterministic merge — e.g. <c>["sourceSchemaName", "rootSchemaName"]</c> for the folder tree, whose
-	/// app-authored folder-schema binding the mobile template does not itself supply. Without this the web
-	/// node (inherited template chrome) is pruned and the value is lost. Empty (the default) keeps the
-	/// advisory-merge behavior — e.g. <c>DataTable → List</c>, whose grid→row transform is structural, not a
-	/// property copy, and is left to the caller per <c>componentSuggestions</c>.
+	/// Optional whitelist that NARROWS which web-node properties are carried onto the mapped mobile element —
+	/// e.g. <c>["sourceSchemaName", "rootSchemaName"]</c> for the folder tree, whose app-authored binding is
+	/// the only thing the mobile template does not itself supply. Leave it EMPTY (the default) for a twin of
+	/// the SAME component on both sides (e.g. <c>AttachmentList → AttachmentFileList</c>, both
+	/// <c>crt.FileList</c>): the element is just renamed between the web and mobile templates, so its WHOLE
+	/// property set is carried automatically (no <c>type</c> is emitted — a merge targets an element the
+	/// template already owns). A twin whose web type has no mobile equivalent (a structural conversion, e.g.
+	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries nothing and stays an advisory merge, with
+	/// the grid→row how-to left to the caller per <c>componentSuggestions</c>. Without a twin the web node
+	/// (inherited template chrome) is pruned and its values are lost.
 	/// </summary>
 	[JsonPropertyName("carryProperties")]
 	public IReadOnlyList<string> CarryProperties { get; init; } = [];
