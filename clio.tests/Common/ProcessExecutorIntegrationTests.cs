@@ -60,11 +60,11 @@ public class ProcessExecutorIntegrationTests {
 		ProcessExecutor sut = new(logger);
 		string directory = Path.Combine(Path.GetTempPath(), $"clio-process-preflight-timeout-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(directory);
-		for (int index = 0; index < 40_000; index++) {
+		for (int index = 0; index < 5_000; index++) {
 			File.Create(Path.Combine(directory, $"{index:D5}.tmp")).Dispose();
 		}
 		ProcessExecutionOptions options = new(ResolveFixtureExecutable(), "--write-carriage-return-output") {
-			Timeout = TimeSpan.FromMilliseconds(100),
+			Timeout = TimeSpan.FromMilliseconds(10),
 			MonitoredDirectory = directory,
 			MaximumMonitoredDirectoryBytes = long.MaxValue
 		};
@@ -78,10 +78,12 @@ public class ProcessExecutorIntegrationTests {
 			// Assert
 			result.TimedOut.Should().BeTrue(
 				because: "the configured deadline must include the monitored-directory preflight scan");
+			result.Started.Should().BeFalse(
+				because: "the deadline must stop preflight before the fixture process can launch");
 			result.Canceled.Should().BeFalse(
 				because: "the operation deadline, not caller cancellation, stopped this execution");
-			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750),
-				because: "a large existing checkout must not postpone a one-hundred-millisecond operation deadline");
+			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(500),
+				because: "an existing checkout must not postpone a ten-millisecond operation deadline");
 		} finally {
 			Directory.Delete(directory, recursive: true);
 		}
