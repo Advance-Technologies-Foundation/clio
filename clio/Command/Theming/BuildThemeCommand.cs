@@ -578,18 +578,20 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			// Report through the redacted form only — echoing the raw advisory here would leak the very
 			// text the substitution exists to contain.
 			_logger.WriteWarning($"{ContractViolationText}: {redacted}");
-			Debug.Fail("A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
-				"unredacted onto the create-theme MCP result by contract (see CollectWarnings' doc): they must be " +
-				"static or locally computed text, and caller input may be interpolated only after a validation " +
-				"gate equivalent to FontFamilyName.Validate.");
 			warnings[i] = redacted;
 		}
-		if (violated) {
-			// Redact() is byte-identical for the static advisory (pinned by its survive-the-redactor test);
-			// routing the append through it anyway means any future dynamic content added here travels the
-			// redactor automatically instead of resting on this method's doc.
-			warnings.Add(Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(RedactionContractAdvisory));
+		if (!violated) {
+			return;
 		}
+		// The append still travels the redactor even though the static advisory is byte-identical under
+		// it (pinned by the survive-the-redactor test): future dynamic content added here would then be
+		// scrubbed automatically instead of resting on this method's doc. The debug fail-fast comes last,
+		// after the containment is complete — the runtime treats a failing assert as non-returning.
+		warnings.Add(Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(RedactionContractAdvisory));
+		Debug.Fail("A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
+			"unredacted onto the create-theme MCP result by contract (see CollectWarnings' doc): they must be " +
+			"static or locally computed text, and caller input may be interpolated only after a validation " +
+			"gate equivalent to FontFamilyName.Validate.");
 	}
 
 	private static void AddGoogleFontsAvailabilityWarnings(
