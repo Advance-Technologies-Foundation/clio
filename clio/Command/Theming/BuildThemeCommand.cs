@@ -525,12 +525,14 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// has already rejected anything outside its letters/digits/spaces/hyphens grammar in
 	/// <see cref="ResolveFontAvailability"/> — an advisory must never interpolate input that has not passed an
 	/// equivalent gate. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
-	/// contract (including the font advisories), and the guard below runs the redactor over every advisory in
-	/// every build configuration: a violating advisory — existing or added later — fails fast in Debug/test
-	/// runs and ships only in its redacted form in Release, so a violation cannot leak raw text on the
-	/// strength of the doc alone.
+	/// contract (including the font advisories), and <see cref="EnforceAdvisoryRedactionContract"/> runs the
+	/// redactor over every advisory in every build configuration: a violating advisory — existing or added
+	/// later — fails fast in Debug/test runs, and otherwise ships only in its redacted form with the
+	/// substitution announced on the warnings channel itself (<see cref="RedactionContractAdvisory"/>, which
+	/// reaches MCP callers — the logger echo is visible only on CLI flows), so a violation can neither leak
+	/// raw text nor fire invisibly on the strength of the doc alone.
 	/// </summary>
-	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
+	private IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {
 		List<string> warnings = [];
 		if (FontWeightsWithoutFamily(options)) {
@@ -540,18 +542,54 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (string.IsNullOrEmpty(options.Accent)) {
 			AddAutoAccentWarning(options, warnings);
 		}
+		EnforceAdvisoryRedactionContract(warnings);
+		return warnings;
+	}
+
+	/// <summary>
+	/// The shared clause both substitution channels (the companion advisory and the CLI logger echo) are
+	/// composed from, so the two descriptions of the same event cannot drift apart.
+	/// </summary>
+	private const string ContractViolationText =
+		"build-theme: an advisory violated the non-redaction contract and was replaced with its redacted form";
+
+	/// <summary>
+	/// The advisory appended when a build advisory violated the non-redaction contract and was replaced with
+	/// its redacted form. Travels the warnings channel so the substitution is visible to MCP callers, where
+	/// the logger echo is suppressed. Static text by design — it must itself satisfy the contract it reports.
+	/// </summary>
+	internal const string RedactionContractAdvisory =
+		ContractViolationText + "; report this as a clio defect.";
+
+	/// <summary>
+	/// Backstop for the non-redaction contract described on <see cref="CollectWarnings"/>. Internal solely
+	/// for the contract-guard test: the branch is unreachable through the public API while every shipped
+	/// advisory is contract-compliant, and <see cref="Debug.Fail(string)"/> would fail-fast a test host that
+	/// reached it through the real flow.
+	/// </summary>
+	internal void EnforceAdvisoryRedactionContract(List<string> warnings) {
+		bool violated = false;
 		for (int i = 0; i < warnings.Count; i++) {
 			string redacted = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(warnings[i]);
 			if (string.Equals(redacted, warnings[i], StringComparison.Ordinal)) {
 				continue;
 			}
+			violated = true;
+			// Report through the redacted form only — echoing the raw advisory here would leak the very
+			// text the substitution exists to contain.
+			_logger.WriteWarning($"{ContractViolationText}: {redacted}");
 			Debug.Fail("A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
-				"unredacted onto the create-theme MCP result by contract (see this method's doc): they must be " +
+				"unredacted onto the create-theme MCP result by contract (see CollectWarnings' doc): they must be " +
 				"static or locally computed text, and caller input may be interpolated only after a validation " +
 				"gate equivalent to FontFamilyName.Validate.");
 			warnings[i] = redacted;
 		}
-		return warnings;
+		if (violated) {
+			// Redact() is byte-identical for the static advisory (pinned by its survive-the-redactor test);
+			// routing the append through it anyway means any future dynamic content added here travels the
+			// redactor automatically instead of resting on this method's doc.
+			warnings.Add(Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(RedactionContractAdvisory));
+		}
 	}
 
 	private static void AddGoogleFontsAvailabilityWarnings(

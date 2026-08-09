@@ -168,6 +168,9 @@ public class CreateThemeTool(
 				options.CssContent = css;
 				return CreateOnEnvironment(resolvedCommand, options, buildWarnings);
 			},
+			// error arrives pre-redacted: ExecuteResolved's catch runs every escaping exception message
+			// through SensitiveErrorTextRedactor before invoking this callback, so prefixing is all that
+			// remains here. Pinned by CreateTheme_ShouldRedactFaultText_WhenBuildPhaseExceptionCarriesSensitiveContent.
 			error => CreateThemeResult.Failure(
 				buildPhase ? $"{ErrorCodes.BuildFailed}: {error}" : error, buildWarnings));
 	}

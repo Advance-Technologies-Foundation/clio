@@ -1228,6 +1228,51 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Pins the pre-redaction guarantee for faults escaping the build phase: ExecuteResolved redacts every exception message before the error continuation prefixes it, so sensitive fragments in a mid-build fault can never reach the MCP caller — with the documented theme-build-failed code still applied.")]
+	public void CreateTheme_ShouldRedactFaultText_WhenBuildPhaseExceptionCarriesSensitiveContent() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException(
+				"environment probe failed for https://tenant.example/api?password=hunter2 at C:\\secrets\\env.json"));
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "ghost", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a fault escaping the build phase must fail the call rather than create a theme");
+		result.Error.Should().StartWith(CreateThemeTool.ErrorCodes.BuildFailed,
+			because: "the error continuation must still apply the documented theme-build-failed code to a pre-redacted message");
+		result.Error.Should().NotContain("hunter2",
+			because: "ExecuteResolved redacts the exception message before the continuation sees it, so a credential fragment must never reach the MCP caller");
+		result.Error.Should().NotContain("tenant.example",
+			because: "host fragments in a build-phase fault travel the same redacted channel as every other failure");
+		result.Error.Should().NotContain("env.json",
+			because: "filesystem paths ride the redactor's separate Windows-path pattern, so the path channel needs its own pin — a URI-only regression must not slip past this test");
+		result.Error.Should().Contain("environment probe failed",
+			because: "redaction is surgical, not wholesale — the human-readable reason must survive so the agent can self-correct, proving the message traveled the redactor rather than being dropped");
+		result.Error.Should().Contain("[redacted-uri]",
+			because: "the stable placeholder proves redaction, not truncation, removed the URI fragment");
+		result.Error.Should().Contain("[redacted-path]",
+			because: "the stable placeholder proves redaction, not truncation, removed the path fragment");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "nothing may be created when the build phase faulted");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A fault the build engine does not catch (here an unreadable bundled template surfacing as IOException from the command resolve) still reaches the caller inside the theme-build-failed taxonomy: TryBuildTheme's false-return channel is not the only way the build phase can fail, and a code-less generic message would fall outside the documented contract agents branch on. Version-gate and create-phase failures must stay unprefixed — see the sibling tests.")]
 	public void CreateTheme_ShouldPrefixBuildFailedCode_WhenTheBuildPhaseThrowsUnexpectedly() {
 		// Arrange

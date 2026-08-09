@@ -720,7 +720,10 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   `warnings` on both the success and the failure paths. `error` is redacted before it leaves the tool;
   `warnings` are deliberately not redacted — every advisory is static or locally computed text by contract
   (a font advisory carries only a family name the build has already validated against the font-family
-  grammar), pinned by the `CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite` tests.
+  grammar), pinned by the `CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite` tests. Should an
+  advisory ever violate that contract, it ships in its redacted form together with a static companion
+  advisory announcing the substitution ("report this as a clio defect"), so the containment is visible to
+  the caller rather than silent.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`
