@@ -176,6 +176,14 @@ public sealed class TextUtilitiesTests
 	[TestCase("3.2.1.0-  @@@  ", TestName = "SanitizeVersionForDisplay drops an all-forbidden suffix")]
 	[TestCase("3.2.1.0-rc 1", TestName = "SanitizeVersionForDisplay drops a suffix containing a space")]
 	[TestCase("3.2.1.0-rc/../etc", TestName = "SanitizeVersionForDisplay drops a suffix containing a slash")]
+	// Separator edge cases. These belong to the hand-written scan that replaced the original regex, and they
+	// are its whole risk surface: an anchored pattern got them for free, a loop has to be told.
+	[TestCase("3.2.1.0-rc..1", TestName = "SanitizeVersionForDisplay drops a doubled dot")]
+	[TestCase("3.2.1.0-rc--1", TestName = "SanitizeVersionForDisplay drops a doubled hyphen")]
+	[TestCase("3.2.1.0-rc.-1", TestName = "SanitizeVersionForDisplay drops two different separators in a row")]
+	[TestCase("3.2.1.0-rc.", TestName = "SanitizeVersionForDisplay drops a trailing separator")]
+	[TestCase("3.2.1.0-.rc", TestName = "SanitizeVersionForDisplay drops a leading separator")]
+	[TestCase("3.2.1.0-.", TestName = "SanitizeVersionForDisplay drops a lone separator")]
 	public void SanitizeVersionForDisplay_ShouldDropTheWholeSuffix_WhenAnyCharacterIsForbidden(string input) {
 		// Arrange
 		PackageVersion version = PackageVersion.ParseVersion(input);
