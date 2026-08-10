@@ -88,16 +88,16 @@ public class BundledPackageConvergence : IBundledPackageConvergence {
 		}
 		if (!string.IsNullOrWhiteSpace(bundledVersion.Suffix)) {
 			// CANNOT DECIDE, so warn and allow — the same answer as an unreadable version above, for the same
-			// reason: clio's own artifact is malformed and blocking would turn its defect into the user's.
-			// Refusing here instead is a TRAP, and this was measured rather than reasoned about. The comparison
+			// reason: clio's own artifact is malformed, and blocking would turn its defect into the user's.
+			// Refusing here instead is a TRAP, and that was measured rather than reasoned about. The comparison
 			// below uses PackageVersion's operator, whose CompareSuffix ranks an empty suffix BELOW a non-empty
-			// one — so with a bundled 1.0.1.0-rc, an environment recording the GA 1.0.1.0 reads as BEHIND, and
-			// so does every lower version. Convergence would refuse every gated call and name
-			// install-process-builder as the remedy; that command refuses the same distribution as malformed;
-			// and --force is deliberately absent over MCP. Every gated tool dead, no in-band way out, over a
-			// defect in clio rather than anything about the environment.
-			// The install command is where the rule is enforced, and it can afford to refuse because refusing
-			// there costs one command rather than the whole surface, and its message names the real problem.
+			// one, so a bundled 1.0.1.0-rc makes an environment recording the GA 1.0.1.0 read as BEHIND — and so
+			// does every lower version. Convergence would then refuse every gated call and point at the
+			// installer as the remedy, while the installer refuses that very same distribution as malformed, and
+			// the override for it is deliberately unavailable over MCP. Every gated tool dead, with no in-band
+			// way out, over a defect in clio rather than anything about the environment.
+			// Enforcement therefore lives in the install command, which can afford to refuse: refusing there
+			// costs one command rather than the whole surface, and its message names the real problem.
 			_logger.WriteWarning(
 				$"This clio's bundled {packageName} declares version "
 				+ $"{TextUtilities.SanitizeVersionForDisplay(bundledVersion)}, which carries a pre-release "
