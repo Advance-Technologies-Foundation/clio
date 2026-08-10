@@ -166,9 +166,31 @@ public class CreatioPkgTests
 	[OneTimeTearDown]
 	public void TeardownOneTime()
 	{
-		if (System.IO.Directory.Exists(ResultDir))
+		// Cleanup is best-effort: an external process holding a handle inside ResultDir (an orphan
+		// dotnet/testhost on a shared CI agent) must not fail an otherwise green suite. Retry the
+		// delete briefly, then warn and move on instead of throwing.
+		if (!System.IO.Directory.Exists(ResultDir))
 		{
-			System.IO.Directory.Delete(ResultDir, true);
+			return;
+		}
+		const int maxAttempts = 3;
+		for (int attempt = 1; attempt <= maxAttempts; attempt++)
+		{
+			try
+			{
+				System.IO.Directory.Delete(ResultDir, true);
+				return;
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+			{
+				if (attempt == maxAttempts)
+				{
+					TestContext.Out.WriteLine(
+						$"CreatioPkgTests cleanup left '{ResultDir}' behind after {maxAttempts} attempts: {exception.Message}");
+					return;
+				}
+				System.Threading.Thread.Sleep(500 * attempt);
+			}
 		}
 	}
 
