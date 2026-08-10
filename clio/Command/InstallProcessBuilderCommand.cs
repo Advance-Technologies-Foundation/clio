@@ -234,7 +234,9 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// version BACKWARDS, or because this distribution is stamped so that such a move could not be detected.
 	/// </summary>
 	/// <param name="message">
-	/// The refusal, always naming <c>--force</c>. The downgrade case names both versions; the malformed-
+	/// The refusal. Both cases append <see cref="OverrideHint"/>, which says an override exists and where to
+	/// read about it WITHOUT naming the flag — read that remark before changing this text, because the omission
+	/// is deliberate and two tests assert it. The downgrade case names both versions; the malformed-
 	/// distribution case names only the shipped one, because the environment's version is not what is wrong.
 	/// </param>
 	/// <returns><c>true</c> when the install must be refused.</returns>
@@ -329,8 +331,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			// would otherwise block here forever, with nothing attempted and nothing printed. On the MCP path
 			// that is worse than a slow command: the tool holds the per-tenant configuration-build
 			// reservation across this call, and a hang never reaches the finally that releases it, so every
-			// later install-process-builder AND compile-creatio on that tenant is refused for the life of the
-			// server process. A read allowed to fail must not be allowed to hang.
+			// later install-process-builder AND compile-creatio on that tenant is refused until the
+			// reservation ceiling reclaims it (McpToolExecutionLock.TryReserveConfigurationBuild — it used to
+			// be for the life of the server process, which is what that ceiling was added for). Bounding it
+			// here is still right regardless: a read allowed to FAIL must not be allowed to hang, and a
+			// backstop measured in tens of minutes is no substitute for not wedging in the first place.
 			Task<PackageVersion> read = Task.Run(() =>
 				_requiredPackageChecker.GetInstalledVersion(BundledPackages.ProcessBuilderPackageName));
 			if (!read.Wait(InstalledVersionProbeTimeoutMs)) {

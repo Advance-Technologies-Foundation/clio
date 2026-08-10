@@ -187,7 +187,9 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// <para>
 	/// What is NOT delegated is the empty case. The helper returns empty input unchanged, which would render as
 	/// nothing at all in the middle of a sentence; <c>(empty)</c> says that the responder answered and said
-	/// nothing, which is a different fact from a short answer and the one a reader needs here.
+	/// nothing, which is a different fact from a short answer. Note it is not reachable today: both call sites
+	/// sit after a successful <c>JsonDocument.Parse</c>, which rejects null, empty and whitespace-only input
+	/// into the catch-all above. Kept as defence for a future caller that quotes a body before parsing it.
 	/// </para>
 	/// </remarks>
 	private static string Truncate(string response, int max) =>

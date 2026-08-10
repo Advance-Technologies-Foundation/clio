@@ -135,9 +135,12 @@ What it does beyond running the steps below:
 
 - computes the pins **from the archive it just produced**, so "the pins are stale" stops being a
   reachable state;
-- reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the
-  compile marker present, the package's own assembly absent. No pin covers this, and its absence is how
-  a rebundle without `Files/Libs` would pass every test and then fail the target's configuration build;
+- reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
+  marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
+  particular no `SqlScripts/` or `Data/`, which the target EXECUTES at install time). The guard fixture now
+  pins all of that too, so a bad rebundle fails CI as well; the value of having it here is that the script
+  stops you BEFORE the archive and its pins are committed, and before step 6 rewrites the SHA pin from the
+  very archive that is wrong;
 - verifies `ModifiedOnUtc` actually MOVED, rather than merely being present;
 - rebuilds clio, and reports every other build output that now holds a different archive or none.
 
@@ -229,8 +232,12 @@ dotnet <clio>/clio/bin/Debug/net8.0/clio.dll extract-pkg-zip `
 
 Step 5 must show: exactly **2** `.dll` files, both under `Files/Libs` (`ErrorOr`, `ATF.Repository` — real
 dependencies absent from the platform core; never exclude them by file name, that halves the archive and
-ships source that cannot compile), **no** `CrtProcessBuilder.dll` anywhere, and the
-`Schemas/CrtProcessBuilderCompileMarker` folder present.
+ships source that cannot compile), **no** `CrtProcessBuilder.dll` anywhere, the
+`Schemas/CrtProcessBuilderCompileMarker` folder present **and no other schema folder**, and **nothing outside
+`descriptor.json` / `Files` / `Schemas` / `Resources`** — in particular no `SqlScripts/` and no `Data/`, which
+the target EXECUTES at install time (this install passes no `PackageInstallOptions`, so the platform's own
+defaults apply). The clio-side guard fixture pins all of that as well, so a bad archive fails CI whichever
+path produced it; checking here is what stops you before the archive and its pins are committed.
 
 That marker schema is load-bearing and fails silently: it is the only thing that puts the package into the
 target's configuration build. Lose it and the package installs, the gate reports it present, and every

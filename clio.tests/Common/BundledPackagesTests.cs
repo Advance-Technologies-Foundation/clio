@@ -20,7 +20,9 @@ namespace Clio.Tests.Common;
 /// Reintroducing it would break nothing that any test observes. It would compile, every existing test would
 /// pass, and the damage would appear later as an environment told it is behind a version clio does not ship.
 /// The requirements document still described the deleted design for a while after it was deleted, which is
-/// how a reader would come to add it back in good faith. Prose cannot stop that; this can.
+/// how a reader would come to add it back in good faith. Prose cannot stop that; this can — within its reach,
+/// which is this TYPE. A version parked on another type, or under a name without "Version" in it, would still
+/// pass; the guard is aimed at the specific regression the ADR forbids, not at every conceivable spelling.
 /// </para>
 /// </remarks>
 [TestFixture]

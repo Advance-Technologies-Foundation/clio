@@ -743,6 +743,19 @@ public class BundledProcessBuilderPackageTests {
 			.ToList();
 
 		// Assert
+		// Every allowlisted name must actually BE in the archive, for the same reason the ungated-operation
+		// allowlist is presence-checked: a name left behind after the thing it named stopped shipping silently
+		// widens what this test tolerates, and nothing else would notice.
+		List<string> presentTopLevel = entries
+			.Select(entry => entry.Split('/')[0])
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		foreach (string allowed in AllowedTopLevelEntries) {
+			presentTopLevel.Should().Contain(
+				present => string.Equals(present, allowed, StringComparison.OrdinalIgnoreCase),
+				because: $"'{allowed}' is on the allowlist, so it must still be something the archive ships — an "
+					+ "entry left on the list after it stopped shipping widens the check below without saying so");
+		}
 		// An ALLOWLIST, not a ban on the two folder names that motivated it. A denylist would have to be
 		// extended for every install-time mechanism Creatio grows, and would be silently wrong until someone
 		// noticed the new one — which is the same shape of failure this whole fixture exists to prevent.
