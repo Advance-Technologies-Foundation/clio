@@ -194,6 +194,22 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 		contract.Description.Should().NotMatchRegex(@"(?i)no\s+(application\s+)?restart",
 			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
 				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");
+		// Duration ban, mirrored from ToolContractGetToolTests. The patterns are restated rather than shared
+		// because this is a separate assembly; keep the two in step. They deliberately also catch the short
+		// spellings ("~30 s", "45 sec", "2 min") — the earlier form only looked for the full words, and the
+		// abbreviations are exactly what a rewrite reaches for once the words are banned.
+		foreach (string durationPattern in new[] {
+			@"(?i)\d+\s*(-|–|to)\s*\d+\s*(s|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours)\b",
+			@"(?i)\d+\s*(s|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours)\b"
+		}) {
+			normalizedDescription.Should().NotMatchRegex(durationPattern,
+				because: "elapsed time is a property of the TARGET — configuration size, host, load — not of "
+					+ "clio, and this contract is the ONLY description a non-resident tool's caller receives. An "
+					+ "agent read '~15-75 s' out of a description once and repeated it to a user as a promise");
+			contract.PreferredFlow.Notes.Should().NotMatchRegex(durationPattern,
+				because: "the notes are read alongside the description, so a figure banned from one must not be "
+					+ "reachable through the other");
+		}
 		contract.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the tool needs package-install permission plus SysPackage read access on a registered "
 				+ "environment, and an agent that reads the contract before calling should learn that from it. "

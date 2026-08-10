@@ -179,7 +179,11 @@ $beforeStamp   = Get-DescriptorField $descriptor 'ModifiedOnUtc'
 [version] $parsedNew = $null
 [version] $parsedOld = $null
 if (-not [version]::TryParse($Version, [ref] $parsedNew)) {
-    Die "-Version '$Version' is not a version. Use four parts, e.g. 1.0.1.0."
+    # A pre-release suffix lands here, and it is worth naming rather than leaving as "not a version": it is
+    # the most plausible thing someone tries, and it is forbidden for a REASON, not just unsupported.
+    # IBundledPackageCatalog.TryGetVersion refuses a suffixed bundled version as well - a second,
+    # unbypassable line, because these manual-looking steps can also be run by hand without this script.
+    Die "-Version '$Version' is not a version. Use four plain numbers, e.g. 1.0.1.0 - no pre-release suffix ('-rc', '-dev'): clio compares bundled versions numerically and refuses an archive whose version carries one."
 }
 if ($parsedNew.Revision -lt 0) {
     Die "-Version '$Version' must carry all four parts: a three-part version yields Revision = -1 and sorts BELOW any four-part version an environment recorded."
@@ -324,8 +328,24 @@ $entries = & {
         $i += $contentLen
         [pscustomobject]@{ Name = $name; Size = $contentLen }
     }
+    # Published for the completeness check below. The container has no terminator, so a well-formed walk
+    # lands EXACTLY on the end of the buffer; anything else means a length prefix sent the walk somewhere
+    # it should not be.
+    $script:archiveWalkEnd = $i
+    $script:archiveWalkLength = $b.Length
 }
 if (-not $entries) { Die 'Could not read the archive container - the format may have changed.' }
+if ($script:archiveWalkEnd -ne $script:archiveWalkLength) {
+    # Every `break` above leaves the walk short, and so does a trailing partial length prefix. Without this
+    # check the inventory below would be verified only over the entries read BEFORE the corruption and
+    # report success — the archive's own reader in clio does not accept that: CompressionUtilities throws
+    # InvalidDataException on exactly this input, via the leftover-bytes discriminator. A verifier that is
+    # more tolerant than the consumer it verifies for is not a verifier.
+    Die ("The archive container does not parse to its end: the walk stopped at byte $($script:archiveWalkEnd) " +
+         "of $($script:archiveWalkLength) after reading $($entries.Count) entries. clio's own reader throws " +
+         'InvalidDataException on this, so the inventory below would be checked over a fragment. Re-run the ' +
+         'compress step; if it recurs, the container format changed and this script needs updating.')
+}
 
 $dlls = $entries | Where-Object { $_.Name -like '*.dll' }
 $ownAssembly = $dlls | Where-Object { $_.Name -match '(?i)(^|[\\/])CrtProcessBuilder\.dll$' }
@@ -334,8 +354,13 @@ if ($ownAssembly) {
 }
 $expectedLibs = @('ErrorOr.dll', 'ATF.Repository.dll')
 foreach ($lib in $expectedLibs) {
-    if (-not ($dlls | Where-Object { $_.Name -like "*$lib" })) {
-        Die "Files/Libs/$lib is missing from the archive. It is a compile reference, so the target's configuration build would fail and the install would report 'the environment did not compile the package'."
+    # Anchored on the DIRECTORY too, matching the style used for the own-assembly check above. An
+    # unanchored "*$lib" accepts the file at any path inside the archive, while the contract this step
+    # verifies is specifically "both under Files/Libs" - the location is what makes them compile
+    # references for the target's build rather than incidental payload.
+    $libPattern = '(?i)(^|[\\/])Files[\\/]Libs[\\/]' + [regex]::Escape($lib) + '$'
+    if (-not ($dlls | Where-Object { $_.Name -match $libPattern })) {
+        Die "Files/Libs/$lib is missing from the archive (found: $((($dlls | ForEach-Object Name) -join ', '))). It is a compile reference, so the target's configuration build would fail and the install would report 'the environment did not compile the package'."
     }
 }
 if ($dlls.Count -ne $expectedLibs.Count) {
@@ -371,7 +396,12 @@ function Replace-InFile([string] $path, [string] $pattern, [string] $replacement
 # Anchored on the constant's NAME, not merely on "64 hex digits on their own line": the pins file already
 # carries other quoted literals, and a shape-only pattern would silently overwrite the next one added.
 Replace-InFile $pinsFile '(?s)(ExpectedArchiveSha256\s*=\s*)"[0-9A-Fa-f]{64}";' "`${1}`"$sha`";" 'ExpectedArchiveSha256'
-Replace-InFile $pinsFile 'ExpectedArchiveVersion = "[^"]*";' "ExpectedArchiveVersion = `"$Version`";" 'ExpectedArchiveVersion'
+# $parsedNew.ToString(), NOT the raw $Version. [version]::TryParse accepts ' 1.0.1.0' and '01.0.1.0', and
+# set-pkg-version writes the CANONICAL form into the descriptor - so pinning the raw argument produces a
+# green script run and a red guard test, which is the one state this script promises to make unreachable.
+# Four parts are already guaranteed at this point (step 2 dies on a three-part version), so ToString()
+# cannot shorten it.
+Replace-InFile $pinsFile 'ExpectedArchiveVersion = "[^"]*";' "ExpectedArchiveVersion = `"$($parsedNew.ToString())`";" 'ExpectedArchiveVersion'
 Replace-InFile $pinsFile 'ExpectedDescriptorModifiedOnUtc = "[^"]*";' "ExpectedDescriptorModifiedOnUtc = `"$stamp`";" 'ExpectedDescriptorModifiedOnUtc'
 # There is deliberately no version constant to update. clio reads the shipped version out of this very
 # archive (IBundledPackageCatalog), so nothing on the clio side has to be kept in step with it - which is

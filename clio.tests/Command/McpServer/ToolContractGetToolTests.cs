@@ -2066,6 +2066,25 @@ public sealed class ToolContractGetToolTests {
 		curatedDescription.Should().NotMatchRegex(@"(?i)--force",
 			because: "the contract must not hand an agent the literal bypass invocation right after telling it "
 				+ "not to work around the refusal");
+		// The no-duration guard has to live on THIS surface too, and the same reasoning as above applies with
+		// more force: the tool is non-resident, so the curated contract is the only description an agent ever
+		// receives, and a figure quoted here reaches the user as a promise about a duration that is a property
+		// of the target, not of clio. The patterns are shared with InstallProcessBuilderToolTests rather than
+		// restated, because two copies of a ban drift and the [Description] copy already proved that a claim
+		// can walk past a guard phrased slightly differently.
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationRangePattern,
+			because: "an agent once read '~15-75 s' out of a description and repeated it to a user as a "
+				+ "promise; elapsed time depends on the target's configuration size, host and load");
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationFigurePattern,
+			because: "a single figure is the same promise as a range, only harder to spot");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(
+			InstallProcessBuilderToolTests.DurationRangePattern,
+			because: "the flow notes are read alongside the description and carry the same weight, so a "
+				+ "duration banned from one must not be reachable through the other");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(
+			InstallProcessBuilderToolTests.DurationFigurePattern,
+			because: "same surface, same promise — a figure here is what an agent quotes when the description "
+				+ "declines to give one");
 		contract.Name.Should().Be(InstallProcessBuilderTool.InstallProcessBuilderToolName,
 			because: "the requested tool contract should be returned verbatim");
 		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",

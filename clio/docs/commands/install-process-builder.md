@@ -148,8 +148,17 @@ caller lacking the right finds out at its next call, from the guard's own messag
 which names the right.
 
 Consequence worth stating plainly: **exit code 1 from this command never means a
-missing permission.** It means the archive did not install, or the environment did
-not compile it — and the place to look is the configuration build log.
+missing permission.** What it does mean depends on the message, and only some of
+those point at the configuration build log:
+
+| Exit-1 message says | Where to look |
+|---|---|
+| ProcessDesignService does not answer | the environment's configuration build log — the archive installed and the build did not take |
+| the install itself failed | the same build log, plus the environment's own install output |
+| refusing, the environment carries a newer version | nowhere on the environment: update clio, or re-run with `--force` if the rollback is what you want |
+| timed out waiting for the environment to come back | the environment's availability; the install may well have succeeded |
+| the environment is not registered | your clio settings (`clio show-web-app-list`) |
+| this clio installation does not carry the bundled archive | your clio installation — reinstall or update it |
 
 ## Notes
 
@@ -181,7 +190,10 @@ not compile it — and the place to look is the configuration build log.
 
 install-gate - Install or update cliogate in Creatio
 list-packages - List packages in a Creatio environment
-restart-web-app - Restart a Creatio application
+restart-web-app - Restart a Creatio application. **Not needed after this command**
+— the restart already happened, and this command waited for the environment to come
+back before reporting. Listed only because a restart is sometimes wanted for an
+unrelated reason.
 
 ## Reporting Bugs
 

@@ -57,7 +57,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>5a752ad</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>9813205</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -70,11 +70,15 @@ public class BundledProcessBuilderPackageTests {
 	/// this constant in the SAME commit that replaces the archive, and say in the message which commit of the
 	/// producing repository the bytes came from.
 	/// <para>
-	/// Verify the reference rather than copying the previous one: this docstring named <c>e01a0ec</c> for a
-	/// while, which cannot produce these bytes (its descriptor carried <c>/Date(1786026213000)/</c> against
-	/// the shipped <c>/Date(1786075660000)/</c>), so anyone following it to reproduce the archive would have
-	/// got a different hash. The <c>ModifiedOnUtc</c> pinned below is the cheapest way to check: it must
-	/// match the descriptor at the commit named above.
+	/// Verify the reference rather than copying the previous one, and verify it in BOTH directions — this
+	/// paragraph has now been wrong each way round. It first named <c>e01a0ec</c>, whose descriptor carried
+	/// <c>/Date(1786026213000)/</c> and so cannot produce these bytes. It was then corrected to a commit whose
+	/// descriptor still said <c>/Date(1786075660000)/</c> while the archive shipped
+	/// <c>/Date(1786345127000)/</c>: that time the COMMIT was behind, because the restamp a rebundle performs
+	/// happens in the package checkout and was left uncommitted there. Both failures look identical to whoever
+	/// follows the reference — a different hash — so the check is the same: the <c>ModifiedOnUtc</c> pinned
+	/// below must match the descriptor at the commit named above. Committing that restamp on the package side
+	/// is part of every rebundle; the runbook says so.
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
@@ -153,11 +157,29 @@ public class BundledProcessBuilderPackageTests {
 	private const string AuthorizationGateMethodName = "EnsureCanManageProcessDesign";
 
 	/// <summary>
-	/// Number of handler call sites that must invoke <see cref="AuthorizationGateMethodName"/>. A FLOOR, not
-	/// an exact count: adding a handler must not fail this test, but removing a gate from an existing one
-	/// must.
+	/// EXACT number of call sites that must invoke <see cref="AuthorizationGateMethodName"/> in the shipped
+	/// sources.
 	/// </summary>
-	private const int MinimumAuthorizationGateCallSites = 3;
+	/// <remarks>
+	/// Three, NOT four, and the difference is worth writing down because it is the first thing anyone
+	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
+	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
+	/// (<see cref="UngatedOperations"/>) and the remaining four are gated at three places, because
+	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
+	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. Build and modify do not
+	/// use it (they own their own rollback and session-release error handling), so they gate in their own
+	/// handlers. Hence: 2 write handlers + 1 shared read boundary.
+	/// <para>
+	/// EXACT rather than a floor, which is a deliberate change of stance. A floor equal to the current count
+	/// already catches a dropped gate — remove one of the three and two remain — but it says nothing about
+	/// WHY the number is what it is, and a reader who assumes one-per-operation concludes the floor is set
+	/// two below the truth and that a dropped gate would pass. Exactness also catches the case a floor cannot:
+	/// a gate MOVED rather than removed, keeping the count while leaving an operation open. Adding a gated
+	/// operation must raise this in the same commit as <see cref="ExpectedOperationContractCount"/> — both are
+	/// security counts, and neither should be able to drift on its own.
+	/// </para>
+	/// </remarks>
+	private const int ExpectedAuthorizationGateCallSites = 3;
 
 	/// <summary>
 	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
@@ -384,11 +406,13 @@ public class BundledProcessBuilderPackageTests {
 				+ "required too, and that half is exactly what makes this gate stricter than CanManageSolution. "
 				+ "A rebundle that lost the connection-type check would install, pass every other pin here, and "
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
-		callSites.Should().BeGreaterThanOrEqualTo(MinimumAuthorizationGateCallSites,
+		callSites.Should().Be(ExpectedAuthorizationGateCallSites,
 			because: "the gate sits BELOW the service boundary, in the domain handlers, so it is these call "
-				+ "sites and not a per-[WebInvoke] attribute that authorize a request. An archive rebuilt "
-				+ "from a pre-gate prototype installs fine and answers the install command's own probe BETTER "
-				+ "than a gated one would, so this is the only place the property is checked");
+				+ "sites and not a per-[WebInvoke] attribute that authorize a request. Two write handlers plus "
+				+ "the one shared read boundary in ProcessDesigner.Execute cover all four gated operations — "
+				+ "see ExpectedAuthorizationGateCallSites for why that is three and not four. An archive "
+				+ "rebuilt from a pre-gate prototype installs fine and answers the install command's own probe "
+				+ "BETTER than a gated one would, so this is the only place the property is checked");
 	}
 
 	[Test]
@@ -521,10 +545,14 @@ public class BundledProcessBuilderPackageTests {
 			declared.FindAll(r => !string.IsNullOrEmpty(r.Version));
 
 		// Assert
-		// The scan has to be falsifiable before its verdict means anything. Every way it could break —
-		// wrong assembly, wrong attribute type, the inherit flag, the property-level miss above — yields an
-		// EMPTY list and a green test, which is indistinguishable from "no literals declared". Asserting the
-		// five presence-only declarations are visible is what tells the two apart.
+		// The scan has to be falsifiable before its verdict means anything. Most ways it could break — wrong
+		// assembly, wrong attribute type, the inherit flag — yield an EMPTY list and a green test, which is
+		// indistinguishable from "no literals declared", and asserting the five presence-only declarations
+		// are visible tells those two apart. It does NOT cover the property-level arm: all five declarations
+		// in the assembly are class-level today, so this count survives deleting the GetProperties() walk
+		// entirely. That arm is falsified by GetProcessBuilderRequirements_ShouldSeeAPropertyLevelDeclaration
+		// instead, on a fixture-local type, which is the only way to test it before the first real
+		// property-level literal ships — the very moment it has to already work.
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
@@ -654,6 +682,74 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
+	}
+
+	[Test]
+	[Description("The collector must see a PROPERTY-level declaration. Every CrtProcessBuilder gate in the assembly happens to be class-level today, so the requirement scan's own self-check (five declarations visible) is satisfied without the property walk ever running — deleting that walk leaves the suite green. This fixture-local type is the red test the walk did not have, and it stays meaningful after the first real property-level literal ships.")]
+	public void GetProcessBuilderRequirements_ShouldSeeAPropertyLevelDeclaration() {
+		// Arrange & Act
+		List<RequiresPackageAttribute> declared =
+			[.. GetProcessBuilderRequirements(typeof(PropertyLevelRequirementFixture))];
+
+		// Assert
+		declared.Should().HaveCount(1,
+			because: "[RequiresPackage] is declared for AttributeTargets.Property as well as Class, and the "
+				+ "runtime checker enforces both, so a scan that walks only classes reports a gate it cannot see");
+		declared[0].Version.Should().Be("9.9.9.9",
+			because: "the version literal is the whole point of collecting it — the satisfiability check "
+				+ "downstream compares it against what the archive carries");
+	}
+
+	[Test]
+	[Description("Symmetry for the class-level arm: the collector passes inherit: true, so a requirement declared on a base class must be seen through a derived type. RequiredPackageChecker resolves the requirement from the concrete options type it is handed, which is routinely a subclass.")]
+	public void GetProcessBuilderRequirements_ShouldSeeAClassLevelDeclarationThroughADerivedType() {
+		// Arrange & Act
+		List<RequiresPackageAttribute> declared =
+			[.. GetProcessBuilderRequirements(typeof(DerivedFromClassLevelRequirementFixture))];
+
+		// Assert
+		declared.Should().HaveCount(1,
+			because: "the attribute is Inherited = true and the collector asks for inherited attributes, so a "
+				+ "derived options type carries its base's gate");
+	}
+
+	[Test]
+	[Description("The collector must filter by package name. Without the filter it would fold cliogate's own declarations — which are numerous, versioned, and satisfied by a completely different archive — into a check that compares them against the CrtProcessBuilder archive, and demand of it versions it was never meant to carry.")]
+	public void GetProcessBuilderRequirements_ShouldIgnoreADeclarationForAnotherPackage() {
+		// Arrange & Act
+		List<RequiresPackageAttribute> declared =
+			[.. GetProcessBuilderRequirements(typeof(OtherPackageRequirementFixture))];
+
+		// Assert
+		declared.Should().BeEmpty(
+			because: "only requirements naming the bundled package may reach the satisfiability check; a "
+				+ "cliogate floor is satisfied by a different archive entirely");
+	}
+
+	#endregion
+
+	#region Nested types: Fixtures for the requirement collector
+
+	// Deliberately local to this fixture rather than reusing a production options type: these exist to
+	// exercise the COLLECTOR's two arms independently of which declaration form the product happens to use
+	// today, so they keep working when that changes.
+	private sealed class PropertyLevelRequirementFixture {
+
+		[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "9.9.9.9")]
+		public bool GatedOption { get; set; }
+
+	}
+
+	[RequiresPackage(BundledPackages.ProcessBuilderPackageName)]
+	private class ClassLevelRequirementFixture { }
+
+	private sealed class DerivedFromClassLevelRequirementFixture : ClassLevelRequirementFixture { }
+
+	private sealed class OtherPackageRequirementFixture {
+
+		[RequiresPackage("cliogate", "2.0.0.42")]
+		public bool GatedOption { get; set; }
+
 	}
 
 	#endregion

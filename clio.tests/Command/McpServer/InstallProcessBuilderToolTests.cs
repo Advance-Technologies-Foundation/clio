@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -27,6 +27,28 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class InstallProcessBuilderToolTests {
+
+	/// <summary>
+	/// Time units a duration claim can be spelled with, as a regex alternation.
+	/// </summary>
+	/// <remarks>
+	/// Bare <c>m</c> and <c>h</c> are deliberately absent: they collide with ordinary prose far more often
+	/// than anyone writes "2 h", and <c>min</c>/<c>hour</c> cover the real spellings. The trailing
+	/// <c>\b</c> at each use site is what keeps <c>s</c> from matching "30 schemas".
+	/// </remarks>
+	internal const string DurationUnits =
+		"s|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours";
+
+	/// <summary>
+	/// A duration RANGE, e.g. <c>15-75 s</c>.
+	/// </summary>
+	internal const string DurationRangePattern =
+		@"(?i)\d+\s*(-|–|to)\s*\d+\s*(" + DurationUnits + @")\b";
+
+	/// <summary>
+	/// A single duration figure, e.g. <c>~30 s</c>, <c>45 sec</c>, <c>2 min</c>.
+	/// </summary>
+	internal const string DurationFigurePattern = @"(?i)\d+\s*(" + DurationUnits + @")\b";
 
 	[Test]
 	[Category("Unit")]
@@ -122,13 +144,13 @@ public sealed class InstallProcessBuilderToolTests {
 			because: "the description must disclose HOW the outcome is checked, not just that it is: the tool "
 				+ "asks the package's own service whether it is serving, which is why a successful install call "
 				+ "can still fail — and naming the operation lets a caller reproduce the check by hand");
-		description.Description.Should().NotMatchRegex(@"(?i)\d+\s*(-|–|to)\s*\d+\s*(s|sec|seconds)",
+		description.Description.Should().NotMatchRegex(DurationRangePattern,
 			because: "a duration range must never appear here. It was measured on two stands and does NOT "
 				+ "generalise — elapsed time is a property of the TARGET (configuration size, host, load), not "
 				+ "of clio. And on this surface a range does not stay an estimate: an agent read '~15-75 s' out "
 				+ "of this description and repeated it to a user as a promise. Say the call is slow and that the "
 				+ "duration depends on the environment; never quote one");
-		description.Description.Should().NotMatchRegex(@"(?i)\d+\s*(seconds|minutes)",
+		description.Description.Should().NotMatchRegex(DurationFigurePattern,
 			because: "a single figure is the same promise as a range, only harder to spot");
 		description.Description.Should().Contain("liveness, not identity",
 			because: "the check's LIMIT is part of its contract: on an upgrade a stale assembly that still "

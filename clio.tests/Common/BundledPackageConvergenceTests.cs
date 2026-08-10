@@ -171,7 +171,7 @@ public class BundledPackageConvergenceTests {
 	}
 
 	[Test]
-	[Description("A pre-release suffix on the INSTALLED version sorts it above the same numeric release, so a developer's -rc build is not asked to move to the release. Documented rather than corrected: PackageVersion's ordering is repo-wide and the [RequiresPackage] gate uses it, so diverging here would make the two rules disagree about which of two versions is newer.")]
+	[Description("A pre-release suffix on the INSTALLED version does not make an environment look behind, so a developer's -rc build is not asked to move to the release of the same number. This is the only suffix-sensitive case this rule still has, because the suffix can only ever appear on the INSTALLED side: IBundledPackageCatalog.TryGetVersion refuses a suffixed bundled version outright, which is what keeps this rule and the install command's downgrade guard from having to agree on how a pre-release orders against its release.")]
 	public void TryGetConvergenceRefusal_ShouldAllow_WhenInstalledVersionCarriesAPreReleaseSuffix() {
 		// Arrange
 		ArrangeBundledVersion("1.0.0.0");
@@ -181,9 +181,9 @@ public class BundledPackageConvergenceTests {
 
 		// Assert
 		refused.Should().BeFalse(
-			because: "PackageVersion.CompareSuffix ranks an empty suffix BELOW a non-empty one, the inverse of "
-				+ "SemVer. Unreachable through the supported path - the rebundle script parses -Version through "
-				+ "System.Version, which rejects suffixes - so this pins the behaviour rather than blessing it");
+			because: "the environment is not BEHIND the archive at the same four-part number, so demanding an "
+				+ "update would send a developer to install a package they effectively already have. The "
+				+ "install command agrees on this input and permits the install, so the pair cannot deadlock");
 	}
 
 	[Test]

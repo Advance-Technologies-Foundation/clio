@@ -122,9 +122,17 @@ PREREQUISITES
       design processes" - which are different problems with different fixes, and
       only the first is this command's business. A caller lacking the right finds
       out at its next call, from the guard's own message, which names the right.
-      So an exit code of 1 from THIS command never means a missing permission:
-      it means the archive did not install, or the environment did not compile
-      it, and the place to look is the configuration build log.
+      So an exit code of 1 from THIS command never means a missing permission.
+      What it does mean depends on the message, and only some of those point at
+      the configuration build log:
+        - "ProcessDesignService does not answer" or the install failed -> the
+          environment's configuration build log.
+        - "refusing ... carries a newer version" -> nothing to look at on the
+          environment; update clio, or re-run with --force to roll it back.
+        - timed out waiting for the environment -> its availability; the install
+          may well have succeeded.
+        - environment not registered -> your clio settings.
+        - "does not carry the bundled archive" -> your clio installation.
 
 NOTES
     - The command installs the version of the package bundled with your current
@@ -152,7 +160,10 @@ NOTES
 SEE ALSO
     install-gate - Install or update cliogate in Creatio
     list-packages - List packages in a Creatio environment
-    restart-web-app - Restart a Creatio application
+    restart-web-app - Restart a Creatio application. NOT needed after this
+        command: the restart already happened, and this command waited for the
+        environment to come back before reporting. Listed only because a
+        restart is sometimes wanted for an unrelated reason.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

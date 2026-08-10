@@ -295,62 +295,31 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 
 	/// <summary>
 	/// Determines whether <paramref name="installed"/> is genuinely newer than <paramref name="shipped"/>,
-	/// with SemVer's ordering of pre-releases.
+	/// comparing the four-part numbers and nothing else.
 	/// </summary>
 	/// <remarks>
-	/// NOT <c>PackageVersion</c>'s own comparison, and the difference decides this guard both ways.
-	/// <c>CompareSuffix</c> ranks an EMPTY suffix BELOW a non-empty one, so it holds
-	/// <c>1.1.0.0 &lt; 1.1.0.0-rc</c> — the inverse of SemVer. Using it here would:
-	/// <list type="bullet">
-	/// <item><description>
-	/// REFUSE installing the GA <c>1.1.0.0</c> onto an environment recording <c>1.1.0.0-rc</c>, which is an
-	/// upgrade, not a rollback — and strand the caller, because the refusal's advice ("update clio") cannot
-	/// help when clio already ships the release, and <c>--force</c> is unavailable over MCP; and
-	/// </description></item>
-	/// <item><description>
-	/// ALLOW installing a pre-release over the GA of the same version — the silent rollback this guard
-	/// exists to stop.
-	/// </description></item>
-	/// </list>
-	/// Reachable through the supported path: <c>clio set-pkg-version</c> accepts and writes the
-	/// <c>X.Y.Z.W-suffix</c> form deliberately, and whatever lands in <c>SysPackage.Version</c> is parsed
-	/// straight back through <c>PackageVersion</c>.
+	/// NOT <c>PackageVersion</c>'s own comparison, and deliberately narrower than it. <c>CompareSuffix</c>
+	/// ranks an EMPTY suffix BELOW a non-empty one, so it holds <c>1.1.0.0 &lt; 1.1.0.0-rc</c> — the inverse
+	/// of SemVer. This guard needs no answer to that question at all, because
+	/// <see cref="IBundledPackageCatalog.TryGetVersion"/> refuses a suffixed SHIPPED version outright: with
+	/// one side guaranteed suffix-free, "is the environment ahead of what we carry" is settled by the numbers.
 	/// <para>
-	/// Fixed locally rather than in <c>PackageVersion</c>: that operator is repo-wide and backs the
-	/// <c>[RequiresPackage]</c> gate for cliogate, where the same change would alter which environments are
-	/// refused. Correcting it there is its own decision with its own blast radius.
+	/// A suffix on the INSTALLED side is therefore ignored rather than ordered, and the effect is the one we
+	/// want: installing <c>1.1.0.0</c> over an environment recording <c>1.1.0.0-rc</c> is permitted, because
+	/// the release supersedes its own pre-release. This case is reachable through the supported path —
+	/// <c>clio set-pkg-version</c> accepts and writes the <c>X.Y.Z.W-suffix</c> form deliberately, and
+	/// whatever lands in <c>SysPackage.Version</c> is parsed straight back through <c>PackageVersion</c>.
+	/// </para>
+	/// <para>
+	/// So <c>PackageVersion</c>'s operator is left alone rather than corrected: it is repo-wide and backs the
+	/// <c>[RequiresPackage]</c> gate for cliogate and NuGet version selection, where the same change would
+	/// alter which environments are refused and which packages are chosen. Correcting it there is its own
+	/// decision with its own blast radius, and nothing here needs it.
 	/// </para>
 	/// </remarks>
-	private static bool IsStrictlyNewer(PackageVersion installed, PackageVersion shipped) {
-		int numeric = installed.Version.CompareTo(shipped.Version);
-		if (numeric != 0) {
-			return numeric > 0;
-		}
-		bool installedIsPreRelease = !string.IsNullOrWhiteSpace(installed.Suffix);
-		bool shippedIsPreRelease = !string.IsNullOrWhiteSpace(shipped.Suffix);
-		if (installedIsPreRelease != shippedIsPreRelease) {
-			// A pre-release precedes its own release, so the environment is newer only when it is the one
-			// holding the RELEASE and we would be shipping the pre-release over it.
-			return shippedIsPreRelease;
-		}
-		return string.CompareOrdinal(installed.Suffix ?? string.Empty, shipped.Suffix ?? string.Empty) > 0;
-	}
+	private static bool IsStrictlyNewer(PackageVersion installed, PackageVersion shipped) =>
+		installed.Version.CompareTo(shipped.Version) > 0;
 
-	/// <summary>
-	/// Renders a version read from the ENVIRONMENT in a form that is safe to put in front of a reader.
-	/// </summary>
-	/// <remarks>
-	/// <see cref="PackageVersion"/> splits on the first <c>-</c>: the left side must parse as
-	/// <see cref="Version"/> and is therefore numeric, but the SUFFIX is free text that
-	/// <c>ToString</c> re-emits verbatim, newlines included. This value comes from the target's
-	/// <c>SysPackage.Version</c> column, and the message carrying it reaches an MCP agent's context — so a
-	/// hostile or compromised instance could otherwise plant instructions there. Rendering the numeric
-	/// version plus a clamped, restricted suffix keeps the information a reader needs and drops the rest.
-	/// <para>
-	/// The SHIPPED version is not passed through this: it comes from clio's own archive, and anyone able to
-	/// choose its text already controls what the command installs.
-	/// </para>
-	/// </remarks>
 	/// <summary>
 	/// Clamps text that came from the environment or the transport before it is quoted back.
 	/// </summary>
@@ -369,6 +338,22 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			: collapsed[..QuotedTextLimit] + "…";
 	}
 
+	/// <summary>
+	/// Renders a version read from the ENVIRONMENT in a form that is safe to put in front of a reader.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="PackageVersion"/> splits on the first <c>-</c>: the left side must parse as
+	/// <see cref="Version"/> and is therefore numeric, but the SUFFIX is free text that
+	/// <c>ToString</c> re-emits verbatim, newlines included. This value comes from the target's
+	/// <c>SysPackage.Version</c> column, and the message carrying it reaches an MCP agent's context — so a
+	/// hostile or compromised instance could otherwise plant instructions there. Rendering the numeric
+	/// version plus a clamped, restricted suffix keeps the information a reader needs and drops the rest.
+	/// <para>
+	/// The SHIPPED version is not passed through this: it comes from clio's own archive, it is refused
+	/// outright if it carries a suffix (see <see cref="IBundledPackageCatalog.TryGetVersion"/>), and anyone
+	/// able to choose its text already controls what the command installs.
+	/// </para>
+	/// </remarks>
 	private static string Sanitize(PackageVersion version) {
 		if (string.IsNullOrWhiteSpace(version.Suffix)) {
 			return version.Version.ToString();

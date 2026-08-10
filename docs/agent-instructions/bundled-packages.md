@@ -150,6 +150,17 @@ The script requires `pwsh`. The steps below are what it runs, and they are the f
 PowerShell — the same arrangement `AGENTS.md` uses for `cliogate`'s `build.ps1`. Read them anyway: they
 carry the REASONS, and a script that fails is only useful to someone who knows what each step protects.
 
+> **`X.Y.Z.W` means four plain numbers — no `-rc`, no `-dev`, no suffix of any kind.** The script cannot
+> emit one (`[version]::TryParse` rejects it); by hand you can, which is why the rule is enforced a second
+> time where it cannot be walked around: `IBundledPackageCatalog.TryGetVersion` REFUSES a suffixed bundled
+> version, so an archive carrying one silently stops taking part in the convergence check instead of being
+> compared. The reason it is forbidden rather than ordered: `PackageVersion` ranks an empty suffix BELOW a
+> non-empty one (GA < rc) while the install command's downgrade guard compares the numbers only, and a
+> suffixed *shipped* version is the single input on which those two rules would trap a caller — convergence
+> refusing every gated call and naming the install as the remedy, the install refusing that same version as
+> a rollback, and `--force` unavailable over MCP. A suffix on the version an ENVIRONMENT records is fine and
+> is simply ignored.
+
 ### In the `ProcessBuilder` repository
 
 ```powershell
@@ -178,6 +189,16 @@ dotnet <clio>/clio/bin/Debug/net8.0/clio.dll set-pkg-version ./packages/CrtProce
 #     PackageDescriptor.ClearMilliseconds dropped DateTime.Kind and ToUniversalTime then treated the
 #     value as local. The producing bug is fixed, so a schema saved by a current clio is correct - but a
 #     descriptor written before the fix keeps its wrong value, since nothing re-stamps it.
+
+# 2c. COMMIT the restamped descriptor.json in THIS repository, in the same change as the rebundle. Not
+#     housekeeping: the clio-side SHA-256 pin names a commit of this repo as where the archive can be
+#     reproduced from, and step 2 rewrote descriptor.json in your checkout. Leave it uncommitted and the
+#     named commit still carries the OLD stamp - so anyone following the reference rebuilds a different
+#     archive, gets a different hash, and the guard test fails on a branch nobody touched. This has already
+#     happened once: the archive shipped /Date(1786345127000)/ while the referenced commit said
+#     /Date(1786075660000)/, and it was found in review rather than by any check.
+git -C <ProcessBuilder> add packages/CrtProcessBuilder/descriptor.json
+git -C <ProcessBuilder> commit -m "<ticket> rebundle to X.Y.Z.W"
 
 # 3. Delete the build output. clioignore does NOT filter Files/Bin (path patterns were tried and do not
 #    match), so without this the archive stops being source-only and ships a host-specific assembly -

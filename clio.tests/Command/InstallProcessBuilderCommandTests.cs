@@ -485,7 +485,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("A pre-release recorded in the environment is NOT newer than the release this clio ships, so installing the GA over an -rc proceeds. PackageVersion's own comparison says the opposite — it ranks an empty suffix BELOW a non-empty one — and using it would strand the caller: 'update clio' cannot help when clio already ships the release, and --force is unavailable over MCP.")]
+	[Description("A pre-release suffix recorded in the ENVIRONMENT does not block the install of the same numeric version, so a GA goes over an -rc. The guard compares the four-part numbers only, which it can do because a suffixed SHIPPED version is refused at the catalog; PackageVersion's own comparison would answer the opposite here — it ranks an empty suffix BELOW a non-empty one — and would strand the caller, since 'update clio' cannot help when clio already ships the release and --force is unavailable over MCP.")]
 	public void Execute_ShouldInstall_WhenTheEnvironmentCarriesAPreReleaseOfTheShippedVersion() {
 		// Arrange
 		ArrangeInstalledVersion($"{ShippedVersion}-rc");
@@ -496,17 +496,18 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(0,
-			because: "SemVer orders a pre-release below its own release, so the GA is an upgrade over the rc");
+			because: "the numbers are equal, so the environment is not ahead, and the release supersedes its "
+				+ "own pre-release");
 		_packageInstaller.Received(1).Install(
 			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
 	}
 
 	[Test]
-	[Description("Installing a PRE-RELEASE over the release of the same version is a rollback and must be refused — the other half of the same inversion, and the one that would have let the guard's own failure mode through silently.")]
-	public void Execute_ShouldRefuse_WhenShippingAPreReleaseOverTheInstalledRelease() {
+	[Description("The mirror of the case above: a pre-release suffix on the environment's version must not SUPPRESS a real refusal either. Ignoring the suffix has to mean ignoring it in both directions — here the environment is numerically ahead, so the install would still roll it back.")]
+	public void Execute_ShouldRefuse_WhenTheEnvironmentIsAheadAndCarriesAPreReleaseSuffix() {
 		// Arrange
-		ArrangeShippedVersion($"{ShippedVersion}-rc");
-		ArrangeInstalledVersion(ShippedVersion);
+		ArrangeInstalledVersion("1.0.0.1-rc");
+		ArrangeShippedVersion("1.0.0.0");
 		ArrangeSuccessfulInstall();
 
 		// Act
@@ -514,8 +515,8 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 
 		// Assert
 		result.Should().Be(1,
-			because: "the environment holds the release and clio carries only a pre-release of it, so this "
-				+ "install would move it backwards");
+			because: "the environment records a higher four-part number, and the suffix neither adds to nor "
+				+ "subtracts from that");
 		_packageInstaller.DidNotReceive().Install(
 			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
 			Arg.Any<string>(), Arg.Any<bool>());
