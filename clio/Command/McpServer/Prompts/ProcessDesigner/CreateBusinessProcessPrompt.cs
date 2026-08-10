@@ -33,7 +33,9 @@ public static class CreateBusinessProcessPrompt {
 		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
 		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
 		 trigger), not a page save handler; add `changedColumns` to fire an `on:modified` trigger only when specific
-		 columns change, and/or a `filter` to fire only for matching records. Confirm the target package with the
+		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`
+		 element with an `email.body` HTML custom message (bodyFormat `html` only; email templates and the
+		 sender/recipients/subject are not configured by this element yet). Confirm the target package with the
 		 user before building.
 		 """;
 }

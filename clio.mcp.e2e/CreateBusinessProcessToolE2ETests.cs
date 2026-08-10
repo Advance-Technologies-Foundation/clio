@@ -516,6 +516,61 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the flag is element-level: an explicit true on a plain user task must persist too");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a sendEmail element with a custom-message HTML body, and describe-business-process reads the body back (round-trip): the element resolves to the sendEmail build type and its Body parameter carries the distinctive HTML verbatim.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a sendEmail HTML body and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildSendEmailHtmlBody_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSendEmailE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a sendEmail element with a custom-message HTML body must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package that supports the sendEmail element)");
+
+		// Readback: the distinctive HTML body proves the body round-tripped — it is stored as a ConstValue on the
+		// element's Body parameter (build) and surfaced by describe (decode), not merely that a sendEmail element exists.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement sendEmail = graph.Elements.Single(element => element.Name == "SendEmail1");
+		sendEmail.BuildType.Should().Be("sendemail",
+			because: "a Send email element round-trips to the dedicated sendEmail build token, not the generic userTask");
+		string sendEmailJson = JsonSerializer.Serialize(sendEmail);
+		sendEmailJson.Should().Contain("ClioSendEmailProbe",
+			because: "the custom-message HTML body is stored verbatim on the Body parameter and surfaced by describe");
+	}
+
+	// A sendEmail element carrying a custom-message HTML body with a distinctive probe token, so the describe read-back
+	// proves the body round-tripped (build stores it as a ConstValue on the Body parameter, describe decodes it) rather
+	// than just that a sendEmail element exists. StartEvent1 -> SendEmail1 -> EndEvent1 is a minimal valid graph.
+	private static string BuildSendEmailDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Send Email E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail",
+		      "email": { "bodyFormat": "html", "body": "<html><body><p>ClioSendEmailProbe</p></body></html>" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	// Deserializes the described graph (the Info log-message value inside the clio command envelope) into the typed
 	// DescribeProcessResult, so a test can assert element fields directly instead of substring-matching the escaped
 	// envelope.

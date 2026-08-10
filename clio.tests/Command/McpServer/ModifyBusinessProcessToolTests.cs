@@ -48,6 +48,36 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards an addElement operation that adds a sendEmail element with an HTML email body verbatim — the tool is an opaque pass-through, so the new element type and email.body ride through to the command without modification.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_SendEmail_AddElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sendEmailOps =
+			"[{\"op\":\"addElement\",\"element\":{\"name\":\"SendEmail1\",\"type\":\"sendEmail\","
+			+ "\"email\":{\"bodyFormat\":\"html\",\"body\":\"<p>Hello</p>\"}}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", sendEmailOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid sendEmail addElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(sendEmailOps,
+			because: "the sendEmail addElement operation and its email.body must pass through unchanged (opaque pass-through)");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the environment name is empty.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Fail_When_Environment_Is_Empty() {
