@@ -314,6 +314,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
+			["install-process-builder"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,

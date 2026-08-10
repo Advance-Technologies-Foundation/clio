@@ -204,7 +204,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		});
 
 		// Assert — the pre-save platform interpretation-validation gate rejects the self-referential mapping.
-		// Requires a stand whose clioprocessbuilder package includes the pre-save validation gate.
+		// Requires a stand whose CrtProcessBuilder package includes the pre-save validation gate.
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		// Primary, culture-stable: the clio-authored prefix that ONLY the gate emits (ProcessSchemaValidator) — proves
 		// the gate fired regardless of the stand's profile culture (the platform's own message below is localizable).
