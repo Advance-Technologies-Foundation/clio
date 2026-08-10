@@ -112,9 +112,9 @@ public class CreateThemeTool(
 		IReadOnlyList<string> buildWarnings = null;
 		bool faultBelongsToBuildPhase = false;
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
-			resolvedCommand => {
+			(resolvedCommand, gateResolution) => {
 				faultBelongsToBuildPhase = true;
-				if (!TryBuildBrandCss(args, out string css, out buildWarnings, out string buildError)) {
+				if (!TryBuildBrandCss(args, gateResolution, out string css, out buildWarnings, out string buildError)) {
 					return CreateThemeResult.Failure(
 						$"{ErrorCodes.BuildFailed}: {SensitiveErrorTextRedactor.Redact(buildError)}", buildWarnings);
 				}
@@ -156,10 +156,10 @@ public class CreateThemeTool(
 			|| args.FontWeights is { Length: > 0 };
 	}
 
-	private bool TryBuildBrandCss(CreateThemeArgs args, out string css,
+	private bool TryBuildBrandCss(CreateThemeArgs args, CreatioVersionResolution gateResolution, out string css,
 		out IReadOnlyList<string> warnings, out string error) {
 		EnvironmentOptions environmentOptions = new() { Environment = args.EnvironmentName };
-		string gateVersion = GateCreatioVersionResolution?.Version?.ToString();
+		string gateVersion = gateResolution?.Version?.ToString();
 		EnvironmentSettings resolvedSettings = gateVersion is null
 			? _commandResolver.Resolve<EnvironmentSettings>(environmentOptions)
 			: null;
