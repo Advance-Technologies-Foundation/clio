@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using Clio.Common;
@@ -286,32 +286,6 @@ public class BundledPackageCatalogTests {
 				+ "below every installed version and quietly declare every environment converged");
 		version.Should().BeNull(because: "no version may be invented when none could be read");
 		diagnosis.Should().NotBeNullOrWhiteSpace(because: "silence is the one unacceptable outcome here");
-	}
-
-	[Test]
-	[Description("A shipped version carrying a pre-release suffix is REFUSED, not returned. This is the invariant that lets the convergence rule and the install command's downgrade guard compare bundled versions without agreeing on how a pre-release orders against its release: PackageVersion ranks an empty suffix BELOW a non-empty one, the guard uses the numbers only, and a suffixed shipped version is the single input on which those two answers trap the caller in a refusal loop. The refusal is here rather than in the rebundle script because the script is not the only producer — the runbook keeps manual steps for a host without pwsh — and this method is what every producer's output passes through.")]
-	[TestCase("1.0.0.0-rc", TestName = "TryGetVersion_ShouldRefuse_WhenTheShippedVersionCarriesASuffix(rc)")]
-	[TestCase("1.0.0.0-dev.4", TestName = "TryGetVersion_ShouldRefuse_WhenTheShippedVersionCarriesASuffix(dev.4)")]
-	public void TryGetVersion_ShouldRefuse_WhenTheShippedVersionCarriesASuffix(string shippedVersion) {
-		// Arrange
-		ArrangeArchive(
-			Encoding.UTF8.GetBytes($"{{\"Descriptor\": {{\"PackageVersion\": \"{shippedVersion}\"}}}}"));
-
-		// Act
-		bool read = _sut.TryGetVersion(
-			BundledPackages.ProcessBuilderPackageName, out PackageVersion version, out string diagnosis);
-
-		// Assert
-		read.Should().BeFalse(
-			because: "the suffix is refused rather than ordered — ordering it is the one case where the "
-				+ "convergence rule and the downgrade guard disagree about which of two versions is newer");
-		version.Should().BeNull(
-			because: "a caller that ignores the returned false must not end up holding a version this method "
-				+ "has just declared unusable");
-		diagnosis.Should().Contain(shippedVersion,
-			because: "whoever hand-rebundled needs to see WHICH version was rejected, not just that one was");
-		diagnosis.Should().Contain("four-part",
-			because: "the diagnosis has to name the rule, otherwise the reader cannot tell what to change");
 	}
 
 	[Test]

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -170,13 +170,31 @@ public class BundledProcessBuilderPackageTests {
 	/// use it (they own their own rollback and session-release error handling), so they gate in their own
 	/// handlers. Hence: 2 write handlers + 1 shared read boundary.
 	/// <para>
-	/// EXACT rather than a floor, which is a deliberate change of stance. A floor equal to the current count
-	/// already catches a dropped gate — remove one of the three and two remain — but it says nothing about
-	/// WHY the number is what it is, and a reader who assumes one-per-operation concludes the floor is set
-	/// two below the truth and that a dropped gate would pass. Exactness also catches the case a floor cannot:
-	/// a gate MOVED rather than removed, keeping the count while leaving an operation open. Adding a gated
-	/// operation must raise this in the same commit as <see cref="ExpectedOperationContractCount"/> — both are
-	/// security counts, and neither should be able to drift on its own.
+	/// EXACT rather than a floor, but do NOT read more into that than it gives. A floor equal to the current
+	/// count already catches a dropped gate — remove one of the three and two remain — so exactness adds only
+	/// the detection of an ADDED call site, which is never a regression. Its real value is that the number is
+	/// now stated with its arithmetic: a reader who assumes one gate per operation concludes a floor of 3 sits
+	/// two below the truth and that a dropped gate would pass it, which is how this pin came to be reported as
+	/// broken when it was not.
+	/// <para>
+	/// What NEITHER form catches is a gate MOVED rather than removed — the total survives by definition. Do
+	/// NOT try to close that here. It needs each gate bound to the operation it protects, and a text scan over
+	/// an archive cannot do it honestly: proximity matching would accept a call that never executes and would
+	/// break on reformatting. The property is already asserted where the code lives and can be substituted, by
+	/// four tests in the ProcessBuilder repository that make <c>IProcessDesignGuard</c> deny and require the
+	/// operation to fail without doing its work — <c>BuildProcess_ShouldFailAndNotMutate_WhenGuardDenies</c>,
+	/// <c>ModifyProcess_ShouldFailAndNotMutate_WhenGuardDenies</c>,
+	/// <c>ListUserTasks_ShouldRefuseAndNotQueryCatalog_WhenGuardDenies</c> and
+	/// <c>DescribeProcess_ShouldRefuseAndNotQueryDescriber_WhenGuardDenies</c> — plus
+	/// <c>ProcessDesignGuardTests</c> for the gate itself. Those are strictly stronger than any byte scan:
+	/// they prove the guard is on the execution path, not merely present in the text.
+	/// </para>
+	/// <para>
+	/// What is left for THIS file is the coarse failure the other repository's CI cannot see: an archive
+	/// bundled from a pre-gate state as a whole, which is what the literals and counts here catch. The one
+	/// path that reaches it is <c>rebundle-process-builder.ps1 -SkipTests</c>. Adding a gated operation must
+	/// raise this count in the same commit as <see cref="ExpectedOperationContractCount"/> — both are security
+	/// counts, and neither should be able to drift on its own.
 	/// </para>
 	/// </remarks>
 	private const int ExpectedAuthorizationGateCallSites = 3;
@@ -416,7 +434,7 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("The shipped service must expose exactly the expected number of operations, so a new ungated endpoint cannot arrive unnoticed behind the gate-count floor.")]
+	[Description("The shipped service must expose exactly the expected number of operations, so a new ungated endpoint cannot arrive unnoticed behind the gate-count assertion.")]
 	public void BundledArchive_ShouldExposeNoUnexpectedOperation() {
 		// Arrange
 		string archive = ReadBundledArchiveAsText();
@@ -426,7 +444,7 @@ public class BundledProcessBuilderPackageTests {
 
 		// Assert
 		operations.Should().Be(ExpectedOperationContractCount,
-			because: "the gate assertion above is a FLOOR, and a floor is structurally blind to the case that "
+			because: "the gate assertion above counts CALL SITES, which is structurally blind to the case that "
 				+ "matters most here: an operation added WITHOUT a gate raises the operation count while leaving "
 				+ "the gate count untouched, so every other pin in this fixture passes and clio ships a "
 				+ "privileged Creatio service with an unauthorized endpoint. Pinning the total is what makes "
@@ -491,9 +509,13 @@ public class BundledProcessBuilderPackageTests {
 				+ "rule compares against every environment; pinning it here is what puts a version change on a "
 				+ "reviewable line rather than leaving it invisible inside the archive's byte count");
 		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
-			because: "four parts, because a shorter version yields Revision = -1 through System.Version and "
-				+ "would compare below any four-part requirement, making a gate unsatisfiable by a successful "
-				+ "install");
+			because: "four parts and nothing else. Shorter yields Revision = -1 through System.Version and would "
+				+ "compare below any four-part requirement, making a gate unsatisfiable by a successful install. "
+				+ "A pre-release SUFFIX is excluded by the same pattern, and that is now load-bearing rather "
+				+ "than tidiness: InstallProcessBuilderCommand compares four-part numbers alone, which is sound "
+				+ "only while no suffix can reach the shipped side — one that did would make a rollback "
+				+ "undetectable, so the command refuses such a distribution outright and this line is what stops "
+				+ "one being committed in the first place");
 		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedSchemaDescriptorModifiedOnUtc}\"",
 			because: "set-pkg-version stamps the PACKAGE descriptor only, so the schema descriptor's timestamp "
 				+ "is hand-maintained — and it is the one field here that has actually shipped wrong, carrying "

@@ -68,7 +68,7 @@ public interface IBundledPackageCatalog {
 	/// Reads the version recorded in the bundled archive's descriptor.
 	/// </summary>
 	/// <param name="packageName">Package name (case-insensitive).</param>
-	/// <param name="version">The version the distribution carries, when readable. Never suffixed.</param>
+	/// <param name="version">The version the distribution carries, when readable.</param>
 	/// <param name="diagnosis">
 	/// A user-facing explanation of why the version could not be read, when it could not. Never a bare
 	/// exception message: a distribution that cannot describe itself is broken, and the reader needs to be
@@ -79,10 +79,15 @@ public interface IBundledPackageCatalog {
 	/// Thrown when the package does not ship inside clio — see <see cref="GetArchivePath"/>.
 	/// </exception>
 	/// <remarks>
-	/// A version carrying a pre-release suffix is REFUSED, not returned: this is the one boundary every
-	/// producer of a bundled archive passes through, and refusing here is what lets the rest of clio compare
-	/// bundled versions numerically without having to agree on how a pre-release orders against its release.
-	/// The implementation comment on the refusal carries the reasoning.
+	/// A READER, deliberately: it reports what the archive says and never judges it. A bundled version is
+	/// required to be a plain four-part number, but enforcing that here was tried and reverted — a refusal has
+	/// to come back as <see langword="false"/>, which already means "I could not read it", and the two demand
+	/// opposite defaults from callers. Both consumers treat an unreadable version as "proceed with a warning",
+	/// which is right for a truncated archive and catastrophic for a malformed VERSION: it switches off the
+	/// install command's downgrade guard, so a distribution stamped <c>1.0.1.0-rc</c> would silently roll a
+	/// shared environment back from whatever it had. The rule is therefore enforced where it can refuse
+	/// loudly — see <c>InstallProcessBuilderCommand</c>, which will not install such a distribution at all,
+	/// and the archive pin in <c>BundledProcessBuilderPackageTests</c>, which stops one shipping.
 	/// </remarks>
 	bool TryGetVersion(string packageName, out PackageVersion version, out string diagnosis);
 
@@ -247,27 +252,6 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 			diagnosis =
 				$"The bundled {packageName} archive at '{archivePath}' has a malformed {DescriptorEntryPath} "
 				+ $"({Flatten(e.Message)}). Reinstall or update clio itself.";
-			return false;
-		}
-		if (!string.IsNullOrWhiteSpace(version.Suffix)) {
-			// A pre-release suffix on the SHIPPED version is REFUSED rather than ordered, and that is the whole
-			// reason the two version rules can be left alone. Ordering it is where they stop agreeing:
-			// PackageVersion ranks an empty suffix BELOW a non-empty one (so GA < rc), while the install
-			// command's downgrade guard uses SemVer (rc < GA). Feed a suffixed shipped version to both and the
-			// caller is trapped — convergence refuses every gated call and names the install as the remedy,
-			// then the install refuses that same version as a rollback, and --force is deliberately absent over
-			// MCP. Forbidding the input removes the disagreement instead of arbitrating it.
-			// The boundary is here, not in the rebundle script, because the script is not the only producer:
-			// it already cannot emit a suffix ([version]::TryParse rejects one), but the runbook keeps manual
-			// steps as the fallback for a host without pwsh — and documents going by hand when the script
-			// refuses. This method is the one point every producer's output passes through on the way in.
-			diagnosis =
-				$"The bundled {packageName} archive at '{archivePath}' declares Descriptor.PackageVersion "
-				+ $"'{Flatten(version.ToString())}', but a bundled package version must be a plain four-part "
-				+ "number with no pre-release suffix. Reinstall or update clio itself.";
-			// Null it out: a caller that ignores the returned false must not end up holding a version this
-			// method has just declared unusable.
-			version = null;
 			return false;
 		}
 		_versionCache[packageName] = version;

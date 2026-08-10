@@ -523,6 +523,49 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
+	[Description("A pre-release suffix on the SHIPPED version refuses the install outright, and it must REFUSE rather than warn-and-proceed. The downgrade comparison is numbers-only, which is sound only while no suffix can reach this side: allowed through, shipping 1.0.1.0-rc onto an environment recording 9.9.9.9 installs, because the numbers say nothing is wrong and the suffix is the one thing the comparison ignores — the exact undetected rollback this guard exists to prevent. Deliberately NOT the unreadable-version branch, which proceeds because there is genuinely nothing to compare; here the distribution is readable and wrong.")]
+	[TestCase("1.0.1.0-rc")]
+	[TestCase("1.0.1.0-dev.4")]
+	public void Execute_ShouldRefuse_WhenTheShippedVersionCarriesAPreReleaseSuffix(string shippedVersion) {
+		// Arrange
+		ArrangeShippedVersion(shippedVersion);
+		ArrangeInstalledVersion("9.9.9.9");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "a malformed distribution must not install: proceeding is what turns a rollback that could "
+				+ "have been refused into one nothing can detect");
+		_packageInstaller.DidNotReceive().Install(
+			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>());
+		_logger.Received().WriteError(Arg.Is<string>(text =>
+			text.Contains("four-part") && text.Contains("Reinstall or update clio")));
+	}
+
+	[Test]
+	[Description("The refusal above is overridable by --force like the downgrade refusal, because it is the same class of decision — a human accepting a rollback — and --force is CLI-only, so an agent can never reach it.")]
+	public void Execute_ShouldInstall_WhenTheShippedVersionCarriesASuffixAndForceIsPassed() {
+		// Arrange
+		ArrangeShippedVersion("1.0.1.0-rc");
+		ArrangeInstalledVersion("9.9.9.9");
+		ArrangeSuccessfulInstall();
+
+		// Act
+		int result = _command.Execute(new InstallProcessBuilderOptions { Force = true });
+
+		// Assert
+		result.Should().Be(0,
+			because: "--force is the human override for every backwards-move refusal this command makes, and "
+				+ "splitting it would leave one of them with no way past at all");
+		_packageInstaller.Received(1).Install(
+			ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
+	}
+
+	[Test]
 	[Description("The SHIPPED half of the comparison is read from the archive through IBundledPackageCatalog, never from a constant: the same installed version must produce opposite verdicts when only the catalog's answer changes. The ADR forbids a shipped-version constant, and a mutant that hardcoded 1.0.0.0 would pass every other test here.")]
 	[TestCase("2.0.0.0", 0, TestName = "catalog ahead of the environment - installs")]
 	[TestCase("1.0.0.0", 1, TestName = "catalog behind the environment - refuses")]

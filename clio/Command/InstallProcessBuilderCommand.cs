@@ -88,8 +88,10 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions {
 /// existence pre-check of its own.
 /// </description></item>
 /// </list>
-/// <b>There is exactly ONE short-circuit</b>: an install that would move the environment's recorded
-/// version BACKWARDS is refused unless <c>--force</c> is passed - see <see cref="WouldDowngrade"/>.
+/// <b>The only short-circuits</b> are about moving an environment BACKWARDS, and both are refused unless
+/// <c>--force</c> is passed — see <see cref="ShouldRefuseInstall"/>: an install that would move the recorded
+/// version backwards, and a distribution whose own bundled version is stamped so that such a move could not
+/// be detected.
 /// Otherwise an explicitly requested install always installs; see the comment at the install site for the
 /// reasoning and for the one part of it that is now open again.
 /// </remarks>
@@ -231,6 +233,12 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </description></item>
 	/// </list>
 	/// <para>
+	/// One case REFUSES for a different reason than a comparison: a bundled version carrying a pre-release
+	/// suffix. Read the branch for why it must not join the list above — the short version is that this
+	/// comparison is numbers-only, so a suffixed shipped version makes a rollback undetectable rather than
+	/// merely unknown, and "proceed when unsure" is the wrong default for an artifact that is definitely wrong.
+	/// </para>
+	/// <para>
 	/// There is a FOURTH, and it is silent: <c>PackageInfo</c> leaves its version <see langword="null"/> when
 	/// <c>SysPackage.Version</c> does not parse, and <c>GetInstalledVersion</c> returns <c>?.Version</c> — so
 	/// a recorded version of garbage is indistinguishable here from the package being absent, and takes the
@@ -243,7 +251,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// ever installed, and not evidence that the recorded version is the one serving.
 	/// </para>
 	/// </remarks>
-	private bool WouldDowngrade(out string message) {
+	private bool ShouldRefuseInstall(out string message) {
 		message = null;
 		if (!_bundledPackageCatalog.TryGetVersion(
 				BundledPackages.ProcessBuilderPackageName,
@@ -253,6 +261,28 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 				$"{diagnosis} Installing anyway: without a version to compare, a downgrade cannot be ruled in "
 				+ "or out, and refusing would block the install over clio's own defect.");
 			return false;
+		}
+		if (!string.IsNullOrWhiteSpace(shippedVersion.Suffix)) {
+			// REFUSED, not warned-and-installed, and the difference is the whole point. A bundled version must
+			// be a plain four-part number: IsStrictlyNewer below compares numbers alone, which is only sound
+			// while no suffix can appear on this side. Let one through and the guard stops being able to see a
+			// rollback — shipping 1.0.1.0-rc onto an environment recording 9.9.9.9 would install, because the
+			// suffix is all that the comparison ignores and the numbers say nothing is wrong. That is the exact
+			// harm this guard exists to prevent, so a malformed distribution must not reach the comparison at
+			// all rather than reach it blind.
+			// Note this is NOT the unreadable-version path above: that one proceeds because "I could not check"
+			// must not become "you may not proceed", and there is genuinely nothing to compare. Here the
+			// distribution is readable and WRONG, clio's own artifact, and installing it is what causes damage
+			// to somebody else's environment. Blocking is the safe direction; the message names clio, not the
+			// target, because that is where the fix is.
+			message =
+				$"Refusing: this clio distribution declares {BundledPackages.ProcessBuilderPackageName} "
+				+ $"{Truncate(Sanitize(shippedVersion))}, but a bundled package version must be a plain "
+				+ "four-part number with no pre-release suffix — clio compares bundled versions numerically, "
+				+ "and installing a suffixed one could move the target environment's recorded version backwards "
+				+ "for everyone using it without being detected. Reinstall or update clio itself. If you "
+				+ "produced this archive, re-run the rebundle with a four-part version.";
+			return true;
 		}
 		PackageVersion installedVersion;
 		try {
@@ -349,9 +379,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// hostile or compromised instance could otherwise plant instructions there. Rendering the numeric
 	/// version plus a clamped, restricted suffix keeps the information a reader needs and drops the rest.
 	/// <para>
-	/// The SHIPPED version is not passed through this: it comes from clio's own archive, it is refused
-	/// outright if it carries a suffix (see <see cref="IBundledPackageCatalog.TryGetVersion"/>), and anyone
-	/// able to choose its text already controls what the command installs.
+	/// Applied to the SHIPPED version in one place only — the refusal of a suffixed bundled version. Normally
+	/// that version needs no defending: it comes from clio's own archive, and anyone able to choose its text
+	/// already controls what the command installs. But that refusal fires precisely because the archive is
+	/// malformed, so its text is exactly what cannot be assumed well-formed, and it is quoted back through
+	/// here and <see cref="Truncate"/> for the same reason the environment's is.
 	/// </para>
 	/// </remarks>
 	private static string Sanitize(PackageVersion version) {
@@ -440,10 +472,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 					"will not help — reinstall or update clio itself.");
 				return 1;
 			}
-			// The ONE thing that can stop an explicitly requested install: it would move the environment
-			// backwards. Checked before anything is touched, and skipped entirely under --force.
-			if (!options.Force && WouldDowngrade(out string downgradeRefusal)) {
-				_logger.WriteError(downgradeRefusal);
+			// The only things that can stop an explicitly requested install, both about moving the environment
+			// backwards: it WOULD move backwards, or this distribution is stamped so that a rollback could not
+			// be detected at all. Checked before anything is touched, and skipped entirely under --force.
+			if (!options.Force && ShouldRefuseInstall(out string refusal)) {
+				_logger.WriteError(refusal);
 				return 1;
 			}
 			// Otherwise no short-circuit: an explicitly requested install always installs. It is invoked as

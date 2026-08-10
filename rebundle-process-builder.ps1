@@ -318,33 +318,43 @@ $entries = & {
     $gz.CopyTo($ms); $gz.Dispose(); $fs.Dispose()
     $b = $ms.ToArray(); $ms.Dispose()
     $i = 0
+    # Tracked EXPLICITLY rather than inferred from where the walk stopped. Comparing $i against $b.Length is
+    # not enough, and getting that wrong made this check pass on three of the four truncations it is for: when
+    # a field is missing ENTIRELY - no content-length prefix after a name, or a prefix whose value runs past
+    # the buffer - the guard trips with $i already sitting exactly on the end, so a short walk is
+    # indistinguishable from a complete one. The dropped entry is invisible too, because an entry is only
+    # emitted after its content is consumed.
+    $script:archiveWalkOk = $true
     while ($i + 4 -le $b.Length) {
         $nameLen = [BitConverter]::ToInt32($b, $i); $i += 4
-        if ($nameLen -le 0 -or $i + $nameLen * 2 -gt $b.Length) { break }
+        if ($nameLen -le 0 -or $i + $nameLen * 2 -gt $b.Length) { $script:archiveWalkOk = $false; break }
         $name = [Text.Encoding]::Unicode.GetString($b, $i, $nameLen * 2); $i += $nameLen * 2
-        if ($i + 4 -gt $b.Length) { break }
+        if ($i + 4 -gt $b.Length) { $script:archiveWalkOk = $false; break }
         $contentLen = [BitConverter]::ToInt32($b, $i); $i += 4
-        if ($contentLen -lt 0 -or $i + $contentLen -gt $b.Length) { break }
+        if ($contentLen -lt 0 -or $i + $contentLen -gt $b.Length) { $script:archiveWalkOk = $false; break }
         $i += $contentLen
         [pscustomobject]@{ Name = $name; Size = $contentLen }
     }
-    # Published for the completeness check below. The container has no terminator, so a well-formed walk
-    # lands EXACTLY on the end of the buffer; anything else means a length prefix sent the walk somewhere
-    # it should not be.
     $script:archiveWalkEnd = $i
     $script:archiveWalkLength = $b.Length
 }
 if (-not $entries) { Die 'Could not read the archive container - the format may have changed.' }
-if ($script:archiveWalkEnd -ne $script:archiveWalkLength) {
-    # Every `break` above leaves the walk short, and so does a trailing partial length prefix. Without this
-    # check the inventory below would be verified only over the entries read BEFORE the corruption and
-    # report success — the archive's own reader in clio does not accept that: CompressionUtilities throws
-    # InvalidDataException on exactly this input, via the leftover-bytes discriminator. A verifier that is
-    # more tolerant than the consumer it verifies for is not a verifier.
-    Die ("The archive container does not parse to its end: the walk stopped at byte $($script:archiveWalkEnd) " +
-         "of $($script:archiveWalkLength) after reading $($entries.Count) entries. clio's own reader throws " +
-         'InvalidDataException on this, so the inventory below would be checked over a fragment. Re-run the ' +
-         'compress step; if it recurs, the container format changed and this script needs updating.')
+if (-not $script:archiveWalkOk -or $script:archiveWalkEnd -ne $script:archiveWalkLength) {
+    # Two conditions, because they catch different corruptions: the flag catches a field that could not be
+    # read in full, and the offset catches a walk that ended early or left trailing bytes behind (the
+    # container has no terminator, so a well-formed walk lands exactly on the end).
+    # Without this the inventory below would be verified over the entries read BEFORE the corruption and
+    # report success, while clio's own reader refuses the same bytes: CompressionUtilities throws
+    # InvalidDataException via its leftover-bytes discriminator. A verifier more tolerant than the consumer it
+    # verifies for is not a verifier. NOTE the one place this is now STRICTER than clio - 1 to 3 trailing
+    # stray bytes, which SafeReadGZipStream consumes and accepts. Deliberate: this script is deciding whether
+    # to publish an archive, so an unexplained tail is a reason to stop, not to shrug.
+    Die ("The archive container does not parse cleanly: the walk stopped at byte $($script:archiveWalkEnd) of " +
+         "$($script:archiveWalkLength) after reading $($entries.Count) entries (complete fields: " +
+         "$($script:archiveWalkOk)). The inventory below would be checked over a fragment. The descriptor is " +
+         'already stamped, so re-run the pack step directly rather than re-running this script:' + "`n" +
+         "    dotnet $clioDll compress $packageDir --skip-pdb -d $archive" + "`n" +
+         'If it recurs, the container format changed and this script needs updating.')
 }
 
 $dlls = $entries | Where-Object { $_.Name -like '*.dll' }
