@@ -50,7 +50,7 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 	public async Task ThemeTools_Should_Advertise_All_Brand_Parameters_Over_The_Wire() {
 		// Arrange
 		string[] brandParameters = [
-			"primary", "secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights", "version"
+			"primary", "secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights"
 		];
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -69,6 +69,10 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 			because: "css-content must not be schema-required once the brand mode is an alternative CSS source");
 		buildParameters.Should().Contain(brandParameters,
 			because: "build-theme inherits the same shared brand properties and must keep advertising them");
+		buildParameters.Should().Contain("version",
+			because: "build-theme targets a version the caller names, so version stays part of its surface");
+		createParameters.Should().NotContain("version",
+			because: "create-theme writes to a named environment, so the template always follows that environment's own version — an override could only build CSS that does not match where the theme lands");
 		buildContract.InputSchema.Required.Should().BeEquivalentTo(["primary"],
 			because: "build-theme keeps its own required set — the shared base record must not change it");
 		string[] sharedBrandParameters = ["secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights"];

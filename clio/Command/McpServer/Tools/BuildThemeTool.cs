@@ -51,12 +51,7 @@ public sealed class BuildThemeTool(
 
 	internal const string ToolName = "build-theme";
 
-	/// <summary>
-	/// The argument roster returned when a caller sends an unrecognised field name. Extracted to a field
-	/// (mirroring <see cref="CreateThemeTool.ValidArgumentNames"/>) so the drift test can assert every
-	/// <see cref="ThemeBrandArgs"/> wire name still appears here after the brand properties moved to the
-	/// shared base record.
-	/// </summary>
+	/// <summary>The argument roster returned when a caller sends an unrecognised field name.</summary>
 	internal static readonly string ValidArgumentNames =
 		"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
 		"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.";
@@ -90,7 +85,8 @@ public sealed class BuildThemeTool(
 	/// <returns>A structured result carrying the built CSS (compute mode) or the written path (workspace-write mode), or a failure message.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
-		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
+		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — use it when you need the CSS itself. " +
+		"To create a theme on an environment from brand inputs, prefer create-theme's brand mode: it builds the same CSS server-side in one call instead of routing it through the agent. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
 		"Custom font families are checked against Google Fonts over the network (a short bounded probe): a family the catalog does not publish gets NO @import (it renders only where installed locally) plus a warning, and an unverifiable probe keeps the import plus a warning — so the css can vary with probe outcomes, which the warnings always disclose. " +
 		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical (given the same probe outcomes). " +
@@ -169,10 +165,10 @@ public sealed class BuildThemeTool(
 		}
 		catch (EnvironmentResolutionException) {
 			if (!string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-				fallbackWarning =
+				fallbackWarning = SensitiveErrorTextRedactor.Redact(
 					$"build-theme: could not resolve environment '{args.EnvironmentName}' — built against the "
 					+ "newest supported version instead. Pass version to target a specific template, or omit "
-					+ "environment-name to use the credential-passthrough tenant's version.";
+					+ "environment-name to use the credential-passthrough tenant's version.");
 			}
 			return null;
 		}

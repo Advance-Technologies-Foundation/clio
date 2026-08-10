@@ -4,17 +4,10 @@ using System.Text.Json.Serialization;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Palette and font inputs shared by the MCP tools that drive the theme CSS engine, declared once so
-/// <c>create-theme</c> (brand mode) and <c>build-theme</c> advertise an identical brand contract.
-/// <para>
-/// <c>primary</c> and <c>version</c> deliberately stay on the concrete argument records rather than joining
-/// this base: their MCP attributes differ per tool and attributes live on the declaration, so a shared
-/// declaration could only carry one of each. <c>build-theme</c> marks <c>primary</c> <see cref="System.ComponentModel.DataAnnotations.RequiredAttribute"/>
-/// (it is the only CSS source there) while <c>create-theme</c> must leave it optional (<c>css-content</c> is
-/// the alternative source), and each tool documents a different resolution rule for <c>version</c>. Moving
-/// them here would drop build-theme's schema-level requirement and give both tools a description that is
-/// wrong for one of them.
-/// </para>
+/// Palette and font inputs shared by the MCP tools that drive the theme CSS engine, so <c>create-theme</c>
+/// (brand mode) and <c>build-theme</c> advertise an identical brand contract. <c>primary</c> and
+/// <c>version</c> are not part of it: <c>primary</c> differs in required-ness per tool, and <c>version</c>
+/// belongs to <c>build-theme</c> alone.
 /// </summary>
 public abstract record ThemeBrandArgs {
 	/// <summary>Secondary colour; derived from the primary when omitted.</summary>

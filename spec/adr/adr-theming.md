@@ -159,20 +159,41 @@ instance), taking **inline `cssContent` only** (no file variant). They fall thro
 
 _Amended (ENG-93989, 2026-07-30):_ the `create-theme` **MCP tool** gains a **brand mode** alongside
 inline `cssContent`: the caller passes the brand inputs (`primary` plus optional
-secondary/accent/success/error, fonts, font weights, and an optional template `version`) and the tool
+secondary/accent/success/error, fonts, and font weights) and the tool
 builds the CSS server-side in the same call by composing the shared
 `BuildThemeCommand.TryBuildTheme(options, resolvedSettings, …)` overload — exactly one of the two CSS
 sources per call. Rationale: in the no-code flow the theme CSS no longer crosses the model boundary in
-either direction (the C-D1 token-cost concern, extended to create), and output identity with
-`build-theme` is guaranteed given the same font-availability probe outcomes — a probe verdict can
-suppress a web-font `@import` (ENG-93985), so identity holds per verdict set — because both surfaces
-share `TryBuildTheme` + `ThemeParameterValidator` — no second engine. This is **MCP-only, with no CLI parity** — the precedent is `advise-theme-palette`
-(an MCP surface with no CLI verb); the CLI already covers the non-inline need via `--css-content-file`.
+either direction (the C-D1 token-cost concern, extended to create). Both surfaces share `TryBuildTheme`
++ `ThemeParameterValidator` — there is no second engine — so `build-theme` and brand mode emit identical
+output for a given set of font-availability probe verdicts (a verdict can suppress a web-font `@import`,
+ENG-93985, so identity holds per verdict set rather than absolutely). This is **MCP-only, with no CLI
+parity** — the precedent is `advise-theme-palette` (an MCP surface with no CLI verb); the CLI already
+covers the non-inline need via `--css-content-file`.
 Deliberately **not** added: a `css-content-file` argument on this MCP tool — it would knot a
 three-way XOR (`css-content` × file × brand inputs); do not add it without revisiting this amendment
-(a separate tool if the need ever materializes). The create call stays non-idempotent (B-D3's
-no-pre-check decision stands), so the theming guidance now instructs agents to pass an explicit `id`
-as an idempotency key and to confirm with `list-themes` before retrying after a transport timeout.
+(a separate tool if the need ever materializes).
+
+There is deliberately **no `version` argument** on this tool, unlike `build-theme`. `build-theme` builds for
+a target the caller names, so naming a version there is meaningful and is mutually exclusive with
+`environment-name`. `create-theme` **writes** to a named environment, which is mandatory, so a version
+override could only produce CSS that does not match where the theme lands — nothing legitimate, and no
+validation could distinguish an intentional override from a mistake. The build template therefore always
+follows the environment's own version, resolved once by the version-floor gate. A dev-build environment
+(`0.0.0.0`, no matching template) consequently has no brand-mode escape hatch; the `build-theme` +
+inline `css-content` path still covers it.
+
+The build runs **inside** `ExecuteResolved`, after the `[RequiresCreatioVersion]` gate, because the gate
+must refuse a below-floor environment before any build work runs — hoisting the build out would invert
+that ordering. The cost is that the bounded Google Fonts probe holds the per-tenant lock across network
+I/O; accepted because the probe is capped at two families per call, probed concurrently, with
+process-wide memoized verdicts, while the ThemeService create round-trip already holds the same lock
+for longer.
+
+The create call stays non-idempotent (B-D3's no-pre-check decision stands), so a retry after a transport
+timeout needs an explicit `id` as an idempotency key and a `list-themes` check first. That rule is
+agent-facing, so it belongs to the published `theming` article in
+[clio-knowledge](https://github.com/Advance-Technologies-Foundation/clio-knowledge) rather than to this
+repository.
 
 **B-D6 — Guidance edit.** Flip the "No-code / server flow" section in `ThemingGuidanceResource` from "not
 yet available" to available; add a body section covering create/update/delete; keep the shared sections

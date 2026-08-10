@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -73,8 +73,7 @@ public class CreateThemeToolTests {
 			(nameof(CreateThemeArgs.Error), "error"),
 			(nameof(CreateThemeArgs.HeadingFont), "heading-font"),
 			(nameof(CreateThemeArgs.BodyFont), "body-font"),
-			(nameof(CreateThemeArgs.FontWeights), "font-weights"),
-			(nameof(CreateThemeArgs.Version), "version")
+			(nameof(CreateThemeArgs.FontWeights), "font-weights")
 		];
 
 		// Act
@@ -532,30 +531,6 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("version conflicts with css-content on its own: it is one of the two brand legs still listed by hand (it lives on CreateThemeArgs, not on the shared record), so the reflective drift test cannot cover it.")]
-	public void CreateTheme_ShouldReportSourceConflict_WhenCssContentAndVersionOnlySupplied() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
-
-		// Act
-		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", CssContent: ".x{}", Version: "10.0"));
-
-		// Assert
-		result.Success.Should().BeFalse(
-			because: "version selects the template the brand engine builds against, so it is meaningless alongside inline CSS");
-		result.Error.Should().Contain(CreateThemeTool.ErrorCodes.CssSourceConflict,
-			because: "dropping the hand-written version leg must fail here rather than silently accepting and ignoring the parameter");
-		result.Error.Should().Contain(ExpectedBrandParameterList(),
-			because: "the rendered list is generated from the same reflective source as the guard, so it must name exactly the parameters that raise the conflict");
-		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
-		ConsoleLogger.Instance.ClearMessages();
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("A brand field declared on CreateThemeArgs itself (not on the shared record) still conflicts with css-content, so a field added to the derived record cannot escape both the reflective guard and the drift test.")]
 	public void CreateTheme_ShouldReportSourceConflict_ForEveryDeclaredBrandFieldOnCreateThemeArgs() {
 		// Arrange
@@ -571,8 +546,8 @@ public class CreateThemeToolTests {
 			.Where(property => !nonBrandProperties.Contains(property.Name))
 			.ToArray();
 		declaredBrandProperties.Select(property => property.Name).Should()
-			.BeEquivalentTo([nameof(CreateThemeArgs.Primary), nameof(CreateThemeArgs.Version)],
-				because: "primary and version are the only brand inputs declared outside ThemeBrandArgs; a new one here needs a leg in HasAnyBrandParameter");
+			.BeEquivalentTo([nameof(CreateThemeArgs.Primary)],
+				because: "primary is the only brand input declared outside ThemeBrandArgs; a new one here needs a leg in HasAnyBrandParameter");
 
 		foreach (System.Reflection.PropertyInfo property in declaredBrandProperties) {
 			// Arrange
@@ -655,7 +630,7 @@ public class CreateThemeToolTests {
 		brandProperties.Should().NotBeEmpty(
 			because: "ThemeBrandArgs carries the shared brand fields; an empty set means this test pins no forwarding at all");
 		CreateThemeArgs args = new(
-			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0");
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6");
 		Dictionary<string, string> expectedSentinels = new();
 		foreach (PropertyInfo property in brandProperties) {
 			(object value, string sentinel) = BrandSentinelFor(property);
@@ -733,33 +708,6 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("build-theme's hand-written rosters cannot drift from ThemeBrandArgs either: the seven shared brand properties now live on the base record in another file, while build-theme's args-parameter Description and its unknown-argument hint still list them as literals. A property added to ThemeBrandArgs would otherwise update create-theme's generated rosters and silently leave build-theme's stale — the exact asymmetry this guard exists to prevent.")]
-	public void BuildThemeAdvertisedRosters_ShouldListEveryThemeBrandArgsProperty() {
-		// Arrange
-		string[] sharedWireNames = typeof(ThemeBrandArgs)
-			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
-			.ToArray();
-		sharedWireNames.Should().NotBeEmpty(because: "an empty set means this test pins nothing");
-
-		// Act
-		string argsDescription = typeof(BuildThemeTool)
-			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
-			.GetParameters()[0]
-			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
-
-		// Assert
-		argsDescription.Should().NotBeNull(because: "the args wrapper is documented for the caller");
-		foreach (string wireName in sharedWireNames) {
-			argsDescription.Should().Contain(wireName,
-				because: $"'{wireName}' is declared on ThemeBrandArgs, so build-theme's caller-facing parameter roster must keep naming it");
-			BuildThemeTool.ValidArgumentNames.Should().Contain(wireName,
-				because: $"the corrective hint an agent reads after a rejected build-theme call must keep naming '{wireName}'");
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Every multi-word brand parameter has both camelCase and snake_case rename aliases pointing at the canonical kebab-case name, so an agent that guesses the wrong spelling of a field is steered to the right one instead of being told the argument is unknown — or, worse, being steered to a different argument.")]
 	public void CreateTheme_ShouldReturnRenameHint_ForEveryMultiWordBrandParameterSpelling() {
 		// Arrange
@@ -806,7 +754,7 @@ public class CreateThemeToolTests {
 			.OrderBy(property => property.MetadataToken)
 			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
 			.ToArray();
-		return string.Join(", ", new[] { "primary" }.Concat(shared).Append("version"));
+		return string.Join(", ", new[] { "primary" }.Concat(shared));
 	}
 
 	[Test]
@@ -959,7 +907,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean Blue", Primary: "#004fd6", Version: "10.0"));
+			EnvironmentName: "docker_fix2", Caption: "Ocean Blue", Primary: "#004fd6"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a caption alone is enough to name the theme");
@@ -1029,7 +977,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0"));
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a failed create is a failure even when the build succeeded");
@@ -1058,7 +1006,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0") {
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6") {
 			FontWeights = [400, 700]
 		});
 
@@ -1075,7 +1023,7 @@ public class CreateThemeToolTests {
 	public void ThemeTools_ShouldAdvertiseInheritedBrandProperties_WhenSdkGeneratesTheSchema() {
 		// Arrange
 		string[] brandWireNames = [
-			"primary", "secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights", "version"
+			"primary", "secondary", "accent", "success", "error", "heading-font", "body-font", "font-weights"
 		];
 		CreateThemeTool createTool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance,
 			Substitute.For<IToolCommandResolver>());
@@ -1118,7 +1066,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0") {
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6") {
 			FontWeights = [400, 700]
 		});
 
@@ -1134,29 +1082,31 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Keeps BuildThemeOptions.EnvironmentName null and skips settings resolution when environment-name and version are both supplied — the environment reaches the build only as resolvedSettings, so BuildThemeCommand's version/environment-name mutual-exclusion guard can never trip.")]
 	[Category("Unit")]
-	public void CreateTheme_ShouldKeepBuildEnvironmentNameNull_WhenEnvironmentNameAndVersionBothSupplied() {
+	public void CreateTheme_ShouldKeepBuildEnvironmentNameNull_WhenTheGateResolvedAVersion() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		BuildThemeCommandHarness build = new();
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker.EnsureRequirements(Arg.Any<object>())
+			.Returns(CreatioVersionResolution.Resolved(new Version(10, 0, 0, 720)));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
-		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
-			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
 		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0"));
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "an explicit version plus an environment-name is a valid brand-mode request — the environment reaches the build only as resolvedSettings, so the command's 'mutually exclusive' guard cannot trip");
+			because: "the gate-resolved version reaches the build as a version while the environment reaches it only as resolvedSettings, so the command's 'mutually exclusive' guard cannot trip");
 		result.Warnings.Should().BeNull(
 			because: "a build that raised no advisories must omit the warnings key entirely rather than emit an empty array the agent has to interpret");
-		build.TemplateProvider.Received(1).GetCssTemplate("10.0");
+		build.TemplateProvider.Received(1).GetCssTemplate("10.0.0.720");
 		build.ResolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
 		commandResolver.DidNotReceive().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
 		ConsoleLogger.Instance.ClearMessages();
@@ -1304,6 +1254,43 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("When no version requirement triggered, the gate carries no resolution to reuse, so the brand build falls back to resolving the environment itself and probing it — the template still comes from the target environment's real version rather than silently degrading to the newest supported one.")]
+	public void CreateTheme_ShouldProbeTheEnvironment_WhenTheGateCarriesNoResolution() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		EnvironmentSettings settings = new() { Uri = "https://tenant.example" };
+		IPlatformVersionResolver versionResolver = Substitute.For<IPlatformVersionResolver>();
+		versionResolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.0.999", VersionResolutionSource.Environment)));
+		build.ResolverFactory.Create(settings).Returns(versionResolver);
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker.EnsureRequirements(Arg.Any<object>()).Returns((CreatioVersionResolution)null);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(settings);
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an absent gate resolution must not fail the brand build; it only means the version has to be probed here");
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+		build.ResolverFactory.Received(1).Create(settings);
+		build.TemplateProvider.Received(1).GetCssTemplate("10.0.0.999");
+		build.TemplateProvider.DidNotReceive().GetCssTemplate(null);
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A dev-build environment (0.0.0.0 bypasses the version floor) cannot select a build template: the brand build fails under theme-build-failed and nothing is created — the same refusal class the pre-threading second probe produced. The template provider's rejection contract for below-10.0 versions is pinned on the provider itself; this pins create-theme's flow through it.")]
 	public void CreateTheme_ShouldFailTheBuild_WhenTheGateResolvedADevBuild() {
 		// Arrange
@@ -1396,7 +1383,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6", Version: "10.0"));
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a failed build must refuse the create");
@@ -1589,7 +1576,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeArgs args = JsonSerializer.Deserialize<CreateThemeArgs>(
-			"""{"environment-name":"docker_fix2","caption":"Ocean","primary":"#004fd6","secondary":"#0d2e4e","accent":"#f94e11","success":"#0b8500","error":"#d2310d","heading-font":"Poppins","body-font":"Inter","font-weights":[400,600],"version":"10.0"}""",
+			"""{"environment-name":"docker_fix2","caption":"Ocean","primary":"#004fd6","secondary":"#0d2e4e","accent":"#f94e11","success":"#0b8500","error":"#d2310d","heading-font":"Poppins","body-font":"Inter","font-weights":[400,600]}""",
 			options)!;
 
 		// Assert
@@ -1602,7 +1589,6 @@ public class CreateThemeToolTests {
 		args.BodyFont.Should().Be("Inter", because: "the advertised kebab-case body-font field must bind");
 		args.FontWeights.Should().Equal(new[] { 400, 600 },
 			because: "font-weights is a typed JSON int array on the MCP surface, not the CLI's comma-separated string");
-		args.Version.Should().Be("10.0", because: "the advertised version field must bind");
 		(args.ExtensionData is null || args.ExtensionData.Count == 0).Should().BeTrue(
 			because: "every brand kebab field binds to a declared parameter, so nothing overflows");
 	}
@@ -1617,7 +1603,7 @@ public class CreateThemeToolTests {
 		string template = File.ReadAllText(
 			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
 		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
-		templateProvider.GetCssTemplate("10.0").Returns(template);
+		templateProvider.GetCssTemplate(Arg.Any<string>()).Returns(template);
 		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
 		publishedCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
 			.Returns(GoogleFontAvailability.InCatalog);
@@ -1637,7 +1623,7 @@ public class CreateThemeToolTests {
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", Caption: "Ocean",
-			Primary: "#004fd6", Version: "10.0") { HeadingFont = malformedFont });
+			Primary: "#004fd6") { HeadingFont = malformedFont });
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -1662,7 +1648,7 @@ public class CreateThemeToolTests {
 		string template = File.ReadAllText(
 			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
 		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
-		templateProvider.GetCssTemplate("10.0").Returns(template);
+		templateProvider.GetCssTemplate(Arg.Any<string>()).Returns(template);
 		templateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
 		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
@@ -1684,7 +1670,7 @@ public class CreateThemeToolTests {
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", Caption: "Ocean", Id: "ocean",
-			Primary: "#004fd6", Version: "10.0") { HeadingFont = "Poppins", FontWeights = [400, 600] });
+			Primary: "#004fd6") { HeadingFont = "Poppins", FontWeights = [400, 600] });
 		bool directOk = realBuildCommand.TryBuildTheme(
 			new BuildThemeOptions {
 				Primary = "#004fd6", CssClassName = "ocean-theme", Caption = "Ocean", Id = "ocean",
@@ -1714,7 +1700,7 @@ public class CreateThemeToolTests {
 		string template = File.ReadAllText(
 			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
 		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
-		templateProvider.GetCssTemplate("10.0").Returns(template);
+		templateProvider.GetCssTemplate(Arg.Any<string>()).Returns(template);
 		templateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
 		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
@@ -1739,13 +1725,13 @@ public class CreateThemeToolTests {
 		// environment-name path (the two are mutually exclusive there) and create-theme off the probe.
 		CreateThemeResult createResult = createTool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", Caption: "Ocean", Id: "ocean",
-			Primary: "#004fd6", Version: "10.0") {
+			Primary: "#004fd6") {
 			Secondary = "#0d2e4e", Accent = "#ff6f61", Success = "#2e7d32", Error = "#c62828",
 			HeadingFont = "Poppins", BodyFont = "Lato", FontWeights = [400, 600]
 		});
 		BuildThemeResult buildResult = buildTool.BuildTheme(new BuildThemeArgs(
 			CssClassName: "ocean-theme", Caption: "Ocean", Id: "ocean",
-			Primary: "#004fd6", Version: "10.0") {
+			Primary: "#004fd6") {
 			Secondary = "#0d2e4e", Accent = "#ff6f61", Success = "#2e7d32", Error = "#c62828",
 			HeadingFont = "Poppins", BodyFont = "Lato", FontWeights = [400, 600]
 		});
@@ -1767,7 +1753,7 @@ public class CreateThemeToolTests {
 		string template = File.ReadAllText(
 			Path.Combine(TestContext.CurrentContext.TestDirectory, "Theming/Fixtures/theme.css.tpl"));
 		IThemeTemplateProvider templateProvider = Substitute.For<IThemeTemplateProvider>();
-		templateProvider.GetCssTemplate("10.0").Returns(template);
+		templateProvider.GetCssTemplate(Arg.Any<string>()).Returns(template);
 		templateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
 		IGoogleFontsCatalog publishedCatalog = Substitute.For<IGoogleFontsCatalog>();
@@ -1788,7 +1774,7 @@ public class CreateThemeToolTests {
 
 		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
-			EnvironmentName: "docker_fix2", Caption: "Ocean Breeze", Primary: "#004fd6", Version: "10.0"));
+			EnvironmentName: "docker_fix2", Caption: "Ocean Breeze", Primary: "#004fd6"));
 
 		// Assert
 		ThemeParameterValidator.TryResolveCssClassName(null, "Ocean Breeze", out string registeredClass, out _)

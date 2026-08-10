@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -301,13 +300,9 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 
 	/// <summary>
 	/// Like <see cref="TryBuildTheme(BuildThemeOptions, out string, out string, out IReadOnlyList{string}, out string)"/>
-	/// but resolves the platform version from a caller-supplied <paramref name="resolvedSettings"/> instead of
-	/// resolving <c>--environment-name</c> by name against the settings repository. Used by the
-	/// <c>build-theme</c> MCP tool, and composed by the <c>create-theme</c> MCP tool's brand mode to build the
-	/// CSS server-side in the same call; each tool resolves settings itself via
-	/// <see cref="Clio.Command.McpServer.Tools.IToolCommandResolver"/> so the version probe reaches the correct
-	/// (possibly header-derived, credential-passthrough) tenant; the CLI never calls this overload and its
-	/// by-name <see cref="ResolveVersion(BuildThemeOptions)"/> path stays unchanged.
+	/// but takes the platform version from a caller-supplied <paramref name="resolvedSettings"/> instead of
+	/// resolving <c>--environment-name</c> by name against the settings repository, so a caller that has already
+	/// resolved its target tenant does not get a second, name-based lookup.
 	/// </summary>
 	/// <param name="options">The brand inputs and template-version selectors.</param>
 	/// <param name="resolvedSettings">
@@ -515,24 +510,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			TaskScheduler.Default).GetAwaiter().GetResult();
 	}
 
-	/// <summary>
-	/// Collects the non-fatal build advisories. These travel verbatim onto the <c>create-theme</c> MCP result,
-	/// which is the one string channel there that is NOT passed through
-	/// <see cref="Clio.Command.McpServer.SensitiveErrorTextRedactor"/> — the error channel beside it is. Every advisory
-	/// added here must therefore be static text or a locally computed value: never an environment setting, a
-	/// path, a URI, or unvalidated caller input. The only caller-supplied text any advisory interpolates today
-	/// is a font family name, gated by <see cref="Clio.Theming.FontFamilyName.Validate"/> in
-	/// <see cref="ResolveFontAvailability"/> — necessary but not sufficient: the grammar blocks URIs, paths,
-	/// and key/value separators, yet a grammar-valid family such as "Bearer Sans" still trips the redactor's
-	/// Bearer-token rule, which is why the guard below is the containment rather than the doc. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
-	/// contract (including the font advisories), and <see cref="EnforceAdvisoryRedactionContract"/> runs the
-	/// redactor over every advisory in every build configuration: a violating advisory — existing or added
-	/// later — fails fast in Debug/test runs, and otherwise ships only in its redacted form with the
-	/// substitution announced on the warnings channel itself (<see cref="RedactionContractAdvisory"/>, which
-	/// reaches MCP callers — the logger echo is visible only on CLI flows), so a violation can neither leak
-	/// raw text nor fire invisibly on the strength of the doc alone.
-	/// </summary>
-	private IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
+	private static IReadOnlyList<string> CollectWarnings(BuildThemeOptions options,
 		IReadOnlyDictionary<string, GoogleFontAvailability> fontAvailability) {
 		List<string> warnings = [];
 		if (FontWeightsWithoutFamily(options)) {
@@ -542,59 +520,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (string.IsNullOrEmpty(options.Accent)) {
 			AddAutoAccentWarning(options, warnings);
 		}
-		EnforceAdvisoryRedactionContract(warnings);
 		return warnings;
-	}
-
-	/// <summary>
-	/// The shared clause both substitution channels (the companion advisory and the CLI logger echo) are
-	/// composed from, so the two descriptions of the same event cannot drift apart.
-	/// </summary>
-	private const string ContractViolationText =
-		"build-theme: an advisory violated the non-redaction contract and was replaced with its redacted form";
-
-	/// <summary>
-	/// The advisory appended when a build advisory violated the non-redaction contract and was replaced with
-	/// its redacted form. Travels the warnings channel so the substitution is visible to MCP callers, where
-	/// the logger echo is suppressed. Static text by design — it must itself satisfy the contract it reports.
-	/// </summary>
-	private const string RedactionContractAdvisory =
-		ContractViolationText + "; report this as a clio defect.";
-
-	/// <summary>
-	/// Backstop for the non-redaction contract described on <see cref="CollectWarnings"/>. Reachable through
-	/// the public build path: the <see cref="Clio.Theming.FontFamilyName"/> grammar blocks URIs, paths, and
-	/// key/value separators, but not every redactor pattern — a grammar-valid family beginning with
-	/// "Bearer " trips the redactor's Bearer-token rule inside the Google-Fonts advisories that interpolate
-	/// it, which is exactly the flow the contract-guard test drives end-to-end.
-	/// <see cref="Debug.Fail(string)"/> fail-fasts Debug/test hosts that reach it; a Release build ships
-	/// only the redacted advisory plus the companion announcement.
-	/// </summary>
-	private void EnforceAdvisoryRedactionContract(List<string> warnings) {
-		bool violated = false;
-		for (int i = 0; i < warnings.Count; i++) {
-			string redacted = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(warnings[i]);
-			if (string.Equals(redacted, warnings[i], StringComparison.Ordinal)) {
-				continue;
-			}
-			violated = true;
-			// Report through the redacted form only — echoing the raw advisory here would leak the very
-			// text the substitution exists to contain.
-			_logger.WriteWarning($"{ContractViolationText}: {redacted}");
-			warnings[i] = redacted;
-		}
-		if (!violated) {
-			return;
-		}
-		// The append still travels the redactor even though the static advisory is byte-identical under
-		// it (pinned by the survive-the-redactor test): future dynamic content added here would then be
-		// scrubbed automatically instead of resting on this method's doc. The debug fail-fast comes last,
-		// after the containment is complete — the runtime treats a failing assert as non-returning.
-		warnings.Add(Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(RedactionContractAdvisory));
-		Debug.Fail("A build advisory carries text the sensitive-text redactor would rewrite. Advisories travel " +
-			"unredacted onto the create-theme MCP result by contract (see CollectWarnings' doc): they must be " +
-			"static or locally computed text, and caller input may be interpolated only after a validation " +
-			"gate equivalent to FontFamilyName.Validate.");
 	}
 
 	private static void AddGoogleFontsAvailabilityWarnings(

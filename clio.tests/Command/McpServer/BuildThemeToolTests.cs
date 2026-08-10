@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio;
@@ -364,6 +365,57 @@ public sealed class BuildThemeToolTests
 		result.Warnings.Should().NotBeNull(because: "the fallback must surface a warning instead of being silent");
 		result.Warnings.Should().Contain(w => w.Contains("ghost") && w.Contains("newest supported version"),
 			because: "the warning must name the unresolved environment and the newest-version fallback so the caller is not silently diverged from the CLI's hard error");
+	}
+
+	[Test]
+	[Description("The hand-written rosters cannot drift from ThemeBrandArgs: the seven shared brand properties live on the base record in another file, while this tool's args-parameter Description and its unknown-argument hint still list them as literals — the Description cannot be generated because an attribute value must be a compile-time constant. A property added to ThemeBrandArgs would otherwise update create-theme's generated rosters and silently leave these stale.")]
+	public void BuildThemeAdvertisedRosters_ShouldListEveryThemeBrandArgsProperty() {
+		// Arrange
+		string[] sharedWireNames = typeof(ThemeBrandArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		sharedWireNames.Should().NotBeEmpty(because: "an empty set means this test pins nothing");
+
+		// Act
+		string argsDescription = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetParameters()[0]
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
+
+		// Assert
+		argsDescription.Should().NotBeNull(because: "the args wrapper is documented for the caller");
+		foreach (string wireName in sharedWireNames) {
+			argsDescription.Should().Contain(wireName,
+				because: $"'{wireName}' is declared on ThemeBrandArgs, so this tool's caller-facing parameter roster must keep naming it");
+			BuildThemeTool.ValidArgumentNames.Should().Contain(wireName,
+				because: $"the corrective hint an agent reads after a rejected build-theme call must keep naming '{wireName}'");
+		}
+	}
+
+	[Test]
+	[Description("The fallback warning interpolates environment-name, which is raw caller input, so the warnings channel is redacted per entry before it crosses the MCP boundary — the same treatment the error channel and every other warning-returning tool apply.")]
+	public void BuildTheme_ShouldRedactTheFallbackWarning_WhenTheNamedEnvironmentCarriesSensitiveText() {
+		// Arrange
+		const string sensitiveEnvironmentName = "https://tenant.example/x?password=hunter2";
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(o => o.Environment == sensitiveEnvironmentName))
+			.Returns(_ => throw new EnvironmentResolutionException("build-theme: environment is not registered."));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>(), _googleFontsCatalog);
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: sensitiveEnvironmentName));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an unresolvable named environment still fails soft to LatestFallback");
+		result.Warnings.Should().NotContain(w => w.Contains(sensitiveEnvironmentName),
+			because: "an environment name that carries a URI and a credential must never reach the agent transcript verbatim");
+		result.Warnings.Should().Contain(w => w.Contains("[redacted-uri]") && w.Contains("newest supported version"),
+			because: "the advisory must still tell the caller which fallback was taken, with only the sensitive token replaced");
 	}
 
 	[Test]

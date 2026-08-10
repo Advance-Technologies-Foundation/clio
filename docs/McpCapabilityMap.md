@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-07-09`
+Snapshot date: `2026-08-10`
 
 ## One-sentence summary
 
@@ -178,19 +178,9 @@ enabled") rather than silently honored:
   no-argument path was already compliant before this feature (documented `latest-fallback`).
 - `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
   newest bundled template when no header-derived tenant is available, and on mixed input (a
-  header plus an explicit `environment-name`) — never a header-blind name lookup. The soft
-  fallback is not silent: when the caller explicitly named an `environment-name` that could not
-  be resolved, the result carries a non-fatal `warnings` entry naming the environment and the
-  newest-version fallback (the resolution catch is scoped to `EnvironmentResolutionException`, so
-  an unexpected fault surfaces as a real error rather than a silent newest-version build).
-  The same version-resolution probe also runs server-side inside `create-theme` brand mode (it
-  composes the build into its single call; an explicit `version` argument skips the probe): the
-  probe resolves through the same per-request resolver as the create call itself, so the build and
-  the theme write always target the same tenant. `create-theme` hard-requires `environment-name`,
-  however, so it rejects a passthrough request before any probe runs — a missing
-  `environment-name` fails the tool's own validation, and a supplied one trips the uniform
-  explicit-environment rejection above; the header-tenant probe behaviour applies to `build-theme`
-  only.
+  header plus an explicit `environment-name`) — never a header-blind name lookup. When the caller
+  explicitly named an `environment-name` that could not be resolved, the fallback is disclosed in
+  a non-fatal `warnings` entry rather than applied silently.
 
 **Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
 alternative (register the target environment and use the stdio path, or a non-passthrough
@@ -204,6 +194,13 @@ alternative (register the target environment and use the stdio path, or a non-pa
 These three remain unsupported by design: the environment name doubles as a local
 package-directory selector with no passthrough equivalent, and routing was judged
 disproportionate for v1 (see the ADR's decision matrix for `link-from-repository-*`).
+
+`create-theme` is unreachable over passthrough for a different reason, so it is in neither list:
+it hard-requires `environment-name`, so a missing one fails the tool's own validation and a
+supplied one trips the uniform explicit-environment rejection above. Its brand mode runs the same
+version-resolution probe as `build-theme`, through the same per-request resolver as the create call
+itself, so the build and the theme write always target the same tenant — but that tenant is always
+the named environment, never a header-derived one.
 
 ## What An AI Learns About Execution Semantics
 
@@ -711,19 +708,15 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
-  Create a theme on the environment from inline `css-content` plus a caption, or — brand mode — from brand colours and fonts (`primary`, plus optional secondary/accent/success/error, fonts, and font weights), with the CSS built server-side in the same call so it never enters the agent context. Exactly one of the two CSS sources per call. Brand mode runs the same Google Fonts availability probe as `build-theme`, with the same suppression and warning outcomes, so on that path the tool reaches fonts.google.com as well as the addressed tenant; the inline `css-content` path stays tenant-only.
+  Create a theme on the environment from inline `css-content` plus a caption, or — brand mode — from brand colours and fonts (`primary`, plus optional secondary/accent/success/error, fonts, and font weights), with the CSS built server-side in the same call so it never enters the agent context. Exactly one of the two CSS sources per call. There is no `version` argument: the theme is written to a named environment, so the build template always follows that environment's own version, resolved once by the version-floor gate. (`build-theme` keeps `version` — it builds for a target the caller names rather than writes to one.) Brand mode runs the same Google Fonts availability probe as `build-theme`, with the same suppression and warning outcomes, so on that path the tool reaches fonts.google.com as well as the addressed tenant; the inline `css-content` path stays tenant-only.
   Stable error codes travelling in the `error` message, on top of the version-gate codes above:
   `theme-css-source-conflict` (both CSS sources supplied), `theme-css-source-missing` (neither supplied),
   `theme-brand-primary-missing` (brand parameters without `primary`, which is what enables the brand mode),
   and `theme-build-failed: <engine message>` (the server-side build rejected the brand inputs or the build
   phase faulted — raised before any HTTP write, so nothing was created). Non-fatal build advisories travel in
   `warnings` on both the success and the failure paths. `error` is redacted before it leaves the tool;
-  `warnings` are deliberately not redacted — every advisory is static or locally computed text by contract
-  (a font advisory carries only a family name the build has already validated against the font-family
-  grammar), pinned by the `CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite` tests. Should an
-  advisory ever violate that contract, it ships in its redacted form together with a static companion
-  advisory announcing the substitution ("report this as a clio defect"), so the containment is visible to
-  the caller rather than silent.
+  advisories travel verbatim, because each is static text or a locally computed value — a font advisory
+  carries only a family name the build already validated against the font-family grammar.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`

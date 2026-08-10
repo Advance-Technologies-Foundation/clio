@@ -221,12 +221,11 @@ public sealed class GoogleFontsCatalogTests {
 
 		// Act
 		System.Threading.Tasks.Parallel.For(0, 2000,
-			new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = System.Environment.ProcessorCount },
 			index => cache.Store($"Family {index}", GoogleFontAvailability.InCatalog));
 
 		// Assert
 		cache.EntryCount.Should().BeLessThanOrEqualTo(512 + System.Environment.ProcessorCount,
-			because: "the capacity check is a check-then-act over a concurrent dictionary, so each of the at most ProcessorCount writers may pass it once — the tolerance is only sound because the parallelism above is capped at that same number (unbounded Parallel.For lets the thread pool inject extra workers under load and the bound flakes, as CI showed)");
+			because: "the capacity check is a check-then-act over a concurrent dictionary, so concurrent writers may each pass it once — the bound stays tight, not exact");
 	}
 
 	[Test]
