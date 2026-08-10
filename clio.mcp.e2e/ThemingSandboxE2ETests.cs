@@ -307,7 +307,7 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CreateThemeTool.ToolName)]
 	[AllureName("a blind same-id create retry leaves exactly one theme in the catalog")]
-	[AllureDescription("Pins the server-side invariant the theming guidance's retry protocol rests on (ENG-93989): create-theme is non-idempotent by design (ADR B-D3), so the guidance tells agents to pass an explicit id and confirm with list-themes before retrying after a transport timeout. This test performs the blind retry that protocol warns against — a second create-theme call with the SAME explicit id and arguments, in brand mode — and asserts the live catalog holds exactly ONE theme under that id afterwards. The second call's verdict is logged, not asserted: the pinned invariant is no-duplication, not the server's rejection shape. Ignored when the stand lacks theming access.")]
+	[AllureDescription("Pins the server-side invariant the theming guidance's retry protocol rests on (ENG-93989): create-theme is non-idempotent by design (ADR B-D3), so the guidance tells agents to pass an explicit id and confirm with list-themes before retrying after a transport timeout. This test performs the blind retry that protocol warns against — a second create-theme call with the SAME explicit id and arguments, in brand mode — and asserts BOTH halves: the retry's own verdict lands in the closed set of acceptable outcomes (a duplicate rejection naming the id, or an idempotent success echoing the same id — anything else would mean the retry failed for an unrelated reason and the no-duplication check below would pass vacuously), and the live catalog holds exactly ONE theme under that id afterwards. Ignored when the stand lacks theming access.")]
 	public async Task CreateTheme_ShouldNotCreateDuplicate_WhenSameIdIsRetried() {
 		// Arrange
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
@@ -335,6 +335,20 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 			await CallToolAsync(context, CreateThemeTool.ToolName, createArgs));
 		TestContext.Out.WriteLine(
 			$"same-id retry verdict: success={retried.Success}, error={retried.Error ?? "<none>"}");
+
+		// Assert — the retry's own verdict must land in the closed set of acceptable outcomes. Without
+		// this, a regression that makes the retry fail for an UNRELATED reason (env resolution, build
+		// fault, transport) would leave the no-duplication assertion below vacuously green: nothing was
+		// created twice because the retry never reached the create at all.
+		bool duplicateRejected = !retried.Success
+			&& retried.Error is not null
+			&& retried.Error.Contains(themeId)
+			&& retried.Error.Contains("exist", StringComparison.OrdinalIgnoreCase);
+		bool idempotentSuccess = retried.Success && retried.Id == themeId;
+		(duplicateRejected || idempotentSuccess).Should().BeTrue(
+			because: "a same-id retry may only be rejected as a duplicate naming the id, or answered as an "
+				+ $"idempotent success echoing the id — got success={retried.Success}, id={retried.Id ?? "<none>"}, "
+				+ $"error={retried.Error ?? "<none>"}");
 
 		// Assert — the no-duplication invariant
 		ListThemesResult catalog = await ListThemesAsync(context, environmentName);

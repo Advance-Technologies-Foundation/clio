@@ -377,7 +377,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		warnings.Should().Contain(warning => warning.Contains("could not verify \"" + bodyFamily + "\""),
 			because: "the Unverified advisory must be in the sample — it interpolates the caller's family name twice");
 		warnings.Should().OnlyContain(warning => SensitiveErrorTextRedactor.Redact(warning) == warning,
-			because: "a family name that passed the font-family grammar cannot carry a URI, path or credential pair, so even these advisories must survive the redactor unchanged");
+			because: "these grammar-valid families are redactor-clean, so their advisories must survive the redactor unchanged — the grammar alone is not sufficient (a family like \"Bearer Sans\" trips the redactor's Bearer-token rule; that residue is contained by the advisory guard, pinned in BuildThemeAdvisoryContractGuardTests)");
 	}
 
 	private static void AssertBothAdvisoriesSurviveRedaction(IReadOnlyList<string> warnings) {

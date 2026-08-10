@@ -39,12 +39,12 @@ public abstract record ThemeBrandArgs {
 
 	/// <summary>Heading font family; Montserrat when omitted.</summary>
 	[JsonPropertyName("heading-font")]
-	[Description("Heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
+	[Description("Heading font family; Montserrat when omitted. The name must start with a letter or digit and contain only letters, digits, spaces and hyphens (max 100 chars); a malformed name fails the build with INVALID_FONT_FAMILY.")]
 	public string? HeadingFont { get; init; }
 
 	/// <summary>Body font family; Montserrat when omitted.</summary>
 	[JsonPropertyName("body-font")]
-	[Description("Body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
+	[Description("Body font family; Montserrat when omitted. The name must start with a letter or digit and contain only letters, digits, spaces and hyphens (max 100 chars); a malformed name fails the build with INVALID_FONT_FAMILY.")]
 	public string? BodyFont { get; init; }
 
 	/// <summary>Font weights to load; ignored without a custom heading or body font.</summary>

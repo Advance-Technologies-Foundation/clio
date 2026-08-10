@@ -1273,6 +1273,74 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Reuses the version-floor gate's probe when version is omitted: the gate's resolution selects the build template directly, so the brand build performs no second environment probe — no settings resolution and no resolver-factory call — inside the per-tenant lock.")]
+	public void CreateTheme_ShouldReuseTheGateVersionProbe_WhenVersionIsOmitted() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker.EnsureRequirements(Arg.Any<object>())
+			.Returns(CreatioVersionResolution.Resolved(new Version(10, 0, 0, 720)));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the gate-resolved version must feed a normal successful brand build");
+		commandResolver.DidNotReceive().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+		build.ResolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
+		build.TemplateProvider.Received(1).GetCssTemplate("10.0.0.720");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A dev-build environment (0.0.0.0 bypasses the version floor) cannot select a build template: the brand build fails under theme-build-failed and nothing is created — the same refusal class the pre-threading second probe produced. The template provider's rejection contract for below-10.0 versions is pinned on the provider itself; this pins create-theme's flow through it.")]
+	public void CreateTheme_ShouldFailTheBuild_WhenTheGateResolvedADevBuild() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		build.TemplateProvider.GetCssTemplate("0.0.0.0")
+			.Returns(_ => throw new ArgumentException(
+				"Themes require Creatio 10.0 or newer; version 0.0.0.0 is not supported."));
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker.EnsureRequirements(Arg.Any<object>())
+			.Returns(CreatioVersionResolution.Resolved(new Version(0, 0, 0, 0)));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a dev build has no matching theme template, so the brand build must refuse");
+		result.Error.Should().StartWith(CreateThemeTool.ErrorCodes.BuildFailed,
+			because: "a template rejection is a build-phase failure and must carry the documented code");
+		result.Error.Should().Contain("Themes require Creatio 10.0 or newer",
+			because: "the caller must learn why the dev environment cannot take a built theme");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "nothing may be created when no template could be selected");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A fault the build engine does not catch (here an unreadable bundled template surfacing as IOException from the command resolve) still reaches the caller inside the theme-build-failed taxonomy: TryBuildTheme's false-return channel is not the only way the build phase can fail, and a code-less generic message would fall outside the documented contract agents branch on. Version-gate and create-phase failures must stay unprefixed — see the sibling tests.")]
 	public void CreateTheme_ShouldPrefixBuildFailedCode_WhenTheBuildPhaseThrowsUnexpectedly() {
 		// Arrange

@@ -833,7 +833,7 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Both font arguments name the one fatal outcome and point at the guidance that owns the full contract, so an agent reading the tool schema can tell a build-failing name from an advisory availability warning without the rule being restated on six surfaces.")]
+	[Description("Both font arguments name the one fatal outcome and carry the name contract inline — declared once, on the shared ThemeBrandArgs record, so it is still not restated per surface. The schema is deliberately self-sufficient: the externalized theming guidance article does not document the brand-mode font contract, so deferring to it would point an agent at guidance that never mentions the rule.")]
 	[TestCase("HeadingFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForHeadingFont")]
 	[TestCase("BodyFont", TestName = "BuildThemeArgs_ShouldDocumentNameContract_ForBodyFont")]
 	public void BuildThemeArgs_ShouldDocumentTheFamilyNameContract(string parameterName) {
@@ -845,8 +845,8 @@ public sealed class BuildThemeToolTests
 		description.Should().NotBeNull(because: "every advertised argument carries a description in the tool schema");
 		description.Should().Contain("INVALID_FONT_FAMILY",
 			because: "the agent must be able to tell the one fatal font outcome from the advisory availability ones");
-		description.Should().Contain("get-guidance theming",
-			because: "the full name contract lives in the guidance rather than being restated on every surface, so the argument must point at it");
+		description.Should().Contain("letters, digits, spaces and hyphens",
+			because: "the name contract must be readable off the schema itself — the guidance article does not document brand mode, so the argument cannot defer to it");
 	}
 
 	[Test]

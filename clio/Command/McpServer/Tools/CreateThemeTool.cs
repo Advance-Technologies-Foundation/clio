@@ -110,7 +110,8 @@ public class CreateThemeTool(
 		"checked against Google Fonts over the network (a short bounded probe): a family the catalog does not " +
 		"publish gets no @import plus a warning, and an unverifiable probe keeps the import plus a warning. " +
 		"The inline css-content path stays tenant-only (no Google Fonts probe) — OpenWorld reflects the brand-mode probe only. " +
-		"For the theme workflow, read get-guidance theming first.")]
+		"This description is authoritative for create-theme's CSS sources, font-name contract, and error codes; " +
+		"get-guidance theming covers the surrounding workflow (apply, default theme, deletion).")]
 	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (inline mode) or primary (brand mode) — exactly one of the two, " +
 			"css-class-name, caption, id, package-name, secondary, accent, success, error, heading-font, body-font, font-weights, version (all optional).")]
@@ -228,7 +229,18 @@ public class CreateThemeTool(
 	private bool TryBuildBrandCss(CreateThemeArgs args, out string css,
 		out IReadOnlyList<string> warnings, out string error) {
 		EnvironmentOptions environmentOptions = new() { Environment = args.EnvironmentName };
-		EnvironmentSettings resolvedSettings = string.IsNullOrWhiteSpace(args.Version)
+		// The version-floor gate has already probed THIS environment's version inside this same call
+		// (class-level [RequiresCreatioVersion] on CreateThemeOptions), so when the caller omitted
+		// version, reuse the gate's resolution instead of paying a second probe — a fresh resolver over a
+		// fresh authenticated client, up to several HTTP round-trips — under the per-tenant lock. The
+		// template lookup tolerates a full core version ("10.0.0.720" selects the 10.0 template). The
+		// settings fallback below survives only for callers whose gate produced no resolution (a
+		// substituted checker in tests, or a future non-gated composition) and is byte-identical to the
+		// pre-threading behavior.
+		string gateVersion = string.IsNullOrWhiteSpace(args.Version)
+			? GateCreatioVersionResolution?.Version?.ToString()
+			: null;
+		EnvironmentSettings resolvedSettings = string.IsNullOrWhiteSpace(args.Version) && gateVersion is null
 			? _commandResolver.Resolve<EnvironmentSettings>(environmentOptions)
 			: null;
 		BuildThemeOptions buildOptions = new() {
@@ -243,7 +255,7 @@ public class CreateThemeTool(
 			HeadingFont = args.HeadingFont,
 			BodyFont = args.BodyFont,
 			FontWeights = args.FontWeights,
-			Version = args.Version,
+			Version = string.IsNullOrWhiteSpace(args.Version) ? gateVersion : args.Version,
 			// Must stay null: the environment reaches the build only as resolvedSettings. Copying it here
 			// alongside an explicit version trips ResolveVersion's version/environment mutual-exclusion
 			// guard on every version+environment call (pinned by

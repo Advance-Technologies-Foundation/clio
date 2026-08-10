@@ -521,10 +521,10 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// <see cref="Clio.Command.McpServer.SensitiveErrorTextRedactor"/> — the error channel beside it is. Every advisory
 	/// added here must therefore be static text or a locally computed value: never an environment setting, a
 	/// path, a URI, or unvalidated caller input. The only caller-supplied text any advisory interpolates today
-	/// is a font family name, which is safe solely because <see cref="Clio.Theming.FontFamilyName.Validate"/>
-	/// has already rejected anything outside its letters/digits/spaces/hyphens grammar in
-	/// <see cref="ResolveFontAvailability"/> — an advisory must never interpolate input that has not passed an
-	/// equivalent gate. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
+	/// is a font family name, gated by <see cref="Clio.Theming.FontFamilyName.Validate"/> in
+	/// <see cref="ResolveFontAvailability"/> — necessary but not sufficient: the grammar blocks URIs, paths,
+	/// and key/value separators, yet a grammar-valid family such as "Bearer Sans" still trips the redactor's
+	/// Bearer-token rule, which is why the guard below is the containment rather than the doc. The <c>CollectWarnings_ShouldEmitNothingTheRedactorWouldRewrite</c> trio samples this
 	/// contract (including the font advisories), and <see cref="EnforceAdvisoryRedactionContract"/> runs the
 	/// redactor over every advisory in every build configuration: a violating advisory — existing or added
 	/// later — fails fast in Debug/test runs, and otherwise ships only in its redacted form with the
@@ -558,16 +558,19 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	/// its redacted form. Travels the warnings channel so the substitution is visible to MCP callers, where
 	/// the logger echo is suppressed. Static text by design — it must itself satisfy the contract it reports.
 	/// </summary>
-	internal const string RedactionContractAdvisory =
+	private const string RedactionContractAdvisory =
 		ContractViolationText + "; report this as a clio defect.";
 
 	/// <summary>
-	/// Backstop for the non-redaction contract described on <see cref="CollectWarnings"/>. Internal solely
-	/// for the contract-guard test: the branch is unreachable through the public API while every shipped
-	/// advisory is contract-compliant, and <see cref="Debug.Fail(string)"/> would fail-fast a test host that
-	/// reached it through the real flow.
+	/// Backstop for the non-redaction contract described on <see cref="CollectWarnings"/>. Reachable through
+	/// the public build path: the <see cref="Clio.Theming.FontFamilyName"/> grammar blocks URIs, paths, and
+	/// key/value separators, but not every redactor pattern — a grammar-valid family beginning with
+	/// "Bearer " trips the redactor's Bearer-token rule inside the Google-Fonts advisories that interpolate
+	/// it, which is exactly the flow the contract-guard test drives end-to-end.
+	/// <see cref="Debug.Fail(string)"/> fail-fasts Debug/test hosts that reach it; a Release build ships
+	/// only the redacted advisory plus the companion announcement.
 	/// </summary>
-	internal void EnforceAdvisoryRedactionContract(List<string> warnings) {
+	private void EnforceAdvisoryRedactionContract(List<string> warnings) {
 		bool violated = false;
 		for (int i = 0; i < warnings.Count; i++) {
 			string redacted = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(warnings[i]);

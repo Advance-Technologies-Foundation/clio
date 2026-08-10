@@ -290,8 +290,17 @@ public abstract class BaseTool<T>(
 			return;
 		}
 		ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
-		checker.EnsureRequirements(options);
+		GateCreatioVersionResolution = checker.EnsureRequirements(options);
 	}
+
+	/// <summary>
+	/// The version resolution the floor gate performed for this invocation, or <c>null</c> when no
+	/// requirement was triggered (or the gate has not run). Tool instances are constructed per invocation
+	/// (see <c>McpToolInvokerRegistry.CreateTool</c>), so this never carries state across calls. Lets a
+	/// derived tool reuse the gate's probe — e.g. to select a version-matched artifact — instead of paying
+	/// a second environment round-trip inside the per-tenant lock.
+	/// </summary>
+	private protected CreatioVersionResolution GateCreatioVersionResolution { get; private set; }
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME
 	// switch logic the command itself is resolved with. Sharing this with ResolveCommand guarantees the

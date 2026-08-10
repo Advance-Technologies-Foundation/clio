@@ -1,30 +1,58 @@
 namespace Clio.Tests.Command;
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Clio.Command.McpServer.Tools;
+using System.Threading;
+using Clio.Command.McpServer;
 using Clio.Command.Theming;
 using Clio.Common;
 using Clio.Theming;
-using Clio.UserEnvironment;
-using Clio.Workspaces;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 /// <summary>
-/// Pins <see cref="BuildThemeCommand.EnforceAdvisoryRedactionContract"/> — the Release-containment
-/// backstop for the advisory non-redaction contract. Every test runs with the trace listeners swapped
-/// for a recording one (see <see cref="Setup"/>) so the guard's <c>Debug.Fail</c> is captured instead of
-/// fail-fasting the test host; the fixture is <see cref="NonParallelizableAttribute"/> because that swap
-/// is process-global state.
+/// Pins the advisory non-redaction contract's backstop through the public
+/// <see cref="BuildThemeCommand.TryBuildTheme(BuildThemeOptions, out string, out string, out IReadOnlyList{string}, out string)"/>
+/// path — no test seam. A font family that satisfies the <see cref="Clio.Theming.FontFamilyName"/> grammar can
+/// still carry a token the sensitive-text redactor rewrites: "Bearer Sans" is grammar-valid, yet the redactor's
+/// Bearer-token pattern rewrites both Google-Fonts advisories that interpolate it, so the guard's containment
+/// (in-place redaction, companion advisory, logger echo, debug fail-fast) is reachable end-to-end. Every test
+/// runs with the trace listeners swapped for a recording one (see <see cref="Setup"/>) so the guard's
+/// <c>Debug.Fail</c> is captured instead of fail-fasting the test host; the fixture is
+/// <see cref="NonParallelizableAttribute"/> because that swap is process-global state, and it sits apart from
+/// <see cref="BuildThemeCommandTests"/> so the swap does not serialize that whole fixture.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
 [Category("Unit")]
 [Property("Module", "Command")]
-public class BuildThemeAdvisoryContractGuardTests {
+public class BuildThemeAdvisoryContractGuardTests : BaseClioModuleTests {
+
+	/// <summary>
+	/// Snapshot of the command's private companion advisory. Hardcoded on purpose: the literal is an
+	/// MCP-caller-visible contract, so a production rewording must surface here as a conscious change.
+	/// </summary>
+	private const string RedactionContractAdvisory =
+		"build-theme: an advisory violated the non-redaction contract and was replaced with its redacted form"
+		+ "; report this as a clio defect.";
+
+	/// <summary>
+	/// The NotInCatalog advisory for a redactor-clean family, byte-for-byte as CollectWarnings emits it —
+	/// the pass-through baseline a violating sibling must not disturb.
+	/// </summary>
+	private const string CompliantVerdanaAdvisory =
+		"build-theme: \"Verdana\" was not found in Google Fonts — names are case-sensitive "
+		+ "(\"Roboto\" resolves where \"roboto\" does not), and families are sometimes renamed (search "
+		+ "fonts.google.com for the current name). No web-font import was added: the theme shows "
+		+ "\"Verdana\" only where it is installed locally; everywhere else the text falls back to "
+		+ "a generic face. Pick a Google font and restyle if that is not acceptable.";
+
+	private const string FontWeightsAdvisory =
+		"build-theme: font weights were ignored — they apply only to a custom heading or body font.";
 
 	private sealed class RecordingTraceListener : TraceListener {
 
@@ -46,32 +74,55 @@ public class BuildThemeAdvisoryContractGuardTests {
 
 	private RecordingTraceListener _recorder;
 	private TraceListener[] _savedListeners;
+	private IThemeCssBuilder _themeCssBuilder;
+	private IThemeTemplateProvider _themeTemplateProvider;
 	private ILogger _logger;
+	private IGoogleFontsCatalog _googleFontsCatalog;
 	private BuildThemeCommand _command;
 
-	[SetUp]
-	public void Setup() {
+	public override void Setup() {
+		base.Setup();
 		_recorder = new RecordingTraceListener();
 		_savedListeners = Trace.Listeners.Cast<TraceListener>().ToArray();
 		Trace.Listeners.Clear();
 		Trace.Listeners.Add(_recorder);
-		_logger = Substitute.For<ILogger>();
-		_command = new BuildThemeCommand(
-			Substitute.For<IThemeCssBuilder>(),
-			Substitute.For<IThemeTemplateProvider>(),
-			Substitute.For<IPlatformVersionResolverFactory>(),
-			Substitute.For<ISettingsRepository>(),
-			Substitute.For<IWorkspacePathBuilder>(),
-			Substitute.For<IFileSystem>(),
-			_logger,
-			Substitute.For<IGoogleFontsCatalog>());
+		_command = Container.GetRequiredService<BuildThemeCommand>();
+		_themeTemplateProvider.GetCssTemplate(Arg.Any<string>()).Returns("template-css");
+		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>()).Returns("built-css");
 	}
 
-	[TearDown]
-	public void Teardown() {
+	public override void TearDown() {
 		Trace.Listeners.Clear();
 		Trace.Listeners.AddRange(_savedListeners);
+		_themeCssBuilder.ClearReceivedCalls();
+		_themeTemplateProvider.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
+		_googleFontsCatalog.ClearReceivedCalls();
+		base.TearDown();
 	}
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
+		_themeCssBuilder = Substitute.For<IThemeCssBuilder>();
+		_themeTemplateProvider = Substitute.For<IThemeTemplateProvider>();
+		_logger = Substitute.For<ILogger>();
+		_googleFontsCatalog = Substitute.For<IGoogleFontsCatalog>();
+		_googleFontsCatalog.LookupAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.InCatalog);
+		containerBuilder.AddTransient<IThemeCssBuilder>(_ => _themeCssBuilder);
+		containerBuilder.AddTransient<IThemeTemplateProvider>(_ => _themeTemplateProvider);
+		containerBuilder.AddTransient<ILogger>(_ => _logger);
+		containerBuilder.AddTransient<IGoogleFontsCatalog>(_ => _googleFontsCatalog);
+	}
+
+	// Explicit --accent keeps the auto-accent advisory out of every arrangement, so each test's warning
+	// set is exactly the advisories it stages. The colour values never reach validation: the CSS builder
+	// is substituted, and only the real builder validates colours.
+	private static BuildThemeOptions ValidOptions() => new() {
+		Primary = "#004fd6",
+		CssClassName = "MyTheme",
+		Accent = "#f94e11"
+	};
 
 	private void AssertDebugFailSignal() {
 		// Debug.Fail is [Conditional("DEBUG")]: every current lane (build.yml, local dev) compiles tests
@@ -87,66 +138,128 @@ public class BuildThemeAdvisoryContractGuardTests {
 #endif
 	}
 
-	[Test]
-	[Description("A violating advisory is replaced with its redacted form, the substitution is announced on the warnings channel itself (the companion advisory MCP callers can see), the logger echo carries only redacted text, and the debug fail-fast signal fires in Debug lanes — so the containment can never run invisibly.")]
-	public void EnforceAdvisoryRedactionContract_ShouldStripAnnounceAndReport_WhenAdvisoryViolatesTheContract() {
-		// Arrange
-		List<string> warnings = ["build-theme: probe hit https://tenant.example/x?password=hunter2 unexpectedly."];
-
-		// Act
-		_command.EnforceAdvisoryRedactionContract(warnings);
-
-		// Assert
-		AssertDebugFailSignal();
-		warnings[0].Should().NotContain("hunter2",
-			because: "the containment must strip the violating text before the advisory can reach any caller");
-		warnings[0].Should().Contain("[redacted-uri]",
-			because: "the substitution must be a redaction, not a truncation — the advisory stays readable");
-		warnings.Should().Contain(BuildThemeCommand.RedactionContractAdvisory,
-			because: "the companion advisory is the only substitution signal an MCP caller can see — the logger echo is suppressed in MCP server mode and the flow log buffer is cleared");
-		_logger.Received(1).WriteWarning(Arg.Is<string>(line =>
-			line.Contains("[redacted-uri]") && !line.Contains("hunter2")));
+	private static int CountOccurrences(string text, string token) {
+		int count = 0;
+		int index = 0;
+		while ((index = text.IndexOf(token, index, StringComparison.Ordinal)) >= 0) {
+			count++;
+			index += token.Length;
+		}
+		return count;
 	}
 
 	[Test]
-	[Description("With several violating advisories around a compliant one, each violator is redacted in place, the compliant advisory stays byte-identical, and the companion advisory is appended exactly once, at the end — the announcement reports the event, not each violation.")]
-	public void EnforceAdvisoryRedactionContract_ShouldAnnounceOnce_WhenSeveralAdvisoriesViolateTheContract() {
-		// Arrange
-		const string compliant = "build-theme: font weights were ignored — they apply only to a custom heading or body font.";
-		List<string> warnings = [
-			"build-theme: probe hit https://tenant.example/x?password=hunter2 unexpectedly.",
-			compliant,
-			@"build-theme: template fell back after reading C:\secrets\template.css."
-		];
+	[Description("End-to-end through the public build: a grammar-valid family the redactor rewrites (\"Bearer Sans\") makes the NotInCatalog advisory violate the contract, and the guard redacts it in place — every interpolation, not just the first — announces the substitution on the warnings channel (the only signal an MCP caller can see), echoes only redacted text to the logger, and fires the debug fail-fast; the build itself still succeeds because the containment is advisory-level.")]
+	public void TryBuildTheme_ShouldContainAndAnnounceViolation_WhenAdvisoryInterpolatesARedactorTrippingFamily() {
+		// Arrange — "Bearer Sans" passes FontFamilyName's grammar, yet the redactor's Bearer-token
+		// pattern rewrites "Bearer Sans" to "[redacted]" wherever an advisory interpolates it.
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Bearer Sans";
+		_googleFontsCatalog.LookupAsync("Bearer Sans", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
 
 		// Act
-		_command.EnforceAdvisoryRedactionContract(warnings);
+		bool ok = _command.TryBuildTheme(options, out string css, out _, out IReadOnlyList<string> warnings, out string error);
 
 		// Assert
-		warnings.Should().HaveCount(4,
-			because: "three original advisories plus exactly one companion announcement must come back — no per-violation duplicates");
-		warnings[0].Should().Contain("[redacted-uri]",
-			because: "the first violator must be redacted in its own slot, not dropped or reordered");
-		warnings[1].Should().Be(compliant,
-			because: "a contract-honoring advisory sitting between violators must stay byte-identical");
-		warnings[2].Should().Contain("[redacted-path]",
-			because: "the second violator must be redacted in its own slot through the path pattern");
-		warnings[3].Should().Be(BuildThemeCommand.RedactionContractAdvisory,
+		ok.Should().BeTrue(because: "a contract violation is contained, not escalated into a build failure");
+		error.Should().BeNull(because: "the violation travels the warnings channel, never the error channel");
+		css.Should().Be("built-css", because: "the theme itself builds normally around the contained advisory");
+		AssertDebugFailSignal();
+		warnings.Should().HaveCount(2,
+			because: "the redacted advisory plus exactly one companion announcement must come back");
+		warnings[0].Should().NotContain("Bearer",
+			because: "the family appears twice in the NotInCatalog advisory and every occurrence must be rewritten");
+		CountOccurrences(warnings[0], "[redacted]").Should().Be(2,
+			because: "both interpolations of the family must be redacted in place, not truncated away");
+		warnings[0].Should().Contain("was not found in Google Fonts",
+			because: "the substitution is a redaction, not a truncation — the advisory stays readable");
+		warnings[1].Should().Be(RedactionContractAdvisory,
+			because: "the companion advisory is the only substitution signal an MCP caller can see — the logger echo is suppressed in MCP server mode — and its literal is a caller-visible contract");
+		_logger.Received(1).WriteWarning(Arg.Any<string>());
+		_logger.Received(1).WriteWarning(Arg.Is<string>(line =>
+			line.Contains("non-redaction contract") && line.Contains("[redacted]") && !line.Contains("Bearer")));
+	}
+
+	[Test]
+	[Description("A compliant advisory in the same build passes through byte-identical while its violating sibling is redacted in place, and the companion advisory is appended once, at the end — the guard contains exactly the violator, nothing around it.")]
+	public void TryBuildTheme_ShouldKeepCompliantAdvisoryByteIdentical_WhenASiblingAdvisoryViolates() {
+		// Arrange — heading trips the redactor; body is a redactor-clean family whose NotInCatalog
+		// advisory text is fully deterministic, so byte-identity can be asserted against a literal.
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Bearer Sans";
+		options.BodyFont = "Verdana";
+		_googleFontsCatalog.LookupAsync("Bearer Sans", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+		_googleFontsCatalog.LookupAsync("Verdana", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, out _, out _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "advisory containment never fails the build");
+		error.Should().BeNull(because: "a successful build carries no error");
+		warnings.Should().HaveCount(3,
+			because: "two font advisories plus exactly one companion announcement must come back");
+		warnings.Should().ContainSingle(warning => warning == CompliantVerdanaAdvisory,
+			because: "a contract-honoring advisory beside a violator must reach the caller byte-identical");
+		string redacted = warnings.Single(warning => warning.Contains("[redacted]"));
+		redacted.Should().NotContain("Bearer",
+			because: "the violator must be redacted in its own slot with every occurrence rewritten");
+		warnings[^1].Should().Be(RedactionContractAdvisory,
 			because: "the companion advisory is appended once, after the advisories it reports on");
 	}
 
 	[Test]
-	[Description("Compliant advisories pass through untouched: no substitution, no companion advisory, no logger echo, no debug failure — the guard is a strict no-op on the contract-honoring path every shipped advisory takes.")]
-	public void EnforceAdvisoryRedactionContract_ShouldBeNoOp_WhenEveryAdvisoryHonorsTheContract() {
+	[Description("With both font slots tripping the redactor — one through the NotInCatalog template, one through the Unverified template — each violator is redacted in place and the companion advisory still appears exactly once: the announcement reports the event, not each violation.")]
+	public void TryBuildTheme_ShouldAnnounceOnce_WhenBothFontAdvisoriesViolate() {
 		// Arrange
-		const string compliant = "build-theme: font weights were ignored — they apply only to a custom heading or body font.";
-		List<string> warnings = [compliant];
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Bearer Sans";
+		options.BodyFont = "Bearer Grotesk";
+		_googleFontsCatalog.LookupAsync("Bearer Sans", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.NotInCatalog);
+		_googleFontsCatalog.LookupAsync("Bearer Grotesk", Arg.Any<CancellationToken>())
+			.Returns(GoogleFontAvailability.Unverified);
 
 		// Act
-		_command.EnforceAdvisoryRedactionContract(warnings);
+		bool ok = _command.TryBuildTheme(options, out _, out _, out IReadOnlyList<string> warnings, out string error);
 
 		// Assert
-		warnings.Should().Equal([compliant],
+		ok.Should().BeTrue(because: "advisory containment never fails the build");
+		error.Should().BeNull(because: "a successful build carries no error");
+		warnings.Should().HaveCount(3,
+			because: "two redacted advisories plus exactly one companion announcement must come back — no per-violation duplicates");
+		warnings.Where(warning => warning == RedactionContractAdvisory).Should().ContainSingle(
+			because: "several violations in one build are one contract event, announced once");
+		warnings[^1].Should().Be(RedactionContractAdvisory,
+			because: "the announcement comes after the advisories it reports on");
+		warnings.Should().ContainSingle(warning =>
+				warning.Contains("was not found in Google Fonts") && warning.Contains("[redacted]") && !warning.Contains("Bearer"),
+			because: "the NotInCatalog violator must be redacted in place through its own template");
+		warnings.Should().ContainSingle(warning =>
+				warning.Contains("could not verify") && warning.Contains("[redacted]") && !warning.Contains("Bearer"),
+			because: "the Unverified violator must be redacted in place through its own template");
+		_logger.Received(2).WriteWarning(Arg.Any<string>());
+		AssertDebugFailSignal();
+	}
+
+	[Test]
+	[Description("A build whose only advisory honors the contract passes through the guard as a strict no-op: the advisory arrives byte-identical, no companion advisory, no logger echo, no debug failure.")]
+	public void TryBuildTheme_ShouldPassCompliantAdvisoryThroughUntouched_WhenNoAdvisoryViolates() {
+		// Arrange — font weights without a family fire the static (deterministic) compliant advisory,
+		// and no fonts are requested so no probe-driven advisory can appear beside it.
+		BuildThemeOptions options = ValidOptions();
+		options.FontWeights = [400, 700];
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, out _, out _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "a compliant advisory build succeeds");
+		error.Should().BeNull(because: "a successful build carries no error");
+		warnings.Should().Equal([FontWeightsAdvisory],
 			because: "a contract-honoring advisory must reach the caller byte-identical, with no companion advisory appended");
 		_recorder.Failures.Should().BeEmpty(
 			because: "the fail-fast signal exists only for contract violations");
@@ -154,14 +267,33 @@ public class BuildThemeAdvisoryContractGuardTests {
 	}
 
 	[Test]
+	[Description("A clean build — published fonts, explicit accent — produces no advisories and no guard side effects at all: nothing appended, nothing logged, nothing failed.")]
+	public void TryBuildTheme_ShouldEmitNothing_WhenFontsArePublished() {
+		// Arrange — the fixture's catalog default answers InCatalog for any family.
+		BuildThemeOptions options = ValidOptions();
+		options.HeadingFont = "Inter";
+		options.BodyFont = "Inter";
+
+		// Act
+		bool ok = _command.TryBuildTheme(options, out string css, out _, out IReadOnlyList<string> warnings, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "published fonts build cleanly");
+		error.Should().BeNull(because: "a successful build carries no error");
+		css.Should().Be("built-css", because: "the built CSS comes back through the public overload");
+		warnings.Should().BeEmpty(because: "no advisory fires, so the guard has nothing to inspect");
+		_recorder.Failures.Should().BeEmpty(because: "no violation means no fail-fast signal");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("The companion advisory itself honors the contract it reports: the redactor returns it unchanged, so announcing a violation can never introduce a second violation.")]
 	public void RedactionContractAdvisory_ShouldSurviveTheRedactorUnchanged() {
 		// Arrange & Act
-		string redacted = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(
-			BuildThemeCommand.RedactionContractAdvisory);
+		string redacted = SensitiveErrorTextRedactor.Redact(RedactionContractAdvisory);
 
 		// Assert
-		redacted.Should().Be(BuildThemeCommand.RedactionContractAdvisory,
+		redacted.Should().Be(RedactionContractAdvisory,
 			because: "the substitution announcement travels the unredacted warnings channel and must be static, contract-compliant text");
 	}
 
