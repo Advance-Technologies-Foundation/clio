@@ -16,9 +16,11 @@
         compiled the shipped sources;
       * moving PackageVersion without moving ModifiedOnUtc leaves the environment's recorded version
         behind, because Creatio decides WHETHER to rewrite the SysPackage row from the timestamp;
-      * NOT moving PackageVersion at all ships the new sources to nobody: clio compares the recorded
-        version against the one in the archive, so an unchanged version means every existing
-        environment is already "converged" and is never asked to update;
+      * NOT moving PackageVersion at all ships the new sources to nobody ONCE THE PACKAGE HAS SHIPPED:
+        clio compares the recorded version against the one in the archive, so an unchanged version means
+        every existing environment is already "converged" and is never asked to update. Before the first
+        release there is nothing to propagate to, which is the one case this guard is wrong about - see
+        -Version;
       * refreshing the archive but not its SHA pin leaves a red test at best and a lie at worst;
       * forgetting to rebuild clio means every local verification tests the PREVIOUS archive, since an
         install resolves the bundled .gz from the BUILD OUTPUT, not from the repository.
@@ -40,6 +42,12 @@
     archive, so a rebundle under an unchanged version reaches only brand-new installs. Raising it costs
     nothing to maintain - no floor constant exists to keep in step - and is the only way for a change to
     reach environments that already have the package.
+
+    ONE case this guard is deliberately wrong about: before the FIRST release, while the version exists
+    only on the delivering branch and no environment anywhere carries it. Then a bump propagates to
+    nobody either, and re-cutting under the same version is correct - only ModifiedOnUtc has to move.
+    There is no flag for it on purpose: a switch would be a permanent hole bought for a one-off. Do those
+    steps by hand and say in the commit message why the version stayed.
 
 .PARAMETER Configuration
     Which clio build output to use and refresh (Debug or Release). Omit to auto-detect: with exactly one
@@ -223,8 +231,14 @@ the shipped archive. So this run would produce an archive that:
   * installs correctly on a machine that has never had the package, and
   * is never offered to any environment that already has it - they all compare as already converged.
 
-Pass a higher -Version. There is no reason left to hold it back: no floor constant has to be kept in step
-with it any more, so raising it costs nothing.
+Pass a higher -Version. There is no reason left to hold it back once the package has SHIPPED: no floor
+constant has to be kept in step with it any more, so raising it costs nothing.
+
+The one exception is BEFORE the first release, while this version exists only on the delivering branch and no
+environment anywhere carries it. Then there is nothing for a bump to propagate to, and re-cutting under the
+same version is correct - only ModifiedOnUtc has to move. This script deliberately has no flag for that: a
+switch would be a permanent hole for the sake of a one-off, so do those steps by hand (the runbook lists
+them) and say in the commit message why the version stayed.
 "@
 }
 

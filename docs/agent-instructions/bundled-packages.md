@@ -90,7 +90,11 @@ shipped version out of the archive itself (`IBundledPackageCatalog`) and compare
 environment recorded; that comparison is the entire delivery mechanism. So:
 
 - **raising it is the only way a change reaches an existing environment** — see fact 2 for what happens
-  when it does not;
+  when it does not. This is what the rule protects, so it also bounds the rule: **before the FIRST release**,
+  while the version exists only on the delivering branch and no environment carries it, there is nothing to
+  propagate to and re-cutting under the same version is correct — only `ModifiedOnUtc` has to move. The
+  script still refuses; do that one by hand (the manual steps below) and record why in the commit message. A
+  flag for it would be a permanent hole bought for a one-off;
 - **lowering it now REFUSES**, it does not merely fail to propagate: `install-process-builder` reads the
   environment's recorded version and will not move it backwards without `--force`. So a rebundle that
   lowers the version, or an older clio pointed at a stand that already carries a newer package, is turned

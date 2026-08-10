@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -57,7 +57,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>53cb6be</c>, branch
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>5a752ad</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
@@ -78,7 +78,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"93B527B9626E0D6D63F90189A2DDA5B1D8097FEEA64F0B14D5968EEDCDA05748";
+		"19B3C2FD666D3B74D44634F644DC728EF4183A65D3872906E4D59D77A8CC8911";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -92,7 +92,15 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// It cannot catch a deliberately FROZEN version — that is
 	/// <c>rebundle-process-builder.ps1</c>'s must-increase guard, which refuses before touching anything.
-	/// This makes the freeze visible; the script makes it impossible through the supported path.
+	/// This makes the freeze visible; the script makes it hard to do by accident.
+	/// <para>
+	/// The must-increase rule starts at the FIRST RELEASE. Before the package has ever shipped in a released
+	/// clio there is no environment carrying it, so there is nothing for a bump to propagate to and re-cutting
+	/// the archive under the same version is correct — only <c>ModifiedOnUtc</c> has to move, which is what
+	/// makes a target pick up the new sources. That is why this pin can stay at <c>1.0.0.0</c> across
+	/// rebundles on the delivering branch. The script still refuses; the pre-release path is deliberately the
+	/// manual one, so the guard keeps no hole for the steady state.
+	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveVersion = "1.0.0.0";
@@ -121,7 +129,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786075660000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786345127000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
