@@ -2513,6 +2513,18 @@ stories:
   # archive produced from that branch by SHA-256, so the two land together.
   # Test plan: spec/test-plans/tp-deliver-process-builder-package.md (written after implementation — it maps
   # the delivered coverage and states the gaps rather than forecasting).
+  # Status review as of 2026-08-10: still `review`. Reviewer findings on the open PR drove four further
+  # commits, and TWO of them fixed defects introduced by the fix before them — the bundled-version suffix
+  # rule was placed wrongly twice (first in the reader, which blinded the downgrade guard; then in the
+  # install command alone, which let convergence dead-end every gated tool). Both wrong placements passed
+  # their own tests and a full 3-lens round, so a second review round was run explicitly and is what caught
+  # them. See the 2026-08-10 diary entry for the generalisation. Full unit suite green (8715).
+  # NOT done and deliberately out of scope, recorded so they are not mistaken for oversights: the
+  # install-application path installs any .gz with no version comparison at all (pre-existing, but it hands
+  # an agent an unguarded equivalent of the override install-process-builder withholds); the two DLLs in the
+  # archive have no per-file content pin, and the whole-archive SHA is refreshed by the rebundle script
+  # itself; and untrusted version text is sanitised at each consumer rather than at the RequiredPackageChecker
+  # boundary where it enters.
 
   - id: story-deliver-process-builder-package-1
     title: "Bundle the source-only CrtProcessBuilder archive into the clio distribution"
