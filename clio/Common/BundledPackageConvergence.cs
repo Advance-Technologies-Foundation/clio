@@ -89,9 +89,20 @@ public class BundledPackageConvergence : IBundledPackageConvergence {
 		if (installedVersion >= bundledVersion) {
 			return false;
 		}
+		// BOTH versions go through the allowlist, and the installed one is the reason. It is read from the
+		// target's SysPackage.Version column, whose text comes from a package's own descriptor — so anyone able
+		// to install a package on that environment chooses it. PackageVersion treats everything after the first
+		// '-' as a free-text suffix and re-emits it verbatim, newlines included, and this message does not stop
+		// at a console: RequiredPackageChecker throws it as PackageRequirementException and BaseTool returns it
+		// through FromValidationError, which does NOT redact — so it lands in an MCP agent's context, on EVERY
+		// gated call rather than only on an install. That is a wider exposure than the install command's own
+		// refusal, which has sanitised the identical value all along.
+		// The bundled version is clio's own artifact and would not need this; it is clamped anyway because the
+		// catalog is a reader and will hand over whatever the archive says, including a malformed suffix.
 		message =
-			$"This clio carries {packageName} {bundledVersion}, but the target environment has "
-			+ $"{installedVersion}. Update the package in the target environment and retry.";
+			$"This clio carries {packageName} {TextUtilities.SanitizeVersionForDisplay(bundledVersion)}, but the "
+			+ $"target environment has {TextUtilities.SanitizeVersionForDisplay(installedVersion)}. Update the "
+			+ "package in the target environment and retry.";
 		return true;
 	}
 

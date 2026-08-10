@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -277,7 +277,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			// target, because that is where the fix is.
 			message =
 				$"Refusing: this clio distribution declares {BundledPackages.ProcessBuilderPackageName} "
-				+ $"{Truncate(Sanitize(shippedVersion))}, but a bundled package version must be a plain "
+				+ $"{TextUtilities.SanitizeVersionForDisplay(shippedVersion)}, but a bundled package version must be a plain "
 				+ "four-part number with no pre-release suffix — clio compares bundled versions numerically, "
 				+ "and installing a suffixed one could move the target environment's recorded version backwards "
 				+ "for everyone using it without being detected. Reinstall or update clio itself. If you "
@@ -315,7 +315,7 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		}
 		message =
 			$"Refusing: the environment carries {BundledPackages.ProcessBuilderPackageName} "
-			+ $"{Sanitize(installedVersion)}, and this clio ships {shippedVersion} — installing would move "
+			+ $"{TextUtilities.SanitizeVersionForDisplay(installedVersion)}, and this clio ships {TextUtilities.SanitizeVersionForDisplay(shippedVersion)} — installing would move "
 			+ "that environment's recorded version BACKWARDS for everyone using it, and nothing downstream "
 			+ "would report it: the gate would see a present package and the convergence check compares the "
 			+ "recorded version, which the rollback has just rewritten. Update clio instead, or pass --force "
@@ -351,12 +351,18 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		installed.Version.CompareTo(shipped.Version) > 0;
 
 	/// <summary>
-	/// Clamps text that came from the environment or the transport before it is quoted back.
+	/// Clamps EXCEPTION text that came from the environment or the transport before it is quoted back.
 	/// </summary>
 	/// <remarks>
 	/// A DataService failure with no <c>errorInfo</c> puts the ENTIRE raw response body into the exception
 	/// message (<c>SelectQueryHelper</c>), which can carry a server stack trace and internal paths. On the
 	/// MCP path that would be redacted; on the CLI it would go straight to the console.
+	/// <para>
+	/// Versions do NOT come through here — they go through
+	/// <see cref="TextUtilities.SanitizeVersionForDisplay"/>, which rebuilds them from permitted characters
+	/// rather than merely shortening them. A length cap is the right defence for a stack trace and the wrong
+	/// one for a value that reaches an agent's context, where the payload fits well inside any cap.
+	/// </para>
 	/// </remarks>
 	private static string Truncate(string text) {
 		if (string.IsNullOrEmpty(text)) {
@@ -366,34 +372,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		return collapsed.Length <= QuotedTextLimit
 			? collapsed
 			: collapsed[..QuotedTextLimit] + "…";
-	}
-
-	/// <summary>
-	/// Renders a version read from the ENVIRONMENT in a form that is safe to put in front of a reader.
-	/// </summary>
-	/// <remarks>
-	/// <see cref="PackageVersion"/> splits on the first <c>-</c>: the left side must parse as
-	/// <see cref="Version"/> and is therefore numeric, but the SUFFIX is free text that
-	/// <c>ToString</c> re-emits verbatim, newlines included. This value comes from the target's
-	/// <c>SysPackage.Version</c> column, and the message carrying it reaches an MCP agent's context — so a
-	/// hostile or compromised instance could otherwise plant instructions there. Rendering the numeric
-	/// version plus a clamped, restricted suffix keeps the information a reader needs and drops the rest.
-	/// <para>
-	/// Applied to the SHIPPED version in one place only — the refusal of a suffixed bundled version. Normally
-	/// that version needs no defending: it comes from clio's own archive, and anyone able to choose its text
-	/// already controls what the command installs. But that refusal fires precisely because the archive is
-	/// malformed, so its text is exactly what cannot be assumed well-formed, and it is quoted back through
-	/// here and <see cref="Truncate"/> for the same reason the environment's is.
-	/// </para>
-	/// </remarks>
-	private static string Sanitize(PackageVersion version) {
-		if (string.IsNullOrWhiteSpace(version.Suffix)) {
-			return version.Version.ToString();
-		}
-		string suffix = new(version.Suffix
-			.Where(character => char.IsLetterOrDigit(character) || character is '.' or '_' or '-')
-			.Take(32).ToArray());
-		return suffix.Length == 0 ? version.Version.ToString() : $"{version.Version}-{suffix}";
 	}
 
 	/// <summary>
