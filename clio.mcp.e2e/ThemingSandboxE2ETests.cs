@@ -336,10 +336,7 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		TestContext.Out.WriteLine(
 			$"same-id retry verdict: success={retried.Success}, error={retried.Error ?? "<none>"}");
 
-		// Assert — the retry's own verdict must land in the closed set of acceptable outcomes. Without
-		// this, a regression that makes the retry fail for an UNRELATED reason (env resolution, build
-		// fault, transport) would leave the no-duplication assertion below vacuously green: nothing was
-		// created twice because the retry never reached the create at all.
+		// Assert — the retry's own verdict
 		bool duplicateRejected = !retried.Success
 			&& retried.Error is not null
 			&& retried.Error.Contains(themeId)

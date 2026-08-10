@@ -115,9 +115,6 @@ public class BuildThemeAdvisoryContractGuardTests : BaseClioModuleTests {
 		containerBuilder.AddTransient<IGoogleFontsCatalog>(_ => _googleFontsCatalog);
 	}
 
-	// Explicit --accent keeps the auto-accent advisory out of every arrangement, so each test's warning
-	// set is exactly the advisories it stages. The colour values never reach validation: the CSS builder
-	// is substituted, and only the real builder validates colours.
 	private static BuildThemeOptions ValidOptions() => new() {
 		Primary = "#004fd6",
 		CssClassName = "MyTheme",
@@ -151,8 +148,7 @@ public class BuildThemeAdvisoryContractGuardTests : BaseClioModuleTests {
 	[Test]
 	[Description("End-to-end through the public build: a grammar-valid family the redactor rewrites (\"Bearer Sans\") makes the NotInCatalog advisory violate the contract, and the guard redacts it in place — every interpolation, not just the first — announces the substitution on the warnings channel (the only signal an MCP caller can see), echoes only redacted text to the logger, and fires the debug fail-fast; the build itself still succeeds because the containment is advisory-level.")]
 	public void TryBuildTheme_ShouldContainAndAnnounceViolation_WhenAdvisoryInterpolatesARedactorTrippingFamily() {
-		// Arrange — "Bearer Sans" passes FontFamilyName's grammar, yet the redactor's Bearer-token
-		// pattern rewrites "Bearer Sans" to "[redacted]" wherever an advisory interpolates it.
+		// Arrange
 		BuildThemeOptions options = ValidOptions();
 		options.HeadingFont = "Bearer Sans";
 		_googleFontsCatalog.LookupAsync("Bearer Sans", Arg.Any<CancellationToken>())
@@ -184,8 +180,7 @@ public class BuildThemeAdvisoryContractGuardTests : BaseClioModuleTests {
 	[Test]
 	[Description("A compliant advisory in the same build passes through byte-identical while its violating sibling is redacted in place, and the companion advisory is appended once, at the end — the guard contains exactly the violator, nothing around it.")]
 	public void TryBuildTheme_ShouldKeepCompliantAdvisoryByteIdentical_WhenASiblingAdvisoryViolates() {
-		// Arrange — heading trips the redactor; body is a redactor-clean family whose NotInCatalog
-		// advisory text is fully deterministic, so byte-identity can be asserted against a literal.
+		// Arrange
 		BuildThemeOptions options = ValidOptions();
 		options.HeadingFont = "Bearer Sans";
 		options.BodyFont = "Verdana";
@@ -248,8 +243,7 @@ public class BuildThemeAdvisoryContractGuardTests : BaseClioModuleTests {
 	[Test]
 	[Description("A build whose only advisory honors the contract passes through the guard as a strict no-op: the advisory arrives byte-identical, no companion advisory, no logger echo, no debug failure.")]
 	public void TryBuildTheme_ShouldPassCompliantAdvisoryThroughUntouched_WhenNoAdvisoryViolates() {
-		// Arrange — font weights without a family fire the static (deterministic) compliant advisory,
-		// and no fonts are requested so no probe-driven advisory can appear beside it.
+		// Arrange
 		BuildThemeOptions options = ValidOptions();
 		options.FontWeights = [400, 700];
 
@@ -269,7 +263,7 @@ public class BuildThemeAdvisoryContractGuardTests : BaseClioModuleTests {
 	[Test]
 	[Description("A clean build — published fonts, explicit accent — produces no advisories and no guard side effects at all: nothing appended, nothing logged, nothing failed.")]
 	public void TryBuildTheme_ShouldEmitNothing_WhenFontsArePublished() {
-		// Arrange — the fixture's catalog default answers InCatalog for any family.
+		// Arrange
 		BuildThemeOptions options = ValidOptions();
 		options.HeadingFont = "Inter";
 		options.BodyFont = "Inter";

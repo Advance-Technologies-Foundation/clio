@@ -229,14 +229,6 @@ public class CreateThemeTool(
 	private bool TryBuildBrandCss(CreateThemeArgs args, out string css,
 		out IReadOnlyList<string> warnings, out string error) {
 		EnvironmentOptions environmentOptions = new() { Environment = args.EnvironmentName };
-		// The version-floor gate has already probed THIS environment's version inside this same call
-		// (class-level [RequiresCreatioVersion] on CreateThemeOptions), so when the caller omitted
-		// version, reuse the gate's resolution instead of paying a second probe — a fresh resolver over a
-		// fresh authenticated client, up to several HTTP round-trips — under the per-tenant lock. The
-		// template lookup tolerates a full core version ("10.0.0.720" selects the 10.0 template). The
-		// settings fallback below survives only for callers whose gate produced no resolution (a
-		// substituted checker in tests, or a future non-gated composition) and is byte-identical to the
-		// pre-threading behavior.
 		string gateVersion = string.IsNullOrWhiteSpace(args.Version)
 			? GateCreatioVersionResolution?.Version?.ToString()
 			: null;
