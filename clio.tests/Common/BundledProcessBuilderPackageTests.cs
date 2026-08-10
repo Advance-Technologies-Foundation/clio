@@ -56,6 +56,21 @@ public class BundledProcessBuilderPackageTests {
 	private const string CompileMarkerSchemaName = "CrtProcessBuilderCompileMarker";
 
 	/// <summary>
+	/// Every top-level entry the bundled archive may contain.
+	/// </summary>
+	/// <remarks>
+	/// Adding to this list is a decision about what runs on a customer's environment, so make it deliberately
+	/// and say why. <c>SqlScripts</c> and <c>Data</c> are the two that must never appear — Creatio executes
+	/// them at install time and the install passes no <c>PackageInstallOptions</c>, so the platform's own
+	/// defaults apply — but the list is an allowlist rather than a ban on those two names, because a denylist
+	/// would need extending for every install-time mechanism the platform grows and would be silently
+	/// incomplete until somebody noticed.
+	/// </remarks>
+	private static readonly string[] AllowedTopLevelEntries = [
+		"descriptor.json", "Files", "Schemas", "Resources"
+	];
+
+	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
 	/// (<c>packages/CrtProcessBuilder</c> at commit <c>9813205</c>, branch
 	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
@@ -703,6 +718,40 @@ public class BundledProcessBuilderPackageTests {
 			because: "ErrorOr and ATF.Repository are real compile references absent from the platform core, so "
 				+ "dropping either ships source the target cannot build; and any OTHER dll is a leaked build "
 				+ "output, which would survive a failed compile and answer from stale code");
+	}
+
+	[Test]
+	[Description("The archive may contain NOTHING that executes on install beyond the sources the target compiles. This is the only pin that constrains what else is in there: every other check in this fixture is a substring probe over the decompressed text or a descriptor field, and the DLL inventory above covers .dll entries alone. Creatio applies its own defaults for SQL scripts and bound data because the install passes no PackageInstallOptions, so a SqlScripts/ or Data/ folder arriving in this archive would run arbitrary SQL and write bound rows — role membership, granted operations, system settings — on every customer environment that installs it. The whole-archive SHA-256 does not compensate: the rebundle script refreshes it from the archive it just produced, so the clio-side diff for such an addition is one hash line, one date line and a binary blob.")]
+	public void BundledArchive_ShouldContainNothingThatExecutesOnInstall() {
+		// Arrange
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
+
+		// Act
+		List<string> unexpectedTopLevel = entries
+			.Select(entry => entry.Split('/')[0])
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Where(top => !AllowedTopLevelEntries.Contains(top, StringComparer.OrdinalIgnoreCase))
+			.ToList();
+		List<string> schemaFolders = entries
+			.Where(entry => entry.StartsWith("Schemas/", StringComparison.OrdinalIgnoreCase))
+			.Select(entry => entry.Split('/')[1])
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		// Assert
+		// An ALLOWLIST, not a ban on the two folder names that motivated it. A denylist would have to be
+		// extended for every install-time mechanism Creatio grows, and would be silently wrong until someone
+		// noticed the new one — which is the same shape of failure this whole fixture exists to prevent.
+		unexpectedTopLevel.Should().BeEmpty(
+			because: "a source-only package needs exactly the descriptor, the sources and their resources. "
+				+ $"Anything else is either inert (then say so and add it to {nameof(AllowedTopLevelEntries)} "
+				+ "deliberately) or it executes on the customer's environment at install time, which is a "
+				+ "decision nobody should be able to make by dropping a folder into the producing repository");
+		schemaFolders.Should().BeEquivalentTo([CompileMarkerSchemaName],
+			because: "the compile marker is the only schema this package ships, and it is empty on purpose. A "
+				+ "second schema is not inert: a ProcessSchema can carry a script task, and a client schema "
+				+ "reaches the UI — both would install and run under the package's own name, below the "
+				+ "CanManageProcessDesign gate that protects everything the service itself does");
 	}
 
 	[Test]

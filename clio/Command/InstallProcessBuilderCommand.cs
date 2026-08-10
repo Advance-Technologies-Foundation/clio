@@ -115,6 +115,30 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </summary>
 	private const int QuotedTextLimit = 300;
 
+	/// <summary>
+	/// How both refusals point at the override: by saying one exists and where to read about it, never by
+	/// naming the flag.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately not the literal <c>--force</c>, and the reason is the audience rather than secrecy. These
+	/// messages are written with <c>WriteError</c>, which <c>BaseTool</c> captures into
+	/// <c>CommandExecutionResult.Output</c> — so on the MCP path the refusal text lands in an agent's context.
+	/// The override is CLI-only precisely because rolling a package back affects everyone on that environment
+	/// and an agent working somebody's business task is not the party to decide it, and the curated contract
+	/// already bans the literal for that reason: concrete syntax outweighs an abstract prohibition, and any
+	/// host that also grants a shell can run what it was just shown.
+	/// <para>
+	/// A human at a terminal still needs the escape, which is why this points at <c>-H</c> rather than saying
+	/// nothing. One extra step for the person entitled to make the decision, no ready-made command for the
+	/// party that is not. An earlier revision quoted the flag in both messages — added in response to a review
+	/// finding that one refusal failed to mention the override at all. That finding was right about the human
+	/// and wrong about the channel; this wording answers both.
+	/// </para>
+	/// </remarks>
+	private const string OverrideHint =
+		"A command-line override exists for the case where the rollback is what you want; see "
+		+ "'clio install-process-builder -H'.";
+
 	#endregion
 
 	#region Fields: Private
@@ -293,8 +317,8 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 				+ "must be a plain four-part number with no pre-release suffix — clio compares bundled versions "
 				+ "numerically, and installing a suffixed one could move the target environment's recorded "
 				+ "version backwards for everyone using it without being detected. Reinstall or update clio "
-				+ "itself, or re-run the rebundle with a four-part version if you produced this archive. Pass "
-				+ "--force to install it anyway.";
+				+ "itself, or re-run the rebundle with a four-part version if you produced this archive. "
+				+ OverrideHint;
 			return true;
 		}
 		PackageVersion installedVersion;
@@ -335,11 +359,11 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		}
 		message =
 			$"Refusing: the environment carries {BundledPackages.ProcessBuilderPackageName} "
-			+ $"{TextUtilities.SanitizeVersionForDisplay(installedVersion)}, and this clio ships {TextUtilities.SanitizeVersionForDisplay(shippedVersion)} — installing would move "
-			+ "that environment's recorded version BACKWARDS for everyone using it, and nothing downstream "
-			+ "would report it: the gate would see a present package and the convergence check compares the "
-			+ "recorded version, which the rollback has just rewritten. Update clio instead, or pass --force "
-			+ "if the rollback is what you want.";
+			+ $"{TextUtilities.SanitizeVersionForDisplay(installedVersion)}, and this clio ships "
+			+ $"{TextUtilities.SanitizeVersionForDisplay(shippedVersion)} — installing would move that "
+			+ "environment's recorded version BACKWARDS for everyone using it, and nothing downstream would "
+			+ "report it: the gate would see a present package and the convergence check compares the recorded "
+			+ "version, which the rollback has just rewritten. Update clio instead. " + OverrideHint;
 		return true;
 	}
 
