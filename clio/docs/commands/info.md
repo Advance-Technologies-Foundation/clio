@@ -15,7 +15,8 @@ clio info [OPTIONS]
 
 ## Description
 
-Displays version information for clio, cliogate, and the .NET runtime
+Displays version information for clio, cliogate, the bundled `CrtProcessBuilder`
+package, and the .NET runtime
 environment. By default (without options), displays all component versions
 and the path to the settings file.
 
@@ -67,6 +68,7 @@ clio info -s
 Default output (all versions):
 clio:   8.0.1.97
 gate:   2.0.0.38
+process-builder:   1.0.0.0
 dotnet: 8.0.0
 settings file path: C:\Users\username\.clio\appsettings.json
 
@@ -75,6 +77,14 @@ clio:   8.0.1.97
 
 ## Notes
 
+- The `process-builder` version is the `CrtProcessBuilder` package this clio **carries**, read out of the
+  bundled archive itself rather than from any environment. It is the same value the process-designer
+  commands compare against, so comparing it with `clio list-packages -e <environment>` tells you whether
+  that environment is behind what this clio would install.
+- If that line reads `unavailable — …`, this clio installation cannot read its own bundled archive. The
+  message names the file and the remedy is to reinstall or update clio; nothing done to an environment can
+  help. Gated commands still work against an environment that already has the package — they simply stop
+  offering to update it.
 - The cliogate version shown is the version included with current clio
 installation
 - This may differ from the version installed on a specific Creatio instance

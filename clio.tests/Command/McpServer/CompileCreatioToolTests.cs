@@ -13,6 +13,15 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
+// NonParallelizable: this fixture and CompileCreatioToolTests both call
+// McpToolExecutionLock.ResetConfigurationBuildReservationsForTests(), which does an UNKEYED Clear() on a
+// process-global dictionary, and both hold a reservation across an await in the middle of a test. Under
+// [assembly: Parallelizable(ParallelScope.Fixtures)] one fixture's TearDown can therefore clear the
+// reservation the other is asserting on, with no bug present. The keys differ today (sandbox-tenant vs
+// busy-tenant) so it cannot flake yet — it is one shared key away. It would flake FIRST under the
+// mandated pre-commit filter, where the smaller fixture pool makes the two likelier to be co-scheduled,
+// and a flaky red on the gate is how a gate stops being trusted.
+[NonParallelizable]
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class CompileCreatioToolTests
@@ -23,7 +32,7 @@ public sealed class CompileCreatioToolTests
 		// A deadline-branch test detaches its compile; its compile reservation is released on that detached
 		// continuation, which can outlive the test method. Clear the process-global reservations so a leaked
 		// one cannot fast-fail the next test's compile for the shared "sandbox-tenant" key.
-		McpToolExecutionLock.ResetCompileReservationsForTests();
+		McpToolExecutionLock.ResetConfigurationBuildReservationsForTests();
 	}
 
 	[Test]
@@ -346,7 +355,7 @@ public sealed class CompileCreatioToolTests
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
 		// Simulate a compile already running for this tenant by holding its reservation.
-		McpToolExecutionLock.TryReserveCompile("sandbox-tenant").Should().BeTrue(
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant").Should().BeTrue(
 			because: "the first reservation for a tenant must succeed");
 
 		try
@@ -366,7 +375,7 @@ public sealed class CompileCreatioToolTests
 		}
 		finally
 		{
-			McpToolExecutionLock.ReleaseCompile("sandbox-tenant");
+			McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant");
 			ConsoleLogger.Instance.ClearMessages();
 		}
 	}
@@ -386,8 +395,8 @@ public sealed class CompileCreatioToolTests
 		ICompileOperationRegistry registry = new CompileOperationRegistry();
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
-		McpToolExecutionLock.TryReserveCompile("sandbox-tenant").Should().BeTrue();
-		McpToolExecutionLock.ReleaseCompile("sandbox-tenant");
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant").Should().BeTrue();
+		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant");
 
 		try
 		{

@@ -11,7 +11,8 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName,
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
 	public string ProcessName { get; set; } = string.Empty;
