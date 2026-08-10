@@ -485,7 +485,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("A pre-release suffix recorded in the ENVIRONMENT does not block the install of the same numeric version, so a GA goes over an -rc. The guard compares the four-part numbers only, which it can do because a suffixed SHIPPED version is refused at the catalog; PackageVersion's own comparison would answer the opposite here — it ranks an empty suffix BELOW a non-empty one — and would strand the caller, since 'update clio' cannot help when clio already ships the release and --force is unavailable over MCP.")]
+	[Description("A pre-release suffix recorded in the ENVIRONMENT does not block the install of the same numeric version, so a GA goes over an -rc. The guard compares the four-part numbers only, which it can do because the branch before it has already refused a suffixed SHIPPED version; PackageVersion's own comparison would answer the opposite here — it ranks an empty suffix BELOW a non-empty one — and would strand the caller, since 'update clio' cannot help when clio already ships the release and --force is unavailable over MCP.")]
 	public void Execute_ShouldInstall_WhenTheEnvironmentCarriesAPreReleaseOfTheShippedVersion() {
 		// Arrange
 		ArrangeInstalledVersion($"{ShippedVersion}-rc");
@@ -523,13 +523,13 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("A pre-release suffix on the SHIPPED version refuses the install outright, and it must REFUSE rather than warn-and-proceed. The downgrade comparison is numbers-only, which is sound only while no suffix can reach this side: allowed through, shipping 1.0.1.0-rc onto an environment recording 9.9.9.9 installs, because the numbers say nothing is wrong and the suffix is the one thing the comparison ignores — the exact undetected rollback this guard exists to prevent. Deliberately NOT the unreadable-version branch, which proceeds because there is genuinely nothing to compare; here the distribution is readable and wrong.")]
+	[Description("A pre-release suffix on the SHIPPED version refuses the install outright, and it must REFUSE rather than warn-and-proceed. The installed version is EQUAL in its four parts on purpose: that is the case no other branch can catch, because the downgrade comparison is numbers-only and finds nothing strictly newer — so allowed through, this install rewrites the recorded version to a pre-release, the one undetected rollback the guard exists to prevent. A bigger installed version (9.9.9.9) would be refused by the numeric comparison anyway and would prove nothing about this branch. Deliberately NOT the unreadable-version branch, which proceeds because there is genuinely nothing to compare; here the distribution is readable and wrong.")]
 	[TestCase("1.0.1.0-rc")]
 	[TestCase("1.0.1.0-dev.4")]
 	public void Execute_ShouldRefuse_WhenTheShippedVersionCarriesAPreReleaseSuffix(string shippedVersion) {
 		// Arrange
 		ArrangeShippedVersion(shippedVersion);
-		ArrangeInstalledVersion("9.9.9.9");
+		ArrangeInstalledVersion("1.0.1.0");
 		ArrangeSuccessfulInstall();
 
 		// Act
@@ -547,7 +547,7 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 	}
 
 	[Test]
-	[Description("The refusal above is overridable by --force like the downgrade refusal, because it is the same class of decision — a human accepting a rollback — and --force is CLI-only, so an agent can never reach it.")]
+	[Description("The refusal above is overridable by --force like the downgrade refusal, because it is the same class of decision — a human accepting a rollback — and --force is CLI-only, so an agent can never reach it. The arrangement makes BOTH refusals applicable at once (suffixed shipped version AND an environment numerically ahead), so this also pins that --force clears the pair rather than only the first one reached.")]
 	public void Execute_ShouldInstall_WhenTheShippedVersionCarriesASuffixAndForceIsPassed() {
 		// Arrange
 		ArrangeShippedVersion("1.0.1.0-rc");

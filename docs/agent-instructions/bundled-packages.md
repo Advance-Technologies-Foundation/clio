@@ -150,16 +150,26 @@ The script requires `pwsh`. The steps below are what it runs, and they are the f
 PowerShell — the same arrangement `AGENTS.md` uses for `cliogate`'s `build.ps1`. Read them anyway: they
 carry the REASONS, and a script that fails is only useful to someone who knows what each step protects.
 
-> **`X.Y.Z.W` means four plain numbers — no `-rc`, no `-dev`, no suffix of any kind.** The script cannot
-> emit one (`[version]::TryParse` rejects it); by hand you can, which is why the rule is enforced a second
-> time where it cannot be walked around: `IBundledPackageCatalog.TryGetVersion` REFUSES a suffixed bundled
-> version, so an archive carrying one silently stops taking part in the convergence check instead of being
-> compared. The reason it is forbidden rather than ordered: `PackageVersion` ranks an empty suffix BELOW a
-> non-empty one (GA < rc) while the install command's downgrade guard compares the numbers only, and a
-> suffixed *shipped* version is the single input on which those two rules would trap a caller — convergence
-> refusing every gated call and naming the install as the remedy, the install refusing that same version as
-> a rollback, and `--force` unavailable over MCP. A suffix on the version an ENVIRONMENT records is fine and
-> is simply ignored.
+> **`X.Y.Z.W` means four plain numbers — no `-rc`, no `-dev`, no suffix of any kind.** The script cannot emit
+> one (`[version]::TryParse` rejects it); by hand you can, so the rule is enforced twice more downstream:
+> `InstallProcessBuilderCommand` REFUSES to install a distribution whose bundled version carries a suffix,
+> and the `ExpectedArchiveVersion` pin in `BundledProcessBuilderPackageTests` refuses to let one be
+> committed. `BundledPackageConvergence` neither refuses nor compares it — it warns that the distribution
+> cannot be compared and allows the call through.
+>
+> That split is deliberate and both halves were arrived at by getting it wrong first, so do not "simplify" it:
+>
+> - **The reader must not refuse.** Enforcing the rule in `IBundledPackageCatalog.TryGetVersion` was tried and
+>   reverted. A refusal there comes back as `false`, which already means "I could not read it", and the install
+>   command answers that by installing anyway — so the downgrade guard went blind and a suffixed distribution
+>   could roll a shared environment back from any version, undetected.
+> - **Convergence must not refuse either.** That was tried too. `PackageVersion` ranks an empty suffix BELOW a
+>   non-empty one (GA < rc), so a bundled `1.0.1.0-rc` makes an environment recording the GA `1.0.1.0` — and
+>   every lower version — read as behind. Convergence refused every gated call and named the install as the
+>   remedy; the install refused the same distribution as malformed; and `--force` is unavailable over MCP. The
+>   whole process-designer surface dead, with no in-band way out, over a defect in clio.
+>
+> A suffix on the version an ENVIRONMENT records is fine and is simply ignored.
 
 ### In the `ProcessBuilder` repository
 

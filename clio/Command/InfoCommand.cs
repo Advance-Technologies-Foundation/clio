@@ -65,12 +65,17 @@ namespace Clio.Command
 		// would actually ship. A distribution that cannot read its own archive says so here instead of
 		// printing a number that is no longer backed by anything — that failure is the whole reason a
 		// constant was the wrong carrier (spec/adr/adr-bundled-package-version-source-of-truth.md).
+		// Rendered through SanitizeVersionForDisplay for the same reason the convergence message is: the catalog
+		// is a READER and hands over whatever the archive's descriptor says, suffix included, and PackageVersion
+		// re-emits that suffix verbatim with newlines intact. Only clio's own artifact reaches here, so this is
+		// tidiness rather than a defence — but it is a line printed to a console, and a version that could
+		// forge extra lines in `clio info` output is worth not having.
 		private string GetBundledProcessBuilderVersion() =>
 			_bundledPackageCatalog.TryGetVersion(
 				BundledPackages.ProcessBuilderPackageName,
 				out PackageVersion version,
 				out string diagnosis)
-				? version.ToString()
+				? TextUtilities.SanitizeVersionForDisplay(version)
 				: $"unavailable — {diagnosis}";
 
         public override int Execute(InfoCommandOptions options)

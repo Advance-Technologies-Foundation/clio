@@ -86,6 +86,27 @@ public class BundledPackageConvergence : IBundledPackageConvergence {
 			_logger.WriteWarning(diagnosis);
 			return false;
 		}
+		if (!string.IsNullOrWhiteSpace(bundledVersion.Suffix)) {
+			// CANNOT DECIDE, so warn and allow — the same answer as an unreadable version above, for the same
+			// reason: clio's own artifact is malformed and blocking would turn its defect into the user's.
+			// Refusing here instead is a TRAP, and this was measured rather than reasoned about. The comparison
+			// below uses PackageVersion's operator, whose CompareSuffix ranks an empty suffix BELOW a non-empty
+			// one — so with a bundled 1.0.1.0-rc, an environment recording the GA 1.0.1.0 reads as BEHIND, and
+			// so does every lower version. Convergence would refuse every gated call and name
+			// install-process-builder as the remedy; that command refuses the same distribution as malformed;
+			// and --force is deliberately absent over MCP. Every gated tool dead, no in-band way out, over a
+			// defect in clio rather than anything about the environment.
+			// The install command is where the rule is enforced, and it can afford to refuse because refusing
+			// there costs one command rather than the whole surface, and its message names the real problem.
+			_logger.WriteWarning(
+				$"This clio's bundled {packageName} declares version "
+				+ $"{TextUtilities.SanitizeVersionForDisplay(bundledVersion)}, which carries a pre-release "
+				+ "suffix. A bundled package version must be a plain four-part number, so this distribution "
+				+ "cannot be compared against the version the environment records — the environment is NOT "
+				+ "being reported as out of date. Reinstall or update clio itself; installing this package is "
+				+ "refused separately until then.");
+			return false;
+		}
 		if (installedVersion >= bundledVersion) {
 			return false;
 		}
@@ -97,8 +118,9 @@ public class BundledPackageConvergence : IBundledPackageConvergence {
 		// through FromValidationError, which does NOT redact — so it lands in an MCP agent's context, on EVERY
 		// gated call rather than only on an install. That is a wider exposure than the install command's own
 		// refusal, which has sanitised the identical value all along.
-		// The bundled version is clio's own artifact and would not need this; it is clamped anyway because the
-		// catalog is a reader and will hand over whatever the archive says, including a malformed suffix.
+		// The bundled version is clio's own artifact and cannot be suffixed by the time it reaches here (the
+		// branch above returned), so clamping it is belt-and-braces against a future edit rather than a
+		// defence — but it costs nothing and the catalog is a reader, so it will hand over whatever it finds.
 		message =
 			$"This clio carries {packageName} {TextUtilities.SanitizeVersionForDisplay(bundledVersion)}, but the "
 			+ $"target environment has {TextUtilities.SanitizeVersionForDisplay(installedVersion)}. Update the "

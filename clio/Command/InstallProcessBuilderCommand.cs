@@ -31,12 +31,13 @@ namespace Clio.Command;
 public class InstallProcessBuilderOptions : EnvironmentNameOptions {
 
 	/// <summary>
-	/// Installs even when the environment already carries a NEWER version than this clio ships.
+	/// Installs despite either backwards-move refusal: an environment already carrying a NEWER version than
+	/// this clio ships, or a bundled version stamped with a pre-release suffix.
 	/// </summary>
 	/// <remarks>
 	/// Deliberately CLI-only — it is not exposed on the MCP tool. Rolling a package back is a decision with
 	/// consequences for everyone else on that environment, and an agent working a user's business task is
-	/// not the right party to take it. The refusal names this flag so a human can.
+	/// not the right party to take it. Both refusals name this flag so a human can.
 	/// <para>
 	/// <c>new</c> on purpose: <see cref="EnvironmentOptions"/> already declares a <c>--force</c> ("Force
 	/// restore") that is inherited here and means nothing for this verb. Shadowing it gives the flag this
@@ -47,7 +48,8 @@ public class InstallProcessBuilderOptions : EnvironmentNameOptions {
 	/// </para>
 	/// </remarks>
 	[Option("force", Required = false,
-		HelpText = "Install even if it would downgrade the package already installed in the environment")]
+		HelpText = "Install even if it would downgrade the package in the environment, or if this clio's "
+			+ "bundled version carries a pre-release suffix")]
 	public new bool Force { get; set; }
 
 }
@@ -204,9 +206,13 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		_bundledPackageCatalog.GetArchivePath(BundledPackages.ProcessBuilderPackageName);
 
 	/// <summary>
-	/// Decides whether this install would move the environment's recorded version BACKWARDS.
+	/// Decides whether this install must be refused — either because it would move the environment's recorded
+	/// version BACKWARDS, or because this distribution is stamped so that such a move could not be detected.
 	/// </summary>
-	/// <param name="message">The refusal, naming both versions and the flag that overrides it.</param>
+	/// <param name="message">
+	/// The refusal, always naming <c>--force</c>. The downgrade case names both versions; the malformed-
+	/// distribution case names only the shipped one, because the environment's version is not what is wrong.
+	/// </param>
 	/// <returns><c>true</c> when the install must be refused.</returns>
 	/// <remarks>
 	/// Nothing else stops a downgrade. The installer does not compare versions, and neither does the
@@ -233,10 +239,14 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </description></item>
 	/// </list>
 	/// <para>
-	/// One case REFUSES for a different reason than a comparison: a bundled version carrying a pre-release
-	/// suffix. Read the branch for why it must not join the list above — the short version is that this
-	/// comparison is numbers-only, so a suffixed shipped version makes a rollback undetectable rather than
-	/// merely unknown, and "proceed when unsure" is the wrong default for an artifact that is definitely wrong.
+	/// Those three are about the COMPARISON. Before it runs, one case refuses for a different reason: a bundled
+	/// version carrying a pre-release suffix. It refuses BEFORE the environment is read, so it also overrides
+	/// the absent-package case above — deliberately, and this is the one place the two rules disagree. Nothing
+	/// can be rolled back on an environment that has no package, but installing an unorderable version there
+	/// seeds a recorded value that every later convergence and downgrade decision has to work around, and the
+	/// remedy (reinstall clio, or rebundle with four parts) is available to whoever hit it. "Proceed when
+	/// unsure" is the right default for a check that could not run; it is the wrong one for an artifact that is
+	/// definitely wrong.
 	/// </para>
 	/// <para>
 	/// There is a FOURTH, and it is silent: <c>PackageInfo</c> leaves its version <see langword="null"/> when
@@ -265,11 +275,13 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		if (!string.IsNullOrWhiteSpace(shippedVersion.Suffix)) {
 			// REFUSED, not warned-and-installed, and the difference is the whole point. A bundled version must
 			// be a plain four-part number: IsStrictlyNewer below compares numbers alone, which is only sound
-			// while no suffix can appear on this side. Let one through and the guard stops being able to see a
-			// rollback — shipping 1.0.1.0-rc onto an environment recording 9.9.9.9 would install, because the
-			// suffix is all that the comparison ignores and the numbers say nothing is wrong. That is the exact
-			// harm this guard exists to prevent, so a malformed distribution must not reach the comparison at
-			// all rather than reach it blind.
+			// while no suffix can appear on this side. Let one through and the comparison goes blind exactly
+			// where the suffix is the ONLY difference — shipping 1.0.1.0-rc onto an environment recording
+			// 1.0.1.0 passes IsStrictlyNewer, because with equal numbers nothing is strictly newer, and the
+			// install rewrites the recorded version to a pre-release. A rollback the guard cannot see, which is
+			// the one harm it exists to prevent.
+			// Do not reach for a bigger example: 1.0.1.0-rc over 9.9.9.9 is caught by the numeric comparison
+			// on its own (9 > 1), so it proves nothing about this branch. The equal-numbers case is the case.
 			// Note this is NOT the unreadable-version path above: that one proceeds because "I could not check"
 			// must not become "you may not proceed", and there is genuinely nothing to compare. Here the
 			// distribution is readable and WRONG, clio's own artifact, and installing it is what causes damage
@@ -277,11 +289,12 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 			// target, because that is where the fix is.
 			message =
 				$"Refusing: this clio distribution declares {BundledPackages.ProcessBuilderPackageName} "
-				+ $"{TextUtilities.SanitizeVersionForDisplay(shippedVersion)}, but a bundled package version must be a plain "
-				+ "four-part number with no pre-release suffix — clio compares bundled versions numerically, "
-				+ "and installing a suffixed one could move the target environment's recorded version backwards "
-				+ "for everyone using it without being detected. Reinstall or update clio itself. If you "
-				+ "produced this archive, re-run the rebundle with a four-part version.";
+				+ $"{TextUtilities.SanitizeVersionForDisplay(shippedVersion)}, but a bundled package version "
+				+ "must be a plain four-part number with no pre-release suffix — clio compares bundled versions "
+				+ "numerically, and installing a suffixed one could move the target environment's recorded "
+				+ "version backwards for everyone using it without being detected. Reinstall or update clio "
+				+ "itself, or re-run the rebundle with a four-part version if you produced this archive. Pass "
+				+ "--force to install it anyway.";
 			return true;
 		}
 		PackageVersion installedVersion;
@@ -306,7 +319,14 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 		} catch (Exception e) {
 			_logger.WriteWarning(
 				"Could not read the version currently installed in the environment "
-				+ $"({Truncate(e.GetReadableMessageException())}). Installing anyway; if the environment is "
+				// SanitizeForDisplay, not a length cap alone. A DataService failure with no errorInfo puts the
+				// ENTIRE raw response body into the exception message (SelectQueryHelper), so this text is
+				// chosen by the target, and it reaches an MCP agent's context: the redaction in
+				// McpPassthroughRedaction applies to PASSTHROUGH keys only, and this tool takes a registered
+				// environment name, so nothing else clamps it. Stripping every control character is what stops
+				// a forged output line or a terminal escape; the cap stops a whole HTML error page.
+				+ $"({TextUtilities.SanitizeForDisplay(e.GetReadableMessageException(), QuotedTextLimit)}). "
+				+ "Installing anyway; if the environment is "
 				+ "genuinely unreachable the install itself will say so.");
 			return false;
 		}
@@ -330,9 +350,13 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// <remarks>
 	/// NOT <c>PackageVersion</c>'s own comparison, and deliberately narrower than it. <c>CompareSuffix</c>
 	/// ranks an EMPTY suffix BELOW a non-empty one, so it holds <c>1.1.0.0 &lt; 1.1.0.0-rc</c> — the inverse
-	/// of SemVer. This guard needs no answer to that question at all, because
-	/// <see cref="IBundledPackageCatalog.TryGetVersion"/> refuses a suffixed SHIPPED version outright: with
-	/// one side guaranteed suffix-free, "is the environment ahead of what we carry" is settled by the numbers.
+	/// of SemVer. This guard needs no answer to that question, because the branch ABOVE it in
+	/// <see cref="ShouldRefuseInstall"/> has already refused a suffixed shipped version: by the time control
+	/// reaches here that side is suffix-free, and "is the environment ahead of what we carry" is settled by the
+	/// numbers. The precondition is local and one branch away on purpose — it used to be attributed to
+	/// <see cref="IBundledPackageCatalog.TryGetVersion"/>, which is a READER and never refused anything after
+	/// that experiment was reverted, so the guarantee pointed at a type that did not provide it. Note it is
+	/// also conditional: <c>--force</c> skips both branches, and a caller passing it has accepted the rollback.
 	/// <para>
 	/// A suffix on the INSTALLED side is therefore ignored rather than ordered, and the effect is the one we
 	/// want: installing <c>1.1.0.0</c> over an environment recording <c>1.1.0.0-rc</c> is permitted, because
@@ -349,30 +373,6 @@ public class InstallProcessBuilderCommand : Command<InstallProcessBuilderOptions
 	/// </remarks>
 	private static bool IsStrictlyNewer(PackageVersion installed, PackageVersion shipped) =>
 		installed.Version.CompareTo(shipped.Version) > 0;
-
-	/// <summary>
-	/// Clamps EXCEPTION text that came from the environment or the transport before it is quoted back.
-	/// </summary>
-	/// <remarks>
-	/// A DataService failure with no <c>errorInfo</c> puts the ENTIRE raw response body into the exception
-	/// message (<c>SelectQueryHelper</c>), which can carry a server stack trace and internal paths. On the
-	/// MCP path that would be redacted; on the CLI it would go straight to the console.
-	/// <para>
-	/// Versions do NOT come through here — they go through
-	/// <see cref="TextUtilities.SanitizeVersionForDisplay"/>, which rebuilds them from permitted characters
-	/// rather than merely shortening them. A length cap is the right defence for a stack trace and the wrong
-	/// one for a value that reaches an agent's context, where the payload fits well inside any cap.
-	/// </para>
-	/// </remarks>
-	private static string Truncate(string text) {
-		if (string.IsNullOrEmpty(text)) {
-			return text;
-		}
-		string collapsed = text.Replace("\r", " ").Replace("\n", " ");
-		return collapsed.Length <= QuotedTextLimit
-			? collapsed
-			: collapsed[..QuotedTextLimit] + "…";
-	}
 
 	/// <summary>
 	/// Waits for the platform's own post-install restart to complete.

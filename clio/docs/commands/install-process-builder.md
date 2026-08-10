@@ -71,14 +71,22 @@ RECORDED, which moves when the archive is accepted whether or not anything compi
 Only the package's own code answering a request can establish that it was compiled at
 all — which is what this check asks, and the most it can ask.
 
-The command **always installs**, with one exception, and re-running is otherwise safe; it
-costs one configuration build on the target. The exception is a **downgrade**: when the
-environment already carries a NEWER version than this clio ships, the command refuses
-without installing, because rolling the package back affects everyone using that
-environment and nothing downstream would report it — the gate would still see a present
-package, and the version clio compares against is the recorded one the rollback has just
-rewritten. Pass `--force` when the rollback is what you want. Reinstalling the SAME
-version is not a downgrade and is always allowed.
+The command **always installs except in two cases**, and re-running is otherwise safe; it
+costs one configuration build on the target. Both exceptions are about moving an
+environment **backwards**, and `--force` overrides both.
+
+1. **A downgrade.** The environment already carries a NEWER version than this clio ships.
+   Rolling the package back affects everyone using that environment and nothing downstream
+   would report it — the gate would still see a present package, and the version clio
+   compares against is the recorded one the rollback has just rewritten.
+2. **A malformed distribution.** This clio's own bundled version carries a pre-release
+   suffix (e.g. `1.0.1.0-rc`). clio compares bundled versions numerically, so a suffixed
+   one makes case 1 undetectable: shipping `1.0.1.0-rc` onto an environment recording
+   `1.0.1.0` would pass the comparison — the numbers are equal — and rewrite the recorded
+   version to a pre-release. Nothing about the target environment is wrong; reinstall or
+   update clio, or re-run the rebundle with a four-part version if you produced the archive.
+
+Reinstalling the SAME version is not a downgrade and is always allowed.
 
 ## Options
 
@@ -86,12 +94,14 @@ version is not a downgrade and is always allowed.
         Target environment name from your configuration
 
     --force
-        Install even when the environment already carries a NEWER version of the
-        package than this clio ships. Without it such an install is REFUSED: it
-        would roll the package back for everyone using that environment, and
-        nothing downstream would report it. Reinstalling the SAME version is not
-        a downgrade and never needs this flag - that is the normal repair path
-        for a package that installed but never compiled.
+        Install despite either backwards-move refusal: an environment that
+        already carries a NEWER version of the package than this clio ships, or
+        a bundled version stamped with a pre-release suffix. Without it both are
+        REFUSED - the first would roll the package back for everyone using that
+        environment with nothing downstream reporting it, and the second would
+        make exactly that rollback undetectable. Reinstalling the SAME version is
+        not a downgrade and never needs this flag - that is the normal repair
+        path for a package that installed but never compiled.
 
     Environment options (can be used instead of -e):
         -u, --uri <URI>
@@ -156,6 +166,7 @@ those point at the configuration build log:
 | ProcessDesignService does not answer | the environment's configuration build log — the archive installed and the build did not take |
 | the install itself failed | the same build log, plus the environment's own install output |
 | refusing, the environment carries a newer version | nowhere on the environment: update clio, or re-run with `--force` if the rollback is what you want |
+| refusing, the bundled version carries a pre-release suffix | your clio installation, not the environment — reinstall or update clio, or rebundle with a four-part version |
 | timed out waiting for the environment to come back | the environment's availability; the install may well have succeeded |
 | the environment is not registered | your clio settings (`clio show-web-app-list`) |
 | this clio installation does not carry the bundled archive | your clio installation — reinstall or update it |

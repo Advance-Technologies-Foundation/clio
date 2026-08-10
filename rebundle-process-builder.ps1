@@ -137,6 +137,14 @@ Write-Host "Using clio $($chosen.Configuration)/$($chosen.Framework)" -Foregroun
 # ---------------------------------------------------------------- 1. sources compile, tests pass
 if ($SkipTests) {
     Write-Host "`n=== 1. SKIPPED: package build and tests" -ForegroundColor Yellow
+    # Say what this actually costs, because it is not obvious and it is the security-relevant half.
+    # clio's own guard fixture checks the archive's authorization gate only coarsely - literals present, an
+    # exact call-site count, no uncommented-out calls - and deliberately does NOT try to bind each gate to the
+    # operation it protects (a text scan over an archive cannot do that honestly). The tests being skipped here
+    # are what does: four cases that make IProcessDesignGuard deny and require the operation to fail without
+    # doing its work. Skipping them removes the only check that would notice a gate MOVED rather than deleted.
+    Write-Host "    NOTE: the four IProcessDesignGuard tests are the only check that each operation is still" -ForegroundColor Yellow
+    Write-Host "    bound to its authorization gate. clio's own pins cannot see a gate moved between handlers." -ForegroundColor Yellow
 } else {
     Step '1. Validate the sources compile and their tests pass (the TARGET will have to compile them)'
     Push-Location $PackageRepoPath
@@ -181,9 +189,10 @@ $beforeStamp   = Get-DescriptorField $descriptor 'ModifiedOnUtc'
 if (-not [version]::TryParse($Version, [ref] $parsedNew)) {
     # A pre-release suffix lands here, and it is worth naming rather than leaving as "not a version": it is
     # the most plausible thing someone tries, and it is forbidden for a REASON, not just unsupported.
-    # IBundledPackageCatalog.TryGetVersion refuses a suffixed bundled version as well - a second,
-    # unbypassable line, because these manual-looking steps can also be run by hand without this script.
-    Die "-Version '$Version' is not a version. Use four plain numbers, e.g. 1.0.1.0 - no pre-release suffix ('-rc', '-dev'): clio compares bundled versions numerically and refuses an archive whose version carries one."
+    # Downstream, InstallProcessBuilderCommand refuses to install such a distribution and the guard fixture's
+    # ExpectedArchiveVersion pin refuses to let one be committed - but --force skips the former, so treat this
+    # as the first line rather than a redundant one. These steps can also be run by hand without this script.
+    Die "-Version '$Version' is not a version. Use four plain numbers, e.g. 1.0.1.0 - no pre-release suffix ('-rc', '-dev'): clio compares bundled versions numerically and refuses to install an archive whose version carries one."
 }
 if ($parsedNew.Revision -lt 0) {
     Die "-Version '$Version' must carry all four parts: a three-part version yields Revision = -1 and sorts BELOW any four-part version an environment recorded."
@@ -338,7 +347,9 @@ $entries = & {
     $script:archiveWalkEnd = $i
     $script:archiveWalkLength = $b.Length
 }
-if (-not $entries) { Die 'Could not read the archive container - the format may have changed.' }
+# The completeness check comes FIRST. Corruption in the very first entry emits nothing, so an `-not $entries`
+# guard ahead of it would win and print the generic "format may have changed" - swallowing the precise
+# diagnosis below, including the re-run instruction, for the corruption most likely to need it.
 if (-not $script:archiveWalkOk -or $script:archiveWalkEnd -ne $script:archiveWalkLength) {
     # Two conditions, because they catch different corruptions: the flag catches a field that could not be
     # read in full, and the offset catches a walk that ended early or left trailing bytes behind (the
@@ -349,13 +360,18 @@ if (-not $script:archiveWalkOk -or $script:archiveWalkEnd -ne $script:archiveWal
     # verifies for is not a verifier. NOTE the one place this is now STRICTER than clio - 1 to 3 trailing
     # stray bytes, which SafeReadGZipStream consumes and accepts. Deliberate: this script is deciding whether
     # to publish an archive, so an unexplained tail is a reason to stop, not to shrug.
+    # @() around $entries because it is $null when the FIRST entry is the corrupt one - which is exactly the
+    # case this check now handles, and $null.Count throws under Set-StrictMode -Version Latest.
     Die ("The archive container does not parse cleanly: the walk stopped at byte $($script:archiveWalkEnd) of " +
-         "$($script:archiveWalkLength) after reading $($entries.Count) entries (complete fields: " +
+         "$($script:archiveWalkLength) after reading $(@($entries).Count) entries (complete fields: " +
          "$($script:archiveWalkOk)). The inventory below would be checked over a fragment. The descriptor is " +
          'already stamped, so re-run the pack step directly rather than re-running this script:' + "`n" +
          "    dotnet $clioDll compress $packageDir --skip-pdb -d $archive" + "`n" +
          'If it recurs, the container format changed and this script needs updating.')
 }
+# Still needed after the check above: an EMPTY buffer walks cleanly to its end (0 == 0) and would otherwise
+# reach the inventory, which would then report a missing compile reference rather than an unreadable archive.
+if (-not $entries) { Die 'The archive contains no entries at all - the format may have changed, or compress produced nothing.' }
 
 $dlls = $entries | Where-Object { $_.Name -like '*.dll' }
 $ownAssembly = $dlls | Where-Object { $_.Name -match '(?i)(^|[\\/])CrtProcessBuilder\.dll$' }
@@ -403,9 +419,18 @@ function Replace-InFile([string] $path, [string] $pattern, [string] $replacement
     } else { Ok "$label -> unchanged" }
 }
 
-# Anchored on the constant's NAME, not merely on "64 hex digits on their own line": the pins file already
-# carries other quoted literals, and a shape-only pattern would silently overwrite the next one added.
-Replace-InFile $pinsFile '(?s)(ExpectedArchiveSha256\s*=\s*)"[0-9A-Fa-f]{64}";' "`${1}`"$sha`";" 'ExpectedArchiveSha256'
+# Under -SkipTests the SHA pin is NOT refreshed, and that is the point. Refreshing it is what makes a
+# rebundle reviewable-by-diff, but it also silences the one clio-side signal that the archive changed at all -
+# so a run that skipped the package's own gate tests would leave nothing red anywhere. Leaving the pin stale
+# makes the guard fixture fail until a human looks at the archive and updates it deliberately.
+if ($SkipTests) {
+    Write-Host "`n    ExpectedArchiveSha256 -> NOT refreshed (tests were skipped)." -ForegroundColor Yellow
+    Write-Host "    The guard fixture will fail until you run the package tests and update it deliberately." -ForegroundColor Yellow
+} else {
+    # Anchored on the constant's NAME, not merely on "64 hex digits on their own line": the pins file already
+    # carries other quoted literals, and a shape-only pattern would silently overwrite the next one added.
+    Replace-InFile $pinsFile '(?s)(ExpectedArchiveSha256\s*=\s*)"[0-9A-Fa-f]{64}";' "`${1}`"$sha`";" 'ExpectedArchiveSha256'
+}
 # $parsedNew.ToString(), NOT the raw $Version. [version]::TryParse accepts ' 1.0.1.0' and '01.0.1.0', and
 # set-pkg-version writes the CANONICAL form into the descriptor - so pinning the raw argument produces a
 # green script run and a red guard test, which is the one state this script promises to make unreachable.

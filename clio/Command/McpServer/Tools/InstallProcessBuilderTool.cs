@@ -93,18 +93,24 @@ public sealed class InstallProcessBuilderTool(
 	             UPGRADE a stale assembly that still answers will pass. Treat a successful install of a NEW
 	             version as authoritative only after the functionality you needed actually works.
 
-	             It always installs, with ONE exception, and re-running is otherwise safe (it costs one
+	             It always installs except in two cases, and re-running is otherwise safe (it costs one
 	             configuration build on the target). Take the refusal itself as the signal to call this tool
 	             rather than comparing versions yourself: `list-packages` reports the version the environment
 	             RECORDED, which is what the gate already checks for you.
 
-	             The exception: it REFUSES when the environment already carries a NEWER version than this clio
-	             ships, because installing would move that environment's recorded version backwards for
-	             everyone using it. Report the refusal and say the fix is to update clio. Do not retry it, and
-	             do not reach for a shell to get around it: an override exists but is deliberately NOT
-	             available to you - it is a command-line flag a human runs after deciding the rollback is
-	             what they want. Reinstalling the SAME version is not a downgrade and is allowed - that is the
-	             repair path when a package installed but never compiled.
+	             Both exceptions exist to stop an environment moving BACKWARDS, both report exit code 1, and
+	             neither is retryable. The override is the same for both and is deliberately NOT available to
+	             you - it is a command-line flag a human runs after deciding the rollback is what they want. Do
+	             not reach for a shell to get around either one.
+
+	             1. The environment already carries a NEWER version than this clio ships, so installing would
+	             move its recorded version backwards for everyone using it. Say the fix is to update clio.
+	             2. This clio's OWN bundled version carries a pre-release suffix, which makes a rollback
+	             undetectable, so the distribution is refused rather than installed. Nothing about the target
+	             environment is wrong. Say the fix is to reinstall or update clio.
+
+	             Reinstalling the SAME version is not a downgrade and is allowed - that is the repair path when
+	             a package installed but never compiled.
 
 	             Long-running: streams notifications/progress while working. If the MCP response deadline is
 	             reached first you get an in-progress note, which is NOT a verdict - the install is still

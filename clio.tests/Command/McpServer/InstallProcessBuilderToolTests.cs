@@ -132,9 +132,11 @@ public sealed class InstallProcessBuilderToolTests {
 				+ "the effects of both. install-gate's false is not the precedent: it ships a prebuilt "
 				+ "assembly and never makes the target rebuild");
 		attribute.Idempotent.Should().BeTrue(
-			because: "a SEQUENTIAL re-run converges on the same end state - the command always installs, so it "
-				+ "costs one configuration build and changes nothing else. The hint says nothing about "
-				+ "CONCURRENT re-entry, which is refused outright by the configuration-build reservation");
+			because: "a SEQUENTIAL re-run converges on the same end state - it either installs again, costing "
+				+ "one configuration build and changing nothing else, or hits the same refusal it hit before, "
+				+ "which changes nothing at all. Both refusals are stable under repetition, which is what the "
+				+ "hint promises. It says nothing about CONCURRENT re-entry, refused outright by the "
+				+ "configuration-build reservation");
 		description.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the description should name the package the tool installs");
 		description.Description.Should().Contain("create-business-process",
@@ -350,7 +352,9 @@ public sealed class InstallProcessBuilderToolTests {
 			return _exitCode;
 		}
 	}
+
 	[Test]
+	[Category("Unit")]
 	[Description("The args record is the entire agent-reachable surface of this tool, so it must expose exactly one member. --force is deliberately withheld from MCP, and the only thing standing between that decision and an agent is this record - adding a property 'for parity' would expose the override with no other test turning red.")]
 	public void InstallProcessBuilderArgs_ShouldExposeOnlyTheEnvironmentName() {
 		// Arrange & Act

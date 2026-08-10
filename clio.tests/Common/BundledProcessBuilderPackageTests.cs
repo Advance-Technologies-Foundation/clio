@@ -339,6 +339,33 @@ public class BundledProcessBuilderPackageTests {
 		return count;
 	}
 
+	/// <summary>
+	/// Counts occurrences of <paramref name="value"/> that are actually CODE — i.e. not preceded on their own
+	/// line by a <c>//</c> comment marker.
+	/// </summary>
+	/// <remarks>
+	/// A plain substring count over archive text cannot tell a live call from a commented-out one, and for the
+	/// authorization gate that gap is the whole guard: comment out all three
+	/// <c>_guard.EnsureCanManageProcessDesign()</c> calls and the count stays at three, the operation count is
+	/// unchanged, and both gate literals still match — because the guard CLASS is untouched — so an archive
+	/// with zero live gates passes every pin in this fixture. Line-level rather than token-level on purpose:
+	/// this is a text scan over sources it cannot parse, so it recognises the one form that actually occurs
+	/// (<c>// _guard.…</c>) and does not pretend to understand block comments or strings.
+	/// </remarks>
+	private static int CountUncommentedOccurrences(string text, string value) {
+		int count = 0;
+		for (int index = text.IndexOf(value, StringComparison.Ordinal);
+			index >= 0;
+			index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal)) {
+			int lineStart = text.LastIndexOfAny(['\n', '\r'], index) + 1;
+			string beforeOnLine = text.Substring(lineStart, index - lineStart);
+			if (!beforeOnLine.Contains("//", StringComparison.Ordinal)) {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -409,7 +436,7 @@ public class BundledProcessBuilderPackageTests {
 		string archive = ReadBundledArchiveAsText();
 
 		// Act
-		int callSites = CountOccurrences(archive, $"_guard.{AuthorizationGateMethodName}()");
+		int callSites = CountUncommentedOccurrences(archive, $"_guard.{AuthorizationGateMethodName}()");
 
 		// Assert
 		archive.Should().Contain("\"CanManageProcessDesign\"",

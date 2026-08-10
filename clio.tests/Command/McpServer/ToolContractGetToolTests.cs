@@ -2056,13 +2056,22 @@ public sealed class ToolContractGetToolTests {
 		// The E2E pins the same claims, but E2E is advisory and cannot fail a merge.
 		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ");
 		curatedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
-			because: "the one case where the tool does NOT install must be discoverable, or an agent meets the "
-				+ "refusal as a surprise");
+			because: "a case where the tool does NOT install must be discoverable, or an agent meets the refusal "
+				+ "as a surprise. There are TWO — an environment already ahead, and a malformed bundled version "
+				+ "— and this regex covers the first; the second is pinned below. Do not reword either into a "
+				+ "claim that exactly one exists: the contract said that after the second refusal shipped");
 		curatedDescription.Should().MatchRegex(@"(?i)update clio",
 			because: "stating the refusal without the remedy just produces a retry loop");
 		curatedDescription.Should().NotMatchRegex(@"(?i)no skip|always installs|never refuses",
 			because: "the contradicting claim is the regression that actually shipped; a positive-match-only "
 				+ "guard stays green while the same description asserts both halves");
+		curatedDescription.Should().NotMatchRegex(@"(?i)\b(one|1) (case|exception)\b|but one\b",
+			because: "there are TWO refusals now. The 'exactly one' framing survived the first refusal being "
+				+ "added and had to be caught in review twice, so it is banned rather than trusted to whoever "
+				+ "edits this string next");
+		curatedDescription.Should().MatchRegex(@"(?i)pre-release suffix",
+			because: "the second refusal is reachable from MCP — the tool builds its own options and Force "
+				+ "defaults to false — so an agent that meets it must find it in the only description it gets");
 		curatedDescription.Should().NotMatchRegex(@"(?i)--force",
 			because: "the contract must not hand an agent the literal bypass invocation right after telling it "
 				+ "not to work around the refusal");

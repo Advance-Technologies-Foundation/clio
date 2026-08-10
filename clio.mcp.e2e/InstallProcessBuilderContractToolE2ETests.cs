@@ -173,7 +173,7 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 		// freely; a purely cosmetic re-wrap must not turn this red.
 		string normalizedDescription = Regex.Replace(contract.Description, @"\s+", " ");
 		normalizedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
-			because: "the one case where this tool does NOT install must be in the contract, or an agent meets "
+			because: "a case where this tool does NOT install must be in the contract, or an agent meets "
 				+ "the refusal as a surprise. Within one sentence, so 'it never refuses ... a newer version' "
 				+ "cannot satisfy it across two");
 		normalizedDescription.Should().MatchRegex(@"(?i)update clio",
@@ -191,6 +191,11 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			because: "this is the regression that actually shipped: the curated contract kept saying 'It "
 				+ "ALWAYS installs - there is no skip' after the refusal existed. A positive-match-only guard "
 				+ "stays green while the same description asserts both halves");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)\b(one|1) (case|exception)\b|but one\b",
+			because: "the same drift recurred for the SECOND refusal: 'installs in every case but one' outlived "
+				+ "the malformed-bundled-version refusal, which is reachable from MCP");
+		normalizedDescription.Should().MatchRegex(@"(?i)pre-release suffix",
+			because: "an agent meeting the second refusal must find it in the only description it receives");
 		contract.Description.Should().NotMatchRegex(@"(?i)no\s+(application\s+)?restart",
 			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
 				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");

@@ -171,7 +171,7 @@ public class BundledPackageConvergenceTests {
 	}
 
 	[Test]
-	[Description("A pre-release suffix on the INSTALLED version does not make an environment look behind, so a developer's -rc build is not asked to move to the release of the same number. This is the only suffix-sensitive case this rule still has, because the suffix can only ever appear on the INSTALLED side: IBundledPackageCatalog.TryGetVersion refuses a suffixed bundled version outright, which is what keeps this rule and the install command's downgrade guard from having to agree on how a pre-release orders against its release.")]
+	[Description("A pre-release suffix on the INSTALLED version does not make an environment look behind, so a developer's -rc build is not asked to move to the release of the same number. Note the MECHANISM is not the four-part comparison the install command uses: this rule compares with PackageVersion's own operator, whose CompareSuffix ranks a non-empty suffix ABOVE an empty one, so 1.0.0.0-rc reads as newer than 1.0.0.0 and the environment is simply not behind.")]
 	public void TryGetConvergenceRefusal_ShouldAllow_WhenInstalledVersionCarriesAPreReleaseSuffix() {
 		// Arrange
 		ArrangeBundledVersion("1.0.0.0");
@@ -181,9 +181,32 @@ public class BundledPackageConvergenceTests {
 
 		// Assert
 		refused.Should().BeFalse(
-			because: "the environment is not BEHIND the archive at the same four-part number, so demanding an "
-				+ "update would send a developer to install a package they effectively already have. The "
-				+ "install command agrees on this input and permits the install, so the pair cannot deadlock");
+			because: "PackageVersion's ordering puts 1.0.0.0-rc above 1.0.0.0, so the environment is not BEHIND "
+				+ "and demanding an update would send a developer to install a package they effectively already "
+				+ "have. The install command permits this input too, so the pair cannot deadlock");
+	}
+
+	[Test]
+	[Description("A pre-release suffix on the BUNDLED version means this rule cannot decide, so it warns and allows — the same answer as an unreadable archive, because the defect is clio's either way. Refusing instead is a trap, and this test exists because that trap shipped: the comparison below uses PackageVersion's operator, which ranks an empty suffix BELOW a non-empty one, so a bundled 1.0.1.0-rc makes an environment recording the GA 1.0.1.0 — and every lower version — read as behind. Convergence would then refuse every gated call and name install-process-builder as the remedy, that command refuses the same distribution as malformed, and --force is absent over MCP: the whole process-designer surface dead with no in-band way out, over a defect in clio.")]
+	[TestCase("1.0.1.0", TestName = "TryGetConvergenceRefusal warns and allows a GA at the same number")]
+	[TestCase("0.0.0.1", TestName = "TryGetConvergenceRefusal warns and allows a genuinely older version")]
+	public void TryGetConvergenceRefusal_ShouldWarnAndAllow_WhenTheBundledVersionCarriesASuffix(
+		string installedVersion) {
+		// Arrange
+		ArrangeBundledVersion("1.0.1.0-rc");
+
+		// Act
+		bool refused = _sut.TryGetConvergenceRefusal(
+			BundledPackage, Version(installedVersion), out string message);
+
+		// Assert
+		refused.Should().BeFalse(
+			because: "a gated command must not be blocked because clio's own archive is stamped wrongly, and "
+				+ "the remedy this rule would name refuses that same distribution — so refusing here has no exit");
+		message.Should().BeNull(
+			because: "there is no refusal, so there must be no refusal message for a caller to surface");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text =>
+			text.Contains("four-part") && text.Contains("NOT")));
 	}
 
 	[Test]
@@ -206,8 +229,12 @@ public class BundledPackageConvergenceTests {
 				because: "an instruction reaching an agent's context is the harm, and a control-character strip "
 					+ $"would NOT have removed '{word}' — which is why the version goes through an allowlist");
 		}
-		message.Should().NotContain("\n").And.NotContain("\r",
+		// Two statements rather than a .And chain: in a chain the `because` binds only to the last link, so the
+		// first assertion would carry none — which this repo requires of every assertion.
+		message.Should().NotContain("\n",
 			because: "a newline would let the value forge an extra line in the message it is embedded in");
+		message.Should().NotContain("\r",
+			because: "a carriage return does the same on a Windows console");
 		message.Should().Contain("0.0.0.1",
 			because: "the numeric version must survive: the reader still needs to know which version the "
 				+ "environment records, and that half cannot carry a payload");
