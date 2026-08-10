@@ -63,7 +63,7 @@ every environment that already has the package compares as converged and is neve
 reaches new installs only, silently. This is why the version must move on every rebundle, and why
 `rebundle-process-builder.ps1` refuses to run without a higher one.
 
-Re-measured on 2026-08-06 (net472, `ts1-web01-15837616`), which added one property worth knowing: the
+Re-measured on 2026-08-06 on an internal net472 stand, which added one property worth knowing: the
 comparison is **"differs", not "is later"**. Installing an archive whose `ModifiedOnUtc` is EARLIER than the
 recorded one still rewrites the row — the recorded version went `1.1.0.2` -> `1.1.0.1` and the install
 reported success. So `SysPackage.Version` is not monotonic and carries no guarantee of being the highest
@@ -215,8 +215,11 @@ git -C <ProcessBuilder> commit -m "<ticket> rebundle to X.Y.Z.W"
 #    which installs, satisfies the gate, and then 404s on the other runtime.
 Remove-Item packages/CrtProcessBuilder/Files/Bin -Recurse -Force
 
-# 4. Pack straight into the clio checkout.
-dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder `
+# 4. Pack straight into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
+#    already removed the only .pdb there is, so the flag changes nothing about the output - but the archive
+#    is pinned BYTE-FOR-BYTE by SHA-256, and the two paths have to produce the same bytes for that pin to
+#    mean anything. Any .pdb that ever appears outside Files/Bin would otherwise make them diverge.
+dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder --skip-pdb `
   -d <clio>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
 # 5. VERIFY the archive rather than trusting step 3 - its failure is silent.

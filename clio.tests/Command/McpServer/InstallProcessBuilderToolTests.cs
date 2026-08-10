@@ -262,6 +262,26 @@ public sealed class InstallProcessBuilderToolTests {
 				because: "the refusal must say WHY it refused; without the broad per-tenant monitor there is "
 					+ "nothing to queue behind, and queueing was never right — a second install would rebuild "
 					+ "and restart an instance already being rebuilt");
+			// The reservation is reclaimable once it is older than the ceiling, and this is the half that
+			// matters most. The reservation is released by the `finally` of the work delegate, which past the
+			// MCP response deadline runs DETACHED — so that `finally` is the only release, and the install POST
+			// it wraps goes out with Timeout.Infinite. A target that accepts the request and then never answers
+			// leaves the entry in place for the life of the server process, and every later
+			// install-process-builder AND compile-creatio on that tenant is refused with no in-band recovery.
+			// Note what this does NOT do: nothing is cancelled and a build still running past the ceiling keeps
+			// running. The ceiling only stops a reservation nobody will ever release from outliving the work it
+			// was protecting.
+			McpToolExecutionLock.BackdateConfigurationBuildReservationForTests(
+					"busy-tenant",
+					McpToolExecutionLock.ConfigurationBuildReservationCeilingForTests + TimeSpan.FromMinutes(1))
+				.Should().BeTrue(because: "the reservation taken above must still be there to age");
+			McpToolExecutionLock.TryReserveConfigurationBuild("busy-tenant").Should().BeTrue(
+				because: "a reservation nobody can release must not wedge the tenant permanently — otherwise a "
+					+ "single stalled target costs every later install AND compile on it until the MCP server "
+					+ "process restarts");
+			McpToolExecutionLock.TryReserveConfigurationBuild("busy-tenant").Should().BeFalse(
+				because: "reclaiming must RE-take the reservation, not merely drop it: the freshly reclaimed "
+					+ "slot has to exclude the next caller exactly as the original did");
 		} finally {
 			McpToolExecutionLock.ReleaseConfigurationBuild("busy-tenant");
 			ConsoleLogger.Instance.ClearMessages();

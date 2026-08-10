@@ -178,17 +178,22 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// Shortens an unexpected response for inclusion in a diagnosis.
 	/// </summary>
 	/// <remarks>
-	/// Control characters are stripped, not merely trimmed: the value is a body from an UNKNOWN responder and
-	/// it goes straight into a log line, so CR/LF or ANSI escapes in it could forge or overwrite lines around
-	/// it. The same reasoning already governs <c>FormatPackageNamesForLog</c> in cliogate.
+	/// Delegates the actual work to <see cref="TextUtilities.SanitizeForDisplay"/> rather than repeating it.
+	/// This method used to carry its own copy of the same control-character strip and truncation, which left
+	/// three caps for one class of text in one feature and, worse, meant a future hardening of the shared
+	/// helper would silently miss this call site — the one that quotes a body from an UNKNOWN responder.
+	/// Control characters are the security-relevant half: the value goes straight into a log line and, on the
+	/// MCP path, an agent's context, so CR/LF or ANSI escapes in it could forge or overwrite lines around it.
+	/// <para>
+	/// What is NOT delegated is the empty case. The helper returns empty input unchanged, which would render as
+	/// nothing at all in the middle of a sentence; <c>(empty)</c> says that the responder answered and said
+	/// nothing, which is a different fact from a short answer and the one a reader needs here.
+	/// </para>
 	/// </remarks>
-	private static string Truncate(string response, int max) {
-		if (string.IsNullOrEmpty(response)) {
-			return "(empty)";
-		}
-		string flattened = new(response.Select(c => char.IsControl(c) ? ' ' : c).ToArray());
-		return flattened.Length <= max ? flattened : flattened.Substring(0, max) + "…";
-	}
+	private static string Truncate(string response, int max) =>
+		string.IsNullOrEmpty(response)
+			? "(empty)"
+			: TextUtilities.SanitizeForDisplay(response, max);
 
 	#endregion
 

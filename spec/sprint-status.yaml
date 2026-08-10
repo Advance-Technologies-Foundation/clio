@@ -2531,7 +2531,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: M
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2547,7 +2547,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: M
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2564,7 +2564,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: S
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2581,7 +2581,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: S
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md

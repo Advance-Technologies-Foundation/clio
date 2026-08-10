@@ -127,7 +127,7 @@ built anyway.
 |---|---|
 | Bundle | `clio/Common/BundledPackages.cs`, `clio/CrtProcessBuilder/CrtProcessBuilder.gz`, csproj `Content` glob, `.gitattributes` (`*.gz binary`) |
 | Command | `clio/Command/InstallProcessBuilderCommand.cs` |
-| MCP | `Tools/InstallProcessBuilderTool.cs`, `ToolContractGetTool.BuildInstallProcessBuilder`, `Resources/ProcessDesigner/ProcessModelingGuidanceResource.cs`, `Resources/DeployLifecycleGuidanceResource.cs` |
+| MCP | `Tools/InstallProcessBuilderTool.cs`, `ToolContractGetTool.BuildInstallProcessBuilder`, `Resources/KnowledgeGuidanceResourceAdapter.cs` (the `process-modeling` and `deploy-lifecycle` guides themselves are published from the external `clio-knowledge` library and pinned by `curated-knowledge-names.json`, so FR-12/NFR-01 are satisfied in that repository rather than here) |
 | Gate | 5 `[RequiresPackage]` sites; `BaseTool` returns `FromValidationError` (exit 1) for `PackageRequirementException`, not `FromError` (−1) |
 | Info | `clio/Command/InfoCommand.cs` |
 | Docs | `help/en/install-process-builder.txt`, `docs/commands/install-process-builder.md`, `Commands.md`, `Wiki/WikiAnchors.txt`, `docs/McpCapabilityMap.md` §11 |

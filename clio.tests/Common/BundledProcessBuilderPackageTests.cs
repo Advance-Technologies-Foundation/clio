@@ -690,8 +690,12 @@ public class BundledProcessBuilderPackageTests {
 		entries.Should().NotContain(
 			entry => entry.EndsWith($"{BundledPackages.ProcessBuilderPackageName}.pdb",
 				StringComparison.OrdinalIgnoreCase),
-			because: "symbols travel with a leaked build output and are the same accident by a different name; "
-				+ "neither runbook passes --skip-pdb - both delete Files/Bin instead, which is what removes the pdb along with the assembly - so this assertion is the check on THAT step, not on a flag");
+			because: "symbols travel with a leaked build output and are the same accident by a different name. "
+				+ "BOTH runbooks pass --skip-pdb, and both also delete Files/Bin, which is what actually removes "
+				+ "the pdb along with the assembly - so this assertion checks the OUTCOME rather than either "
+				+ "step. The earlier version of this sentence claimed neither runbook passed the flag, which was "
+				+ "false for the script and would have told the next reader not to look for it while the manual "
+				+ "path silently produced different bytes for the same archive");
 		entries.Should().NotContain(
 			entry => entry.StartsWith("Files/Bin/", StringComparison.OrdinalIgnoreCase),
 			because: "Files/Bin is the csproj's unconditional OutputPath and clioignore does not filter it, so "

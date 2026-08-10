@@ -275,9 +275,14 @@ public abstract class BaseTool<T>(
 			// retrying the same call won't help", whereas the whole point of this refusal is that the
 			// caller CAN fix it — install the named package, then retry. Reporting it as -1 tells the
 			// agent not to bother, which breaks the install-then-retry remediation the hint describes.
-			// The message stays STATIC (package name + attribute Hint, built by RequiredPackageChecker):
-			// neither FromValidationError nor FromError redacts, so never enrich it with the target URI
-			// or any connection detail — route dynamic text through FromException(redactSensitive: true).
+			// Neither FromValidationError nor FromError redacts, so never enrich this message with the target
+			// URI or any connection detail — route dynamic text through FromException(redactSensitive: true).
+			// It used to be flatly STATIC (package name + attribute Hint, both source literals). It no longer
+			// is: the convergence refusal forwarded through this same path embeds the version the ENVIRONMENT
+			// recorded, which is attacker-influenceable by anyone able to install a package on that target. That
+			// is admissible only because it arrives already clamped to a version-shaped allowlist by
+			// TextUtilities.SanitizeVersionForDisplay — so the rule for anything added here is not "keep it
+			// static" but "nothing reaches this unclamped".
 			return (CommandExecutionResult.FromValidationError(ex.Message), null, null);
 		} catch (CreatioVersionRequirementException ex) {
 			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
