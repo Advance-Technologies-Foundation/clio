@@ -172,7 +172,7 @@ internal static class McpToolExecutionLock {
 	/// <c>compile-creatio</c>: <c>install-process-builder</c> ships a source-only package the target compiles
 	/// during installation, so it must exclude, and be excluded by, a concurrent compile on the same tenant.
 	/// It is deliberately narrow — it does NOT serialize unrelated same-tenant tools the way the per-tenant
-	/// execution monitor would (review Blocker, ENG-91315).
+	/// execution monitor would (review Blocker).
 	/// </remarks>
 	internal static bool TryReserveConfigurationBuild(string cacheKey) =>
 		_configurationBuildInFlight.TryAdd(Normalize(cacheKey), 0);

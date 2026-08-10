@@ -376,7 +376,8 @@ public class BundledProcessBuilderPackageTests {
 			because: "the shipped service writes process schemas, and a Creatio process can carry a script "
 				+ "task — i.e. server-side C#. The gate is the CanManageProcessDesign operation plus a "
 				+ "General (non-portal) user, deliberately stricter than cliogate's CanManageSolution, which "
-				+ "omits the connection-type check (adr-ENG-90883 section 'Security gate')");
+				+ "omits the connection-type check (see the backend-process-designer ADR, section "
+				+ "'Security gate')");
 		archive.Should().Contain(ConnectionTypeCheck,
 			because: "the operation literal alone pins only HALF of what every clio surface promises — the help "
 				+ "text, the command docs and the MCP contract all state a General (non-portal) user is "

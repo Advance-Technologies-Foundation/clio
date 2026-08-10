@@ -206,7 +206,7 @@ Never: `Test1`, `TestMethod`, `ShouldWork`, `MyTest`.
 - Unit + Integration: `clio.tests/{FeatureName}Tests.cs`
 - MCP E2E: `clio.mcp.e2e/`
 - MCP E2E **does** run in CI, but as an **advisory, non-blocking** check — never treat it as a gate.
-  `.github/workflows/teamcity-mcp-e2e.yml` (ENG-92669) triggers the TeamCity `Team_Atf_ClioMcpE2eTests`
+  `.github/workflows/teamcity-mcp-e2e.yml` triggers the TeamCity `Team_Atf_ClioMcpE2eTests`
   build for the PR head branch, and TeamCity's Commit Status Publisher posts the result back onto the PR.
   The workflow header states it outright: *"Phase 1 is advisory (non-blocking) — the status is informational
   and is NOT a required check."*

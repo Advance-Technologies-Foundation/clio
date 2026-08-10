@@ -48,7 +48,7 @@ public sealed class InstallProcessBuilderTool(
 	/// monitor — <see cref="InternalExecuteWithoutTenantLock{TCommand}"/>. Past the response deadline the
 	/// work runs detached, so the monitor would stay held after the caller was answered and every unrelated
 	/// same-tenant tool, read-only ones included, would stall behind work nobody awaits any more (review
-	/// Blocker, ENG-91315, the same reason <c>compile-creatio</c> takes no lock). What genuinely must not
+	/// Blocker, the same reason <c>compile-creatio</c> takes no lock). What genuinely must not
 	/// overlap is the configuration build this install triggers on the target, and that is exactly what the
 	/// reservation excludes — against another install AND against a concurrent <c>compile-creatio</c>.
 	/// </para>

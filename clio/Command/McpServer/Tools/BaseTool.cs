@@ -209,7 +209,7 @@ public abstract class BaseTool<T>(
 	/// For a tool whose work is DETACHED past the MCP response deadline. Holding the per-tenant monitor
 	/// across such a call keeps it held after the caller was answered, so every unrelated same-tenant tool —
 	/// including read-only ones — stalls behind work nobody is waiting for any more (review Blocker,
-	/// ENG-91315, which is why <c>compile-creatio</c> takes no <c>GetLock</c> either).
+	/// which is why <c>compile-creatio</c> takes no <c>GetLock</c> either).
 	/// <para>
 	/// A caller on this path MUST provide its own narrow mutual exclusion — see
 	/// <see cref="McpToolExecutionLock.TryReserveConfigurationBuild"/> — and must fail fast rather than
