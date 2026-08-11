@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using Clio.Command;
 using Clio.Common;
+using Clio.Package;
+using Clio.Project.NuGet;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -100,6 +104,100 @@ namespace Clio.Tests
             // Assert
             hasRequirement.Should().BeFalse(
                 because: "the gate reads [RequiresPackage] off the command options type (T in BaseTool<T>), so the stray attribute on the args record was incorrect and must be removed");
+        }
+
+        // ---------------------------------------------------------------------------------------------
+        // Decision D8: the stale-package detector. Measured on a live stand, a request carrying a
+        // future-shaped 'connections' array is answered NORMALLY by an older package, with the member
+        // silently ignored - no contract implements IExtensibleDataObject, so the serializer drops unknown
+        // members at every nesting level. A green log and a wrong process is the worst outcome in this
+        // domain, so something has to notice. The decision is to rely on the CONVERGENCE rule rather than
+        // build a second mechanism or reintroduce a version literal the pin above forbids: the rule already
+        // refuses when the environment carries an older version than this clio ships, on every gated call,
+        // and every rebundle is required to raise the shipped version. This test is what makes that
+        // reliance real rather than assumed - it drives the SHIPPED attribute through the REAL checker and
+        // the REAL convergence rule.
+        [Test]
+        [Description("D8 stale-package detector: an environment whose CrtProcessBuilder predates this clio's bundled archive is REFUSED on a gated process-designer call, with a message naming both versions and the install hint. This is the mechanism that stops an older package from silently ignoring a 'connections' array - it cannot be a version literal on the attribute, because that would restate a delivery policy in a place that cannot track the archive.")]
+        public void ProcessDesignerGate_ShouldRefuse_WhenEnvironmentPackagePredatesTheBundledArchive()
+        {
+            // Arrange - the environment has the package (so the presence-only requirement is SATISFIED) but
+            // at a version older than the one this distribution carries.
+            IApplicationPackageListProvider packages = Substitute.For<IApplicationPackageListProvider>();
+            packages.GetPackages().Returns([
+                CreatePackageInfo(BundledPackages.ProcessBuilderPackageName, "1.0.0.0")
+            ]);
+            IBundledPackageCatalog catalog = Substitute.For<IBundledPackageCatalog>();
+            catalog.IsBundled(BundledPackages.ProcessBuilderPackageName).Returns(true);
+            catalog.TryGetVersion(BundledPackages.ProcessBuilderPackageName,
+                    out Arg.Any<PackageVersion>(), out Arg.Any<string>())
+                .Returns(call => {
+                    call[1] = PackageVersion.ParseVersion("1.1.0.0");
+                    call[2] = null;
+                    return true;
+                });
+            IRequiredPackageChecker checker = new RequiredPackageChecker(packages,
+                new BundledPackageConvergence(catalog, Substitute.For<ILogger>()));
+
+            // Act - the SHIPPED options type, so the test cannot pass if the gate is ever removed from it
+            Action act = () => checker.EnsureRequirements(new ModifyBusinessProcessOptions());
+
+            // Assert
+            PackageRequirementException refusal = act.Should().Throw<PackageRequirementException>(
+                    because: "an older package answers a connections request normally and drops the member, so the "
+                        + "only protection is refusing before the request is sent")
+                .Which;
+            refusal.Message.Should().Contain("1.0.0.0",
+                because: "the reader has to see what the environment actually has, or they cannot tell a convergence "
+                    + "refusal from a missing-package one");
+            refusal.Message.Should().Contain("1.1.0.0",
+                because: "and what this clio ships, which is the version the environment must be brought to");
+            refusal.Message.Should().Contain("install-process-builder",
+                because: "the refusal is only actionable if it names the verb that fixes it");
+        }
+
+        [Test]
+        [Description("The same gate does NOT refuse when the environment is already at the bundled version: the detector must catch a stale package without blocking a current one, or every gated call on a correctly-installed environment would fail.")]
+        public void ProcessDesignerGate_ShouldAllow_WhenEnvironmentPackageMatchesTheBundledArchive()
+        {
+            // Arrange
+            IApplicationPackageListProvider packages = Substitute.For<IApplicationPackageListProvider>();
+            packages.GetPackages().Returns([
+                CreatePackageInfo(BundledPackages.ProcessBuilderPackageName, "1.1.0.0")
+            ]);
+            IBundledPackageCatalog catalog = Substitute.For<IBundledPackageCatalog>();
+            catalog.IsBundled(BundledPackages.ProcessBuilderPackageName).Returns(true);
+            catalog.TryGetVersion(BundledPackages.ProcessBuilderPackageName,
+                    out Arg.Any<PackageVersion>(), out Arg.Any<string>())
+                .Returns(call => {
+                    call[1] = PackageVersion.ParseVersion("1.1.0.0");
+                    call[2] = null;
+                    return true;
+                });
+            IRequiredPackageChecker checker = new RequiredPackageChecker(packages,
+                new BundledPackageConvergence(catalog, Substitute.For<ILogger>()));
+
+            // Act
+            Action act = () => checker.EnsureRequirements(new ModifyBusinessProcessOptions());
+
+            // Assert
+            act.Should().NotThrow(
+                because: "a converged environment must pass; a detector that refused here would take the whole "
+                    + "process-designer surface down on a correct install");
+        }
+
+        private static PackageInfo CreatePackageInfo(string name, string version)
+        {
+            PackageDescriptor descriptor = new() {
+                DependsOn = new List<PackageDependency>(),
+                UId = Guid.NewGuid(),
+                Maintainer = "Fake_Maintainer",
+                ModifiedOnUtc = DateTime.UtcNow.ToString(CultureInfo.InvariantCulture),
+                Name = name,
+                PackageVersion = version,
+                ProjectPath = string.Empty
+            };
+            return new PackageInfo(descriptor, string.Empty, new List<string>());
         }
     }
 }

@@ -177,6 +177,37 @@ cliogate (a privileged endpoint with `CheckCanManageSolution` first) or a thin c
 `CanManageProcessDesign` only, unconditional. A direct consequence of D6: the package never mutates the
 data model, so there is no second privilege level and no gate whose contract depends on request content.
 
+### D8 — The stale-package detector is the convergence rule, not a new mechanism
+
+An environment whose `CrtProcessBuilder` predates this feature is caught by
+**`IBundledPackageConvergence`** — the existing rule that refuses when the environment carries an older
+version of a bundled package than the running clio distribution ships. No second mechanism, and no version
+literal on `[RequiresPackage]`.
+
+*Why a detector is required at all.* Measured: a request carrying a future-shaped `connections` array is
+answered **normally** by an older package, with the member silently ignored — no contract implements
+`IExtensibleDataObject`, checked across all 25 `[DataContract]` types, so the serializer drops unknown members
+at every nesting level. An old package plus a new field is therefore a green log and a wrong process, which is
+the worst outcome this whole design is built against.
+
+*Why convergence rather than the other two options.* A version literal on the attribute (option ii) was
+rejected twice over: the attribute states what the CODE needs, convergence states what environments should be
+brought to, and the two can legitimately disagree — merging them makes both unsayable separately. The pin test
+asserts the **absence** of a version literal on all five process-designer gates for exactly that reason, and
+`spec/adr/adr-bundled-package-version-source-of-truth.md` records why a version constant in this assembly is a
+claim about bytes it no longer describes. Making the package reject unknown members (option iii) would put the
+detector in the component that is by definition the *old* one on a stale environment — it cannot report a
+field it was built before.
+
+*What arms it.* The rebundle's `-Version` bump, which is already mandatory on every rebundle. Convergence
+compares the archive's own descriptor version against what the environment recorded, so raising the shipped
+version is what turns every gated call on a stale environment into a refusal naming `install-process-builder`.
+
+*What it does not cover, stated so it is not mistaken for complete.* An environment at or ahead of the
+bundled version passes, as it must — so a hand-installed package that is *newer by version* but built before
+this feature would not be caught. That is not reachable through any shipped path (the archive is the only
+thing clio installs) and no cheap check distinguishes it, so it is accepted rather than guarded.
+
 ### D9 — One deprecation predicate, read with a metadata fallback
 
 `deprecated ⟺ usageType == None ∥ name ∈ {SendEmailUserTask, EmailUserTask}`.
@@ -245,12 +276,12 @@ one; that scenario is inherently two-phase (change the data model, then design t
 otherwise is what created the authorization muddle. Element-specific knowledge concentrates in
 `ConnectionCapability`, which must be kept as the single place it lives.
 
-**Detector required (T-10).** Measured: a request carrying unknown members — including a future-shaped
-`connections` array — is answered normally with the members **silently ignored**; no contract implements
-`IExtensibleDataObject` (checked across all 25 `[DataContract]` types), so this holds at every nesting
-level. An old package plus a new `connections` field is therefore a green log and a wrong process, and
-`[RequiresPackage]` is presence-only with a pin test asserting the **absence** of a version literal. A
-detector must exist — mechanism is the open D8.
+**Detector required (T-10), and it exists.** Measured: a request carrying unknown members — including a
+future-shaped `connections` array — is answered normally with the members **silently ignored**; no contract
+implements `IExtensibleDataObject` (checked across all 25 `[DataContract]` types), so this holds at every
+nesting level. An old package plus a new `connections` field is therefore a green log and a wrong process, and
+`[RequiresPackage]` is presence-only with a pin test asserting the **absence** of a version literal. **D8
+resolves this onto the convergence rule** (above), armed by the rebundle's mandatory version bump.
 
 ---
 
@@ -266,6 +297,8 @@ detector must exist — mechanism is the open D8.
 | Conditional privilege check inside `setConnections` (D6/D7) | Makes an operation's contract depend on its content, adds a second gate to a component that deliberately centralised its one, and invents an atomicity question |
 | Two operations inside the package, one per privilege level (D6) | Still smuggles data-model mutation into the wrong component |
 | Name the wire field `activityConnections`, or carry the host up front (D2) | Creates exactly the rename it was meant to avoid; B1 makes the host a late addition instead |
+| A `[RequiresPackage]` version literal for the stale-package detector (D8) | Restates a delivery policy where it cannot track the archive, and the pin test asserts its absence for that reason |
+| Make the package reject unknown members (D8) | Puts the detector in the component that is by definition the OLD one on a stale environment |
 | Raw metapath in `describe` + documentation (D11) | Breaks round-trip for the fixed-record dialect and forces the caller to resolve schema UIds |
 
 ---
@@ -275,8 +308,8 @@ detector must exist — mechanism is the open D8.
 **Decisions still to take (none block the first delivery).** D4 — user tasks created by `add-user-task`
 structurally cannot carry connections: document or extend. D5 — `list-user-tasks` advertises retired
 schemas with no marker (confirmed on live data: 23 tasks including all three); fix here or as its own
-task. D8 — the old-package detector's mechanism. D12 — MCP-only, or add a CLI verb and its full doc
-surface.
+task. D12 — MCP-only, or add a CLI verb and its full doc surface. (**D8 is taken** — see the decision
+above.)
 
 **Residual inside D9.** Whether to honour the `ProcessObsoletedElements` feature flag, which *inverts*
 the predicate. Recommended: honour it, so an environment that deliberately re-enabled retired elements is
