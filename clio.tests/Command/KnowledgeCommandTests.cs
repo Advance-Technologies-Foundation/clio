@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -97,7 +99,10 @@ public sealed class UpdateKnowledgeCommandTests : BaseCommandTests<UpdateKnowled
 	[Description("Updates only the explicitly selected source alias.")]
 	public void Execute_ShouldUpdateSelectedSource_WhenAliasIsProvided() {
 		// Arrange
-		_service.Update("partner").Returns(KnowledgeCommandTestData.SuccessBatch("updated", "partner"));
+		_service.Update("partner").Returns(new KnowledgeSourceBatchResult(
+			true,
+			"Knowledge operation completed for 1 source(s).",
+			[new KnowledgeSourceOperationResult("partner", true, "updated", "Partner knowledge was updated.")]));
 
 		// Act
 		int exitCode = _command.Execute(new UpdateKnowledgeOptions { Source = " partner " });
@@ -105,6 +110,102 @@ public sealed class UpdateKnowledgeCommandTests : BaseCommandTests<UpdateKnowled
 		// Assert
 		exitCode.Should().Be(0, because: "a successful selected-source update must return success");
 		_service.Received(1).Update("partner");
+		KnowledgeCommandTestData.OutputCalls(_logger).Should().Equal(
+			[
+				"WriteInfo(Knowledge update)",
+				"WriteLine(  Result: succeeded)",
+				"WriteLine(  Message: Knowledge operation completed for 1 source(s).)",
+				"WriteLine()",
+				"WriteInfo(Sources (1))",
+				"WriteLine()",
+				"WriteInfo(1. partner)",
+				"WriteLine(  Status: updated)",
+				"WriteLine(  Message: Partner knowledge was updated.)"
+			],
+			because: "a successful update must use the same ordered one-stream layout as other outcomes");
+	}
+
+	[Test]
+	[Description("Emits only the unchanged structured batch result when JSON output is requested.")]
+	public void Execute_ShouldEmitOnlyStructuredBatchResult_WhenJsonIsRequested() {
+		// Arrange
+		KnowledgeSourceBatchResult result = new(
+			true,
+			"Knowledge operation completed for 1 source(s).",
+			[new KnowledgeSourceOperationResult("partner", true, "up-to-date", "Partner knowledge is current.")]);
+		_service.Update("partner").Returns(result);
+
+		// Act
+		int exitCode = _command.Execute(new UpdateKnowledgeOptions { Source = "partner", Json = true });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the structured update completed successfully");
+		var calls = _logger.ReceivedCalls().ToArray();
+		calls.Should().ContainSingle(because: "JSON mode must emit one payload without human-readable headings");
+		calls[0].GetMethodInfo().Name.Should().Be(nameof(ILogger.WriteLine),
+			because: "the structured payload is written as one line-oriented logger message");
+		string json = calls[0].GetArguments().Single().Should().BeOfType<string>(
+			because: "the structured payload must be serialized as JSON text").Subject;
+		using JsonDocument document = JsonDocument.Parse(json);
+		JsonElement root = document.RootElement;
+		root.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the existing batch success field must remain present");
+		root.GetProperty("message").GetString().Should().Be(result.Message,
+			because: "the existing batch message field must remain unchanged");
+		JsonElement source = root.GetProperty("sources").EnumerateArray().Should().ContainSingle(
+			because: "the existing per-source result array must remain present").Subject;
+		source.GetProperty("sourceAlias").GetString().Should().Be("partner",
+			because: "the existing source alias field must remain unchanged");
+		source.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the existing per-source success field must remain present");
+		source.GetProperty("status").GetString().Should().Be("up-to-date",
+			because: "the existing source status field must remain unchanged");
+		source.GetProperty("message").GetString().Should().Be("Partner knowledge is current.",
+			because: "the existing per-source message field must remain unchanged");
+	}
+
+	[Test]
+	[Description("Prints the complete knowledge update as ordered vertical source blocks instead of a table.")]
+	public void Execute_ShouldPrintOrderedVerticalSourceBlocks_WhenHumanOutputIsRequested() {
+		// Arrange
+		_service.Update(null).Returns(new KnowledgeSourceBatchResult(
+			false,
+			"Knowledge operation completed with one failure.",
+			[
+				new KnowledgeSourceOperationResult(
+					"creatio-curated",
+					true,
+					"up-to-date",
+					"Knowledge source 'creatio-curated' is up to date at 1.13.8."),
+				new KnowledgeSourceOperationResult(
+					"partner",
+					false,
+					"failed",
+					"Partner verification failed.")
+			]));
+
+		// Act
+		int exitCode = _command.Execute(new UpdateKnowledgeOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "one selected source failed to update");
+		KnowledgeCommandTestData.OutputCalls(_logger).Should().Equal(
+			[
+				"WriteInfo(Knowledge update)",
+				"WriteLine(  Result: failed)",
+				"WriteLine(  Message: Knowledge operation completed with one failure.)",
+				"WriteLine()",
+				"WriteInfo(Sources (2))",
+				"WriteLine()",
+				"WriteInfo(1. creatio-curated)",
+				"WriteLine(  Status: up-to-date)",
+				"WriteLine(  Message: Knowledge source 'creatio-curated' is up to date at 1.13.8.)",
+				"WriteLine()",
+				"WriteInfo(2. partner)",
+				"WriteLine(  Status: failed)",
+				"WriteLine(  Message: Partner verification failed.)"
+			],
+			because: "the multi-source report must remain ordered, numbered, and on one output stream");
 	}
 }
 
@@ -152,6 +253,76 @@ public sealed class InfoKnowledgeCommandTests : BaseCommandTests<InfoKnowledgeOp
 		_service.Received(1).GetInfo("creatio", false);
 		_logger.Received(1).WriteLine(Arg.Is<string>(value =>
 			value.Contains("\"alias\": \"creatio\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Prints detailed human-readable knowledge state as vertical blocks instead of a wide table.")]
+	public void Execute_ShouldPrintVerticalSourceBlocks_WhenHumanOutputIsRequested() {
+		// Arrange
+		KnowledgeSourceInfo primary = KnowledgeCommandTestData.Source("creatio") with {
+			Diagnostic = "Primary source is healthy."
+		};
+		KnowledgeSourceInfo secondary = KnowledgeCommandTestData.Source("partner") with {
+			Enabled = false,
+			Priority = 10,
+			Participation = "isolated",
+			IsInstalled = false,
+			IsValid = false,
+			ActiveLibraryVersion = null,
+			ActiveSequence = null,
+			BundleDigest = null,
+			ResolvedRevision = null,
+			ActiveContentPath = null,
+			UpdateAvailability = null,
+			Diagnostic = "   "
+		};
+		_service.GetInfo(null, false).Returns(new KnowledgeSourceInfoResult(
+			true,
+			"appsettings.json",
+			"knowledge",
+			[primary, secondary],
+			"Knowledge root is available."));
+
+		// Act
+		int exitCode = _command.Execute(new InfoKnowledgeOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the local knowledge state was reported successfully");
+		KnowledgeCommandTestData.OutputCalls(_logger).Should().Equal(
+			[
+				"WriteInfo(Knowledge)",
+				"WriteLine(  Settings file: appsettings.json)",
+				"WriteLine(  Root path: knowledge)",
+				"WriteLine(  Diagnostic: Knowledge root is available.)",
+				"WriteLine()",
+				"WriteInfo(Sources (2))",
+				"WriteLine()",
+				"WriteInfo(1. creatio)",
+				"WriteLine(  Library: com.example.creatio)",
+				"WriteLine(  Transport: git)",
+				"WriteLine(  Enabled: yes)",
+				"WriteLine(  Priority: 50)",
+				"WriteLine(  Participation: supplement)",
+				"WriteLine(  Installed: yes)",
+				"WriteLine(  Valid: yes)",
+				"WriteLine(  Library version: 1.0.0)",
+				"WriteLine(  Sequence: 1)",
+				"WriteLine(  Bundle digest: digest)",
+				"WriteLine(  Revision: 0123456789abcdef)",
+				"WriteLine(  Active path: content)",
+				"WriteLine(  Update: up-to-date)",
+				"WriteLine(  Diagnostic: Primary source is healthy.)",
+				"WriteLine()",
+				"WriteInfo(2. partner)",
+				"WriteLine(  Library: com.example.partner)",
+				"WriteLine(  Transport: git)",
+				"WriteLine(  Enabled: no)",
+				"WriteLine(  Priority: 10)",
+				"WriteLine(  Participation: isolated)",
+				"WriteLine(  Installed: no)",
+				"WriteLine(  Valid: no)"
+			],
+			because: "every source field must stay ordered within its vertical block and empty optional values must be omitted");
 	}
 }
 
@@ -513,6 +684,11 @@ public sealed class ListKnowledgeSourcesCommandTests : BaseCommandTests<ListKnow
 }
 
 internal static class KnowledgeCommandTestData {
+	internal static string[] OutputCalls(ILogger logger) => logger.ReceivedCalls()
+		.Select(call => $"{call.GetMethodInfo().Name}({string.Join(", ", call.GetArguments()
+			.Select(argument => argument?.ToString() ?? "<null>"))})")
+		.ToArray();
+
 	internal static KnowledgeSourceBatchResult SuccessBatch(string message, string sourceAlias = "creatio") =>
 		new(true, message, [new KnowledgeSourceOperationResult(sourceAlias, true, "succeeded", message)]);
 

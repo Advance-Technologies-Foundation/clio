@@ -2513,7 +2513,7 @@ stories:
   # archive produced from that branch by SHA-256, so the two land together.
   # Test plan: spec/test-plans/tp-deliver-process-builder-package.md (written after implementation — it maps
   # the delivered coverage and states the gaps rather than forecasting).
-  # Status review as of 2026-08-10: still `review`. Reviewer findings on the open PR drove four further
+  # Status review as of 2026-08-10 (SUPERSEDED by the line below, kept for the record): still `review`. Reviewer findings on the open PR drove four further
   # commits, and TWO of them fixed defects introduced by the fix before them — the bundled-version suffix
   # rule was placed wrongly twice (first in the reader, which blinded the downgrade guard; then in the
   # install command alone, which let convergence dead-end every gated tool). Both wrong placements passed
@@ -2525,13 +2525,23 @@ stories:
   # archive have no per-file content pin, and the whole-archive SHA is refreshed by the rebundle script
   # itself; and untrusted version text is sanitised at each consumer rather than at the RequiredPackageChecker
   # boundary where it enters.
+  # MERGED 2026-08-10: clio#1012 -> master as cc14f635, and the package side cli-process-builder#18 -> main
+  # thirteen seconds apart, so the archive and the commit its SHA pin names landed together. The four rows
+  # below therefore read `done` per the AGENTS.md rule; the narrative above predates the merge.
+  # A FOLLOW-UP is in flight on feature/ENG-94385-post-merge-review-followup: the pre-merge three-lens gate
+  # produced findings that were not applied before merging, and it applies them on top of master — an
+  # allowlist pinning what the bundled archive may contain (nothing that EXECUTES on install), both refusals
+  # no longer handing an agent the --force literal, help/docs no longer presenting five MCP-only tools as CLI
+  # commands, a guard against reintroducing the deleted version constant, and a ceiling so a stuck
+  # configuration-build reservation cannot wedge a tenant for the life of the MCP server process. The stories
+  # stay `done` — their scope shipped — but do not read `done` as "nothing outstanding here".
 
   - id: story-deliver-process-builder-package-1
     title: "Bundle the source-only CrtProcessBuilder archive into the clio distribution"
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: M
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2547,7 +2557,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: M
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2564,7 +2574,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: S
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
@@ -2581,7 +2591,7 @@ stories:
     feature: "deliver-process-builder-package"
     repo: "clio"
     size: S
-    status: review
+    status: done
     jira: ENG-94385
     prd: spec/prd/spec-deliver-process-builder-package.md
     adr: spec/adr/adr-deliver-process-builder-package.md
