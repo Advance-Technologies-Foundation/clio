@@ -115,6 +115,30 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("EnsureRequirements returns the resolution it validated against — including the dev-build bypass — so a caller can reuse the gate's probe instead of paying a second one, and returns null when no requirement was triggered (no probe ran).")]
+	public void EnsureRequirements_ShouldReturnTheResolutionItValidatedAgainst() {
+		// Arrange
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 0, 0, 720)));
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		CreatioVersionResolution satisfied = checker.EnsureRequirements(new ClassRequirementOptions());
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(0, 0, 0, 0)));
+		CreatioVersionResolution devBuild = Container.GetRequiredService<ICreatioVersionChecker>()
+			.EnsureRequirements(new ClassRequirementOptions());
+		CreatioVersionResolution untriggered = Container.GetRequiredService<ICreatioVersionChecker>()
+			.EnsureRequirements(new NoRequirementOptions());
+
+		// Assert
+		satisfied.Version.Should().Be(new Version(10, 0, 0, 720),
+			because: "a satisfied requirement must hand back the very resolution it checked, so callers can reuse the probe instead of paying a second one");
+		devBuild.Version.Should().Be(new Version(0, 0, 0, 0),
+			because: "the dev-build bypass still resolved a version the caller may need");
+		untriggered.Should().BeNull(
+			because: "no triggered requirement means no probe ran, so there is no resolution to reuse");
+	}
+
+	[Test]
 	[Description("EnsureRequirements throws version-too-old when the environment version is below the required minimum.")]
 	public void EnsureRequirements_ShouldThrowVersionTooOld_WhenCurrentVersionIsOlder() {
 		// Arrange
