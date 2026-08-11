@@ -27,14 +27,37 @@ public static class EnvironmentNotFoundError {
 	/// The currently registered environment names, or <c>null</c> when they cannot be enumerated.
 	/// </param>
 	/// <returns>A human- and agent-readable message that ends with a copy-pasteable fix.</returns>
-	public static string Build(string? missingEnvironmentName, IEnumerable<string>? availableEnvironmentNames) {
+	public static string Build(string? missingEnvironmentName, IEnumerable<string>? availableEnvironmentNames,
+		bool? isMcpContext = null) {
 		string name = string.IsNullOrWhiteSpace(missingEnvironmentName)
 			? "<unknown>"
 			: missingEnvironmentName.Trim();
 		string availableHint = BuildAvailableHint(availableEnvironmentNames);
-		string fix = $"To register it, run: clio reg-web-app {name} -u <url> -l <login> -p <password>";
+		// The caller is the same command class on both surfaces, so the audience cannot be decided per
+		// call site: it is a property of the process. Program.IsMcpServerMode is set once from the verb
+		// (mcp-server / mcp-http) — the same ambient marker ConsoleLogger already branches on. The
+		// parameter exists so a test can pin either text without mutating that process-wide state.
+		bool isMcp = isMcpContext ?? Program.IsMcpServerMode;
+		string fix = isMcp ? BuildMcpFix(name) : BuildCliFix(name);
 		return $"Environment with key '{name}' not found.{availableHint} {fix}";
 	}
+
+	private static string BuildCliFix(string name) =>
+		$"To register it, run: clio reg-web-app {name} -u <url> -l <login> -p <password>";
+
+	// Inside an MCP session the shell command is the wrong advice: it registers the environment in
+	// appsettings.json of ANOTHER process, and this server keeps its own loaded copy — the caller would
+	// then see the registration succeed and the very next tool call still fail. clio-run reaches
+	// reg-web-app in THIS process, so the file and the running server move together.
+	private static string BuildMcpFix(string name) =>
+		"To register it from this MCP session, call the clio-run tool with "
+		+ $"{{\"command\":\"reg-web-app\",\"args\":{{\"environment-name\":\"{name}\",\"uri\":\"<url>\","
+		+ "\"login\":\"<login>\",\"password\":\"<password>\"}} — that writes appsettings.json and updates "
+		+ "this running server in one step. "
+		+ "This server holds the environment list it loaded from appsettings.json at start; "
+		+ "`list-environments` and environment resolution re-read that file at call time, but tools bound "
+		+ "at server start still answer from the loaded copy, so an edit made outside this process (Bash, "
+		+ "or `clio reg-web-app` in another process) is not guaranteed to be seen before a restart.";
 
 	/// <summary>
 	/// Composes the actionable message, reading the registered environment names from the supplied
@@ -44,7 +67,8 @@ public static class EnvironmentNotFoundError {
 	/// <param name="missingEnvironmentName">The environment key that could not be resolved.</param>
 	/// <param name="settingsRepository">The settings repository used to list registered environments.</param>
 	/// <returns>A human- and agent-readable message that ends with a copy-pasteable fix.</returns>
-	public static string Build(string? missingEnvironmentName, ISettingsRepository? settingsRepository) {
+	public static string Build(string? missingEnvironmentName, ISettingsRepository? settingsRepository,
+		bool? isMcpContext = null) {
 		IEnumerable<string>? names = null;
 		try {
 			names = settingsRepository?.GetAllEnvironments()?.Keys;
@@ -52,7 +76,7 @@ public static class EnvironmentNotFoundError {
 			// Enumerating environments is best-effort; never let it hide the not-found error.
 			names = null;
 		}
-		return Build(missingEnvironmentName, names);
+		return Build(missingEnvironmentName, names, isMcpContext);
 	}
 
 	private static string BuildAvailableHint(IEnumerable<string>? availableEnvironmentNames) {

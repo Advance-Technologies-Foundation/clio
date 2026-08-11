@@ -572,6 +572,38 @@ namespace Clio
 			TrySaveSchema(_fileSystem);
 		}
 
+		/// <inheritdoc />
+		public SettingsReloadResult Reload() {
+			// The bootstrap service reads the file on every call (it never caches) and already takes the
+			// settings file lock, which is re-entrant for this thread — so a concurrent reg-web-app from
+			// another process or thread either finishes before this read starts or waits for it, and a
+			// partially written file is never observed.
+			SettingsBootstrapResult result;
+			try {
+				result = _settingsBootstrapService.GetResult();
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+				or TimeoutException or Newtonsoft.Json.JsonException) {
+				return new SettingsReloadResult(false, null, BuildReloadWarning(exception.Message));
+			}
+			SettingsBootstrapReport report = result?.Report;
+			if (result is null || string.Equals(report?.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+				string issue = report?.Issues?.FirstOrDefault()?.Message
+					?? $"{FileName} could not be read.";
+				return new SettingsReloadResult(false, report, BuildReloadWarning(issue));
+			}
+			// Same post-load normalization the constructor and UpdateSettingsIfChanged apply: without it a
+			// hand-edited file can leave Features/Knowledge null and drops the OrdinalIgnoreCase rebuild
+			// that IsFeatureEnabled depends on.
+			_settings = result.Settings ?? new Settings();
+			EnsureSettingsCollections();
+			AttachDbServers(_settings);
+			return new SettingsReloadResult(true, report, null);
+		}
+
+		private static string BuildReloadWarning(string reason) =>
+			$"Could not re-read {AppSettingsFile}: {reason} The previously loaded settings are still in use.";
+
 		internal static Settings CreateDefaultSettings(Settings settings = null) {
 			Settings result = settings ?? new Settings();
 			result.Environments ??= new Dictionary<string, EnvironmentSettings>();
