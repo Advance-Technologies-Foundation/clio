@@ -13,6 +13,23 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
+// NonParallelizable: MarkSessionContainerAvailable_Should_Release_SessionContainer_Only_NotLockProvider
+// swaps substitutes into McpToolExecutionLock's PROCESS-GLOBAL static facade via Configure() and restores
+// the real ones in its finally. Under [assembly: Parallelizable(ParallelScope.Fixtures)] that swap window
+// is visible to every MCP tool test running on the other two workers, and it leaks BOTH ways:
+//   * outward — BaseTool.ExecuteLocked does `lock (McpToolExecutionLock.GetLock(key))`, and an unstubbed
+//     substitute returns null for the object-typed GetLock (NSubstitute does not auto-substitute `object`),
+//     so an unrelated tool test dies with ArgumentNullException at Monitor.ReliableEnter. Which test is hit
+//     is incidental — it is whichever one reaches GetLock inside the window. Observed on
+//     RestoreDbByCredentials_Should_Map_Explicit_Credentials_Arguments in 2 of 4 runs of
+//     --filter "Category=Unit&(Module=McpServer|Module=Command|Module=Common)";
+//   * inward — a concurrent tool call routes its MarkAvailable into this test's substitute, which would
+//     break the DidNotReceive assertion here with no bug present.
+// Same hazard class the CompileCreatioToolTests / InstallProcessBuilderToolTests headers describe for
+// ResetConfigurationBuildReservationsForTests. BaseToolTests, whose Configure pattern this test copied, is
+// already NonParallelizable — but for an unrelated reason (it reads back the ConsoleLogger singleton), so
+// the isolation the pattern silently depended on did not travel with it.
+[NonParallelizable]
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class RestartToolTests {
@@ -365,6 +382,13 @@ public sealed class RestartToolTests {
 		// Arrange — wire substitutes into the static facade, restoring the real ones in finally (BaseToolTests pattern).
 		string tenantKey = "tenant-finding2-" + Guid.NewGuid();
 		ITenantExecutionLockProvider lockProvider = Substitute.For<ITenantExecutionLockProvider>();
+		// GetLock is object-typed, so an unstubbed substitute hands back null and anything that reaches the
+		// facade while it is swapped in ends up at `lock (null)`. The real provider never returns null, so
+		// keep the double faithful: one stable object for every key, mirroring same-key-same-lock. The
+		// [NonParallelizable] on this fixture is what actually closes the window; this only keeps the failure
+		// mode sane if that guard is ever lost.
+		object substituteLock = new();
+		lockProvider.GetLock(Arg.Any<string>()).Returns(substituteLock);
 		ISessionContainerCache sessionCache = Substitute.For<ISessionContainerCache>();
 		McpToolExecutionLock.Configure(lockProvider, sessionCache);
 		try {
