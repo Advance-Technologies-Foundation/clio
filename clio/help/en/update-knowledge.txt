@@ -16,6 +16,9 @@ DESCRIPTION
     an explicit commit remains immutable. With no configured reference, only a
     successful update persists the discovered default branch. MCP observes successful
     activations without restarting.
+    Human-readable output uses a short summary followed by one vertical block per source,
+    keeping statuses and messages readable at ordinary terminal widths. Use --json for
+    structured automation output.
 
 OPTIONS
     --source <alias>    Update only this source; omit for all enabled sources
