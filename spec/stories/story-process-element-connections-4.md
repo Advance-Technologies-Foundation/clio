@@ -129,6 +129,28 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
    Caught by the pre-PR review; the DTOs, a new `DescribedConnection` type and the warning surfacing were
    added before the PR was opened, and the E2E assertions were rewritten to go through the typed model
    because a substring of the serialized envelope passed for the wrong reason in five of the six cases.
+8. **The six E2E cases were then RUN on a stand, and the deviation is what running them found.**
+   `krestov-test` carried a hand-built `CrtProcessBuilder 1.1.0.1` against this clio's bundled `1.1.0.0` — a
+   higher version with pre-feature code, which is precisely the case D8 records as accepted-not-guarded. So
+   the first run failed on the platform's own `Operation 'setConnections' is not supported. Supported: …`
+   rather than on anything this story wrote. `install-process-builder --force` (which also compiled the
+   configuration — a source-only package needs that) then produced **6/6 green in 2m03s**. The ADR's D8
+   section now records that the uncovered case degrades to a LOUD error, and why: an unknown member of a
+   known contract is dropped in silence, an unknown operation NAME is refused by name.
+9. **`writesConnectionsAtRuntime` was asserted by nothing, and now is.** The field was promised in
+   `DescribeProcessTool`'s `[Description]` ("FALSE is the answer that matters"), declared on the DTO after
+   deviation 7, and covered by no test at either level — so the rule was proven while the delivery was not,
+   which is deviation 7's exact failure class one layer up. `ModifyBusinessProcessToolE2ETests` now asserts
+   it on the wire (`true` for a perform task, which has no `CreateActivity` gate) via a `ReadTaskAsync`
+   helper extracted from `ReadConnectionsAsync`.
+10. **The runtime tail was measured, which no green test above can do.** A connection that persists,
+    compiles and reads back correctly can still write nothing — trap T-2, the `ModifiedInSchemaUId` stamp.
+    On `UsrConnProbe1`/`CONNPROBE`: the pre-existing activity had `AccountId` set by the older `addMapping`
+    path and `ContactId` NULL; after `setConnections` bound Contact to a **real** record and one
+    `ProcessEngineService.svc/RunProcess`, the new activity carries the named Contact with `AccountId`
+    unchanged as the control. A fixed-record connection is therefore effective at run time. Note for reuse:
+    the E2E cases bind `Guid.NewGuid()` ids, which is correct for persistence and unusable for a run —
+    `Activity.AccountId`/`ContactId` are foreign keys.
 
 ## Definition of Done
 
@@ -140,3 +162,7 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
   prompt, and two new pin tests. No curated `get-tool-contract` entry exists for the process-designer tools,
   so the `[Description]` is their contract surface
 - [x] Diary entry appended
+- [x] Verified on a live stand (krestov-test): 6/6 connections E2E green in 2m03s after
+  `install-process-builder --force`; `writesConnectionsAtRuntime` asserted on the wire; and the runtime
+  tail measured on `UsrConnProbe1` — a fixed-record connection populates the created Activity column,
+  with the pre-existing mapping-sourced column unchanged as the control

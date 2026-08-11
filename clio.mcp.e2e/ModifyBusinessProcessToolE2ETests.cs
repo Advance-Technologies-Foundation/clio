@@ -865,6 +865,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the raw persisted macro travels alongside the decoded form, which is what lets an unrecognised future macro survive a round trip");
 		connection.Registered.Should().BeTrue(
 			because: "Account carries a shipped connection-registry row, so the connection is a full citizen rather than the invisible half-citizen case");
+		// The element-level capability verdict, asserted on the wire rather than in the package. Its own unit
+		// tests prove the RULE; only a real describe proves the answer survives serialization at all — and a
+		// silently dropped member is exactly the failure this feature already shipped once, where four new
+		// fields were promised by the tool description and dropped by clio's DTO. `true` is the only correct
+		// answer for a perform task: it has no CreateActivity gate, so the connection cannot be inert.
+		(await ReadTaskAsync(context, processName)).WritesConnectionsAtRuntime.Should().BeTrue(
+			because: "a perform task writes its connections unconditionally, and null here would mean the verdict never reached the caller who is told to read it before trusting a binding");
 	}
 
 	[Test]
@@ -1024,16 +1031,20 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		return result;
 	}
 
-	/// <summary>Reads the perform task's connections through the TYPED describe model.</summary>
-	private static async Task<IReadOnlyList<DescribedConnection>> ReadConnectionsAsync(ArrangeContext context,
-			string processName) {
+	/// <summary>Reads the perform task itself through the TYPED describe model.</summary>
+	private static async Task<DescribedElement> ReadTaskAsync(ArrangeContext context, string processName) {
 		CallToolResult callResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName
 		});
 		DescribeProcessResult described = ParseDescribeResult(callResult);
-		DescribedElement task = described.Elements.Single(element => element.Name == "Task1");
-		return task.Connections ?? [];
+		return described.Elements.Single(element => element.Name == "Task1");
+	}
+
+	/// <summary>Reads the perform task's connections through the TYPED describe model.</summary>
+	private static async Task<IReadOnlyList<DescribedConnection>> ReadConnectionsAsync(ArrangeContext context,
+			string processName) {
+		return (await ReadTaskAsync(context, processName)).Connections ?? [];
 	}
 
 	private static async Task<DescribedConnection> ReadConnectionAsync(ArrangeContext context, string processName,

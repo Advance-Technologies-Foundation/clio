@@ -208,6 +208,19 @@ bundled version passes, as it must — so a hand-installed package that is *newe
 this feature would not be caught. That is not reachable through any shipped path (the archive is the only
 thing clio installs) and no cheap check distinguishes it, so it is accepted rather than guarded.
 
+That exact case then occurred, on the feature's own verification stand, and it is worth recording because
+what it produced is *not* the silent failure this design exists to prevent. `krestov-test` carried a
+hand-built `1.1.0.1` — a higher version than the bundled `1.1.0.0`, with pre-feature code — so convergence
+correctly saw no regression and the call went through. The answer was
+`Operation 'setConnections' is not supported. Supported: addElement, …, setElement`: a refusal from the
+package's own operation dispatcher, which enumerates what it does support. So the uncovered case degrades to
+a LOUD error, and the reason is a real asymmetry worth keeping in mind — an unknown **member** of a known
+contract is dropped in silence (T-10, the premise of this whole decision), while an unknown **operation
+name** is rejected by name. The write path is therefore self-diagnosing even where the detector is blind;
+only the read path can go quiet there, by returning a descriptor with no `connections` array at all, which
+is indistinguishable from "nothing is bound". Fixing it by hand is `install-process-builder --force`, whose
+`--force` exists for precisely this backwards move.
+
 Two further gaps, named because a reader would otherwise assume the detector is unconditional. Convergence
 declines to DECIDE — warning and allowing — when clio's own archive cannot be read or declares a
 pre-release suffix, so a defective distribution disarms it by design: blocking there would turn clio's defect
