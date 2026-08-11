@@ -20,7 +20,11 @@ public interface ISettingsBootstrapService {
 	/// read-only path such as <see cref="ISettingsRepository.Reload"/>, which a <c>ReadOnly</c> MCP tool
 	/// calls on every invocation. This overload never writes.
 	/// </remarks>
-	/// <returns>The settings as they are on disk, with the same report and broken-file semantics.</returns>
+	/// <returns>
+	/// The settings as they are on disk, with the same report and broken-file semantics. A missing file
+	/// is reported as status <c>file-missing</c> instead of the repairing path's <c>healthy</c>, so a
+	/// caller can tell "no configuration file" from "a file with no environments".
+	/// </returns>
 	SettingsBootstrapResult GetResultWithoutRepairs();
 }
 
@@ -54,7 +58,18 @@ public sealed record SettingsBootstrapResult(
 
 public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
+	private const string SettingsFileMissingCode = "settings-file-missing";
 	private const int CurrentSettingsVersion = 1;
+
+	/// <summary>
+	/// Status reported when appsettings.json does not exist and the caller asked for no repair write.
+	/// </summary>
+	/// <remarks>
+	/// The repairing path creates the file and is genuinely "healthy" afterwards. A read-only caller
+	/// gets no file created, so reporting "healthy" with zero environments would look like a real,
+	/// empty configuration — and a caller that already holds settings would replace them with nothing.
+	/// </remarks>
+	internal const string FileMissingStatus = "file-missing";
 	private readonly IFileSystem _fileSystem;
 	private readonly bool _applyRepairs;
 
@@ -100,8 +115,10 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			if (applyRepairs) {
 				SettingsRepository.SaveSettings(_fileSystem, emptySettings, expectedContent: null,
 					verifyExpectedContent: true);
+				return BuildResult("healthy", settingsFilePath, null, emptySettings, [], []);
 			}
-			return BuildResult("healthy", settingsFilePath, null, emptySettings, [], []);
+			return BuildResult(FileMissingStatus, settingsFilePath, null, emptySettings,
+				[new SettingsIssue(SettingsFileMissingCode, "appsettings.json does not exist.")], []);
 		}
 		string fileContent;
 		try {

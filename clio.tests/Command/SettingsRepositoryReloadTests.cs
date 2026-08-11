@@ -97,6 +97,27 @@ public sealed class SettingsRepositoryReloadTests {
 	}
 
 	[Test]
+	[Description("Keeps the previously loaded environments and returns a warning when appsettings.json was deleted.")]
+	public void Reload_Should_Keep_Previous_State_And_Warn_When_File_Is_Missing() {
+		// Arrange
+		SettingsRepository sut = new(_fileSystem);
+		_fileSystem.File.Delete(SettingsRepository.AppSettingsFile);
+
+		// Act
+		SettingsReloadResult result = sut.Reload();
+
+		// Assert
+		result.Reloaded.Should().BeFalse(
+			because: "a missing file is not an authoritative empty configuration and must not replace a valid state");
+		result.Warning.Should().NotBeNullOrWhiteSpace(
+			because: "silently answering with zero environments would look like every environment was unregistered");
+		sut.GetAllEnvironments().Keys.Should().Contain("netcore-env",
+			because: "the previously loaded environments must stay usable while the file is absent");
+		_fileSystem.File.Exists(SettingsRepository.AppSettingsFile).Should().BeFalse(
+			because: "the reload is a read: it must not re-create the settings file it failed to find");
+	}
+
+	[Test]
 	[Description("Keeps feature-flag lookups case-insensitive after a reload replaced the settings snapshot.")]
 	public void Reload_Should_Preserve_Case_Insensitive_Feature_Lookup() {
 		// Arrange

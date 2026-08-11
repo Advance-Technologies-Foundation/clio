@@ -590,17 +590,25 @@ namespace Clio
 				return new SettingsReloadResult(false, null, BuildReloadWarning(exception.Message));
 			}
 			SettingsBootstrapReport report = result?.Report;
-			if (result is null || string.Equals(report?.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+			// "file-missing" is as much a reason to keep the current snapshot as "broken": the non-repairing
+			// read does not create the file, so it hands back an empty (not an authoritative) Settings, and
+			// replacing the live one with it would silently clear every registered environment.
+			if (result is null
+				|| string.Equals(report?.Status, "broken", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(report?.Status, SettingsBootstrapService.FileMissingStatus,
+					StringComparison.OrdinalIgnoreCase)) {
 				string issue = report?.Issues?.FirstOrDefault()?.Message
 					?? $"{FileName} could not be read.";
 				return new SettingsReloadResult(false, report, BuildReloadWarning(issue));
 			}
 			// Same post-load normalization the constructor and UpdateSettingsIfChanged apply: without it a
 			// hand-edited file can leave Features/Knowledge null and drops the OrdinalIgnoreCase rebuild
-			// that IsFeatureEnabled depends on.
-			_settings = result.Settings ?? new Settings();
-			EnsureSettingsCollections();
-			AttachDbServers(_settings);
+			// that IsFeatureEnabled depends on. It runs on a LOCAL snapshot, and only the fully initialized
+			// object is published — a concurrent reader either sees the whole old snapshot or the whole new
+			// one, never one with null Environments/Features halfway through normalization.
+			Settings fresh = NormalizeSettings(result.Settings);
+			AttachDbServers(fresh);
+			_settings = fresh;
 			return new SettingsReloadResult(true, report, null);
 		}
 
@@ -799,28 +807,36 @@ namespace Clio
 		}
 
 		private void EnsureSettingsCollections() {
-			_settings ??= new Settings();
-			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
-			_settings.Features ??= new Dictionary<string, bool>();
-			_settings.Knowledge ??= new KnowledgeConfiguration();
-			_settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
-				StringComparer.OrdinalIgnoreCase);
-			_settings.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
-			EnsureFeaturesComparer();
-			EnsureKnowledgeComparers();
+			_settings = NormalizeSettings(_settings);
 		}
 
-		private void EnsureKnowledgeComparers() {
-			if (!ReferenceEquals(_settings.Knowledge.Sources.Comparer, StringComparer.OrdinalIgnoreCase)) {
+		// Takes the instance to normalize as a parameter rather than reading the field, so a caller that
+		// is building a replacement snapshot (Reload) can finish it on a local variable and publish it
+		// with a single reference assignment — readers never observe a half-initialized _settings.
+		private static Settings NormalizeSettings(Settings settings) {
+			Settings result = settings ?? new Settings();
+			result.Environments ??= new Dictionary<string, EnvironmentSettings>();
+			result.Features ??= new Dictionary<string, bool>();
+			result.Knowledge ??= new KnowledgeConfiguration();
+			result.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+				StringComparer.OrdinalIgnoreCase);
+			result.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
+			EnsureFeaturesComparer(result);
+			EnsureKnowledgeComparers(result);
+			return result;
+		}
+
+		private static void EnsureKnowledgeComparers(Settings settings) {
+			if (!ReferenceEquals(settings.Knowledge.Sources.Comparer, StringComparer.OrdinalIgnoreCase)) {
 				Dictionary<string, KnowledgeSourceConfiguration> sources = new(StringComparer.OrdinalIgnoreCase);
-				foreach ((string alias, KnowledgeSourceConfiguration source) in _settings.Knowledge.Sources) {
+				foreach ((string alias, KnowledgeSourceConfiguration source) in settings.Knowledge.Sources) {
 					sources[alias] = source;
 				}
-				_settings.Knowledge.Sources = sources;
+				settings.Knowledge.Sources = sources;
 			}
-			if (!ReferenceEquals(_settings.Knowledge.TopicPins.Comparer, StringComparer.Ordinal)) {
-				_settings.Knowledge.TopicPins = new Dictionary<string, string>(
-					_settings.Knowledge.TopicPins,
+			if (!ReferenceEquals(settings.Knowledge.TopicPins.Comparer, StringComparer.Ordinal)) {
+				settings.Knowledge.TopicPins = new Dictionary<string, string>(
+					settings.Knowledge.TopicPins,
 					StringComparer.Ordinal);
 			}
 		}
@@ -830,8 +846,8 @@ namespace Clio
 		// OrdinalIgnoreCase comparer. This makes IsFeatureEnabled/SetFeature/GetFeatures all
 		// case-insensitive in one place; the convention is: the command writes the key as-given and
 		// lookups never depend on casing. The rebuild is idempotent and skipped once applied.
-		private void EnsureFeaturesComparer() {
-			if (ReferenceEquals(_settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
+		private static void EnsureFeaturesComparer(Settings settings) {
+			if (ReferenceEquals(settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
 				return;
 			}
 			// Rebuild manually rather than via the Dictionary(IDictionary, IEqualityComparer) copy-constructor:
@@ -840,10 +856,10 @@ namespace Clio
 			Dictionary<string, bool> rebuilt = new(StringComparer.OrdinalIgnoreCase);
 			// On a case-collision the last-enumerated value wins; this is acceptable because such a
 			// state only arises from a manual appsettings.json edit (the command never writes colliding keys).
-			foreach (KeyValuePair<string, bool> kvp in _settings.Features) {
+			foreach (KeyValuePair<string, bool> kvp in settings.Features) {
 				rebuilt[kvp.Key] = kvp.Value;
 			}
-			_settings.Features = rebuilt;
+			settings.Features = rebuilt;
 		}
 
 		private void UpdateSettings(Action<Settings> mutation) => UpdateSettingsIfChanged(settings => {

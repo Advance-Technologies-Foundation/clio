@@ -21,7 +21,7 @@ namespace Clio.UserEnvironment
 	/// <param name="Warning">
 	/// A human- and agent-readable explanation of why the reload was skipped, or <c>null</c> on success.
 	/// </param>
-	public sealed record SettingsReloadResult(bool Reloaded, SettingsBootstrapReport Report, string Warning);
+	public sealed record SettingsReloadResult(bool Reloaded, SettingsBootstrapReport? Report, string? Warning);
 
 	/// <summary>
 	/// Provides access to persisted clio settings and registered environment definitions.
@@ -39,8 +39,8 @@ namespace Clio.UserEnvironment
 		/// settings file lock and deserializes the whole file, which must not be charged to every
 		/// settings getter of every command. Call it where a stale environment list is observable —
 		/// the <c>list-environments</c> tool and the MCP environment-resolution path.
-		/// A corrupt or unreadable file never throws here: the previously loaded settings stay in use
-		/// and the reason is returned as <see cref="SettingsReloadResult.Warning"/>.
+		/// A corrupt, unreadable or missing file never throws here: the previously loaded settings stay
+		/// in use and the reason is returned as <see cref="SettingsReloadResult.Warning"/>.
 		/// </remarks>
 		/// <returns>The reload outcome, including a warning when the file could not be read.</returns>
 		SettingsReloadResult Reload();
