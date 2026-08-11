@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -69,10 +70,16 @@ public sealed class ModifyBusinessProcessCommandTests {
 			.Returns(BuildResult());
 
 		// Act
-		_command.Execute(options);
+		int result = _command.Execute(options);
 
-		// Assert
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		// Assert — stated as an assertion with a reason rather than a bare DidNotReceive, so the intent is
+		// legible and the emptiness is what the test actually claims.
+		_logger.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Should().Be(0,
+				because: "the server reported nothing, and a warning invented from an absent member would train a "
+					+ "reader to ignore the channel that carries the two outcomes describe cannot show afterwards");
+		result.Should().Be(0, because: "no warnings is the ordinary successful edit");
 	}
 
 	[Test]
