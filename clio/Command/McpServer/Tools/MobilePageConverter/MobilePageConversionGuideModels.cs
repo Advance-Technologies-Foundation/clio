@@ -34,10 +34,10 @@ public sealed class SourceComponentInfo {
 
 /// <summary>
 /// A source-page component that was NOT converted because it lives inside one of the web template's
-/// non-converting containers (declared per template as <c>nonConvertingContainers</c> — for
-/// <c>PageWithTabsFreedomTemplate</c> that is the WHOLE <c>MainHeader</c>: page title, back button, AND the
-/// action bar with its Order/print buttons). The mobile template already provides the equivalent
-/// header/scaffold chrome, so this component is intentionally dropped. Because the prune runs before
+/// non-converting containers (declared per template as <c>nonConvertingContainers</c> — e.g. a header
+/// container holding the page title, back button, AND an action bar with buttons). The mobile template
+/// already provides the equivalent header/scaffold chrome, so this component is intentionally dropped.
+/// Because the prune runs before
 /// inherited-chrome subtraction, the list mixes chrome the mobile template replaces (page title, back button)
 /// with page-added components — use <see cref="IsContainer"/> / <see cref="Container"/> to tell them apart.
 /// It is reported HERE (never in <see cref="MobilePageConversionGuide.ElementMap"/>, which only lists converted
@@ -365,16 +365,16 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// Components dropped from conversion because they live inside the web template's non-converting
-	/// container(s) (<c>nonConvertingContainers</c> — for <c>PageWithTabsFreedomTemplate</c>, the whole
-	/// <c>MainHeader</c>, not just its action bar). The mobile template already provides the equivalent
-	/// header/scaffold chrome, so these are intentionally excluded. The prune runs before inherited-chrome
-	/// subtraction, so the list mixes chrome the mobile template replaces (page title, back button) with
-	/// page-added components (e.g. Order/print buttons) — a consumer should split on <c>isContainer</c> /
-	/// <c>container</c> and present the former as replaced-by-template, not as a loss. Enumerated HERE (not in
-	/// <see cref="ElementMap"/>) so the caller can confirm nothing needed was lost; do NOT re-add them. A nested
-	/// subtree whose name is a template twin (e.g. tabs) is carved out and still converts, so it is absent from
-	/// this list. Null when the matched template declares no non-converting containers, or when none of their
-	/// descendants were present on the source page.
+	/// container(s) (<c>nonConvertingContainers</c> — e.g. a whole header container, not just its action
+	/// bar). The mobile template already provides the equivalent header/scaffold chrome, so these are
+	/// intentionally excluded. The prune runs before inherited-chrome subtraction, so the list mixes chrome
+	/// the mobile template replaces (page title, back button) with page-added components (e.g. Order/print
+	/// buttons) — a consumer should split on <c>isContainer</c> / <c>container</c> and present the former as
+	/// replaced-by-template, not as a loss. Enumerated HERE (not in <see cref="ElementMap"/>) so the caller
+	/// can confirm nothing needed was lost; do NOT re-add them. A nested subtree whose name is a template
+	/// twin (e.g. tabs) is carved out and still converts, so it is absent from this list. Null when the
+	/// matched template declares no non-converting containers, or when none of their descendants were
+	/// present on the source page.
 	/// </summary>
 	[JsonPropertyName("excludedComponents")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
