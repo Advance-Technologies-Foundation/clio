@@ -64,19 +64,17 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop';
           Set-Location $env:GITHUB_WORKSPACE;
-          # TEMPORARY DIAGNOSTIC (ENG-91845): MSB1009 persists on TS1-CORE-DEV24 and TS1-MRKT-WEB01 even with
-          # the working directory anchored above, so the cwd theory is dead and the next question is what those
-          # boxes actually have on disk after a successful checkout. Remove once the cause is known.
-          Write-Host "PWD           = $($PWD.Path)";
-          Write-Host "WORKSPACE     = $env:GITHUB_WORKSPACE";
-          Write-Host "csproj exists = $(Test-Path (Join-Path $env:GITHUB_WORKSPACE 'clio.tests\clio.tests.csproj'))";
-          Write-Host "root entries  = $((Get-ChildItem -Force $env:GITHUB_WORKSPACE | Select-Object -ExpandProperty Name) -join ', ')";
-          if (Test-Path (Join-Path $env:GITHUB_WORKSPACE 'clio.tests')) {
-            Write-Host "clio.tests    = $((Get-ChildItem -Force (Join-Path $env:GITHUB_WORKSPACE 'clio.tests') | Select-Object -ExpandProperty Name) -join ', ')";
-          }
-          Write-Host "git status    = $(git -C $env:GITHUB_WORKSPACE status --porcelain=v1 --untracked-files=no | Measure-Object -Line | Select-Object -ExpandProperty Lines) changed tracked files";
-          Write-Host "git head      = $(git -C $env:GITHUB_WORKSPACE log -1 --format=%H)";
-          Write-Host "git ls-files  = $(git -C $env:GITHUB_WORKSPACE ls-files --error-unmatch clio.tests/clio.tests.csproj 2>&1)";
+          # Why the Set-Location above, and what it is NOT for. Two self-hosted runners spent a day failing
+          # this job in ~1s with `MSB1009: Project file does not exist` while actions/checkout reported
+          # success. Anchoring the cwd did not help, and an on-runner diagnostic (2026-08-11, TS1-CORE-DEV24,
+          # install at C:/creatio/actions-runner) showed why: the workspace contained ONLY `.git`, yet
+          # `git status` reported a clean tree and `git ls-files --error-unmatch clio.tests/clio.tests.csproj`
+          # resolved. Git was operating on a worktree somewhere else — a stale `core.worktree` in the repo
+          # config, or a machine-level GIT_WORK_TREE/GIT_DIR — so checkout "succeeded" while this directory
+          # stayed empty. That is a runner-host defect: deleting `_work/clio` on the affected box (forcing a
+          # fresh clone) and clearing those variables is the fix, and no workflow change can substitute for it.
+          # The Set-Location stays because a relative path in a profile-loading shell should not be trusted,
+          # not because it addresses the above.
           dotnet build-server shutdown;
           dotnet test .\clio.tests\clio.tests.csproj `
             --filter "Category!=Integration" `
