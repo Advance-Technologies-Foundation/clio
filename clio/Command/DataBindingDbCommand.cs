@@ -47,7 +47,7 @@ public class UpsertDataBindingRowDbOptions : EnvironmentOptions {
 /// <summary>
 /// Options for the <c>remove-data-binding-row-db</c> command.
 /// </summary>
-[Verb("remove-data-binding-row-db", HelpText = "Remove a row from a remote DB-first data binding and delete the package schema data record when no bound rows remain")]
+[Verb("remove-data-binding-row-db", HelpText = "DELETE the live record and remove its row from a remote DB-first data binding (no confirmation, no undo)")]
 public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
@@ -57,6 +57,21 @@ public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
 
 	[Option("key-value", Required = true, HelpText = "Primary-key value of the row to remove")]
 	public string KeyValue { get; set; } = string.Empty;
+}
+
+/// <summary>
+///     Options for <see cref="ReadDataBindingDbCommand" />.
+/// </summary>
+[Verb("read-data-binding-db", Aliases = ["get-data-binding-db"],
+	HelpText = "Read which columns a remote DB-first data binding actually ships")]
+public class ReadDataBindingDbOptions : EnvironmentOptions {
+
+	[Option("package", Required = true, HelpText = "Target package name")]
+	public string PackageName { get; set; } = string.Empty;
+
+	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
+	public string BindingName { get; set; } = string.Empty;
+
 }
 
 /// <summary>
@@ -132,6 +147,39 @@ public class RemoveDataBindingRowDbCommand(IDataBindingDbService dataBindingDbSe
 }
 
 /// <summary>
+///     Reports which columns a remote DB-first data binding ships, so the transfer contract can be checked without
+///     exporting and unpacking the whole package.
+/// </summary>
+public class ReadDataBindingDbCommand(IDataBindingDbService dataBindingDbService, ILogger logger)
+	: Command<ReadDataBindingDbOptions> {
+
+	/// <inheritdoc />
+	public override int Execute(ReadDataBindingDbOptions options) {
+		try {
+			BoundBindingProjection projection = dataBindingDbService.ReadBinding(options);
+			logger.WriteInfo($"binding: {projection.BindingName}");
+			logger.WriteInfo($"schema:  {projection.EntitySchemaName}");
+			logger.WriteInfo($"uId:     {projection.BindingUId}");
+			logger.WriteInfo($"rows:    {projection.Rows.Count}");
+			IReadOnlyList<string> columns = projection.GetColumns();
+			logger.WriteInfo($"columns ({columns.Count}): {string.Join(", ", columns)}");
+			for (int index = 0; index < projection.Rows.Count; index++) {
+				IReadOnlyDictionary<string, string> row = projection.Rows[index];
+				string values = string.Join(", ", row.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+					.Select(pair => $"{pair.Key}={pair.Value}"));
+				logger.WriteInfo($"row[{index}]: {values}");
+			}
+			return 0;
+		}
+		catch (Exception exception) {
+			logger.WriteError(exception.Message);
+			return 1;
+		}
+	}
+
+}
+
+/// <summary>
 /// Shared DB-first data-binding service used by the CLI commands and MCP tools.
 /// </summary>
 public interface IDataBindingDbService {
@@ -149,6 +197,38 @@ public interface IDataBindingDbService {
 	/// Removes a row from a remote DB-first binding and deletes the package schema data record when empty.
 	/// </summary>
 	void RemoveRow(RemoveDataBindingRowDbOptions options);
+
+	/// <summary>
+	/// Reads what a remote DB-first binding actually ships: its entity schema and, per row, the exact set of
+	/// bound columns.
+	/// </summary>
+	/// <remarks>
+	///     A binding ships ONLY the columns it was created with, and that projection — not the live record — is what
+	///     transfers to the next environment.
+	/// </remarks>
+	/// <exception cref="InvalidOperationException">The package or the binding does not exist on the environment.</exception>
+	BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options);
+}
+
+/// <summary>
+///     What a DB-first data binding ships, as read back from the environment.
+/// </summary>
+/// <param name="BindingName">Binding folder name, i.e. the <c>SysPackageSchemaData.Name</c>.</param>
+/// <param name="EntitySchemaName">Entity schema the binding carries rows for.</param>
+/// <param name="BindingUId">Identifier of the package-schema-data record.</param>
+/// <param name="Rows">One entry per bound row: the column names mapped to their bound values.</param>
+public sealed record BoundBindingProjection(
+	string BindingName,
+	string EntitySchemaName,
+	Guid BindingUId,
+	IReadOnlyList<IReadOnlyDictionary<string, string>> Rows) {
+
+	/// <summary>
+	///     Every column name the binding ships, across all rows, in stable order.
+	/// </summary>
+	public IReadOnlyList<string> GetColumns() =>
+		Rows.SelectMany(row => row.Keys).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
 }
 
 public interface ILookupRegistrationService {
@@ -519,6 +599,47 @@ internal sealed class DataBindingDbService(
 			packageRef, options.BindingName, schema.SchemaName, bindingSchema, existingIds, bindingUId);
 	}
 
+	/// <inheritdoc />
+	public BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		ValidateEnvironment(options);
+
+		PackageRef packageRef = bindingWriter.ResolvePackage(options.PackageName);
+		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
+		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
+		IReadOnlyList<IReadOnlyDictionary<string, string>> rows = boundRows
+			.Select(row => (IReadOnlyDictionary<string, string>)row.ToDictionary(
+				pair => pair.Key,
+				pair => FormatBoundValue(pair.Value),
+				StringComparer.Ordinal))
+			.ToArray();
+		return new BoundBindingProjection(options.BindingName, entitySchemaName, bindingUId, rows);
+	}
+
+	/// <summary>
+	///     Renders a bound value as text, collapsing a lookup envelope to <c>displayValue (value)</c>.
+	/// </summary>
+	private static string FormatBoundValue(JsonNode? value) {
+		if (value is null) {
+			return string.Empty;
+		}
+		if (value is not JsonObject envelope) {
+			return value.ToString();
+		}
+		bool hasDisplayValue = envelope.TryGetPropertyValue("displayValue", out JsonNode? display);
+		bool hasRawValue = envelope.TryGetPropertyValue("value", out JsonNode? raw);
+		if (!hasDisplayValue && !hasRawValue) {
+			return envelope.ToJsonString();
+		}
+		string displayValue = display?.ToString() ?? string.Empty;
+		string rawValue = raw?.ToString() ?? string.Empty;
+		if (string.IsNullOrEmpty(displayValue)) {
+			return rawValue;
+		}
+		return string.IsNullOrEmpty(rawValue) ? displayValue : $"{displayValue} ({rawValue})";
+	}
+
+	/// <inheritdoc />
 	public void RemoveRow(RemoveDataBindingRowDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		ValidateEnvironment(options);
@@ -556,11 +677,20 @@ internal sealed class DataBindingDbService(
 		}
 	}
 
+	/// <summary>
+	///     Builds a DataService DeleteQuery body for one row of a schema.
+	/// </summary>
+	/// <remarks>
+	///     Both arguments are caller-controlled and never validated as a GUID, so they are JSON-escaped: a crafted
+	///     value could otherwise close the string and inject sibling properties into the filter.
+	/// </remarks>
 	private static string BuildDeleteQueryBody(string rootSchemaName, string keyValue) {
+		string escapedRootSchemaName = JsonEncodedText.Encode(rootSchemaName ?? string.Empty).ToString();
+		string escapedKeyValue = JsonEncodedText.Encode(keyValue ?? string.Empty).ToString();
 		return $$"""
 			{
 			  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
-			  "rootSchemaName":"{{rootSchemaName}}",
+			  "rootSchemaName":"{{escapedRootSchemaName}}",
 			  "filters":{
 			    "isEnabled":true,
 			    "filterType":6,
@@ -580,7 +710,7 @@ internal sealed class DataBindingDbService(
 			          "expressionType":2,
 			          "parameter":{
 			            "dataValueType":0,
-			            "value":"{{keyValue}}"
+			            "value":"{{escapedKeyValue}}"
 			          }
 			        }
 			      }

@@ -689,6 +689,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
+		services.AddTransient<InstallProcessBuilderTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
@@ -748,6 +749,7 @@ public class BindingsModule {
 		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
+		services.AddTransient<InstallProcessBuilderCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
@@ -765,6 +767,7 @@ public class BindingsModule {
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
+		services.AddTransient<ReadDataBindingDbCommand>();
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
@@ -1013,6 +1016,13 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		// Singleton so the descriptor is decompressed out of the bundled archive once rather than once per
+		// gated call: the archive cannot change under a running container, and on the MCP path this sits on
+		// the hot path of every gated tool invocation. It is excluded from RegisterAssemblyInterfaceTypes for
+		// the reason recorded there — an auto-registered transient would win or lose on declaration order.
+		// IBundledPackageConvergence is NOT registered here: it is stateless, so the auto-scan's transient
+		// is correct for it.
+		services.AddSingleton<IBundledPackageCatalog, BundledPackageCatalog>();
 		services.AddTransient<IRequiredPackageChecker, RequiredPackageChecker>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
@@ -1269,6 +1279,11 @@ public class BindingsModule {
 					// registered explicitly as a SINGLETON; the auto-scan would give restart-by-environment-name
 					// and restart-status each their own empty table and silently break status polling.
 					|| implementedInterface == typeof(IRestartOperationRegistry)
+					// The bundled-package catalog is registered explicitly as a SINGLETON so the archive's
+					// descriptor is decompressed once instead of on every gated call. Its ctor resolves
+					// cleanly, so the auto-scan WOULD register it — as a transient, and which registration
+					// won would then depend on declaration order rather than on intent.
+					|| implementedInterface == typeof(IBundledPackageCatalog)
 					// Knowledge services use explicit singleton registrations because they retain immutable
 					// runtime snapshots, source locks, and transport clients across MCP requests.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace

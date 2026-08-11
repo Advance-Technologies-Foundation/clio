@@ -220,7 +220,7 @@ public sealed class ValidateProcessGraphToolTests {
 		// Arrange
 		IProcessGraphValidator validator = Substitute.For<IProcessGraphValidator>();
 		ValidateProcessGraphTool tool = new(validator, _commandResolver);
-		const string message = "Package 'clioprocessbuilder' is required. Run 'clio install-clioprocessbuilder -e dev'";
+		const string message = "Package 'CrtProcessBuilder' is required. Run 'clio install-process-builder -e dev'";
 		_checker.When(c => c.EnsureRequirements(Arg.Any<object>()))
 			.Do(_ => throw new PackageRequirementException(message));
 

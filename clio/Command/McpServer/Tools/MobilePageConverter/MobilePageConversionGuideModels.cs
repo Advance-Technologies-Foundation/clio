@@ -549,10 +549,33 @@ public sealed class MobilePageConversionGuide {
 	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
 	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
 	/// restore the web spacing. Null when nothing was normalized.
+	/// <para>
+	/// BACK-COMPAT ALIAS: this section shipped before <see cref="Normalizations"/> existed and duplicates
+	/// its <c>"spacing"</c> entry, shape unchanged. New callers should read <see cref="Normalizations"/>,
+	/// which also carries the standards this one cannot express. REMOVAL TARGET: the only consumer is an
+	/// LLM prompt, so this duplicate should go once the guidance article published for
+	/// <c>normalizations</c> has shipped — it is not intended to be permanent.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("spacingNormalization")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public SpacingNormalizationInfo SpacingNormalization { get; init; }
+
+	// ── Every property normalization the conversion rules declare ──────
+	/// <summary>
+	/// One section per normalization standard the CONVERSION RULES declare, keyed by the rule's
+	/// <c>reportGroup</c> (e.g. <c>"spacing"</c>, <c>"metricStyle"</c>). The set of keys is open: the rules
+	/// file is resolved at runtime, so a standard added there appears here without a binary change, and a
+	/// key this build has never seen gets its own section rather than being folded into another standard's.
+	/// <para>
+	/// Each section carries the caller-facing wording from its rule, the elements normalized (with the
+	/// dotted paths actually written), and anything the stamp had to skip. Read the section rather than
+	/// assuming a fixed set of properties. Null when nothing was normalized at all.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("normalizations")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, NormalizationInfo> Normalizations { get; init; }
 
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
@@ -831,6 +854,77 @@ public sealed class SpacingNormalizationEntry {
 	/// <summary>The property names stamped onto the container's mobileValues (e.g. ["gap"]).</summary>
 	[JsonPropertyName("properties")]
 	public IReadOnlyList<string> Properties { get; init; } = [];
+}
+
+/// <summary>
+/// One normalization standard's report: the caller-facing wording carried by the conversion rule that
+/// declared it, what was normalized, and what could not be. Shared by every standard — a new one is a
+/// rules-file entry, not another pair of identical DTOs.
+/// </summary>
+public sealed class NormalizationInfo {
+	/// <summary>
+	/// Caller-facing summary of this standard's outcome, composed by clio from the actual counts. Never
+	/// sourced from the rules file: those resolve at runtime, and this text reaches the agent's
+	/// instruction channel.
+	/// </summary>
+	[JsonPropertyName("note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; init; }
+
+	/// <summary>One entry per element this standard normalized.</summary>
+	[JsonPropertyName("normalized")]
+	public IReadOnlyList<NormalizationEntry> Normalized { get; init; } = [];
+
+	/// <summary>
+	/// Elements the standard could NOT be applied to, with the branch it refused and why. Present only when
+	/// something was skipped. Without it a silent no-op is indistinguishable from "nothing to normalize" —
+	/// these elements keep the WEB values and may need a manual pass in the designer.
+	/// </summary>
+	[JsonPropertyName("skipped")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<NormalizationSkip> Skipped { get; init; }
+}
+
+/// <summary>One element normalized to a standard, and the properties actually written on it.</summary>
+public sealed class NormalizationEntry {
+	/// <summary>The element's mobile name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The element's mobile component type.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The properties stamped onto this element's mobileValues. A replacing rule reports the top-level key
+	/// it replaced (e.g. <c>["gap"]</c>); a merging rule reports the dotted paths of the leaves it actually
+	/// changed (e.g. <c>["config.layout.border.hidden"]</c>) — never the merged root, which would
+	/// under-report, and never a leaf that already held the target value.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+}
+
+/// <summary>One element a standard could not be stamped onto, and why.</summary>
+public sealed class NormalizationSkip {
+	/// <summary>The element's mobile name.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The element's mobile component type.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// The dotted paths the stamp refused to enter (e.g. <c>["config.text"]</c> when the element binds its
+	/// whole text config). Other paths of the same rule may still have been stamped.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+
+	/// <summary>Why the branch was refused, in caller-facing wording.</summary>
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
 }
 
 /// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>

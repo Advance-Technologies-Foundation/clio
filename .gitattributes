@@ -1,3 +1,11 @@
+# Bundled Creatio package archives are shipped byte-for-byte inside the published tool and installed
+# straight into a Creatio environment, so a line-ending rewrite would corrupt them. Repo-wide on purpose:
+# the rule states the intent for ANY .gz, not just the two that exist today (clio/cliogate/,
+# clio/CrtProcessBuilder/), so a third bundled archive needs no new entry. Declaring it explicitly rather
+# than relying on git's content auto-detection, which is a heuristic we should not be depending on for
+# artifacts whose integrity is pinned by a hash.
+*.gz binary
+
 # Pin test fixtures that are compared byte-for-byte against serialized output to LF,
 # so the working-tree line endings do not depend on each machine's core.autocrlf.
 # The clio YAML serializer emits Environment.NewLine (CRLF on Windows); tests normalize

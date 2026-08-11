@@ -272,12 +272,16 @@ public static class WebToMobileAnalysisService {
 		// so the order is safe either way — it is fixed here so it stays that way.
 		List<TabAreaLayerGroup> tabAreaLayers = BuildTabAreaLayers(elementMap, rules, sourcePage);
 
-		// Spacing normalization: mobile follows its own spacing standard, so the web page's
-		// container spacing is deliberately IGNORED — every Grid/Flex container the converter INSERTS gets
-		// the rules-defined values (gap Medium on all axes). Runs AFTER the tab-area pass so one pass covers
-		// converted and synthesized containers alike (the invariant is per-element-map, not per-origin);
-		// merge twins the mobile template provides are never touched.
-		List<SpacingNormalizationEntry> spacingNormalization = ApplyComponentPropertyOverrides(elementMap, rules);
+		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
+		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
+		// (discarded, never translated). Which component, which properties and which values all come from
+		// the rules file — this pass knows none of them. Runs AFTER the tab-area pass so one pass covers
+		// converted and synthesized elements alike (the invariant is per-element-map, not per-origin);
+		// merge twins the mobile template provides are never touched. Each rule also declares the report
+		// group it feeds, so two standards never bleed into each other's summary.
+		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
+		IReadOnlyList<NormalizationEntry> spacingNormalization =
+			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -338,6 +342,8 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
+			// Back-compat alias: spacingNormalization shipped before normalizations existed, so its shape is
+			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
 				? new SpacingNormalizationInfo {
 					Note = "Mobile follows the mobile spacing standard: the web page's container spacing was "
@@ -345,12 +351,33 @@ public static class WebToMobileAnalysisService {
 						+ "carries gap Medium, already baked into elementMap[].mobileValues — nothing separate "
 						+ "to apply. Silent normalization, not a gate decision: report it as ONE aggregated "
 						+ "line and never restore the web spacing.",
-					Normalized = spacingNormalization
+					Normalized = [.. spacingNormalization.Select(n => new SpacingNormalizationEntry {
+						Name = n.Name, Type = n.Type, Properties = n.Properties
+					})]
 				}
 				: null,
+			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned, viewModelConfigRootMerge, modelConfigRootMerge, mobileTemplateUnavailable, dataSectionArrayConflicts, tabAreaLayers.Count > 0, spacingNormalization.Count > 0, emptyRemovedNames.Count > 0, nonConvertingPruned ? excludedContainers : null),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0, tabAreaLayers.Count > 0, spacingNormalization.Count > 0),
+			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
+			// mis-wires the moment a parameter is inserted rather than appended.
+			Constraints = BuildConstraints(webOnly,
+				hasModelConfig: modelConfig is not null,
+				hasViewModelConfig: viewModelConfig is not null,
+				hasAdaptiveLayout: adaptiveLayout.Count > 0,
+				templatePruned: templatePruned,
+				viewModelConfigRootMerge: viewModelConfigRootMerge,
+				modelConfigRootMerge: modelConfigRootMerge,
+				mobileTemplateUnavailable: mobileTemplateUnavailable,
+				dataSectionArrayConflicts: dataSectionArrayConflicts,
+				hasTabAreaLayers: tabAreaLayers.Count > 0,
+				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
+				normalization: componentPropertyOverrides,
+				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null),
+			NextSteps = BuildNextSteps(
+				hasDataSections: modelConfig is not null || viewModelConfig is not null,
+				hasAdaptiveLayout: adaptiveLayout.Count > 0,
+				hasTabAreaLayers: tabAreaLayers.Count > 0,
+				normalization: componentPropertyOverrides),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1545,7 +1572,7 @@ public static class WebToMobileAnalysisService {
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false, bool hasEmptyContainerRemovals = false,
+		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		IReadOnlyCollection<string> nonConvertingContainers = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1642,16 +1669,10 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
-		if (hasSpacingNormalization) {
-			constraints.Add(
-				"Spacing is NORMALIZED, not converted: mobile follows the mobile spacing standard, so the web " +
-				"page's container spacing was deliberately IGNORED — every inserted crt.GridContainer / " +
-				"crt.FlexContainer (converted and synthesized alike) already carries gap Medium on all axes in " +
-				"its mobileValues. Do NOT restore or translate the web gap, and do NOT treat the difference " +
-				"from the web page as a defect. This is SILENT — never a gate question: state it in the plan " +
-				"and the final report as ONE aggregated line (guide.spacingNormalization lists the containers). " +
-				"Merge twins the mobile template provides keep the template's own spacing untouched.");
-		}
+		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
+		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
+		// built-in text for a rules file that predates reportConstraint.
+		AppendNormalizationLines(constraints, normalization);
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -1663,7 +1684,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		bool hasSpacingNormalization = false) {
+		ComponentPropertyOverrideResult normalization = null) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1679,9 +1700,7 @@ public static class WebToMobileAnalysisService {
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
-		if (hasSpacingNormalization) {
-			steps.Add("Spacing: every inserted Grid/Flex container already carries gap Medium in its mobileValues — the web page's spacing is ignored by design (guide.spacingNormalization lists them). Do not restore the web gap; mention the normalization as ONE aggregated line when you present the plan and the final report.");
-		}
+		AppendNormalizationLines(steps, normalization);
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
 		return steps;
@@ -3011,24 +3030,31 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT (spacing
-	/// normalization). For each entry whose <c>mobileType</c> matches an override rule, the listed
-	/// properties are SET on the prebuilt <c>mobileValues</c> — replacing whatever the web page carried
-	/// (any shape: token, px number, CSS string, per-axis object; the web value is discarded, never
-	/// translated) and ADDED when the web page carried none, so the converted body is self-describing
-	/// instead of leaning on the mobile client's defaults. Covers converted and synthesized inserts alike
-	/// (run it after the tab-area pass); merge twins, drops and relocate hints are never touched, and the
-	/// element identity keys (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an
-	/// absent/empty group is a no-op. Returns one advisory entry per normalized element for the guide's
-	/// <c>spacingNormalization</c> report section.
+	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT, stamping each mobile
+	/// standard the rules file declares (container spacing, metric style). For each entry whose
+	/// <c>mobileType</c> matches an override rule, the listed properties are SET on the prebuilt
+	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
+	/// number, CSS string, per-axis object; the web value is discarded, never translated) and ADDED when
+	/// the web page carried none, so the converted body is self-describing instead of leaning on the
+	/// mobile client's defaults. A rule that sets <c>mergeNestedObjects</c> instead merges its object
+	/// value into the element's own, which is what a rule targeting a nested leaf needs — see
+	/// <see cref="StampOverrideValue"/> for both semantics, for why a PRESENT non-object is never
+	/// overwritten, and for why an ABSENT branch is created. Covers converted and synthesized inserts alike (run it after the tab-area pass);
+	/// merge twins, drops and relocate hints are never touched, and the element identity keys
+	/// (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an absent/empty group is a
+	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
+	/// declared via <c>reportGroup</c>.
 	/// </summary>
-	private static List<SpacingNormalizationEntry> ApplyComponentPropertyOverrides(
+	private static ComponentPropertyOverrideResult ApplyComponentPropertyOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
-		var normalized = new List<SpacingNormalizationEntry>();
+		var result = new ComponentPropertyOverrideResult();
 		IReadOnlyList<ComponentPropertyOverrideRule> overrides = rules?.ComponentPropertyOverrides;
 		if (overrides is not { Count: > 0 }) {
-			return normalized;
+			return result;
 		}
+		// One rule per mobile type: a duplicate `type` in the rules file LAST-WINS, silently. That also means
+		// a type cannot carry two rules (e.g. replace one key, merge another) — a limit to lift here, in the
+		// pass, if a standard ever needs it, rather than by loosening the per-rule merge flag.
 		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
 		foreach (ComponentPropertyOverrideRule rule in overrides) {
 			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
@@ -3036,7 +3062,7 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		if (byType.Count == 0) {
-			return normalized;
+			return result;
 		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
@@ -3046,21 +3072,259 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			var properties = new List<string>();
+			var skippedPaths = new List<string>();
 			foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
 				if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
 					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
 					continue; // element identity is never overridable, whatever the rules file says
 				}
-				values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
-				properties.Add(pair.Key);
+				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
+			}
+			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
+			// so a caller can tell "nothing to normalize" from "could not normalize".
+			if (properties.Count > 0 || skippedPaths.Count > 0) {
+				result.Add(ResolveReportGroup(entry.MobileType), entry.MobileName, entry.MobileType,
+					properties, skippedPaths);
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Stamps one rule value onto <paramref name="values"/> under <paramref name="key"/> and records what
+	/// was stamped in <paramref name="stamped"/>.
+	/// <para>
+	/// Default (<paramref name="mergeNestedObjects"/> false) REPLACES the value outright and reports the
+	/// top-level key — the long-standing behavior, kept byte-for-byte so a spacing rule still discards the
+	/// web value instead of translating it.
+	/// </para>
+	/// <para>
+	/// When the rule opts into merging, an object rule value is merged into the element's own object and
+	/// the concrete LEAF PATHS actually written are reported (e.g. <c>config.text.fontSizeMode</c>) rather
+	/// than the merged root, which alone would under-report what a rules file touched. Merging NEVER
+	/// overwrites a value that is PRESENT but is not an object — at ANY depth, not just at the top-level
+	/// key — because that value is typically a whole-value binding: replacing it with an object assembled
+	/// from the rule alone destroys the binding and leaves the component missing registry-required fields
+	/// (an indicator widget without <c>config.data</c> renders nothing). Such a branch is recorded in
+	/// <paramref name="skipped"/>, so the refusal is visible in the report instead of silent.
+	/// </para>
+	/// <para>
+	/// An ABSENT branch is the opposite case and IS created — that is the normalization itself, and the
+	/// long-standing contract of this pass ("added when the web page carried none, so the converted body is
+	/// self-describing"). A real converted metric carries <c>layout</c> with a colour and icon but no
+	/// <c>border</c>, so refusing to create would make the standard unreachable on every real page. The
+	/// trade-off is knowing: a created branch holds ONLY what the rule declares, so it may be partial by the
+	/// component's own schema. Accepted deliberately — the source element had no value there to preserve,
+	/// and validate-page is the backstop.
+	/// Leaves are written, creating or overwriting, but only when the value actually DIFFERS — an element
+	/// already authored at the standard is left alone and is not reported. A non-object rule value still
+	/// replaces, so a merging rule can carry flat entries too.
+	/// </para>
+	/// </summary>
+	private static void StampOverrideValue(JsonObject values, string key, JsonElement ruleValue,
+		bool mergeNestedObjects, List<string> stamped, List<string> skipped) {
+		JsonNode incoming = JsonNode.Parse(ruleValue.GetRawText());
+		if (mergeNestedObjects && incoming is JsonObject incomingObject) {
+			if (!HasLeaf(incomingObject)) {
+				// Nothing is writable anywhere below, so creating the branch would change the body and report
+				// nothing. Counting keys is not enough: { "layout": {} } has a key and no leaf.
+				return;
+			}
+			if (!values.ContainsKey(key)) {
+				values[key] = new JsonObject(); // absent: same rule as any deeper branch
+			}
+			if (values[key] is not JsonObject existing) {
+				skipped.Add(key);
+				return;
+			}
+			MergeJsonObject(existing, incomingObject, key, stamped, skipped);
+			return;
+		}
+		values[key] = incoming;
+		stamped.Add(key);
+	}
+
+	/// <summary>
+	/// True when <paramref name="source"/> carries at least one non-object value somewhere below it — the
+	/// only thing a merge can actually write. A tree of empty objects writes nothing, so it must not cause a
+	/// branch to be created either, at any depth.
+	/// </summary>
+	private static bool HasLeaf(JsonObject source) {
+		foreach (KeyValuePair<string, JsonNode> pair in source) {
+			if (pair.Value is not JsonObject child || HasLeaf(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// Merges <paramref name="source"/> into <paramref name="target"/>, recording the dotted path of every
+	/// leaf written into <paramref name="stamped"/> and of every object branch refused into
+	/// <paramref name="skipped"/>. A branch is refused only when the target carries a NON-OBJECT at that
+	/// key (typically a whole-value binding); an ABSENT key is created and descended into. This is the same
+	/// guard <see cref="StampOverrideValue"/> applies to the top-level key, enforced at every depth so a
+	/// nested binding cannot be clobbered. Leaves are written with a detached clone (a
+	/// <see cref="JsonNode"/> already owned by another parent cannot be re-attached), and ONLY when the
+	/// value actually differs — an element already at the standard is left alone and is not reported as
+	/// normalized, since the section's wording ("the web value was ignored") would then be untrue of it.
+	/// The replace path deliberately keeps reporting unconditionally: narrowing it would change what the
+	/// long-standing spacing section lists.
+	/// </summary>
+	private static void MergeJsonObject(
+		JsonObject target, JsonObject source, string prefix, List<string> stamped, List<string> skipped) {
+		foreach (KeyValuePair<string, JsonNode> pair in source) {
+			string path = $"{prefix}.{pair.Key}";
+			if (pair.Value is JsonObject sourceChild) {
+				if (sourceChild.Count == 0) {
+					continue; // nothing to write below: neither create the branch nor claim it was refused
+				}
+				if (!target.ContainsKey(pair.Key)) {
+					target[pair.Key] = new JsonObject(); // absent: creating is the normalization itself
+				}
+				if (target[pair.Key] is JsonObject existingChild) {
+					MergeJsonObject(existingChild, sourceChild, path, stamped, skipped);
+				} else {
+					skipped.Add(path); // present but NOT an object: never clobber it
+				}
+				continue;
+			}
+			JsonNode incomingLeaf = pair.Value?.DeepClone();
+			if (JsonNode.DeepEquals(target[pair.Key], incomingLeaf)) {
+				continue; // already at the standard — writing it would be a no-op, reporting it a false claim
+			}
+			target[pair.Key] = incomingLeaf;
+			stamped.Add(path);
+		}
+	}
+
+	/// <summary>The report group each normalizable component type belongs to.</summary>
+	private static readonly IReadOnlyDictionary<string, string> ReportGroupsByType =
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["crt.GridContainer"] = SpacingGroup,
+			["crt.FlexContainer"] = SpacingGroup,
+			["crt.IndicatorWidget"] = "metricStyle"
+		};
+
+	/// <summary>The group the <c>spacingNormalization</c> back-compat alias mirrors.</summary>
+	private const string SpacingGroup = "spacing";
+
+	/// <summary>
+	/// The guide section a standard reports into, derived from the component TYPE it targets rather than
+	/// declared by the rules file. The binary owns this deliberately: the section is a presentation detail,
+	/// a free-form key in a runtime-resolved file lets an authoring typo ("metricstyle") silently open a new
+	/// section instead of failing, and renaming the spacing rules' group would silently delete the
+	/// documented <c>spacingNormalization</c> alias from the response. An unmapped type falls back to its
+	/// own name, so a new standard still reports somewhere sensible; adding it here is what gives it a
+	/// curated section name.
+	/// </summary>
+	private static string ResolveReportGroup(string mobileType) =>
+		mobileType is { Length: > 0 } && ReportGroupsByType.TryGetValue(mobileType, out string group)
+			? group
+			: mobileType;
+
+	/// <summary>
+	/// Appends ONE line per report group that recorded something, composed from the actual counts.
+	/// Deliberately built here rather than taken from the rules file: that file is resolved at runtime
+	/// (env var → local cache → CDN), and <c>constraints</c>/<c>nextSteps</c> are the arrays the calling
+	/// agent treats as clio's own hard rules — nothing outside this binary may write into them. It is also
+	/// deterministic, and one line instead of the several hundred tokens per page that per-rule prose cost,
+	/// while still saying the one thing the caller cannot derive from the data: do not undo it.
+	/// </summary>
+	private static void AppendNormalizationLines(
+		List<string> lines, ComponentPropertyOverrideResult normalization) {
+		if (normalization is null) {
+			return;
+		}
+		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in normalization.Groups) {
+			lines.Add(SummaryFor(group, accumulator));
+		}
+	}
+
+	/// <summary>The single caller-facing sentence describing one group's outcome.</summary>
+	private static string SummaryFor(string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) {
+		string skipped = accumulator.Skipped.Count > 0
+			? $", {accumulator.Skipped.Count} skipped (kept their web values — worth calling out)"
+			: string.Empty;
+		return $"{group}: {accumulator.Normalized.Count} element(s) normalized{skipped} — see "
+			+ $"guide.normalizations.{group}. The values are already in elementMap[].mobileValues; the web "
+			+ "page's own values for those properties were IGNORED by design. Do NOT restore them, do NOT "
+			+ "treat the difference as a defect, and never raise it as a gate question.";
+	}
+
+	/// <summary>
+	/// Projects the pass output into the guide's <c>normalizations</c> map — one section per group that
+	/// recorded something. Null when nothing was normalized, so the section is omitted rather than empty.
+	/// </summary>
+	private static IReadOnlyDictionary<string, NormalizationInfo> BuildNormalizations(
+		ComponentPropertyOverrideResult result) {
+		if (result.IsEmpty) {
+			return null;
+		}
+		var sections = new Dictionary<string, NormalizationInfo>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in result.Groups) {
+			sections[group] = new NormalizationInfo {
+				Note = SummaryFor(group, accumulator),
+				Normalized = accumulator.Normalized,
+				Skipped = accumulator.Skipped.Count > 0 ? accumulator.Skipped : null
+			};
+		}
+		return sections;
+	}
+
+	/// <summary>
+	/// Output of the shared component-property override pass, bucketed by the report group each element's
+	/// type maps to. One pass stamps every standard; the reporting stays separate because each standard is
+	/// a distinct thing the caller has to be told about.
+	/// </summary>
+	private sealed class ComponentPropertyOverrideResult {
+		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
+		private readonly List<string> _order = [];
+
+		/// <summary>Report groups that recorded something, in first-seen (element-map) order.</summary>
+		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>
+			_order.Select(group => new KeyValuePair<string, GroupAccumulator>(group, _groups[group]));
+
+		/// <summary>True when no group recorded anything — the guide then omits the section entirely.</summary>
+		public bool IsEmpty => _order.Count == 0;
+
+		/// <summary>The entries of one group, or an empty list when that group recorded nothing.</summary>
+		public IReadOnlyList<NormalizationEntry> EntriesOf(string group) =>
+			_groups.TryGetValue(group, out GroupAccumulator accumulator) ? accumulator.Normalized : [];
+
+		/// <summary>
+		/// Records one element under its group. Only a merging rule can skip — a replacing rule always
+		/// writes its key.
+		/// </summary>
+		public void Add(string group, string name, string type,
+			IReadOnlyList<string> properties, IReadOnlyList<string> skipped) {
+			if (!_groups.TryGetValue(group, out GroupAccumulator accumulator)) {
+				accumulator = new GroupAccumulator();
+				_groups[group] = accumulator;
+				_order.Add(group);
 			}
 			if (properties.Count > 0) {
-				normalized.Add(new SpacingNormalizationEntry {
-					Name = entry.MobileName, Type = entry.MobileType, Properties = properties
+				accumulator.Normalized.Add(new NormalizationEntry {
+					Name = name, Type = type, Properties = properties
+				});
+			}
+			if (skipped.Count > 0) {
+				accumulator.Skipped.Add(new NormalizationSkip {
+					Name = name, Type = type, Properties = skipped,
+					Reason = "the element already carries a non-object value at this path — typically a "
+						+ "whole-value binding — and a merging rule never overwrites one: replacing it with an "
+						+ "object built from the rule alone would destroy the binding and leave the component "
+						+ "missing fields it needs, while still appearing normalized. This element keeps its "
+						+ "WEB value here"
 				});
 			}
 		}
-		return normalized;
+
+		/// <summary>What one report group accumulated.</summary>
+		internal sealed class GroupAccumulator {
+			public List<NormalizationEntry> Normalized { get; } = [];
+			public List<NormalizationSkip> Skipped { get; } = [];
+		}
 	}
 
 	/// <summary>Base36 digit alphabet for <see cref="StableSuffix"/> (lowercase, designer-style).</summary>

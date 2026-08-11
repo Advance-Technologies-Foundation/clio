@@ -87,7 +87,7 @@ public sealed class MobilePageConversionGuideTool {
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
 			"plus tabAreaLayers (MANDATORY synthesized two-layer tab body, already baked into elementMap as ordinary inserts; semantics in the conversion guide), " +
-			"plus spacingNormalization (SILENT gap normalization on every inserted container; semantics in the conversion guide), " +
+			"plus normalizations (SILENT property normalization, one section per standard - each carries a one-line summary, the elements it normalized with the EXACT properties written, and anything it had to skip; read the section rather than assuming which properties a standard sets; spacingNormalization is kept as a back-compat alias of the spacing section; semantics in the conversion guide), " +
 			"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]

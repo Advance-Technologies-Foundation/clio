@@ -1,0 +1,184 @@
+NAME
+    install-process-builder - Install the bundled process-builder package to a Creatio environment
+
+SYNOPSIS
+    clio install-process-builder [OPTIONS]
+    clio update-process-builder [OPTIONS]
+    clio installprocessbuilder [OPTIONS]
+
+DESCRIPTION
+    Installs the "CrtProcessBuilder" package to a Creatio environment. The package
+    ships inside clio and serves ProcessDesignService, the backend endpoint that
+    builds and edits business processes from a declarative descriptor.
+
+    The package is required by the process-designer capability, which is exposed
+    as MCP TOOLS and has no CLI verbs - do not expect to run these from a shell:
+    - create-business-process / modify-business-process
+    - describe-business-process
+    - list-user-tasks
+    - validate-process-graph
+
+    They are additionally behind the 'process-designer' feature toggle, which is
+    off by default; enable it with 'clio experimental --name process-designer
+    --enable'. Each refuses to run against an environment where the package is
+    missing or older than the version bundled with clio, and names this command
+    in the refusal.
+
+    The package ships as source, without a compiled assembly, and the target
+    environment compiles it during installation against its own core. One archive
+    therefore serves every runtime.
+
+    You never need to run a restart yourself, but a restart does happen - and it
+    comes from a different place on each runtime:
+
+      .NET Framework  the PLATFORM recycles itself, because the workspace assembly
+                      changed ("Workspace assembly changed - Run restart
+                      application" in its Application log).
+      .NET            the package installer issues the restart, because the target
+                      is a .NET host.
+
+    Either way that restart outlives the install call, so this command waits for
+    the instance to answer its health check before checking the service. Probing
+    sooner would either fail while the app warms up or, when upgrading, be
+    answered by the outgoing app domain still serving the old assembly.
+
+    Because the assembly is produced by the target rather than shipped, installing
+    and working are different states. After a successful install the command asks
+    the package's own service whether it is serving - Ping, ungated - and fails
+    unless it answers. No database read can establish this: SysPackage records the
+    version the environment ACCEPTED whether or not anything compiled.
+
+    What that decides, and what it does not:
+      - FIRST install, build failed - CAUGHT. Nothing answers. Creatio registers
+        service routes by reflecting over LOADED types, so with no compiled
+        assembly there is no route at all.
+      - RE-INSTALL of the same version - passes, as it should: the package is
+        compiled and serving, which is the whole question.
+      - UPGRADE, build failed - NOT caught. The previously built assembly is
+        still loaded and answers, so the check passes while old code serves.
+
+    The last case is a deliberate limit, not an oversight. Catching it needs the
+    shipped version readable back out of the running code, which for a source-only
+    package means a hand-maintained copy of it inside the sources: the assembly
+    version belongs to the platform (a stand reported 10.1.453.0 for a package
+    installed as 1.1.0.1) and descriptor.json is absent from the target's build
+    directory. After an upgrade, treat the functionality working as the proof.
+
+    'clio list-packages' cannot substitute for this: it reads the version the
+    environment RECORDED, which moves when the archive is accepted whether or not
+    anything compiled.
+
+    The command ALWAYS installs except in two cases, and re-running is otherwise
+    safe; it costs one configuration build on the target. Both exceptions are
+    about moving an environment BACKWARDS, and --force overrides both.
+
+      1. A DOWNGRADE: the environment already carries a newer version than this
+         clio ships. Rolling the package back affects everyone using that
+         environment and nothing downstream would report it.
+      2. A MALFORMED distribution: this clio's own bundled version carries a
+         pre-release suffix (e.g. 1.0.1.0-rc). clio compares bundled versions
+         numerically, so a suffixed one would make case 1 undetectable. Nothing
+         about the target environment is wrong - reinstall or update clio, or
+         re-run the rebundle with a four-part version.
+
+    Reinstalling the SAME version is not a downgrade and is always allowed.
+
+OPTIONS
+    -e, --environment <ENVIRONMENT_NAME>
+        Target environment name from your configuration
+
+    --force
+        Install despite either backwards-move refusal: an environment that
+        already carries a NEWER version of the package than this clio ships, or
+        a bundled version stamped with a pre-release suffix. Without it both are
+        REFUSED - the first would roll the package back for everyone using that
+        environment with nothing downstream reporting it, and the second would
+        make exactly that rollback undetectable. Reinstalling the SAME version is
+        not a downgrade and never needs this flag - that is the normal repair
+        path for a package that installed but never compiled.
+
+    Environment options (can be used instead of -e):
+        -u, --uri <URI>
+            Application URI
+
+        -l, --Login <LOGIN>
+            User login (administrator permission required)
+
+        -p, --Password <PASSWORD>
+            User password
+
+EXAMPLES
+    Install the package using a configured environment:
+        clio install-process-builder -e dev
+
+    Install with direct credentials:
+        clio install-process-builder -u https://myapp.creatio.com -l administrator -p password
+
+    Update an existing installation:
+        clio update-process-builder -e dev
+
+PREREQUISITES
+    - Permission to install a package on the target environment (the install
+      itself runs a configuration build and restarts the instance).
+    - Using the process-designer commands afterwards additionally requires the
+      CanManageProcessDesign operation and a General (non-portal) user - the gate
+      ProcessDesignService enforces in its own handlers. It is deliberately
+      stricter than cliogate's CanManageSolution, which is broader and does not
+      check the connection type, so CanManageSolution alone does not grant
+      process design.
+    - That right does NOT decide this command's verdict, and that separation is
+      deliberate. The post-install check calls Ping, which is ungated, so a
+      caller who may install but may not design processes still gets a truthful
+      answer about the install. An earlier version probed the gated ListUserTasks
+      and conflated two verdicts - "the build did not take" and "you may not
+      design processes" - which are different problems with different fixes, and
+      only the first is this command's business. A caller lacking the right finds
+      out at its next call, from the guard's own message, which names the right.
+      So an exit code of 1 from THIS command never means a missing permission.
+      What it does mean depends on the message, and only some of those point at
+      the configuration build log:
+        - "ProcessDesignService does not answer" or the install failed -> the
+          environment's configuration build log.
+        - "refusing ... carries a newer version" -> nothing to look at on the
+          environment; update clio, or re-run with --force to roll it back.
+        - "refusing ... must be a plain four-part number" -> your clio
+          installation, not the environment; reinstall or update clio, or
+          rebundle with a four-part version.
+        - timed out waiting for the environment -> its availability; the install
+          may well have succeeded.
+        - environment not registered -> your clio settings.
+        - "does not carry the bundled archive" -> your clio installation.
+
+NOTES
+    - The command installs the version of the package bundled with your current
+      clio installation; it never downloads anything.
+    - Installation includes a configuration build on the target environment, so it
+      takes substantially longer than a plain package install. How long is a
+      property of the environment - its configuration size, host and load - not of
+      clio, so no figure here would hold across environments. The command waits for
+      the instance to answer its health check rather than for a fixed budget.
+    - 'clio list-packages' shows the version the environment RECORDED, which is
+      what the version comparison is made against. It moves on install only when the
+      archive's descriptor also changed its ModifiedOnUtc: that field is what
+      Creatio treats as "this descriptor changed", and the version alone does not
+      trigger the rewrite. This matters only to whoever BUILDS a package archive,
+      and only if they edit descriptor.json by hand - 'clio set-pkg-version' writes
+      both fields, so a version bump through it always takes effect.
+    - Installing does not unlock maintainer packages, even on an environment with
+      developer mode enabled.
+    - If the command reports that ProcessDesignService does not answer, the package
+      installed but the environment did not compile it. Check the environment's
+      configuration build log. The Application Hub can roll such an install back
+      through its own restore step; from the command line use
+      'clio restore-configuration'.
+
+SEE ALSO
+    install-gate - Install or update cliogate in Creatio
+    list-packages - List packages in a Creatio environment
+    restart-web-app - Restart a Creatio application. NOT needed after this
+        command: the restart already happened, and this command waited for the
+        environment to come back before reporting. Listed only because a
+        restart is sometimes wanted for an unrelated reason.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
