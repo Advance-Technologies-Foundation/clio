@@ -4,7 +4,7 @@
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
 **Decisions**: D11, D9 (the `deprecated` flag)
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 **Repo**: `ProcessBuilder` — `packages/CrtProcessBuilder/Files/src/cs/`
 **Depends on**: story 1
@@ -29,31 +29,31 @@ metapath
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Per element, `describe` emits `connections[]`, filtered to `Source != None` (T-7). An
+- [x] **AC-01** — Per element, `describe` emits `connections[]`, filtered to `Source != None` (T-7). An
   unbound connection never appears; the designer's ability to show unbound rows is deliberately not
   reproduced.
-- [ ] **AC-02** — Each emitted connection carries the **raw** persisted value verbatim under a stable
+- [x] **AC-02** — Each emitted connection carries the **raw** persisted value verbatim under a stable
   field **and** a decoded source, per the D11 table: `[#Lookup.{schemaUId}.{recordId}#]` →
   `{ recordId, referenceSchema }`; `[#…[Element:{e}].[Parameter:{p}]#]` →
   `{ sourceElement, sourceElementParameter }`; `[#…[Parameter:{p}]#]` → `{ processParameter }`.
-- [ ] **AC-03** — The decoded shape is **exactly** what `setConnections` accepts, so `describe` output is
+- [x] **AC-03** — The decoded shape is **exactly** what `setConnections` accepts, so `describe` output is
   re-appliable without translation.
-- [ ] **AC-04** — Anything else — an unrecognised macro, or a known dialect whose identifiers do not
+- [x] **AC-04** — Anything else — an unrecognised macro, or a known dialect whose identifiers do not
   resolve — degrades to `{ expression: "<raw>" }`. The decoder must **never fail and never emit a
   half-decoded source**.
-- [ ] **AC-05** — Schema-UId→name resolution uses the tolerant `EntitySchemaResolver.FindNameByUId`
+- [x] **AC-05** — Schema-UId→name resolution uses the tolerant `EntitySchemaResolver.FindNameByUId`
   (returns null rather than throwing). An unresolvable reference degrades per AC-04.
-- [ ] **AC-06** — Element and parameter UIds are resolved to names from the schema already being walked —
+- [x] **AC-06** — Element and parameter UIds are resolved to names from the schema already being walked —
   no extra round trip.
-- [ ] **AC-07** — Elements carry `deprecated` (from `UserTaskDeprecationPolicy`, story 1) and
+- [x] **AC-07** — Elements carry `deprecated` (from `UserTaskDeprecationPolicy`, story 1) and
   `writesConnectionsAtRuntime`, so a legacy process built on a retired element is **readable and
   explainable** even though it may not be authored.
-- [ ] **AC-08** — Round-trip test **per dialect**: `describe → setConnections → describe` is stable for
+- [x] **AC-08** — Round-trip test **per dialect**: `describe → setConnections → describe` is stable for
   each of fixed record, element output, process parameter, system variable, system setting.
-- [ ] **AC-09** — Forward-compatibility test: an unrecognised macro round-trips through `expression`
+- [x] **AC-09** — Forward-compatibility test: an unrecognised macro round-trips through `expression`
   without loss. This is the pinned case that proves a future platform macro degrades instead of breaking
   `describe`.
-- [ ] **AC-10** — No refusal or guard from the write path reaches `describe`. Reading a process must never
+- [x] **AC-10** — No refusal or guard from the write path reaches `describe`. Reading a process must never
   fail because its connections would be rejected on write.
 
 ## Implementation Notes
@@ -84,10 +84,25 @@ unlike the two `[Parameter:…]` dialects, whose UIds do appear on the emitted p
 `displayValue` does not exist in the contracts and `DisplayValue` is not persisted, so there is no label
 to fall back on.
 
+## Deviations recorded at implementation time
+
+1. **AC-08's five dialects became six cases.** The round-trip is pinned per dialect as specified, and the
+   *system-setting* row is covered — but only because the write side ACCEPTS a system-setting expression
+   rather than refusing it (see story 3's note on AC-11). Refusing it would have made a connection read back
+   from a designer-authored process un-re-appliable, which contradicts AC-03.
+2. **`source` and `registered` were added to the emitted connection** beyond the AC list. `registered` is the
+   same half-citizen fact story 3 must warn about on write, and reporting it on read is what lets a caller
+   diagnose an EXISTING process; `source` makes a connection stored with an unusual value source visible
+   instead of silently normalised on a round trip.
+3. **`writesConnectionsAtRuntime` is three-valued, not two.** `null` means not established — a non-user-task
+   element, an unresolvable schema, or a user task outside the supported set, about which the package has no
+   measured claim. Reporting `false` there would assert something it cannot back.
+
 ## Definition of Done
 
-- [ ] All AC met; AAA structure, `because` on every assertion, `[Description]` on every test method
-- [ ] Cross-platform tests
-- [ ] Public API documented; DI-registered behind an interface
-- [ ] No new `CLIO*` diagnostics in touched files
-- [ ] Diary entry appended
+- [x] All AC met; AAA structure, `because` on every assertion, `[Description]` on every test method
+- [x] Cross-platform tests
+- [x] Public API documented; DI-registered behind an interface
+- [x] No new `CLIO*` diagnostics in touched files (`CLIO*` analyzers run in the clio repo only; the
+  `ProcessBuilder` build is warning-free)
+- [x] Diary entry appended
