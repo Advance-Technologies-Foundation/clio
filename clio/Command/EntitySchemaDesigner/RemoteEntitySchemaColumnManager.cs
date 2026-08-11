@@ -450,6 +450,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private void AddColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
 		string effectiveCultureName) {
 		EnsureNameIsUnique(schema, options.ColumnName, null);
+		EnsureNameIsFreeAcrossPackages(schema, package, options.ColumnName);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
 		TitleLocalizationNormalizationResult titleNormalization =
@@ -942,6 +943,57 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			throw new EntitySchemaDesignerException(
 				$"Column '{name}' already exists in schema '{schema.Name}'.");
 		}
+	}
+
+	/// <summary>
+	/// Refuses a name that another PACKAGE already contributes to the same schema — the collision
+	/// <see cref="EnsureNameIsUnique"/> structurally cannot see.
+	/// </summary>
+	/// <remarks>
+	/// A base schema extended by several packages has one replacing schema per package, and the design item this
+	/// command edits is fetched for ONE package with <c>UseFullHierarchy = false</c>: it carries that package's own
+	/// columns plus the parent's inherited ones, and nothing from a SIBLING layer. So two packages can each add
+	/// <c>UsrFoo</c> to <c>Activity</c> and both look unique at design time. The result is not a scoped failure — the
+	/// duplicate member breaks code generation for that schema with a <c>ValidateException</c>, i.e. it breaks
+	/// <c>Activity</c> for the WHOLE environment, including every process and page that touches it. That is far
+	/// beyond what a caller adding one column is choosing to risk, which is why this refuses rather than attempts.
+	/// <para>The merged runtime schema is the only view that sees every layer, so it is the one consulted. If it
+	/// cannot be read the check is SKIPPED rather than failed: a schema with no runtime form yet (never compiled,
+	/// or created moments ago) cannot have a cross-layer collision, and turning an unreadable read into a refusal
+	/// would block the legitimate first add on a new schema.</para>
+	/// </remarks>
+	private void EnsureNameIsFreeAcrossPackages(EntityDesignSchemaDto schema, PackageInfo package, string name) {
+		RuntimeEntitySchemaResult? runtimeSchema;
+		try {
+			runtimeSchema = _runtimeEntitySchemaReader.GetByName(schema.Name);
+		} catch (Exception exception) when (exception is InvalidOperationException
+			or HttpRequestException
+			or JsonException
+			or TaskCanceledException
+			or EntitySchemaDesignerException) {
+			_logger.WriteWarning(
+				$"Could not read the merged runtime schema for '{schema.Name}', so the cross-package name check was "
+				+ $"skipped: {exception.Message}");
+			return;
+		}
+		// A null result is "no runtime form", the same fact as an unreadable one, and it must degrade the same way:
+		// this guard exists to prevent an environment-wide break, never to become one by refusing a legitimate add.
+		if (runtimeSchema?.Columns == null) {
+			return;
+		}
+		RuntimeEntitySchemaColumnResult? conflicting = runtimeSchema.Columns
+			.FirstOrDefault(column => string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase));
+		if (conflicting == null) {
+			return;
+		}
+		// Present at runtime and absent from this package's design item: another layer owns it. (Present in BOTH is
+		// impossible here — EnsureNameIsUnique already refused that, with a message about this schema.)
+		throw new EntitySchemaDesignerException(
+			$"Column '{name}' already exists on the compiled '{schema.Name}' but not in package "
+			+ $"'{package.Descriptor.Name}''s layer of it, so another package contributes it. Adding a second "
+			+ $"column of that name would break code generation for '{schema.Name}' across the WHOLE environment "
+			+ "(a duplicate member raises a ValidateException), not just for this package. Choose a different name — "
+			+ "the package prefix is required, so prefix a distinguishing word rather than reusing this one.");
 	}
 
 	private EntityDesignSchemaDto LoadSchema(string schemaName, Guid packageUId, string packageName,

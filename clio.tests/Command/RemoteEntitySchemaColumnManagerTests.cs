@@ -162,6 +162,61 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("REFUSES an add whose column name already exists on the COMPILED schema but not in this package's layer of it: another package contributes it, and a duplicate member breaks code generation for that schema across the whole environment rather than only for this package.")]
+	public void ModifyColumn_RefusesAdd_WhenAnotherPackageAlreadyContributesTheName() {
+		// Arrange — this package's design layer knows only Id; the merged runtime schema carries UsrColumn40
+		// from a sibling package, which is the collision the design-item read structurally cannot see.
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_runtimeEntitySchemaReader.GetByName("UsrVehicle").Returns(CreateMergedRuntimeSchema());
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrColumn40",
+			Type = "Text"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "attempting it would break the schema for every package, which is far beyond what a caller "
+					+ "adding one column is choosing to risk")
+			.WithMessage("*UsrColumn40*")
+			.And.Message.Should().Contain("WHOLE environment",
+				because: "the refusal has to state the blast radius, or a reader will treat it as a naming nit and retry");
+		_designerClient.DidNotReceiveWithAnyArgs().SaveSchemaDbStructure(default, default);
+	}
+
+	[Test]
+	[Description("Still adds the column when the merged runtime schema cannot be read: an unreadable or absent runtime form is 'no cross-layer collision is knowable', and a guard against breaking the environment must not become the thing that blocks a legitimate first add.")]
+	public void ModifyColumn_AddsColumn_WhenTheMergedRuntimeSchemaCannotBeRead() {
+		// Arrange — the runtime read throws, as it does for a schema with no compiled form yet
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_runtimeEntitySchemaReader.GetByName("UsrVehicle")
+			.Returns(_ => throw new InvalidOperationException("schema has no runtime form"));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrBrandNew",
+			Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "the add must still happen — the check degrades, it does not refuse");
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == "UsrBrandNew",
+			because: "a schema with no runtime form cannot have a column contributed by another layer");
+		_logger.Received().WriteWarning(Arg.Is<string>(text => text.Contains("cross-package name check")));
+	}
+
+	[Test]
 	[Description("Adds a Color column as data value type 18 and does not treat it as the primary display column (Color is not text-like).")]
 	public void ModifyColumn_AddsColorColumn_WhenTypeIsColor() {
 		// Arrange
