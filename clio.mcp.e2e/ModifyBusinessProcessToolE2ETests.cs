@@ -831,8 +831,17 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	// These are the rows of the feature's verification matrix that only a real stand can answer. Everything
 	// below the wire is unit-tested in the package; what these prove is that the operations are reachable
 	// over the real MCP path, that the platform accepts the shape we write, and that the read-back a caller
-	// gets is re-appliable. A perform-task element is used because it is the one connection-capable task with
-	// no CreateActivity gate, so the effectiveness rule can never be what a failure here means.
+	// gets is re-appliable.
+	//
+	// Every assertion here goes through the TYPED describe model rather than a substring of the serialized
+	// envelope, and that is deliberate: a `Contain("AccountRef")` passes on the process-parameter list alone,
+	// before any connection exists, and a `Contain("record")` matches the word in an unrelated error. Both
+	// were written that way first and both were green for the wrong reason. Every modify call is also checked
+	// for success, because a refusal that goes unchecked turns "the operation left the sibling alone" into
+	// "the operation never ran".
+	//
+	// A perform task is used because it is the one connection-capable user task with no CreateActivity gate,
+	// so a failure here can never be the effectiveness rule.
 
 	[Test]
 	[Description("Over the real MCP path: setConnections binds a connection on a perform task, and describe-business-process reads it back with BOTH the raw persisted macro and a decoded source in the shape setConnections accepts.")]
@@ -842,34 +851,20 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpConnBindE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPerformTaskDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
 
 		// Act
-		CallToolResult modifyResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = SetAccountConnectionFromProcessParameterOperations()
-		});
-		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName
-			});
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetAccountConnectionFromProcessParameterOperations());
+		DescribedConnection connection = await ReadConnectionAsync(context, processName, "Account");
 
 		// Assert
-		string modifyJson = JsonSerializer.Serialize(modifyResult);
-		modifyJson.Should().Contain("\"success\":true",
-			because: "the platform must accept the connection shape this package writes; a unit test cannot establish that");
-		string describeJson = JsonSerializer.Serialize(describeResult);
-		describeJson.Should().Contain("connections",
-			because: "the read-back must surface the connection, or a caller cannot verify what they asked for");
-		describeJson.Should().Contain("AccountRef",
-			because: "the decoded source names the PROCESS PARAMETER, not a platform metapath — that decode is the whole point of the hybrid read-back");
-		describeJson.Should().Contain("Parameter:",
-			because: "the raw persisted macro travels alongside the decoded form, which is what makes an unrecognised future macro survive a round trip");
+		connection.ProcessParameter.Should().Be("AccountRef",
+			because: "the decoded source names the PROCESS PARAMETER, not a platform metapath — that decode is the whole point of the hybrid read-back, and it is what makes the output re-appliable");
+		connection.Value.Should().Contain("Parameter:",
+			because: "the raw persisted macro travels alongside the decoded form, which is what lets an unrecognised future macro survive a round trip");
+		connection.Registered.Should().BeTrue(
+			because: "Account carries a shipped connection-registry row, so the connection is a full citizen rather than the invisible half-citizen case");
 	}
 
 	[Test]
@@ -880,32 +875,21 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpConnRecordE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPerformTaskDescriptor(processName)
-		});
-		string recordId = Guid.NewGuid().ToString();
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		Guid recordId = Guid.NewGuid();
 
 		// Act
-		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = SetAccountConnectionFromRecordIdOperations(recordId)
-		});
-		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName
-			});
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Account", recordId));
+		DescribedConnection connection = await ReadConnectionAsync(context, processName, "Account");
 
 		// Assert
-		string describeJson = JsonSerializer.Serialize(describeResult);
-		describeJson.Should().Contain("[#Lookup.",
-			because: "the entity-schema half of the macro is composed server-side from the column, which is the one id a caller cannot guess");
-		describeJson.Should().Contain(recordId,
-			because: "the record the caller named must be the record that was bound");
-		describeJson.Should().Contain("\"referenceSchema\"",
-			because: "the read-back resolves the entity to a NAME, so the decoded source is re-appliable as-is");
+		Guid.Parse(connection.RecordId!).Should().Be(recordId,
+			because: "the record the caller named must be the record that was bound (parsed, so a casing or brace difference in the round trip is not read as a behavioural failure)");
+		connection.ReferenceSchema.Should().Be("Account",
+			because: "the entity-schema half of the macro is composed server-side and read back as a NAME, so the decoded source is re-appliable as-is");
+		connection.Value.Should().StartWith("[#Lookup.",
+			because: "the persisted form is the platform's lookup macro, which the caller never had to write");
 	}
 
 	[Test]
@@ -916,33 +900,22 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpConnUpsertE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPerformTaskDescriptor(processName)
-		});
-		string contactRecordId = Guid.NewGuid().ToString();
-		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = SetContactConnectionFromRecordIdOperations(contactRecordId)
-		});
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		Guid contactRecordId = Guid.NewGuid();
+		Guid accountRecordId = Guid.NewGuid();
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Contact", contactRecordId));
 
 		// Act — a second call that names ONLY Account
-		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = SetAccountConnectionFromRecordIdOperations(Guid.NewGuid().ToString())
-		});
-		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName
-			});
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Account", accountRecordId));
 
-		// Assert
-		string describeJson = JsonSerializer.Serialize(describeResult);
-		describeJson.Should().Contain(contactRecordId,
-			because: "a column absent from the request must be left exactly as it was — this is the one behaviour a replace reading of set* would break, invisibly");
+		// Assert — both columns, because "the sibling survived" is only meaningful if the listed one was written
+		IReadOnlyList<DescribedConnection> connections = await ReadConnectionsAsync(context, processName);
+		Guid.Parse(connections.Single(c => c.Column == "Contact").RecordId!).Should().Be(contactRecordId,
+			because: "a column absent from the request must be left exactly as it was — the one behaviour a replace reading of set* would break, invisibly");
+		Guid.Parse(connections.Single(c => c.Column == "Account").RecordId!).Should().Be(accountRecordId,
+			because: "and the column that WAS listed must have been written, or the test would pass for a request that did nothing");
 	}
 
 	[Test]
@@ -953,36 +926,23 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpConnClearE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPerformTaskDescriptor(processName)
-		});
-		string recordId = Guid.NewGuid().ToString();
-		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = SetAccountConnectionFromRecordIdOperations(recordId)
-		});
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		Guid recordId = Guid.NewGuid();
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Account", recordId));
+		// Positive control: without it, "the connection is gone" is equally satisfied by "it was never bound".
+		(await ReadConnectionsAsync(context, processName)).Should().ContainSingle(c => c.Column == "Account",
+			because: "the connection must be present BEFORE the clear, or its later absence proves nothing");
 
 		// Act
-		CallToolResult clearResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = ClearAccountConnectionOperations()
-		});
-		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName
-			});
+		CallToolResult clearResult = await ModifyExpectingSuccessAsync(context, processName,
+			ClearConnectionOperations("Account"));
 
 		// Assert
-		string clearJson = JsonSerializer.Serialize(clearResult);
-		clearJson.Should().Contain("CLEARED",
+		SerializeToolText(clearResult).Should().Contain("CLEARED",
 			because: "the result is the only place a caller learns the unbind happened, since the read-back can only show what remains");
-		string describeJson = JsonSerializer.Serialize(describeResult);
-		describeJson.Should().NotContain(recordId,
-			because: "an unbound connection is filtered out of the read-back, so the record it pointed at must be gone from it");
+		(await ReadConnectionsAsync(context, processName)).Should().NotContain(c => c.Column == "Account",
+			because: "an unbound connection is filtered out of the read-back");
 	}
 
 	[Test]
@@ -993,24 +953,23 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpConnNoColumnE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPerformTaskDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
-			["operations"] = SetUnknownColumnConnectionOperations()
+			["operations"] = SetConnectionFromRecordIdOperations("UsrClioNoSuchSection", Guid.NewGuid())
 		});
 
 		// Assert
-		string callResultJson = JsonSerializer.Serialize(callResult);
-		callResultJson.Should().Contain("UsrClioNoSuchSection",
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("UsrClioNoSuchSection",
 			because: "the refusal must name the column the caller asked for");
-		callResultJson.Should().Contain("column",
-			because: "the diagnosis has to say WHICH precondition failed, because the fix for a missing column is a data-model change this operation deliberately does not make");
+		text.Should().Contain("has no",
+			because: "the diagnosis has to say WHICH precondition failed — the host entity lacking the column needs a data-model change this operation deliberately does not make");
+		(await ReadConnectionsAsync(context, processName)).Should().BeEmpty(
+			because: "a refused operation aborts the whole edit, so nothing may have been written");
 	}
 
 	[Test]
@@ -1021,10 +980,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpConnBadMacroE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPerformTaskDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -1034,10 +990,64 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Assert
-		string callResultJson = JsonSerializer.Serialize(callResult);
-		callResultJson.Should().Contain("record",
-			because: "the refusal must explain that a connection can only be bound to a record reference, which is what makes it actionable");
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("DateValue",
+			because: "the refusal quotes the offending macro family, which is what makes it actionable rather than a generic rejection");
+		(await ReadConnectionsAsync(context, processName)).Should().BeEmpty(
+			because: "the named failure mode is a value that persists and writes nothing, so proving the refusal means proving nothing was written");
 	}
+
+	/// <summary>
+	/// Creates the process and asserts the create itself succeeded. An unchecked create turns every later
+	/// assertion into a statement about a process that does not exist.
+	/// </summary>
+	private static async Task CreateProcessAsync(ArrangeContext context, string processName, string descriptor) {
+		CallToolResult result = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+		result.IsError.Should().NotBeTrue(
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+	}
+
+	/// <summary>Applies operations and asserts the edit succeeded, returning the result so a caller can read its notices.</summary>
+	private static async Task<CallToolResult> ModifyExpectingSuccessAsync(ArrangeContext context,
+			string processName, string operations) {
+		CallToolResult result = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = operations
+		});
+		result.IsError.Should().NotBeTrue(because: "the platform must accept the shape this package writes");
+		SerializeToolText(result).Should().Contain("edited (",
+			because: "the success line is what distinguishes an applied edit from a refusal the test would otherwise read as success");
+		return result;
+	}
+
+	/// <summary>Reads the perform task's connections through the TYPED describe model.</summary>
+	private static async Task<IReadOnlyList<DescribedConnection>> ReadConnectionsAsync(ArrangeContext context,
+			string processName) {
+		CallToolResult callResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName
+		});
+		DescribeProcessResult described = ParseDescribeResult(callResult);
+		DescribedElement task = described.Elements.Single(element => element.Name == "Task1");
+		return task.Connections ?? [];
+	}
+
+	private static async Task<DescribedConnection> ReadConnectionAsync(ArrangeContext context, string processName,
+			string column) {
+		IReadOnlyList<DescribedConnection> connections = await ReadConnectionsAsync(context, processName);
+		return connections.Single(connection => connection.Column == column);
+	}
+
+	/// <summary>
+	/// Concatenates the tool result's text blocks. Serializing the whole result escapes the payload, so a literal
+	/// with quotes in it can never match — which is how three of these assertions were unfalsifiable at first.
+	/// </summary>
+	private static string SerializeToolText(CallToolResult callResult) =>
+		string.Join("\n", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
 
 	/// <summary>
 	/// A process whose single task is a PERFORM TASK — the one connection-capable user task with no
@@ -1070,24 +1080,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Account", "processParameter": "AccountRef" } ] } ]
 		""";
 
-	private static string SetAccountConnectionFromRecordIdOperations(string recordId) =>
+	private static string SetConnectionFromRecordIdOperations(string column, Guid recordId) =>
 		$$"""
-		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Account", "recordId": "{{recordId}}" } ] } ]
+		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "{{column}}", "recordId": "{{recordId}}" } ] } ]
 		""";
 
-	private static string SetContactConnectionFromRecordIdOperations(string recordId) =>
+	private static string ClearConnectionOperations(string column) =>
 		$$"""
-		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Contact", "recordId": "{{recordId}}" } ] } ]
-		""";
-
-	private static string ClearAccountConnectionOperations() =>
-		"""
-		[ { "op": "clearConnections", "elementName": "Task1", "connections": [ { "column": "Account" } ] } ]
-		""";
-
-	private static string SetUnknownColumnConnectionOperations() =>
-		$$"""
-		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "UsrClioNoSuchSection", "recordId": "{{Guid.NewGuid()}}" } ] } ]
+		[ { "op": "clearConnections", "elementName": "Task1", "connections": [ { "column": "{{column}}" } ] } ]
 		""";
 
 	private static string SetAccountConnectionFromDateConstantOperations() =>

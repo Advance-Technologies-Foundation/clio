@@ -186,7 +186,7 @@ literal on `[RequiresPackage]`.
 
 *Why a detector is required at all.* Measured: a request carrying a future-shaped `connections` array is
 answered **normally** by an older package, with the member silently ignored — no contract implements
-`IExtensibleDataObject`, checked across all 25 `[DataContract]` types, so the serializer drops unknown members
+`IExtensibleDataObject`, checked across the package's `[DataContract]` types (25 when measured, 27 after this feature), so the serializer drops unknown members
 at every nesting level. An old package plus a new field is therefore a green log and a wrong process, which is
 the worst outcome this whole design is built against.
 
@@ -207,6 +207,15 @@ version is what turns every gated call on a stale environment into a refusal nam
 bundled version passes, as it must — so a hand-installed package that is *newer by version* but built before
 this feature would not be caught. That is not reachable through any shipped path (the archive is the only
 thing clio installs) and no cheap check distinguishes it, so it is accepted rather than guarded.
+
+Two further gaps, named because a reader would otherwise assume the detector is unconditional. Convergence
+declines to DECIDE — warning and allowing — when clio's own archive cannot be read or declares a
+pre-release suffix, so a defective distribution disarms it by design: blocking there would turn clio's defect
+into the user's, and the install command refuses such a distribution separately. And a rebundle must never
+reuse a version: the rule is "the environment records an OLDER version than the archive carries", so re-cutting
+changed sources under an unchanged version leaves every environment already on it comparing as converged, with
+the `connections` array silently dropped and nothing red anywhere. The rebundle script refuses that; the
+pre-release carve-out its docs describe applied only before the package had shipped and is now void.
 
 ### D9 — One deprecation predicate, read with a metadata fallback
 
@@ -278,7 +287,7 @@ otherwise is what created the authorization muddle. Element-specific knowledge c
 
 **Detector required (T-10), and it exists.** Measured: a request carrying unknown members — including a
 future-shaped `connections` array — is answered normally with the members **silently ignored**; no contract
-implements `IExtensibleDataObject` (checked across all 25 `[DataContract]` types), so this holds at every
+implements `IExtensibleDataObject` (checked across the package's `[DataContract]` types (25 when measured, 27 after this feature)), so this holds at every
 nesting level. An old package plus a new `connections` field is therefore a green log and a wrong process, and
 `[RequiresPackage]` is presence-only with a pin test asserting the **absence** of a version literal. **D8
 resolves this onto the convergence rule** (above), armed by the rebundle's mandatory version bump.

@@ -18,6 +18,10 @@ namespace Clio.Tests
     [TestFixture]
     [Category("Unit")]
     [Property("Module", "Command")]
+    // Also Common: the D8 tests at the end of this fixture exercise clio/Common/RequiredPackageChecker.cs and
+    // clio/Common/BundledPackageConvergence.cs, so the targeted filter a developer runs after editing the
+    // convergence rule (Category=Unit&Module=Common) has to reach them.
+    [Property("Module", "Common")]
     [Description("Reflection lock-in tests asserting the four process-designer command options classes are gated on the bundled CrtProcessBuilder package, that the requirement is presence-only, that the hint names the install command, and that the MCP args record carries the same requirement.")]
     public class ProcessDesignerRequiresPackageAttributeTests
     {
@@ -184,6 +188,11 @@ namespace Clio.Tests
             act.Should().NotThrow(
                 because: "a converged environment must pass; a detector that refused here would take the whole "
                     + "process-designer surface down on a correct install");
+            // Without this the test is vacuous: "did not throw" is equally satisfied by the gate having been
+            // removed from the options type, or by the convergence call having been deleted outright. Asserting
+            // that the rule was CONSULTED is what makes this a negative control rather than an absence of evidence.
+            catalog.Received(1).TryGetVersion(BundledPackages.ProcessBuilderPackageName,
+                out Arg.Any<PackageVersion>(), out Arg.Any<string>());
         }
 
         private static PackageInfo CreatePackageInfo(string name, string version)

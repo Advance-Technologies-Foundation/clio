@@ -72,8 +72,8 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>9813205</c>, branch
-	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>555df43</c>, branch
+	/// <c>feature/ENG-91845-process-element-connections</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
 	/// </summary>

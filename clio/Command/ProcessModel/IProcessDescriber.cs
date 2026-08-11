@@ -229,6 +229,91 @@ public sealed class DescribedElement {
 	/// </summary>
 	[JsonPropertyName("filter")]
 	public DescribedFilter Filter { get; set; }
+
+	/// <summary>
+	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
+	/// attached to. <c>null</c> when the element has none, and also when the server is an older
+	/// <c>CrtProcessBuilder</c> that does not report them.
+	/// </summary>
+	[JsonPropertyName("connections")]
+	public List<DescribedConnection> Connections { get; set; }
+
+	/// <summary>
+	/// For a user-task element: whether the referenced user-task schema is RETIRED by the platform. <c>null</c> when
+	/// the element is not a user task (or the server does not report it); <c>false</c> means no retirement marker was
+	/// found. Reported, never enforced on a read — a legacy process must stay readable.
+	/// </summary>
+	[JsonPropertyName("deprecated")]
+	public bool? Deprecated { get; set; }
+
+	/// <summary>
+	/// For a user-task element: whether connections on THIS element would be written at run time. <c>false</c> is the
+	/// answer that matters — it marks a process whose connections persist, compile and run green while writing
+	/// nothing. <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task outside the
+	/// supported set), so it is not a licence to assume the connections work.
+	/// </summary>
+	[JsonPropertyName("writesConnectionsAtRuntime")]
+	public bool? WritesConnectionsAtRuntime { get; set; }
+}
+
+/// <summary>
+/// One BOUND host-entity connection of an element, as the server decoded it.
+/// </summary>
+/// <remarks>
+/// Hybrid by design: <see cref="Value"/> is the raw persisted macro and exactly one of
+/// <see cref="RecordId"/>+<see cref="ReferenceSchema"/> / <see cref="ProcessParameter"/> /
+/// <see cref="SourceElement"/>+<see cref="SourceElementParameter"/> / <see cref="Expression"/> is the decoded form,
+/// in the same shape <c>setConnections</c> accepts. A macro the server does not recognise arrives as
+/// <see cref="Expression"/> carrying the original text, so nothing is lost and a future platform macro degrades
+/// instead of breaking the read.
+/// <para>Every member is declared here on purpose. The server drops unknown JSON members silently, and so does
+/// this side: a field the server reports and this type does not declare is discarded without a trace, which is the
+/// same silent-loss failure the connections feature exists to remove.</para>
+/// </remarks>
+public sealed class DescribedConnection {
+	/// <summary>The host-entity column the connection binds (for example <c>Account</c>).</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; set; }
+
+	/// <summary>
+	/// Whether a connection-registry row registers this column. <c>false</c> does NOT mean the value is unwritten —
+	/// it is — but the connection is ignored by the record page's connections detail, Next Steps, email
+	/// auto-relation rules and quick-add, and is normally absent from the designer's connections block too.
+	/// </summary>
+	[JsonPropertyName("registered")]
+	public bool Registered { get; set; }
+
+	/// <summary>The platform value source (<c>Script</c> for every designer-authored connection).</summary>
+	[JsonPropertyName("source")]
+	public string Source { get; set; }
+
+	/// <summary>The raw persisted value, verbatim.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+
+	/// <summary>Decoded fixed record: the bound record's id. Paired with <see cref="ReferenceSchema"/>.</summary>
+	[JsonPropertyName("recordId")]
+	public string RecordId { get; set; }
+
+	/// <summary>Decoded fixed record: the referenced entity's NAME, resolved from the UId inside the macro.</summary>
+	[JsonPropertyName("referenceSchema")]
+	public string ReferenceSchema { get; set; }
+
+	/// <summary>Decoded process-parameter source: the process parameter's name.</summary>
+	[JsonPropertyName("processParameter")]
+	public string ProcessParameter { get; set; }
+
+	/// <summary>Decoded element-output source: the source element's name.</summary>
+	[JsonPropertyName("sourceElement")]
+	public string SourceElement { get; set; }
+
+	/// <summary>Decoded element-output source: the parameter name on that element.</summary>
+	[JsonPropertyName("sourceElementParameter")]
+	public string SourceElementParameter { get; set; }
+
+	/// <summary>The raw macro when no dialect decodes it — a system variable, a system setting, or a newer macro.</summary>
+	[JsonPropertyName("expression")]
+	public string Expression { get; set; }
 }
 
 /// <summary>The record-event trigger of a signal start element (what starts the process).</summary>

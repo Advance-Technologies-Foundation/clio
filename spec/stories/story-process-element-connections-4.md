@@ -117,6 +117,19 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
    `[Verb]`, so there is no `docs/commands`, `help/en` or `WikiAnchors` target to update. D12 — whether to add
    a CLI verb and take on that doc surface — stays open.
 
+6. **AC-08 landed in ONE fixture, not three.** All six connections cases live in
+   `ModifyBusinessProcessToolE2ETests`, not split across it and `DescribeProcessToolE2ETests` as the AC
+   describes: each case has to bind through modify and then verify through describe, so splitting them would
+   have duplicated the arrange and left neither half meaningful alone. `CreateBusinessProcessToolE2ETests` is
+   untouched because a build descriptor does not carry connections.
+7. **The clio-side DTOs did not carry the new fields, and the first pass of this story shipped descriptions
+   promising output that never arrived.** `DescribedElement` had no `connections`/`deprecated`/
+   `writesConnectionsAtRuntime` and `ModifyProcessResultDto` had no `warnings`, so System.Text.Json dropped
+   all four silently — the same failure class this whole feature exists to remove, on our side of the wire.
+   Caught by the pre-PR review; the DTOs, a new `DescribedConnection` type and the warning surfacing were
+   added before the PR was opened, and the E2E assertions were rewritten to go through the typed model
+   because a substring of the serialized envelope passed for the wrong reason in five of the six cases.
+
 ## Definition of Done
 
 - [x] All AC met
