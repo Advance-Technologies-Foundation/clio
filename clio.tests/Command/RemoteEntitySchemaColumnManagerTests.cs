@@ -311,7 +311,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Arrange
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
 		SetupLoadedSchema();
-		var inner = (Exception)Activator.CreateInstance(faultType);
+		Exception inner = Activator.CreateInstance(faultType) as Exception;
+		inner.Should().NotBeNull(because: "the TestCase types must be constructible exception types, or the arrange proves nothing");
 		_runtimeEntitySchemaReader.GetByName("UsrVehicle")
 			.Returns(_ => throw new AggregateException(inner));
 		var options = new ModifyEntitySchemaColumnOptions {

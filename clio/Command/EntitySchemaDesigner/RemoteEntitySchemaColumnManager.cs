@@ -124,7 +124,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		// design schema in memory and nothing is saved until below, so after the first operation the layer no
 		// longer describes what the package contributes — which is the only thing that makes a runtime hit a
 		// CROSS-PACKAGE collision rather than this package's own column being removed and re-added.
-		CrossPackageNameContext crossPackageNames = CreateCrossPackageNameContext(schema, rootOperation);
+		CrossPackageNameContext crossPackageNames = CreateCrossPackageNameContext(schema);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			ApplyColumnMutation(schema, package, operation, effectiveCultureName, crossPackageNames);
 		}
@@ -971,8 +971,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		HashSet<string> PristineLayerNames,
 		Lazy<HashSet<string>?> RuntimeNames);
 
-	private CrossPackageNameContext CreateCrossPackageNameContext(EntityDesignSchemaDto schema,
-		RemoteCommandOptions options) {
+	private CrossPackageNameContext CreateCrossPackageNameContext(EntityDesignSchemaDto schema) {
 		HashSet<string> pristine = new(
 			GetAllColumns(schema)
 				.Select(column => column.Name)
