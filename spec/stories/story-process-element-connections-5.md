@@ -4,7 +4,7 @@
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md) §4.4
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
 **Decisions**: D6, D10
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 **Repo**: `clio` (guidance + optional thin tool), `cliogate` (or clio) for the cache reset
 **Depends on**: none — deliberately independent of stories 1–4
@@ -119,6 +119,25 @@ Four candidate homes, with what disqualifies or recommends each:
 | cliogate + reflection on the constant | Avoids the dependency but reintroduces the failure class this feature exists to remove: a renamed constant reads as "nothing to clear" and stays silent. |
 | `CrtProcessBuilder` | Most likely correct. It already lives in the process-designer layer and already uses these manager types, so the constant costs it nothing new. D6 keeps *data-model mutation* out of the package; a cache reset is not one. |
 | **No new code — `clear-redis-db`** | Check this FIRST. Creatio's session/application caches are Redis-backed, and clio already ships `clear-redis-db` plus `restart-web-app`. If a Redis flush invalidates both the ESQ item and the contract cache, AC-03 is satisfied by an existing capability and AC-04's "composition, never reimplementation" applies to it too. |
+
+**Blocked on an OBSERVATION, not on a decision (2026-08-11).** The check above cannot be run from the CLI
+today, and that is worth stating precisely because it looks runnable:
+
+- the connections catalog reads `EntityConnection` through a plain `Select` with no cache, so `setConnections`
+  resolves a freshly registered column whatever the platform cache holds — our own write path cannot observe
+  the cache at all;
+- the platform cache surfaces as DYNAMIC parameters on the user-task contract, and `describe` omits every
+  parameter whose `Source = None`, so a parameter that exists but is unbound is indistinguishable from one
+  that does not exist;
+- which leaves the designer's "Connected to" block — a browser artefact behind an interactive login.
+
+So the endpoint stays unwritten: there is no evidence yet that a Redis flush is insufficient, and writing it
+on the assumption that it is would be the shipped-code-instead-of-a-sentence trade this story set out to
+avoid. Two ways to unblock, in order of cost: a human opens the designer on a stand, registers a column and
+watches whether the list changes before and after `clear-redis-db`; or `describe` gains an opt-in that
+reports unbound connection parameters, which would make the cache observable from the CLI and is arguably
+worth having on its own merits. Until one of them happens, AC-03 is an open decision with a named
+experiment, not a coding task.
 
 **What decides it:** one stand measurement — register a row, confirm the designer still shows the old list,
 run `clear-redis-db`, and look again. Only if that fails does the story need an endpoint, and then
