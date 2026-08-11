@@ -63,7 +63,7 @@ public sealed class CompileCreatioTool(
 		// every unrelated same-tenant tool for the multi-minute (past-deadline detached) compile duration.
 		// Reserved BEFORE registry.Begin so a rejected duplicate creates no tracked record (also curbs the
 		// unbounded-record growth a bogus-env loop could cause).
-		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey))
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation))
 		{
 			return new CommandExecutionResult(1, [
 				new ErrorMessage(CompileAlreadyInProgressMessage(args.EnvironmentName))
@@ -102,7 +102,7 @@ public sealed class CompileCreatioTool(
 						// heartbeat work delegate, so it runs on the (possibly detached, past-deadline)
 						// continuation — spanning the real compile duration — and covers a resolution throw too
 						// (which happens before Execute's own try/finally is ever entered).
-						McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey);
+						McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
 					}
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					return result;

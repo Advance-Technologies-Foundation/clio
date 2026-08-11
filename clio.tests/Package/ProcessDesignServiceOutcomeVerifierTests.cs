@@ -247,7 +247,10 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 			because: "the diagnosis reaches the CLI log and, on the MCP path, the agent's context — an "
 				+ "unbounded quote of a stranger's response body would flood both, and the responder chooses "
 				+ "its own length");
-		diagnosis.Should().Contain("…",
+		// The marker is TextUtilities.SanitizeForDisplay's, not this class's: the local copy of the strip-and-
+		// truncate logic was removed in favour of the shared helper, so that a future hardening of it cannot
+		// miss the one call site that quotes a body from an unknown responder.
+		diagnosis.Should().Contain("...",
 			because: "the truncation must be visible, or a reader cannot tell a short answer from a clipped one");
 	}
 

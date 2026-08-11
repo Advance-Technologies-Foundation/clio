@@ -443,8 +443,15 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_packageInstaller.DidNotReceive().Install(
 			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
 			Arg.Any<string>(), Arg.Any<bool>());
+		// The refusal must name both versions and point at the override — but NOT by quoting the flag. This
+		// text is captured into CommandExecutionResult.Output, so on the MCP path it lands in an agent's
+		// context, and the override is CLI-only precisely so an agent cannot take a decision that affects
+		// everyone on that environment. Naming the flag here would hand over the ready-made command that the
+		// curated contract already bans for the same reason.
 		_logger.Received().WriteError(Arg.Is<string>(message =>
-			message.Contains("9.9.9.9") && message.Contains("--force")));
+			message.Contains("9.9.9.9")
+			&& message.Contains("override exists")
+			&& !message.Contains("--force")));
 	}
 
 	[Test]
@@ -542,8 +549,12 @@ public class InstallProcessBuilderCommandTests : BaseCommandTests<InstallProcess
 		_packageInstaller.DidNotReceive().Install(
 			Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
 			Arg.Any<string>(), Arg.Any<bool>());
+		// Same rule as the downgrade refusal: point at the override, never quote the flag. See the comment
+		// there for why the MCP path makes this a real constraint rather than a stylistic one.
 		_logger.Received().WriteError(Arg.Is<string>(text =>
-			text.Contains("four-part") && text.Contains("Reinstall or update clio")));
+			text.Contains("four-part")
+			&& text.Contains("Reinstall or update clio")
+			&& !text.Contains("--force")));
 	}
 
 	[Test]

@@ -63,7 +63,7 @@ every environment that already has the package compares as converged and is neve
 reaches new installs only, silently. This is why the version must move on every rebundle, and why
 `rebundle-process-builder.ps1` refuses to run without a higher one.
 
-Re-measured on 2026-08-06 (net472, `ts1-web01-15837616`), which added one property worth knowing: the
+Re-measured on 2026-08-06 on an internal net472 stand, which added one property worth knowing: the
 comparison is **"differs", not "is later"**. Installing an archive whose `ModifiedOnUtc` is EARLIER than the
 recorded one still rewrites the row — the recorded version went `1.1.0.2` -> `1.1.0.1` and the install
 reported success. So `SysPackage.Version` is not monotonic and carries no guarantee of being the highest
@@ -135,9 +135,12 @@ What it does beyond running the steps below:
 
 - computes the pins **from the archive it just produced**, so "the pins are stale" stops being a
   reachable state;
-- reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the
-  compile marker present, the package's own assembly absent. No pin covers this, and its absence is how
-  a rebundle without `Files/Libs` would pass every test and then fail the target's configuration build;
+- reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
+  marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
+  particular no `SqlScripts/` or `Data/`, which the target EXECUTES at install time). The guard fixture now
+  pins all of that too, so a bad rebundle fails CI as well; the value of having it here is that the script
+  stops you BEFORE the archive and its pins are committed, and before step 6 rewrites the SHA pin from the
+  very archive that is wrong;
 - verifies `ModifiedOnUtc` actually MOVED, rather than merely being present;
 - rebuilds clio, and reports every other build output that now holds a different archive or none.
 
@@ -215,8 +218,11 @@ git -C <ProcessBuilder> commit -m "<ticket> rebundle to X.Y.Z.W"
 #    which installs, satisfies the gate, and then 404s on the other runtime.
 Remove-Item packages/CrtProcessBuilder/Files/Bin -Recurse -Force
 
-# 4. Pack straight into the clio checkout.
-dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder `
+# 4. Pack straight into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
+#    already removed the only .pdb there is, so the flag changes nothing about the output - but the archive
+#    is pinned BYTE-FOR-BYTE by SHA-256, and the two paths have to produce the same bytes for that pin to
+#    mean anything. Any .pdb that ever appears outside Files/Bin would otherwise make them diverge.
+dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder --skip-pdb `
   -d <clio>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
 # 5. VERIFY the archive rather than trusting step 3 - its failure is silent.
@@ -226,8 +232,12 @@ dotnet <clio>/clio/bin/Debug/net8.0/clio.dll extract-pkg-zip `
 
 Step 5 must show: exactly **2** `.dll` files, both under `Files/Libs` (`ErrorOr`, `ATF.Repository` — real
 dependencies absent from the platform core; never exclude them by file name, that halves the archive and
-ships source that cannot compile), **no** `CrtProcessBuilder.dll` anywhere, and the
-`Schemas/CrtProcessBuilderCompileMarker` folder present.
+ships source that cannot compile), **no** `CrtProcessBuilder.dll` anywhere, the
+`Schemas/CrtProcessBuilderCompileMarker` folder present **and no other schema folder**, and **nothing outside
+`descriptor.json` / `Files` / `Schemas` / `Resources`** — in particular no `SqlScripts/` and no `Data/`, which
+the target EXECUTES at install time (this install passes no `PackageInstallOptions`, so the platform's own
+defaults apply). The clio-side guard fixture pins all of that as well, so a bad archive fails CI whichever
+path produced it; checking here is what stops you before the archive and its pins are committed.
 
 That marker schema is load-bearing and fails silently: it is the only thing that puts the package into the
 target's configuration build. Lose it and the package installs, the gate reports it present, and every

@@ -62,6 +62,16 @@ namespace Clio.Common
 		/// bytes: they are stored UTF-16LE, so an ASCII/UTF-8 probe never matches a path, and any assertion
 		/// phrased against one is silently vacuous. Measured on the shipped process-builder archive: a text
 		/// scan finds zero hits for <c>SafeText.cs</c>, which is a real entry.
+		/// <para>
+		/// <b>No production caller today, and that is deliberate rather than dead code.</b> Its only consumer is
+		/// <c>BundledProcessBuilderPackageTests</c>, which uses it to assert what the archive clio ships to
+		/// customers may and may not contain — that no build output leaked in, that both compile references are
+		/// under <c>Files/Libs</c>, and that nothing which EXECUTES on install (a <c>SqlScripts/</c> or
+		/// <c>Data/</c> folder) is present. Those are properties of a committed binary artifact produced in a
+		/// different repository, so a test is the only place they can be checked at all; putting the walk here
+		/// rather than in the fixture keeps one implementation of the container format, next to the readers that
+		/// share its primitives. Do not delete this as unused.
+		/// </para>
 		/// </remarks>
 		IReadOnlyList<string> ListGZipEntryNames(string packedPackagePath);
 

@@ -32,8 +32,8 @@ ENG-94385 with the package **UId preserved**, so an existing installation upgrad
 ## 3. Functional requirements
 
 **FR-01 — Bundle.** The archive ships inside the clio distribution and is copied to the output
-directory. clio never downloads it. Identity (name, version, archive filename) comes from one place,
-`clio/Common/BundledPackages.cs`.
+directory. clio never downloads it. Identity (name, archive filename) comes from one place,
+clio/Common/BundledPackages.cs. The VERSION deliberately does not: it is read from the archive's own descriptor at runtime by `IBundledPackageCatalog`, because the archive is a content file that can be replaced without a rebuild (see `spec/adr/adr-bundled-package-version-source-of-truth.md`; `BundledPackagesTests` fails if a version constant is reintroduced).
 
 **FR-02 — One archive, every runtime.** The archive contains no compiled assembly; the target compiles
 it during installation. No `IsNetCore` branch, no per-framework artifact. (ADR: Decision.)
@@ -45,7 +45,7 @@ it during installation. No `IsNetCore` branch, no per-framework artifact. (ADR: 
 **FR-04 — Bundled-artifact pre-check.** A distribution that failed to carry the archive says so plainly,
 naming the expected path, instead of surfacing as a generic failure from inside the installer.
 
-**FR-05 — No short-circuit, with one exception.** The command always installs, EXCEPT when the install would move the environment's recorded version backwards; that is refused unless `--force` is passed (added after the initial delivery — nothing else stops a downgrade, and a rollback affects everyone on a shared environment). There is no cheap trustworthy way to ask "is this
+**FR-05 — No short-circuit, with two exceptions.** The command always installs, EXCEPT in two cases, both about an environment moving BACKWARDS and both overridable only from the command line: (a) the install would move the environment's recorded version backwards, and (b) this clio's own bundled version carries a pre-release suffix, which would make case (a) undetectable. Neither refusal quotes the override flag, because the refusal text reaches an MCP agent's context and the decision is a human's. There is no cheap trustworthy way to ask "is this
 environment already serving what I ship", so an explicitly requested install is performed: it is invoked as
 remediation, the install is backed up, and a needless run costs one configuration build.
 
@@ -71,8 +71,8 @@ hand-maintained duplicate inside the shipped sources. The package-agnostic repla
 
 **FR-08 — Detection and offer.** The five consuming commands
 (`create-business-process`, `modify-business-process`, `describe-business-process`, `list-user-tasks`,
-`validate-process-graph`) carry a versioned `[RequiresPackage]` whose `Hint` names the exact remediation
-for both surfaces (CLI verb and MCP tool).
+`validate-process-graph`) carry a PRESENCE-ONLY `[RequiresPackage]` whose `Hint` names the exact remediation. "Behind" is a separate rule (`IBundledPackageConvergence`), not a floor on the attribute
+These five are MCP TOOLS with no CLI verbs, and sit behind the `process-designer` feature toggle.
 
 **FR-09 — The remediation is reachable.** `install-process-builder` carries neither `[RequiresPackage]`
 nor `[FeatureToggle]`, so it cannot be filtered out by the gate it exists to satisfy.
@@ -114,7 +114,7 @@ built anyway.
   environment that accepted the package without compiling it returns 1 with an actionable message.
 - **AC-04** Re-running is safe and installs again; it never reports "nothing to do" for an environment whose
   package is present but not working.
-- **AC-07** The `[RequiresPackage]` floor is satisfied on an environment upgraded in place — which requires
+- **AC-07** The environment's RECORDED version is what convergence compares, and it is satisfied on an environment upgraded in place — which requires
   the rebundle to move the descriptor's `ModifiedOnUtc` together with `PackageVersion` (use
   `clio set-pkg-version`), because Creatio rewrites the recorded version only when the date changed.
 - **AC-05** With `process-designer` OFF, the MCP server still advertises `install-process-builder` while
@@ -127,7 +127,7 @@ built anyway.
 |---|---|
 | Bundle | `clio/Common/BundledPackages.cs`, `clio/CrtProcessBuilder/CrtProcessBuilder.gz`, csproj `Content` glob, `.gitattributes` (`*.gz binary`) |
 | Command | `clio/Command/InstallProcessBuilderCommand.cs` |
-| MCP | `Tools/InstallProcessBuilderTool.cs`, `ToolContractGetTool.BuildInstallProcessBuilder`, `Resources/ProcessDesigner/ProcessModelingGuidanceResource.cs`, `Resources/DeployLifecycleGuidanceResource.cs` |
+| MCP | `Tools/InstallProcessBuilderTool.cs`, `ToolContractGetTool.BuildInstallProcessBuilder`, `Resources/KnowledgeGuidanceResourceAdapter.cs` (the `process-modeling` and `deploy-lifecycle` guides themselves are published from the external `clio-knowledge` library and pinned by `curated-knowledge-names.json`, so FR-12/NFR-01 are satisfied in that repository rather than here) |
 | Gate | 5 `[RequiresPackage]` sites; `BaseTool` returns `FromValidationError` (exit 1) for `PackageRequirementException`, not `FromError` (−1) |
 | Info | `clio/Command/InfoCommand.cs` |
 | Docs | `help/en/install-process-builder.txt`, `docs/commands/install-process-builder.md`, `Commands.md`, `Wiki/WikiAnchors.txt`, `docs/McpCapabilityMap.md` §11 |
@@ -137,7 +137,7 @@ built anyway.
 **Automated.** 11 unit tests on the command (including the readiness-wait race:
 `Execute_ShouldFailWithoutProbing_WhenInstanceDoesNotBecomeReady`), 4 archive-content tests pinning the
 descriptor identity and the compile-marker schema in the shipped `.gz`, 4 MCP tool tests including the
-"not feature-gated" invariant, lock-in tests on the versioned requirement and the verbatim `Hint`, and 3
+"not feature-gated" invariant, lock-in tests on the presence-only requirement and the verbatim `Hint`, and 3
 stand-free MCP E2E tests — discovery-while-gated-off, the curated contract (with a regression guard
 against the retracted "no restart" wording), and the invalid-environment envelope.
 
