@@ -35,7 +35,15 @@
         { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer", "note": "Web profile island (the styled side-area grid with color/borderRadius). Merge twin — do NOT recreate it: the mobile template already provides AreaProfileContainer inside GeneralTabContainer as the profile card, so this wrapper's children are placed INSIDE AreaProfileContainer (never directly into GeneralTabContainer, and never leave AreaProfileContainer empty). Sibling side-area blocks (e.g. a second card like CaseInfoContainer) are NOT the island — they stay ordinary inserts into GeneralTabContainer. The island's own styling is template-provided and is not carried; if the web wrapper carries a BOUND visible or is targeted by business rules, move that logic onto AreaProfileContainer or each promoted child — it is not carried automatically." },
         { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
-      ]
+      ],
+      "headerActionsContainer": {
+        "web": "MainHeader",
+        "container": {
+          "namePrefix": "HeaderActionsContainer_",
+          "values": { "type": "crt.FlexContainer", "direction": "row" }
+        },
+        "note": "Page-specific, mobile-supported descendants of the web MainHeader (e.g. a custom button inserted into ActionButtonsContainer) are relocated into this NEW synthesized crt.FlexContainer — always bucket 0 in the mobile Tabs' own parent container, i.e. above any CardContentWrapper:top content and above Tabs itself. Pure template chrome (title, back button, Save/Cancel/Close, TagSelect, Requeue/Postpone/SetRecordRights, ...) keeps being excluded by the existing template-component pruning; unaffected."
+      }
     },
     {
       "web": "BasePageFreedomTemplate",

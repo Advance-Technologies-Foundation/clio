@@ -139,6 +139,43 @@ public static class WebToMobileAnalysisService {
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
 
+		// 0-header. Header-actions origin tracking (ENG-93152): on the INTACT tree (before ANY pruning below),
+		// collect the names of page-specific, mobile-supported descendants of the declared header-actions
+		// container (e.g. MainHeader) that PruneTemplateComponents will hoist to the container's own tree
+		// position once its chrome is dropped. Must run first, for the same reason 0a must: hoisting detaches
+		// a survivor from the container that identifies it, so the tracking pass needs the intact nesting.
+		// These names are later excluded from the generic positional (:top/:bottom) classification and routed
+		// instead into ONE synthesized header-actions container (WalkElements) — replacing the array-order
+		// accident of a header survivor merely happening to land next to whatever positional anchor a template
+		// declares. Gated on templateComponentNames being available: without a baseline, PruneTemplateComponents
+		// itself would not run and every MainHeader child (title, back button included) would misread as a
+		// "survivor" — there being no baseline to tell chrome from page content.
+		HeaderActionsContainerRule headerActionsContainerRule = templateRule?.HeaderActionsContainer;
+		HashSet<string> headerOriginNames = null;
+		string headerActionsContainerName = null;
+		if (!string.IsNullOrWhiteSpace(headerActionsContainerRule?.Web)
+			&& IsUsableLayer(headerActionsContainerRule.Container)
+			&& templateComponentNames is { Count: > 0 }) {
+			headerOriginNames = CollectHeaderOriginNames(tree, headerActionsContainerRule.Web, map, componentMap, templateComponentNames);
+			if (headerOriginNames.Count > 0) {
+				HashSet<string> takenNames = bundle.ViewConfig is null
+					? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+					: CollectComponentNames(bundle.ViewConfig);
+				foreach (string mobileTwin in map.Values) {
+					takenNames.Add(mobileTwin);
+				}
+				foreach (ComponentMappingRule twin in componentMap.Values) {
+					if (!string.IsNullOrWhiteSpace(twin?.Mobile)) {
+						takenNames.Add(twin.Mobile);
+					}
+				}
+				string prefix = headerActionsContainerRule.Container.NamePrefix;
+				string suffix = StableSuffix(sourcePage, headerActionsContainerRule.Web,
+					candidate => takenNames.Contains(prefix + candidate));
+				headerActionsContainerName = prefix + suffix;
+			}
+		}
+
 		// 0a. Declarative, rule-driven exclusion: drop the components of the web template's non-converting
 		//     containers (e.g. MainHeader / its action bar) BEFORE chrome subtraction. It must run first
 		//     because chrome subtraction hoists page-added survivors up to the root, detaching them from the
@@ -230,7 +267,8 @@ public static class WebToMobileAnalysisService {
 			ResolvePositionalParents(positionalPlacements, mobileContainerParents);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor,
+			headerOriginNames, headerActionsContainerName, headerActionsContainerRule?.Web);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -244,6 +282,19 @@ public static class WebToMobileAnalysisService {
 		// (removal is layout cleanup, not attribute cleanup).
 		HashSet<string> emptyRemovedNames = RemoveEmptyContainers(
 			elementMap, rules, out HashSet<string> emptyRemovedMobileNames);
+		// Materialize the synthesized header-actions container (bucket 0) only now that empty-container
+		// removal above has already dropped any header-origin child whose OWN content emptied out — such a
+		// candidate is a drop by this point and never counts as a survivor, so an all-chrome-lost header gets
+		// no synthesized container at all (mirrors the tab-area layers' own null-when-empty rule). Must run
+		// BEFORE CompactPositionalIndexes so its sentinel bucket-0 index and the generic :top siblings it now
+		// precedes are renumbered together in that one pass (see HeaderActionsBucketIndex).
+		string headerActionsParent = mobileContainerParents is not null
+			&& mobileContainerParents.TryGetValue(MobileTabsElementName, out string tabsParent)
+			&& !string.IsNullOrWhiteSpace(tabsParent)
+				? tabsParent
+				: PositionalFallbackParent;
+		HeaderActionsContainerGroup headerActionsContainerGroup = MaterializeHeaderActionsContainer(
+			elementMap, headerActionsContainerRule, headerActionsContainerName, headerActionsParent);
 		// Positional :top indexes are assigned at walk time to ALL siblings of an anchor, including ones the
 		// walk later dropped (unsupported type, foreign data source, unsupported button request) — every drop
 		// source leaves the same index hole the empty-container pass does, so compaction runs unconditionally,
@@ -342,6 +393,7 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
+			HeaderActionsContainer = headerActionsContainerGroup,
 			// Back-compat alias: spacingNormalization shipped before normalizations existed, so its shape is
 			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
@@ -372,12 +424,14 @@ public static class WebToMobileAnalysisService {
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
 				normalization: componentPropertyOverrides,
-				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null),
+				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null,
+				hasHeaderActionsContainer: headerActionsContainerGroup is not null),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				normalization: componentPropertyOverrides),
+				normalization: componentPropertyOverrides,
+				hasHeaderActionsContainer: headerActionsContainerGroup is not null),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -867,6 +921,91 @@ public static class WebToMobileAnalysisService {
 				CollectExcludedSubtreeNames(items, excluded, containerNameMap, componentMap, container, nameToContainer);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Collects, from the INTACT merged tree (before ANY pruning), the names of the declared header-actions
+	/// container's (<paramref name="headerContainer"/>, e.g. "MainHeader") page-specific survivors — the
+	/// descendant names <see cref="PruneTemplateComponents"/> will hoist to the container's OWN tree position
+	/// once its baseline chrome is dropped. Mirrors that method's own baseline/hoist recursion so the two stay
+	/// in lockstep: a name in <paramref name="baseline"/> is chrome and is skipped over (recursing into its
+	/// children, since pruning hoists straight through it); a mapped twin (a container in
+	/// <paramref name="containerNameMap"/> or a component in <paramref name="componentMap"/>) is carved out —
+	/// it has its own conversion rule and is never collected; an anonymous wrapper is transparent (recursed
+	/// through, never itself collected — it has no name to receive an elementMap entry to reroute); anything
+	/// else IS a survivor — its name is collected and its OWN descendants are NOT (they stay nested under it
+	/// after the hoist, not bucketed separately). Returns an empty set when the container name is blank, the
+	/// container is absent from the tree, or the baseline is unavailable (nothing would be hoisted, so there
+	/// is nothing to track).
+	/// </summary>
+	internal static HashSet<string> CollectHeaderOriginNames(
+		JArray tree,
+		string headerContainer,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
+		IReadOnlySet<string> baseline) {
+		var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (string.IsNullOrWhiteSpace(headerContainer) || baseline is not { Count: > 0 }) {
+			return names;
+		}
+		JArray headerItems = FindContainerItemsByName(tree, headerContainer);
+		if (headerItems is not null) {
+			CollectHeaderOriginNamesCore(headerItems, containerNameMap, componentMap, baseline, names);
+		}
+		return names;
+	}
+
+	private static void CollectHeaderOriginNamesCore(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
+		IReadOnlySet<string> baseline,
+		HashSet<string> names) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			if (string.IsNullOrEmpty(name)) {
+				// Anonymous wrapper: transparent — it has no name to ever match an elementMap entry against.
+				if (node["items"] is JArray anonymousItems) {
+					CollectHeaderOriginNamesCore(anonymousItems, containerNameMap, componentMap, baseline, names);
+				}
+				continue;
+			}
+			bool isMappedTwin = containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name));
+			if (isMappedTwin) {
+				continue; // carve-out: converts under its own rule, out of scope for this bucket
+			}
+			if (baseline.Contains(name)) {
+				// Chrome: PruneTemplateComponents hoists straight through it — keep looking underneath.
+				if (node["items"] is JArray chromeItems) {
+					CollectHeaderOriginNamesCore(chromeItems, containerNameMap, componentMap, baseline, names);
+				}
+				continue;
+			}
+			// Page-specific survivor: collected here; its own descendants stay nested under it after the hoist.
+			names.Add(name);
+		}
+	}
+
+	/// <summary>Finds the FIRST node named <paramref name="name"/> anywhere in the tree and returns its items (null when absent or childless).</summary>
+	private static JArray FindContainerItemsByName(JArray nodes, string name) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			if (string.Equals(node["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase)) {
+				return node["items"] as JArray;
+			}
+			if (node["items"] is JArray items) {
+				JArray found = FindContainerItemsByName(items, name);
+				if (found is not null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -1573,7 +1712,7 @@ public static class WebToMobileAnalysisService {
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
-		IReadOnlyCollection<string> nonConvertingContainers = null) {
+		IReadOnlyCollection<string> nonConvertingContainers = null, bool hasHeaderActionsContainer = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1669,6 +1808,16 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
+		if (hasHeaderActionsContainer) {
+			constraints.Add(
+				"headerActionsContainer is MANDATORY, not a proposal: a page-specific, mobile-supported descendant " +
+				"of the web header (e.g. a custom action button) is relocated into ONE synthesized container instead " +
+				"of wherever it would otherwise land — never ask whether to apply it and never place it yourself. It " +
+				"is ALREADY baked into the element map as bucket 0 of its own mobile parent (ahead of any generic " +
+				":top content and the anchor the template positions itself against, e.g. the mobile Tabs). Apply the " +
+				"element map as it is; do NOT reorder, reparent, or recreate this container by hand — see " +
+				"headerActionsContainer for its name, parent, and the elements moved into it.");
+		}
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
@@ -1684,7 +1833,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		ComponentPropertyOverrideResult normalization = null) {
+		ComponentPropertyOverrideResult normalization = null, bool hasHeaderActionsContainer = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1699,6 +1848,9 @@ public static class WebToMobileAnalysisService {
 		}
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
+		}
+		if (hasHeaderActionsContainer) {
+			steps.Add("guide.headerActionsContainer names the ONE synthesized header-actions container (already baked into elementMap as bucket 0 of its own mobile parent, ahead of any generic :top content). Apply the element map as it is — this structure is MANDATORY; do NOT ask the user whether to apply it and do NOT place its movedChildren anywhere else yourself.");
 		}
 		AppendNormalizationLines(steps, normalization);
 		steps.Add("Validate the body with validate-page; resolve any findings.");
@@ -1733,7 +1885,10 @@ public static class WebToMobileAnalysisService {
 		List<FlaggedRequest> FlaggedRequests,
 		Dictionary<string, JObject> SourceLayouts,
 		Dictionary<string, int> GridContainerColumns,
-		IReadOnlyDictionary<string, string> PositionalParentByAnchor);
+		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
+		IReadOnlySet<string> HeaderOriginNames,
+		string HeaderActionsContainerName,
+		string HeaderOriginAnchorName);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -1758,14 +1913,19 @@ public static class WebToMobileAnalysisService {
 		List<FlaggedRequest> flaggedRequests,
 		Dictionary<string, JObject> sourceLayouts,
 		Dictionary<string, int> gridContainerColumns,
-		IReadOnlyDictionary<string, string> positionalParentByAnchor) {
+		IReadOnlyDictionary<string, string> positionalParentByAnchor,
+		IReadOnlySet<string> headerOriginNames,
+		string headerActionsContainerName,
+		string headerOriginAnchorName) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
-			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			headerOriginNames ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			headerActionsContainerName, headerOriginAnchorName);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
@@ -1791,8 +1951,15 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 
+			// A header-origin survivor (see HeaderActionsContainerRule) is classified by tree ORIGIN, never by
+			// array position — it takes precedence over positional-sibling classification so it is never
+			// "accidentally" caught by whatever positional anchor a template happens to declare nearby.
+			bool isHeaderOrigin = ctx.HeaderOriginNames.Contains(name);
 			// A positional sibling of the anchor is rerouted to the mobile anchor's parent (± index).
-			bool isPositional = positional.TryGetValue(name, out (string Parent, int? Index) place);
+			// TryGetValue is called unconditionally (its out parameter is always assigned) so header-origin
+			// status can override the result below without leaving `place` only conditionally assigned.
+			bool foundPositional = positional.TryGetValue(name, out (string Parent, int? Index) place);
+			bool isPositional = !isHeaderOrigin && foundPositional;
 
 			bool isContainer = (items is { Count: > 0 }) || IsLayoutContainer(type, name, null, ctx.MobileByType);
 
@@ -1861,7 +2028,8 @@ public static class WebToMobileAnalysisService {
 				//    that parentName). A web tab (crt.TabContainer) IS mobile-supported, so it falls through
 				//    to the insert below and becomes its OWN new mobile tab (no more general-tab collapsing).
 				if (!typeSupported) {
-					string target = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+					string target = isHeaderOrigin ? ctx.HeaderActionsContainerName
+						: isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 					ctx.Out.Add(new ElementMapEntry {
 						WebName = name, WebType = Nz(type), Operation = "relocate-children", ParentName = target,
 						Reason = $"container type '{type}' has no mobile equivalent — its children are placed in {target}"
@@ -1881,13 +2049,17 @@ public static class WebToMobileAnalysisService {
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
-					ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
+					ParentName = isHeaderOrigin ? ctx.HeaderActionsContainerName
+						: isPositional ? place.Parent : ResolveParent(ctx, mobileParentName),
+					PropertyName = "items",
 					Index = isPositional ? place.Index : null,
 					CaptionResource = containerCaption,
 					MobileValues = BuildMobileValues(ctx, node, name, type, containerCaption),
-					Reason = isPositional
-						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-						: "container; mobile-supported"
+					Reason = isHeaderOrigin
+						? $"{ctx.HeaderOriginAnchorName}-origin, mobile-supported — moved into the synthesized header-actions container"
+						: isPositional
+							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+							: "container; mobile-supported"
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -1909,13 +2081,17 @@ public static class WebToMobileAnalysisService {
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
-				ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
+				ParentName = isHeaderOrigin ? ctx.HeaderActionsContainerName
+					: isPositional ? place.Parent : ResolveParent(ctx, mobileParentName),
+				PropertyName = "items",
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption),
-				Reason = isPositional
-					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-					: "field/leaf; mobile-supported"
+				Reason = isHeaderOrigin
+					? $"{ctx.HeaderOriginAnchorName}-origin, mobile-supported — moved into the synthesized header-actions container"
+					: isPositional
+						? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+						: "field/leaf; mobile-supported"
 			});
 		}
 	}
@@ -2771,6 +2947,51 @@ public static class WebToMobileAnalysisService {
 		return entry.MobileValues is JsonObject values && values["tools"] is JsonArray { Count: > 0 }
 			? basis + "; its tools content is discarded with it"
 			: basis;
+	}
+
+	/// <summary>
+	/// Sentinel index for the synthesized header-actions container: guaranteed to sort before any generic
+	/// <c>:top</c> index (which starts at 0), so <see cref="CompactPositionalIndexes"/> renumbers this
+	/// container to bucket 0 and shifts the generic <c>:top</c> siblings it now precedes to 1, 2, … in that
+	/// SAME pass — no separate "+1 shift" step needed.
+	/// </summary>
+	private const int HeaderActionsBucketIndex = -1;
+
+	/// <summary>
+	/// Materializes the ONE synthesized header-actions container (<see cref="HeaderActionsContainerRule"/>) as
+	/// bucket 0 of its own mobile parent — but ONLY when at least one header-origin element actually survived
+	/// conversion as a real <c>insert</c> targeting it. Runs AFTER <see cref="RemoveEmptyContainers"/> so a
+	/// header-origin child removed there (its own content emptied out) is already a <c>drop</c> by this point
+	/// and never counts as a survivor — an all-chrome-lost header gets no synthesized container at all,
+	/// mirroring the tab-area layers' own null-when-empty rule. Must run BEFORE
+	/// <see cref="CompactPositionalIndexes"/> (see <see cref="HeaderActionsBucketIndex"/>). A no-op (returns
+	/// null) when the declared container name is absent — the rule was unusable, or the origin-tracking pass
+	/// found nothing to track in the first place.
+	/// </summary>
+	private static HeaderActionsContainerGroup MaterializeHeaderActionsContainer(
+		List<ElementMapEntry> elementMap,
+		HeaderActionsContainerRule rule,
+		string containerName,
+		string containerParent) {
+		if (string.IsNullOrWhiteSpace(containerName)) {
+			return null;
+		}
+		List<ElementMapEntry> survivors = elementMap.Where(e =>
+			string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+			&& string.Equals(e.ParentName, containerName, StringComparison.OrdinalIgnoreCase)).ToList();
+		if (survivors.Count == 0) {
+			return null;
+		}
+		ElementMapEntry entry = SynthesizedLayerEntry(rule.Container, containerName, containerParent,
+			$"synthesized header-actions container ({rule.Web} survivors) — bucket 0");
+		entry.Index = HeaderActionsBucketIndex;
+		elementMap.Insert(0, entry);
+		return new HeaderActionsContainerGroup {
+			AnchorContainer = rule.Web,
+			ContainerName = containerName,
+			ParentName = containerParent,
+			MovedChildren = [.. survivors.Select(s => s.MobileName)]
+		};
 	}
 
 	/// <summary>

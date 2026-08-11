@@ -539,6 +539,20 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<TabAreaLayerGroup> TabAreaLayers { get; init; }
 
+	// ── Header-actions container synthesized from the web template's header origin ────
+	/// <summary>
+	/// The ONE synthesized "header-actions" container the converter creates when the matched template
+	/// declares <c>headerActionsContainer</c>: page-specific, mobile-supported descendants of the web header
+	/// (e.g. a custom action button) are relocated here instead of the array-order accident of a generic
+	/// <c>:top</c>/<c>:bottom</c> rule catching them (see <see cref="HeaderActionsContainerGroup"/>). Already
+	/// baked into <see cref="ElementMap"/> as an ordinary synthesized insert; this is an informational summary
+	/// of a MANDATORY structure, NOT a proposal. Null when the template declares no such container, or when
+	/// no header-origin survivor made it into the element map (an all-chrome-lost header gets none).
+	/// </summary>
+	[JsonPropertyName("headerActionsContainer")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public HeaderActionsContainerGroup HeaderActionsContainer { get; init; }
+
 	// ── Spacing normalized on inserted containers ──────────────────────
 	/// <summary>
 	/// Spacing normalization applied by the converter: mobile pages follow the mobile spacing
@@ -821,6 +835,38 @@ public sealed class TabAreaLayerGroup {
 	/// The components moved out of the tab and into the Area, in the order they are stacked there
 	/// (the source page's own order — the first entry is row 1). Already reflected in each element's
 	/// <c>parentName</c> and <c>layoutConfig</c>, so there is nothing to re-parent by hand.
+	/// </summary>
+	[JsonPropertyName("movedChildren")]
+	public IReadOnlyList<string> MovedChildren { get; init; } = [];
+}
+
+/// <summary>
+/// The ONE synthesized "header-actions" container the converter creates when the matched template declares
+/// <c>headerActionsContainer</c> (see <see cref="MobilePageConversionGuide.HeaderActionsContainer"/>):
+/// page-specific, mobile-supported descendants of the web header (e.g. a custom action button) are relocated
+/// here — classified by TREE ORIGIN, never by array position — instead of the array-order accident of a
+/// generic <c>:top</c>/<c>:bottom</c> rule catching them because they happen to land as a sibling of its
+/// anchor. Already baked into <see cref="MobilePageConversionGuide.ElementMap"/> as an ordinary synthesized
+/// <c>insert</c> (no <c>webName</c>) at bucket 0 of its own mobile parent — ahead of any generic <c>:top</c>
+/// content and the anchor the template positions itself against (e.g. the mobile Tabs). This is an
+/// informational summary of a MANDATORY structure, NOT a proposal — report it at the conversion gate as fact.
+/// </summary>
+public sealed class HeaderActionsContainerGroup {
+	/// <summary>The web template container this bucket tracks (e.g. "MainHeader").</summary>
+	[JsonPropertyName("anchorContainer")]
+	public string AnchorContainer { get; init; }
+
+	/// <summary>Name of the synthesized container (its <c>elementMap[].mobileName</c>).</summary>
+	[JsonPropertyName("containerName")]
+	public string ContainerName { get; init; }
+
+	/// <summary>Mobile container the synthesized container itself inserts into, as bucket 0.</summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
+
+	/// <summary>
+	/// The header-origin elements relocated into it (their mobile names), in source-tree order. Already
+	/// reflected in each element's <c>parentName</c>, so there is nothing to re-parent by hand.
 	/// </summary>
 	[JsonPropertyName("movedChildren")]
 	public IReadOnlyList<string> MovedChildren { get; init; } = [];

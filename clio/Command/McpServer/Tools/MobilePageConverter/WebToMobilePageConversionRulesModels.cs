@@ -115,6 +115,43 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("nonConvertingContainers")]
 	public IReadOnlyList<string> NonConvertingContainers { get; init; } = [];
 
+	/// <summary>
+	/// Header-actions relocation for this template's declared web header container (e.g. "MainHeader") — see
+	/// <see cref="HeaderActionsContainerRule"/>. Null when the template needs no such relocation.
+	/// </summary>
+	[JsonPropertyName("headerActionsContainer")]
+	public HeaderActionsContainerRule HeaderActionsContainer { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>
+/// Declares that page-specific, mobile-supported descendants of a web template container (e.g. the header's
+/// action bar inside <see cref="Web"/>) are relocated into ONE new synthesized container instead of falling
+/// wherever the generic prune-and-hoist mechanism happens to place them (e.g. "accidentally" caught by a
+/// <c>:top</c> positional rule declared for an unrelated sibling, purely because of tree order). Classification
+/// is BY TREE ORIGIN — a page-specific survivor of <see cref="Web"/> after <c>PruneTemplateComponents</c> —
+/// never by component type; the rule declares which container to watch, not what counts as a "button" or an
+/// "action". Pure template chrome (title, back button, Save/Cancel/Close, …) is unaffected: it keeps being
+/// dropped by the existing template-component pruning regardless of this rule. Null on a template that
+/// declares no such container — the origin-tracking pass is then a no-op.
+/// </summary>
+public sealed class HeaderActionsContainerRule {
+	/// <summary>Web template container whose page-specific survivors are tracked (e.g. "MainHeader").</summary>
+	[JsonPropertyName("web")]
+	public string Web { get; init; }
+
+	/// <summary>
+	/// The synthesized container itself (element-name prefix + mobile <c>values</c>, incl. <c>type</c>) — same
+	/// shape as one <see cref="TabAreaLayersRule"/> layer. It always becomes bucket 0 of its own mobile parent
+	/// container — ahead of any generic <c>:top</c> content and the anchor the template positions itself
+	/// against (e.g. the mobile Tabs). Absent or unusable (no name prefix, no declared type) switches the
+	/// whole pass off, the same way an unusable tab-area layer does.
+	/// </summary>
+	[JsonPropertyName("container")]
+	public SynthesizedContainerRule Container { get; init; }
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
