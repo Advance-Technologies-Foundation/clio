@@ -47,7 +47,15 @@ $authHeaders = @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/
 # (System.Net.WebException) and PowerShell 7 (Microsoft.PowerShell.Commands.
 # HttpResponseException), with the response headers exposed differently on each.
 # HttpClient never throws on a status code, so this reads the same on both hosts.
-try { Add-Type -AssemblyName System.Net.Http -ErrorAction Stop } catch { }
+try {
+  Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+}
+catch {
+  # Expected on PowerShell 7, where System.Net.Http is already part of the loaded framework and
+  # Add-Type refuses it. Not fatal, and not silent either: the New-Object below is what actually
+  # decides whether the type is available, and it throws with its own message if it is not.
+  Write-Host "::debug::Add-Type System.Net.Http was not needed: $($_.Exception.Message)"
+}
 $targetIsTeamCity = $false
 $probeStatus = 'no response'
 $httpClient = New-Object System.Net.Http.HttpClient

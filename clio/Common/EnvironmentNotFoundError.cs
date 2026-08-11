@@ -42,23 +42,6 @@ public static class EnvironmentNotFoundError {
 		return $"Environment with key '{name}' not found.{availableHint} {fix}";
 	}
 
-	private static string BuildCliFix(string name) =>
-		$"To register it, run: clio reg-web-app {name} -u <url> -l <login> -p <password>";
-
-	// Inside an MCP session the shell command is the wrong advice: it registers the environment in
-	// appsettings.json of ANOTHER process, and this server keeps its own loaded copy — the caller would
-	// then see the registration succeed and the very next tool call still fail. clio-run reaches
-	// reg-web-app in THIS process, so the file and the running server move together.
-	private static string BuildMcpFix(string name) =>
-		"To register it from this MCP session, call the clio-run tool with "
-		+ $"{{\"command\":\"reg-web-app\",\"args\":{{\"environment-name\":\"{name}\",\"uri\":\"<url>\","
-		+ "\"login\":\"<login>\",\"password\":\"<password>\"}} — that writes appsettings.json and updates "
-		+ "this running server in one step. "
-		+ "This server holds the environment list it loaded from appsettings.json at start; "
-		+ "`list-environments` and environment resolution re-read that file at call time, but tools bound "
-		+ "at server start still answer from the loaded copy, so an edit made outside this process (Bash, "
-		+ "or `clio reg-web-app` in another process) is not guaranteed to be seen before a restart.";
-
 	/// <summary>
 	/// Composes the actionable message, reading the registered environment names from the supplied
 	/// settings repository. Failures while enumerating environments degrade gracefully to the
@@ -78,6 +61,23 @@ public static class EnvironmentNotFoundError {
 		}
 		return Build(missingEnvironmentName, names, isMcpContext);
 	}
+
+	private static string BuildCliFix(string name) =>
+		$"To register it, run: clio reg-web-app {name} -u <url> -l <login> -p <password>";
+
+	// Inside an MCP session the shell command is the wrong advice: it registers the environment in
+	// appsettings.json of ANOTHER process, and this server keeps its own loaded copy — the caller would
+	// then see the registration succeed and the very next tool call still fail. clio-run reaches
+	// reg-web-app in THIS process, so the file and the running server move together.
+	private static string BuildMcpFix(string name) =>
+		"To register it from this MCP session, call the clio-run tool with "
+		+ $"{{\"command\":\"reg-web-app\",\"args\":{{\"environment-name\":\"{name}\",\"uri\":\"<url>\","
+		+ "\"login\":\"<login>\",\"password\":\"<password>\"}} — that writes appsettings.json and updates "
+		+ "this running server in one step. "
+		+ "This server holds the environment list it loaded from appsettings.json at start; "
+		+ "`list-environments` and environment resolution re-read that file at call time, but tools bound "
+		+ "at server start still answer from the loaded copy, so an edit made outside this process (Bash, "
+		+ "or `clio reg-web-app` in another process) is not guaranteed to be seen before a restart.";
 
 	private static string BuildAvailableHint(IEnumerable<string>? availableEnvironmentNames) {
 		List<string> names = availableEnvironmentNames?
