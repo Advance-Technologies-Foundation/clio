@@ -55,9 +55,19 @@ already ships the pieces.
   failure mode of the unofficial "add column → INSERT → compile" recipe. Nothing in clio does it today.
   Home: a cliogate endpoint (`[WebInvoke]`, `CheckCanManageSolution()` as the first line, `KnownRoute` +
   `/rest/CreatioApiGateway/<MethodName>`, per the AGENTS.md four-step recipe) or a thin clio tool.
-- [ ] **AC-04** — If a convenience tool sequences the three steps, it lives in the **schema /
-  app-modeling** surface, never the process-designer surface, and is a **composition** — it must not
-  reimplement what `update-entity-schema` / `add-package-dependency` / `create-data-binding` already do.
+- [x] **AC-04** — **DECIDED: no convenience tool.** Having now run all three steps by hand, the sequencing is
+  not what makes this hard. Each step already refuses well on its own, and the three genuinely difficult parts
+  are not sequencing at all: the prefix requirement (enforced at save), the collision that breaks the schema
+  environment-wide (now guarded by AC-02, in the command where it belongs rather than in a wrapper), and the
+  `ColumnUId` hand-off between steps 1 and 3 — which is a *discoverability* problem solved by naming the right
+  read command, not by hiding the step.
+  <br>A wrapper would also have to own two conditionals it cannot decide for the caller: whether the target
+  package already has a replacing layer of the host schema (AC-05 measured only the "already has" path), and
+  whether that package is non-foreign so bound data can be written at all (AC-06). A tool that guesses either
+  turns a clear refusal into an opaque one, which is the opposite of this story's purpose.
+  <br>So the deliverable is the RECIPE (AC-01) plus the pre-check that already shipped, and the constraint the
+  AC states — schema/app-modeling surface, never the process-designer surface — stands as the rule for anyone
+  who revisits this with a concrete need.
 - [x] **AC-05** — **VERIFIED on krestov-test (2026-08-11), with one qualification that matters more than the
   result.** `update-entity-schema --package Custom --schema-name Activity` with an `add` operation
   (`type: Lookup`, `reference-schema-name`, `indexed: true`) added `UsrClioConnProbe`: "Schema 'Activity'
