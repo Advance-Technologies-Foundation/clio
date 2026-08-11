@@ -44,7 +44,7 @@ already ships the pieces.
   |---|---|---|
   | 1. add the `Activity` lookup column | `update-entity-schema` (`environment-name`, `package-name`, `schema-name`, `operations`; the operation model carries `ReferenceSchemaName`/`ReferenceSchemaAlias`; publishes and rebuilds OData, no compile) | the name **must** carry the package prefix (`EntitySchema.GetIsPrefixRequired()` returns `true` unconditionally and is enforced at save); `isIndexed: true` is the product convention (`SectionWizardCasesSettings.js:424-437`) |
   | 2. declare the dependency | `add-package-dependency` on `Activity`'s owning package (`CrtCoreBase`) | required — the platform enforces it at export/install and cannot auto-apply it from configuration (the applier is `internal`) |
-  | 3. registry row + binding | `create-data-binding` + `add-data-binding-row` (local package sources — identical to what the 7.x wizard emits), or the DB-first `create-data-binding-db` + `upsert-data-binding-row-db` | row: `Id` = a **fixed** guid (it is the binding key), `SysEntitySchemaUId` = `c449d832-a4cc-4b01-b9d5-8a12c42a9f89`, `ColumnUId` = the UId of the column from step 1 (read it with `get-entity-schema-column-properties`); `Position` may be omitted |
+  | 3. registry row + binding | `create-data-binding` + `add-data-binding-row` (local package sources — identical to what the 7.x wizard emits), or the DB-first `create-data-binding-db` + `upsert-data-binding-row-db` | row: `Id` = a **fixed** guid (it is the binding key), `SysEntitySchemaUId` = `c449d832-a4cc-4b01-b9d5-8a12c42a9f89`, `ColumnUId` = the UId of the column from step 1 — read it with **`get-entity-schema-properties`** (its structured MCP output carries `u-id` per column). NOT `get-entity-schema-column-properties`: that command returns every other column property and **not the UId**, on any surface (verified on the CLI and over MCP), so the recipe as first written was not executable; `Position` may be omitted |
 
 - [ ] **AC-02** — A **same-name pre-check** before step 1: a column of that name already contributed by
   another package breaks `Activity` for the whole environment via a codegen `ValidateException`. Refuse
@@ -67,7 +67,7 @@ already ships the pieces.
   rather than developed, the binding half is unavailable — say so instead of failing opaquely.
 - [ ] **AC-07** — `setConnections`' state-(1) and state-(2) messages (story 3, AC-19) name **this** recipe,
   so the refusal and the remedy are connected in the agent's reading order.
-- [ ] **AC-08 (inherited from story 4)** — This story is the first point at which the **created-parameter
+- [x] **AC-08 (inherited from story 4)** — **MEASURED, and it needed no data-model change after all.** This story is the first point at which the **created-parameter
   tail at run time** can be verified, so it verifies it. Story 4 proved runtime effectiveness only for a
   perform task binding a **static** connection column; the created path needs a column that IS in the
   registry and is NOT declared by the element's user task, because `EntityConnectionBinder.ResolveColumn`
@@ -77,6 +77,21 @@ already ships the pieces.
   this guards is specific and already anticipated in code: a created parameter missing its data value type
   or reference entity survives the save and throws at task COMPLETION, which is why
   `EnsureParameterExists` asserts both rather than assuming them.
+
+  **Result (krestov-test, 2026-08-11).** The stand already HAD a registered-but-non-shipped column, so the
+  recipe was not needed to produce one: `UsrUsrTestApprovalElement` (`21da1fdf-…`) is one of the five
+  `EntityConnection` rows for Activity, left by earlier testing. Binding it as a fixed record on the probe's
+  perform task and running the process wrote it: the created Activity carries
+  `UsrUsrTestApprovalElementId = b6975148-…`, with `AccountId` (mapping-sourced) and `ContactId` (a static
+  column bound earlier) both unchanged as controls — three runs, each adding exactly one column and keeping
+  the previous ones, so every earlier binding stays a live control.
+
+  So a DYNAMIC connection parameter — one outside the user task's shipped contract — is materialised and
+  written at task completion, which is the failure this AC guards. What the measurement canNOT distinguish,
+  stated because the difference is invisible from outside: whether that parameter was created by
+  `EnsureParameterExists` or by the platform's own `SynchronizeActivityConnectionParameters` hook, since
+  `describe` omits parameters whose `Source = None`. Both are non-shipped parameters, so the guarded failure
+  mode is covered either way; a provenance claim would need a server-side read of `CreatedInSchemaUId`.
 
 ## Implementation Notes
 
