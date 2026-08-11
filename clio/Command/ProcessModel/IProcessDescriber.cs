@@ -249,8 +249,11 @@ public sealed class DescribedElement {
 	/// <summary>
 	/// For a user-task element: whether connections on THIS element would be written at run time. <c>false</c> is the
 	/// answer that matters — it marks a process whose connections persist, compile and run green while writing
-	/// nothing. <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task outside the
-	/// supported set), so it is not a licence to assume the connections work.
+	/// nothing — and it has TWO causes with different fixes: the user task's runtime never writes connections
+	/// (change the element kind), or this element's activity-creation gate is shut (set <c>CreateActivity</c> to a
+	/// constant true). <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task
+	/// outside the supported set), so it is not a licence either. Both <c>false</c> and <c>null</c> mean
+	/// <c>setConnections</c> is refused on that element; only <c>true</c> means it is accepted.
 	/// </summary>
 	[JsonPropertyName("writesConnectionsAtRuntime")]
 	public bool? WritesConnectionsAtRuntime { get; set; }

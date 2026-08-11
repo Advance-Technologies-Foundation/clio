@@ -3,7 +3,7 @@
 **Feature**: process-element-connections
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
-**Decisions**: D1, D2 (wire naming), D8 (open), D12 (open)
+**Decisions**: D1, D2 (wire naming), D8 (TAKEN in this story — see the ADR), D12 (open)
 **Status**: in-progress
 **Size**: M
 **Repo**: `clio` (+ the committed `CrtProcessBuilder.gz`)
@@ -39,7 +39,8 @@ ignoring my request
 - [x] **AC-04 (D8)** — An environment whose installed package predates this feature is **detected and
   reported**. This is mandatory, not defensive: measured on a live stand, a request carrying a
   future-shaped `connections` array is answered **normally with the member silently ignored** (no contract
-  implements `IExtensibleDataObject`, checked across all 25 `[DataContract]` types, so it holds at every
+  implements `IExtensibleDataObject`, checked across all `[DataContract]` types — 25 when measured, 27 after this
+  feature — so it holds at every
   nesting level). `[RequiresPackage]` is presence-only and a pin test asserts the **absence** of a version
   literal, so the existing gate cannot carry this. Mechanism is D8 — take the decision in this story.
 - [x] **AC-05** — Guidance updated in `clio-knowledge` (`guidance/mcp/guides/processes/process-modeling.md`
@@ -169,5 +170,6 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
 - [x] Diary entry appended
 - [x] Verified on a live stand (krestov-test), for a perform task on STATIC connection columns: 6/6 green after
   `install-process-builder --force`; `writesConnectionsAtRuntime` asserted on the wire; and the runtime
-  tail measured on `UsrConnProbe1` — a fixed-record connection populates the created Activity column,
+  tail measured on `UsrConnProbe1` — a fixed-record connection populates a pre-existing STATIC column of the
+  created Activity record (not a created column, and not a created parameter),
   with the pre-existing mapping-sourced column unchanged as the control

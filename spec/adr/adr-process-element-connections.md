@@ -203,6 +203,14 @@ field it was built before.
 compares the archive's own descriptor version against what the environment recorded, so raising the shipped
 version is what turns every gated call on a stale environment into a refusal naming `install-process-builder`.
 
+*Residual the write path does NOT close: a system-setting expression.* `EnsureCompatibleMacro` refuses the
+four typed-constant families that provably cannot hold a record reference, but a `[#SysSettings...#]`
+expression is **accepted with a warning** rather than refused — reading a setting's value type at design time
+is a capability the package does not have. So the failure mode the analysis named (a text setting bound to a
+lookup connection, leaving the column empty at run time) is made LOUD, not closed. Closing it needs a
+`SysSettings` value-type read; until then the warning is the whole guard, and both shipped tool descriptions
+name it.
+
 *What it does not cover, stated so it is not mistaken for complete.* An environment at or ahead of the
 bundled version passes, as it must — so a hand-installed package that is *newer by version* but built before
 this feature would not be caught. That is not reachable through any shipped path (the archive is the only
@@ -248,7 +256,9 @@ anyway the *output* of `getIsElementObsolete`.
 **The metadata fallback is load-bearing.** The data half only works if `UsageType` is populated on the
 instance the package holds, and a compiled instance is known to shed metadata — that is how `Tag` was
 lost. Resolve as `FindInstanceByUId(uid) ?? FindInstanceFromMetaData(uid)`
-(`ProcessSchemaElementManager.cs:562-563`). Without it the predicate looks correct and silently returns
+(`ProcessSchemaElementManager.cs:562-563`) — **correction from implementation: `FindInstanceFromMetaData(Guid)`
+is `internal virtual` and unreachable from a configuration package, so the shipped code uses the public
+`FindRuntimeSchemaFromMetaData` to the same effect. Do not re-derive the unreachable one from here.** Without it the predicate looks correct and silently returns
 `Advanced` for everything, letting `CallUserTask` through.
 
 *Scope, as a consequence rather than a separate choice:* the predicate does **not** drive connections
@@ -359,3 +369,6 @@ auto-creates the referenced schema. Exercising parameter materialisation additio
 `ProcessUserTaskSchemaManager`. The E2E surface is **43 tests across 9 files**; connections extend three
 of them — Modify (the new operations), Describe (the projection plus the per-dialect round-trip: six new
 cases on a file that has two today), and Create if `connections` is accepted in the build descriptor.
+**What actually shipped:** all six landed in ONE fixture, Modify (16 → 22), because each needs a process
+built and then edited, and splitting them would have duplicated the arrange and left neither half meaningful
+alone. Describe stayed at 2 and Create at 14 — a build descriptor carries no connections.

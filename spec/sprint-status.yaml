@@ -2617,8 +2617,9 @@ stories:
     blocks: []
 
   # --- process-element-connections (activity "Connected to") ---
-  # Analysis complete; every research fact closed. 8 decisions taken (D1, D1a, D2, D3, D6, D7, D9, D10, D11)
-  # — see spec/adr/adr-process-element-connections.md. Still open and NOT blocking stories 1-3: D4, D5, D8, D12.
+  # Analysis complete; every research fact closed. 10 decisions taken (D1, D1a, D2, D3, D6, D7, D8, D9, D10, D11)
+  # — see spec/adr/adr-process-element-connections.md. D8 was taken during story 4. Still open and NOT blocking
+  # any shipped story: D4, D5, D12.
   # Key measured premise: the shipped `addMapping` already writes a connection end to end (plan §5.1), so this
   # feature is enforcement + ergonomics + read-back, not new capability. Per D1, stories 1-3 are ONE delivery.
   - id: story-process-element-connections-1
@@ -2626,7 +2627,9 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder"
     size: M
-    status: in-progress
+    status: review
+    jira: ENG-91845
+    pr: engineering/cli-process-builder#21
     file: spec/stories/story-process-element-connections-1.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
@@ -2641,7 +2644,9 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder"
     size: M
-    status: in-progress
+    status: review
+    jira: ENG-91845
+    pr: engineering/cli-process-builder#21
     file: spec/stories/story-process-element-connections-2.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
@@ -2656,7 +2661,9 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder"
     size: L
-    status: in-progress
+    status: review
+    jira: ENG-91845
+    pr: engineering/cli-process-builder#21
     file: spec/stories/story-process-element-connections-3.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
@@ -2671,11 +2678,13 @@ stories:
     feature: "process-element-connections"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
+    jira: ENG-91845
+    pr: 1027
     file: spec/stories/story-process-element-connections-4.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
-    status_note: "Wire field is `connections`, never activityConnections and no host member (D2) — that is what keeps a future host entity ADDITIVE. D8 detector is MANDATORY, not defensive: measured on a live stand, a request carrying a future-shaped connections array is answered normally with the member SILENTLY IGNORED (no IExtensibleDataObject across all 25 DataContract types), and [RequiresPackage] is presence-only with a pin test asserting the ABSENCE of a version literal. Guidance is guidance/mcp/guides/processes/process-modeling.md (316 lines, reachable via gh api not WebFetch) and says NOTHING about connections today — seven passages pinned to lines, incl. 289 where the article itself states you cannot guess the Lookup ids. E2E: the process-designer surface is 43 tests across 9 files; Describe has only 2 today and gains six round-trip cases."
+    status_note: "Wire field is `connections`, never activityConnections and no host member (D2) — that is what keeps a future host entity ADDITIVE. D8 detector is MANDATORY, not defensive: measured on a live stand, a request carrying a future-shaped connections array is answered normally with the member SILENTLY IGNORED (no IExtensibleDataObject across all DataContract types (25 when measured, 27 after this feature)), and [RequiresPackage] is presence-only with a pin test asserting the ABSENCE of a version literal. Guidance is guidance/mcp/guides/processes/process-modeling.md (316 lines at the time of analysis, reachable via gh api not WebFetch); it said NOTHING about connections, and clio-knowledge#50 is the PR that fixes that — seven passages pinned to lines, incl. 289 where the article itself states you cannot guess the Lookup ids. E2E: the process-designer surface is 43 tests across 9 files; Describe has only 2 today and gains six round-trip cases."
     depends_on:
       - story-process-element-connections-2
       - story-process-element-connections-3
@@ -2687,9 +2696,10 @@ stories:
     repo: "clio"
     size: M
     status: ready-for-dev
+    jira: ENG-91845
     file: spec/stories/story-process-element-connections-5.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
-    status_note: "Deliberately independent of stories 1-4: D6 puts data-model mutation outside CrtProcessBuilder. Mostly COMPOSITION of capabilities clio already ships — update-entity-schema (adds the lookup column, publishes, rebuilds OData) + add-package-dependency (CrtCoreBase) + create-data-binding/add-data-binding-row (registry row, byte-equivalent to the 7.x wizard's artefact). The ONLY genuinely new code is cache invalidation (ProcessUserTaskSchemaManager.reset): without it the designer shows the old list even after a compile, which is why the unofficial add-column-INSERT-compile recipe fails in practice. Needs a same-name pre-check — a colliding column breaks Activity for the WHOLE environment via a codegen ValidateException. One thing to verify once: that update-entity-schema cleanly ADDS a column to Activity (its docs cover inherited-column edits, which is a different operation). Carries AC-08 inherited from story 4: this is the first point at which the CREATED-parameter runtime tail can be verified at all, because ResolveColumn refuses a host column that is neither registered nor element-declared, so the created path needs a registered-but-undeclared column and this recipe is what produces one."
+    status_note: "Deliberately independent of stories 1-4: D6 puts data-model mutation outside CrtProcessBuilder. Mostly COMPOSITION of capabilities clio already ships — update-entity-schema (adds the lookup column, publishes, rebuilds OData) + add-package-dependency (CrtCoreBase) + create-data-binding/add-data-binding-row (registry row, byte-equivalent to the 7.x wizard's artefact). The ONLY genuinely new code is cache invalidation (ProcessUserTaskSchemaManager.reset): without it the designer shows the old list even after a compile, which is why the unofficial add-column-INSERT-compile recipe fails in practice. Needs a same-name pre-check — a colliding column breaks Activity for the WHOLE environment via a codegen ValidateException. One thing to verify once: that update-entity-schema cleanly ADDS a column to Activity (its docs cover inherited-column edits, which is a different operation). Carries its own AC-08 (the gap story 4 could not close; note story 4 has a DIFFERENT AC-08, the E2E-budget one): this is the first point at which the CREATED-parameter runtime tail can be verified at all, because ResolveColumn refuses a host column that is neither registered nor element-declared, so the created path needs a registered-but-undeclared column and this recipe is what produces one."
     depends_on: []
     blocks: []

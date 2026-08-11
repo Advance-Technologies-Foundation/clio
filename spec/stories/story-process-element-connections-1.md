@@ -53,8 +53,10 @@ the write path
   FindInstanceFromMetaData(uid)`. A test must prove the metadata fallback is exercised — without it the
   predicate silently returns `Advanced` for everything and `CallUserTask` passes.
 - [x] **AC-08** — The deprecation policy lives **outside** `ConnectionCapability` and is not consulted by
-  any connections refusal (D9 scope). Its consumers are `describe`'s `deprecated` flag and the
-  build/`addElement` policy refusal.
+  any connections refusal (D9 scope). Its ONLY consumer is `describe`'s `deprecated` flag. The
+  build/`addElement` policy refusal that D9 also envisaged was **not implemented** — nothing in the package
+  refuses a retired user task, so `addElement` with `SendEmailUserTask` succeeds. Recorded in the plan's D9
+  entry and §3.6 rather than left as an implied promise; the flag is reporting only.
 - [x] **AC-09** — Unit tests cover all of the above. **No test asserts caption content**: the fixture's
   `CreateLookupColumn` sets `Caption = new LocalizableString()` (empty).
 
@@ -103,9 +105,11 @@ Three, each forced by a fact that only surfaced against the platform assemblies:
 2. **The `ProcessObsoletedElements` flag is not honoured** (D9's residual). The server-side feature-read
    extension is not in the reference assemblies used for the local build and the feature code cannot be
    verified from available sources; a wrong code reads as "disabled" forever, which is the silent-failure
-   class this feature exists to remove. The package is therefore deliberately stricter than a flag-enabled
-   environment — authoring is refused where the designer would allow it, reading is unaffected. Decide it in
-   story 2/3, where the effect is observable.
+   class this feature exists to remove. **Correction (recorded during the final review):** the effect is the
+   OPPOSITE way round from what this deviation first said. The predicate refuses nothing, so not honouring the
+   flag cannot make the package stricter about authoring — it only means a `deprecated: true` label where a
+   flag-enabled environment would say false. Reading is what differs; authoring is unaffected either way. The
+   ADR still recommends honouring the flag; nobody has needed to yet, and the label is the whole exposure.
 3. **AC-06's rule is stricter than the platform for two of the four page tasks.** `UserQuestionUserTask` and
    `OpenEditPageUserTask` gate on `CreateActivity || !(Owner is ProcessComponentSet)`, so inside an ordinary
    business process — all this package builds — they create the activity regardless of `CreateActivity`. The

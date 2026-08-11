@@ -35,6 +35,47 @@ public sealed class ModifyBusinessProcessCommandTests {
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1);
 
 	[Test]
+	[Description("Writes every server warning out as a WARNING, not merely parsing it: the two outcomes it carries (a connection on an unregistered column, a cleared binding) are invisible in describe afterwards, so a warning that is deserialized and then dropped is the same defect as one never sent.")]
+	public void Execute_ShouldWriteWarnings_WhenTheServerReportsThem() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = SampleOperations
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(new ModifyBusinessProcessResult("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1,
+				new[] { "Connection 'OmniChat' is not registered", "Connection 'Account' was CLEARED" }));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a warning is a caveat on a SUCCESSFUL edit, not a failure");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("OmniChat")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("CLEARED")));
+	}
+
+	[Test]
+	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it.")]
+	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = SampleOperations
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
 	[Category("Unit")]
 	[Description("Forwards the process identity and inline operations to the modify service and logs the result on success.")]
 	public void Execute_ShouldMapInlineOperationsToService_WhenOperationsJsonProvided() {

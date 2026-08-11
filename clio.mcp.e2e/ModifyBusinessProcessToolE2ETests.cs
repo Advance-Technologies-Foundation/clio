@@ -897,6 +897,19 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the record the caller named must be the record that was bound (parsed, so a casing or brace difference in the round trip is not read as a behavioural failure)");
 		connection.ReferenceSchema.Should().Be("Account",
 			because: "the entity-schema half of the macro is composed server-side and read back as a NAME, so the decoded source is re-appliable as-is");
+		// On Activity every connection column is named after the entity it references, so the assertion above
+		// cannot by itself distinguish a resolved entity from the requested column echoed back. What discriminates
+		// is the macro: its first half must be a GUID the caller never sent — the reference-entity UId the server
+		// looked up — and it must not be the record id. (The package's own unit tests pin the resolution itself,
+		// with an entity deliberately named unlike its column.)
+		string[] macroParts = connection.Value!.Replace("[#Lookup.", string.Empty).Replace("#]", string.Empty)
+			.Split('.');
+		macroParts.Should().HaveCount(2,
+			because: "the fixed-record macro is exactly [#Lookup.<entitySchemaUId>.<recordId>#]");
+		Guid.TryParse(macroParts[0], out Guid macroSchemaUId).Should().BeTrue(
+			because: "the entity half is a schema UId the server composed from the target column, and the caller sent no UId at all");
+		macroSchemaUId.Should().NotBe(recordId,
+			because: "the two halves must be different values, or the 'synthesised from the column' claim would hold for a macro that just repeated the record id");
 		connection.Value.Should().StartWith("[#Lookup.",
 			because: "the persisted form is the platform's lookup macro, which the caller never had to write");
 	}

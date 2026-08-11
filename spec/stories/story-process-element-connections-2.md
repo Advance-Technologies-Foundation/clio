@@ -37,7 +37,12 @@ metapath
   `{ recordId, referenceSchema }`; `[#…[Element:{e}].[Parameter:{p}]#]` →
   `{ sourceElement, sourceElementParameter }`; `[#…[Parameter:{p}]#]` → `{ processParameter }`.
 - [x] **AC-03** — The decoded shape is **exactly** what `setConnections` accepts, so `describe` output is
-  re-appliable without translation.
+  re-appliable without translation — with two exceptions the shipped tool description names, both inherent to
+  reporting faithfully rather than defects: a legacy fixed-record connection whose stored macro names a
+  different entity than its column round-trips to a refusal unless `referenceSchema` is dropped (the reader
+  reports the MACRO's entity, the writer checks the COLUMN's), and a stored value that is not a `[#...#]`
+  macro at all comes back as `expression` and is refused on re-apply. Reporting either differently would mean
+  claiming a resolution the stored value does not carry.
 - [x] **AC-04** — Anything else — an unrecognised macro, or a known dialect whose identifiers do not
   resolve — degrades to `{ expression: "<raw>" }`. The decoder must **never fail and never emit a
   half-decoded source**.

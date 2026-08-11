@@ -71,8 +71,11 @@ I never ship a process that persists, compiles, runs green and writes nothing
   by construction rather than by observation.
 - [x] **AC-10** — Element-parameter UIds are fresh GUIDs, **not** the column UId (T-3).
 - [x] **AC-11** — The `expression` escape hatch is **type-checked against the macro family** for the
-  target column type. A text system setting bound to a Lookup connection is refused. (Today
-  `BuildSourceValue` stores `expression` verbatim with no validation — that is the hole this closes.)
+  target column type: the four typed-constant families that provably cannot hold a record reference are
+  REFUSED. A `[#SysSettings...#]` expression is **accepted with a warning**, not refused — its value type
+  cannot be read at design time, so the hole the analysis named (a text setting bound to a lookup connection)
+  is made LOUD rather than closed; see deviation 1 and the ADR's residual note. (Today `BuildSourceValue`
+  stores `expression` verbatim with no validation — that is the hole this closes.)
 
 ### Guards — refuse, never ignore
 
@@ -145,8 +148,11 @@ Do **not** create an `Activity` column here (D6) — refuse with state (1) and n
 - [x] All AC met; AAA, `because` on every assertion, `[Description]` on every test method
 - [x] Cross-platform tests; behaviour classes interfaced and DI-registered
 - [x] Verification matrix rows in plan §8 covered at the UNIT layer, including the two Send-email rows
-  (automatic → refused, manual → allowed). The rows that require a real run — the created-parameter tail at
-  task completion, and "written at run time" — are story 4's E2E and a stand check
+  (automatic → refused, manual → allowed). Of the two rows that require a real run, story 4's stand check
+  closed "written at run time" (for a STATIC column). The created-parameter tail at task completion is NOT
+  reachable from story 4's E2E — none of those cases runs a process, and `ResolveColumn` refuses a column that
+  is neither registered nor element-declared, so the created path needs a registered-but-undeclared column.
+  Carried to story 5 AC-08, which is where such a column can first be produced
 - [x] No new `CLIO*` diagnostics in touched files (`CLIO*` analyzers run in the clio repo only; the
   `ProcessBuilder` build is warning-free)
 - [x] Diary entry appended
