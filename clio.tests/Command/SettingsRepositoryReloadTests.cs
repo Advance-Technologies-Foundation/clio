@@ -114,6 +114,34 @@ public sealed class SettingsRepositoryReloadTests {
 				+ "otherwise feature keys silently become case-sensitive");
 	}
 
+	[Test]
+	[Description("Leaves appsettings.json byte-identical when re-reading a file that still has a pending migration.")]
+	public void Reload_Should_Not_Write_The_Settings_File() {
+		// Arrange — the constructor is allowed to apply repairs; what must never write is the reload,
+		// which a ReadOnly MCP tool performs on every call.
+		SettingsRepository sut = new(_fileSystem);
+		const string pendingMigrationSettings = """
+			{
+			  "ActiveEnvironmentKey": "netcore-env",
+			  "Autoupdate": false,
+			  "Environments": {
+			    "netcore-env": { "Uri": "http://localhost:5001", "Login": "Supervisor", "Password": "Supervisor" }
+			  }
+			}
+			""";
+		WriteSettings(pendingMigrationSettings);
+
+		// Act
+		SettingsReloadResult result = sut.Reload();
+
+		// Assert
+		result.Reloaded.Should().BeTrue(
+			because: "a file with a pending migration is still readable");
+		_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(pendingMigrationSettings,
+			because: "a read must not rewrite the settings file: the reload runs on every ReadOnly "
+				+ "list-environments call and on every MCP environment resolution");
+	}
+
 	private void WriteSettings(string content) {
 		_fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, content);
 	}

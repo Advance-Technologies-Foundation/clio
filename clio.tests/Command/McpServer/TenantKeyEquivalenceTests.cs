@@ -49,11 +49,12 @@ public sealed class TenantKeyEquivalenceTests {
 	}
 
 	private static ToolCommandResolver CreateResolver(
-		KeyCapturingSessionCache cache, ICredentialContextAccessor credentialContextAccessor) {
+		KeyCapturingSessionCache cache, ICredentialContextAccessor credentialContextAccessor,
+		string environmentUri = Url) {
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.IsEnvironmentExists(EnvironmentName).Returns(true);
 		settingsRepository.FindEnvironment(EnvironmentName).Returns(new EnvironmentSettings {
-			Uri = Url,
+			Uri = environmentUri,
 			Login = "Supervisor",
 			Password = "Supervisor",
 			IsNetCore = true
@@ -111,5 +112,28 @@ public sealed class TenantKeyEquivalenceTests {
 			because: "the passthrough lock must key off the exact credential-discriminating identity the container is cached under");
 		tenantKey.Should().StartWith("passthrough:",
 			because: "the passthrough branch keys the container (and lock) under the passthrough discriminator");
+	}
+
+	[Test]
+	[Description("Derives a different container key when the same environment name is re-pointed to another uri.")]
+	public void GetTenantKey_ShouldChange_WhenEnvironmentUriChanges() {
+		// Arrange — the same environment NAME, registered against two different uris (ENG-94529: an
+		// environment re-pointed in appsettings.json between two tool calls).
+		ICredentialContextAccessor accessor = Substitute.For<ICredentialContextAccessor>();
+		EnvironmentOptions options = new() { Environment = EnvironmentName };
+		ToolCommandResolver beforeMove = CreateResolver(new KeyCapturingSessionCache(), accessor);
+		ToolCommandResolver afterMove = CreateResolver(new KeyCapturingSessionCache(), accessor,
+			environmentUri: "https://moved.creatio.com");
+
+		// Act
+		string keyBeforeMove = beforeMove.GetTenantKey(options);
+		string keyAfterMove = afterMove.GetTenantKey(options);
+
+		// Assert
+		keyAfterMove.Should().NotBe(keyBeforeMove,
+			because: "the cached container holds an IApplicationClient bound to one uri, so keying only on "
+				+ "the environment name would serve the OLD uri after the environment was re-pointed");
+		keyAfterMove.Should().Contain("https://moved.creatio.com",
+			because: "the target uri is part of the identity the container is cached under");
 	}
 }

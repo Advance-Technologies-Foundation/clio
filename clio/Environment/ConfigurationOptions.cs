@@ -580,7 +580,10 @@ namespace Clio
 			// partially written file is never observed.
 			SettingsBootstrapResult result;
 			try {
-				result = _settingsBootstrapService.GetResult();
+				// Explicitly the NON-repairing read: GetResult writes the file back when a migration is
+				// pending or the file is missing, and this method is called by a ReadOnly MCP tool on every
+				// invocation. A read must not rewrite appsettings.json.
+				result = _settingsBootstrapService.GetResultWithoutRepairs();
 			}
 			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
 				or TimeoutException or Newtonsoft.Json.JsonException) {

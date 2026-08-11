@@ -351,9 +351,14 @@ public class ToolCommandResolver(
 	// distinct containers instead of colliding on a shared authenticated session. Secret material is
 	// SHA-256 hashed via the shared helper and never placed raw in the key (FR-11).
 	internal static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
-		string identity = options.Environment
-			?? settings.Uri
-			?? DefaultIdentifier;
+		// The uri belongs in the identity, not just the name. An environment re-pointed to a new uri in
+		// appsettings.json keeps its name, so a name-only identity handed back the cached container whose
+		// IApplicationClient is still bound to the OLD uri — the settings reload would be undone by the
+		// cache (ENG-94529). Adding the uri only makes the key finer-grained: identical settings still
+		// share one authenticated session.
+		string identity = string.Concat(
+			options.Environment ?? DefaultIdentifier, "|",
+			settings.Uri ?? string.Empty);
 		string credentials = string.Concat(
 			settings.Login ?? string.Empty, "|",
 			settings.Password ?? string.Empty, "|",

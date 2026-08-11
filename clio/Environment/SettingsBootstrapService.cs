@@ -10,6 +10,18 @@ namespace Clio.UserEnvironment;
 public interface ISettingsBootstrapService {
 	SettingsBootstrapResult GetResult();
 	SettingsBootstrapReport GetReport();
+
+	/// <summary>
+	/// Reads the settings file WITHOUT applying any repair or migration write.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="GetResult"/> may write the file back (a pending migration, or a missing file that is
+	/// created with defaults). That is correct for a command that is starting up, and wrong for a
+	/// read-only path such as <see cref="ISettingsRepository.Reload"/>, which a <c>ReadOnly</c> MCP tool
+	/// calls on every invocation. This overload never writes.
+	/// </remarks>
+	/// <returns>The settings as they are on disk, with the same report and broken-file semantics.</returns>
+	SettingsBootstrapResult GetResultWithoutRepairs();
 }
 
 public sealed record SettingsIssue(
@@ -52,18 +64,22 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	}
 
 	public SettingsBootstrapResult GetResult() {
-		return Load();
+		return Load(_applyRepairs);
 	}
 
 	public SettingsBootstrapReport GetReport() {
 		return GetResult().Report;
 	}
 
-	private SettingsBootstrapResult Load() {
+	public SettingsBootstrapResult GetResultWithoutRepairs() {
+		return Load(applyRepairs: false);
+	}
+
+	private SettingsBootstrapResult Load(bool applyRepairs) {
 		return SettingsRepository.ExecuteWithSettingsLock(_fileSystem, () => {
 			for (int attempt = 0; attempt < 3; attempt++) {
 				try {
-					return LoadUnlocked();
+					return LoadUnlocked(applyRepairs);
 				}
 				catch (SettingsRepository.SettingsFileChangedException) {
 					if (attempt == 2) {
@@ -77,11 +93,11 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		});
 	}
 
-	private SettingsBootstrapResult LoadUnlocked() {
+	private SettingsBootstrapResult LoadUnlocked(bool applyRepairs) {
 		string settingsFilePath = SettingsRepository.AppSettingsFile;
 		if (!_fileSystem.File.Exists(settingsFilePath)) {
 			Settings emptySettings = new() { Environments = [], SettingsVersion = CurrentSettingsVersion };
-			if (_applyRepairs) {
+			if (applyRepairs) {
 				SettingsRepository.SaveSettings(_fileSystem, emptySettings, expectedContent: null,
 					verifyExpectedContent: true);
 			}
@@ -125,7 +141,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 				"Use 'clio set-active-environment <name>' to fix this."));
 		}
 		SettingsRepository.AttachDbServers(settingsModel);
-		if (_applyRepairs && ApplyMigrations(settingsModel, repairs)) {
+		if (applyRepairs && ApplyMigrations(settingsModel, repairs)) {
 			SettingsRepository.SaveSettings(_fileSystem, settingsModel, fileContent, verifyExpectedContent: true);
 		}
 		return BuildResult(
