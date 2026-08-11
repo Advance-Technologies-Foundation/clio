@@ -32,7 +32,7 @@
 # build is queued, the status can post to the tip rather than the exact commit
 # that triggered this run. Acceptable for an advisory check.
 #
-# ENG-94529 - WHY THERE ARE TWO PARALLEL ATTEMPT JOBS.
+# ENG-94529 - WHY THE QUEUE STEP IS RETRIED AND PREFLIGHTED.
 # `runs-on: self-hosted` matches EVERY runner in the Default group, and not all of
 # them sit inside the corporate network. On a runner without corporate DNS,
 # teamcity-rnd.bpmonline.com resolves through public DNS to the bpmonline.com web
@@ -45,19 +45,23 @@
 #     hostname resolved to; on the out-of-network runner the corporate CI token went
 #     to a public web front end. The preflight is unauthenticated and requires the
 #     `TeamCity-Node-Id` response header, which only the real server sets.
-#   * Two attempt jobs run IN PARALLEL. A self-hosted runner executes one job at a
-#     time, so as long as two runners are idle the two jobs land on two different
-#     ones and an in-network runner is reached even when another runner takes the
-#     first job. Whichever attempt has no route exits green and defers; the gate job
-#     fails only when NO attempt could queue, and its message names the runners that
-#     were tried. This raises the odds rather than guaranteeing the outcome: if only
-#     the out-of-network runner is idle, both jobs land on it and the gate reports
-#     exactly that.
+#   * The queue attempt is RETRIED as a chain of jobs. A runner with no route defers
+#     (`queued=false`, exit 0) instead of failing, and the next attempt is a separate
+#     job, so GitHub schedules it wherever a runner is free - which is how an
+#     in-network runner gets reached. The chain is SEQUENTIAL on purpose: the first
+#     version ran two attempts in parallel, both landed on healthy runners (the pool
+#     has more than one) and queued TWO ~45-min full-Creatio builds for the same
+#     branch. An attempt now runs only when no earlier attempt queued anything, so a
+#     duplicate build is impossible by construction rather than by a queue check.
+#     The gate job fails only when NO attempt got through, and names the runners it
+#     tried. This raises the odds rather than guaranteeing the outcome: if every
+#     attempt happens to land on the out-of-network runner, the gate reports exactly
+#     that.
 # THE PROPER FIX IS ONE LINE AND NEEDS A RUNNER ADMIN: label the in-network runners
 # (e.g. `teamcity-net`) and replace `runs-on: self-hosted` with
-# `runs-on: [self-hosted, teamcity-net]`. Once that label exists, delete the second
-# attempt job and the gate - keep the preflight, which is a credential-safety
-# control and not a workaround.
+# `runs-on: [self-hosted, teamcity-net]`. Once that label exists, delete attempts 2
+# and 3 and the gate - keep the preflight, which is a credential-safety control and
+# not a workaround.
 name: TeamCity MCP e2e
 
 # GITHUB_TOKEN is unused here; drop all scopes so an in-network runner never
@@ -123,7 +127,7 @@ jobs:
       runner: ${{ steps.queue.outputs.runner }}
     steps:
       # Only .github/scripts, and no credential left in the local git config: the
-      # trigger script is shared by both attempts and lives in the repository so
+      # trigger script is shared by every attempt and lives in the repository so
       # there is exactly one copy of it.
       - name: Check out the trigger script
         uses: actions/checkout@v4
@@ -142,9 +146,6 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
-          # Attempt 1 goes first; the sibling attempt waits, so a healthy attempt 1
-          # has already queued by the time the sibling looks at the queue.
-          START_DELAY_SECONDS: '0'
           RUNNER_LABEL: ${{ runner.name }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -152,11 +153,13 @@ jobs:
 
   attempt-2:
     name: Queue TeamCity MCP e2e (attempt 2)
+    needs: attempt-1
+    # Runs only when attempt 1 found no route to TeamCity. `needs` also means this
+    # job is scheduled after attempt 1 released its runner, so it can land on a
+    # different one.
+    if: needs.attempt-1.outputs.queued != 'true'
     runs-on: self-hosted
     timeout-minutes: 10
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       # Only the workflow's own scripts are needed; checkout must not leave a token
       # behind on an in-network runner.
@@ -166,7 +169,7 @@ jobs:
       runner: ${{ steps.queue.outputs.runner }}
     steps:
       # Only .github/scripts, and no credential left in the local git config: the
-      # trigger script is shared by both attempts and lives in the repository so
+      # trigger script is shared by every attempt and lives in the repository so
       # there is exactly one copy of it.
       - name: Check out the trigger script
         uses: actions/checkout@v4
@@ -184,11 +187,51 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
-          # Deliberate lag: this attempt exists only to cover the case where the
-          # other one landed on a runner with no route to TeamCity. Waiting first
-          # means that when BOTH runners are healthy this one finds the build
-          # already queued and does not queue a second full-Creatio build.
-          START_DELAY_SECONDS: '25'
+          RUNNER_LABEL: ${{ runner.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:GITHUB_WORKSPACE\.github\scripts\queue-teamcity-build.ps1"
+
+  attempt-3:
+    name: Queue TeamCity MCP e2e (attempt 3)
+    needs: [attempt-1, attempt-2]
+    # Third and last try. Two runners without a route in a row is unlikely but the
+    # pool is not fixed, and one more sub-second job is far cheaper than a red check
+    # that has nothing to do with the pull request. No always(): when an attempt
+    # fails for a REAL reason (bad token, rejected request) the chain must stop and
+    # surface it instead of retrying it twice more.
+    if: >-
+      needs.attempt-1.outputs.queued != 'true' &&
+      needs.attempt-2.outputs.queued != 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      # Only the workflow's own scripts are needed; checkout must not leave a token
+      # behind on an in-network runner.
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
+    steps:
+      # Only .github/scripts, and no credential left in the local git config: the
+      # trigger script is shared by every attempt and lives in the repository so
+      # there is exactly one copy of it.
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Queue TeamCity build for the PR branch
+        id: queue
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
           RUNNER_LABEL: ${{ runner.name }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -196,7 +239,7 @@ jobs:
 
   gate:
     name: TeamCity MCP e2e trigger
-    needs: [attempt-1, attempt-2]
+    needs: [attempt-1, attempt-2, attempt-3]
     runs-on: ubuntu-latest
     if: >-
       always() && (github.event_name == 'workflow_dispatch' ||
@@ -207,21 +250,25 @@ jobs:
         env:
           QUEUED_1: ${{ needs.attempt-1.outputs.queued }}
           QUEUED_2: ${{ needs.attempt-2.outputs.queued }}
+          QUEUED_3: ${{ needs.attempt-3.outputs.queued }}
           RUNNER_1: ${{ needs.attempt-1.outputs.runner }}
           RUNNER_2: ${{ needs.attempt-2.outputs.runner }}
+          RUNNER_3: ${{ needs.attempt-3.outputs.runner }}
           RESULT_1: ${{ needs.attempt-1.result }}
           RESULT_2: ${{ needs.attempt-2.result }}
+          RESULT_3: ${{ needs.attempt-3.result }}
         run: |
           set -euo pipefail
           echo "attempt-1: result=$RESULT_1 queued=${QUEUED_1:-unset} runner=${RUNNER_1:-unknown}"
           echo "attempt-2: result=$RESULT_2 queued=${QUEUED_2:-unset} runner=${RUNNER_2:-unknown}"
-          if [ "${QUEUED_1:-}" = "true" ] || [ "${QUEUED_2:-}" = "true" ]; then
+          echo "attempt-3: result=$RESULT_3 queued=${QUEUED_3:-unset} runner=${RUNNER_3:-unknown}"
+          if [ "${QUEUED_1:-}" = "true" ] || [ "${QUEUED_2:-}" = "true" ] || [ "${QUEUED_3:-}" = "true" ]; then
             echo "A TeamCity MCP e2e build is queued. Its result is published onto the PR head commit"
             echo "by TeamCity's Commit Status Publisher, as a separate commit status."
             exit 0
           fi
           echo "::error::No attempt could reach TeamCity, so no MCP e2e build was queued."
-          echo "Runners tried: ${RUNNER_1:-unknown}, ${RUNNER_2:-unknown}."
+          echo "Runners tried: ${RUNNER_1:-unknown}, ${RUNNER_2:-unknown}, ${RUNNER_3:-unknown}."
           echo "This is a runner/network problem, not a problem with the pull request:"
           echo "teamcity-rnd.bpmonline.com only resolves to the TeamCity server from inside the"
           echo "corporate network. Label the in-network runners and pin runs-on to that label"

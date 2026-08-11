@@ -5,18 +5,18 @@
 # parse error at run time - see PR #832.
 #
 # Consumed environment (set by .github/workflows/teamcity-mcp-e2e.yml):
-#   TC_URL, TC_TOKEN, BUILD_TYPE, HEAD_REF, HEAD_SHA, PR_NUMBER,
-#   START_DELAY_SECONDS, RUNNER_LABEL
+#   TC_URL, TC_TOKEN, BUILD_TYPE, HEAD_REF, HEAD_SHA, PR_NUMBER, RUNNER_LABEL
 #
 # Step outputs:
 #   runner - the runner this attempt ran on, so the gate job can name it.
-#   queued - "true" when a build for HEAD_REF is queued (by this attempt or by a
-#            sibling attempt), "false" when this runner has no route to TeamCity.
+#   queued - "true" when a build for HEAD_REF is queued or already running,
+#            "false" when this runner has no route to TeamCity.
 #
-# Exit code is 0 for "no route" on purpose: that is a runner problem which a sibling
-# attempt on an in-network runner can still cover, and the gate job is what turns
-# "no attempt got through" into a failure. A genuine TeamCity error (bad token,
-# rejected request, no build id) still throws and fails this job.
+# Exit code is 0 for "no route" on purpose: that is a runner problem which the next
+# attempt job - scheduled on whatever runner is free - can still cover, and the gate
+# job is what turns "no attempt got through" into a failure. A genuine TeamCity error
+# (bad token, rejected request, no build id) still throws and fails this job, which
+# stops the retry chain instead of repeating a request that will not work.
 $ErrorActionPreference = 'Stop'
 
 $runnerName = if ([string]::IsNullOrWhiteSpace($env:RUNNER_LABEL)) { $env:COMPUTERNAME } else { $env:RUNNER_LABEL }
@@ -29,13 +29,6 @@ function Set-QueuedOutput([string]$Value) {
 
 if ([string]::IsNullOrWhiteSpace($env:TC_TOKEN)) {
   throw 'TEAMCITY_TOKEN secret is not set - cannot trigger TeamCity.'
-}
-
-$startDelaySeconds = 0
-if (-not [int]::TryParse($env:START_DELAY_SECONDS, [ref]$startDelaySeconds)) { $startDelaySeconds = 0 }
-if ($startDelaySeconds -gt 0) {
-  Write-Host "Waiting $startDelaySeconds s so a faster sibling attempt can queue the build first."
-  Start-Sleep -Seconds $startDelaySeconds
 }
 
 $authHeaders = @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/json' }
@@ -89,20 +82,41 @@ if (-not $targetIsTeamCity) {
 
 Write-Host "Preflight passed: $env:TC_URL answered as TeamCity."
 
-# 2. Is a build for this branch already queued? Both attempts run against the same
-# branch, so without this check two healthy runners would queue two ~45-min
-# full-Creatio builds. A queued build found here counts as success for this attempt.
-$queueUri = "$env:TC_URL/app/rest/buildQueue" `
-  + "?locator=buildType:$($env:BUILD_TYPE),count:100" `
-  + "&fields=build(id,webUrl,properties(property(name,value)))"
-$existing = Invoke-RestMethod -Method Get -Uri $queueUri -Headers $authHeaders -TimeoutSec 60
-foreach ($queuedBuild in @($existing.build)) {
-  $branchProperty = @($queuedBuild.properties.property) | Where-Object { $_.name -eq 'BranchNameClio' }
-  if ($null -ne $branchProperty -and $branchProperty.value -eq $env:HEAD_REF) {
-    Write-Host "A build for BranchNameClio=$env:HEAD_REF is already queued (#$($queuedBuild.id)): $($queuedBuild.webUrl)"
-    Write-Host 'Not queueing a second one.'
-    Set-QueuedOutput 'true'
-    exit 0
+# 2. Is a build for this exact commit already queued or running? The retry chain is
+# sequential, so it cannot itself produce a duplicate; this guards the other route to
+# one - a re-run of this workflow, or an automation re-running a red check, while the
+# build it queued before is still going (that produced two concurrent full-Creatio
+# builds on run 31489635011).
+# The match key is the COMMIT, not the branch. Both states have to be inspected -
+# with moveToTop and a free agent a build leaves the queue within seconds, so a
+# queue-only check reads as "nothing there". But a RUNNING build has already checked
+# its sources out, so it cannot stand in for a newer commit: keying on the branch
+# would silently let a push be reported by an older build. The commit travels in the
+# build comment (BranchNameClio carries only the branch), so that is what is compared.
+# workflow_dispatch has no commit, and falls back to matching the branch.
+$branchFields = 'build(id,webUrl,state,comment(text),properties(property(name,value)))'
+$lookups = @(
+  "$env:TC_URL/app/rest/buildQueue?locator=buildType:$($env:BUILD_TYPE),count:100&fields=$branchFields",
+  "$env:TC_URL/app/rest/builds?locator=buildType:$($env:BUILD_TYPE),running:true,count:50&fields=$branchFields"
+)
+$matchesThisRun = {
+  param($candidate)
+  $branchProperty = @($candidate.properties.property) | Where-Object { $_.name -eq 'BranchNameClio' }
+  if ($null -eq $branchProperty -or $branchProperty.value -ne $env:HEAD_REF) { return $false }
+  if ([string]::IsNullOrWhiteSpace($env:HEAD_SHA)) { return $true }
+  $commentText = ''
+  if ($null -ne $candidate.comment) { $commentText = [string]$candidate.comment.text }
+  return $commentText.Contains($env:HEAD_SHA)
+}
+foreach ($lookupUri in $lookups) {
+  $found = Invoke-RestMethod -Method Get -Uri $lookupUri -Headers $authHeaders -TimeoutSec 60
+  foreach ($existingBuild in @($found.build)) {
+    if (& $matchesThisRun $existingBuild) {
+      Write-Host "A build for this commit on $env:HEAD_REF is already $($existingBuild.state) (#$($existingBuild.id)): $($existingBuild.webUrl)"
+      Write-Host 'Not queueing a second one.'
+      Set-QueuedOutput 'true'
+      exit 0
+    }
   }
 }
 
