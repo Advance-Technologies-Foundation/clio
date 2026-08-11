@@ -179,17 +179,23 @@ public sealed class ServerProcessDescriberTests {
 		result.IsError.Should().BeFalse(because: "the response is a valid graph");
 		DescribedEmail email = result.Value.Elements[0].Email;
 		email.Should().NotBeNull(because: "the email block must be deserialized, not dropped by the clio DTO");
-		email.Mode.Should().Be("manual");
-		email.SenderDisplay.Should().Be("sales@example.com");
-		email.Subject.Should().Be("After modify");
-		email.HasBody.Should().BeTrue();
-		email.Importance.Should().Be("high");
-		email.IgnoreErrors.Should().BeTrue();
+		email.Mode.Should().Be("manual", because: "the send-mode token maps to the DTO's mode property");
+		email.SenderDisplay.Should().Be("sales@example.com",
+			because: "senderDisplay carries the human-readable mailbox identity alongside the sender formula");
+		email.Subject.Should().Be("After modify", because: "the subject constant survives the read-back");
+		email.HasBody.Should().BeTrue(
+			because: "hasBody flags a custom-message body without echoing the HTML itself");
+		email.Importance.Should().Be("high", because: "the importance token maps to the DTO");
+		email.IgnoreErrors.Should().BeTrue(because: "the ignore-sending-errors flag maps to the DTO");
 		email.To.Should().ContainSingle(because: "the recipient list must survive read-back")
-			.Which.Value.Should().Be("to@example.com");
-		email.Performer.Type.Should().Be("role");
-		email.Performer.RoleDisplay.Should().Be("All employees");
-		email.Performer.ShowPage.Should().BeTrue();
+			.Which.Value.Should().Be("to@example.com",
+				because: "the recipient's constant address is carried on the parameter's value");
+		email.Performer.Type.Should().Be("role",
+			because: "the manual-mode performer kind maps to the nested performer DTO");
+		email.Performer.RoleDisplay.Should().Be("All employees",
+			because: "roleDisplay carries the resolved role name for a human reader");
+		email.Performer.ShowPage.Should().BeTrue(
+			because: "the show-execution-page flag is part of the performer block");
 	}
 
 	[Test]

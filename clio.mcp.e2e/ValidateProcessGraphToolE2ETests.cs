@@ -109,6 +109,40 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, a sendEmail node classifies as a user task rather than an unknown type: ManagerMap.ResolveDataId maps the 'sendEmail' build token, so the graph validates with no UNKNOWN finding. Purely client-side classification — it needs no sendEmail support in the deployed CrtProcessBuilder package.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph classifies a sendEmail node as a known type")]
+	public async Task ValidateProcessGraph_Should_ClassifySendEmail_AsKnownType() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = ResolveEnvironmentOrIgnore();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("m", "sendEmail"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "m", "sequence"), Edge("m", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "validating a graph with a sendEmail node returns a structured payload");
+		response.Success.Should().BeTrue(because: "the graph is well formed");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Where(finding => finding.RuleId == "UNKNOWN")
+			.Should().BeEmpty(
+				because: "'sendEmail' is a known build type, so it must not be reported as an unrecognized element "
+					+ "type the way it was before the token was mapped");
+		response.HasErrors.Should().BeFalse(
+			because: "Start -> Send email -> End violates no connection rule once the node type is recognized");
+	}
+
+	[Test]
 	[Description("Over the real MCP path against a reachable environment with CrtProcessBuilder, a start event with an incoming flow surfaces an R1 error finding.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph surfaces an R1 error for a start with an incoming flow")]

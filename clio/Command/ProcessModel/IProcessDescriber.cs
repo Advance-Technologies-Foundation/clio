@@ -231,10 +231,15 @@ public sealed class DescribedElement {
 	public DescribedFilter Filter { get; set; }
 
 	/// <summary>
-	/// For a Send email element (<c>EmailTemplateUserTask</c>) with a configured email: its configuration decoded
-	/// back into the descriptor vocabulary. <c>null</c> for other element kinds, for an unconfigured Send email
-	/// element, and when the server (an older <c>CrtProcessBuilder</c>) does not report it. Round-trips into a
-	/// <c>create</c>/<c>modify</c> <c>email</c> block (recipients re-enter as append-only entries).
+	/// For a Send email element (<c>EmailTemplateUserTask</c>): its configuration decoded back into the descriptor
+	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
+	/// not report it. Round-trips into a <c>create</c>/<c>modify</c> <c>email</c> block (recipients re-enter as
+	/// append-only entries).
+	/// <para>The block reports EFFECTIVE values: a field the element inherits untouched from the
+	/// <c>EmailTemplateUserTask</c> schema (a platform default such as <c>ignoreErrors</c>) comes back like a
+	/// configured one, because it is the value the element will actually use. So the block's PRESENCE is not
+	/// evidence that anyone configured this element — do not read "importance is already normal" as a deliberate
+	/// choice, and do not use "no block" as the unconfigured signal.</para>
 	/// </summary>
 	[JsonPropertyName("email")]
 	public DescribedEmail Email { get; set; }
