@@ -2671,7 +2671,7 @@ stories:
     feature: "process-element-connections"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-process-element-connections-4.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md

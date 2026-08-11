@@ -4,7 +4,7 @@
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
 **Decisions**: D1, D2 (wire naming), D8 (open), D12 (open)
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 **Repo**: `clio` (+ the committed `CrtProcessBuilder.gz`)
 **Depends on**: stories 2 and 3
@@ -28,21 +28,21 @@ ignoring my request
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — The wire field is **`connections`**, never `activityConnections`, and carries no host
+- [x] **AC-01** — The wire field is **`connections`**, never `activityConnections`, and carries no host
   member (D2). This is load-bearing: it is what lets a host entity be added later as an optional field
   instead of a breaking rename.
-- [ ] **AC-02** — `modify-business-process` accepts the two new `op` tokens; the tool `[Description]` and
+- [x] **AC-02** — `modify-business-process` accepts the two new `op` tokens; the tool `[Description]` and
   the curated contract describe them, including the D1a upsert semantics ("columns you do not list are left
   alone") and the fact that `recordId` needs no schema UId.
-- [ ] **AC-03** — `describe-business-process` surfaces `connections[]` with both the raw value and the
+- [x] **AC-03** — `describe-business-process` surfaces `connections[]` with both the raw value and the
   decoded source.
-- [ ] **AC-04 (D8)** — An environment whose installed package predates this feature is **detected and
+- [x] **AC-04 (D8)** — An environment whose installed package predates this feature is **detected and
   reported**. This is mandatory, not defensive: measured on a live stand, a request carrying a
   future-shaped `connections` array is answered **normally with the member silently ignored** (no contract
   implements `IExtensibleDataObject`, checked across all 25 `[DataContract]` types, so it holds at every
   nesting level). `[RequiresPackage]` is presence-only and a pin test asserts the **absence** of a version
   literal, so the existing gate cannot carry this. Mechanism is D8 — take the decision in this story.
-- [ ] **AC-05** — Guidance updated in `clio-knowledge` (`guidance/mcp/guides/processes/process-modeling.md`
+- [x] **AC-05** — Guidance updated in `clio-knowledge` (`guidance/mcp/guides/processes/process-modeling.md`
   — 316 lines; note the path is **not** `guidance/process-modeling.md`, and the repo is reachable via
   `gh api`, not `WebFetch`). The article currently says **nothing** about connections — zero occurrences of
   "Connected to", "ActivityConnection", "EntityConnection". Seven passages, pinned to lines:
@@ -57,24 +57,24 @@ ignoring my request
   | describe section | the `connections[]` projection, `deprecated`, `writesConnectionsAtRuntime` |
   | 293+ R1–R17 | state explicitly that connections are **not** graph edges and `validate-process-graph` is unaffected |
 
-- [ ] **AC-06** — The guidance PR bumps `libraryVersion` **and** `sequence` (clio rejects changed content
+- [x] **AC-06** — The guidance PR bumps `libraryVersion` **and** `sequence` (clio rejects changed content
   under a reused sequence). A body edit needs no local re-pin; if a guide is added or renamed, the routing
   article and `curated-knowledge-names.json` follow.
-- [ ] **AC-07** — Rebundle via `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <checkout> -Version
+- [x] **AC-07** — Rebundle via `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <checkout> -Version
   X.Y.Z.W`. `-Version` is required and must go **up**: clio compares the shipped version against what the
   environment recorded, so an unchanged version reaches new installs only and nobody who already has the
   package is asked to update.
-- [ ] **AC-08** — E2E coverage added in `clio.mcp.e2e`. The existing process-designer surface is **43 tests
+- [x] **AC-08** — E2E coverage added in `clio.mcp.e2e`. The existing process-designer surface is **43 tests
   across 9 files**; this feature extends three: `ModifyBusinessProcessToolE2ETests` (16 today — the two new
   operations), `DescribeProcessToolE2ETests` (**2 today** — the projection plus D11's per-dialect
   round-trip, six new cases, so this file more than triples), and `CreateBusinessProcessToolE2ETests` (14
   today) if `connections` is accepted in the build descriptor. `ValidateProcessGraphToolE2ETests` needs
   nothing — connections are not edges.
-- [ ] **AC-09** — Docs reviewed per the command-documentation policy; if no CLI verb is added (D12), state
+- [x] **AC-09** — Docs reviewed per the command-documentation policy; if no CLI verb is added (D12), state
   **"MCP-only, no CLI doc surface"** explicitly in the change summary rather than leaving it implied.
-- [ ] **AC-10** — Shipped workspace templates (`clio/tpl/**`) reviewed against the
+- [x] **AC-10** — Shipped workspace templates (`clio/tpl/**`) reviewed against the
   resident-or-bridged oracle; `WorkspaceTemplateGuidanceDriftTests` green.
-- [ ] **AC-11** — ClioRing compatibility statement in the change summary — either the commands/results, or
+- [x] **AC-11** — ClioRing compatibility statement in the change summary — either the commands/results, or
   `ClioRing compatibility reviewed, no Ring-consumed contract changed` with the inspected paths cited.
 
 ## Implementation Notes
@@ -92,10 +92,38 @@ When driving the service directly during development, pass the service path **wi
 `C:/Program Files/Git/rest/...`, which the stand rejects as a dangerous request path; `ServiceUrlBuilder`
 normalises the slashless form and prepends the `0/` web-app alias itself.
 
+## Deviations recorded at implementation time
+
+1. **D8 was already solved by shipped machinery, so the story built a proof rather than a detector.**
+   `IBundledPackageConvergence` already refuses when the environment carries an older bundled-package version
+   than the distribution ships, and `RequiredPackageChecker` already runs it on every triggered
+   `[RequiresPackage]` — which is every gated process-designer call. What was missing was the *decision* and
+   evidence that the chain covers the connections case, so AC-04 landed as: D8 recorded in the ADR with its
+   two rejected alternatives, plus two pin tests driving the SHIPPED attribute through the REAL checker and
+   the REAL convergence rule (behind → refused naming both versions and the verb; converged → allowed). The
+   rebundle's mandatory version bump is what arms it.
+2. **AC-02's "curated contract" does not exist for these tools.** `ToolContractGetTool` carries no definition
+   for `modify-business-process` or `describe-business-process` — it names them only inside
+   `install-process-builder`'s contract, as the remedy. Their `[Description]` is therefore the agent-facing
+   contract, and that is where the semantics went.
+3. **Only Debug/net8.0 carries the new archive locally.** The rebundle script refreshes ONE build output and
+   warns about the others; the net10.0 output could not be rebuilt because running `clio mcp-server` processes
+   hold `clio.exe`. Anyone verifying an install locally must use the refreshed output or rebuild — an install
+   resolves the archive from the build output, not the repository. CI is unaffected.
+4. **AC-06's re-pin was not needed.** `curated-knowledge-names.json` follows a guide being ADDED or RENAMED;
+   this was a body edit to an existing guide, so the local pin is untouched. (It is separately 9 sequences
+   behind the live library — pre-existing, not this feature.)
+5. **AC-09: MCP-only, stated rather than implied.** The four process-designer options classes carry no
+   `[Verb]`, so there is no `docs/commands`, `help/en` or `WikiAnchors` target to update. D12 — whether to add
+   a CLI verb and take on that doc surface — stays open.
+
 ## Definition of Done
 
-- [ ] All AC met
-- [ ] Targeted tests run and named in the change summary (Module=McpServer at minimum)
-- [ ] MCP review statement included ("MCP reviewed, no update required" is not available here — this story
-  *is* the MCP change)
-- [ ] Diary entry appended
+- [x] All AC met
+- [x] Targeted tests run and named in the change summary:
+  `dotnet test clio.tests --filter "Category=Unit&(Module=McpServer|Module=Command|Module=Common)"` →
+  7810 passed / 18 skipped / 0 failed (net8.0)
+- [x] MCP review statement included — this story IS the MCP change: two tool `[Description]`s, the modify
+  prompt, and two new pin tests. No curated `get-tool-contract` entry exists for the process-designer tools,
+  so the `[Description]` is their contract surface
+- [x] Diary entry appended
