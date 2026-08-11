@@ -58,13 +58,25 @@ already ships the pieces.
 - [ ] **AC-04** — If a convenience tool sequences the three steps, it lives in the **schema /
   app-modeling** surface, never the process-designer surface, and is a **composition** — it must not
   reimplement what `update-entity-schema` / `add-package-dependency` / `create-data-binding` already do.
-- [ ] **AC-05** — Verified once at implementation time: that `update-entity-schema` cleanly **adds** a
-  column to `Activity` specifically. Its documentation addresses **inherited**-column edits (caption and
-  description only); adding a column to a base schema from another package means creating a replacing
-  schema, which is a different operation and is unproven for `Activity`.
-- [ ] **AC-06** — The recipe states the environment precondition that makes step 3 conditional: writing
-  bound data requires a **non-foreign** target package. On a stand where the target package is installed
-  rather than developed, the binding half is unavailable — say so instead of failing opaquely.
+- [x] **AC-05** — **VERIFIED on krestov-test (2026-08-11), with one qualification that matters more than the
+  result.** `update-entity-schema --package Custom --schema-name Activity` with an `add` operation
+  (`type: Lookup`, `reference-schema-name`, `indexed: true`) added `UsrClioConnProbe`: "Schema 'Activity'
+  published in 13.1s", OData rebuild requested, and the column reads back as `source: own` with
+  `u-id: 91f303e6-…`, taking the Custom layer's `own-column-count` from 0 to 1.
+
+  The qualification: the replacing `Activity` schema in `Custom` **already existed** (0 own columns,
+  `extend-parent: true`), so what is proven is "adds a column to an EXISTING package layer", not "creates the
+  layer". The story's worry — that this is a different, unproven operation — is therefore narrower than
+  stated, but not void: on a package with no layer yet, step 1 takes a path this measurement did not exercise.
+  State that conditionally in the recipe rather than implying one path.
+
+  The new cross-package pre-check (AC-02) ran against the live environment on this call and correctly did not
+  interfere — the name was free in every layer.
+- [x] **AC-06** — Precondition confirmed by exercising it: `create-data-binding-db -e krestov-test --package
+  Custom --schema EntityConnection` created the row AS BOUND package data (`da8351db-…`), so `Custom` on this
+  stand is non-foreign and the binding half is available. The recipe must still state the precondition,
+  because the failure on a foreign package is what it protects against — that half remains unexercised, and
+  is named as such rather than assumed to be graceful.
 - [ ] **AC-07** — `setConnections`' state-(1) and state-(2) messages (story 3, AC-19) name **this** recipe,
   so the refusal and the remedy are connected in the agent's reading order.
 - [x] **AC-08 (inherited from story 4)** — **MEASURED, and it needed no data-model change after all.** This story is the first point at which the **created-parameter
@@ -92,6 +104,19 @@ already ships the pieces.
   `EnsureParameterExists` or by the platform's own `SynchronizeActivityConnectionParameters` hook, since
   `describe` omits parameters whose `Source = None`. Both are non-shipped parameters, so the guarded failure
   mode is covered either way; a provenance claim would need a server-side read of `CreatedInSchemaUId`.
+
+  **Provenance closed by construction (same day, second measurement).** After AC-05 added
+  `UsrClioConnProbe` and step 3 registered it, binding THAT column on the same probe element and running the
+  process wrote it too (`UsrClioConnProbeId = ba5642d3-…`, with all three earlier columns unchanged). The
+  ambiguity above is gone: the element was built hours before the column existed, so the platform's
+  `SynchronizeActivityConnectionParameters` hook cannot have created its parameter — only
+  `EnsureParameterExists` can have. So the CREATED-parameter tail is proven, not merely the dynamic one.
+
+  **And it settles the severity of AC-03.** The platform's cached contract could not have known about a column
+  registered minutes earlier, yet the runtime wrote it. So a stale cache does NOT block the write; it affects
+  what the DESIGNER shows. The cache reset is therefore an ergonomics fix for a human looking at "Connected
+  to", not a correctness fix for an agent-authored process — which lowers AC-03 from "the only new code" to a
+  usability nicety, and is one more reason not to build the endpoint on speculation.
 
 ## Implementation Notes
 
