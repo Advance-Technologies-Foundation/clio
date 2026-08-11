@@ -2695,7 +2695,7 @@ stories:
     feature: "process-element-connections"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-91845
     file: spec/stories/story-process-element-connections-5.md
     prd: spec/process-element-connections/process-element-connections-plan.md

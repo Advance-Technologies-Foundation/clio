@@ -80,6 +80,36 @@ already ships the pieces.
 
 ## Implementation Notes
 
+### AC-03's home is an open question, and the answer may be "no new code" (found while starting the story)
+
+Two facts change the shape of AC-03, both verified from sources rather than assumed:
+
+**1. Both caches are SERVER-side.** The plan calls the second one "the client ESQ cache", but the ESQ that
+reads the registry is server-side C# — `ProcessUserTaskUtilities.CreateActivityConnectionEsq`
+(`CrtProcessDesigner`), which sets `esq.CacheItemName =
+BaseProcessUserTaskUtilities.ProcessUserTaskSchemaManagerCacheItemName`, and it is consumed by the public
+server hook `SynchronizeActivityConnectionParameters(userConnection, target)`. So invalidation does not
+require a browser; a server-side call can do it. That is better than the plan implies.
+
+**2. But cliogate cannot reference the key.** `cliogate.csproj` compiles against `CreatioSDK`, whose `lib`
+carries no `Terrasoft.Configuration` — and `BaseProcessUserTaskUtilities` is a configuration-layer type
+(no source in PackageStore; the only referencing package is `CrtProcessDesigner`). So the AGENTS.md
+cliogate recipe cannot name that constant at compile time.
+
+Four candidate homes, with what disqualifies or recommends each:
+
+| Option | Verdict |
+|---|---|
+| cliogate + a package dependency on `CrtProcessDesigner` | Heaviest. cliogate is installed on **every** environment clio touches, so a new dependency there is a product-wide commitment for one cache reset. |
+| cliogate + reflection on the constant | Avoids the dependency but reintroduces the failure class this feature exists to remove: a renamed constant reads as "nothing to clear" and stays silent. |
+| `CrtProcessBuilder` | Most likely correct. It already lives in the process-designer layer and already uses these manager types, so the constant costs it nothing new. D6 keeps *data-model mutation* out of the package; a cache reset is not one. |
+| **No new code — `clear-redis-db`** | Check this FIRST. Creatio's session/application caches are Redis-backed, and clio already ships `clear-redis-db` plus `restart-web-app`. If a Redis flush invalidates both the ESQ item and the contract cache, AC-03 is satisfied by an existing capability and AC-04's "composition, never reimplementation" applies to it too. |
+
+**What decides it:** one stand measurement — register a row, confirm the designer still shows the old list,
+run `clear-redis-db`, and look again. Only if that fails does the story need an endpoint, and then
+`CrtProcessBuilder` is its home. Do not write the endpoint before that check; it is the difference between
+shipping code and shipping a sentence.
+
 Registry facts an agent needs and cannot infer: the table is `EntityConnection`, keyed
 `(SysEntitySchemaUId, ColumnUId, Position)`; the package-data folder the 7.x wizard produces is
 `EntityConnection_<Id-with-dashes-stripped>`; the only 8.x writer in the product is
