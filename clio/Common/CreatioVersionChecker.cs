@@ -71,7 +71,7 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 	#region Methods: Public
 
 	/// <inheritdoc/>
-	public void EnsureRequirements(object optionsInstance) {
+	public CreatioVersionResolution EnsureRequirements(object optionsInstance) {
 		ArgumentNullException.ThrowIfNull(optionsInstance);
 		Type optionsType = optionsInstance.GetType();
 
@@ -80,7 +80,7 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 		// with a property-level requirement whose bool flag is false performs no version lookup at all.
 		List<RequiresCreatioVersionAttribute> triggered = CollectTriggeredRequirements(optionsInstance, optionsType);
 		if (triggered.Count == 0) {
-			return;
+			return null;
 		}
 
 		// Parse EVERY triggered MinVersion up front (also validating each — a malformed floor fails fast
@@ -121,7 +121,7 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 
 		// Dev-build bypass: a development build satisfies every requirement.
 		if (IsDevBuild(currentVersion)) {
-			return;
+			return resolution;
 		}
 
 		if (currentVersion < requiredVersion) {
@@ -132,6 +132,8 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 					strictest.Hint),
 				CreatioVersionRequirementException.VersionTooOldCode);
 		}
+
+		return resolution;
 	}
 
 	/// <inheritdoc/>
