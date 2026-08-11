@@ -53,10 +53,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Anchor the working directory before anything resolves a relative path. `shell: powershell` loads the
+      # user profile (there is no -NoProfile), so a machine-local profile that Set-Location's leaves the step
+      # running somewhere other than the workspace — and every project path below is relative. Measured
+      # 2026-08-11: TS1-CORE-DEV24 and TS1-MRKT-WEB01 failed 1s in with `MSB1009: Project file does not
+      # exist` while checkout was clean and the merge commit provably contained the file; K-KRYLOV-NB passed.
+      # `dotnet build-server shutdown` in the same step succeeded throughout, because it needs no path.
       - name: Run unit tests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
           dotnet build-server shutdown;
           dotnet test .\clio.tests\clio.tests.csproj `
             --filter "Category!=Integration" `
@@ -80,6 +87,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
           dotnet test .\clio.tests\clio.tests.csproj `
             --filter "Category=Integration" `
             -p:RunAnalyzers=false;
@@ -99,5 +107,6 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
           dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false;
 
