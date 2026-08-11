@@ -8175,3 +8175,17 @@ Context: `CLIO MCP e2e tests (ATF)` was the only red check on PR #1026 (build 15
 Discovery: both failures — `KnowledgeManagementToolE2ETests.McpStartup_ShouldPreserveCuratedKillSwitch_WhenSourceIsDisabled` and `MobilePageConversionGuideToolE2ETests.GuidanceGet_Should_Return_Conversion_Guide_With_EmptyContainerRemoval_Contract` — fail identically on the VCS-triggered trunk build 15860779 (3 failed) and on 15859876. The PR build had FEWER failures than trunk. The job also reports `branchName: trunk` for every run, so the branch under test travels in a parameter, not in the TeamCity branch — the branch column cannot be used to tell a PR build from a baseline one.
 Decision: not treated as PR work. Muting or fixing a trunk-wide e2e failure is a separate task and needs a human decision.
 Impact: For this job, compare the failing test NAMES against the newest `vcs`-triggered build before touching anything: `teamcity build list --job Team_Atf_ClioMcpE2eTests` then `teamcity build tests <id> | grep -v '^✓'`. The `(N new)` counter in `statusText` is relative to TeamCity's own history and is not a per-PR signal.
+
+## 2026-08-11 16:16 – Readable knowledge command output
+Context: `info-knowledge` rendered 15 source fields in one broken wide table, and `update-knowledge` used a table whose wrapped message appeared as a second row.
+Decision: Render both commands as short summaries followed by numbered vertical source blocks. Preserve their existing JSON contracts and highlight failed update headings without changing lifecycle behavior.
+Discovery: `update-knowledge` and `install-knowledge` shared a human reporter, so changing that reporter would have altered an unrequested third command. Giving update its own renderer kept install stable. The detailed branch of `KnowledgeSourceTable` then became dead; the remaining seven-column path still belongs to `list-knowledge-sources`.
+Files: clio/Command/KnowledgeCommands.cs, clio.tests/Command/KnowledgeCommandTests.cs, clio/help/en/info-knowledge.txt, clio/help/en/update-knowledge.txt, clio/docs/commands/info-knowledge.md, clio/docs/commands/update-knowledge.md, clio/Commands.md
+Impact: Both real commands are readable at ordinary terminal widths against the active 1.13.8 bundle. Focused output tests pass on net8.0 and net10.0; the complete Command module passes on both frameworks.
+
+## 2026-08-11 16:32 – Knowledge output review hardening
+Context: The mandatory pre-PR review exercised the new human output with separate stdout and stderr capture and reviewed the output assertions as a user-visible contract.
+Decision: Keep every `update-knowledge` report block on stdout, including failed results, with the explicit `Result: failed` field and non-zero exit code carrying failure semantics. Pin successful, mixed-result, and JSON modes with exact ordered logger transcripts or parsed structured fields.
+Discovery: Coloring failed headings through `WriteError` split headings from their status and message when callers redirected streams. The terminal combined them visually, so only an isolated stream capture exposed the broken block.
+Files: clio/Command/KnowledgeCommands.cs, clio.tests/Command/KnowledgeCommandTests.cs
+Impact: Redirected output remains coherent, both success and failure layouts are regression-covered, and the JSON contract stays isolated from human formatting.
