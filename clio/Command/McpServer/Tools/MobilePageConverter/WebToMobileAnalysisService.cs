@@ -160,10 +160,7 @@ public static class WebToMobileAnalysisService {
 		List<string> dataSources = CollectDataSources(bundle);
 
 		// 5. Instance-level element map (per named element: merge / insert / drop / relocate-children).
-		Dictionary<string, string> attrToDs = BuildAttrToDs(bundle);
 		Dictionary<string, string> attrToColumn = BuildAttrToColumn(bundle);
-		HashSet<string> dataSourceSet = new(dataSources, StringComparer.OrdinalIgnoreCase);
-		string primaryDs = ResolvePrimaryDs(attrToDs, dataSources);
 		JObject resources = ParseResources(bundle);
 		// Request (action) conversion: as the element map prebuilds each insert's mobileValues, the
 		// event-binding requests (a button's clicked, etc.) are remapped/stripped/flagged in-place and
@@ -180,7 +177,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalParentByAnchor =
 			ResolvePositionalParents(positionalPlacements, mobileContainerParents);
 		List<ElementMapEntry> elementMap = BuildElementMap(
-			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
+			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
@@ -1446,10 +1443,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> MobileByType,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> WebByType,
 		WebToMobilePageConversionRules Rules,
-		IReadOnlyDictionary<string, string> AttrToDs,
 		IReadOnlyDictionary<string, string> AttrToColumn,
-		IReadOnlySet<string> DataSources,
-		string PrimaryDs,
 		JObject Resources,
 		string RelocateTarget,
 		List<ElementMapEntry> Out,
@@ -1473,10 +1467,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType,
 		WebToMobilePageConversionRules rules,
-		IReadOnlyDictionary<string, string> attrToDs,
 		IReadOnlyDictionary<string, string> attrToColumn,
-		IReadOnlySet<string> dataSources,
-		string primaryDs,
 		JObject resources,
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
 		List<ConvertedRequest> convertedRequests,
@@ -1489,7 +1480,7 @@ public static class WebToMobileAnalysisService {
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
-			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
+			rules, attrToColumn, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 		WalkElements(ctx, tree, mobileParentName: null);
@@ -1621,11 +1612,12 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 
-			// leaf — drop only when not transferable (foreign data source or no mobile type).
-			if (NodeReferencedForeignDs(ctx, node) is { } foreignDs) {
-				ctx.Out.Add(Drop(name, type, $"multi-data-source ({foreignDs})"));
-				continue;
-			}
+			// leaf — drop only when not transferable, i.e. the type has no mobile equivalent. The data source
+			// an element is bound to is NOT a transferability criterion: a mobile page carries the same
+			// multi-data-source structure as web (the data-section pass surfaces every data source, not just
+			// the primary one), so a detail list bound to a non-primary page data source converts like any
+			// other leaf. Dropping it here used to remove whole detail sections — and, because emptiness
+			// cascades, their wrapper containers with them.
 			bool leafSupported = !string.IsNullOrEmpty(type) && ctx.MobileTypes.Contains(type);
 			string leafMobileType = leafSupported ? type : FindRule(ctx.Rules, type)?.Mobile?.FirstOrDefault();
 			if (string.IsNullOrEmpty(leafMobileType)) {
@@ -1698,25 +1690,6 @@ public static class WebToMobileAnalysisService {
 		} catch (System.Text.Json.JsonException) {
 			return null;
 		}
-	}
-
-	/// <summary>Returns a referenced data source other than the primary one (multi-data-source), or null.</summary>
-	private static string NodeReferencedForeignDs(ElementMapContext ctx, JObject node) {
-		if (string.IsNullOrEmpty(ctx.PrimaryDs)) {
-			return null;
-		}
-		var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		if (node["dataSourceName"]?.ToString() is { Length: > 0 } dsn) {
-			referenced.Add(dsn);
-		}
-		foreach (string token in ExtractDollarRefs(node)) {
-			if (ctx.AttrToDs.TryGetValue(token, out string ds)) {
-				referenced.Add(ds);
-			} else if (ctx.DataSources.Contains(token)) {
-				referenced.Add(token);
-			}
-		}
-		return referenced.FirstOrDefault(ds => ctx.DataSources.Contains(ds) && !string.Equals(ds, ctx.PrimaryDs, StringComparison.OrdinalIgnoreCase));
 	}
 
 	/// <summary>Extracts <c>$Token</c> binding references from a node's own properties (excluding child items).</summary>
@@ -3108,29 +3081,6 @@ public static class WebToMobileAnalysisService {
 		return digits.ToString();
 	}
 
-	private static Dictionary<string, string> BuildAttrToDs(PageBundleInfo bundle) {
-		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		if (bundle.ViewModelConfig is null) {
-			return map;
-		}
-		JObject vmc;
-		try {
-			vmc = JObject.Parse(bundle.ViewModelConfig.ToJsonString());
-		} catch (Newtonsoft.Json.JsonException) {
-			return map;
-		}
-		if (vmc["attributes"] is JObject attributes) {
-			foreach (JProperty attr in attributes.Properties()) {
-				string path = (attr.Value as JObject)?["modelConfig"]?["path"]?.ToString();
-				if (!string.IsNullOrEmpty(path)) {
-					int dot = path.IndexOf('.');
-					map[attr.Name] = dot > 0 ? path[..dot] : path;
-				}
-			}
-		}
-		return map;
-	}
-
 	/// <summary>Maps each attribute name to its column code (the segment after the last dot of <c>modelConfig.path</c>).</summary>
 	private static Dictionary<string, string> BuildAttrToColumn(PageBundleInfo bundle) {
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -3153,20 +3103,6 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		return map;
-	}
-
-	private static string ResolvePrimaryDs(Dictionary<string, string> attrToDs, List<string> dataSources) {
-		string pds = dataSources.FirstOrDefault(d => string.Equals(d, "PDS", StringComparison.OrdinalIgnoreCase));
-		if (pds is not null) {
-			return pds;
-		}
-		if (attrToDs.Count > 0) {
-			return attrToDs.Values
-				.GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
-				.OrderByDescending(g => g.Count())
-				.First().Key;
-		}
-		return dataSources.FirstOrDefault();
 	}
 
 	private static JObject ParseResources(PageBundleInfo bundle) {

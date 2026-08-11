@@ -450,7 +450,7 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileContainerParents: mobileContainerParents);
 
 	[Test]
-	[Description("Golden Leads_FormPage: Tabs merges; EVERY web tab inserts as its OWN new mobile tab (no general-tab collapsing); a tab with a caption keeps it; multi-DS/unsupported children drop; template twins merge.")]
+	[Description("Golden Leads_FormPage: Tabs merges; EVERY web tab inserts as its OWN new mobile tab (no general-tab collapsing); a tab with a caption keeps it; an UNSUPPORTED child drops while a child bound to a non-primary data source converts; template twins merge.")]
 	public void Analyze_ElementMap_GoldenLeadsFormPage() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -500,12 +500,17 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "LeadName").Operation.Should().Be("insert");
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
 		Element(guide, "Status").ParentName.Should().Be("OverviewTab");
-		// Unsupported / foreign-DS children of the tab → drop.
+		// An UNSUPPORTED child of the tab drops; a child bound to a NON-PRIMARY data source does not.
 		Element(guide, "IndicatorWidget").Operation.Should().Be("drop");
-		Element(guide, "SimilarLeadList").Operation.Should().Be("drop");
-		Element(guide, "SimilarLeadList").Reason.Should().Contain("SimilarLeadsDS");
+		Element(guide, "SimilarLeadList").Operation.Should().Be("insert",
+			because: "a mobile page carries the same multi-data-source structure as web, so the data source a grid "
+				+ "is bound to is not a transferability criterion");
+		Element(guide, "SimilarLeadList").MobileType.Should().Be("crt.List",
+			because: "the kept grid must still be mapped onto its mobile equivalent by the components rule");
+		Element(guide, "SimilarLeadList").Reason.Should().NotContain("multi-data-source",
+			because: "the multi-data-source drop reason must no longer be emitted for a detail list");
 
-		// Page-specific tab → insert with caption; multi-DS child dropped.
+		// Page-specific tab → insert with caption; its non-primary-DS grid converts with it.
 		ElementMapEntry sales = Element(guide, "SalesTab");
 		sales.Operation.Should().Be("insert");
 		sales.ParentName.Should().Be("Tabs");
@@ -514,15 +519,17 @@ public sealed class WebToMobileConversionServiceTests {
 		sales.CaptionResource.SourceValue.Should().Be("Sales");
 		Element(guide, "Budget").Operation.Should().Be("insert");
 		Element(guide, "Budget").ParentName.Should().Be("SalesTab");
-		Element(guide, "ProductsList").Operation.Should().Be("drop");
-		Element(guide, "ProductsList").Reason.Should().Contain("ProductsListDS");
+		Element(guide, "ProductsList").Operation.Should().Be("insert",
+			because: "a detail list on its own page data source is transferable — dropping it removed whole detail sections");
+		Element(guide, "ProductsList").ParentName.Should().Be("SalesTab");
 
 		// Empty tabs are still inserted HERE because these rules carry no emptyContainerRemoval section —
 		// the removal pass is switched by data (see the "Empty container removal" region for the on-state).
 		Element(guide, "ProcessingTab").Operation.Should().Be("insert");
 		Element(guide, "Timeline").Operation.Should().Be("drop");
 		Element(guide, "HistoryTab").Operation.Should().Be("insert");
-		Element(guide, "HistGrid").Operation.Should().Be("drop");
+		Element(guide, "HistGrid").Operation.Should().Be("insert",
+			because: "an explicit dataSourceName naming a non-primary data source is no longer a drop trigger either");
 	}
 
 	[Test]
@@ -3516,6 +3523,47 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "Timeline").Operation.Should().Be("drop", because: "the child's own drop is what emptied the box");
 		guide.Constraints.Should().Contain(c => c.Contains("empty container"),
 			because: "the reader must be told the removal already happened and is not theirs to redo or undo");
+	}
+
+	[Test]
+	[Description("A detail grid whose bulkActions request params reference its own collection attribute is converted, so its wrapper container and expansion panel are NOT removed as empty — the data-source drop used to cascade and discard the whole detail section.")]
+	public void Analyze_DetailGridOnNonPrimaryDataSource_KeepsItselfAndItsWrappers() {
+		// Arrange — the exact shape that used to trigger the drop: the grid's OWN collection attribute is
+		// referenced from a property OTHER than items (items is excluded from the reference scan), here the
+		// bulk-action request params. Its data source is registered on the page and is not the primary one.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel", "items": [
+				{ "name": "ProductsListGridContainer", "type": "crt.GridContainer", "items": [
+					{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$GridDetail_tviz7gf",
+					  "bulkActions": [ { "clicked": { "request": "crt.DeleteRecordsRequest",
+						"params": { "filters": "$GridDetail_tviz7gf" } } } ] } ] } ] } ]
+			""",
+			modelConfigJson: """
+			{ "dataSources": { "PDS": { "type": "crt.EntityDataSource" }, "GridDetail_tviz7gfDS": { "type": "crt.EntityDataSource" } } }
+			""",
+			viewModelConfigJson: """
+			{ "attributes": {
+				"Number": { "modelConfig": { "path": "PDS.Number" } },
+				"GridDetail_tviz7gf": { "isCollection": true, "modelConfig": { "path": "GridDetail_tviz7gfDS" } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.Operation.Should().Be("insert",
+			because: "a mobile page carries the same multi-data-source structure as web, so the data source a "
+				+ "detail list is bound to is not a transferability criterion");
+		grid.MobileType.Should().Be("crt.List",
+			because: "the kept grid must still be mapped onto its mobile equivalent by the components rule");
+		Element(guide, "ProductsListGridContainer").Operation.Should().Be("insert",
+			because: "a wrapper is removed only when EVERY child dropped — keeping the grid keeps the wrapper");
+		Element(guide, "ProductsExpansionPanel").Operation.Should().Be("insert",
+			because: "the drop used to cascade up and discard the panel together with its header tools");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "drop",
+			because: "nothing on this page is untransferable once the data-source drop is gone");
 	}
 
 	[Test]
