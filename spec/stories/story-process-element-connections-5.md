@@ -67,6 +67,16 @@ already ships the pieces.
   rather than developed, the binding half is unavailable — say so instead of failing opaquely.
 - [ ] **AC-07** — `setConnections`' state-(1) and state-(2) messages (story 3, AC-19) name **this** recipe,
   so the refusal and the remedy are connected in the agent's reading order.
+- [ ] **AC-08 (inherited from story 4)** — This story is the first point at which the **created-parameter
+  tail at run time** can be verified, so it verifies it. Story 4 proved runtime effectiveness only for a
+  perform task binding a **static** connection column; the created path needs a column that IS in the
+  registry and is NOT declared by the element's user task, because `EntityConnectionBinder.ResolveColumn`
+  refuses a host column that is neither. This recipe produces exactly such a column, so once it works:
+  bind it with `setConnections` on a perform task, run the process, and confirm the created Activity
+  carries the column — with a second, statically-bound column left unchanged as the control. The failure
+  this guards is specific and already anticipated in code: a created parameter missing its data value type
+  or reference entity survives the save and throws at task COMPLETION, which is why
+  `EnsureParameterExists` asserts both rather than assuming them.
 
 ## Implementation Notes
 

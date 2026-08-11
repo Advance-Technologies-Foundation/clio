@@ -216,10 +216,14 @@ correctly saw no regression and the call went through. The answer was
 package's own operation dispatcher, which enumerates what it does support. So the uncovered case degrades to
 a LOUD error, and the reason is a real asymmetry worth keeping in mind — an unknown **member** of a known
 contract is dropped in silence (T-10, the premise of this whole decision), while an unknown **operation
-name** is rejected by name. The write path is therefore self-diagnosing even where the detector is blind;
-only the read path can go quiet there, by returning a descriptor with no `connections` array at all, which
-is indistinguishable from "nothing is bound". Fixing it by hand is `install-process-builder --force`, whose
-`--force` exists for precisely this backwards move.
+name** is rejected by name, because the executor dispatches on the `op` token and answers an unknown one by
+enumerating the tokens it does have. So a capability delivered as a new OP TOKEN is self-diagnosing even
+where the detector is blind — which is what these two operations are. That is NOT a general property of the
+write path: a future capability delivered as a new MEMBER on an existing op would be dropped exactly as
+silently as the read path, since `ProcessOperationDescriptor` is a flat `[DataContract]` like every other.
+The read path is already in that position — a stale package returns a descriptor with no `connections` array
+at all, which is indistinguishable from "nothing is bound". Fixing it by hand is
+`install-process-builder --force`, whose `--force` exists for precisely this backwards move.
 
 Two further gaps, named because a reader would otherwise assume the detector is unconditional. Convergence
 declines to DECIDE — warning and allowing — when clio's own archive cannot be read or declares a

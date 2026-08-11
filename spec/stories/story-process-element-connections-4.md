@@ -143,14 +143,19 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
    which is deviation 7's exact failure class one layer up. `ModifyBusinessProcessToolE2ETests` now asserts
    it on the wire (`true` for a perform task, which has no `CreateActivity` gate) via a `ReadTaskAsync`
    helper extracted from `ReadConnectionsAsync`.
-10. **The runtime tail was measured, which no green test above can do.** A connection that persists,
+10. **The runtime tail was measured for a STATIC connection column, which no green test above can do.** A connection that persists,
     compiles and reads back correctly can still write nothing — trap T-2, the `ModifiedInSchemaUId` stamp.
     On `UsrConnProbe1`/`CONNPROBE`: the pre-existing activity had `AccountId` set by the older `addMapping`
     path and `ContactId` NULL; after `setConnections` bound Contact to a **real** record and one
     `ProcessEngineService.svc/RunProcess`, the new activity carries the named Contact with `AccountId`
     unchanged as the control. A fixed-record connection is therefore effective at run time. Note for reuse:
     the E2E cases bind `Guid.NewGuid()` ids, which is correct for persistence and unusable for a run —
-    `Activity.AccountId`/`ContactId` are foreign keys.
+    `Activity.AccountId`/`ContactId` are foreign keys. What this does NOT close, stated because story 4's own
+    earlier note mis-assigned it to these six cases: the **created/dynamic** parameter tail at task completion.
+    Every case here binds a pre-existing STATIC column and none runs a process, so no E2E case can reach it, and
+    a probe cannot either today — `EntityConnectionBinder.ResolveColumn` refuses a column that exists on the host
+    but is neither registered nor element-declared, so the created path needs a column that IS registered and NOT
+    declared. Making one is what story 5 builds, so the check belongs to story 5 acceptance.
 
 ## Definition of Done
 
@@ -162,7 +167,7 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
   prompt, and two new pin tests. No curated `get-tool-contract` entry exists for the process-designer tools,
   so the `[Description]` is their contract surface
 - [x] Diary entry appended
-- [x] Verified on a live stand (krestov-test): 6/6 connections E2E green in 2m03s after
+- [x] Verified on a live stand (krestov-test), for a perform task on STATIC connection columns: 6/6 green after
   `install-process-builder --force`; `writesConnectionsAtRuntime` asserted on the wire; and the runtime
   tail measured on `UsrConnProbe1` — a fixed-record connection populates the created Activity column,
   with the pre-existing mapping-sourced column unchanged as the control

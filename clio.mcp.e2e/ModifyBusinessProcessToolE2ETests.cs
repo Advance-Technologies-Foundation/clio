@@ -853,10 +853,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string processName = $"UsrClioBpConnBindE2e{Guid.NewGuid():N}";
 		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
 
-		// Act
+		// Act — ONE describe, so the connection and the element-level verdict below are read from the same
+		// snapshot. Two round trips would look like one to a reader and would put live I/O in the Assert block.
 		await ModifyExpectingSuccessAsync(context, processName,
 			SetAccountConnectionFromProcessParameterOperations());
-		DescribedConnection connection = await ReadConnectionAsync(context, processName, "Account");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		DescribedConnection connection = (task.Connections ?? []).Single(c => c.Column == "Account");
 
 		// Assert
 		connection.ProcessParameter.Should().Be("AccountRef",
@@ -870,7 +872,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// silently dropped member is exactly the failure this feature already shipped once, where four new
 		// fields were promised by the tool description and dropped by clio's DTO. `true` is the only correct
 		// answer for a perform task: it has no CreateActivity gate, so the connection cannot be inert.
-		(await ReadTaskAsync(context, processName)).WritesConnectionsAtRuntime.Should().BeTrue(
+		task.WritesConnectionsAtRuntime.Should().BeTrue(
 			because: "a perform task writes its connections unconditionally, and null here would mean the verdict never reached the caller who is told to read it before trusting a binding");
 	}
 
