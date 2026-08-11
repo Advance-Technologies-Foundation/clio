@@ -2627,7 +2627,7 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder"
     size: M
-    status: review
+    status: done
     jira: ENG-91845
     pr: engineering/cli-process-builder#21
     file: spec/stories/story-process-element-connections-1.md
@@ -2644,7 +2644,7 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder"
     size: M
-    status: review
+    status: done
     jira: ENG-91845
     pr: engineering/cli-process-builder#21
     file: spec/stories/story-process-element-connections-2.md
@@ -2661,7 +2661,7 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder"
     size: L
-    status: review
+    status: done
     jira: ENG-91845
     pr: engineering/cli-process-builder#21
     file: spec/stories/story-process-element-connections-3.md
