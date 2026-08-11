@@ -1,4 +1,15 @@
 ---
+# ENG-94529: these jobs run on GITHUB-HOSTED runners on purpose.
+# They only need a .NET SDK and the repository, so nothing here justifies borrowing a
+# machine from the shared self-hosted pool - a pool that also contains laptops. Two
+# concrete failures came from that pool: a runner without corporate DNS turned the
+# TeamCity trigger red for three days, and a sparse checkout by another workflow left
+# the SHARED per-repository working directory without clio.tests, which failed the
+# unit-test job with MSB1009 on that runner only. A hosted runner is a clean machine
+# per job, and for a public repository it costs nothing.
+# The SDK is pinned rather than inherited from the image: clio multi-targets net8.0 and
+# (when the SDK allows) net10.0, so an image without the .NET 10 SDK would silently
+# drop a target framework instead of failing.
 name: Build
 on:
   push:
@@ -13,7 +24,7 @@ jobs:
   # ── Detect which areas of the codebase changed ────────────────────────
   changes:
     name: Detect changes
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       clio-src:    ${{ steps.filter.outputs.clio-src }}
       tests:       ${{ steps.filter.outputs.tests }}
@@ -47,11 +58,17 @@ jobs:
       needs.changes.outputs.clio-src == 'true' ||
       needs.changes.outputs.tests   == 'true' ||
       github.ref == 'refs/heads/master'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Run unit tests
         shell: powershell
@@ -70,11 +87,17 @@ jobs:
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
       github.event_name == 'pull_request'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Run integration tests
         shell: powershell
@@ -89,11 +112,17 @@ jobs:
     name: Analyzer Tests
     needs: changes
     if: needs.changes.outputs.analyzers == 'true'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Run analyzer tests
         shell: powershell
