@@ -4,7 +4,7 @@
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
 **Decisions**: D2, D3 (rule), D9
-**Status**: in-progress
+**Status**: done
 **Size**: M
 **Repo**: `ProcessBuilder` — `packages/CrtProcessBuilder/Files/src/cs/`
 

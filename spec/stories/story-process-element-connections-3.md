@@ -4,7 +4,7 @@
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
 **Decisions**: D1, D1a, D3, D6, D7
-**Status**: in-progress
+**Status**: done
 **Size**: L
 **Repo**: `ProcessBuilder` — `packages/CrtProcessBuilder/Files/src/cs/`
 **Depends on**: story 1 (ships together with story 2 — see D1)
@@ -148,11 +148,13 @@ Do **not** create an `Activity` column here (D6) — refuse with state (1) and n
 - [x] All AC met; AAA, `because` on every assertion, `[Description]` on every test method
 - [x] Cross-platform tests; behaviour classes interfaced and DI-registered
 - [x] Verification matrix rows in plan §8 covered at the UNIT layer, including the two Send-email rows
-  (automatic → refused, manual → allowed). Of the two rows that require a real run, story 4's stand check
+  (automatic → refused, manual → allowed). Four §8 rows need a real run or a designer, not two; of those, story 4's stand check
   closed "written at run time" (for a STATIC column). The created-parameter tail at task completion is NOT
   reachable from story 4's E2E — none of those cases runs a process, and `ResolveColumn` refuses a column that
   is neither registered nor element-declared, so the created path needs a registered-but-undeclared column.
-  Carried to story 5 AC-08, which is where such a column can first be produced
+  Carried to story 5 AC-08, which is where such a column can first be produced. One §8 row is NOT covered at
+  any layer and is not merely deferred: "describe output fed into build → refused on policy grounds" needs the
+  deprecation refusal that was never implemented (see story 1 AC-08 and the plan's D9 entry)
 - [x] No new `CLIO*` diagnostics in touched files (`CLIO*` analyzers run in the clio repo only; the
   `ProcessBuilder` build is warning-free)
 - [x] Diary entry appended

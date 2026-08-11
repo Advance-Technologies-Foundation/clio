@@ -167,9 +167,12 @@ pieces: **`update-entity-schema`** adds the lookup column (its own description: 
 **add**, modify, and remove column operations to a remote Creatio entity schema"*; the operation model
 carries `ReferenceSchemaName`, and it publishes and rebuilds OData without a compile);
 **`add-package-dependency`** declares the dependency on `CrtCoreBase`; **`create-data-binding`** +
-**`add-data-binding-row`** create the registry row and its package binding. The **only genuinely missing
-artefact is cache invalidation** — `ProcessUserTaskSchemaManager.reset` clears the server contract cache
-and the client ESQ cache, without which the designer shows the old list even after a compile. Its home is
+**`add-data-binding-row`** create the registry row and its package binding. The artefact this analysis called the **only genuinely
+missing one** was cache invalidation — `ProcessUserTaskSchemaManager.reset` clears the server contract cache
+and the ESQ cache, without which the designer shows the old list even after a compile. **Re-scoped during
+story 5:** the runtime write channel matches parameters to columns by UId-then-name and never opens
+`EntityConnection`, so the reset is designer ergonomics, not correctness — and the code that did ship is the
+cross-package name pre-check instead. Its home is
 cliogate (a privileged endpoint with `CheckCanManageSolution` first) or a thin clio tool.
 
 ### D7 — One authorization gate
@@ -371,4 +374,8 @@ of them — Modify (the new operations), Describe (the projection plus the per-d
 cases on a file that has two today), and Create if `connections` is accepted in the build descriptor.
 **What actually shipped:** all six landed in ONE fixture, Modify (16 → 22), because each needs a process
 built and then edited, and splitting them would have duplicated the arrange and left neither half meaningful
-alone. Describe stayed at 2 and Create at 14 — a build descriptor carries no connections.
+alone. Describe stayed at 2 and Create at 14 — a build descriptor carries no connections. The six also cover
+the OPERATIONS (decode read-back, macro synthesis, upsert, clear, two refusals) rather than the per-dialect
+round trip this paragraph specified: that is pinned at the UNIT layer, in the package's
+`ConnectionRoundTripTests` (five dialects plus an unrecognised macro, each asserting the re-read value is
+byte-identical). No E2E case re-applies a described connection.

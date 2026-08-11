@@ -4,7 +4,7 @@
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
 **Decisions**: D1, D2 (wire naming), D8 (TAKEN in this story — see the ADR), D12 (open)
-**Status**: in-progress
+**Status**: review
 **Size**: M
 **Repo**: `clio` (+ the committed `CrtProcessBuilder.gz`)
 **Depends on**: stories 2 and 3

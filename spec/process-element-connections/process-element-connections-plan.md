@@ -484,7 +484,7 @@ because clio already ships the pieces:
 |---|---|---|
 | 1. add the `Activity` lookup column | **`update-entity-schema`** — *"Applies a batch of **add**, modify, and remove column operations to a remote Creatio entity schema"*; args `environment-name`, `package-name`, `schema-name`, `operations`; the operation model carries `ReferenceSchemaName`/`ReferenceSchemaAlias`, so a lookup to the section's entity is expressible. Publishes and rebuilds OData — no compile. | Name **must** carry the package prefix (`EntitySchema.GetIsPrefixRequired()` → `true`, unconditional, enforced at save). `isIndexed: true` is the product convention (`SectionWizardCasesSettings.js:424-437`). |
 | 2. declare the dependency | **`add-package-dependency`** on `Activity`'s owning package (`CrtCoreBase`) | Required: the platform enforces it at export/install and cannot auto-apply it from configuration. |
-| 3. registry row + binding | **`create-data-binding`** + **`add-data-binding-row`** (local package sources — the delivery-correct artifact, identical to what the 7.x wizard emits), or the DB-first pair **`create-data-binding-db`** + **`upsert-data-binding-row-db`** | Row: `Id` = a **fixed** guid (it is the binding key), `SysEntitySchemaUId` = `c449d832-a4cc-4b01-b9d5-8a12c42a9f89` (root `Activity`), `ColumnUId` = the UId of the column from step 1 (read it with `get-entity-schema-column-properties`). `Position` may be omitted. |
+| 3. registry row + binding | **`create-data-binding`** + **`add-data-binding-row`** (local package sources — the delivery-correct artifact, identical to what the 7.x wizard emits), or the DB-first pair **`create-data-binding-db`** + **`upsert-data-binding-row-db`** | Row: `Id` = a **fixed** guid (it is the binding key), `SysEntitySchemaUId` = `c449d832-a4cc-4b01-b9d5-8a12c42a9f89` (root `Activity`), `ColumnUId` = the UId of the column from step 1 (read it with `get-entity-schema-properties` (its structured MCP output carries `u-id` per column; `get-entity-schema-column-properties` returns every OTHER column property and NOT the UId, on any surface)). `Position` may be omitted. |
 
 **The only genuinely missing artifact is cache invalidation.** `ProcessUserTaskSchemaManager.reset`
 clears both the server contract cache and the client ESQ cache; without it the designer keeps showing
@@ -846,7 +846,7 @@ refusal may reach `describe`.
    **silently ignored**. So the exact future failure mode is demonstrated, not merely analogous: an old
    package plus a new `connections` field is a green log and a silently wrong process. The result
    generalises to nested descriptors because no contract opts out: `grep IExtensibleDataObject` over all
-   25 `[DataContract]` types in `Contracts/` returns **nothing**, so the serializer drops unknown members
+   `[DataContract]` types in `Contracts/` (25 when measured, 27 after this feature) returns **nothing**, so the serializer drops unknown members
    uniformly at every level. **D8 is therefore required** — a detector must exist.
 5. **Can the calling identity read `EntityConnection`?** Failure mode is an empty candidate list, which
    presents as a validation bug rather than a permission bug. *Remove the dependency instead of measuring

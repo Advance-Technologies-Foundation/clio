@@ -46,16 +46,19 @@ already ships the pieces.
   | 2. declare the dependency | `add-package-dependency` on `Activity`'s owning package (`CrtCoreBase`) | required — the platform enforces it at export/install and cannot auto-apply it from configuration (the applier is `internal`) |
   | 3. registry row + binding | `create-data-binding` + `add-data-binding-row` (local package sources — identical to what the 7.x wizard emits), or the DB-first `create-data-binding-db` + `upsert-data-binding-row-db` | row: `Id` = a **fixed** guid (it is the binding key), `SysEntitySchemaUId` = `c449d832-a4cc-4b01-b9d5-8a12c42a9f89`, `ColumnUId` = the UId of the column from step 1 — read it with **`get-entity-schema-properties`** (its structured MCP output carries `u-id` per column). NOT `get-entity-schema-column-properties`: that command returns every other column property and **not the UId**, on any surface (verified on the CLI and over MCP), so the recipe as first written was not executable; `Position` may be omitted |
 
-- [ ] **AC-02** — A **same-name pre-check** before step 1: a column of that name already contributed by
+- [x] **AC-02** — SHIPPED (`EnsureNameIsFreeAcrossPackages`, plus the batch-scoped pristine-layer rule the
+  audit forced after it refused a legitimate remove-then-re-add). A **same-name pre-check** before step 1: a column of that name already contributed by
   another package breaks `Activity` for the whole environment via a codegen `ValidateException`. Refuse
   rather than attempt.
-- [ ] **AC-03 (the only new code)** — **Cache invalidation** exists and is callable.
+- [ ] **AC-03 (re-scoped — see the AC-08 result: ergonomics, not correctness)** — **Cache invalidation**
+  exists and is callable.
   `ProcessUserTaskSchemaManager.reset` clears both the server contract cache and the client ESQ cache;
   without it the designer keeps showing the old list **even after a compile** — this is the practical
   failure mode of the unofficial "add column → INSERT → compile" recipe. Nothing in clio does it today.
   Home: a cliogate endpoint (`[WebInvoke]`, `CheckCanManageSolution()` as the first line, `KnownRoute` +
   `/rest/CreatioApiGateway/<MethodName>`, per the AGENTS.md four-step recipe) or a thin clio tool.
-- [x] **AC-04** — **DECIDED: no convenience tool.** Having now run all three steps by hand, the sequencing is
+- [x] **AC-04** — **DECIDED: no convenience tool.** Having now run steps 1 and 3 by hand (step 2, `add-package-dependency`, was NOT run — step 1 succeeded
+  without it, consistent with the plan's "enforced only at export/install"), the sequencing is
   not what makes this hard. Each step already refuses well on its own, and the three genuinely difficult parts
   are not sequencing at all: the prefix requirement (enforced at save), the collision that breaks the schema
   environment-wide (now guarded by AC-02, in the command where it belongs rather than in a wrapper), and the
@@ -82,9 +85,13 @@ already ships the pieces.
 
   The new cross-package pre-check (AC-02) ran against the live environment on this call and correctly did not
   interfere — the name was free in every layer.
-- [x] **AC-06** — Precondition confirmed by exercising it: `create-data-binding-db -e krestov-test --package
-  Custom --schema EntityConnection` created the row AS BOUND package data (`da8351db-…`), so `Custom` on this
-  stand is non-foreign and the binding half is available. The recipe must still state the precondition,
+- [x] **AC-06** — Precondition confirmed by exercising it: `create-data-binding-db -e krestov-test --package Custom
+  --schema EntityConnection --binding-name EntityConnectionUsrClioConnProbe --rows '[{"values":{"SysEntitySchemaUId":
+  "c449d832-…","ColumnUId":"91f303e6-…"}}]'` created the row AS BOUND package data and logged
+  `Created row: da8351db-…`; the registry went from five rows to six. The `--rows` argument is load-bearing and
+  was missing from an earlier draft of this line: without it the command creates an EMPTY binding and the
+  row-creation half of step 3 goes unexercised, so quote it in full. What this does NOT establish is that
+  `Custom` is non-foreign ''' — nothing on that code path tests foreignness; the write simply succeeded. The recipe must still state the precondition,
   because the failure on a foreign package is what it protects against — that half remains unexercised, and
   is named as such rather than assumed to be graceful.
 - [ ] **AC-07** — `setConnections`' state-(1) and state-(2) messages (story 3, AC-19) name **this** recipe,
@@ -118,13 +125,18 @@ already ships the pieces.
   **Provenance closed by construction (same day, second measurement).** After AC-05 added
   `UsrClioConnProbe` and step 3 registered it, binding THAT column on the same probe element and running the
   process wrote it too (`UsrClioConnProbeId = ba5642d3-…`, with all three earlier columns unchanged). The
-  ambiguity above is gone: the element was built hours before the column existed, so the platform's
-  `SynchronizeActivityConnectionParameters` hook cannot have created its parameter — only
-  `EnsureParameterExists` can have. So the CREATED-parameter tail is proven, not merely the dynamic one.
+  ambiguity above is gone — but the timing argument an earlier draft used does not close it, because the
+  load-bearing event is the SAVE, which happened after the column existed. What closes it is reachability:
+  `SynchronizeActivityConnectionParameters` is invoked from exactly one place, the designer's NUI service, and
+  onto a throwaway design copy — it can never persist a parameter into a package-authored process. So only
+  `EnsureParameterExists` can have created this one. So the CREATED-parameter tail is proven, not merely the dynamic one.
 
-  **And it settles the severity of AC-03.** The platform's cached contract could not have known about a column
-  registered minutes earlier, yet the runtime wrote it. So a stale cache does NOT block the write; it affects
-  what the DESIGNER shows. The cache reset is therefore an ergonomics fix for a human looking at "Connected
+  **And it settles the severity of AC-03** — though not by the reasoning an earlier draft of this line gave.
+  That draft inferred an unobserved cache state ("the cached contract could not have known"), which this same
+  story says two sections down is not observable from the CLI at all. The fact that actually settles it is
+  recorded in the ProcessBuilder diary: the runtime write channel matches element parameters to Activity
+  columns by UId-then-name and NEVER opens `EntityConnection`, so it cannot consult that registry's cache in
+  the first place. A stale cache therefore affects what the DESIGNER shows and nothing else. The cache reset is therefore an ergonomics fix for a human looking at "Connected
   to", not a correctness fix for an agent-authored process — which lowers AC-03 from "the only new code" to a
   usability nicety, and is one more reason not to build the endpoint on speculation.
 
