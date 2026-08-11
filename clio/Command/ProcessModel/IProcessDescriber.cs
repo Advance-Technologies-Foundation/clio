@@ -229,6 +229,85 @@ public sealed class DescribedElement {
 	/// </summary>
 	[JsonPropertyName("filter")]
 	public DescribedFilter Filter { get; set; }
+
+	/// <summary>
+	/// For a Send email element (<c>EmailTemplateUserTask</c>) with a configured email: its configuration decoded
+	/// back into the descriptor vocabulary. <c>null</c> for other element kinds, for an unconfigured Send email
+	/// element, and when the server (an older <c>CrtProcessBuilder</c>) does not report it. Round-trips into a
+	/// <c>create</c>/<c>modify</c> <c>email</c> block (recipients re-enter as append-only entries).
+	/// </summary>
+	[JsonPropertyName("email")]
+	public DescribedEmail Email { get; set; }
+}
+
+/// <summary>The email configuration of a Send email element, read back from its parameters.</summary>
+public sealed class DescribedEmail {
+	/// <summary>Send mode: <c>auto</c> or <c>manual</c>; null when not set on the element.</summary>
+	[JsonPropertyName("mode")]
+	public string Mode { get; set; }
+
+	/// <summary>The sender formula (<c>[#Lookup.{objectUId}.{mailboxId}#]</c>); null when no sender is set.</summary>
+	[JsonPropertyName("sender")]
+	public string Sender { get; set; }
+
+	/// <summary>Human-readable sender identity (mailbox name / address) when the schema carries one.</summary>
+	[JsonPropertyName("senderDisplay")]
+	public string SenderDisplay { get; set; }
+
+	/// <summary>The subject — a plain constant or a formula expression; null when not set.</summary>
+	[JsonPropertyName("subject")]
+	public string Subject { get; set; }
+
+	/// <summary>True when the element carries a custom-message body (the body HTML itself is not echoed).</summary>
+	[JsonPropertyName("hasBody")]
+	public bool HasBody { get; set; }
+
+	/// <summary>Importance token (<c>none</c>/<c>normal</c>/<c>high</c>/<c>low</c>); null when not set.</summary>
+	[JsonPropertyName("importance")]
+	public string Importance { get; set; }
+
+	/// <summary>The ignore-sending-errors flag; null when not set on the element.</summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>To recipients — the element's dynamic <c>Recipient&lt;N&gt;</c> parameters that carry a value.</summary>
+	[JsonPropertyName("to")]
+	public List<DescribedParameter> To { get; set; }
+
+	/// <summary>Cc recipients — the dynamic <c>CopyRecipient&lt;N&gt;</c> parameters that carry a value.</summary>
+	[JsonPropertyName("cc")]
+	public List<DescribedParameter> Cc { get; set; }
+
+	/// <summary>Bcc recipients — the dynamic <c>BlindCopyRecipient&lt;N&gt;</c> parameters that carry a value.</summary>
+	[JsonPropertyName("bcc")]
+	public List<DescribedParameter> Bcc { get; set; }
+
+	/// <summary>The manual-mode performer; null when the element carries no performer assignment.</summary>
+	[JsonPropertyName("performer")]
+	public DescribedEmailPerformer Performer { get; set; }
+}
+
+/// <summary>The manual-mode performer of a Send email element ("Who performs the task?").</summary>
+public sealed class DescribedEmailPerformer {
+	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>For user/manager: the contact formula on the <c>OwnerId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("contact")]
+	public string Contact { get; set; }
+
+	/// <summary>For role: the role formula on the <c>RoleId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("role")]
+	public string Role { get; set; }
+
+	/// <summary>Human-readable role name when the schema carries one.</summary>
+	[JsonPropertyName("roleDisplay")]
+	public string RoleDisplay { get; set; }
+
+	/// <summary>The "open the execution page automatically" flag; null when not set on the element.</summary>
+	[JsonPropertyName("showPage")]
+	public bool? ShowPage { get; set; }
 }
 
 /// <summary>The record-event trigger of a signal start element (what starts the process).</summary>

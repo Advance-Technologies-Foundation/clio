@@ -159,6 +159,40 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
+	public void Describe_ShouldReadSendEmailConfiguration_WhenServerReportsIt() {
+		// Arrange — the shape a runtime-verified CrtProcessBuilder DescribeProcess returns for a configured element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"[#Lookup.5e487721-02e2-48ee-b755-dfa5160f5315.11111111-2222-3333-4444-555555555555#]\",\"senderDisplay\":\"sales@example.com\","
+			+ "\"subject\":\"After modify\",\"hasBody\":true,\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"to\":[{\"name\":\"Recipient1\",\"uid\":\"p1\",\"type\":\"MaxSizeText\",\"source\":\"ConstValue\",\"value\":\"to@example.com\"}],"
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":true}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Should().NotBeNull(because: "the email block must be deserialized, not dropped by the clio DTO");
+		email.Mode.Should().Be("manual");
+		email.SenderDisplay.Should().Be("sales@example.com");
+		email.Subject.Should().Be("After modify");
+		email.HasBody.Should().BeTrue();
+		email.Importance.Should().Be("high");
+		email.IgnoreErrors.Should().BeTrue();
+		email.To.Should().ContainSingle(because: "the recipient list must survive read-back")
+			.Which.Value.Should().Be("to@example.com");
+		email.Performer.Type.Should().Be("role");
+		email.Performer.RoleDisplay.Should().Be("All employees");
+		email.Performer.ShowPage.Should().BeTrue();
+	}
+
+	[Test]
 	[Description("Deserializes a signal start's record trigger — entity, on, and the tracked-change columns array — from the server response into the DescribedSignal DTO, so describe read-back surfaces changedColumns instead of dropping them.")]
 	public void Describe_ShouldReadSignalTrackedColumns_WhenServerReportsThem() {
 		// Arrange — a signalStart on Order, on:modified, restricted to the Amount + StatusId columns

@@ -26,7 +26,9 @@ public class ListUserTasksTool(
 		 OpenWorld = false),
 	 Description("List the user-facing user tasks available on a Creatio environment (the process designer "
 		 + "palette), including custom ones. Returns each task's name and UId; pass a name as a userTaskName "
-		 + "on a userTask element when building a process with create-business-process. Requires the "
+		 + "on a userTask element when building a process with create-business-process. Exception: for "
+		 + "EmailTemplateUserTask (Send email) use the dedicated type sendEmail with its email block instead of "
+		 + "the generic userTask route. Requires the "
 		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment. Install it with install-process-builder.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args

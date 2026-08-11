@@ -79,7 +79,7 @@ A preconfigured page is referenced by the element, and its parameters drive the 
 
 **Goal:** Support the **Send email** element — configure the sender, recipients (To / Cc / Bcc), subject and body, and/or an email template.
 
-**Status:** Not implemented. The element can be added as a user task generically, but its email configuration is not supported.
+**Status:** Implemented server-side (ENG-92706, `cli-process-builder` branch `feature/ENG-92706-send-email-element`, on top of the ENG-95064 body foundation): dedicated `sendEmail` element + `email` block covering mode (auto/manual), sender (mailbox id or email), To/Cc/Bcc recipients as dynamic element parameters (constant / process parameter / expression+referenceSchema), subject, importance, ignoreErrors, and the manual-mode performer (user/manager/role); `describe-process` read-back; `setElement` in-place reconfigure (recipients append-only). Serialization capture-verified (`docs/send-email-element-capture.md` there) and runtime-verified. **Out of scope / follow-ups:** email templates (descoped in the Jira description), body macro authoring (ENG-95064), activity-connection dynamic parameters (ENG-91845), entity-column recipients as first-class sources (ENG-91844 — the raw `expression` escape hatch works today).
 
 #### Scope
 
