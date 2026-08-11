@@ -689,10 +689,17 @@ in another repo — **`build.ps1` must not gain a build step for it**. It is bun
 
 ### 5.3 One source of truth for the bundled version
 
-The cliogate version story is three-way inconsistent today and must not be copied:
+> **SUPERSEDED — the sentence below was wrong about `version.txt`, and is kept only so the correction is
+> traceable.** It called the file stale, written by nobody, with an upgrade-warning branch that can never
+> fire. It is none of those: `Program.CheckApiVersion` compares it against the environment's cliogate
+> ASSEMBLY version, and `cliogate/Properties/AssemblyInfo.cs` carries the same `1.1.1.2` — an
+> assembly-vs-assembly comparison that is consistent and does fire. The three cliogate version-shaped values,
+> and why they differ, are analysed in ONE place now: the remarks on `clio/Common/BundledPackages.cs`. Read
+> that, not this.
+
+The cliogate version story looked three-way inconsistent when this plan was written:
 `InfoCommand._gateVersion` const `2.0.0.44` (regex-rewritten by `build.ps1`), `cliogate/descriptor.json`
-`2.0.0.44`, and `clio/cliogate/version.txt` `1.1.1.2` — **stale, written by nobody**, with exactly one
-reader (`Program.CheckApiVersion`), which means its upgrade-warning branch can never fire.
+`2.0.0.44`, and `clio/cliogate/version.txt` `1.1.1.2`.
 
 For the new package, introduce **one** constant and derive everything from it:
 
@@ -1110,7 +1117,7 @@ missing service.
   carrying §8.
 - **P5.4 Code review gates.** Comprehensive 3-lens review before opening the PR; triaged scoped
   review per post-open commit; comprehensive review before ready-to-merge.
-- **P5.5 Release notes.** `RELEASE.md` — call out the new bundled package and its version.
+- ~~**P5.5 Release notes.** `RELEASE.md` — call out the new bundled package and its version.~~ **Dropped as unsatisfiable:** `RELEASE.md` is a release *process* guide (how to tag), not a changelog, and this repository has no `CHANGELOG.md`. There is nowhere this entry could go, so the obligation was removed rather than left as a permanently unmet checklist item.
 - **P5.6 Diary.** Append an entry to `.codex/workspace-diary.md` in **both** repos.
 
 ---

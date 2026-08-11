@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading;
 using Clio.Command.McpServer;
 
 namespace Clio.Command.McpServer.Tools;
@@ -89,7 +92,42 @@ internal static class McpToolExecutionLock {
 	// reservation instead: a second same-tenant compile fails fast (mirroring the core's own reject), and
 	// non-compile tools are not blocked at all. Process-global by necessity — concurrent MCP calls share the
 	// process, and tool instances do not — matching why the lock provider itself is a static facade.
-	private static readonly ConcurrentDictionary<string, byte> _configurationBuildInFlight = new();
+	private static readonly ConcurrentDictionary<string, BuildReservation> _configurationBuildInFlight = new();
+
+	/// <summary>
+	/// One held configuration-build reservation: who holds it, and since when.
+	/// </summary>
+	/// <param name="Token">
+	/// Ownership, from a monotonic counter. NOT derived from the clock: <c>Environment.TickCount64</c> has a
+	/// ~15.6 ms resolution on Windows, so two reservations taken inside one tick would share a stamp and
+	/// ownership would stop being decidable. Production could not hit that today — a reclaim needs an entry
+	/// older than the ceiling, so the two stamps are tens of minutes apart — but correctness that rests on the
+	/// clock being coarse enough is not correctness, and a test constructing the collision found it at once.
+	/// </param>
+	/// <param name="StartedAtMs">
+	/// When the reservation was taken, in monotonic ticks, for the ceiling comparison only.
+	/// </param>
+	internal readonly record struct BuildReservation(long Token, long StartedAtMs);
+
+	private static long _reservationTokenSource;
+
+	/// <summary>
+	/// How long a configuration-build reservation may be held in THIS PROCESS before another caller may
+	/// reclaim it.
+	/// </summary>
+	/// <remarks>
+	/// A backstop against a reservation that can never be released — not a timeout on the build, and not a
+	/// distributed lease: another clio process on another machine is unaffected either way. See
+	/// <see cref="TryReserveConfigurationBuild"/> for what does serialize that case, why a reservation can
+	/// become unreleasable, and why this value is generous.
+	/// </remarks>
+	private static readonly TimeSpan ConfigurationBuildReservationCeiling = TimeSpan.FromMinutes(30);
+
+	/// <summary>
+	/// The ceiling in the units the reservation stamps are measured in.
+	/// </summary>
+	private static long ConfigurationBuildReservationCeilingMs =>
+		(long)ConfigurationBuildReservationCeiling.TotalMilliseconds;
 
 	/// <summary>
 	/// Wires the facade to the host's DI-registered lock provider and session cache. Called once at MCP
@@ -174,22 +212,104 @@ internal static class McpToolExecutionLock {
 	/// It is deliberately narrow — it does NOT serialize unrelated same-tenant tools the way the per-tenant
 	/// execution monitor would (review Blocker).
 	/// </remarks>
-	internal static bool TryReserveConfigurationBuild(string cacheKey) =>
-		_configurationBuildInFlight.TryAdd(Normalize(cacheKey), 0);
+	internal static bool TryReserveConfigurationBuild(string cacheKey, out BuildReservation reservation) {
+		string key = Normalize(cacheKey);
+		// Environment.TickCount64, NOT DateTime.UtcNow: this is an ELAPSED-time measurement, and the wall clock
+		// is not monotonic. A forward step of more than the ceiling — an NTP phase correction, a VM snapshot
+		// restore, a laptop resuming with a corrected RTC, an operator setting the clock — would otherwise
+		// reclaim a reservation whose build started seconds ago, which is the one thing the generous ceiling is
+		// supposed to prevent. Ticks since boot cannot move backwards and do not wrap in any realistic uptime.
+		long now = Environment.TickCount64;
+		reservation = new BuildReservation(Interlocked.Increment(ref _reservationTokenSource), now);
+		if (_configurationBuildInFlight.TryAdd(key, reservation)) {
+			return true;
+		}
+		// A held reservation past its ceiling is RECLAIMED rather than honoured, because without that this
+		// dictionary has a permanent-wedge state. The reservation is released by the `finally` of the work
+		// delegate, which past the MCP response deadline runs detached — so that `finally` is the only release
+		// there is, and the install POST it wraps goes out with Timeout.Infinite (BasePackageInstaller). A
+		// target that accepts the request and then never answers — a hung app pool mid-configuration-build, a
+		// proxy holding the connection open, a deliberately stalling instance — therefore leaves the entry in
+		// place for the life of the MCP server process, and every later install-process-builder AND
+		// compile-creatio on that tenant is refused with no in-band recovery. MCP servers are long-lived, so
+		// "restart clio to unstick it" is not an answer a user should need.
+		//
+		// SCOPE, because the wording here used to overclaim it. This dictionary is a static in ONE process:
+		// it does not, and never did, exclude a second clio on another machine. Two users hitting the same
+		// environment are two processes that know nothing about each other. What serializes THAT is the
+		// platform — WorkspaceBuilder rejects a concurrent compilation on the node with
+		// "AnotherCompilationIsInProgress" — and that is the real invariant. This reservation is a local
+		// fast-fail: it stops one process from sending a doomed second request, and from starting a second
+		// detached install on top of its own first one.
+		//
+		// So the ceiling is not a timeout on the work: nothing is cancelled, and a build still running past it
+		// keeps running. It only stops a reservation nobody will ever release from outliving the work it was
+		// protecting. It is generous for the modest reason — not to take the slot away from a build that is
+		// honestly still running IN THIS PROCESS — rather than because early reclaim would break the
+		// cross-machine invariant; the reservation was never what upheld that.
+		//
+		// The root cause on the install path is the unbounded POST, and bounding it would remove the need for
+		// a ceiling THERE. It lives in BasePackageInstaller, shared with install-gate and every other package
+		// install, so it carries its own blast radius and is deliberately a separate change. It would not retire
+		// the ceiling, though: compile-creatio takes the same reservation and its long call does not go through
+		// BasePackageInstaller, so that subject would remain.
+		if (_configurationBuildInFlight.TryGetValue(key, out BuildReservation held)
+			&& now - held.StartedAtMs > ConfigurationBuildReservationCeilingMs) {
+			// TryUpdate, not Remove-then-Add: if two callers race here only one may take the reclaimed slot,
+			// and the comparison value makes that decidable without a lock.
+			return _configurationBuildInFlight.TryUpdate(key, reservation, held);
+		}
+		return false;
+	}
 
 	/// <summary>
 	/// Releases the reservation taken by <see cref="TryReserveConfigurationBuild"/>. Must be called from the
 	/// point where the actual work completes (its detached continuation past the MCP response deadline), not
 	/// where the tool method returns, so the reservation spans the real build duration.
 	/// </summary>
-	internal static void ReleaseConfigurationBuild(string cacheKey) =>
-		_configurationBuildInFlight.TryRemove(Normalize(cacheKey), out _);
+	/// <param name="cacheKey">The tenant key the reservation was taken for.</param>
+	/// <param name="reservation">
+	/// The token <see cref="TryReserveConfigurationBuild"/> handed out. Releasing is a no-op unless it still
+	/// matches, which is what makes a superseded holder harmless.
+	/// </param>
+	/// <remarks>
+	/// OWNERSHIP-AWARE, and it has to be once reclaiming exists. Before the ceiling there was exactly one
+	/// logical owner per key at any time, so an unconditional remove was correct. With reclaiming there can be
+	/// two: the original holder, whose work is still out there, and the caller that reclaimed the slot after
+	/// the ceiling. An unconditional remove let the ORIGINAL delete the RECLAIMER's live reservation when it
+	/// finally returned — and then any third caller reserved successfully and started a configuration build
+	/// alongside the reclaimer's, with no refusal. So the guard would switch itself off for that tenant after
+	/// a single reclaim: precisely the "second install on top of a live one" this reservation exists to stop,
+	/// arrived at by way of the fix for the wedge.
+	/// </remarks>
+	internal static void ReleaseConfigurationBuild(string cacheKey, BuildReservation reservation) =>
+		_configurationBuildInFlight.TryRemove(
+			new KeyValuePair<string, BuildReservation>(Normalize(cacheKey), reservation));
 
 	// Test-only: clears the process-global reservations so detached work started by one test cannot
 	// fast-fail the next one (the release runs on the detached continuation, which may outlive the test
 	// method). No production caller.
 	internal static void ResetConfigurationBuildReservationsForTests() =>
 		_configurationBuildInFlight.Clear();
+
+	// Test-only: ages an existing reservation so the ceiling in TryReserveConfigurationBuild can be exercised
+	// without waiting it out. Deliberately manipulates the same dictionary rather than making the ceiling
+	// itself settable — a configurable ceiling is production state a test could leave wrong for the next one,
+	// whereas a back-dated entry is cleared by ResetConfigurationBuildReservationsForTests like any other.
+	// Returns false when there is no reservation to age, so a test cannot silently assert nothing.
+	internal static bool BackdateConfigurationBuildReservationForTests(string cacheKey, TimeSpan age) {
+		string key = Normalize(cacheKey);
+		return _configurationBuildInFlight.TryGetValue(key, out BuildReservation held)
+			&& _configurationBuildInFlight.TryUpdate(
+				key,
+				held with { StartedAtMs = held.StartedAtMs - (long)age.TotalMilliseconds },
+				held);
+	}
+
+	// Test-only: the ceiling, so a test can express "older than the ceiling" without restating the number and
+	// silently passing if production changes it.
+	internal static TimeSpan ConfigurationBuildReservationCeilingForTests =>
+		ConfigurationBuildReservationCeiling;
 
 	// Null/blank normalizes to the single shared fallback key so GetLock, MarkInUse, and MarkAvailable
 	// all key the same lock-provider entry for an environment-less / test-double call.

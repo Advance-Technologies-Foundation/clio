@@ -18,15 +18,22 @@ Installs the "CrtProcessBuilder" package to a Creatio environment. The package
 ships inside clio and serves ProcessDesignService, the backend endpoint that
 builds and edits business processes from a declarative descriptor.
 
-The package is required by the process-designer capability:
+The package is required by the process-designer capability, which is exposed as **MCP
+tools with no CLI verbs** — `clio list-user-tasks` is not a command and will report an
+unrecognised verb:
 - create-business-process / modify-business-process
 - describe-business-process
 - list-user-tasks
 - validate-process-graph
 
-Those commands refuse to run against an environment where the package is missing
-**or older than the version bundled with clio**, and name this command in the
-refusal.
+They are additionally behind the `process-designer` feature toggle, which is **off by
+default** (`clio experimental --name process-designer --enable`). Each refuses to run
+against an environment where the package is missing **or older than the version bundled
+with clio**, and names this command in the refusal.
+
+`install-process-builder` itself is a normal CLI verb and is deliberately *not* behind
+the toggle — a gated verb would be filtered out of the parser, so the remediation the
+refusals point at would vanish exactly when it is needed.
 
 The package ships as source, without a compiled assembly, and the target
 environment compiles it during installation against its own core. One archive

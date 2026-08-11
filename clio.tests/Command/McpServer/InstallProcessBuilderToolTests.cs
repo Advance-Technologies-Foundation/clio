@@ -245,7 +245,7 @@ public sealed class InstallProcessBuilderToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("busy-tenant");
 		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver);
-		McpToolExecutionLock.TryReserveConfigurationBuild("busy-tenant").Should().BeTrue(
+		McpToolExecutionLock.TryReserveConfigurationBuild("busy-tenant", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue(
 			because: "the test needs to hold the reservation the tool will find taken");
 
 		try {
@@ -263,8 +263,49 @@ public sealed class InstallProcessBuilderToolTests {
 					+ "nothing to queue behind, and queueing was never right — a second install would rebuild "
 					+ "and restart an instance already being rebuilt");
 		} finally {
-			McpToolExecutionLock.ReleaseConfigurationBuild("busy-tenant");
+			McpToolExecutionLock.ReleaseConfigurationBuild("busy-tenant", heldReservation);
 			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A reservation older than the ceiling is reclaimed, the reclaimed slot still excludes the next caller, and the ORIGINAL holder's release does not free it. All three matter together. The reservation is released by the finally of the work delegate, which past the MCP response deadline runs DETACHED — so that finally is the only release, and the install POST it wraps goes out with Timeout.Infinite. A target that accepts the request and then never answers would otherwise wedge the tenant for the life of the server process, refusing every later install and compile with no in-band recovery. But reclaiming creates a second owner, and an unconditional release let the original delete the reclaimer's live reservation — which switched the guard off entirely for that tenant, arriving at 'a second build on top of a live one' by way of the fix for the wedge. Nothing is cancelled and a build still running past the ceiling keeps running: the ceiling only stops a reservation nobody will ever release from outliving the work it protected.")]
+	public void TryReserveConfigurationBuild_ShouldReclaimAndKeepExcluding_WhenOlderThanTheCeiling() {
+		// Arrange
+		const string tenant = "ceiling-tenant";
+		McpToolExecutionLock.ResetConfigurationBuildReservationsForTests();
+		McpToolExecutionLock.TryReserveConfigurationBuild(tenant, out McpToolExecutionLock.BuildReservation stalled).Should().BeTrue(
+			because: "the first reservation for a tenant must succeed");
+		McpToolExecutionLock.BackdateConfigurationBuildReservationForTests(
+				tenant,
+				McpToolExecutionLock.ConfigurationBuildReservationCeilingForTests + TimeSpan.FromMinutes(1))
+			.Should().BeTrue(because: "the reservation just taken must still be there to age");
+
+		try {
+			// Act
+			bool reclaimed = McpToolExecutionLock.TryReserveConfigurationBuild(tenant, out McpToolExecutionLock.BuildReservation owner);
+			bool thirdCallerBeforeRelease = McpToolExecutionLock.TryReserveConfigurationBuild(tenant, out McpToolExecutionLock.BuildReservation _);
+			McpToolExecutionLock.ReleaseConfigurationBuild(tenant, stalled);
+			bool thirdCallerAfterStaleRelease =
+				McpToolExecutionLock.TryReserveConfigurationBuild(tenant, out McpToolExecutionLock.BuildReservation _);
+
+			// Assert
+			reclaimed.Should().BeTrue(
+				because: "a reservation nobody can release must not wedge the tenant permanently — otherwise one "
+					+ "stalled target costs every later install AND compile on it until the process restarts");
+			thirdCallerBeforeRelease.Should().BeFalse(
+				because: "reclaiming must RE-take the reservation, not merely drop it: the freshly reclaimed slot "
+					+ "has to exclude the next caller exactly as the original did");
+			thirdCallerAfterStaleRelease.Should().BeFalse(
+				because: "the stalled holder's release must be a NO-OP once its slot was reclaimed. Without the "
+					+ "ownership token it removed the reclaimer's live reservation, and the next caller then "
+					+ "started a configuration build alongside a running one — the guard disabling itself after "
+					+ "a single reclaim");
+			owner.Should().NotBe(stalled,
+				because: "the reclaimer holds a distinct token, which is what makes the stale release decidable");
+		} finally {
+			McpToolExecutionLock.ResetConfigurationBuildReservationsForTests();
 		}
 	}
 

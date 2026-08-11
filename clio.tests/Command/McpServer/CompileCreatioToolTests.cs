@@ -13,7 +13,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
-// NonParallelizable: this fixture and CompileCreatioToolTests both call
+// NonParallelizable: this fixture and InstallProcessBuilderToolTests both call
 // McpToolExecutionLock.ResetConfigurationBuildReservationsForTests(), which does an UNKEYED Clear() on a
 // process-global dictionary, and both hold a reservation across an await in the middle of a test. Under
 // [assembly: Parallelizable(ParallelScope.Fixtures)] one fixture's TearDown can therefore clear the
@@ -355,7 +355,7 @@ public sealed class CompileCreatioToolTests
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
 		// Simulate a compile already running for this tenant by holding its reservation.
-		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant").Should().BeTrue(
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue(
 			because: "the first reservation for a tenant must succeed");
 
 		try
@@ -375,7 +375,7 @@ public sealed class CompileCreatioToolTests
 		}
 		finally
 		{
-			McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant");
+			McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant", heldReservation);
 			ConsoleLogger.Instance.ClearMessages();
 		}
 	}
@@ -395,8 +395,8 @@ public sealed class CompileCreatioToolTests
 		ICompileOperationRegistry registry = new CompileOperationRegistry();
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
-		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant").Should().BeTrue();
-		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant");
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue();
+		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant", heldReservation);
 
 		try
 		{
