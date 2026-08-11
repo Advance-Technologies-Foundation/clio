@@ -139,14 +139,29 @@ public abstract class BaseTool<T>(
 		T options,
 		Func<TCommand, TResponse> executor,
 		Func<string, TResponse> onFailure) where TCommand : Command<T> {
+		return ExecuteResolved<TCommand, TResponse>(options, (resolvedCommand, _) => executor(resolvedCommand),
+			onFailure);
+	}
+
+	/// <summary>
+	/// Overload of <see cref="ExecuteResolved{TCommand,TResponse}(T,Func{TCommand,TResponse},Func{string,TResponse})"/>
+	/// that also hands the executor the version resolution the floor gate performed for this invocation, so a
+	/// tool needing the target's version (for example to select a version-matched artifact) reuses that probe
+	/// instead of paying a second environment round-trip. The resolution is <see langword="null"/> when no
+	/// version requirement was triggered and none was resolved.
+	/// </summary>
+	private protected TResponse ExecuteResolved<TCommand, TResponse>(
+		T options,
+		Func<TCommand, CreatioVersionResolution, TResponse> executor,
+		Func<string, TResponse> onFailure) where TCommand : Command<T> {
 		// Review (Codex #6): pass options to ExecuteWithCleanLog so this typed-response path runs under the
 		// PER-TENANT lock (not the shared fallback, which would serialize independent tenants) AND marks the
 		// session-container in-use for the call — the reserve-before-Acquire guard (review #5). The
 		// parameterless overload would key on the fallback and leave the resolved container evictable mid-call.
 		return ExecuteWithCleanLog(options as EnvironmentOptions, () => {
 			try {
-				TCommand resolvedCommand = ResolveCommand<TCommand>(options);
-				return executor(resolvedCommand);
+				ResolvedCall<TCommand> resolved = ResolveCall<TCommand>(options);
+				return executor(resolved.Command, resolved.GateResolution);
 			}
 			catch (CreatioVersionRequirementException ex) {
 				// Review (b-horodyskyi): this typed-response path lands in the model/host transcript like
@@ -317,17 +332,15 @@ public abstract class BaseTool<T>(
 	/// (unmet requirement) and any other verification failure propagate to the caller.
 	/// </remarks>
 	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> =>
-		ResolveCommand<TCommand>(options, out _);
+		ResolveCall<TCommand>(options).Command;
 
-	/// <summary>
-	/// Overload of <see cref="ResolveCommand{TCommand}(T)"/> that also outputs the cache key the command's
-	/// container was acquired under, so the execution path locks / marks-in-use on that exact key (M2).
-	/// </summary>
-	private protected TCommand ResolveCommand<TCommand>(T options, out string tenantKey) where TCommand : Command<T> {
-		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options, out tenantKey);
-		EnforceCreatioVersionRequirements(options);
+	private sealed record ResolvedCall<TCommand>(TCommand Command, CreatioVersionResolution GateResolution);
+
+	private ResolvedCall<TCommand> ResolveCall<TCommand>(T options) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options, out _);
+		CreatioVersionResolution gateResolution = EnforceCreatioVersionRequirements(options);
 		EnforcePackageRequirements(options);
-		return resolvedCommand;
+		return new ResolvedCall<TCommand>(resolvedCommand, gateResolution);
 	}
 
 	// Enforces this options type's [RequiresPackage] declarations against the per-call target
@@ -349,7 +362,7 @@ public abstract class BaseTool<T>(
 	}
 
 	// Enforces this options type's [RequiresCreatioVersion] declaration against the per-call target
-	// environment. It runs on the ResolveCommand path (before the package gate, mirroring the CLI
+	// environment. It runs on the ResolveCall path (before the package gate, mirroring the CLI
 	// dispatch order), so BOTH BaseTool execution paths — InternalExecute<TCommand> and the
 	// typed-response/ExecuteWithCleanLog path — are version-gated uniformly. Cheap static pre-check first: options types without
 	// [RequiresCreatioVersion] skip resolution entirely, so non-gated tools stay zero-cost and never
@@ -359,12 +372,12 @@ public abstract class BaseTool<T>(
 	// InternalExecute<TCommand> and to a typed failure by each typed-response tool's own catch); a
 	// malformed [RequiresCreatioVersion] (e.g. on a non-bool property) propagates as
 	// InvalidOperationException so a developer error stays distinguishable from a version refusal.
-	private void EnforceCreatioVersionRequirements(T options) {
+	private CreatioVersionResolution EnforceCreatioVersionRequirements(T options) {
 		if (!RequiresCreatioVersionAttribute.IsDefinedOn(typeof(T))) {
-			return;
+			return null;
 		}
 		ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
-		checker.EnsureRequirements(options);
+		return checker.EnsureRequirements(options);
 	}
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME
