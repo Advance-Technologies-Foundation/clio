@@ -5,6 +5,7 @@ Usage:
 
 Commands:
   activate-pkg                         Activate a package in Creatio, activate-package, apkg, enable-package
+  add-knowledge-source                 Add a trusted Git or NuGet knowledge source
   add-data-binding-row                 Add or replace a row in a package data binding
   add-item                             Generate package item models from Creatio metadata, create
   add-package                          Add package to workspace or local folder, ap
@@ -33,6 +34,8 @@ Commands:
   create-entity-schema                 Create an entity schema in a remote Creatio package
   create-k8-files                      Prepare K8 files for deployment, ck8f
   create-theme                         Create a custom Creatio theme directly on the target environment via the native ThemeService
+  disable-knowledge-source             Stop serving a trusted source while retaining its cache
+  enable-knowledge-source              Enable a configured trusted knowledge source
   create-workspace                     Create a local workspace, createw
   CustomizeDataProtection              Toggle CustomizeDataProtection in appsettings.json, cdp
   dataservice                          Send a Creatio DataService request, ds
@@ -71,6 +74,7 @@ Commands:
   install-application                  Install an application package into Creatio, install-app, push-app
   install-dbhub                        Install, adopt, or repair a local loopback dbHub HTTP MCP server
   install-gate                         Install or update cliogate in Creatio, gate, installgate, update-gate
+  install-knowledge                    Install verified knowledge from one source or all enabled sources
   install-nuget-pkg                    Install NuGet package to a web application (website), installng
   install-toolkit                      Install the Creatio AI App Development Toolkit for all detected coding agents
   last-compilation-log                 Get last compilation log, lcl
@@ -83,6 +87,7 @@ Commands:
   lock-package                         Lock a package in Creatio, lp
   manage-windows-features              Install windows features required for Creatio, mng-win-features, mwf
   mcp-server                           Start the MCP server over stdio, mcp
+  info-knowledge                       Show trusted sources, installed generations, validation, and update status
   merge-workspaces                     Merge packages from multiple workspaces and install them to the environment, mergew
   mock-data                            Generate mock data for unit tests, data-mock
   modify-entity-schema-column          Add, modify, or remove a column in a remote Creatio entity schema
@@ -112,6 +117,7 @@ Commands:
   remove-data-binding-row              Remove a row from a package data binding
   remove-data-binding-row-db           Remove a row from a DB-first package data binding
   restart-web-app                      Restart a web application, restart
+  remove-knowledge-source              Remove a trusted source and its Clio-managed cache
   restore-configuration                Restore the configuration from the last backup, rc, restore
   restore-db                           Restore a database backup, rdb
   restore-nuget-pkg                    Restore NuGet package to a folder, restore-nuget, rn
@@ -130,6 +136,8 @@ Commands:
   show-local-envs                      Show local environments with filesystem and auth status, localenvs
   show-package-file-content            Show files that belong to a package, files, show-files
   list-environments                    List registered Creatio environments, show-web-app-list, env, envs, show-web-app
+  list-knowledge-examples              Discover registered reference examples without cloning their repositories
+  list-knowledge-sources               List all configured knowledge sources, including disabled sources
   start                                Start local Creatio application, sc, start-creatio, start-server
   stop                                 Stop Creatio application(s) and remove services, stop-creatio
   switch-nuget-to-dll-reference        Switches nuget references to dll references in csproj files, nuget2dll
@@ -145,6 +153,8 @@ Commands:
   update-entity-schema                 Apply batch column operations to a remote Creatio entity schema
   update-theme                         Overwrite an existing custom Creatio theme on the target environment via the native ThemeService
   update-toolkit                       Update the Creatio AI App Development Toolkit for all detected coding agents
+  update-knowledge                     Update verified knowledge from one source or all enabled sources
+  delete-knowledge                     Delete installed knowledge while retaining source configuration
   upload-license                       Load license to selected environment, license, load-license, loadlicense
   upload-licenses                      Upload license files to Creatio, lic
   upsert-data-binding-row-db           Upsert a row in a DB-first package data binding

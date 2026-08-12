@@ -26,8 +26,20 @@ public class PackageDescriptor{
 
 	#region Methods: Private
 
+	/// <summary>
+	/// Truncates <paramref name="dt"/> to whole seconds, PRESERVING its <see cref="DateTimeKind"/>.
+	/// </summary>
+	/// <remarks>
+	/// Carrying <c>dt.Kind</c> is the whole point of this overload argument. The component constructor
+	/// without it yields <see cref="DateTimeKind.Unspecified"/>, and
+	/// <see cref="DateTime.ToUniversalTime"/> — which <see cref="UnixTimeConverter.CovertToUnixDateTime"/>
+	/// applies next — treats an Unspecified value as LOCAL. So dropping the kind silently made the
+	/// conversion correct for a <see cref="DateTime.Now"/> input and wrong for a
+	/// <see cref="DateTime.UtcNow"/> one, shifting the latter back by the local offset. Both inputs are
+	/// correct now.
+	/// </remarks>
 	private static DateTime ClearMilliseconds(DateTime dt) {
-		return new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second);
+		return new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second, dt.Kind);
 	}
 
 	#endregion

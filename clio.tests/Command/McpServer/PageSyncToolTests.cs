@@ -979,6 +979,44 @@ public sealed class PageSyncToolTests {
 			because: "the warning names the schema whose base could not be resolved");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A failed mobile base pre-resolution surfaces in the PER-PAGE result (a Validation warning), not just a log line — so a body validated against the permissive seeded stub is not reported as a clean pass.")]
+	public async Task SyncPages_PreResolveMobileBaseFailure_SurfacesWarningInPageResult() {
+		// Arrange — mobile body needs a base, but the get-page read fails (empty rows) so resolution degrades.
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().ContainSingle(
+			because: "the batch had one page")
+			.Which.Validation.Warnings.Should().Contain(w => w.Contains("could not be resolved") && w.Contains("seeded base"),
+			because: "a degraded validation must be visible in the per-page result, not only in a log line");
+	}
+
 	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
 		CreateSuccessfulPageUpdateCommandWithClient(out _, schemaType);
 

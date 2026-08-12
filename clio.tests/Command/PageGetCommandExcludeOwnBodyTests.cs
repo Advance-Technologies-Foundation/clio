@@ -140,4 +140,28 @@ public sealed class PageGetCommandExcludeOwnBodyTests {
 		response.Bundle.ViewModelConfig.ToJsonString().Should().Contain("BaseAttr",
 			because: "the full bundle still reflects the single schema's own body");
 	}
+
+	[Test]
+	[Description("BaseViewModelConfig / BaseModelConfig are internal validation channels — [JsonIgnore] on BOTH Newtonsoft and System.Text.Json — and must never leak into the get-page wire payload through either serializer.")]
+	public void PageGetResponse_BaseConfigFields_NeverSerialize() {
+		// Arrange — a response with both base fields populated with distinctive marker content.
+		var response = new PageGetResponse {
+			Success = true,
+			BaseViewModelConfig = new System.Text.Json.Nodes.JsonObject { ["BaseVmcMarker"] = "vmc" },
+			BaseModelConfig = new System.Text.Json.Nodes.JsonObject { ["BaseMcMarker"] = "mc" }
+		};
+
+		// Act
+		string systemTextJson = System.Text.Json.JsonSerializer.Serialize(response);
+		string newtonsoft = Newtonsoft.Json.JsonConvert.SerializeObject(response);
+
+		// Assert
+		foreach (string payload in new[] { systemTextJson, newtonsoft }) {
+			payload.Should().NotContain("BaseViewModelConfig")
+				.And.NotContain("BaseModelConfig")
+				.And.NotContain("BaseVmcMarker")
+				.And.NotContain("BaseMcMarker",
+				because: "the base-config fields are [JsonIgnore] on both serializers and must never reach the wire payload");
+		}
+	}
 }

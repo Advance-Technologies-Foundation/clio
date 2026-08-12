@@ -268,10 +268,10 @@ public sealed class PageSyncTool(
 		// same-tenant sync-pages/update-page calls block on, against this tool's lock-time goal. Resolving them here
 		// keeps the critical section network-free. Best-effort: a failed resolution is omitted and validation falls
 		// back to the oracle's seeded base exactly as before.
-		IReadOnlyDictionary<int, (string? Vmc, string? Mc)> preResolvedMobileBases =
+		(IReadOnlyDictionary<int, (string? Vmc, string? Mc)> preResolvedMobileBases, IReadOnlySet<int> degradedMobileBaseIndices) =
 			validate
 				? PreResolveMobileBases(pages, pendingIndices, args.EnvironmentName)
-				: new Dictionary<int, (string? Vmc, string? Mc)>();
+				: (new Dictionary<int, (string? Vmc, string? Mc)>(), new HashSet<int>());
 		lock (McpToolExecutionLock.GetLock(tenantKey)) {
 			McpToolExecutionLock.MarkInUse(tenantKey);
 			try {
@@ -289,7 +289,8 @@ public sealed class PageSyncTool(
 					prePass,
 					samplingResults) {
 					EnvironmentName = args.EnvironmentName,
-					PreResolvedMobileBases = preResolvedMobileBases
+					PreResolvedMobileBases = preResolvedMobileBases,
+					DegradedMobileBaseIndices = degradedMobileBaseIndices
 				};
 				try {
 					foreach (int idx in pendingIndices) {
@@ -490,11 +491,12 @@ public sealed class PageSyncTool(
 	// possible future optimization, but sequential keeps the get-page reads ordered and simple, and the batch's
 	// dominant cost is the locked per-page save loop, not this pre-pass.
 	// </para>
-	private IReadOnlyDictionary<int, (string? Vmc, string? Mc)> PreResolveMobileBases(
+	private (IReadOnlyDictionary<int, (string? Vmc, string? Mc)> Bases, IReadOnlySet<int> DegradedIndices) PreResolveMobileBases(
 		IReadOnlyList<PageSyncPageInput> pages,
 		IReadOnlyList<int> pendingIndices,
 		string? environmentName) {
 		var bases = new Dictionary<int, (string? Vmc, string? Mc)>();
+		var degraded = new HashSet<int>();
 		foreach (int index in pendingIndices) {
 			PageSyncPageInput page = pages[index];
 			if (PageSchemaTypeExtensions.FromBody(page.Body) != PageSchemaType.Mobile
@@ -509,9 +511,15 @@ public sealed class PageSyncTool(
 					Uri: null, Login: null, Password: null, Mode: "replace", Logger: logger));
 			if (vmc is not null || mc is not null) {
 				bases[index] = (vmc, mc);
+			} else {
+				// This page NEEDS an external base but resolution failed (read/auth error). Record it so the page's
+				// per-page result carries a warning: without this the body would be validated against the permissive
+				// seeded stub and a not-a-container error could pass unnoticed — a degraded validation must not read
+				// as a genuine pass. (The log line records WHY; this drives the caller-visible signal.)
+				degraded.Add(index);
 			}
 		}
-		return bases;
+		return (bases, degraded);
 	}
 
 	private PageSyncPageResult ProcessPendingPage(PageSyncPageInput page, int index, PageSyncBatchContext ctx) {
@@ -528,7 +536,8 @@ public sealed class PageSyncTool(
 			EnvironmentName = ctx.EnvironmentName,
 			PreResolvedMobileBase = ctx.PreResolvedMobileBases.TryGetValue(index, out (string? Vmc, string? Mc) mobileBase)
 				? mobileBase
-				: null
+				: null,
+			MobileBaseResolutionDegraded = ctx.DegradedMobileBaseIndices.Contains(index)
 		};
 		return SyncSinglePage(page, opOptions);
 	}
@@ -549,6 +558,10 @@ public sealed class PageSyncTool(
 		// validation is off or no mobile page needs an external base. See ExecuteSyncBatch.
 		public IReadOnlyDictionary<int, (string? Vmc, string? Mc)> PreResolvedMobileBases { get; init; }
 			= new Dictionary<int, (string? Vmc, string? Mc)>();
+
+		// Page indices whose mobile base was NEEDED but could NOT be resolved (the validation fell back to the
+		// permissive seeded stub) — surfaced as a per-page warning so the degraded case is not read as a clean pass.
+		public IReadOnlySet<int> DegradedMobileBaseIndices { get; init; } = new HashSet<int>();
 	}
 
 	private sealed record PageSyncPrePassResults(IReadOnlyList<PageSyncPrePassEntry> Entries);
@@ -589,6 +602,10 @@ public sealed class PageSyncTool(
 		// The mobile apply-oracle base pre-resolved off the lock for this page (null for a web page, or a mobile
 		// page that needs no external base / whose resolution failed). Handed to the oracle as a no-network delegate.
 		public (string? Vmc, string? Mc)? PreResolvedMobileBase { get; init; }
+
+		// True when this page NEEDED a mobile base but resolution failed — SyncSinglePage adds a warning so the
+		// degraded validation (against the seeded stub) is visible in the per-page result.
+		public bool MobileBaseResolutionDegraded { get; init; }
 	}
 
 	private PageSyncPageResult TryValidatePage(
@@ -661,6 +678,15 @@ public sealed class PageSyncTool(
 					return validationFailure;
 			}
 			validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
+			if (opOptions.MobileBaseResolutionDegraded) {
+				// The mobile base could not be pre-resolved, so the body was validated against the permissive seeded
+				// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
+				validationResult = AppendCommandWarnings(validationResult, [
+					$"Mobile validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
+						+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
+						+ "the environment/credentials are available to validate against the real base."
+				]);
+			}
 			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
 			if (samplingFailure != null)
 				return samplingFailure;

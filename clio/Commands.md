@@ -1,4 +1,4 @@
-# Clio Command Reference
+﻿# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
@@ -538,6 +538,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="restore-db"></a>
 <a id="rdb"></a>
 - [`restore-db`](docs/commands/restore-db.md) - Restore a database backup, `rdb`
+<a id="read-data-binding-db"></a>
+<a id="get-data-binding-db"></a>
+- [`read-data-binding-db`](docs/commands/read-data-binding-db.md) - Report which columns a DB-first data binding actually ships, `get-data-binding-db`
 
 ## Local Instance Management
 
@@ -605,12 +608,17 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 
+## Branding
+
+<a id="set-logo"></a>
+- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos from local image files and bind them into a package as data bindings
+<a id="set-background-image"></a>
+- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background and bind it into a package as data bindings
+
 ## Customization
 
 <a id="upload-image"></a>
 - [`upload-image`](docs/commands/upload-image.md) - Upload a local image to an environment and print its image id
-<a id="set-background-image"></a>
-- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background, from a local file or an uploaded image id
 
 ## Record rights
 
@@ -621,6 +629,26 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="install-knowledge"></a>
+- [`install-knowledge`](docs/commands/install-knowledge.md) - Install verified knowledge from one source or all enabled sources
+<a id="update-knowledge"></a>
+- [`update-knowledge`](docs/commands/update-knowledge.md) - Update verified knowledge from one source or all enabled sources
+<a id="info-knowledge"></a>
+- [`info-knowledge`](docs/commands/info-knowledge.md) - Show local knowledge state, with optional bounded update checks
+<a id="delete-knowledge"></a>
+- [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete installed knowledge while retaining source configuration
+<a id="add-knowledge-source"></a>
+- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a signed GitHub Release, direct Git checkout, or signed NuGet knowledge source
+<a id="remove-knowledge-source"></a>
+- [`remove-knowledge-source`](docs/commands/remove-knowledge-source.md) - Remove one non-built-in source and best-effort clean its managed cache
+<a id="enable-knowledge-source"></a>
+- [`enable-knowledge-source`](docs/commands/enable-knowledge-source.md) - Enable one configured knowledge source
+<a id="disable-knowledge-source"></a>
+- [`disable-knowledge-source`](docs/commands/disable-knowledge-source.md) - Disable one configured source without deleting its cache
+<a id="list-knowledge-sources"></a>
+- [`list-knowledge-sources`](docs/commands/list-knowledge-sources.md) - List all configured knowledge sources
+<a id="list-knowledge-examples"></a>
+- [`list-knowledge-examples`](docs/commands/list-knowledge-examples.md) - Discover registered reference examples without cloning their repositories
 <a id="install-dbhub"></a>
 - [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
 <a id="sync-dbhub"></a>
@@ -638,6 +666,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
+<a id="install-process-builder"></a>
+<a id="installprocessbuilder"></a>
+<a id="update-process-builder"></a>
+- [`install-process-builder`](docs/commands/install-process-builder.md) - Install or update the bundled process-builder package in Creatio, `installprocessbuilder`, `update-process-builder`
 <a id="install-toolkit"></a>
 - [`install-toolkit`](docs/commands/install-toolkit.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>

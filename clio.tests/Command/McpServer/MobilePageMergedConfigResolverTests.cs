@@ -171,4 +171,48 @@ public sealed class MobilePageMergedConfigResolverTests {
 		viewModelConfigJson.Should().BeNull(because: "a null context carries no schema/environment to resolve a base from");
 		modelConfigJson.Should().BeNull(because: "a null context yields no base for either section");
 	}
+
+	[Test]
+	[Description("An ACCESS-CONTROL read failure (401/403) is swallowed to (null, null) — never rethrown, so it cannot crash the caller's foreach — and the diagnostic names it ACCESS DENIED, distinct from a benign miss.")]
+	public void ResolveMergedConfig_AccessDeniedFailure_ReturnsNullsAndWarnsAccessDenied() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<PageGetCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new InvalidOperationException("401 Unauthorized"));
+		ILogger logger = Substitute.For<ILogger>();
+		string warning = null;
+		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => warning = ci.Arg<string>());
+
+		// Act
+		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
+			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
+
+		// Assert
+		viewModelConfigJson.Should().BeNull(because: "an access-denied failure degrades to the seeded base, not a throw");
+		modelConfigJson.Should().BeNull(because: "both sections degrade together");
+		warning.Should().NotBeNull().And.Contain("ACCESS DENIED",
+			because: "a 401/403 must be classified as access-denied so it is not mistaken for a benign template miss");
+	}
+
+	[Test]
+	[Description("A non-auth read failure is swallowed to (null, null) with a GENERIC warning that does not claim ACCESS DENIED.")]
+	public void ResolveMergedConfig_GenericFailure_ReturnsNullsAndWarnsGeneric() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<PageGetCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new InvalidOperationException("boom"));
+		ILogger logger = Substitute.For<ILogger>();
+		string warning = null;
+		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => warning = ci.Arg<string>());
+
+		// Act
+		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
+			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
+
+		// Assert
+		viewModelConfigJson.Should().BeNull(because: "a generic read failure also degrades to the seeded base without throwing");
+		modelConfigJson.Should().BeNull();
+		warning.Should().NotBeNull().And.NotContain("ACCESS DENIED",
+			because: "a non-auth failure must NOT be misclassified as access-denied");
+	}
 }

@@ -1,0 +1,32 @@
+@startuml
+title modify-business-process - edit an existing process
+autonumber
+skinparam shadowing false
+
+actor "AI agent" as AI
+participant "MCP tool\nmodify-business-process" as Tool
+participant "ModifyBusinessProcessService" as Svc
+participant "ProcessDesignService\n(CrtProcessBuilder)" as PDS
+participant "Terrasoft.Core" as Core
+
+AI -> Tool : describe-business-process (MANDATORY before the edit)
+Tool --> AI : current graph
+AI -> AI : compose the operations array
+AI -> Tool : process-name or process-uid + operations JSON
+Tool -> Svc : ModifyProcess(env, request)
+Svc -> Svc : exactly one identity (name XOR uid)
+Svc -> PDS : POST { "request": { name, operations } }
+PDS -> PDS : apply the operations in order\n(atomic: one failure rolls the whole batch back)
+PDS -> PDS : re-apply auto-layout to the WHOLE diagram
+PDS -> Core : SaveSchema
+PDS --> Svc : { "ModifyProcessResult":\n{ success, schemaName, schemaUId, appliedOperations } }
+Svc --> AI : schemaName + appliedOperations
+AI -> Tool : describe-business-process (MANDATORY read-back)
+
+note over PDS
+  No structural validation on this path -
+  only the create path validates the graph.
+  removeElement cascades but does not
+  re-join the flow across the gap.
+end note
+@enduml

@@ -80,6 +80,7 @@ delete-theme:delete-theme
 set-user-theme:set-user-theme,apply-user-theme
 upload-image:upload-image
 set-background-image:set-background-image
+set-logo:set-logo
 get-build-info:get-build-info,bi,buildinfo
 get-classic-page-sources:get-classic-page-sources,classic-page-sources,get-classic-migration-bundle,classic-migration-bundle
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
@@ -112,6 +113,7 @@ info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
 install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
+install-process-builder:install-process-builder,installprocessbuilder,update-process-builder
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
 install-sql-schema:install-sql-schema,sql-schema-install,execute-sql-schema
@@ -125,6 +127,16 @@ lock-package:lock-package,lp
 manage-windows-features:manage-windows-features,mng-win-features,mwf
 mcp-http:mcp-http
 mcp-server:mcp-server,mcp
+install-knowledge:install-knowledge
+update-knowledge:update-knowledge
+info-knowledge:info-knowledge
+delete-knowledge:delete-knowledge
+add-knowledge-source:add-knowledge-source
+remove-knowledge-source:remove-knowledge-source
+enable-knowledge-source:enable-knowledge-source
+disable-knowledge-source:disable-knowledge-source
+list-knowledge-sources:list-knowledge-sources
+list-knowledge-examples:list-knowledge-examples
 merge-workspaces:merge-workspaces,mergew
 mock-data:mock-data,data-mock
 modify-entity-schema-column:modify-entity-schema-column
@@ -157,6 +169,7 @@ push-nuget-pkg:push-nuget-pkg,push-n,push-nuget
 push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
+read-data-binding-db:read-data-binding-db,get-data-binding-db
 register:register
 ring:ring
 remove-data-binding-row:remove-data-binding-row

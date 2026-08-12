@@ -27,13 +27,14 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
 	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
 	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
+	private const string ReadDbToolName = ReadDataBindingDbTool.ReadDataBindingDbToolName;
 	private const string ODataCreateToolName = ODataCreateTool.ToolName;
 
 	[Test]
-	[Description("Exposes all three DB-first data-binding MCP tools via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
+	[Description("Exposes every DB-first data-binding MCP tool via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
 	[AllureTag(CreateDbToolName)]
 	[AllureName("DB-first data-binding tools are discoverable on the lazy surface")]
-	[AllureDescription("Verifies that create-data-binding-db, upsert-data-binding-row-db, and remove-data-binding-row-db are discoverable via the get-tool-contract compact index.")]
+	[AllureDescription("Verifies that create-data-binding-db, upsert-data-binding-row-db, remove-data-binding-row-db, and read-data-binding-db are discoverable via the get-tool-contract compact index.")]
 	public async Task DataBindingDbTools_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
@@ -49,6 +50,8 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			because: "upsert-data-binding-row-db must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 		toolNames.Should().Contain(RemoveRowDbToolName,
 			because: "remove-data-binding-row-db must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
+	toolNames.Should().Contain(ReadDbToolName,
+			because: "read-data-binding-db must be discoverable on the lazy surface, otherwise agents keep exporting the whole package to prove a projection");
 	}
 
 	[Test]
@@ -161,6 +164,33 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			"remove-data-binding-row-db must reject empty environment-name with exit code 1");
 		AssertIncludesErrorMessage(result,
 			"remove-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
+	}
+
+	[Test]
+	[Description("read-data-binding-db reaches its binding-resolution layer over the real MCP server and reports a human-readable failure for an unresolvable environment, so an agent never mistakes an unreachable read for a proven projection.")]
+	[AllureTag(ReadDbToolName)]
+	[AllureName("Read DB-first binding reports failure without an environment")]
+	[AllureDescription("Invokes read-data-binding-db through the real clio MCP server with an empty environment-name and verifies the read fails with a readable message instead of returning an empty projection that would read as 'no columns shipped'.")]
+	public async Task ReadDataBindingDb_Should_Fail_Without_Environment(){
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			ReadDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = string.Empty,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = "UsrMissingBinding"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 1,
+			"read-data-binding-db must reject empty environment-name with exit code 1");
+		AssertIncludesErrorMessage(result,
+			"an unresolvable read must say why, because an empty result would read as 'the binding ships no columns'");
 	}
 
 	[Test]

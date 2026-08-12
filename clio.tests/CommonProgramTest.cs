@@ -446,7 +446,11 @@ internal class CommonProgramTest : BaseClioModuleTests{
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
-		int exitCode = Program.ExecuteCommands(["set-pkg-version", "--help"]);
+		// set-dev-mode, not set-pkg-version: this test needs a manual help file that documents no arguments
+		// at all, and set-pkg-version's stopped being one when its --package-version became a hard requirement
+		// and the file gained an ARGUMENTS section. The assertion is about the RENDERER, not about either
+		// command, so it moved to a verb whose manual is still genuinely sparse.
+		int exitCode = Program.ExecuteCommands(["set-dev-mode", "--help"]);
 		string output = consoleOutput.ToString();
 
 		exitCode.Should().Be(0, because: "the parser-driven help path should succeed for known commands");
@@ -454,8 +458,10 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "existing manual sections should remain visible in runtime help");
 		output.Should().NotContain("ARGUMENTS",
 			because: "manual help should stay authoritative even when it is sparse");
+		output.Should().NotContain("ENVIRONMENT OPTIONS",
+			because: "on THIS subject that is the only generated options heading that could appear — every option set-dev-mode carries is declared on EnvironmentOptions, so CommandHelpRenderer classifies all of them as environment options and the plain OPTIONS heading can never be reached. Asserting only NotContain(\"OPTIONS\") would therefore be satisfied vacuously, as a substring of this longer heading, and would go silent the moment the heading were renamed");
 		output.Should().NotContain("OPTIONS",
-			because: "manual help should no longer be merged with generated options");
+			because: "manual help should no longer be merged with generated options — kept alongside the narrower assertion above so a subject that DOES carry a non-environment option still fails here");
 	}
 
 	[Test]
