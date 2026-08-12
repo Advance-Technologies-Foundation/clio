@@ -355,6 +355,57 @@ public sealed class ComponentEquivalenceRule {
 	[JsonPropertyName("primaryWeb")]
 	public string PrimaryWeb { get; init; }
 
+	/// <summary>
+	/// Optional: synthesize the mobile element's ROW child from a web array property, instead of leaving the
+	/// transform for the caller to perform. Declared for the web grid → mobile <c>crt.List</c> mapping, whose
+	/// row (<c>crt.ListItem</c>) has no web counterpart to copy: it must be BUILT from the grid's columns.
+	/// Null for every mapping whose mobile element needs no synthesized child.
+	/// </summary>
+	[JsonPropertyName("rowLayout")]
+	public RowLayoutRule RowLayout { get; init; }
+
+	/// <summary>
+	/// Optional: source properties NOT carried onto the mobile element. The generic copy rule carries every
+	/// web property verbatim and deliberately does NOT prune against the mobile registry (it is incomplete —
+	/// ENG-91859), so a mapping whose mobile type genuinely has no equivalent for a web property names it
+	/// here. Applied AFTER <see cref="RowLayout"/>, so a property may feed the row and still be dropped.
+	/// </summary>
+	[JsonPropertyName("dropProperties")]
+	public IReadOnlyList<string> DropProperties { get; init; }
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// Declares how to build a mobile element's row child from a web array property. The SHAPE is fixed (it is the
+/// <c>crt.ListItem</c> contract): the first source entry becomes the row's <c>title</c> — a plain
+/// <c>$&lt;binding&gt;</c> STRING, which is what the mobile registry declares — and each remaining entry
+/// becomes one <c>body</c> object <c>{ "value": "$&lt;binding&gt;" }</c>, in source order. Only the
+/// participating NAMES are data.
+/// </summary>
+public sealed class RowLayoutRule {
+
+	/// <summary>Web array property the row is built FROM (e.g. <c>"columns"</c>).</summary>
+	[JsonPropertyName("sourceProperty")]
+	public string SourceProperty { get; init; }
+
+	/// <summary>Mobile property the row is written TO (e.g. <c>"itemLayout"</c>).</summary>
+	[JsonPropertyName("targetProperty")]
+	public string TargetProperty { get; init; }
+
+	/// <summary>Mobile component type of the row element (e.g. <c>"crt.ListItem"</c>).</summary>
+	[JsonPropertyName("targetType")]
+	public string TargetType { get; init; }
+
+	/// <summary>
+	/// Property of a source entry holding the bound attribute name (e.g. a column's <c>"code"</c>). Its value is
+	/// prefixed with <c>$</c> to form the binding. An entry missing it is skipped.
+	/// </summary>
+	[JsonPropertyName("bindingFrom")]
+	public string BindingFrom { get; init; }
+
+	/// <summary>Suffix appended to the mobile element name to name the row element (e.g. <c>"_ListItem"</c>).</summary>
+	[JsonPropertyName("nameSuffix")]
+	public string NameSuffix { get; init; }
 }
