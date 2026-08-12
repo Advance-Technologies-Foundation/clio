@@ -213,27 +213,28 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 	private static bool IsSchemaPath(string value) => !string.IsNullOrWhiteSpace(value) &&
 		char.IsLetter(value[0]) && value.All(character => char.IsLetterOrDigit(character) || character is '_' or '.');
 
-	private static IEnumerable<Node> Descendants(Node root) {
-		var stack = new Stack<Node>();
-		stack.Push(root);
-		while (stack.Count > 0) {
-			Node current = stack.Pop();
-			yield return current;
-			foreach (Node child in current.ChildNodes.Reverse()) {
-				stack.Push(child);
-			}
-		}
-	}
+	private static IEnumerable<Node> Descendants(Node root) => Walk(root, skipNestedFunctions: false);
 
-	private static IEnumerable<Node> DescendantsSkippingNestedFunctions(Node root) {
+	private static IEnumerable<Node> DescendantsSkippingNestedFunctions(Node root) =>
+		Walk(root, skipNestedFunctions: true);
+
+	// Pre-order walk over the AST. Children are buffered into a single reused list and pushed back-to-front so the
+	// stack yields them in declaration order — Enumerable.Reverse would allocate a fresh buffer for every node, and
+	// these walks run once per schema layer per column method over whole Classic section bodies.
+	private static IEnumerable<Node> Walk(Node root, bool skipNestedFunctions) {
 		var stack = new Stack<Node>();
+		var children = new List<Node>();
 		stack.Push(root);
 		while (stack.Count > 0) {
 			Node current = stack.Pop();
 			yield return current;
-			foreach (Node child in current.ChildNodes.Reverse()) {
-				if (child is IFunction && !ReferenceEquals(child, root)) continue;
-				stack.Push(child);
+			children.Clear();
+			foreach (Node child in current.ChildNodes) {
+				if (skipNestedFunctions && child is IFunction && !ReferenceEquals(child, root)) continue;
+				children.Add(child);
+			}
+			for (int index = children.Count - 1; index >= 0; index--) {
+				stack.Push(children[index]);
 			}
 		}
 	}
@@ -313,7 +314,10 @@ internal sealed class ClassicListColumnResolver(
 		try {
 			designPackageUId = hierarchyClient.GetDesignPackageUId(schemaUId);
 		}
-		catch (InvalidOperationException) {
+		catch (Exception) {
+			// Best-effort, mirroring GetClassicPageSourcesCommand.ResolveHierarchyBaseToTop: the designer call
+			// parses its response as JSON, so an expired session (HTML error page) surfaces as a parser/transport
+			// exception rather than InvalidOperationException. The schema's own package is a valid anchor.
 			designPackageUId = packageUId;
 		}
 		IReadOnlyList<PageDesignerHierarchySchema> initial =

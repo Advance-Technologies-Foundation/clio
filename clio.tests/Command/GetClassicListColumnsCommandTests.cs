@@ -292,6 +292,30 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	}
 
 	[Test]
+	[Description("TryResolve anchors on the schema's own package when the designer design-package call fails for any reason, including a non-JSON response from an expired session.")]
+	public void TryResolve_ShouldAnchorOnSchemaPackage_WhenDesignPackageLookupThrows() {
+		// Arrange
+		_hierarchyClient.GetDesignPackageUId(SchemaUId)
+			.Returns(_ => throw new Newtonsoft.Json.JsonReaderException("Unexpected character encountered: <"));
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "entitySchemaName: 'UsrMncrdSct', diff: []")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("UsrMncrdSct", "UsrName", Column("UsrName", "Name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "UsrMncrdSct26e53fc1Section" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "a failed design-package lookup must degrade to the schema's own package, not fail the command; error: {0}",
+			response.Error);
+		response.Source.Should().Be("entity-default", because: "the hierarchy still resolves through the fallback anchor");
+		_hierarchyClient.Received(1).GetParentSchemas(SchemaUId, PackageUId);
+	}
+
+	[Test]
 	[Description("TryResolve returns a failure envelope without querying Creatio when schema-name is blank.")]
 	public void TryResolve_ShouldFailBeforeRemoteCalls_WhenSchemaNameIsBlank() {
 		// Arrange

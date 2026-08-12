@@ -357,13 +357,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-classic-list-columns"></a>
+- [`get-classic-list-columns`](docs/commands/get-classic-list-columns.md) - Resolve the effective default columns of a Classic section list without changing Creatio data
 <a id="get-classic-page-sources"></a>
 <a id="classic-page-sources"></a>
 <a id="get-classic-migration-bundle"></a>
 <a id="classic-migration-bundle"></a>
 - [`get-classic-page-sources`](docs/commands/get-classic-page-sources.md) - Collect the Classic page sources for folding and write the manifest JSON to disk, `classic-page-sources`, `get-classic-migration-bundle`, `classic-migration-bundle`
-<a id="get-classic-list-columns"></a>
-- [`get-classic-list-columns`](docs/commands/get-classic-list-columns.md) - Resolve the effective default columns of a Classic section list without changing Creatio data
 <a id="get-client-unit-schema"></a>
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
