@@ -2173,6 +2173,20 @@ public static class WebToMobileAnalysisService {
 				values["caption"] = "#ResourceString(" + caption.Key + ")#";
 			}
 		}
+		// A mapping whose mobile element needs a ROW child the web node has no counterpart for (grid → list)
+		// declares how to build it. Doing it here makes the row deterministic: it used to be prose the caller
+		// had to act on, and the same page converted three different ways — no row at all, a correct one, and
+		// one whose title was an object instead of the declared string (ENG-95046).
+		ComponentEquivalenceRule mappingRule = FindRule(ctx.Rules, node["type"]?.ToString());
+		ApplyRowLayout(mappingRule?.RowLayout, node, values, mobileName);
+		// Web properties the mapped mobile type has no equivalent for. Deliberately rule-driven, NOT pruned
+		// against the registry — see the copy rule above (ENG-91859). Runs AFTER the row so the source array
+		// (e.g. the grid's columns) can feed the row and still not be carried.
+		foreach (string drop in mappingRule?.DropProperties ?? []) {
+			if (!string.IsNullOrWhiteSpace(drop)) {
+				values.Remove(drop);
+			}
+		}
 		ProcessEventBindings(ctx, node, values, mobileName);
 		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
 		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
@@ -2189,6 +2203,44 @@ public static class WebToMobileAnalysisService {
 		} catch (System.Text.Json.JsonException) {
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// Builds the row child a <see cref="RowLayoutRule"/> declares and writes it onto
+	/// <paramref name="values"/>. The first source entry becomes the row's <c>title</c> as a plain
+	/// <c>$&lt;binding&gt;</c> STRING (the shape the mobile registry declares for <c>crt.ListItem.title</c>;
+	/// wrapping it as <c>{ "value": … }</c> — the BODY entry shape — renders an empty Title column), each
+	/// remaining entry becomes one <c>body</c> object, and source order is preserved. A no-op when the rule is
+	/// absent, the source property is not an array, no entry yields a binding, or the caller's node already
+	/// carries the target property (a web node that brought its own row wins — it is real authored content).
+	/// </summary>
+	private static void ApplyRowLayout(RowLayoutRule rule, JObject node, JObject values, string mobileName) {
+		if (rule is null || string.IsNullOrWhiteSpace(rule.SourceProperty)
+			|| string.IsNullOrWhiteSpace(rule.TargetProperty) || string.IsNullOrWhiteSpace(rule.BindingFrom)) {
+			return;
+		}
+		if (values[rule.TargetProperty] is not null || node[rule.SourceProperty] is not JArray source) {
+			return;
+		}
+		List<string> bindings = source
+			.OfType<JObject>()
+			.Select(entry => entry[rule.BindingFrom]?.ToString())
+			.Where(binding => !string.IsNullOrWhiteSpace(binding))
+			.Select(binding => "$" + binding)
+			.ToList();
+		if (bindings.Count == 0) {
+			return;
+		}
+		var row = new JObject();
+		if (!string.IsNullOrWhiteSpace(mobileName) && !string.IsNullOrWhiteSpace(rule.NameSuffix)) {
+			row["name"] = mobileName + rule.NameSuffix;
+		}
+		if (!string.IsNullOrWhiteSpace(rule.TargetType)) {
+			row["type"] = rule.TargetType;
+		}
+		row["title"] = bindings[0];
+		row["body"] = new JArray(bindings.Skip(1).Select(binding => new JObject { ["value"] = binding }));
+		values[rule.TargetProperty] = row;
 	}
 
 	/// <summary>

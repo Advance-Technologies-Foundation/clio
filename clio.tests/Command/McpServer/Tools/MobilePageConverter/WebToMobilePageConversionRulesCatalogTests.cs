@@ -36,6 +36,27 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("ENG-95046: the bundled grid rule declares the row synthesis and the grid-only properties to drop, so a converted list's row is data rather than an instruction the caller has to carry out.")]
+	public void LoadBundled_GridRuleDeclaresRowLayoutAndDropProperties() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Web.Contains("crt.DataGrid"));
+		grid.RowLayout.Should().NotBeNull(
+			because: "the crt.ListItem row has no web counterpart to copy — it must be built from the grid's "
+				+ "columns, and leaving that to the caller produced lists with no row at all");
+		grid.RowLayout.SourceProperty.Should().Be("columns");
+		grid.RowLayout.TargetProperty.Should().Be("itemLayout");
+		grid.RowLayout.TargetType.Should().Be("crt.ListItem");
+		grid.RowLayout.BindingFrom.Should().Be("code",
+			because: "a column's code is its bound attribute name, which is what the $binding refers to");
+		grid.DropProperties.Should().BeEquivalentTo(
+			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" },
+			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of them");
+	}
+
+	[Test]
 	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, merging — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
 	public void LoadBundled_ReturnsSeededMetricStyleOverride() {
 		// Arrange & Act

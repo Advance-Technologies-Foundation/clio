@@ -41,7 +41,15 @@ public sealed class WebToMobileConversionServiceTests {
 		Components = [
 			new ComponentEquivalenceRule { Web = ["crt.Checkbox"], Mobile = ["crt.Toggle"], Category = "AlternativeAvailable" },
 			new ComponentEquivalenceRule { Web = ["crt.HtmlEditor"], Mobile = ["crt.RichTextEditor"], Category = "AlternativeAvailable" },
-			new ComponentEquivalenceRule { Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"], Category = "AlternativeAvailable" },
+			new ComponentEquivalenceRule {
+				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"],
+				Category = "AlternativeAvailable",
+				RowLayout = new RowLayoutRule {
+					SourceProperty = "columns", TargetProperty = "itemLayout", TargetType = "crt.ListItem",
+					BindingFrom = "code", NameSuffix = "_ListItem"
+				},
+				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"]
+			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
 				Category = "AlternativeAvailable", PrimaryWeb = "crt.FolderTree"
