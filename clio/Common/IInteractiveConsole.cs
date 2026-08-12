@@ -7,6 +7,15 @@ namespace Clio.Common;
 /// </summary>
 public interface IInteractiveConsole {
 	/// <summary>
+	/// Whether the host can actually ask the user a question. It is <see langword="false"/> for every
+	/// non-interactive context (redirected stdin / MCP / CI) and <see langword="true"/> only on a real
+	/// terminal. Use it for <b>warn-and-proceed</b> confirmations that must fail <b>open</b> — a
+	/// non-interactive host should continue without blocking rather than abort — in contrast to
+	/// <see cref="Prompt(string)"/>, which fails closed (non-interactive returns <see langword="false"/>).
+	/// </summary>
+	bool IsInteractive { get; }
+
+	/// <summary>
 	/// Prompts the user with a yes/no confirmation question.
 	/// </summary>
 	/// <param name="message">The confirmation message to display before the prompt.</param>
