@@ -64,7 +64,6 @@ public sealed class TenantKeyEquivalenceTests {
 		return new ToolCommandResolver(
 			settingsRepository,
 			settingsBootstrapService,
-			new NonInteractiveConsole(),
 			credentialContextAccessor,
 			Substitute.For<ITargetUrlValidator>(),
 			cache);

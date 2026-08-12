@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -105,16 +106,27 @@ public sealed class GetClassicPageSourcesResponse {
 /// seed, plus resolution inputs (entityColumns/columnTitles/resources). The layer bodies are written to the
 /// manifest file, never returned in the response — the caller triggers the run and reads only the small summary.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Command composes its required collaborators (application client, URL builder, column manager, hierarchy client, section resolver, detail edit-page resolver, file system, logger) via constructor injection; grouping them into a parameter object would hide which Classic-migration lookup each collects and gain nothing behaviorally.")]
 public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions> {
 
 	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.ClientUnit;
 	private const string EmptyGuid = ClassicEntitySchemaQuery.EmptyGuid;
 	private const string ClioMigrationDirectoryName = ".clio-migration";
 	private const string ManifestFileName = "manifest.json";
-	private const int MaxParentDepth = 20;
-	private const int MaxDetails = 50;
-	private const int MaxChildPages = 50;
 	private const string DefaultCulture = "en-US";
+	// The manifest/detail-entry field naming the bound object. One name for the three places that write it (page
+	// manifest, child-page manifest, annotated detail entry) so the engine's contract key is stated once.
+	private const string EntityKey = "entity";
+	// The detail-entry field naming the resolved child page (or `false` for a verified none). Single-sourced for the
+	// same reason as EntityKey: the engine reads this exact key, so it is stated once rather than spelled at each write.
+	private const string EditPageKey = "editPage";
+	// No numeric fan-out caps (ENG-94402): a migration unit is collected WHOLE. A page with 250 details migrates
+	// all 250, and a parent chain deeper than any hand-picked number is walked to its base template. Termination
+	// does not rest on a cap — every unbounded walk is bounded by a visited-set over a finite input: the parent walk
+	// by `visitedParentUId` (each UId is followed once), detail/child-page collection by the `seen` name set over
+	// finitely many bodies. Numeric caps only ever truncated real units (ContactPageV2 sat at 48 of the old 50),
+	// which is precisely the silent-incompleteness this command must not produce.
 	// Stand-in reason when the designer answered without an error AND without a schema — an empty success the
 	// walk/enricher paths must report as a gap rather than as a resolved-but-empty layer.
 	private const string NoSchemaReturned = "no schema returned";
@@ -140,8 +152,29 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		TimeSpan.FromSeconds(1));
 
 	// A detail's edit page: getEditPageName / editPageName / EditPageSchemaName -> "SomePage".
+	//
+	// SECONDARY route only (ENG-94401). This token belongs to the pre-V2 `*Detail` generation and its measured yield
+	// on the product is ZERO: 0 of 845 page-detail pairs, 0 of 505 base pages, and — re-measured live on this stand —
+	// 0 of the 24 details AccountPageV2 gathers. Child pages are resolved from `SysModuleEdit` metadata
+	// (IClassicDetailEditPageResolver) instead; this pattern runs only for a detail the metadata answered nothing for,
+	// so a hand-written custom detail that does carry the token still resolves. Do NOT restore it as the primary route.
 	private static readonly Regex EditPageRegex = new(
 		"(?:getEditPageName|editPageName|EditPageSchemaName)[\\s\\S]{0,80}?[\"']([A-Za-z][\\w]+)[\"']",
+		RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
+
+	// A detail reference in a page's `details` config that OVERRIDES the entity the detail binds by default, e.g.
+	// `Files: { schemaName: "FileDetailV2", entitySchemaName: "AccountFile", ... }` — the page binds FileDetailV2 to
+	// AccountFile, not to the entity the detail body declares. The override is what decides which entity's
+	// SysModuleEdit rows apply, so it must be read from the PAGE body; the detail body alone cannot see it. Both key
+	// orders are matched because the config is hand-written. The two keys must be ADJACENT: that is what keeps the
+	// match inside one detail entry (an intervening `}` or `filter: {...}` breaks it), and a non-adjacent override is
+	// simply not seen — the detail then falls back to its own declared entity, which degrades rather than mis-resolves.
+	private static readonly Regex DetailEntityOverrideRegex = new(
+		"(?<![A-Za-z_])schemaName[\"']?\\s*:\\s*[\"'](?<detail>[A-Za-z][\\w]*Detail[\\w]*)[\"']\\s*,\\s*" +
+			"entitySchemaName[\"']?\\s*:\\s*[\"'](?<entity>[A-Za-z_][\\w]*)[\"']" +
+		"|(?<![A-Za-z_])entitySchemaName[\"']?\\s*:\\s*[\"'](?<entity>[A-Za-z_][\\w]*)[\"']\\s*,\\s*" +
+			"schemaName[\"']?\\s*:\\s*[\"'](?<detail>[A-Za-z][\\w]*Detail[\\w]*)[\"']",
 		RegexOptions.Compiled,
 		TimeSpan.FromSeconds(1));
 
@@ -150,6 +183,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
 	private readonly IClassicSectionSchemaResolver _sectionResolver;
+	private readonly IClassicDetailEditPageResolver _childPageResolver;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
@@ -161,6 +195,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	/// <param name="columnManager">Reads remote entity-schema columns for the resolved section entity.</param>
 	/// <param name="hierarchyClient">Fetches the page-designer inheritance hierarchy for a schema.</param>
 	/// <param name="sectionResolver">Resolves a section name to its classic page schema.</param>
+	/// <param name="childPageResolver">
+	/// Resolves the child pages a detail's entity registers in <c>SysModuleEdit</c>. Injected rather than built inline
+	/// from the client this command already holds, so the metadata route is substitutable in tests and so the ESQ
+	/// column set stays next to the other Classic-migration lookups (ENG-94401).
+	/// </param>
 	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
 	/// <param name="logger">Logger for progress and error output.</param>
 	/// <remarks>
@@ -174,6 +213,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		IRemoteEntitySchemaColumnManager columnManager,
 		IPageDesignerHierarchyClient hierarchyClient,
 		IClassicSectionSchemaResolver sectionResolver,
+		IClassicDetailEditPageResolver childPageResolver,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
@@ -181,6 +221,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		_columnManager = columnManager;
 		_hierarchyClient = hierarchyClient;
 		_sectionResolver = sectionResolver;
+		_childPageResolver = childPageResolver;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
@@ -249,19 +290,27 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			// 6b. Enrichers (best-effort, heuristic; omit unresolved, never fabricate). All enricher names are
 			//     primed through ONE batched SelectQuery so the fan-out does not pay a round-trip per name.
 			List<string> detailNames = CollectDetailNames(ctx, schemas, seed);
+			IReadOnlyDictionary<string, string> detailEntityOverrides = CollectDetailEntityOverrides(ctx, schemas, seed);
 			IReadOnlyList<string> sectionCandidates = ResolveSectionCandidates(ctx, options.SchemaName, entity);
 			var enricherNames = new List<string>(detailNames);
 			enricherNames.AddRange(sectionCandidates);
 			PrimeLayerBatch(ctx, enricherNames);
 			JObject detailSchemas = BuildDetailSchemas(ctx, detailNames);
 			JArray section = BuildSection(ctx, sectionCandidates);
-			JObject childPageSchemas = BuildChildPageSchemas(ctx, detailSchemas);
+			JObject childPageSchemas = BuildChildPageSchemas(
+				ctx, detailSchemas, detailEntityOverrides, options.SchemaName,
+				out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo);
+			// The engine keys childPageSchemas by the detail's `editPage` FIRST, and an explicit editPage/entity on the
+			// detail entry WINS over its own body scan — so without these annotations the nested manifests we just
+			// resolved would be keyed by a page name the engine never looks up, and every detail would still read as
+			// "child page NOT verified" (ENG-94401).
+			AnnotateDetailSchemas(detailSchemas, detailChildPageInfo);
 			if (section.Count == 0) {
 				// sectionLayerCount:0 alone cannot be told apart from "this entity has no Classic section", and an
 				// omitted section silently empties the plan's List-page analysis (custom quick filters,
 				// getSectionActions, hardcoded list columns). Say so in the response — a logger warning would not
 				// reach an MCP caller, whose log buffer is cleared before the result is returned.
-				ctx.Warnings.Add(
+				AddWarning(ctx,
 					"No Classic section resolved for " +
 					(string.IsNullOrWhiteSpace(entity) ? $"page '{options.SchemaName}'" : $"entity '{entity}'") +
 					$" (tried: {string.Join(", ", sectionCandidates)}). The manifest carries no section, so the " +
@@ -272,7 +321,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			// 7. Assemble the manifest in the engine's contract shape (omit empty fields, never null-fill).
 			var manifest = new JObject { ["schemas"] = schemas };
 			if (!string.IsNullOrWhiteSpace(entity)) {
-				manifest["entity"] = entity;
+				manifest[EntityKey] = entity;
 			}
 			AddBlock(manifest, "seed", seed);
 			AddBlock(manifest, "entityColumns", entityColumns);
@@ -387,9 +436,19 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return (layers, error);
 	}
 
-	// Resolves many names in ONE SelectQuery and seeds the enumeration cache — including empty entries for
-	// names that do not exist, so later per-name lookups don't re-query them. A batch failure only logs:
-	// every consumer falls back to the memoized per-name path.
+	// Names per batched SelectQuery. EnumerateSchemaLayersBatch puts every name into ONE `In` filter, so the
+	// name count becomes the query's parameter count — and with the fan-out caps gone (ENG-94402) that count is
+	// driven by the page, not by a constant. Chunking keeps each query far below the DBMS parameter ceiling
+	// (MSSql refuses a parameterized statement past 2100) and below request-size limits, so a very wide page
+	// still resolves in a few batched queries instead of failing the batch and degrading to N per-name lookups.
+	// The bound itself is the shared `In`-list ceiling: every batched value set in this flow — here and in the
+	// child-page resolver — is the same kind of parameter list against the same DBMS, so one constant states it.
+	private const int LayerBatchChunkSize = ClassicEntitySchemaQuery.InFilterChunkSize;
+
+	// Resolves many names in batched SelectQueries and seeds the enumeration cache — including empty entries for
+	// names that do not exist, so later per-name lookups don't re-query them. A batch failure only logs (no
+	// ctx.Warnings): every consumer falls back to the memoized per-name path, which loses no manifest content,
+	// so this is a slow path rather than an incompleteness gap.
 	private void PrimeLayerBatch(PageSourcesRunContext ctx, IReadOnlyCollection<string> schemaNames) {
 		List<string> missing = schemaNames
 			.Where(name => !string.IsNullOrWhiteSpace(name) && !ctx.LayersByName.ContainsKey(name))
@@ -398,9 +457,18 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		if (missing.Count == 0) {
 			return;
 		}
+		for (int offset = 0; offset < missing.Count; offset += LayerBatchChunkSize) {
+			List<string> chunk = missing.GetRange(offset, Math.Min(LayerBatchChunkSize, missing.Count - offset));
+			// One failing chunk must not abandon the rest: each chunk the batch resolves still spares its names a
+			// per-name round-trip, and the names of a failed chunk simply stay unmemoized for the fallback path.
+			PrimeLayerChunk(ctx, chunk);
+		}
+	}
+
+	private void PrimeLayerChunk(PageSourcesRunContext ctx, IReadOnlyCollection<string> chunk) {
 		try {
 			(IReadOnlyDictionary<string, IReadOnlyList<SchemaLayer>> layersByName, string error) =
-				SchemaDesignerHelper.EnumerateSchemaLayersBatch(_applicationClient, _serviceUrlBuilder, missing, Kind);
+				SchemaDesignerHelper.EnumerateSchemaLayersBatch(_applicationClient, _serviceUrlBuilder, chunk, Kind);
 			if (error != null) {
 				_logger.WriteWarning($"Batched layer enumeration failed; falling back to per-name lookups: {error}");
 				return;
@@ -565,23 +633,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		var seededTemplateNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var seededLayerUIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		JObject current = topSchema;
-		int depth = 0;
 		while (true) {
 			string parentUId = (current?["parent"] as JObject)?["uId"]?.ToString();
 			if (string.IsNullOrWhiteSpace(parentUId) || string.Equals(parentUId, EmptyGuid, StringComparison.OrdinalIgnoreCase)) {
 				break; // reached the base template — a clean, complete walk
-			}
-			if (depth >= MaxParentDepth) {
-				// Depth cap hit with a parent still to follow: the seed is truncated. Say so, or a truncated
-				// seed looks identical to a page that simply has no more parents (parity with the other exits).
-				// Surface to ctx.Warnings too: a logger warning does not reach an MCP caller (log buffer cleared
-				// before the result is returned), so a truncated seed would otherwise read as complete.
-				string warning =
-					$"Parent-template walk stopped at the depth cap ({MaxParentDepth}); the seed may be truncated " +
-					$"(next unwalked parent '{parentUId}').";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				break;
 			}
 			if (!visitedParentUId.Add(parentUId)) {
 				// Cycle on the parent-link walk: stop and say so — silently truncating hides a corrupt chain.
@@ -592,14 +647,19 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			(JObject parentLayer, string error) = LoadSchemaCached(ctx, parentUId, null);
 			if (error != null || parentLayer == null) {
-				// Best-effort: stop the walk and keep what we have — but say so, or a truncated seed looks
-				// identical to a page that simply has no parents.
-				_logger.WriteWarning($"Parent-template walk stopped at '{parentUId}': {error ?? NoSchemaReturned}");
+				// Best-effort: stop the walk and keep what we have — but say so through BOTH channels. The logger
+				// alone does not reach an MCP caller (its buffer is cleared before the result is returned), so a
+				// seed truncated here would read as a page that simply has no more parents (parity with the
+				// cycle exit above).
+				string warning =
+					$"Parent-template walk stopped at '{parentUId}' ({error ?? NoSchemaReturned}); the seed is " +
+					"truncated and the base containers defined above this point are missing from the manifest.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				break;
 			}
 			levels.Add(LoadParentLevelLayers(ctx, parentUId, parentLayer, seededTemplateNames, seededLayerUIds));
 			current = parentLayer; // continue up from the linked layer's own parent
-			depth++;
 		}
 		levels.Reverse(); // base template first, most-derived template last
 		var seed = new JArray();
@@ -626,7 +686,14 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 		(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, parentName);
 		if (enumError != null) {
-			_logger.WriteWarning($"Could not enumerate parent template '{parentName}' layers: {enumError}");
+			// The level degrades to the linked layer alone, so any sibling layer of this template is dropped from
+			// the seed — the engine then reports the containers they define as unresolvedParents. Caller-visible,
+			// not logger-only: an omitted seed layer is exactly as invisible as a truncated one.
+			string warning =
+				$"Could not enumerate parent template '{parentName}' layers ({enumError}); only the linked layer " +
+				"is seeded, so containers defined in a sibling layer of that template are missing from the manifest.";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
 		}
 		if (enumError != null || layers.Count == 0) {
 			return LinkedLayerOnly(parentUId, parentLayer, seededLayerUIds);
@@ -670,7 +737,13 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, parentName);
 			if (loadError != null || layerSchema == null) {
-				_logger.WriteWarning($"Could not load parent-template layer '{parentName}' ({layer.UId}): {loadError ?? NoSchemaReturned}");
+				// One enumerated sibling body is dropped from the seed while the level still succeeds — a partial
+				// level that the response would otherwise report as a complete one.
+				string warning =
+					$"Could not load parent-template layer '{parentName}' ({layer.UId}): {loadError ?? NoSchemaReturned}. " +
+					"That layer's body is missing from the seed.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				continue;
 			}
 			levelEntries.Add(CreateSeedEntry(layerSchema, layer.PackageName));
@@ -696,16 +769,58 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private string InferEntity(PageSourcesRunContext ctx, JArray schemas, JArray seed) {
 		// Prefer the page's own layer chain (most specific), then the parent-template seed.
 		foreach (JToken entry in schemas.Concat(seed)) {
+			string entity = InferEntityFromBody(ctx, entry["body"]?.ToString());
+			if (entity != null) {
+				return entity;
+			}
+		}
+		return null;
+	}
+
+	// The entity a single schema body declares as its own bound object, or null when it declares none. Shared by the
+	// page-chain inference above and the per-detail entity resolution the child-page lookup needs.
+	private string InferEntityFromBody(PageSourcesRunContext ctx, string body) {
+		if (string.IsNullOrEmpty(body)) {
+			return null;
+		}
+		Match match = SafeMatch(ctx.Warnings, EntityInferenceRegex, body, "inferring the bound entity");
+		return match.Success ? match.Groups[1].Value : null;
+	}
+
+	// The per-detail entity OVERRIDES the page's `details` config declares (detail schema name -> entity schema name).
+	// Read from the page bodies, not the detail bodies: a page can bind a shared detail to a different entity than the
+	// detail's own default (`Files: { schemaName: "FileDetailV2", entitySchemaName: "AccountFile" }`), and that
+	// override — not the detail's default — decides whose SysModuleEdit rows apply.
+	//
+	// Deliberately a second pass rather than an extra output of CollectDetailNames: that collector is attempt-capped
+	// against hostile bodies and its cap semantics are asserted by tests, so overrides are gathered beside it instead
+	// of reshaping it. Precedence within the pass: the page's own layer chain wins over the parent-template seed
+	// (most specific first), and within either, a later (more derived) layer overrides an earlier one.
+	private IReadOnlyDictionary<string, string> CollectDetailEntityOverrides(
+		PageSourcesRunContext ctx, JArray schemas, JArray seed) {
+		var overrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		CollectDetailEntityOverrides(ctx, seed, overrides);    // least specific first...
+		CollectDetailEntityOverrides(ctx, schemas, overrides); // ...so the page's own layers overwrite the seed
+		return overrides;
+	}
+
+	private void CollectDetailEntityOverrides(
+		PageSourcesRunContext ctx, JArray layers, Dictionary<string, string> overrides) {
+		foreach (JToken entry in layers) {
 			string body = entry["body"]?.ToString();
 			if (string.IsNullOrEmpty(body)) {
 				continue;
 			}
-			Match match = SafeMatch(ctx.Warnings, EntityInferenceRegex, body, "inferring the bound entity");
-			if (match.Success) {
-				return match.Groups[1].Value;
+			foreach (GroupCollection groups in SafeMatches(
+					ctx.Warnings, DetailEntityOverrideRegex, body, "reading the details' entity overrides")
+				.Select(match => match.Groups)) {
+				string detailName = groups["detail"].Value;
+				string entityName = groups["entity"].Value;
+				if (!string.IsNullOrWhiteSpace(detailName) && !string.IsNullOrWhiteSpace(entityName)) {
+					overrides[detailName] = entityName;
+				}
 			}
 		}
-		return null;
 	}
 
 	private JObject BuildResources(PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
@@ -713,7 +828,12 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
 			if (error != null || schema == null) {
-				_logger.WriteWarning($"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}");
+				// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
+				// engine then folds captions it has no translation for. Same channel as the catch below.
+				string warning = $"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}. " +
+					"The manifest carries no resources, so localized captions will be missing from the folded page.";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 				return resources;
 			}
 			foreach (MergedLocalizableString localizableString in SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema)) {
@@ -776,13 +896,13 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return (entityColumns, columnTitles);
 	}
 
-	// Collects distinct detail-schema names referenced across every layer body (page chain + parent seed).
-	// The names come from server-supplied bodies, so collection is capped by ATTEMPTS — not by later successes —
-	// to keep a malformed or hostile response from driving unbounded probing.
+	// Collects EVERY distinct detail-schema name referenced across every layer body (page chain + parent seed).
+	// Uncapped by design (ENG-94402): a page that references 250 details must migrate all 250. Collection is
+	// bounded by the input rather than by a number — the `seen` set admits each name once, over finitely many
+	// bodies, so a malformed or repetitive response cannot drive an unbounded walk.
 	private List<string> CollectDetailNames(PageSourcesRunContext ctx, JArray schemas, JArray seed) {
 		var detailNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		int collectionCap = MaxDetails * 2;
 		foreach (JToken entry in schemas.Concat(seed)) {
 			string body = entry["body"]?.ToString();
 			if (string.IsNullOrEmpty(body)) {
@@ -790,17 +910,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			foreach (Match match in SafeMatches(ctx.Warnings, DetailSchemaNameRegex, body, "collecting detail-schema references")) {
 				string detailName = match.Groups[1].Value;
-				if (!seen.Add(detailName)) {
-					continue;
+				if (seen.Add(detailName)) {
+					detailNames.Add(detailName);
 				}
-				if (detailNames.Count >= collectionCap) {
-					string warning =
-						$"More than {collectionCap} distinct detail-schema references found; the remainder is ignored.";
-					_logger.WriteWarning(warning);
-					AddWarning(ctx, warning);
-					return detailNames;
-				}
-				detailNames.Add(detailName);
 			}
 		}
 		return detailNames;
@@ -808,13 +920,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 
 	private JObject BuildDetailSchemas(PageSourcesRunContext ctx, IReadOnlyList<string> detailNames) {
 		var detailSchemas = new JObject();
+		// Every collected detail is resolved — no cap. Layer enumeration is batch-primed, but the body load is one
+		// designer round-trip per detail, so a very wide page is proportionally slower. That is the accepted trade:
+		// a slow complete unit beats a fast one that silently omits part of the page.
 		foreach (string detailName in detailNames) {
-			if (detailSchemas.Count >= MaxDetails) {
-				string warning = $"Detail gathering stopped at {MaxDetails} resolved schemas; the remainder is omitted.";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				break;
-			}
 			try {
 				(IReadOnlyList<SchemaLayer> layers, string enumError) = EnumerateLayersCached(ctx, detailName);
 				if (enumError != null) {
@@ -862,7 +971,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			ClassicSectionLookup lookup = _sectionResolver.ResolveSectionSchemaNames(entity);
 			if (lookup.Error != null) {
 				_logger.WriteWarning($"Could not resolve the section from SysModule metadata: {lookup.Error}");
-				ctx.Warnings.Add(
+				AddWarning(ctx,
 					$"Section metadata lookup failed ({lookup.Error}); fell back to name conventions, which cannot " +
 					"reach a renamed section or one whose schema name carries a UId infix.");
 			}
@@ -936,10 +1045,22 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return null;
 	}
 
-	private JObject BuildChildPageSchemas(PageSourcesRunContext ctx, JObject detailSchemas) {
+	// What the child-page lookup learned about one detail, in the shape the engine's detailSchemas entry reads.
+	// EditPage: the primary edit card's schema name; null when nothing was resolved. VerifiedNoEditPage: the metadata
+	// answered DEFINITIVELY that the detail's entity registers no edit card — the difference between "we checked and
+	// there is none" (which lets the engine's plan proceed) and "we never checked" (which must not read as none).
+	private sealed record DetailChildPageInfo(string Entity, string EditPage, bool VerifiedNoEditPage);
+
+	private JObject BuildChildPageSchemas(
+		PageSourcesRunContext ctx,
+		JObject detailSchemas,
+		IReadOnlyDictionary<string, string> detailEntityOverrides,
+		string pageSchemaName,
+		out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
 		var childPageSchemas = new JObject();
 		// Collect the distinct edit-page names first so the whole set is resolved in one batched enumeration.
-		IReadOnlyList<string> editPageNames = CollectChildPageNames(ctx, detailSchemas);
+		IReadOnlyList<string> editPageNames = CollectChildPageNames(
+			ctx, detailSchemas, detailEntityOverrides, pageSchemaName, out detailChildPageInfo);
 		PrimeLayerBatch(ctx, editPageNames);
 		foreach (string editPageName in editPageNames) {
 			try {
@@ -955,39 +1076,260 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				}
 			}
 			catch (Exception ex) {
-				_logger.WriteWarning($"Could not assemble child page '{editPageName}': {ex.Message}");
+				// Same channel as the error branch above: a dropped child page leaves childPageCount lower than
+				// the page's real fan-out with nothing in the response to say why.
+				string warning = $"Could not assemble child page '{editPageName}': {ex.Message}";
+				_logger.WriteWarning(warning);
+				AddWarning(ctx, warning);
 			}
 		}
 		return childPageSchemas;
 	}
 
-	// The distinct edit-page names named across the detail bodies, capped at MaxChildPages. The names come from
-	// server-supplied bodies, so the cap bounds the nested-manifest fan-out; hitting it is reported as a gap.
-	private List<string> CollectChildPageNames(PageSourcesRunContext ctx, JObject detailSchemas) {
+	// Every distinct child-page name for the gathered details. Uncapped (ENG-94402): the migration unit is collected
+	// whole, and the `seen` set admits each name once so a repeated reference is never resolved twice.
+	//
+	// PRIMARY route: each detail's entity -> its SysModuleEdit registrations (edit card + add mini page), resolved for
+	// every detail entity in ONE batched metadata lookup. This replaces scanning the detail body for a
+	// getEditPageName/editPageName/EditPageSchemaName token, whose measured yield on the product is zero — see the
+	// EditPageRegex comment and ENG-94401. The body scan stays as the SECONDARY route for a detail the metadata
+	// answered nothing for, so a custom detail that does carry the token still resolves.
+	//
+	// One entity can register several pages (one row per TypeColumnValue, plus a mini page), so the child-page count
+	// is not bounded by the detail count either — which is exactly why removing the numeric caps matters here.
+	private List<string> CollectChildPageNames(
+		PageSourcesRunContext ctx,
+		JObject detailSchemas,
+		IReadOnlyDictionary<string, string> detailEntityOverrides,
+		string pageSchemaName,
+		out IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
+		IReadOnlyDictionary<string, string> entityByDetail =
+			ResolveDetailEntities(ctx, detailSchemas, detailEntityOverrides);
+		(IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, ISet<string> resolvedEntities) =
+			ResolveChildPagesByEntity(ctx, entityByDetail);
+		var info = new Dictionary<string, DetailChildPageInfo>(StringComparer.OrdinalIgnoreCase);
+		detailChildPageInfo = info;
 		var editPageNames = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		// Local so both routes share the dedup and the self-reference guard.
+		void Add(string editPageName) {
+			if (string.IsNullOrWhiteSpace(editPageName)) {
+				return;
+			}
+			// A detail bound to the page's OWN entity resolves back to the page itself; nesting a page inside its own
+			// manifest is never what the engine folds.
+			if (string.Equals(editPageName, pageSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				return;
+			}
+			if (seen.Add(editPageName)) {
+				editPageNames.Add(editPageName);
+			}
+		}
 		foreach (JProperty detail in detailSchemas.Properties()) {
-			string detailBody = detail.Value["body"]?.ToString();
-			if (string.IsNullOrEmpty(detailBody)) {
-				continue;
+			entityByDetail.TryGetValue(detail.Name, out string entity);
+			// Metadata first; the body scan runs only for a detail the metadata answered nothing for.
+			if (!TryCollectFromMetadata(detail.Name, entity, pageSchemaName, pagesByEntity, info, Add)) {
+				CollectFromDetailBody(ctx, detail, entity, resolvedEntities, info, Add);
 			}
-			Match editPageMatch = SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
-			if (!editPageMatch.Success) {
-				continue; // no edit page named on the detail -> nothing to nest; the engine flags it
-			}
-			string editPageName = editPageMatch.Groups[1].Value;
-			if (!seen.Add(editPageName)) {
-				continue;
-			}
-			if (editPageNames.Count >= MaxChildPages) {
-				string warning = $"More than {MaxChildPages} distinct child edit pages referenced; the remainder is omitted.";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				break;
-			}
-			editPageNames.Add(editPageName);
 		}
 		return editPageNames;
+	}
+
+	// PRIMARY route for one detail: the pages its entity registers in SysModuleEdit. Returns false when metadata has
+	// no answer for this detail (unresolved entity, or no registrations), which is the caller's cue to fall back to the
+	// body scan; a true return means metadata was definite and the body scan would add nothing.
+	private static bool TryCollectFromMetadata(
+		string detailName,
+		string entity,
+		string pageSchemaName,
+		IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity,
+		IDictionary<string, DetailChildPageInfo> info,
+		Action<string> add) {
+		if (entity == null
+			|| !pagesByEntity.TryGetValue(entity, out IReadOnlyList<ClassicChildPage> metadataPages)
+			|| metadataPages.Count == 0) {
+			return false;
+		}
+		foreach (ClassicChildPage metadataPage in metadataPages) {
+			add(metadataPage.SchemaName);
+		}
+		// The engine reads ONE editPage per detail: the edit card, not the add mini page (which it keys
+		// separately). The mini pages stay in childPageSchemas so the plan still carries their sources.
+		string card = PickPrimaryCard(metadataPages, entity, pageSchemaName);
+		info[detailName] = new DetailChildPageInfo(entity, card, VerifiedNoEditPage: card == null);
+		return true;
+	}
+
+	// SECONDARY route for one detail: the getEditPageName/editPageName token in its own body. `verified none` is
+	// claimable ONLY when the metadata answered for THIS detail's entity — i.e. the entity is in the resolver's
+	// resolved set. A batch-wide "the lookup ran" is not enough: the resolver warns per entity and leaves the ones it
+	// could not resolve out, and for those we never looked, so saying "none" would license the engine to plan around a
+	// child page that does exist.
+	private void CollectFromDetailBody(
+		PageSourcesRunContext ctx,
+		JProperty detail,
+		string entity,
+		ISet<string> resolvedEntities,
+		IDictionary<string, DetailChildPageInfo> info,
+		Action<string> add) {
+		bool verifiedNone = entity != null && resolvedEntities.Contains(entity);
+		string detailBody = detail.Value["body"]?.ToString();
+		Match editPageMatch = string.IsNullOrEmpty(detailBody)
+			? Match.Empty
+			: SafeMatch(ctx.Warnings, EditPageRegex, detailBody, "resolving the detail's edit page");
+		if (!editPageMatch.Success) {
+			// Neither metadata nor body names a page. Record what we know so the engine can tell a verified
+			// "no edit page exists" apart from an unchecked detail.
+			info[detail.Name] = new DetailChildPageInfo(entity, null, verifiedNone);
+			return;
+		}
+		string bodyPage = editPageMatch.Groups[1].Value;
+		info[detail.Name] = new DetailChildPageInfo(entity, bodyPage, VerifiedNoEditPage: false);
+		add(bodyPage);
+	}
+
+	// Which of an entity's registered cards to name as THE detail's editPage. Every candidate here came from metadata,
+	// and every candidate this method may return is also nested in childPageSchemas — so it ranks for the engine's
+	// single per-detail slot without ever inventing a page or naming one the manifest does not carry.
+	//
+	// The self-referential card is excluded for exactly that reason: a detail bound to the page's OWN entity resolves
+	// back to the page being assembled, which the nesting guard drops, so naming it as editPage would point the
+	// engine's [editPage, entity, entity + "Page"] lookup at a page that is not in the manifest — the detail would then
+	// read as "child page NOT verified", the very gate failure this annotation exists to clear. With no card left, the
+	// caller records a verified "no edit page" instead (the metadata did answer for this entity).
+	//
+	// TypeColumnValue cannot rank the rest: an entity's cards are either all typed (Activity registers
+	// EmailPageV2 + ActivityPageV2 + ActivityPageV2 under three different type values, with no default row) or all
+	// untyped (Order registers PortalOrderPage and OrderPageV2, both with an empty one). So prefer the card whose name
+	// is the entity's own conventional page name — `<entity>PageV2`, then `<entity>Page` — which picks ActivityPageV2
+	// over EmailPageV2, OrderPageV2 over PortalOrderPage, and CasePage over PortalCasePage. An exact match outranks a
+	// mere prefix match so a second entity-prefixed card (e.g. ContactPageV2 vs ContactPageV2Detail) cannot win by
+	// registration order alone. Fall back to a prefix match, then to registration order, when the entity registers no
+	// conventionally-named card (e.g. VwAccountRelationship -> AccountRelationshipDetailPageV2).
+	private static string PickPrimaryCard(
+		IReadOnlyList<ClassicChildPage> registered, string entity, string pageSchemaName) {
+		List<ClassicChildPage> cards = registered
+			.Where(page => !page.IsMiniPage
+				&& !string.Equals(page.SchemaName, pageSchemaName, StringComparison.OrdinalIgnoreCase))
+			.ToList();
+		if (cards.Count == 0) {
+			return null;
+		}
+		if (string.IsNullOrWhiteSpace(entity)) {
+			return cards[0].SchemaName;
+		}
+		ClassicChildPage conventional =
+			FindCard(cards, entity + "PageV2")
+			?? FindCard(cards, entity + "Page")
+			?? cards.FirstOrDefault(page => page.SchemaName.StartsWith(entity, StringComparison.OrdinalIgnoreCase));
+		return (conventional ?? cards[0]).SchemaName;
+	}
+
+	private static ClassicChildPage FindCard(IEnumerable<ClassicChildPage> cards, string schemaName) =>
+		cards.FirstOrDefault(page => string.Equals(page.SchemaName, schemaName, StringComparison.OrdinalIgnoreCase));
+
+	// Writes what the child-page lookup learned onto the detail entries themselves. The engine resolves a detail's
+	// child page by `[detail.editPage, detail.entity, detail.entity + "Page"]` and an explicit value on the entry WINS
+	// over its own body scan — so a `*PageV2` card (i.e. most of the product) is reachable ONLY through the explicit
+	// `editPage`. `editPage: false` is the engine's "verified: no Classic edit page exists" signal; it is written only
+	// where the metadata actually established that, never as a stand-in for an unchecked detail.
+	private static void AnnotateDetailSchemas(
+		JObject detailSchemas, IReadOnlyDictionary<string, DetailChildPageInfo> detailChildPageInfo) {
+		foreach (JProperty detail in detailSchemas.Properties()) {
+			if (!detailChildPageInfo.TryGetValue(detail.Name, out DetailChildPageInfo info)
+				|| detail.Value is not JObject entry) {
+				continue;
+			}
+			if (!string.IsNullOrWhiteSpace(info.Entity)) {
+				entry[EntityKey] = info.Entity;
+			}
+			if (!string.IsNullOrWhiteSpace(info.EditPage)) {
+				entry[EditPageKey] = info.EditPage;
+			}
+			else if (info.VerifiedNoEditPage) {
+				entry[EditPageKey] = false;
+			}
+		}
+	}
+
+	// The entity each gathered detail binds: the page's `details`-config override first (it outranks the detail's own
+	// default), else the entity the detail body itself declares. A detail whose entity cannot be resolved is reported
+	// as a gap — its child pages are simply not lookup-able, which must not read as "it has none".
+	private IReadOnlyDictionary<string, string> ResolveDetailEntities(
+		PageSourcesRunContext ctx, JObject detailSchemas, IReadOnlyDictionary<string, string> detailEntityOverrides) {
+		var entityByDetail = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var unresolved = new List<string>();
+		foreach (JProperty detail in detailSchemas.Properties()) {
+			string entity = detailEntityOverrides.TryGetValue(detail.Name, out string overridden)
+				? overridden
+				: InferEntityFromBody(ctx, detail.Value["body"]?.ToString());
+			if (string.IsNullOrWhiteSpace(entity)) {
+				unresolved.Add(detail.Name);
+			}
+			else {
+				entityByDetail[detail.Name] = entity;
+			}
+		}
+		if (unresolved.Count > 0) {
+			bool single = unresolved.Count == 1;
+			AddWarning(ctx,
+				$"Could not determine the bound entity for {(single ? "detail" : "details")} " +
+				$"{string.Join(", ", unresolved)}, so {(single ? "its" : "their")} child pages were not looked up in " +
+				$"SysModuleEdit. That is NOT the same as '{(single ? "it has" : "they have")} no child page'.");
+		}
+		return entityByDetail;
+	}
+
+	// Entity -> the child pages it registers, from ONE batched SysModuleEdit lookup over every detail entity, plus the
+	// set of entities the lookup actually RESOLVED: only an entity the metadata answered for lets a caller claim
+	// "verified: this detail has no edit page". Note the two are independent — an entity can resolve fine and still
+	// register no page (a legitimate verified none), while an entity the resolver warned about is absent from the set
+	// even though the lookup as a whole succeeded. A lookup failure degrades to the body-scan route for every detail
+	// and is surfaced as a response warning, never fatal — child pages are an enricher, not the sources' payload.
+	private (IReadOnlyDictionary<string, IReadOnlyList<ClassicChildPage>> pagesByEntity, ISet<string> resolvedEntities)
+		ResolveChildPagesByEntity(PageSourcesRunContext ctx, IReadOnlyDictionary<string, string> entityByDetail) {
+		var pagesByEntity = new Dictionary<string, IReadOnlyList<ClassicChildPage>>(StringComparer.OrdinalIgnoreCase);
+		var noneResolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		List<string> entities = entityByDetail.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+		if (entities.Count == 0) {
+			return (pagesByEntity, noneResolved);
+		}
+		ClassicChildPageLookup lookup;
+		try {
+			lookup = _childPageResolver.ResolveChildPages(entities);
+		}
+		catch (Exception ex) {
+			// The resolver contract is not to throw, but a substituted or faulty implementation must not fail the whole
+			// assembly: degrade to the body-scan route exactly like a reported error does.
+			ReportChildPageLookupFailure(ctx, ex.Message);
+			return (pagesByEntity, noneResolved);
+		}
+		if (lookup.Error != null) {
+			ReportChildPageLookupFailure(ctx, lookup.Error);
+			return (pagesByEntity, noneResolved);
+		}
+		foreach (string warning in lookup.Warnings ?? []) {
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
+		}
+		foreach (IGrouping<string, ClassicChildPage> group in (lookup.ChildPages ?? [])
+			.GroupBy(page => page.EntityName, StringComparer.OrdinalIgnoreCase)) {
+			pagesByEntity[group.Key] = group
+				.Where(page => !string.IsNullOrWhiteSpace(page.SchemaName))
+				.GroupBy(page => page.SchemaName, StringComparer.OrdinalIgnoreCase)
+				.Select(byName => byName.First())
+				.ToList();
+		}
+		return (pagesByEntity, new HashSet<string>(lookup.ResolvedEntities ?? [], StringComparer.OrdinalIgnoreCase));
+	}
+
+	private void ReportChildPageLookupFailure(PageSourcesRunContext ctx, string error) {
+		string warning =
+			$"Child-page lookup from SysModuleEdit failed ({error}); fell back to scanning the detail bodies for an " +
+			"edit-page token, which resolves almost nothing on a stock product (measured 0 of 845 page-detail pairs). " +
+			"An empty childPageSchemas here does NOT mean the details have no child pages.";
+		_logger.WriteWarning(warning);
+		AddWarning(ctx, warning);
 	}
 
 	// Assembles the CORE nested manifest (schemas + seed + entity) for a child edit page. Bounded to one
@@ -1015,7 +1357,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		string entity = InferEntity(ctx, schemas, seed);
 		var manifest = new JObject { ["schemas"] = schemas };
 		if (!string.IsNullOrWhiteSpace(entity)) {
-			manifest["entity"] = entity;
+			manifest[EntityKey] = entity;
 		}
 		if (seed.Count > 0) {
 			manifest["seed"] = seed;

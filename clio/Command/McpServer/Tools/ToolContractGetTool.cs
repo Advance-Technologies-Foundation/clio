@@ -3748,7 +3748,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance. " +
+			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
@@ -4686,7 +4687,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
+			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. " +
+			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -5190,6 +5192,7 @@ internal static class ToolContractCatalog {
 					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
 			],
 			Preconditions: [
+				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",

@@ -153,11 +153,12 @@ public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 		int exitCode = restartCommand.Execute(new RestartOptions { WaitReady = true, ReadyTimeout = 120 });
 
 		// Assert
-		exitCode.Should().Be(0, because: "the instance answered its health-check within the readiness budget");
+		exitCode.Should().Be(0, because: "the instance answered an authenticated readiness round-trip within the budget");
 		waiter.Received(1).WaitForReady(Arg.Is<ServerReadinessOptions>(readinessOptions =>
 			readinessOptions.Uri == environmentSettings.Uri &&
 			readinessOptions.IsNetCore == environmentSettings.IsNetCore &&
-			readinessOptions.Timeout == TimeSpan.FromSeconds(120)));
+			readinessOptions.Timeout == TimeSpan.FromSeconds(120) &&
+			readinessOptions.RequireAuthenticatedReadiness));
 	}
 
 	[Test]
