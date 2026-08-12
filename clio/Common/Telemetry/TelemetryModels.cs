@@ -13,7 +13,9 @@ public sealed record TelemetryEventRequest(
 	[property: JsonPropertyName("coding_agent")] string CodingAgent,
 	[property: JsonPropertyName("plugin_version")] string PluginVersion,
 	[property: JsonPropertyName("duration_ms")] long? DurationMs = null,
-	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null
+	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null,
+	[property: JsonPropertyName("workflow")] string Workflow = null,
+	[property: JsonPropertyName("variant")] string Variant = null
 ) {
 	[JsonExtensionData]
 	public Dictionary<string, System.Text.Json.JsonElement> ExtensionData { get; init; }

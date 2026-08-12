@@ -36,9 +36,17 @@ public sealed class SendTelemetryTool
 	[Description("""
 				 Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file.
 
-				 Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by
-				 a consuming skill/contract; if no such skill is active (ad-hoc clio use, scripts, or CI), do not call
-				 this tool. Call get-telemetry-consent before using it. Use telemetry_consent only on first run after
+				 Telemetry covers AI-assisted Creatio work run through this MCP server. Skip it only for non-agent
+				 use - a plain script or a CI job. An agent working on a developer's behalf is in scope even when
+				 no skill file is loaded; treating that as "ad-hoc use" is what left whole workflows unreported.
+				 It applies to EVERY workflow, not just app creation. event_name is a flow-agnostic STAGE
+				 (workflow_started, plan_presented, plan_approved, build_started, work_item_completed,
+				 workflow_completed, workflow_failed, ...) and `workflow` says which flow it was
+				 (classic-to-freedom-migration, mobile-page-conversion, branding, app-creation, app-maintenance, ...),
+				 so send the stage plus your workflow rather than inventing a per-flow event name. Optional `variant`
+				 carries a bounded per-stage qualifier the flow defines (a migration scope, a blocked reason) - both
+				 fields are short lowercase tokens, never free text and never customer data. The legacy
+				 app-creation-specific names still work but are deprecated. Call get-telemetry-consent before using it. Use telemetry_consent only on first run after
 				 asking the developer, so Clio can store the local consent decision. Until consent is granted, nothing
 				 is stored, so events sent before consent is established are silently dropped. Which events to send, and
 				 when, is defined by the consuming skill/contract, not by this tool. Delivery is non-blocking and

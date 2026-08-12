@@ -53,6 +53,9 @@ public sealed class TelemetryService : ITelemetryService
 	private const string Unknown = "unknown";
 	private const string SessionStartedEvent = "session_started";
 
+	/// <summary>Canonical session-start event; anchors every elapsed-time measurement for a run.</summary>
+	internal const string WorkflowStartedEvent = "workflow_started";
+
 	/// <summary>
 	/// Version of the persisted event payload shape. Bump when attributes are added or renamed
 	/// so downstream consumers can parse events without relying on their creation date.
@@ -77,6 +80,11 @@ public sealed class TelemetryService : ITelemetryService
 	/// as the CAADT telemetry contract (<c>context/product-telemetry.md</c>).
 	/// </summary>
 	internal static readonly IReadOnlyList<string> AllowedEventNames = [
+		// --- Legacy app-creation names (DEPRECATED, still accepted) ---
+		// Superseded by the flow-agnostic stages below, which carry the flow in the `workflow` field.
+		// Kept accepted because clio and the toolkit release independently: an older installed toolkit
+		// still emits these, and rejecting them would silently zero out its telemetry on a clio update.
+		// New contracts must use the stage vocabulary.
 		SessionStartedEvent,
 		"pre_plan_clarification_requested",
 		"pre_plan_user_input_received",
@@ -90,7 +98,28 @@ public sealed class TelemetryService : ITelemetryService
 		"implementation_completed",
 		"implementation_changes_requested",
 		"implementation_changes_applied",
-		"implementation_failed"
+		"implementation_failed",
+
+		// --- Flow-agnostic stage vocabulary (canonical) ---
+		// WHICH flow a run belongs to travels in the `workflow` FIELD, not in the event name. The
+		// alternative — a name per flow per stage (migration_plan_approved, branding_approved, ...) — encodes
+		// a dimension into the enum: it multiplies names by flows, forces a clio release for every new skill,
+		// and turns "what is our plan-approval rate" into a UNION over a hand-maintained list instead of one
+		// GROUP BY workflow. These stages are deliberately generic so flows stay comparable.
+		WorkflowStartedEvent,
+		"clarification_requested",
+		"user_input_received",
+		"plan_presented",
+		"plan_skipped",
+		"plan_blocked",
+		"plan_changes_requested",
+		"plan_approved",
+		"build_started",
+		"work_item_completed",
+		"workflow_completed",
+		"workflow_failed",
+		"changes_requested",
+		"changes_applied"
 	];
 
 	private static readonly HashSet<string> AllowedEventNameSet = new(AllowedEventNames, StringComparer.Ordinal);
@@ -253,8 +282,34 @@ public sealed class TelemetryService : ITelemetryService
 				return Invalid("field-too-long", $"Telemetry field '{name}' exceeds {MaxFieldLength} characters.");
 			}
 		}
+		foreach ((string name, string value) in OptionalTokenFields(request)) {
+			if (value is not null && !IsAllowedToken(value)) {
+				return Invalid("invalid-token",
+					$"Telemetry field '{name}' must be 1-{MaxFieldLength} characters of lowercase letters, digits, '.', '_' or '-'.");
+			}
+		}
 		return new TelemetryEventResult(true, "valid");
 	}
+
+	// workflow/variant are shape-checked rather than matched against a fixed list of known values. A
+	// closed list would need a clio release every time a skill is added — the exact coupling the
+	// dimension-in-a-field design exists to remove — while a bounded lowercase token is already too
+	// narrow to carry a prompt, a path, or a customer name past the field allow-list.
+	private static IReadOnlyList<(string name, string value)> OptionalTokenFields(TelemetryEventRequest request) =>
+	[
+		("workflow", request.Workflow),
+		("variant", request.Variant)
+	];
+
+	/// <summary>
+	/// Validates a bounded lowercase identifier (a workflow or variant value). Linear scan rather than a
+	/// regex, matching <see cref="IsAllowedSessionId"/>: no ReDoS surface and O(length) on capped input.
+	/// </summary>
+	internal static bool IsAllowedToken(string value) =>
+		!string.IsNullOrWhiteSpace(value)
+		&& value.Length <= MaxFieldLength
+		&& value.All(character =>
+			char.IsAsciiDigit(character) || char.IsAsciiLetterLower(character) || character is '.' or '_' or '-');
 
 	private static IReadOnlyList<(string name, string value)> BoundedFields(TelemetryEventRequest request) =>
 	[
@@ -318,6 +373,14 @@ public sealed class TelemetryService : ITelemetryService
 			StringAttribute("plugin_version", request.PluginVersion),
 			StringAttribute("event_id", eventId)
 		];
+		// The flow dimension. Every stage event carries it, which is what keeps the stage names generic
+		// and lets one query compare the same funnel step across flows.
+		if (!string.IsNullOrWhiteSpace(request.Workflow)) {
+			attributes.Add(StringAttribute("workflow", request.Workflow));
+		}
+		if (!string.IsNullOrWhiteSpace(request.Variant)) {
+			attributes.Add(StringAttribute("variant", request.Variant));
+		}
 		if (request.DurationMs.HasValue) {
 			attributes.Add(new OpenTelemetryAttribute("duration_ms", new OpenTelemetryValue(IntValue: request.DurationMs.Value)));
 		}
@@ -354,6 +417,19 @@ public sealed class TelemetryService : ITelemetryService
 			"implementation_completed" => "implementation_started",
 			"implementation_failed" => "implementation_started",
 			"implementation_changes_applied" => "implementation_changes_requested",
+			// Stage vocabulary: one mapping serves every flow, because the stages are flow-agnostic.
+			// Each pair answers a question the raw funnel counts cannot — how long the plan took to
+			// produce, how long the developer took to approve it, and how long the build then ran.
+			"plan_presented" => WorkflowStartedEvent,
+			"plan_blocked" => WorkflowStartedEvent,
+			"plan_approved" => FirstKnown(sessionState, "plan_presented"),
+			"build_started" => FirstKnown(sessionState, "plan_approved"),
+			// Terminal events report the NARROWEST span available, so a run that failed during the build
+			// reports the build duration rather than the whole session (total elapsed is carried
+			// separately as duration_since_session_start_ms).
+			"workflow_completed" => PreferredKnown(sessionState, "build_started", "plan_approved", WorkflowStartedEvent),
+			"workflow_failed" => PreferredKnown(sessionState, "build_started", "plan_approved", WorkflowStartedEvent),
+			"changes_applied" => FirstKnown(sessionState, "changes_requested"),
 			_ => null
 		};
 		if (string.IsNullOrWhiteSpace(startEventName)
@@ -363,14 +439,30 @@ public sealed class TelemetryService : ITelemetryService
 		return Math.Max(0, (long)(timestamp - startedAt).TotalMilliseconds);
 	}
 
+	// Anchored on whichever start event the session actually produced. Each flow has its own
+	// "<flow>_session_started", so anchoring only on the app-creation one would leave every migration,
+	// mobile-conversion and branding event with no elapsed-time measure at all.
 	private static long? InferDurationSinceSessionStartMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
-		if (eventName == SessionStartedEvent
-			|| !sessionState.Events.TryGetValue(SessionStartedEvent, out DateTimeOffset sessionStartedAt)) {
+		if (IsSessionStartEvent(eventName)) {
 			return null;
 		}
-		return Math.Max(0, (long)(timestamp - sessionStartedAt).TotalMilliseconds);
+		string anchorEventName = sessionState.Events.Keys
+			.Where(IsSessionStartEvent)
+			.OrderBy(name => sessionState.Events[name])
+			.FirstOrDefault();
+		if (anchorEventName is null) {
+			return null;
+		}
+		return Math.Max(0, (long)(timestamp - sessionState.Events[anchorEventName]).TotalMilliseconds);
 	}
+
+	/// <summary>
+	/// True for a session-start event — the canonical <c>workflow_started</c> or the deprecated
+	/// app-creation <c>session_started</c> — which anchors that session's elapsed-time measurements.
+	/// </summary>
+	private static bool IsSessionStartEvent(string eventName) =>
+		eventName is WorkflowStartedEvent or SessionStartedEvent;
 
 	private static string FirstKnown(TelemetrySessionState sessionState, params string[] eventNames)
 	{
@@ -379,6 +471,19 @@ public sealed class TelemetryService : ITelemetryService
 			.OrderBy(eventName => sessionState.Events[eventName])
 			.FirstOrDefault();
 	}
+
+	/// <summary>
+	/// Returns the first recorded event in the caller's PREFERENCE order, unlike
+	/// <see cref="FirstKnown"/> which returns the chronologically earliest.
+	/// </summary>
+	/// <remarks>
+	/// Used by the terminal failure events, where the useful span is the narrowest one available: a
+	/// migration that failed after approval should report the BUILD duration, not the whole session
+	/// (total elapsed is already carried separately as <c>duration_since_session_start_ms</c>).
+	/// Chronological order would always pick the session start and lose that distinction.
+	/// </remarks>
+	private static string PreferredKnown(TelemetrySessionState sessionState, params string[] eventNames) =>
+		eventNames.FirstOrDefault(sessionState.Events.ContainsKey);
 
 	private void UpdateSessionState(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
