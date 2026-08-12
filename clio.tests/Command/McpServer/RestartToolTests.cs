@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -277,6 +278,33 @@ public sealed class RestartToolTests {
 		byCredentialsAttribute.Name.Should().Be(RestartTool.RestartByCredentialsToolName,
 			because: "the metadata should reuse the production tool-name constant");
 		byCredentialsAttribute.Destructive.Should().BeTrue(because: "restarting interrupts the active session");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Drift guard (ENG-94417): on BOTH restart tools the waitReady parameter description agrees with the method-level description about what readiness means — an authenticated application-layer round-trip. The parameter text is reflected verbatim into the MCP schema, so a stale one hands the agent a contract that contradicts the tool it describes.")]
+	public void RestartTools_WaitReadyDescription_Should_Agree_With_MethodDescription() {
+		// Arrange
+		string[] methodNames = [
+			nameof(RestartTool.RestartInstanceByName), nameof(RestartTool.RestartInstanceByCredentials)
+		];
+
+		foreach (string methodName in methodNames) {
+			MethodInfo method = typeof(RestartTool).GetMethod(methodName)!;
+
+			// Act
+			string methodDescription = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+			string waitReadyDescription = method.GetParameters()
+				.Single(parameter => parameter.Name == "waitReady")
+				.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+			// Assert
+			methodDescription.Should().Contain("authenticated",
+				because: $"{methodName} must state that waitReady waits for an authenticated round-trip, not a liveness ping");
+			waitReadyDescription.Should().Contain("authenticated",
+				because: $"the waitReady parameter description on {methodName} is reflected into the MCP schema and must "
+					+ "not promise a bare health-check wait the tool no longer performs");
+		}
 	}
 
 	[Test]
