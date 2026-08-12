@@ -1,0 +1,42 @@
+@startuml
+title create-business-process - build a process from a declarative descriptor
+autonumber
+skinparam shadowing false
+
+actor "AI agent" as AI
+participant "MCP tool\ncreate-business-process" as Tool
+participant "RequiredPackageChecker" as Gate
+participant "CreateBusinessProcessService" as Svc
+participant "ServiceUrlBuilder" as Url
+participant "IApplicationClient" as Cli
+participant "ProcessDesignService\n(CrtProcessBuilder)" as PDS
+participant "Terrasoft.Core" as Core
+
+AI -> AI : intent -> graph\n(elements, flows, parameters, mappings)
+AI -> Tool : list-user-tasks / validate-process-graph (recommended)
+AI -> Tool : descriptor JSON + environment-name
+Tool -> Gate : EnsureRequirements(options)
+Gate -> Core : installed package list
+alt package missing or older than 1.0.0.0
+  Gate --> AI : PackageRequirementException\n"Run 'clio install-process-builder -e env'"
+end
+Tool -> Svc : BuildProcess(env, request)
+Svc -> Svc : apply packageName override
+Svc -> Url : Build(KnownRoute.BuildProcess)
+Url --> Svc : {uri}/[0/]rest/ProcessDesignService/BuildProcess
+Svc -> Cli : POST { "request": descriptor }
+note right of Svc
+  BodyStyle = Wrapped:
+  the descriptor is always
+  wrapped under "request"
+end note
+Cli -> PDS : HTTP POST
+PDS -> PDS : validate the graph, auto-layout,\nbuild ProcessSchema,\nfilter -> Terrasoft.FilterGroup
+PDS -> Core : SaveSchema
+Core --> PDS : schemaUId
+PDS --> Cli : { "BuildProcessResult":\n{ success, schemaName, schemaUId } }
+Cli --> Svc : response body
+Svc -> Svc : success = false -> throw with errorMessage
+Svc --> AI : schemaName + schemaUId
+AI -> Tool : describe-business-process (verification)
+@enduml

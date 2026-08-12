@@ -1,4 +1,4 @@
-# Clio Command Reference
+﻿# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
@@ -538,6 +538,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="restore-db"></a>
 <a id="rdb"></a>
 - [`restore-db`](docs/commands/restore-db.md) - Restore a database backup, `rdb`
+<a id="read-data-binding-db"></a>
+<a id="get-data-binding-db"></a>
+- [`read-data-binding-db`](docs/commands/read-data-binding-db.md) - Report which columns a DB-first data binding actually ships, `get-data-binding-db`
 
 ## Local Instance Management
 
@@ -663,6 +666,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
+<a id="install-process-builder"></a>
+<a id="installprocessbuilder"></a>
+<a id="update-process-builder"></a>
+- [`install-process-builder`](docs/commands/install-process-builder.md) - Install or update the bundled process-builder package in Creatio, `installprocessbuilder`, `update-process-builder`
 <a id="install-toolkit"></a>
 - [`install-toolkit`](docs/commands/install-toolkit.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>

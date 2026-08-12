@@ -14,6 +14,9 @@ DESCRIPTION
     disabled sources. The command reads local configuration and caches by default.
     --check-updates performs bounded transport checks without installing content or
     changing Git source configuration. Output never includes credentials or tokens.
+    Human-readable output uses one vertical block per source so paths, digests, and
+    diagnostics remain readable at ordinary terminal widths. Empty optional values
+    are omitted. Use --json for structured automation output.
 
 OPTIONS
     --source <alias>    Show only this source; omit for every configured source

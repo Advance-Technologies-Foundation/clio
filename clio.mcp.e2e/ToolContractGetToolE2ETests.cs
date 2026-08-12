@@ -312,6 +312,41 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract requires the navigation placement decision before create-app")]
+	[Description("Verifies over the real MCP transport that the create-app contract carries the precondition and anti-pattern, so an agent reading the contract before its first call learns the placement decision is due beforehand.")]
+	public async Task ToolContractGet_Should_Require_NavigationPlacement_Before_ApplicationCreate() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					ApplicationCreateTool.ApplicationCreateToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "create-app should remain discoverable through the executable clio MCP contract catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the placement requirement must survive the wire, since the contract is what an agent reads before its first create-app call");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("BEFORE this call", StringComparison.Ordinal),
+			because: "the ordering is the substance of the requirement, and a live run took the decision only after the app was built");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("get-guidance name=workplaces", StringComparison.Ordinal),
+			because: "the contract states the requirement and routes to the guide owning the option set and the write recipes");
+		contract.AntiPatterns!.Should().Contain(
+			pattern => pattern.Pattern.Contains("THEN ask which workplace", StringComparison.Ordinal),
+			because: "the observed failure order must reach the agent as a named anti-pattern");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises check-settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange

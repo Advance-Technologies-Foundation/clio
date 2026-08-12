@@ -113,6 +113,7 @@ info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
 install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
+install-process-builder:install-process-builder,installprocessbuilder,update-process-builder
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
 install-sql-schema:install-sql-schema,sql-schema-install,execute-sql-schema
@@ -168,6 +169,7 @@ push-nuget-pkg:push-nuget-pkg,push-n,push-nuget
 push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
+read-data-binding-db:read-data-binding-db,get-data-binding-db
 register:register
 ring:ring
 remove-data-binding-row:remove-data-binding-row

@@ -68,7 +68,7 @@ cp ~/.nuget/packages/atf.repository/<version>/lib/netstandard2.0/ATF.Repository.
   cliogate/Files/Bin/
 
 # 3. Bump version
-dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --PackageVersion X.Y.Z.W
+dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --package-version X.Y.Z.W
 
 # 4. Compress
 dotnet clio/bin/Release/net10.0/clio.dll compress ./cliogate -d ./clio/cliogate/cliogate.gz
@@ -95,6 +95,42 @@ dotnet run --project clio/clio.csproj --framework net8.0 -- get-info -e <env>
 ```
 
 The install command is `push-pkg`, **not** `push-package` (that verb does not exist).
+
+# Bundled Creatio packages
+
+clio ships two Creatio packages inside its own distribution — `cliogate` (prebuilt assembly) and
+`CrtProcessBuilder` (source only, compiled by the target) — and installs them on request.
+
+**Before changing any of the following, read [docs/agent-instructions/bundled-packages.md](docs/agent-instructions/bundled-packages.md):**
+
+- `clio/CrtProcessBuilder/*.gz` or `clio/cliogate/*.gz` — the committed archives
+- `clio/Common/BundledPackages.cs` — the identity constants
+- `clio/Common/BundledPackageCatalog.cs` / `BundledPackageConvergence.cs` — the version source of truth
+  and the rule that decides an environment is behind
+- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the SHA-256 / `ModifiedOnUtc` pins
+- a `[RequiresPackage]` version literal
+
+The normal path is one call — `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder
+checkout> -Version X.Y.Z.W`. It runs the whole procedure, computes the pins from the archive it just
+produced, and checks the archive's inventory. The article documents it, and keeps the manual steps as the
+fallback for a host without `pwsh`.
+
+**`-Version` is required and must go UP on every rebundle.** clio reads the shipped version out of the
+archive and compares it against the version the environment recorded; an unchanged version therefore
+reaches new installs only, and nobody who already has the package is ever asked to update. There is no
+version constant to keep in step, so raising it costs nothing. Do NOT reintroduce one — see
+[spec/adr/adr-bundled-package-version-source-of-truth.md](spec/adr/adr-bundled-package-version-source-of-truth.md).
+
+That article carries the rebundle procedure and the three platform facts whose failure modes are SILENT:
+a package is matched by `UId` (never change it); the descriptor's `ModifiedOnUtc` — not `PackageVersion` —
+decides whether the recorded version is rewritten at all (so move BOTH fields on every rebundle —
+`clio set-pkg-version` does it in one step and leaves the provenance marker the pins expect, though a hand
+edit that moves both works too); and for a source-only package "installed" and "compiled" are different
+states that no database read distinguishes.
+
+One trap worth repeating here because it invalidates any local verification: an install command resolves the
+bundled archive from the **build output** directory, so `clio compress -d <repo path>` has no effect until
+clio is rebuilt.
 
 ## Common clio command names (easily confused)
 

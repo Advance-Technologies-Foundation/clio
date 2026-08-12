@@ -107,7 +107,7 @@ public sealed class BaseToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The environment-scoped gate fails the tool with the PackageRequirementException message and never runs the command when a gated options type's requirement is unmet.")]
+	[Description("The environment-scoped gate fails the tool with the PackageRequirementException message on the caller-actionable exit code (1, not -1) and never runs the command when a gated options type's requirement is unmet.")]
 	public void InternalExecuteGeneric_ShouldReturnFailedResultWithMessageAndNotRunCommand_WhenPackageRequirementCheckerThrowsPackageRequirementException() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
@@ -126,8 +126,11 @@ public sealed class BaseToolTests {
 		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "an unsatisfied package requirement must fail the MCP tool before the command runs");
+		result.ExitCode.Should().Be(1,
+			because: "a missing package is an EXPECTED precondition the caller can fix by installing it, which "
+				+ "docs/McpCapabilityMap.md defines as exit 1; reporting it as -1 would tell the agent that "
+				+ "clio itself broke and that retrying is futile, defeating the install-then-retry remediation "
+				+ "the refusal message itself describes");
 		messageValues.Should().Contain("Install the cliogate package.",
 			because: "the PackageRequirementException message must be surfaced verbatim to the MCP caller");
 		command.WasExecuted.Should().BeFalse(
@@ -226,7 +229,7 @@ public sealed class BaseToolTests {
 		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
 		checker
 			.When(c => c.EnsureRequirements(Arg.Any<object>()))
-			.Do(_ => throw new PackageRequirementException("Install the clioprocessbuilder package."));
+			.Do(_ => throw new PackageRequirementException("Install the CrtProcessBuilder package."));
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
@@ -238,7 +241,7 @@ public sealed class BaseToolTests {
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>()
-			.WithMessage("Install the clioprocessbuilder package.",
+			.WithMessage("Install the CrtProcessBuilder package.",
 				because: "the typed-response path that calls ResolveCommand directly must enforce the package gate and let the exception propagate to the tool's own catch");
 		// The checker must be resolved from the same environment-scoped resolver, bound to the per-call environment.
 		resolver.Received(1).Resolve<IRequiredPackageChecker>(

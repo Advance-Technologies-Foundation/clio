@@ -314,6 +314,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
+			["install-process-builder"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,
@@ -337,6 +338,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,
 			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
+			["read-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,

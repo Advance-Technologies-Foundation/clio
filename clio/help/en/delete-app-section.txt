@@ -18,6 +18,11 @@ DESCRIPTION
     By default, the underlying entity schema is preserved. Pass
     --delete-entity-schema to remove it as well.
 
+    NOT FOR REMOVING A SECTION FROM A WORKPLACE. This command deletes the
+    section itself, everywhere. To take a section out of one workplace while
+    keeping it in the others, delete only its SysModuleInWorkplace row - see
+    the workplaces guidance (clio mcp-server: get-guidance name=workplaces).
+
 SYNOPSIS
     clio delete-app-section [options]
 
