@@ -5,6 +5,8 @@ using System.Text.Json;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.Client;
 using NUnit.Framework;
 
 namespace Clio.Mcp.E2E;
@@ -77,6 +79,73 @@ public sealed class McpLifecycleTimingDiagnosticsE2ETests {
 		ReportVerdict(baselineSeconds, samples, killed);
 		samples.Should().HaveCount(LifecycleCycles,
 			because: "every measured lifecycle must produce a sample for the phase breakdown to be interpretable");
+	}
+
+	[Test]
+	[Description("Splits the harness-side session cost into McpServerSession.StartAsync and DisposeAsync, and re-measures dispose with a shortened StdioClientTransportOptions.ShutdownTimeout, to prove whether the ~10 s per lifecycle is that timeout rather than any work the clio server performs.")]
+	public async Task HarnessSession_Should_Attribute_Cost_To_Start_Or_Dispose() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		Report("=== HARNESS SESSION ATTRIBUTION ===");
+
+		// Act
+		List<double> startSeconds = [];
+		List<double> disposeSeconds = [];
+		for (int cycle = 1; cycle <= BaselineCycles; cycle++) {
+			using CancellationTokenSource startupCts = new(HandshakeTimeout);
+			Stopwatch start = Stopwatch.StartNew();
+			McpServerSession session = await McpServerSession.StartAsync(settings, startupCts.Token);
+			start.Stop();
+			await session.ListToolsAsync(startupCts.Token);
+			Stopwatch dispose = Stopwatch.StartNew();
+			await session.DisposeAsync();
+			dispose.Stop();
+			startSeconds.Add(start.Elapsed.TotalSeconds);
+			disposeSeconds.Add(dispose.Elapsed.TotalSeconds);
+			Report($"[harness] cycle {cycle}/{BaselineCycles} StartAsync={start.Elapsed.TotalSeconds:F2}s "
+				+ $"DisposeAsync={dispose.Elapsed.TotalSeconds:F2}s");
+		}
+		List<double> shortenedDisposeSeconds = [];
+		foreach (int shutdownSeconds in new[] { 1, 2 }) {
+			double elapsed = await MeasureSdkDisposeAsync(settings, TimeSpan.FromSeconds(shutdownSeconds));
+			shortenedDisposeSeconds.Add(elapsed);
+			Report($"[harness] ShutdownTimeout={shutdownSeconds}s -> DisposeAsync={elapsed:F2}s");
+		}
+
+		// Assert
+		double disposeMedian = Median([.. disposeSeconds]);
+		Report($"[median] StartAsync={Median([.. startSeconds]):F2}s DisposeAsync={disposeMedian:F2}s");
+		Report(disposeMedian >= 5
+			? "[verdict] DISPOSE-DOMINATED -> the per-lifecycle cost is the client transport shutdown wait, "
+				+ "not clio server work. Compare the shortened-timeout rows to confirm it scales with ShutdownTimeout."
+			: "[verdict] Dispose is cheap -> look elsewhere for the per-lifecycle cost.");
+		disposeSeconds.Should().HaveCount(BaselineCycles,
+			because: "each cycle must contribute a dispose measurement for the attribution to be interpretable");
+	}
+
+	/// <summary>
+	/// Builds a client over the same stdio transport the harness uses but with an explicit
+	/// <see cref="StdioClientTransportOptions.ShutdownTimeout"/>, and returns how long disposing it takes.
+	/// A dispose window that tracks the configured timeout proves the wait IS the timeout.
+	/// </summary>
+	private static async Task<double> MeasureSdkDisposeAsync(McpE2ESettings settings, TimeSpan shutdownTimeout) {
+		ClioProcessDescriptor descriptor = ClioExecutableResolver.Resolve(settings);
+		StdioClientTransport transport = new(new StdioClientTransportOptions {
+			Command = descriptor.Command,
+			Arguments = [.. descriptor.Arguments],
+			WorkingDirectory = descriptor.WorkingDirectory,
+			EnvironmentVariables = settings.ProcessEnvironmentVariables,
+			Name = "clio-mcp-e2e-diagnostics",
+			ShutdownTimeout = shutdownTimeout
+		}, NullLoggerFactory.Instance);
+		using CancellationTokenSource cts = new(HandshakeTimeout);
+		McpClient client = await McpClient.CreateAsync(transport, cancellationToken: cts.Token);
+		await client.ListToolsAsync(cancellationToken: cts.Token);
+		Stopwatch dispose = Stopwatch.StartNew();
+		await client.DisposeAsync();
+		dispose.Stop();
+		return dispose.Elapsed.TotalSeconds;
 	}
 
 	private static async Task<double> MeasureBaselineProcessAsync(
