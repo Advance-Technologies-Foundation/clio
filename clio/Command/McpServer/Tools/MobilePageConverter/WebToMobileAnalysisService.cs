@@ -1791,15 +1791,17 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
+			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption);
+			string leafReason = isPositional
+				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+				: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
 				ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
-				MobileValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption),
-				Reason = isPositional
-					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-					: "field/leaf; mobile-supported"
+				MobileValues = leafValues,
+				Reason = leafReason + RowWithoutTitleNote(ctx, node, leafValues)
 			});
 		}
 	}
@@ -2224,6 +2226,27 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// The note appended to a converted list's reason when its row was built but could take NO title: the source
+	/// grid carries no column of a type the mobile row accepts (all lookups / dates / numbers). Reported rather
+	/// than left silent, because an empty Title column in the designer otherwise looks like a converter failure
+	/// and the caller has no way to tell it apart from one. Empty string whenever a title was set, the element is
+	/// not a synthesized row, or the row was not built at all.
+	/// </summary>
+	private static string RowWithoutTitleNote(ElementMapContext ctx, JObject node, JsonNode values) {
+		RowLayoutRule rule = FindRule(ctx.Rules, node["type"]?.ToString())?.RowLayout;
+		if (rule is null || string.IsNullOrWhiteSpace(rule.TargetProperty) || values is null) {
+			return string.Empty;
+		}
+		JsonNode row = values[rule.TargetProperty];
+		if (row is null || row["title"] is not null) {
+			return string.Empty;
+		}
+		return " — the row carries no title: the source grid has no column of a type a mobile list row accepts "
+			+ "for one (it offers text columns only), so ask the user which value the row should lead with and "
+			+ "set it in the designer";
+	}
+
+	/// <summary>
 	/// Builds the row child a <see cref="RowLayoutRule"/> declares and writes it onto
 	/// <paramref name="values"/>. The first source entry becomes the row's <c>title</c> as a plain
 	/// <c>$&lt;binding&gt;</c> STRING (the shape the mobile registry declares for <c>crt.ListItem.title</c>;
@@ -2244,16 +2267,31 @@ public static class WebToMobileAnalysisService {
 		// from a customer environment, so the value is not assumed well-formed: it is REJECTED rather than
 		// repaired, because stripping the offending characters would produce a plausible-looking token that
 		// silently resolves to nothing. An entry that fails is skipped exactly like one carrying no value at
-		// all — including the first, in which case the next usable column becomes the title.
-		List<string> bindings = source
+		// all — including the first, in which case the next usable column moves up.
+		List<(string Binding, int? ValueType)> entries = source
 			.OfType<JObject>()
-			.Select(entry => entry[rule.BindingFrom]?.ToString())
-			.Where(binding => !string.IsNullOrWhiteSpace(binding) && BindingIdentifierPattern.IsMatch(binding))
-			.Select(binding => "$" + binding)
+			.Select(entry => (
+				Binding: entry[rule.BindingFrom]?.ToString(),
+				ValueType: string.IsNullOrWhiteSpace(rule.ValueTypeFrom)
+					? null
+					: (entry[rule.ValueTypeFrom] as JValue)?.Value as long? ))
+			.Where(e => !string.IsNullOrWhiteSpace(e.Binding) && BindingIdentifierPattern.IsMatch(e.Binding))
+			.Select(e => ("$" + e.Binding, (int?)e.ValueType))
 			.ToList();
-		if (bindings.Count == 0) {
+		if (entries.Count == 0) {
 			return;
 		}
+		// The title is the first entry the TARGET accepts, not simply the first entry: the mobile designer
+		// offers only text columns for a list row's title, so a lookup binds to nothing and leaves the Title
+		// column empty while the body still renders (ENG-95046). A skipped entry is not lost — it becomes a
+		// body row in its original position. With no types declared this degrades to "first entry".
+		// When NO entry declares a value type the rule has nothing to judge by (the source simply does not carry
+		// the property) — fall back to the first entry rather than shipping a row with no title on a page the
+		// types would probably have accepted.
+		bool anyValueTypeKnown = entries.Any(e => e.ValueType.HasValue);
+		int titleIndex = rule.TitleValueTypes is { Count: > 0 } && anyValueTypeKnown
+			? entries.FindIndex(e => e.ValueType.HasValue && rule.TitleValueTypes.Contains(e.ValueType.Value))
+			: 0;
 		var row = new JObject();
 		if (!string.IsNullOrWhiteSpace(mobileName) && !string.IsNullOrWhiteSpace(rule.NameSuffix)) {
 			row["name"] = mobileName + rule.NameSuffix;
@@ -2261,8 +2299,14 @@ public static class WebToMobileAnalysisService {
 		if (!string.IsNullOrWhiteSpace(rule.TargetType)) {
 			row["type"] = rule.TargetType;
 		}
-		row["title"] = bindings[0];
-		row["body"] = new JArray(bindings.Skip(1).Select(binding => new JObject { ["value"] = binding }));
+		// No qualifying entry: the row ships with no title at all rather than one bound to a column the target
+		// cannot display — an absent title is visibly incomplete, a wrong one looks configured and is not.
+		if (titleIndex >= 0) {
+			row["title"] = entries[titleIndex].Binding;
+		}
+		row["body"] = new JArray(entries
+			.Where((_, index) => index != titleIndex)
+			.Select(e => new JObject { ["value"] = e.Binding }));
 		values[rule.TargetProperty] = row;
 	}
 

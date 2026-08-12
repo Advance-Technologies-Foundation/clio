@@ -46,7 +46,8 @@ public sealed class WebToMobileConversionServiceTests {
 				Category = "AlternativeAvailable",
 				RowLayout = new RowLayoutRule {
 					SourceProperty = "columns", TargetProperty = "itemLayout", TargetType = "crt.ListItem",
-					BindingFrom = "code", NameSuffix = "_ListItem"
+					BindingFrom = "code", NameSuffix = "_ListItem",
+					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 27, 28, 29, 30]
 				},
 				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"]
 			},
@@ -4144,6 +4145,67 @@ public sealed class WebToMobileConversionServiceTests {
 		grid.Operation.Should().Be("insert", because: "a column-less grid still converts — only its row is unknown");
 		grid.MobileValues["itemLayout"].Should().BeNull(
 			because: "the row is synthesized FROM the columns; with none there is nothing to synthesize");
+	}
+
+	[Test]
+	[Description("The title binds the first TEXT column, not simply the first column: the mobile designer offers only text columns for a row title, so a leading lookup would render an empty Title column while the body still looked correct. The skipped lookup keeps its place among the body rows.")]
+	public void Analyze_MobileValues_GridWhoseFirstColumnIsALookup_TitlesTheFirstTextColumn() {
+		// Arrange — mirrors Leads_FormPage's StageHistoryList: a lookup first, then dates.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Stages", "type": "crt.DataGrid", "items": "$Stages",
+				  "columns": [
+					{ "id": "c1", "code": "StagesDS_QualifyStatus", "dataValueType": 10 },
+					{ "id": "c2", "code": "StagesDS_Comment", "dataValueType": 30 },
+					{ "id": "c3", "code": "StagesDS_StartDate", "dataValueType": 7 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "Stages").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$StagesDS_Comment",
+			because: "value type 30 is LONG_TEXT and 10 is Lookup — the designer accepts only the text one as a title");
+		row["body"].AsArray().Select(x => x["value"]?.GetValue<string>()).Should().Equal(
+			new[] { "$StagesDS_QualifyStatus", "$StagesDS_StartDate" },
+			because: "the lookup passed over for the title is not lost — it becomes a body row in its original position");
+	}
+
+	[Test]
+	[Description("A grid with no text column at all ships a row with NO title rather than one bound to a column the mobile list cannot display — an absent title is visibly incomplete, a wrong one looks configured and is not.")]
+	public void Analyze_MobileValues_GridWithNoTextColumn_ShipsRowWithoutTitle() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "AllLookups", "type": "crt.DataGrid", "items": "$AllLookups",
+				  "columns": [
+					{ "id": "c1", "code": "AllLookupsDS_Owner", "dataValueType": 10 },
+					{ "id": "c2", "code": "AllLookupsDS_Stage", "dataValueType": 10 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "AllLookups").MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the row still carries the body rows the list can display");
+		row["title"].Should().BeNull(because: "no column qualifies, and an unsupported title binding is worse than none");
+		row["body"].AsArray().Should().HaveCount(2, because: "both lookups remain available as body rows");
+		Element(guide, "AllLookups").Reason.Should().Contain("no title",
+			because: "an empty Title column in the designer is indistinguishable from a converter failure unless "
+				+ "the guide says the source had nothing to put there, so the caller can ask the user instead");
+	}
+
+	[Test]
+	[Description("A list that DID get a title carries no missing-title note — the note must not fire on the normal case.")]
+	public void Analyze_MobileValues_ListWithTitle_CarriesNoMissingTitleNote() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		Element(guide, "ProductsList").Reason.Should().NotContain("no title",
+			because: "this grid's first column is usable as a title, so nothing is missing to report");
 	}
 
 	[Test]
