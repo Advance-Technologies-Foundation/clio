@@ -49,6 +49,8 @@ public class SetLogoTool(
 		"the light logo variant), favicon (the browser tab). A slot argument overrides logo for that slot, so " +
 		"one call can brand every slot and still give the dark panel its own file. The stock splash logo is " +
 		"suppressed automatically, and a favicon also turns on its UseFaviconFromSysSettings gate. " +
+		"Every file must be a supported image format (" + SetLogoCommand.LogoImageFormats + "; the favicon " +
+		"also accepts ico) — a file with another extension is refused before anything is written to that slot. " +
 		"When package is " +
 		"omitted, the environment's CurrentPackageId system setting decides where the bindings land. The logos " +
 		"change for all users and cannot be automatically reverted — warn the user first. A refused image " +
@@ -134,7 +136,7 @@ public sealed record SetLogoArgs(
 	string? DarkLogo = null,
 
 	[property: JsonPropertyName("favicon")]
-	[property: Description("Local image file for the browser-tab icon (FaviconImage). Pass a square icon — clio uploads the file as it is, without resizing or converting it. ICO, PNG and SVG are the safest formats. Never taken from logo.")]
+	[property: Description("Local image file for the browser-tab icon (FaviconImage). Pass a square icon — clio uploads the file as it is, without resizing or converting it. Accepted formats: " + SetLogoCommand.FaviconImageFormats + "; another extension is refused. Never taken from logo.")]
 	string? Favicon = null,
 
 	[property: JsonPropertyName("package")]

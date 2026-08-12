@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Clio.Common;
 using CommandLine;
@@ -49,8 +50,8 @@ public class SetLogoOptions : RemoteCommandOptions {
 
 	/// <summary>Local image file for the browser-tab icon.</summary>
 	[Option("favicon", Required = false,
-		HelpText = "Local image file for the browser-tab icon (FaviconImage). Pass a square icon; ICO, PNG " +
-			"and SVG are the safest formats. Not taken from --logo.")]
+		HelpText = "Local image file for the browser-tab icon (FaviconImage). Pass a square icon; accepted " +
+			"formats: " + SetLogoCommand.FaviconImageFormats + ". Not taken from --logo.")]
 	public string Favicon { get; set; }
 
 	/// <summary>Package that receives the branding data bindings.</summary>
@@ -161,6 +162,16 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 		"Pass at least one image file: logo (every slot at once), login-logo, menu-logo, configuration-logo, " +
 		"dark-logo, or favicon.";
 
+	/// <summary>Comma-separated list of the image file extensions the logo slots accept.</summary>
+	internal const string LogoImageFormats = "png, jpg, jpeg, gif, bmp, webp, svg";
+
+	/// <summary>Comma-separated list of the image file extensions the favicon accepts.</summary>
+	internal const string FaviconImageFormats = LogoImageFormats + ", ico";
+
+	private static readonly BrandingImageFormat LogoFormat = new(LogoImageFormats.Split(", "));
+
+	private static readonly BrandingImageFormat FaviconFormat = new(FaviconImageFormats.Split(", "));
+
 	private static readonly BrandingCompanion SplashSuppression = new(HideSplashLogoCode,
 		$"The logos were applied, but setting {HideSplashLogoCode} failed, so the stock splash logo may still " +
 		"flash during load",
@@ -192,11 +203,12 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 	/// target package. At least one image option is required.
 	/// </summary>
 	/// <remarks>
-	/// An image the environment refuses does not abandon the images that already succeeded: as long as one
-	/// applied, the run still suppresses the splash logo and delivers what applied into the package, so the
-	/// environment and the package never drift apart. The result is a failure naming every refused image,
-	/// because the caller asked for more than the run produced — read <see cref="SetLogoResult.Applied"/> to
-	/// see what did land before re-running with the refused images fixed.
+	/// A refused image — one whose file is not a supported image format, or one the environment rejects —
+	/// does not abandon the images that already succeeded: as long as one applied, the run still suppresses
+	/// the splash logo and delivers what applied into the package, so the environment and the package never
+	/// drift apart. The result is a failure naming every refused image, because the caller asked for more
+	/// than the run produced — read <see cref="SetLogoResult.Applied"/> to see what did land before
+	/// re-running with the refused images fixed.
 	/// </remarks>
 	/// <param name="options">Command options carrying the per-slot files, the favicon, target package, and connection settings.</param>
 	/// <returns>The outcome, carrying what was applied, the bound package, and any warnings.</returns>
@@ -210,7 +222,9 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 			return SetLogoResult.Failure(missingFileError);
 		}
 
-		var (appliedImages, refusedImages) = ApplyImages(requestedImages, options.Environment);
+		var (supportedImages, formatRefusals) = PartitionBySupportedFormat(requestedImages);
+		var (appliedImages, applyRefusals) = ApplyImages(supportedImages, options.Environment);
+		var refusedImages = formatRefusals.Concat(applyRefusals).ToList();
 		if (appliedImages.Count == 0) {
 			return SetLogoResult.Failure(DescribeRefusedImages(refusedImages));
 		}
@@ -331,14 +345,43 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 		return (written, refused);
 	}
 
+	private static (List<BrandingImage> Supported, List<RefusedBrandingImage> Refused) PartitionBySupportedFormat(
+		IReadOnlyList<BrandingImage> requestedImages) {
+		var supported = new List<BrandingImage>();
+		var refused = new List<RefusedBrandingImage>();
+		foreach (var image in requestedImages) {
+			var formatError = FindUnsupportedFormatError(image);
+			if (formatError is null) {
+				supported.Add(image);
+			} else {
+				refused.Add(new RefusedBrandingImage(image, formatError));
+			}
+		}
+		return (supported, refused);
+	}
+
+	private static string FindUnsupportedFormatError(BrandingImage image) {
+		string extension = Path.GetExtension(image.File).TrimStart('.');
+		if (extension.Length == 0) {
+			return $"the file has no extension, so it cannot be verified as an image ({image.Label} accepts: {image.Format.DisplayList})";
+		}
+		if (!image.Format.Accepts(extension)) {
+			return $"'.{extension}' is not a supported image format ({image.Label} accepts: {image.Format.DisplayList})";
+		}
+		return null;
+	}
+
 	private static IReadOnlyList<BrandingImage> ResolveRequestedImages(SetLogoOptions options) {
 		var candidates = new BrandingImage[] {
-			new("login-logo", LoginLogoCode, ResolveSlotFile(options.LoginLogo, options.Logo), SplashSuppression),
-			new("menu-logo", MenuLogoCode, ResolveSlotFile(options.MenuLogo, options.Logo), SplashSuppression),
+			new("login-logo", LoginLogoCode, ResolveSlotFile(options.LoginLogo, options.Logo), LogoFormat,
+				SplashSuppression),
+			new("menu-logo", MenuLogoCode, ResolveSlotFile(options.MenuLogo, options.Logo), LogoFormat,
+				SplashSuppression),
 			new("configuration-logo", ConfigurationLogoCode,
-				ResolveSlotFile(options.ConfigurationLogo, options.Logo), SplashSuppression),
-			new("dark-logo", DarkLogoCode, ResolveSlotFile(options.DarkLogo, options.Logo), SplashSuppression),
-			new(FaviconLabel, FaviconCode, options.Favicon, FaviconGate)
+				ResolveSlotFile(options.ConfigurationLogo, options.Logo), LogoFormat, SplashSuppression),
+			new("dark-logo", DarkLogoCode, ResolveSlotFile(options.DarkLogo, options.Logo), LogoFormat,
+				SplashSuppression),
+			new(FaviconLabel, FaviconCode, options.Favicon, FaviconFormat, FaviconGate)
 		};
 		return candidates
 			.Where(candidate => !string.IsNullOrWhiteSpace(candidate.File))
@@ -395,10 +438,20 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 
 	private sealed record BrandingCompanionFailure(bool Fatal, string Message);
 
+	private sealed record BrandingImageFormat(string[] Extensions) {
+
+		public string DisplayList { get; } = string.Join(", ", Extensions);
+
+		public bool Accepts(string extension) {
+			return Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+		}
+	}
+
 	private sealed record BrandingImage(
 		string Label,
 		string Code,
 		string File,
+		BrandingImageFormat Format,
 		BrandingCompanion Companion = null);
 
 	private sealed record RefusedBrandingImage(BrandingImage Image, string Error);

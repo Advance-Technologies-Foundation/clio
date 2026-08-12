@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.Branding;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -245,5 +247,75 @@ public sealed class SetLogoToolE2ETests : McpContractFixtureBase {
 			because: "a field named after the system setting must be rejected, not silently dropped — a dropped favicon would leave the browser tab unbranded while the run reported success");
 		result.Error.Should().Contain("'faviconImage' -> 'favicon'",
 			because: "the setting code is the name an agent is most likely to guess from the branding guidance, so the hint must map it to the canonical field");
+	}
+
+	[Test]
+	[AllureTag(SetLogoTool.ToolName)]
+	[AllureName("set-logo refuses a non-image favicon with a structured failure naming the accepted formats")]
+	[AllureDescription("Registers an isolated fake environment, passes a real temporary .txt file as favicon through the real clio MCP server, and verifies the structured failure names the refused extension and the accepted formats — the format gate refuses the file before any environment write, so no live Creatio environment is needed.")]
+	[Description("Registers an isolated fake environment, passes a real temporary .txt file as favicon through the real clio MCP server, and verifies the structured failure names the refused extension and the accepted formats — the format gate refuses the file before any environment write, so no live Creatio environment is needed.")]
+	public async Task SetLogo_Should_Refuse_A_NonImage_Favicon_Naming_The_Accepted_Formats() {
+		// Arrange
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-set-logo-format-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string faviconPath = Path.Combine(tempHome, "favicon.txt");
+		await File.WriteAllTextAsync(faviconPath, "not an image");
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": "set-logo-format-e2e",
+			  "Environments": {
+			    "set-logo-format-e2e": {
+			      "Uri": "http://127.0.0.1:1",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		try {
+			await using McpServerSession session =
+				await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				SetLogoTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = "set-logo-format-e2e",
+						["favicon"] = faviconPath
+					}
+				},
+				cancellationTokenSource.Token);
+			SetLogoToolResult result =
+				EntitySchemaStructuredResultParser.Extract<SetLogoToolResult>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "an unsupported image format must surface as a structured in-tool failure, not an MCP protocol error");
+			result.Success.Should().BeFalse(
+				because: "a favicon that is not an image has nothing to apply");
+			result.Error.Should().Contain(".txt",
+				because: "the failure must name the refused extension so the caller can fix the input");
+			result.Error.Should().Contain(SetLogoCommand.FaviconImageFormats,
+				because: "the failure must carry the accepted formats so the caller does not have to read the docs");
+			result.Applied.Should().BeNull(
+				because: "the format gate refuses the file before anything is written, so nothing was applied");
+		}
+		finally {
+			try {
+				Directory.Delete(tempHome, recursive: true);
+			}
+			catch (IOException) { /* the spawned server may still hold the temp home briefly on teardown */ }
+			catch (UnauthorizedAccessException) { /* same file-locking window on Windows */ }
+		}
 	}
 }

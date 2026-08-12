@@ -49,9 +49,13 @@ DESCRIPTION
 
     Each file is uploaded as its Binary sys-setting value; the environment's
     file-security policy is enforced client-side and a per-value size cap
-    (10 MB) applies.
+    (10 MB) applies. Every file must be a supported image format — the logo
+    slots accept png, jpg, jpeg, gif, bmp, webp and svg; the favicon also
+    accepts ico. A file with another extension is refused before anything is
+    written to that slot.
 
-    When the environment refuses one image and accepts another, the run keeps
+    When one image is refused (an unsupported format, or the environment
+    rejects it) and another is accepted, the run keeps
     what already succeeded: the splash suppression and the package delivery
     still run for the applied images, and the command then exits with an error
     naming every refused image. A non-zero exit does NOT mean nothing changed —
@@ -81,7 +85,7 @@ OPTIONS
 
     --dark-logo                     Local image file for the logo on the dark Freedom UI top panel (CrtAppToolbarLogo). Pass the light variant here — a logo drawn for a white background is hard to read on the dark panel.
 
-    --favicon                       Local image file for the browser-tab icon (FaviconImage). Pass a square icon; ICO, PNG and SVG are the safest formats. Not taken from --logo.
+    --favicon                       Local image file for the browser-tab icon (FaviconImage). Pass a square icon; accepted formats: png, jpg, jpeg, gif, bmp, webp, svg, ico. Not taken from --logo.
 
     --package                       Package that receives the logo data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.
 

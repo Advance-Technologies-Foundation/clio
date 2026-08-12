@@ -860,6 +860,102 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 			message.Contains("after a page refresh")));
 	}
 
+	[Test, Category("Unit")]
+	[Description("Refuses a favicon whose extension is not an image format, yet keeps the logo that applied — the format gate joins the same partial-failure channel as an environment refusal.")]
+	public void ApplyLogos_ShouldRefuseTheFavicon_WhenItsExtensionIsNotAnImageFormat() {
+		// Arrange
+		SetLogoOptions options = new() { MenuLogo = LogoFile, Favicon = "C:/brand/favicon.txt" };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the caller asked for a favicon and did not get it");
+		result.Error.Should().Contain(".txt",
+			because: "the failure has to name the extension that was refused");
+		result.Error.Should().Contain(SetLogoCommand.FaviconImageFormats,
+			because: "the caller needs the accepted formats to fix the input without reading the docs");
+		result.Applied.Should().ContainSingle(label => label == "menu-logo",
+			because: "an unsupported favicon must not discard a logo that already landed");
+		_sysSettingsManager.DidNotReceive().UpdateSysSetting(
+			SetLogoCommand.FaviconCode, Arg.Any<object>(), Arg.Any<string>());
+		_sysSettingsManager.DidNotReceive().UpdateSysSetting(
+			SetLogoCommand.UseFaviconCode, Arg.Any<object>(), Arg.Any<string>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Never touches the environment when every requested image has an unsupported format — there is nothing valid to apply.")]
+	public void ApplyLogos_ShouldNotTouchTheEnvironment_WhenEveryImageFormatIsUnsupported() {
+		// Arrange
+		SetLogoOptions options = new() { Favicon = "C:/brand/favicon.txt" };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the run produced nothing the caller asked for");
+		result.Error.Should().Contain(".txt",
+			because: "the failure has to name the extension that was refused");
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+		_packageDataBinder.DidNotReceiveWithAnyArgs().UsePackage(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Accepts ico for the favicon regardless of extension casing, and refuses it for a logo slot — the browser-native icon format belongs to the browser tab alone.")]
+	public void ApplyLogos_ShouldAcceptIcoForTheFaviconOnly() {
+		// Arrange
+		const string icoLogoFile = "C:/brand/logo.ico";
+		const string upperCaseFaviconFile = "C:/brand/FAVICON.ICO";
+		_fileSystem.OpenReadStream(upperCaseFaviconFile).Returns(_ => new MemoryStream(FaviconBytes));
+		SetLogoOptions options = new() { LoginLogo = icoLogoFile, Favicon = upperCaseFaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a logo slot does not accept the ico format");
+		result.Error.Should().Contain("login-logo",
+			because: "the failure has to name the slot whose file was refused");
+		result.Applied.Should().ContainSingle(label => label == SetLogoCommand.FaviconLabel,
+			because: "the favicon accepts ico, so it must land even when a logo slot is refused");
+		result.Bound.Should().Contain(SetLogoCommand.FaviconCode,
+			because: "an applied favicon is delivered into the package like any other applied slot");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Refuses a file without an extension, because it cannot be verified as an image.")]
+	public void ApplyLogos_ShouldRefuseAFileWithoutAnExtension() {
+		// Arrange
+		SetLogoOptions options = new() { Favicon = "C:/brand/favicon" };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a file with no extension cannot be verified as an image");
+		result.Error.Should().Contain("no extension",
+			because: "the caller has to learn why the file was refused when the path looks plausible");
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Names the access cause when a branding setting reads as missing, because row-level rights make an unreadable setting indistinguishable from an absent one.")]
+	public void ApplyLogos_ShouldNameTheAccessCause_WhenAStockSettingReadsAsMissing() {
+		// Arrange
+		GivenFaviconFile();
+		_sysSettingsManager.GetAllUsersDefaultWithType(SetLogoCommand.FaviconCode)
+			.Returns((string.Empty, (string)null));
+		SetLogoOptions options = new() { Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the favicon setting could not be written");
+		result.Error.Should().Contain("is not readable by the current user",
+			because: "a setting the environment cannot show may be an access problem, not a missing setting");
+	}
+
 	private void GivenFaviconFile() {
 		_fileSystem.ExistsFile(FaviconFile).Returns(true);
 		_fileSystem.OpenReadStream(FaviconFile).Returns(_ => new MemoryStream(FaviconBytes));
