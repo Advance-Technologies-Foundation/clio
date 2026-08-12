@@ -60,6 +60,23 @@ internal enum ApplicationLayerReadiness {
 }
 
 /// <summary>
+/// Classification of one poll attempt in <see cref="ServerReadinessWaiter.WaitForReady"/>, folding the
+/// liveness probe and (when required) the authenticated round-trip into a single verdict for the loop.
+/// </summary>
+internal enum AttemptOutcome {
+
+	/// <summary>The attempt proves the target is ready; the wait loop can return success.</summary>
+	Ready,
+
+	/// <summary>No verdict yet — the loop should keep polling until the deadline.</summary>
+	NotReady,
+
+	/// <summary>The authenticated round-trip was rejected too many times in a row; abort the wait.</summary>
+	AuthenticationFailed
+
+}
+
+/// <summary>
 /// Polls a Creatio instance's health-check endpoint until it responds successfully or a timeout elapses.
 /// </summary>
 public interface IServerReadinessWaiter {
@@ -143,30 +160,18 @@ public class ServerReadinessWaiter(
 			// returns a login page / an unauthenticated redirect during warm-up (ENG-94417). Gate readiness on
 			// the authenticated round-trip too, and keep polling until the deadline when only liveness answers.
 			bool liveness = healthCheckCommand.Execute(healthOptions) == 0;
-			if (liveness && options.RequireAuthenticatedReadiness) {
-				ApplicationLayerReadiness readiness = ProbeApplicationLayer(probeTimeoutMs);
-				if (readiness == ApplicationLayerReadiness.Ready) {
-					logger.WriteInfo($"Server is ready after {attempt} attempt(s).");
-					return true;
-				}
-				// A rejected credential is not a warm-up symptom and will not heal by waiting: retrying it
-				// burns the whole readiness budget and then reports a misleading generic timeout. Two
-				// consecutive rejections (not one) before giving up, so a single transient rejection during
-				// security-cache warm-up cannot abort an otherwise healthy wait.
-				consecutiveAuthRejections = readiness == ApplicationLayerReadiness.AuthenticationRejected
-					? consecutiveAuthRejections + 1
-					: 0;
-				if (consecutiveAuthRejections >= MaxConsecutiveAuthRejections) {
-					logger.WriteError(
-						"The application answered its liveness probe, but the authenticated readiness round-trip was "
-						+ $"rejected {consecutiveAuthRejections} times in a row. This is an authentication failure, not "
-						+ "a warm-up delay — verify the environment credentials (e.g. 'clio reg-web-app "
-						+ "--check-login') instead of waiting longer.");
-					return false;
-				}
-			} else if (liveness) {
+			AttemptOutcome outcome = EvaluateAttempt(options, liveness, probeTimeoutMs, ref consecutiveAuthRejections);
+			if (outcome == AttemptOutcome.Ready) {
 				logger.WriteInfo($"Server is ready after {attempt} attempt(s).");
 				return true;
+			}
+			if (outcome == AttemptOutcome.AuthenticationFailed) {
+				logger.WriteError(
+					"The application answered its liveness probe, but the authenticated readiness round-trip was "
+					+ $"rejected {consecutiveAuthRejections} times in a row. This is an authentication failure, not "
+					+ "a warm-up delay — verify the environment credentials (e.g. 'clio reg-web-app "
+					+ "--check-login') instead of waiting longer.");
+				return false;
 			}
 
 			if (DateTime.UtcNow >= deadlineUtc) {
@@ -180,6 +185,46 @@ public class ServerReadinessWaiter(
 
 		logger.WriteWarning($"Server did not become ready within {options.Timeout.TotalSeconds:0} seconds.");
 		return false;
+	}
+
+	/// <summary>
+	/// Classifies one probe attempt against the liveness result and, when required, the authenticated
+	/// round-trip. Extracted from <see cref="WaitForReady"/> to keep the poll loop's cognitive complexity low.
+	/// </summary>
+	/// <param name="options">Target options; only <see cref="ServerReadinessOptions.RequireAuthenticatedReadiness"/>
+	/// is consulted here.</param>
+	/// <param name="liveness">Result of the liveness probe for this attempt.</param>
+	/// <param name="probeTimeoutMs">Per-request timeout for the authenticated round-trip, when needed.</param>
+	/// <param name="consecutiveAuthRejections">Running count of consecutive authentication rejections; updated
+	/// in place so the caller can report it and the next attempt can keep accumulating it.</param>
+	/// <returns>Whether this attempt proves readiness, should continue polling, or should abort as an
+	/// authentication failure.</returns>
+	private AttemptOutcome EvaluateAttempt(
+		ServerReadinessOptions options,
+		bool liveness,
+		int probeTimeoutMs,
+		ref int consecutiveAuthRejections) {
+		if (!liveness) {
+			return AttemptOutcome.NotReady;
+		}
+		if (!options.RequireAuthenticatedReadiness) {
+			return AttemptOutcome.Ready;
+		}
+
+		ApplicationLayerReadiness readiness = ProbeApplicationLayer(probeTimeoutMs);
+		if (readiness == ApplicationLayerReadiness.Ready) {
+			return AttemptOutcome.Ready;
+		}
+		// A rejected credential is not a warm-up symptom and will not heal by waiting: retrying it
+		// burns the whole readiness budget and then reports a misleading generic timeout. Two
+		// consecutive rejections (not one) before giving up, so a single transient rejection during
+		// security-cache warm-up cannot abort an otherwise healthy wait.
+		consecutiveAuthRejections = readiness == ApplicationLayerReadiness.AuthenticationRejected
+			? consecutiveAuthRejections + 1
+			: 0;
+		return consecutiveAuthRejections >= MaxConsecutiveAuthRejections
+			? AttemptOutcome.AuthenticationFailed
+			: AttemptOutcome.NotReady;
 	}
 
 	/// <summary>
