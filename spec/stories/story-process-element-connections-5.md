@@ -205,7 +205,8 @@ creating a section in the 8.x App Hub registers **nothing** and this story exist
 - [ ] Guidance PR bumps `libraryVersion` + `sequence`
 - [ ] Docs and MCP review statements per policy
 - [ ] Diary entry appended
-- [ ] Manual cases run from
-  [process-element-connections-manual-tests.md](../process-element-connections/process-element-connections-manual-tests.md)
-  — written as agent prompts, and each one passed only when BOTH its design-time and its runtime expectation
-  hold, since a connection can persist, compile and read back correctly while writing nothing at run time
+- [ ] Manual cases run from **ENG-91845 → "Test cases (manual)"** (the Jira issue is the single source; a repo
+  copy was deliberately dropped rather than kept in parallel, because the tester marks pass/fail there and two
+  copies drift on the first edit). They are written as agent prompts, and each one passes only when BOTH its
+  design-time and its runtime expectation hold — a connection can persist, compile and read back correctly
+  while writing nothing at run time
