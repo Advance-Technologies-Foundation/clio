@@ -102,11 +102,7 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 				firstEffectiveBody--;
 			}
 			for (int methodIndex = firstEffectiveBody; methodIndex < methods.Length; methodIndex++) {
-				foreach (string path in FindStaticColumnPaths(methods[methodIndex])) {
-					if (seen.Add(path)) {
-						columns.Add(path);
-					}
-				}
+				columns.AddRange(FindStaticColumnPaths(methods[methodIndex]).Where(seen.Add));
 			}
 		}
 		return columns;
@@ -373,15 +369,16 @@ public class GetClassicListColumnsCommand(IClassicListColumnResolver resolver, I
 	public virtual bool TryResolve(
 		GetClassicListColumnsOptions options,
 		out GetClassicListColumnsResponse response) {
+		string schemaName = options?.SchemaName;
 		try {
 			ArgumentNullException.ThrowIfNull(options);
-			response = resolver.Resolve(options.SchemaName);
+			response = resolver.Resolve(schemaName);
 			return true;
 		}
 		catch (Exception exception) {
 			response = new GetClassicListColumnsResponse {
 				Success = false,
-				SectionSchema = options?.SchemaName,
+				SectionSchema = schemaName,
 				Columns = [],
 				Notes = [],
 				Error = exception.Message
