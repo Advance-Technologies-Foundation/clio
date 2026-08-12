@@ -70,7 +70,6 @@ public sealed class GetUserCultureToolPassthroughTests {
 		return new ToolCommandResolver(
 			settingsRepository,
 			settingsBootstrapService,
-			new NonInteractiveConsole(),
 			credentialContextAccessor,
 			Substitute.For<ITargetUrlValidator>(),
 			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));

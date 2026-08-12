@@ -205,7 +205,7 @@ namespace Clio
 		//[Newtonsoft.Json.JsonIgnore]
 		public string EnvironmentPath { get; set; } = string.Empty;
 
-		public EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
+		public virtual EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;

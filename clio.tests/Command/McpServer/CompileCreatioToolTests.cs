@@ -344,6 +344,84 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("The compile-creatio tool description carries the ENG-93157 pre-compilation confirmation trigger AND the tool-surface metadata (Destructive/Idempotent/OpenWorld) is unchanged — this PR's own regression claim (RC-20).")]
+	public void CompileCreatio_Description_Should_Carry_Confirmation_Trigger()
+	{
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!;
+
+		// Act
+		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false).Single();
+		System.ComponentModel.DescriptionAttribute description = (System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single();
+
+		// Assert
+		description.Description.Should().Contain("compile now or postpone",
+			because: "the description must instruct the agent to offer a proceed-or-postpone choice before compiling");
+		description.Description.Should().Contain("ONLY after the user confirms",
+			because: "the description must gate the call on explicit user confirmation");
+		description.Description.Should().Contain("standing consent",
+			because: "the description must close the repeat-in-session loophole so the agent re-asks even on an identical repeated request (ENG-93157 AC-5)");
+		toolAttribute.Destructive.Should().BeTrue(
+			because: "compile-creatio forces a runtime reload; this PR must not change its destructive classification (RC-20)");
+		toolAttribute.Idempotent.Should().BeFalse(
+			because: "compilation is not idempotent; this PR must not change that classification (RC-20)");
+		toolAttribute.OpenWorld.Should().BeFalse(
+			because: "compile-creatio is not an open-world tool; this PR must not change that classification (RC-20)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Cross-channel drift guard (RC-8): the 'standing consent' pre-compile invariant must appear in the clio-owned guaranteed MCP channels — the compile-creatio [Description], both compile prompt branches, and the get-tool-contract precondition — so an edit that drops it from any one channel fails the build. (The core-rules guide moved to clio-knowledge under #927; its copy of the invariant is guarded there, not in clio.)")]
+	public void CompileConsentInvariant_Should_Appear_In_All_Clio_Channels()
+	{
+		// Arrange
+		const string invariant = "standing consent";
+		string description = ((System.ComponentModel.DescriptionAttribute)typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Single()).Description;
+		string fullPrompt = FsmAndCompilePrompt.CompileCreatio("sandbox");
+		string packagePrompt = FsmAndCompilePrompt.CompileCreatio("sandbox", "MyPackage");
+		string precondition = string.Join(" ", new ToolContractGetTool()
+			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
+			.Tools!.Single().Preconditions!);
+
+		// Assert
+		description.Should().Contain(invariant,
+			because: "the compile-creatio [Description] must carry the anti-loophole invariant");
+		fullPrompt.Should().Contain(invariant,
+			because: "the full-compilation prompt branch must carry the anti-loophole invariant");
+		packagePrompt.Should().Contain(invariant,
+			because: "the package-compilation prompt branch must carry the anti-loophole invariant");
+		precondition.Should().Contain(invariant,
+			because: "the get-tool-contract precondition must carry the anti-loophole invariant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Both compile-creatio prompt branches (full and package-only) carry the ENG-93157 heavy-operation warning and postpone option so the agent confirms before compiling.")]
+	public void CompileCreatioPrompt_Should_Warn_And_Offer_Postpone()
+	{
+		// Act
+		string fullPrompt = FsmAndCompilePrompt.CompileCreatio("sandbox");
+		string packagePrompt = FsmAndCompilePrompt.CompileCreatio("sandbox", "MyPackage");
+
+		// Assert
+		fullPrompt.Should().Contain("postpone",
+			because: "the full-compilation prompt must offer the postpone option");
+		fullPrompt.Should().Contain("HEAVY operation",
+			because: "the full-compilation prompt must warn that compilation is heavy");
+		packagePrompt.Should().Contain("postpone",
+			because: "the package-compilation prompt must offer the postpone option");
+		packagePrompt.Should().Contain("HEAVY operation",
+			because: "the package-compilation prompt must warn that compilation is heavy");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A same-tenant compile requested while one is already in flight fails fast with a poll-and-wait notice — mirroring the Creatio core's reject-on-concurrent-compile — instead of resolving/starting a second compile or tracking a duplicate operation.")]
 	public async Task CompileCreatio_Should_FailFast_When_Compile_Already_In_Flight_For_Same_Tenant()
 	{
@@ -463,7 +541,8 @@ public sealed class CompileCreatioToolTests
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<ICompilationHistoryPoller>(),
-				Substitute.For<ILogger>())
+				Substitute.For<ILogger>(),
+				Substitute.For<IInteractiveConsole>())
 		{
 		}
 
@@ -480,7 +559,8 @@ public sealed class CompileCreatioToolTests
 		public CompilePackageOptions? CapturedOptions { get; private set; }
 
 		public FakeCompilePackageCommand()
-			: base(Substitute.For<Clio.Package.IPackageBuilder>(), Substitute.For<ILogger>())
+			: base(Substitute.For<Clio.Package.IPackageBuilder>(), Substitute.For<ILogger>(),
+				Substitute.For<IInteractiveConsole>())
 		{
 		}
 

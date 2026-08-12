@@ -25,7 +25,6 @@ public class ToolCommandResolverTests {
 		new(
 			settingsRepository,
 			settingsBootstrapService,
-			new NonInteractiveConsole(),
 			// A substitute accessor returns null Current by default → the non-passthrough (existing)
 			// path, matching the stdio host's null-object behavior.
 			credentialContextAccessor ?? Substitute.For<ICredentialContextAccessor>(),
@@ -102,6 +101,151 @@ public class ToolCommandResolverTests {
 		}
 		finally {
 			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("Commands resolved for MCP execution get a NON-interactive console regardless of the host process's stdin, so a warn-and-proceed confirmation (e.g. compile-creatio's, ENG-93157) can never block on Console.ReadKey — closing the mcp-http-at-a-TTY deadlock hole.")]
+	[Category("Unit")]
+	public void Resolve_Should_ForceNonInteractiveConsole_InChildContainer() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"broken",
+			SettingsRepository.AppSettingsFile,
+			null,
+			null,
+			0,
+			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[],
+			true,
+			false));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
+
+		try {
+			// Act
+			IInteractiveConsole resolvedConsole = resolver.Resolve<IInteractiveConsole>(options);
+
+			// Assert
+			// Assert the EXACT injected instance, not IsInteractive: under `dotnet test` stdin is redirected,
+			// so a plain RealInteractiveConsole would ALSO report IsInteractive==false — that proxy would pass
+			// even if ForceNonInteractiveConsole were removed (review RC-4). Only BeSameAs proves the child
+			// container actually swapped in the non-interactive console.
+			resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "the per-request MCP child container must force the shared NonInteractiveConsole so a warn-and-proceed confirmation fails open instead of blocking on Console.ReadKey on a TTY-attached mcp-http host, independent of the test host's stdin redirection");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("RC-9: the resolver passes NonInteractiveConsole.Shared into EnvironmentSettings.Fill, so a Safe-flagged environment resolved over an mcp-http host started at a TTY cannot deadlock in Fill on Console.ReadKey. Asserts the exact console captured by a spy Fill, not a proxy that would also hold for a redirected-stdin RealInteractiveConsole.")]
+	[Category("Unit")]
+	public void Resolve_Should_PassNonInteractiveConsole_To_Fill() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"healthy", SettingsRepository.AppSettingsFile, "dev", "dev", 1, [], [], true, true));
+		settingsRepository.IsEnvironmentExists("dev").Returns(true);
+		ConsoleCapturingEnvironmentSettings spy = new() {
+			Uri = "http://localhost", Login = "Supervisor", Password = "Supervisor", Safe = true
+		};
+		settingsRepository.FindEnvironment("dev").Returns(spy);
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			resolver.Resolve<IInteractiveConsole>(options);
+
+			// Assert
+			spy.CapturedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "MCP resolution must pass a non-interactive console to Fill so a Safe-flagged environment fails closed instead of prompting on Console.ReadKey, independent of the host process stdin state");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("RC-14: the credential-passthrough resolve path also forces NonInteractiveConsole into its per-request child container, so the mcp-http multi-tenant edge cannot deadlock on Console.ReadKey.")]
+	[Category("Unit")]
+	public void Resolve_Should_ForceNonInteractiveConsole_InPassthroughChildContainer() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		ICredentialContextAccessor accessor = Substitute.For<ICredentialContextAccessor>();
+		accessor.Current.Returns(new CredentialContext(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			false,
+			McpTransport.Http,
+			true));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService, accessor);
+
+		try {
+			// Act
+			IInteractiveConsole resolvedConsole = resolver.Resolve<IInteractiveConsole>(new EnvironmentOptions());
+
+			// Assert
+			resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "the credential-passthrough child container must force the non-interactive console too, or the multi-tenant mcp-http edge could reopen the Console.ReadKey deadlock");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("RC-14: ResolveWithoutEnvironment also forces NonInteractiveConsole into its per-request child container.")]
+	[Category("Unit")]
+	public void ResolveWithoutEnvironment_Should_ForceNonInteractiveConsole_InChildContainer() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+
+		try {
+			// Act
+			IInteractiveConsole resolvedConsole =
+				resolver.ResolveWithoutEnvironment<IInteractiveConsole>(new EnvironmentOptions());
+
+			// Assert
+			resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+				because: "the environmentless child container must force the non-interactive console so its resolved commands never prompt");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	/// <summary>Spy that captures the <see cref="IInteractiveConsole"/> the resolver passes to Fill.</summary>
+	private sealed class ConsoleCapturingEnvironmentSettings : EnvironmentSettings {
+		public IInteractiveConsole CapturedConsole { get; private set; }
+
+		public override EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
+			CapturedConsole = interactiveConsole;
+			return this;
 		}
 	}
 
