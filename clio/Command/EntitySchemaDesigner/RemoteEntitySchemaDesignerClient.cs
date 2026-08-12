@@ -64,6 +64,9 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
 	private const string WorkspaceExplorerServicePath = "ServiceModel/WorkspaceExplorerService.svc";
 
+	/// <summary>UTF-8 byte-order mark, spelled as an escape so it stays visible in diffs and survives formatters.</summary>
+	private const char ByteOrderMark = '\uFEFF';
+
 	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
 	// which is a compile-class operation. Use the same long timeout as compile-configuration
 	// so a slow-but-successful build is not mistaken for a failure.
@@ -286,7 +289,10 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			return _jsonConverter.DeserializeObject<TResponse>(rawResponse);
 		} catch (Exception rawException) {
 			if (IsHtmlResponse(rawResponse)) {
-				throw new InvalidOperationException(
+				// NonJsonServiceResponseException (not a plain InvalidOperationException): its message is marked
+				// authoritative, so the MCP boundary surfaces this recovery guidance instead of unwrapping to the
+				// raw parser text of the inner exception (ENG-93365).
+				throw new NonJsonServiceResponseException(
 					$"{methodName} returned an HTML error page instead of JSON. " +
 					"The Creatio server encountered an unhandled error. Two common causes, check them in this order: " +
 					"(1) the target package is MISSING A DEPENDENCY on the package/app that owns the upper layer of " +
@@ -303,7 +309,9 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			try {
 				return _jsonConverter.DeserializeObject<TResponse>(correctedJson);
 			} catch (Exception correctedException) {
-				throw new InvalidOperationException(
+				// Authoritative for the same reason as the HTML branch above: this message already carries both
+				// parser errors and the response, so unwrapping to the inner exception would only lose context.
+				throw new NonJsonServiceResponseException(
 					$"{methodName} returned invalid JSON. Raw error: {rawException.Message}. " +
 					$"Corrected error: {correctedException.Message}. Response: {Truncate(rawResponse, 1000)}",
 					correctedException);
@@ -315,7 +323,12 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		if (string.IsNullOrEmpty(rawResponse)) {
 			return false;
 		}
-		string trimmed = rawResponse.TrimStart();
+		// Byte-order marks are stripped along with whitespace (char.IsWhiteSpace does not report a BOM), so a
+		// BOM-prefixed HTML error page still takes the dependency-recovery branch instead of falling through to
+		// the generic invalid-JSON message. The predicate stays narrower than
+		// ServiceResponseJsonGuard.LooksLikeMarkup on purpose: this branch claims a Creatio HTML/XML error page
+		// specifically, while the guard classifies any markup-looking body.
+		string trimmed = rawResponse.TrimStart(ByteOrderMark).TrimStart();
 		return trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
 			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
 			|| trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase);

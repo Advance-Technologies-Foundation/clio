@@ -53,7 +53,6 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 		new(
 			Substitute.For<ISettingsRepository>(),
 			Substitute.For<ISettingsBootstrapService>(),
-			new NonInteractiveConsole(),
 			accessor,
 			// Default substitute allows every url, so the cookie / missing-auth / non-Bearer branches
 			// (the ones under test) are reached instead of being short-circuited by the SSRF guard.

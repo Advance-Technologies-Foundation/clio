@@ -594,6 +594,32 @@ public sealed class ApplicationSectionCreateServiceTests {
 			contentionDelay: _ => { });
 	}
 
+	// Mirrors CreateSutWithResolver but injects a fake monotonic timestamp source so a test can drive the
+	// cumulative timeout-recovery budget deterministically (ENG-94419, PR #1002 RC-1). Keeps the no-op delay seam.
+	private ApplicationSectionCreateService CreateSutWithRecoveryClock(Func<long> recoveryTimestampProvider) =>
+		CreateSutWithClocks(contentionDelay: _ => { }, recoveryTimestampProvider: recoveryTimestampProvider);
+
+	// Mirrors CreateSutWithResolver but injects BOTH the delay seam and the monotonic timestamp source, so a test
+	// can couple a virtual clock (delay advances 'now', timestamp reads it) and exercise the backoff schedule vs
+	// cumulative-budget interaction with the real backoff amounts (ENG-94419, PR #1002 RC-3/RC-4).
+	private ApplicationSectionCreateService CreateSutWithClocks(
+		Action<TimeSpan> contentionDelay, Func<long> recoveryTimestampProvider) {
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		return new ApplicationSectionCreateService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_ => _sysSettingsManager,
+			_logger,
+			_captionCultureResolver,
+			new SectionCreateSerializationGuard(_logger),
+			contentionDelay: contentionDelay,
+			recoveryTimestampProvider: recoveryTimestampProvider);
+	}
+
 	// Builds a SUT whose ILogger (and the guard's ILogger) is a caller-supplied substitute, so a test can
 	// assert spinner lifecycle (BeginSpinner/EndSpinner) and info-line emission. Mirrors CreateSutWithResolver
 	// except it swaps the NullLogger for the injected substitute.
@@ -734,7 +760,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// unwinds with a sentinel once the key is captured so the destructive insert is never reached.
 		List<string> capturedEnvironmentKeys = new();
 		ISectionCreateSerializationGuard recordingGuard = Substitute.For<ISectionCreateSerializationGuard>();
-		recordingGuard.Run(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<Func<bool>>())
+		recordingGuard.Run(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(),
+				Arg.Any<Func<ApplicationSectionCreateService.InsertAttemptResult>>())
 			.Returns(callInfo => {
 				capturedEnvironmentKeys.Add(callInfo.ArgAt<string>(0));
 				throw new NotSupportedException("sentinel: stop before the destructive insert once the guard key is captured");
@@ -1544,6 +1571,215 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "a failed verification readback leaves the section state unknown");
 		exception.RetryGuidance.Should().Contain("Do not retry blindly",
 			because: "an unknown section state makes a blind retry the most dangerous option");
+	}
+
+	[Test]
+	[Description("ENG-94419: when the insert budget expires but the section commits moments later, the post-timeout verification poll (retry with backoff) finds it on a later attempt and recovers it as a success instead of reporting a spurious failure — the 'succeeded after the budget expired' shape.")]
+	public void CreateSection_Should_Recover_When_Insert_Times_Out_And_Section_Becomes_Visible_On_Later_Readback() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		// The first two post-timeout verification reads see nothing (the transaction is still committing);
+		// the third — and the subsequent success readback — see the section created by THIS call (matched by id).
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		// Icon-background persistence after recovery (distinct matcher: columnValues + IconBackground + filters).
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a section that becomes visible on a later post-timeout readback attempt must be recovered as a success, not reported as a spurious timeout failure (ENG-94419)");
+	}
+
+	[Test]
+	[Description("ENG-94419: the post-timeout verification is retried more than once before the timeout failure is surfaced, so a still-committing section is not prematurely declared absent after a single immediate check.")]
+	public void CreateSection_Should_Retry_PostTimeout_Verification_Before_Declaring_Section_Absent() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		int verifyCalls = 0;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				verifyCalls++;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "a section that never becomes visible after the insert timed out is still a classified timeout failure")
+			.Which;
+		verifyCalls.Should().Be(ApplicationSectionCreateService.TimeoutRecoveryVerifyAttempts,
+			because: "on a responsive server (instant verifies) the recovery poll must run the FULL advertised attempt count, not stop early — the budget must strictly exceed the backoff sum (PR #1002 RC-3)");
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.CreatioTimeout,
+			because: "an insert whose response timed out is a creatio-timeout, regardless of the recovery poll outcome");
+		exception.SectionCreated.Should().BeFalse(
+			because: "every verify attempt definitively proved the section absent, so section-created is false (not unknown) (PR #1002 RC-F)");
+		exception.InnerException.Should().BeOfType<WebException>(
+			because: "the original insert-timeout exception (the TimeoutCause) must be preserved through InsertAttemptResult into the surfaced failure (PR #1002 RC-F)");
+	}
+
+	[Test]
+	[Description("ENG-94419 / PR #1002 RC-F: the post-timeout poll prefers a definitive verified-absent (false) over unknown (null) — when early verify attempts error (null) but a later attempt proves the section absent (false), the surfaced failure is section-created=false with the retry-safe guidance, not section-created=null.")]
+	public void CreateSection_Should_Prefer_Definitive_Absent_Over_Unknown_When_Verify_Interleaves_Null_And_False() {
+		// Arrange — first two verify readbacks ERROR (success:false makes the select helper throw -> null); the
+		// third onward answer cleanly with no id match (verified absent -> false).
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":false,"errorInfo":{"message":"transient read error"}}""",
+				_ => """{"success":false,"errorInfo":{"message":"transient read error"}}""",
+				_ => """{"success":true,"rows":[]}""");
+
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "the section was proven absent, so the timeout is surfaced as a classified failure")
+			.Which;
+		exception.SectionCreated.Should().BeFalse(
+			because: "a later attempt definitively proved the section absent, which must win over the earlier unknown (null) results (PR #1002 RC-F)");
+		exception.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the verified-absent guidance (not the unknown-state guidance) must be surfaced when absence was proven");
+	}
+
+	[Test]
+	[Description("ENG-94419 / PR #1002 RC-1: the post-timeout verification poll is bounded by a hard cumulative wall-clock budget, so when the verify readbacks themselves stall it stops after the budget instead of running all TimeoutRecoveryVerifyAttempts x VerificationTimeoutMs and blowing past the client ceiling.")]
+	public void CreateSection_Should_Stop_PostTimeout_Verification_When_Cumulative_Budget_Exceeded() {
+		// Arrange — a monotonic clock that jumps an hour on every read, so the first elapsed check (before the
+		// second attempt) already exceeds the recovery budget and no further verify is issued.
+		long freq = System.Diagnostics.Stopwatch.Frequency;
+		int clockReads = 0;
+		ApplicationSectionCreateService sut = CreateSutWithRecoveryClock(() => clockReads++ * 3600L * freq);
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		int verifyCalls = 0;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				verifyCalls++;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "an absent section after the insert timed out is still a classified timeout failure");
+		verifyCalls.Should().Be(1,
+			because: "once the cumulative recovery budget is exceeded the poll must stop issuing verify calls rather than run all TimeoutRecoveryVerifyAttempts (PR #1002 RC-1)");
+	}
+
+	[Test]
+	[Description("ENG-94419 / PR #1002 RC-3/RC-4: the recovery poll's attempt count and doubling backoff schedule are pinned. With a virtual clock advanced by each backoff sleep (coupled to the recovery timestamp), the always-absent timeout path runs exactly TimeoutRecoveryVerifyAttempts verifies and sleeps the sequence [2s,4s,8s,8s,8s] — catching an attempt-count drop, a broken doubling/cap formula, or a budget that no longer exceeds the backoff sum.")]
+	public void CreateSection_Should_Poll_Full_Attempt_Count_With_Doubling_Backoff_On_Timeout() {
+		// Arrange — couple ONE virtual clock: each backoff sleep advances 'now' by its real duration, and the
+		// recovery timestamp reads the same 'now', so the cumulative-budget vs backoff-sum interaction is
+		// exercised with the REAL backoff amounts (the production sleeps), not the no-op delay.
+		long freq = System.Diagnostics.Stopwatch.Frequency;
+		long nowTicks = 0;
+		List<TimeSpan> delays = new();
+		ApplicationSectionCreateService sut = CreateSutWithClocks(
+			contentionDelay: d => { delays.Add(d); nowTicks += (long)(d.TotalSeconds * freq); },
+			recoveryTimestampProvider: () => nowTicks);
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		int verifyCalls = 0;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				verifyCalls++;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "an always-absent section after the insert timed out is still a classified timeout failure");
+		verifyCalls.Should().Be(ApplicationSectionCreateService.TimeoutRecoveryVerifyAttempts,
+			because: "with the budget (40s) strictly exceeding the backoff sum (30s), a responsive server must run every advertised attempt (PR #1002 RC-3)");
+		delays.Should().Equal(
+			new[] {
+				TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8),
+				TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(8)
+			},
+			because: "the inter-attempt backoff must double from 2s and cap at 8s across the 6 attempts (5 sleeps) (PR #1002 RC-4)");
+	}
+
+	[Test]
+	[Description("ENG-94419 / PR #1002 RC-2/RC-E: on an insert timeout the recovery poll runs OUTSIDE the guard — the FIRST post-timeout verify readback is issued only after the serialization guard's Run() has returned (lock released), so a concurrent same-app caller is never blocked behind the recovery poll. Pins the guard-release-before-poll ordering so a future refactor cannot silently move the poll back inside the lock.")]
+	public void CreateSection_Should_Run_RecoveryPoll_After_Guard_Released_When_Insert_Times_Out() {
+		// Arrange — a guard that invokes the work, then flips 'guardReleased' as Run returns (models the guard's
+		// finally releasing the per-application lock). The verify stub captures whether the guard had already
+		// released when the FIRST post-timeout verify was issued.
+		bool guardReleased = false;
+		bool? releasedAtFirstVerify = null;
+		ISectionCreateSerializationGuard orderingGuard = Substitute.For<ISectionCreateSerializationGuard>();
+		orderingGuard.Run(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(),
+				Arg.Any<Func<ApplicationSectionCreateService.InsertAttemptResult>>())
+			.Returns(callInfo => {
+				Func<ApplicationSectionCreateService.InsertAttemptResult> work =
+					callInfo.ArgAt<Func<ApplicationSectionCreateService.InsertAttemptResult>>(3);
+				ApplicationSectionCreateService.InsertAttemptResult attemptResult = work();
+				guardReleased = true;
+				return attemptResult;
+			});
+		ApplicationSectionCreateService sut = CreateSutWithGuard(orderingGuard);
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => {
+				releasedAtFirstVerify ??= guardReleased;
+				return """{"success":true,"rows":[]}""";
+			});
+
+		// Act
+		Action act = () => sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "an absent section after the insert timed out is still a classified timeout failure");
+		releasedAtFirstVerify.Should().BeTrue(
+			because: "the recovery poll's first verify must run only AFTER the guard released the lock, so a concurrent same-app caller is not serialized behind the read-only poll (PR #1002 RC-2)");
 	}
 
 	private static IEnumerable<TestCaseData> InsertFailureClassificationCases() {
