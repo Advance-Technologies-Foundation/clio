@@ -45,7 +45,8 @@ public sealed class SendTelemetryTool
 				 (classic-to-freedom-migration, mobile-page-conversion, branding, app-creation, app-maintenance, ...),
 				 so send the stage plus your workflow rather than inventing a per-flow event name. Optional `variant`
 				 carries a bounded per-stage qualifier the flow defines (a migration scope, a blocked reason) - both
-				 fields are short lowercase tokens, never free text and never customer data. The legacy
+				 fields are short lowercase tokens, never free text and never customer data. Optional `model` names the
+				 model driving the run (for example claude-opus-5), lowercased, same token shape. The legacy
 				 app-creation-specific names still work but are deprecated. Call get-telemetry-consent before using it. Use telemetry_consent only on first run after
 				 asking the developer, so Clio can store the local consent decision. Nothing is stored until consent is
 				 granted, and the two unconsented outcomes differ: while consent reads unknown a call WITHOUT
