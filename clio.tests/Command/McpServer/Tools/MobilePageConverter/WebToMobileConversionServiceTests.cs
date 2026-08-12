@@ -4019,6 +4019,86 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Grid to list row synthesis (ENG-95046)
+
+	/// <summary>A web detail grid exactly as the detail wizard authors it: a string items binding plus the
+	/// column array whose first entry is the display column.</summary>
+	private static PageBundleInfo GridWithColumns() => Bundle(
+		viewConfigJson: """
+		[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+			{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$ProductsList",
+			  "visible": true, "fitContent": true,
+			  "primaryColumnName": "ProductsListDS_Id",
+			  "selectionState": "$ProductsList_SelectionState",
+			  "_selectionOptions": { "attribute": "ProductsList_SelectionState" },
+			  "features": { "rows": { "selection": { "enable": true } } },
+			  "columns": [
+				{ "id": "c1", "code": "ProductsListDS_Product", "path": "Product", "caption": "#ResourceString(ProductsListDS_Product)#" },
+				{ "id": "c2", "code": "ProductsListDS_Price", "path": "Price", "caption": "#ResourceString(ProductsListDS_Price)#" },
+				{ "id": "c3", "code": "ProductsListDS_Quantity", "path": "Quantity", "caption": "#ResourceString(ProductsListDS_Quantity)#" } ] } ] } ]
+		""",
+		modelConfigJson: """{ "dataSources": { "PDS": {}, "ProductsListDS": {} } }""",
+		viewModelConfigJson: """
+		{ "attributes": { "ProductsList": { "isCollection": true, "modelConfig": { "path": "ProductsListDS" } } } }
+		""");
+
+	[Test]
+	[Description("A web grid converted to crt.List carries a DETERMINISTIC itemLayout: a crt.ListItem whose title is the FIRST column's binding as a STRING and whose body is one { value } entry per remaining column, in web column order.")]
+	public void Analyze_MobileValues_GridConvertedToList_CarriesDeterministicItemLayout() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.MobileType.Should().Be("crt.List", because: "the components rule maps a web grid onto the mobile list");
+		grid.MobileValues.Should().NotBeNull(because: "an insert must ship ready-to-paste values");
+		JsonNode values = grid.MobileValues;
+
+		JsonNode itemLayout = values["itemLayout"];
+		itemLayout.Should().NotBeNull(
+			because: "the row is what makes a mobile list render at all — leaving it for the caller to build from "
+				+ "prose produced pages with no title and no body (ENG-95046)");
+		itemLayout["type"]?.GetValue<string>().Should().Be("crt.ListItem",
+			because: "the mobile row element is inserted into the list's itemLayout");
+		itemLayout["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the registry declares crt.ListItem.title as a STRING binding — an object wrapper renders an "
+				+ "empty Title column in the designer, which is the second half of ENG-95046");
+		itemLayout["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the first web column is the display column and its code is the bound attribute name");
+		JsonArray body = itemLayout["body"]?.AsArray();
+		body.Should().HaveCount(2, because: "every column after the first becomes a body row");
+		body.Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "body rows keep the web column order");
+	}
+
+	[Test]
+	[Description("A web grid converted to crt.List does NOT carry the grid-only properties the mobile list has no equivalent for; the column array survives only as the synthesized row.")]
+	public void Analyze_MobileValues_GridConvertedToList_DropsGridOnlyProperties() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		foreach (string gridOnly in new[] {
+			"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" }) {
+			values[gridOnly].Should().BeNull(
+				because: $"'{gridOnly}' is a web-grid property with no mobile crt.List equivalent — pasting it "
+					+ "verbatim is what left the converted detail showing empty columns (ENG-95046)");
+		}
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the collection binding is the one grid property the mobile list does need");
+		values["type"]?.GetValue<string>().Should().Be("crt.List", because: "the element is still the mobile list");
+	}
+
+	#endregion
+
 	#region Empty container removal
 
 	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =
