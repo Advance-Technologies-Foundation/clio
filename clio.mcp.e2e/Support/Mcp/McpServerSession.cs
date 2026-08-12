@@ -54,11 +54,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			WorkingDirectory = process.WorkingDirectory,
 			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
-			// The SDK's stdio transport waits this FULL window on dispose — it does not return early
-			// when the child has already exited (measured: dispose == 1.03s / 2.03s / 10.03s for a
-			// 1s / 2s / 10s timeout, while the child itself exits ~0.05s after stdin EOF on both a dev
-			// machine and the CI agent). At 10s that idle wait was ~10s x ~195 session lifecycles per
-			// suite run. Keep this comfortably above the measured exit time and far below the old value.
+			// SDK waits the full window on dispose even after the child exits (~0.05s measured on CI); 40x margin.
 			ShutdownTimeout = TimeSpan.FromSeconds(2)
 		}, NullLoggerFactory.Instance);
 
