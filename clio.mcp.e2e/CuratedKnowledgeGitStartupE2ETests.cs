@@ -21,8 +21,12 @@ namespace Clio.Mcp.E2E;
 public sealed class CuratedKnowledgeGitStartupE2ETests {
 	private const string McpServerVerb = "mcp-server";
 	private const string BootstrapWarning = "MCP is starting without built-in curated knowledge:";
-	private static readonly TimeSpan StartupDeadline = TimeSpan.FromSeconds(7);
-	private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(10);
+	// The invariant under test is that startup beats the descendant's thirty-second lifetime, so both
+	// budgets only have to stay below that. A seven-second deadline left roughly five percent of margin
+	// over the six-and-a-half seconds a loaded CI agent actually takes, and reddened builds whenever two
+	// runs overlapped. ResponseTimeout is the effective ceiling for Elapsed and must stay above it.
+	private static readonly TimeSpan StartupDeadline = TimeSpan.FromSeconds(12);
+	private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(20);
 
 	[Test]
 	[Description("Starts the real MCP server with a Git process whose descendant retains redirected handles and verifies bounded fallback.")]
