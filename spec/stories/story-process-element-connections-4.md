@@ -168,6 +168,11 @@ normalises the slashless form and prepends the `0/` web-app alias itself.
   prompt, and two new pin tests. No curated `get-tool-contract` entry exists for the process-designer tools,
   so the `[Description]` is their contract surface
 - [x] Diary entry appended
+- Manual (human/agent-driven) coverage lives in
+  [process-element-connections-manual-tests.md](../process-element-connections/process-element-connections-manual-tests.md).
+  It is not a substitute for the six E2E cases below and does not gate this story — it covers what they
+  structurally cannot: the designer round-trip, the stale-package refusal, and the runtime tail of each
+  macro dialect
 - [x] Verified on a live stand (krestov-test), for a perform task on STATIC connection columns: 6/6 green after
   `install-process-builder --force`; `writesConnectionsAtRuntime` asserted on the wire; and the runtime
   tail measured on `UsrConnProbe1` — a fixed-record connection populates a pre-existing STATIC column of the
