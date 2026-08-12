@@ -33,6 +33,9 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	/// <summary>Distinct bytes for the dark slot, so an override can be told apart from the all-slots file.</summary>
 	private static readonly byte[] DarkLogoBytes = Encoding.UTF8.GetBytes("dark-logo-image-bytes");
 
+	private const string FaviconFile = "C:/brand/favicon.ico";
+	private static readonly byte[] FaviconBytes = Encoding.UTF8.GetBytes("favicon-image-bytes");
+
 	private ISysSettingsManager _sysSettingsManager;
 	private IFileSystem _fileSystem;
 	private IPackageDataBinder _packageDataBinder;
@@ -48,8 +51,11 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_fileSystem.OpenReadStream(Arg.Any<string>()).Returns(_ => new MemoryStream(LogoBytes));
 		_sysSettingsManager.GetFileSecurityPolicy().Returns(FileSecurityPolicy.DisabledPolicy);
 		_sysSettingsManager.GetAllUsersDefaultWithType(Arg.Any<string>())
-			.Returns(callInfo => (string.Empty,
-				callInfo.Arg<string>() == SetLogoCommand.HideSplashLogoCode ? "Boolean" : "Binary"));
+			.Returns(callInfo => (string.Empty, callInfo.Arg<string>() switch {
+				SetLogoCommand.HideSplashLogoCode => "Boolean",
+				SetLogoCommand.UseFaviconCode => "Boolean",
+				var _ => "Binary"
+			}));
 		_sysSettingsManager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>())
 			.Returns(true);
 		_packageDataBinder.UsePackage(Arg.Any<string>()).Returns(TestPackageName);
@@ -85,8 +91,9 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "a run with no logo file has nothing to apply");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("at least one logo")));
+		exitCode.Should().Be(1, because: "a run with no image file has nothing to apply");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("at least one image") && message.Contains("favicon")));
 		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
 	}
 
@@ -104,6 +111,26 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		exitCode.Should().Be(1, because: "a typo in one path must fail the run before any slot is written");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("C:/brand/missing.svg") && message.Contains("menu-logo")));
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Names every missing file in one error, so a run with more than one bad path does not have to be repeated to discover the rest.")]
+	public void Execute_ShouldNameEveryMissingFile_WhenSeveralPathsDoNotExist() {
+		// Arrange
+		_fileSystem.ExistsFile("C:/brand/missing.svg").Returns(false);
+		_fileSystem.ExistsFile(FaviconFile).Returns(false);
+		SetLogoOptions options = new() { MenuLogo = "C:/brand/missing.svg", Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a missing input is a caller mistake, not a partial outcome");
+		result.Error.Should().Contain("C:/brand/missing.svg",
+			because: "the caller has several file arguments and needs to know which path is wrong");
+		result.Error.Should().Contain(FaviconFile,
+			because: "stopping at the first missing file would force a second run just to learn the next one");
 		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
 	}
 
@@ -210,6 +237,27 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Raises no caveat when the splash toggle failed but the environment already reports it suppressed, because a failed write that changed nothing leaves the user nothing to fix.")]
+	public void ApplyLogos_ShouldNotWarn_WhenTheSplashToggleFailsButItAlreadyReadsAsSuppressed() {
+		// Arrange
+		GivenSplashAlreadySuppressed();
+		_sysSettingsManager.UpdateSysSetting(SetLogoCommand.HideSplashLogoCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the stock splash logo is already suppressed, so the failed write cost the user nothing");
+		result.Warnings.Should().BeEmpty(
+			because: "warning about a setting that already holds the wanted value would send the user chasing a non-problem");
+		result.Bound.Should().Contain(SetLogoCommand.HideSplashLogoCode,
+			because: "the setting reads as suppressed, so the value the package snapshots is the one the install target needs");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Keeps the warnings raised before a binding failure on the failure result, so a caveat is not swallowed by the later error.")]
 	public void ApplyLogos_ShouldKeepEarlierWarnings_WhenTheBindingFails() {
 		// Arrange
@@ -276,10 +324,10 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		exitCode.Should().Be(1,
 			because: "reporting success would hide the slot the user asked for and did not get");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("1 of 2") && message.Contains("menu-logo")
-			&& message.Contains(TestPackageName)));
+			message.Contains("1 image(s) failed") && message.Contains("menu-logo")));
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
 			message.Contains("Applied:") && message.Contains("login-logo")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains(TestPackageName)));
 	}
 
 	[Test, Category("Unit")]
@@ -472,8 +520,8 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Names the slots that were already bound when a later delivery throws, so the caller is not told the whole binding failed while the package already carries some of it.")]
-	public void Execute_ShouldNameTheAlreadyBoundSlots_WhenALaterDeliveryFails() {
+	[Description("Reports what the package already carries when a later delivery throws, so the caller is not told the whole binding failed while part of it landed.")]
+	public void Execute_ShouldReportTheAlreadyBoundSettings_WhenALaterDeliveryFails() {
 		// Arrange
 		_packageDataBinder.BindSysSettingsValue(SetLogoCommand.HideSplashLogoCode)
 			.Throws(new InvalidOperationException("SaveSchema rejected the binding"));
@@ -485,9 +533,10 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		// Assert
 		exitCode.Should().Be(1, because: "part of the delivery the user asked for did not land");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("Already bound and left in place")
-			&& message.Contains(SetLogoCommand.LoginLogoCode)
-			&& message.Contains("SaveSchema rejected the binding")));
+			message.Contains("SaveSchema rejected the binding")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains($"Branding data bound into package '{TestPackageName}'")
+			&& message.Contains(SetLogoCommand.LoginLogoCode)));
 	}
 
 	[Test, Category("Unit")]
@@ -502,8 +551,8 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains($"Settings bound into package '{TestPackageName}'")
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains($"Branding data bound into package '{TestPackageName}'")
 			&& message.Contains(SetLogoCommand.LoginLogoCode)));
 	}
 
@@ -521,8 +570,10 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		_command.Execute(options);
 
 		// Assert
-		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("No setting could be bound") && !message.Contains("Settings bound into")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains($"No branding data could be bound into package '{TestPackageName}'")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Branding data bound into package")));
 	}
 
 	[Test, Category("Unit")]
@@ -540,9 +591,9 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 		exitCode.Should().Be(0,
 			because: "every slot applied — a delivery gap is a warning channel, not an apply failure");
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains($"No logo data could be bound into package '{TestPackageName}'")));
+			message.Contains($"No branding data could be bound into package '{TestPackageName}'")));
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
-			message.Contains("Logo data bound into package")));
+			message.Contains("Branding data bound into package")));
 	}
 
 	[Test, Category("Unit")]
@@ -556,7 +607,7 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 
 		// Assert
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains($"Logo data bound into package '{TestPackageName}'")
+			message.Contains($"Branding data bound into package '{TestPackageName}'")
 			&& message.Contains(SetLogoCommand.LoginLogoCode)
 			&& message.Contains(SetLogoCommand.HideSplashLogoCode)));
 	}
@@ -606,5 +657,227 @@ public sealed class SetLogoCommandTests : BaseCommandTests<SetLogoOptions> {
 
 		// Assert
 		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.ConfigurationLogoCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Writes the favicon image and binds both the image and the gate it depends on.")]
+	public void Execute_ShouldApplyAndBindTheFaviconWithItsGate() {
+		// Arrange
+		GivenFaviconFile();
+		SetLogoOptions options = new() { LoginLogo = LogoFile, Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the logo and the favicon both applied");
+		result.Applied.Should().Contain(SetLogoCommand.FaviconLabel,
+			because: "the caller reads Applied to learn the favicon landed, and the sign-out notice keys off it");
+		_sysSettingsManager.Received(1).UpdateSysSetting(
+			SetLogoCommand.FaviconCode,
+			Arg.Is<object>(value => value.ToString() == Convert.ToBase64String(FaviconBytes)),
+			"Binary");
+		_sysSettingsManager.Received(1).UpdateSysSetting(
+			SetLogoCommand.UseFaviconCode,
+			Arg.Is<object>(value => value.ToString() == "true"),
+			Arg.Any<string>());
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.FaviconCode);
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.UseFaviconCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Writes the gate even when the environment already reports it on, so the run never depends on reading a value back before deciding.")]
+	public void Execute_ShouldWriteTheGate_EvenWhenTheEnvironmentReportsItOn() {
+		// Arrange
+		GivenFaviconFile();
+		GivenGateAlreadyOn();
+		SetLogoOptions options = new() { Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the favicon alone is a complete request");
+		_sysSettingsManager.Received(1).UpdateSysSetting(
+			SetLogoCommand.UseFaviconCode,
+			Arg.Is<object>(value => value.ToString() == "true"),
+			Arg.Any<string>());
+		_packageDataBinder.Received(1).BindSysSettingsValue(SetLogoCommand.UseFaviconCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails the run when the favicon gate could not be turned on and the environment does not already report it on, because the icon is inert without the gate.")]
+	public void Execute_ShouldFail_WhenTheFaviconGateCannotBeTurnedOn() {
+		// Arrange
+		GivenFaviconFile();
+		_sysSettingsManager
+			.UpdateSysSetting(SetLogoCommand.UseFaviconCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "success would tell the caller the tab icon is done while the platform keeps the stock one");
+		result.Error.Should().Contain(SetLogoCommand.UseFaviconCode,
+			because: "the failure has to name the setting that leaves the written icon inert");
+		result.Bound.Should().Contain(SetLogoCommand.FaviconCode,
+			because: "the image itself did land on the environment, so the package should carry it");
+		result.Bound.Should().NotContain(SetLogoCommand.UseFaviconCode,
+			because: "the binding snapshots the value at save time, so binding an off gate would switch the favicon off on the install target");
+		_packageDataBinder.DidNotReceive().RemoveSysSettingsValue(SetLogoCommand.UseFaviconCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Succeeds and still binds the gate when its write failed but the environment already reports it on, so a failed write that changed nothing is not reported as a broken favicon.")]
+	public void Execute_ShouldSucceed_WhenTheGateWriteFailsButItAlreadyReadsAsOn() {
+		// Arrange
+		GivenFaviconFile();
+		GivenGateAlreadyOn();
+		_sysSettingsManager
+			.UpdateSysSetting(SetLogoCommand.UseFaviconCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+		SetLogoOptions options = new() { Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the gate is already on, so the favicon will display and the failed write changed nothing");
+		result.Warnings.Should().BeEmpty(
+			because: "nothing on this environment is left in a state the caller has to act on");
+		result.Bound.Should().Contain(SetLogoCommand.UseFaviconCode,
+			because: "the gate reads as on, so the value the package snapshots is the one the install target needs");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails the run when the environment refuses the favicon, yet keeps the logo that already applied both applied and bound.")]
+	public void Execute_ShouldFailButKeepAppliedLogos_WhenTheFaviconIsRefused() {
+		// Arrange
+		GivenFaviconFile();
+		GivenFaviconWriteFails();
+		SetLogoOptions options = new() { LoginLogo = LogoFile, Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the caller asked for a favicon and did not get it, exactly as for a refused logo slot");
+		result.Error.Should().Contain(SetLogoCommand.FaviconLabel,
+			because: "the failure has to name which image the environment refused");
+		result.Applied.Should().NotContain(SetLogoCommand.FaviconLabel,
+			because: "a refused favicon never reached the environment, so the sign-out notice must stay silent");
+		result.Bound.Should().Contain(SetLogoCommand.LoginLogoCode,
+			because: "a refused favicon must not discard a logo that already landed");
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.FaviconCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails a favicon-only run whose icon was refused, since nothing at all reached the environment.")]
+	public void Execute_ShouldFail_WhenTheFaviconWasTheOnlyRequestAndWasRefused() {
+		// Arrange
+		GivenFaviconFile();
+		GivenFaviconWriteFails();
+		SetLogoOptions options = new() { Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the run produced nothing the caller asked for");
+		result.Error.Should().Contain(SetLogoCommand.FaviconCode,
+			because: "the failure has to name the setting that could not be written");
+		_packageDataBinder.DidNotReceiveWithAnyArgs().UsePackage(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails naming the favicon when its file does not exist, before writing anything.")]
+	public void Execute_ShouldFail_WhenTheFaviconFileIsMissing() {
+		// Arrange
+		_fileSystem.ExistsFile(FaviconFile).Returns(false);
+		SetLogoOptions options = new() { LoginLogo = LogoFile, Favicon = FaviconFile };
+
+		// Act
+		SetLogoResult result = _command.ApplyLogos(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a missing input is a caller mistake, not a partial outcome");
+		result.Error.Should().Contain("favicon",
+			because: "the caller has several file arguments and needs to know which path is wrong");
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Never touches the favicon settings on a logos-only run, so a favicon bound earlier is left alone.")]
+	public void Execute_ShouldLeaveTheFaviconAlone_WhenNoFaviconIsPassed() {
+		// Arrange
+		SetLogoOptions options = new() { LoginLogo = LogoFile };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_sysSettingsManager.DidNotReceive().UpdateSysSetting(
+			SetLogoCommand.FaviconCode, Arg.Any<object>(), Arg.Any<string>());
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.FaviconCode);
+		_packageDataBinder.DidNotReceive().BindSysSettingsValue(SetLogoCommand.UseFaviconCode);
+		_packageDataBinder.DidNotReceive().RemoveSysSettingsValue(SetLogoCommand.UseFaviconCode);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Tells the user a page refresh is enough when a logo applied, because a logo does appear on the next load.")]
+	public void Execute_ShouldPromiseAPageRefresh_WhenALogoApplied() {
+		// Arrange
+		GivenFaviconFile();
+		SetLogoOptions options = new() { LoginLogo = LogoFile, Favicon = FaviconFile };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Applied:") && message.Contains("after a page refresh")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Leaves the page-refresh promise out of a favicon-only run, because a favicon never appears on a refresh and the run would otherwise contradict the sign-out notice printed next to it.")]
+	public void Execute_ShouldNotPromiseAPageRefresh_WhenOnlyTheFaviconApplied() {
+		// Arrange
+		GivenFaviconFile();
+		SetLogoOptions options = new() { Favicon = FaviconFile };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Applied:") && message.Contains(SetLogoCommand.FaviconLabel)));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("after a page refresh")));
+	}
+
+	private void GivenFaviconFile() {
+		_fileSystem.ExistsFile(FaviconFile).Returns(true);
+		_fileSystem.OpenReadStream(FaviconFile).Returns(_ => new MemoryStream(FaviconBytes));
+	}
+
+	private void GivenFaviconWriteFails() {
+		_sysSettingsManager
+			.UpdateSysSetting(SetLogoCommand.FaviconCode, Arg.Any<object>(), Arg.Any<string>())
+			.Returns(false);
+	}
+
+	private void GivenGateAlreadyOn() {
+		_sysSettingsManager.GetAllUsersDefaultWithType(SetLogoCommand.UseFaviconCode)
+			.Returns(("true", "Boolean"));
+	}
+
+	private void GivenSplashAlreadySuppressed() {
+		_sysSettingsManager.GetAllUsersDefaultWithType(SetLogoCommand.HideSplashLogoCode)
+			.Returns(("true", "Boolean"));
 	}
 }
